@@ -218,6 +218,12 @@ enum SyncItems {
 
     static func spaceKey(_ id: UUID) -> String { "space:" + id.uuidString }
 
+    /// A space's gradient, an item of its own beside the space's: a Search
+    /// from before gradients doesn't read it, so it carries it along as it
+    /// is and never writes the space back without it (see SyncMerge.stamp).
+    /// Only a space with a gradient has one.
+    static func gradientKey(_ id: UUID) -> String { "gradient:" + id.uuidString }
+
     /// One profile's spaces, as items. Whether a space has sign-ins of its
     /// own is what was agreed when it was first synced (`base`), never
     /// changed after: a store can't change under a space's open tabs.
@@ -228,6 +234,7 @@ enum SyncItems {
             let synced = SyncedSpace(name: space.name, colour: space.colour, icon: space.icon,
                                      sharesSignIns: agreed.map(\.sharesSignIns) ?? space.sharesSignIns)
             out[spaceKey(space.id)] = SyncMerge.text(synced)
+            if let gradient = space.gradient, gradient.usable { out[gradientKey(space.id)] = SyncMerge.text(gradient) }
         }
         if !list.isEmpty { out[spacesOrder] = SyncMerge.text(list.map(\.id.uuidString)) }
         return out
@@ -260,6 +267,7 @@ enum SyncItems {
                 space.colour = synced.colour
                 space.icon = synced.icon
                 if !local.contains(where: { $0.id == id }) { space.sharesSignIns = synced.sharesSignIns }
+                space.gradient = live[gradientKey(id)].flatMap { SyncMerge.value(SpaceGradient.self, $0) }.flatMap { $0.usable ? $0 : nil }
             }
             if space.name.isEmpty { space.name = "Space" }
             return space
@@ -382,6 +390,7 @@ enum SyncItems {
     /// here and so deleted everywhere.
     static func understood(_ key: String, _ text: String) -> Bool {
         if key.hasPrefix("space:") { return SyncMerge.value(SyncedSpace.self, text) != nil }
+        if key.hasPrefix("gradient:") { return SyncMerge.value(SpaceGradient.self, text)?.usable == true }
         if key.hasPrefix("pin:") { return SyncMerge.value(SyncedPin.self, text) != nil }
         if key.hasPrefix("bm:") { return SyncMerge.value(SyncedBookmark.self, text) != nil }
         if key.hasPrefix("order:") || key.hasPrefix("kids:") { return SyncMerge.value([String].self, text) != nil }

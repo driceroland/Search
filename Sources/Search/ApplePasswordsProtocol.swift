@@ -386,6 +386,7 @@ enum AppleCommand: Int {
     case handshake = 2
     case loginNames = 4
     case password = 5
+    case tabEvent = 8
     case passwordsDisabled = 9
     case reloginNeeded = 10
     case hello = 14
@@ -429,6 +430,13 @@ enum AppleMessages {
     static func hello() -> [String: Any] { ["cmd": AppleCommand.hello.rawValue] }
 
     static func end() -> [String: Any] { ["cmd": AppleCommand.end.rawValue] }
+
+    /// A tab came to the front: what Apple's extension tells the helper on
+    /// every tab switch and window focus, unsealed, its answer ignored.
+    /// Nothing about the page goes with it.
+    static func tabEvent(tab: Int) -> [String: Any] {
+        ["cmd": AppleCommand.tabEvent.rawValue, "tabId": tab, "event": 1]
+    }
 
     /// The opening of a pairing: the helper puts its code on screen.
     static func start(_ client: SRPClient) -> [String: Any] {

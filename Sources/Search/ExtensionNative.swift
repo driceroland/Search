@@ -189,6 +189,9 @@ final class HostPipe: @unchecked Sendable {
     private let writing = NSLock()
     var onMessage: ((Any) -> Void)?
     var onExit: (() -> Void)?
+    /// Once the host's process has exited: how it ended (its status or the
+    /// signal) and what came first, in plain words for a log. Nothing it sent.
+    var onTerminated: ((String) -> Void)?
     private var waiters: [(id: Int, continuation: CheckedContinuation<Any?, Error>)] = []
     private var nextWaiter = 0
     private var stopped = false
@@ -232,11 +235,15 @@ final class HostPipe: @unchecked Sendable {
         // reply has been read: the end is when its output closes, as in
         // Chrome. But a child of the host's may hold that output open long
         // after, so an exit ends things after a grace in any case.
-        process.terminationHandler = { [weak self] _ in
+        process.terminationHandler = { [weak self] process in
             guard let self else { return }
             self.lock.lock()
             let now = self.stopped || self.outputClosed
+            let first = self.stopped ? "stopped by the browser" : self.outputClosed ? "its output closed first" : "exited on its own"
             self.lock.unlock()
+            let how = process.terminationReason == .uncaughtSignal
+                ? "signal \(process.terminationStatus)" : "status \(process.terminationStatus)"
+            self.onTerminated?("\(how), \(first)")
             if now {
                 self.finish()
             } else {

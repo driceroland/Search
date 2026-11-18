@@ -121,6 +121,8 @@ extension Browser {
     /// Put away: the page goes with the panel.
     func closePeek() {
         guard let page = peekTab else { return }
+        peekPinch = 0
+        peekFill = false
         withAnimation(Motion.quick) {
             peekTab = nil
             peekFrom = nil
@@ -130,10 +132,28 @@ extension Browser {
         page.close()
     }
 
+    /// A pinch spread past the line: the panel grows to the page's size,
+    /// and once there it is the tab, in place — the zoom seen to its end.
+    func openPeekGrown() {
+        guard peekTab != nil, !peekFill else { return }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            peekPinch = 0
+            return keepPeek(instant: true)
+        }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.92)) {
+            peekFill = true
+            peekPinch = 0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.peekFill else { return }
+            self.keepPeek(instant: true)
+        }
+    }
+
     /// Kept: a tab beside the one it was opened from, and in front. With
     /// Split View on, `beside` keeps it in a pair with that page instead —
     /// the page and what it linked to, side by side.
-    func keepPeek(beside: Bool = false) {
+    func keepPeek(beside: Bool = false, instant: Bool = false) {
         guard let page = peekTab else { return }
         // The tab it was opened from, which in a pair need not be the one
         // in front: kept, it goes beside that one, in its group.
@@ -142,9 +162,14 @@ extension Browser {
         // Kept from a grouped tab, it joins that group, as a link opened
         // from there does (see open).
         if prefs.usesTabGroups, !page.shy, let from { page.groupID = from.groupID }
-        withAnimation(Motion.quick) {
+        // Grown to the page already (a pinch, see openPeekGrown): it simply
+        // becomes the tab, with no fade or shrink in between.
+        var change = Transaction(animation: instant ? nil : Motion.quick)
+        change.disablesAnimations = instant
+        withTransaction(change) {
             peekTab = nil
             peekFrom = nil
+            peekFill = false
         }
         insert(page, at: place)
         if beside, prefs.splitView, let from, canJoin(page, beside: from) {
@@ -182,6 +207,10 @@ struct PeekPanel: View {
     @ObservedObject var browser: Browser
     @ObservedObject var tab: Tab
 
+    /// Grown to the page it is about to become (Browser.peekFill), it wears
+    /// the page's corners, so nothing changes when it becomes the tab.
+    private var corner: CGFloat { browser.peekFill ? (browser.asCards ? Metrics.cardRadius : 0) : 12 }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -196,13 +225,13 @@ struct PeekPanel: View {
                                 PeekSkeleton().transition(.opacity.animation(Motion.quick))
                             }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            RoundedRectangle(cornerRadius: corner, style: .continuous)
                                 .strokeBorder(Palette.hairline, lineWidth: 1)
                         )
                         .shadow(color: .black.opacity(0.25), radius: 30, y: 10)
-                    VStack(spacing: 8) {
+                    if !browser.peekFill { VStack(spacing: 8) {
                         Knob("xmark", help: "Close (esc)") { browser.closePeek() }
                         // ⌥ on it keeps the page beside this one, with Split
                         // View on, as the button under it does.
@@ -212,10 +241,11 @@ struct PeekPanel: View {
                         if browser.prefs.splitView {
                             Knob("rectangle.split.2x1", help: "Keep beside this page (⌥⌘↩)") { browser.keepPeek(beside: true) }
                         }
-                    }
+                    } }
                 }
-                .frame(width: geo.size.width * 0.82, height: geo.size.height * 0.86)
-                .offset(x: 21)
+                .frame(width: geo.size.width * (browser.peekFill ? 1 : 0.82), height: geo.size.height * (browser.peekFill ? 1 : 0.86))
+                .offset(x: browser.peekFill ? 0 : 21)
+                .scaleEffect(browser.peekFill ? 1 : 1 + 0.04 * browser.peekPinch)
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }

@@ -2311,6 +2311,52 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 final class PageView: WKWebView {
     var onMenuClosed: (() -> Void)?
 
+    /// Two fingers spread on a peek open it as a tab, as zooming into it
+    /// would make it bigger: the panel grows a little with the fingers, the
+    /// trackpad taps once when letting go would open it, and lighter when
+    /// the fingers come back under that. Only while the page isn't zoomed
+    /// in: a page already zoomed takes its pinch as it always did.
+    private var peekSpread: CGFloat = 0
+    private var peekArmed = false
+    static let peekOpens: CGFloat = 0.3
+
+    override func magnify(with event: NSEvent) {
+        if !peekPinch(event.phase, by: event.magnification) { super.magnify(with: event) }
+    }
+
+    /// One step of a pinch on this page: false when it isn't a peek's to
+    /// take, and the page zooms as usual. Also how a test pinches.
+    @discardableResult
+    func peekPinch(_ phase: NSEvent.Phase, by amount: CGFloat) -> Bool {
+        guard let browser = Browsers.all.first(where: { $0.peekTab?.web === self }),
+              magnification <= 1.001 || peekSpread != 0 else { return false }
+        switch phase {
+        case .began:
+            peekSpread = 0
+            peekArmed = false
+        case .changed:
+            peekSpread += amount
+            let armed = peekSpread >= PageView.peekOpens
+            if armed != peekArmed {
+                NSHapticFeedbackManager.defaultPerformer.perform(armed ? .levelChange : .alignment, performanceTime: .now)
+                peekArmed = armed
+            }
+            browser.peekPinch = max(0, min(1, peekSpread / PageView.peekOpens))
+        case .ended, .cancelled:
+            let open = peekArmed && phase == .ended
+            peekSpread = 0
+            peekArmed = false
+            if open {
+                browser.openPeekGrown()
+            } else {
+                withAnimation(Motion.quick) { browser.peekPinch = 0 }
+            }
+        default:
+            break
+        }
+        return true
+    }
+
     override func didCloseMenu(_ menu: NSMenu, with event: NSEvent?) {
         super.didCloseMenu(menu, with: event)
         onMenuClosed?()

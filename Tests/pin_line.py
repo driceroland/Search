@@ -40,6 +40,13 @@ def main():
             t.ok(f"{layout}: a group and no pin: the line, between them and the tabs", lines() == 1, lines())
             sv.cmd({"do": "group", "id": a, "name": "none"})
             t.ok(f"{layout}: the group gone: no line", lines() == 0, lines())
+            # Only the empty new tab under the pins: nothing to keep apart.
+            sv.cmd({"do": "pin", "id": a}); sv.cmd({"do": "pin", "id": b})
+            sv.sp("newTab")
+            t.ok(f"{layout}: pins over nothing but an empty tab: no line", lines() == 0, lines())
+            sv.cmd({"do": "pin", "id": b, "off": True})
+            t.ok(f"{layout}: a page under them again: the line", lines() == 1, lines())
+            sv.cmd({"do": "pin", "id": a, "off": True})
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)

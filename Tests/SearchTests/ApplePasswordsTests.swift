@@ -479,6 +479,110 @@ final class ApplePasswordsTests: XCTestCase {
         XCTAssertEqual(after, [])
     }
 
+    // MARK: - keeping the helper running (#1122)
+
+    private func paired(_ fake: FakeHelper, keepAliveEvery: TimeInterval = 3600, made: (() -> Void)? = nil) async -> ApplePasswords {
+        let apple = ApplePasswords(makeLink: { made?(); return fake }, keepAliveEvery: keepAliveEvery)
+        await apple.connect()
+        await apple.enter(fake.code)
+        XCTAssertEqual(apple.state, .paired)
+        return apple
+    }
+
+    private func settle(_ seconds: TimeInterval = 3, until: () -> Bool) async -> Bool {
+        let end = Date().addingTimeInterval(seconds)
+        while Date() < end {
+            if until() { return true }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return until()
+    }
+
+    /// A paired helper is told now and then that a tab came to the front,
+    /// as Apple's extension tells it; before pairing and after, nothing.
+    func testKeepAliveOnlyWhilePaired() async {
+        let fake = FakeHelper(code: "246810")
+        let apple = ApplePasswords(makeLink: { fake }, keepAliveEvery: 0.02)
+        await apple.connect()
+        XCTAssertEqual(apple.state, .code)
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(fake.tabEvents.count, 0, "not while only showing a code")
+        await apple.enter("246810")
+        XCTAssertEqual(apple.state, .paired)
+        let nudged = await settle { fake.tabEvents.count >= 2 }
+        XCTAssertTrue(nudged)
+        XCTAssertEqual(fake.tabEvents.last?["cmd"] as? Int, 8)
+        XCTAssertEqual(fake.tabEvents.last?["event"] as? Int, 1)
+        XCTAssertEqual(Set(fake.tabEvents.last?.keys.map { $0 } ?? []), ["cmd", "tabId", "event"], "nothing about a page")
+        apple.disconnect()
+        let after = fake.tabEvents.count
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(fake.tabEvents.count, after, "not once disconnected")
+    }
+
+    func testWakeChecksAPairedHelperOnly() async {
+        let fake = FakeHelper(code: "246810")
+        let idle = ApplePasswords(makeLink: { fake })
+        idle.woke()
+        XCTAssertEqual(fake.tabEvents.count, 0)
+        let apple = await paired(fake)
+        XCTAssertEqual(fake.tabEvents.count, 0)
+        apple.woke()
+        XCTAssertEqual(fake.tabEvents.count, 1)
+        XCTAssertEqual(apple.state, .paired)
+    }
+
+    /// The key is good only with the helper it was made with: once that
+    /// helper has gone, the next sign-in box offers to connect again, and
+    /// nothing is sent with the old key.
+    func testHelperEndingWhilePairedDropsTheKeyAndTheKeepAlive() async {
+        let fake = FakeHelper(code: "246810")
+        var made = 0
+        let apple = await paired(fake, keepAliveEvery: 0.02) { made += 1 }
+        fake.onEnd?()
+        XCTAssertEqual(apple.state, .idle)
+        let names = await apple.logins(for: "accounts.example.test", tab: UUID())
+        XCTAssertEqual(names, [])
+        XCTAssertEqual(fake.commands, [])
+        let events = fake.tabEvents.count
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(fake.tabEvents.count, events)
+        apple.woke()
+        XCTAssertEqual(fake.tabEvents.count, events)
+        await apple.connect()
+        XCTAssertEqual(made, 2, "a new helper, only when Connect is clicked")
+        XCTAssertEqual(apple.state, .code)
+    }
+
+    /// A helper that no longer knows the session (status 9) drops the
+    /// pairing and says to connect again.
+    func testInvalidSessionDropsThePairing() async {
+        let fake = FakeHelper(code: "246810")
+        let apple = await paired(fake)
+        fake.status = 9
+        let names = await apple.logins(for: "accounts.example.test", tab: UUID())
+        XCTAssertEqual(names, [])
+        XCTAssertEqual(apple.state, .idle)
+        XCTAssertEqual(apple.trouble, "Apple Passwords was disconnected. Connect again to use it.")
+        XCTAssertTrue(fake.stopped)
+    }
+
+    /// Quitting (or the switch going off) still tells the helper goodbye
+    /// and drops the key.
+    func testQuitStillDropsTheKey() async {
+        let fake = FakeHelper(code: "246810")
+        let apple = await paired(fake, keepAliveEvery: 0.02)
+        apple.disconnect(because: "Search quit")
+        XCTAssertEqual(apple.state, .idle)
+        XCTAssertTrue(fake.ended)
+        XCTAssertTrue(fake.stopped)
+        let names = await apple.logins(for: "accounts.example.test", tab: UUID())
+        XCTAssertEqual(names, [])
+        let events = fake.tabEvents.count
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(fake.tabEvents.count, events)
+    }
+
     func testHelperThatWontRunSaysSo() async {
         let apple = ApplePasswords(makeLink: { throw ApplePasswords.Unavailable(errorDescription: "Apple's Passwords helper isn't on this Mac") })
         await apple.connect()
@@ -750,6 +854,10 @@ private final class FakeHelper: AppleLink {
     private(set) var asked: [[String: Any]] = []
     private(set) var ended = false
     private(set) var stopped = false
+    /// The tab events sent, as they were.
+    private(set) var tabEvents: [[String: Any]] = []
+    /// Answers every question with this status instead, if set.
+    var status: Int?
     private var tid = ""
     private var a = SRPNumber(1), b = SRPNumber(1), v = SRPNumber(1)
     private var salt: [UInt8] = []
@@ -785,6 +893,8 @@ private final class FakeHelper: AppleLink {
             answer(["cmd": 14, "capabilities": ["shouldUseBase64": false, "secretSessionVersion": sessionVersion, "canFillOneTimeCodes": fillsCodes]])
         case 0:
             ended = true
+        case 8:
+            tabEvents.append(message)
         case 2:
             let msg = json(message["msg"])
             let pake = (try? JSONSerialization.jsonObject(with: Data(base64Encoded: msg["PAKE"] as! String)!)) as! [String: Any]
@@ -846,6 +956,7 @@ private final class FakeHelper: AppleLink {
             } else if question["USR"] as? String == "ada@example.test" {
                 reply = ["STATUS": 0, "Entries": [["USR": "ada@example.test", "PWD": "made-up-secret", "sites": ["example.test"]]]]
             }
+            if let status { reply = ["STATUS": status] }
             let replyIV = SRPClient.secureRandom(16)
             let out = try AES.GCM.seal(try JSONSerialization.data(withJSONObject: reply), using: key, nonce: AES.GCM.Nonce(data: replyIV))
             let framed = replyIV + [UInt8](out.ciphertext) + [UInt8](out.tag)

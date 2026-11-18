@@ -14,6 +14,16 @@ in [ROADMAP.md](ROADMAP.md).
 ### Fixed
 
 - A popover's arrow is drawn whole near the edge of the screen. With the window down to the foot of the screen, the bookmarks and extensions lists at the column's foot had their arrow bent into the popover's rounded corner, and the same happened to a popover above or under a button near the screen's left or right edge. The arrow now moves along the popover's side, just enough to stay clear of the corner, and a list beside a button too near the foot of the screen to point at it opens above it instead. The bookmarks list's arrow is the colour of the list too, where it was lighter. With the column on the right, its lists open toward the page. Thanks [@egegokdenizduman](https://github.com/egegokdenizduman) for reporting ([#1167](https://github.com/driceroland/Search/issues/1167))
+- Passwords from Apple's Passwords app should ask for a new six-digit code far less often: Search now keeps Apple's helper running for as long as you're connected, telling it now and then (and when the Mac wakes) that a tab came to the front, as Apple's own extension does, so a sleep or a quiet hour no longer lets the pairing go. If it still asks, the reason is noted in the Mac's log for us to look at. Reported by [@mehdiillala](https://github.com/mehdiillala) ([#1122](https://github.com/driceroland/Search/issues/1122))
+- An extension's box opened over a page from a key, as Vimium's Vomnibar (T, o) is, takes what you type straight away, where it opened unfocused and the keys went nowhere until it was clicked. WebKit refuses a frame from another site focus until it has had a key of its own, so the first key now puts the focus where the extension asked before it lands. Thanks to the person who reported it with a full diagnosis.
+- Split View no longer draws a frame round the page the keys go to, as a card or edge to edge: it read as a stray border on one page of two.
+- The line under the pins, with Clear at its end, waits for a tab with a page under it: over nothing but the empty tab a window starts with, it was a line with nothing to keep apart. New Live Folder… is in a square pin's menu too.
+
+### Added
+
+- Settings › Keyboard & Mouse › Bounce at the top and bottom: pages stretch past their ends and spring back, as in Safari. Off unless you turn it on.
+- A space can wear a gradient instead of one colour, if you like: the space's menu › Colour › Gradient… picks two or three colours, which way they run and a faint grain, with a few ready-made ones, and the window changes as you choose. It washes the tabs, the bookmarks bar and the ground around the page as faintly as a colour does, and goes with the space when you switch or swipe. Remove Gradient gives the space its colour back; spaces without one look exactly as before, and it syncs with your other Macs.
+- Spread two fingers on a peek to open it as a tab, as zooming into it: the panel grows a little with your fingers, the trackpad taps once when letting go will open it, and a lighter tap when your fingers come back under that. Let go past it and the panel grows to the whole page and simply is the tab, with no flash. A page already zoomed in keeps its pinch.
 
 ### Held back
 

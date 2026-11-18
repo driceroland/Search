@@ -218,7 +218,7 @@ struct TabBar: View {
                 // The space's colour, if it has one, over whatever ground the
                 // row lies on: the window's, or the one it brings along when
                 // it comes down over the page.
-                SpaceWash(colour: browser.washColour)
+                SpaceWash(look: browser.wash)
                 if browser.prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
@@ -1568,6 +1568,11 @@ struct TabMenu: View {
             }
             // Settings › Tabs › Folders in pinned rows: a row of this
             // space's own into a folder, a new one or one there is.
+            // New Live Folder… on a square too, where it lands at the top
+            // of the rows: it holds a feed, not this pin.
+            if browser.prefs.showsPinFolders && !browser.takesFolder(tab) {
+                Button("New Live Folder…") { LiveFolders.ask(for: browser, in: nil) }
+            }
             if browser.prefs.showsPinFolders && browser.takesFolder(tab) {
                 Button("New Folder") { browser.newPinFolder(holding: tab) }
                 Button("New Live Folder…") { LiveFolders.ask(for: browser, in: tab.pinFolder) }

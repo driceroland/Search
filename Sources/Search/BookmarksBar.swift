@@ -62,7 +62,7 @@ struct BookmarksBar: View {
                 onFrame ? Palette.frame : Palette.ground
                 // The tabs' wash carried on under them, or the colour
                 // stopped at the bar's edge.
-                SpaceWash(colour: browser.washColour)
+                SpaceWash(look: browser.wash)
             }
         }
         .overlay(alignment: .bottom) {
