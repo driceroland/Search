@@ -1568,6 +1568,11 @@ struct TabMenu: View {
             }
             // Settings › Tabs › Folders in pinned rows: a row of this
             // space's own into a folder, a new one or one there is.
+            // New Live Folder… on a square too, where it lands at the top
+            // of the rows: it holds a feed, not this pin.
+            if browser.prefs.showsPinFolders && !browser.takesFolder(tab) {
+                Button("New Live Folder…") { LiveFolders.ask(for: browser, in: nil) }
+            }
             if browser.prefs.showsPinFolders && browser.takesFolder(tab) {
                 Button("New Folder") { browser.newPinFolder(holding: tab) }
                 Button("New Live Folder…") { LiveFolders.ask(for: browser, in: tab.pinFolder) }

@@ -471,7 +471,7 @@ struct SideBar: View {
                     }
                 }
                 // Under the groups, as on screen.
-                if showsLine(kept: pins.count + listed.count + groups.count, listed: listed.count, loose: rest.count) {
+                if showsLine(kept: pins.count + listed.count + groups.count, listed: listed.count, loose: rest.filter { !$0.isBlank }.count) {
                     KeepLine(clears: false) {}
                 }
                 ForEach(rest) { tab in
@@ -590,6 +590,9 @@ struct SideBar: View {
     /// either side of it: nothing kept above it either — no pin of this
     /// space, square or row, and no group — until the first is pinned
     /// (idea 444), as the row across the top has it (TabBar.showsPinLine).
+    /// `loose`: the tabs under it that hold a page. Over nothing but the
+    /// empty tab a window starts with, it was a line with nothing to keep
+    /// apart (Drice, 18 Nov 2026).
     private func showsLine(kept: Int, listed: Int, loose: Int) -> Bool {
         prefs.showsPinRows && kept > 0 && listed + loose > 0
     }
@@ -845,7 +848,7 @@ struct SideBar: View {
             let loose = looseTabs
             // Under the groups: Clear keeps them, as it keeps the pins, so
             // everything above the line is what stays.
-            if showsLine(kept: keptCount, listed: browser.listedPins.count, loose: loose.count) {
+            if showsLine(kept: keptCount, listed: browser.listedPins.count, loose: loose.filter { !$0.isBlank }.count) {
                 KeepLine(clears: !loose.isEmpty) { browser.clearTabs() }
             }
             let ghost: Int? = if case .loose(let at)? = crossing?.target { at } else { nil }

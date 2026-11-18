@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- The line under the pins, with Clear at its end, waits for a tab with a page under it: over nothing but the empty tab a window starts with, it was a line with nothing to keep apart. New Live Folder… is in a square pin's menu too.
+
 ### Added
 
 - Spread two fingers on a peek to open it as a tab, as zooming into it: the panel grows a little with your fingers, the trackpad taps once when letting go will open it, and a lighter tap when your fingers come back under that. Let go past it and the panel grows to the whole page and simply is the tab, with no flash. A page already zoomed in keeps its pinch.
