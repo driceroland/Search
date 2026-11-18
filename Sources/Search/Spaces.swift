@@ -706,7 +706,7 @@ struct SpaceDot: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(Motion.quick, value: browser.space.look)
-        .help("\(browser.space.name) — ⌃1–⌃9, or two fingers \(browser.prefs.sidebar ? "sideways" : "up or down") over the tabs, to switch")
+        .help("\(browser.space.name) — \(KeyCombo.spacesOnCommand ? "⌘1–⌘9" : "⌃1–⌃9"), or two fingers \(browser.prefs.sidebar ? "sideways" : "up or down") over the tabs, to switch")
         .onChange(of: key) { _, now in
             let symbol = symbol
             DispatchQueue.main.async {

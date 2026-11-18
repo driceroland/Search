@@ -1267,7 +1267,10 @@ struct ContentView: View {
             if Launcher.owns(event.window) { return event }
             guard mine(event) else { return event }
             guard event.type == .keyDown else {
-                let held = browser.prefs.showsTabShortcuts && event.modifierFlags.contains(.command)
+                // ⌃ with the tab numbers on it (Settings › Spaces & Pins) is
+                // also the switcher's: its cards are up, not the numbers.
+                let held = browser.prefs.showsTabShortcuts && KeyCombo.holdsTabNumbers(event.modifierFlags)
+                    && !(KeyCombo.spacesOnCommand && browser.tabSwitcher.active)
                 if browser.commandHeld != held { browser.commandHeld = held }
                 // ⌃ let go of switches to the tab the switcher is on — or
                 // whichever its key is held with (Settings › Shortcuts).
@@ -1368,12 +1371,12 @@ struct ContentView: View {
     }
 
     /// A key that goes to another tab or a new one: the switcher's, ⌘T,
-    /// ⌘1 through ⌘9.
+    /// ⌘1 through ⌘9 (⌃1–⌃9 while ⌘1–⌘9 switch spaces).
     private static func movesTab(_ event: NSEvent) -> Bool {
         if ShortcutStore.shared.recentSwitch(event) != nil { return true }
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else { return false }
-        if let number = digits[event.keyCode] { return number != 0 }
-        return event.shortcutCharacters == "t"
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if let number = digits[event.keyCode], number != 0, flags == KeyCombo.tabNumberModifier { return true }
+        return flags == .command && event.shortcutCharacters == "t"
     }
 
     /// The same handling the key monitor gives an event, for the bench to
@@ -1693,6 +1696,15 @@ struct ContentView: View {
             return browser.submitToShiftEngine()
         }
 
+        // ⌃1–⌃9 pick a tab while ⌘1–⌘9 switch spaces (Settings › Spaces &
+        // Pins), as in Arc: by the key, as ⌘1–⌘9 below, and before any
+        // command a ⌃ digit was given while it was free.
+        if KeyCombo.spacesOnCommand, flags.intersection([.command, .shift, .option, .control]) == .control,
+           let number = ContentView.digits[event.keyCode], number != 0 {
+            browser.select(index: number == 9 ? browser.tabShortcutTargets.count - 1 : number - 1)
+            return true
+        }
+
         // Space keys have no menu; other commands arrive here when rebound.
         // A key taken off a command goes back to the page.
         if ShortcutStore.shared.anyChanged || browser.prefs.usesSpaces, let combo = KeyCombo(event: event) {
@@ -1775,6 +1787,9 @@ struct ContentView: View {
         if !shifted, let number = ContentView.digits[event.keyCode] {
             if number == 0 {
                 browser.resetZoom()
+            } else if KeyCombo.spacesOnCommand {
+                // The spaces' (above), unless one was taken off: the page's then.
+                return false
             } else {
                 browser.select(index: number == 9 ? browser.tabShortcutTargets.count - 1 : number - 1)
             }

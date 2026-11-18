@@ -816,6 +816,12 @@ final class Preferences: ObservableObject {
     @Published var usesSpaces: Bool {
         didSet { store.set(usesSpaces, forKey: "spaces") }
     }
+    /// ⌘1–⌘9 switch spaces and ⌃1–⌃9 pick tabs, as in Arc: the two swapped,
+    /// while spaces are on (KeyCombo.spacesOnCommand). Off unless asked for.
+    @Published var spacesOnCommand: Bool {
+        didSet { store.set(spacesOnCommand, forKey: Preferences.spacesOnCommandKey) }
+    }
+    static let spacesOnCommandKey = "spaces.commandNumbers"
     /// Profiles in one window (see OneWindow.swift): a space of another
     /// profile, chosen, brings that profile's window into this one's place.
     /// Off unless asked for; turned off, the windows tucked away come out.
@@ -1099,6 +1105,7 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
+        spacesOnCommand = store.bool(forKey: Preferences.spacesOnCommandKey)
         profilesInOneWindow = store.bool(forKey: "profiles.oneWindow")
         listsPins = store.bool(forKey: "pins.list")
         pinFolders = store.bool(forKey: "pins.folders")
@@ -1264,6 +1271,7 @@ final class Preferences: ObservableObject {
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
         take(\.instantMotion, store.bool(forKey: Motion.instantKey))
         take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))
+        take(\.spacesOnCommand, store.bool(forKey: Preferences.spacesOnCommandKey))
         take(\.bookmarksBar, store.bool(forKey: "bookmarks.bar"))
         take(\.alwaysShowsDownloads, store.bool(forKey: "downloads.button"))
     }

@@ -128,8 +128,38 @@ struct KeyCombo: Codable, Hashable {
         ]
         if system.contains(combo) || combo.key == "escape" { return true }
         if combo.key == "tab", combo.command || !(combo.control || combo.option) { return true }
-        let digit = combo.key.count == 1 && ("1"..."9").contains(combo.key)
-        return digit && !combo.option && !combo.shift && combo.command && !combo.control
+        return combo.isTabNumber
+    }
+
+    /// ⌘1–⌘9 switch spaces and ⌃1–⌃9 pick tabs, the two swapped as in Arc
+    /// (Settings › Spaces & Pins). Only while spaces are on: without them
+    /// ⌘1–⌘9 are the tabs', as always. Read from the settings each time, so
+    /// the switch, the bench and `defaults write` all count at once.
+    static var spacesOnCommand: Bool {
+        Store.settings.bool(forKey: "spaces") && Store.settings.bool(forKey: Preferences.spacesOnCommandKey)
+    }
+
+    /// What is held with the top row to pick a tab: ⌘, or ⌃ with spaces on ⌘.
+    static var tabNumberModifier: NSEvent.ModifierFlags { spacesOnCommand ? .control : .command }
+
+    /// Whether the tabs' numbers should show: their modifier held, alone
+    /// or with others, as ⌘ always was.
+    static func holdsTabNumbers(_ flags: NSEvent.ModifierFlags) -> Bool {
+        flags.contains(tabNumberModifier)
+    }
+
+    /// The tab numbers as menus write them: "⌘1–⌘9", or "⌃1–⌃9".
+    static var tabNumbers: String { spacesOnCommand ? "⌃1–⌃9" : "⌘1–⌘9" }
+
+    /// The key that picks the Nth tab: ⌘N, or ⌃N with spaces on ⌘.
+    static func tabNumber(_ number: Int) -> KeyCombo {
+        KeyCombo(String(number), command: !spacesOnCommand, control: spacesOnCommand)
+    }
+
+    /// One of the keys that pick a tab by its place, kept for that.
+    var isTabNumber: Bool {
+        guard key.count == 1, ("1"..."9").contains(key), !option, !shift else { return false }
+        return self == KeyCombo.tabNumber(Int(key)!)
     }
 
     /// Keys an extension never has, wherever Search's own commands are:
@@ -150,15 +180,25 @@ struct Command: Identifiable {
     let id: String
     let title: String
     let section: Section
-    let defaultKey: KeyCombo?
+    /// The key as the menus first had it, before ⌘1–⌘9 went to the spaces.
+    let baseKey: KeyCombo?
     let run: @MainActor (Browser) -> Void
 
     init(_ id: String, _ title: String, _ section: Section, _ key: KeyCombo?, _ run: @escaping @MainActor (Browser) -> Void) {
         self.id = id
         self.title = title
         self.section = section
-        self.defaultKey = key
+        self.baseKey = key
         self.run = run
+    }
+
+    /// Its key unless you give it another: a space's ⌃N is ⌘N while
+    /// ⌘1–⌘9 switch spaces (KeyCombo.spacesOnCommand).
+    var defaultKey: KeyCombo? {
+        guard section == .spaces, KeyCombo.spacesOnCommand, var key = baseKey, key.control else { return baseKey }
+        key.control = false
+        key.command = true
+        return key
     }
 
     static func named(_ id: String) -> Command? { byID[id] }
@@ -348,11 +388,17 @@ final class ShortcutStore: ObservableObject {
     /// Whole keys only, so ⇧⌘S is never read as ⌘S; a key taken away
     /// altogether is left as written.
     func relabel(_ text: String) -> String {
-        guard !changed.isEmpty, text.contains(where: { "⌃⌥⇧⌘".contains($0) }) else { return text }
+        let swapped = KeyCombo.spacesOnCommand
+        guard !changed.isEmpty || swapped, text.contains(where: { "⌃⌥⇧⌘".contains($0) }) else { return text }
         var moved: [String: String] = [:]
-        for command in Command.all where changed[command.id] != nil {
-            guard let was = command.defaultKey?.display, let now = key(for: command.id)?.display, now != was else { continue }
+        // As written, a space is on ⌃N and a tab on ⌘N; with the two
+        // swapped, each says where it is now.
+        for command in Command.all where changed[command.id] != nil || (swapped && command.section == .spaces) {
+            guard let was = command.baseKey?.display, let now = key(for: command.id)?.display, now != was else { continue }
             moved[was] = now
+        }
+        if swapped {
+            for number in 1...9 { moved[KeyCombo(String(number)).display] = KeyCombo.tabNumber(number).display }
         }
         guard !moved.isEmpty else { return text }
         let whole = NSRange(text.startIndex..., in: text)
