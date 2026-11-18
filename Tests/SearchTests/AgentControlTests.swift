@@ -129,15 +129,72 @@ final class AgentControlTests: XCTestCase {
         XCTAssertEqual(AgentRules.key("shift+Tab")?.flags.contains(.shift), true)
         XCTAssertEqual(AgentRules.key("a")?.characters, "a")
         XCTAssertEqual(AgentRules.key("shift++")?.characters, "+")
-        for refused in ["cmd+v", "cmd+a", "command+w", "meta+c", "shift+cmd+n", "", "ab", "hyper+x"] {
+        XCTAssertEqual(AgentRules.key("ctrl+ArrowLeft")?.flags.contains(.control), true)
+        // H2: Cocoa's Emacs keys cut and yank: ctrl and a character, never.
+        for refused in ["cmd+v", "cmd+a", "command+w", "meta+c", "shift+cmd+n", "", "ab", "hyper+x",
+                        "ctrl+k", "ctrl+y", "control+k", "ctrl+shift+y", "ctrl+a", "ctrl+t", "ctrl+1", "ctrl++"] {
             XCTAssertNil(AgentRules.key(refused), refused)
         }
     }
 
-    func testNoGuessingAtValuesThroughSelectors() {
-        XCTAssertNil(AgentRules.condition(["selector": "input[value^='a']"]))
-        XCTAssertNil(AgentRules.condition(["selector": "input[VALUE='hunter2']"]))
-        XCTAssertNotNil(AgentRules.condition(["selector": "#done", "text": "Hello"]))
+    // H1: no CSS of the agent's, escaped or not; on your tabs, only the
+    // address and title, matched against the address with its secrets out.
+    func testNoSelectorsAtAll() {
+        for selector in ["input[value^='a']", #"[va\lue^="a"]"#, #"[v\61lue^="a"]"#, "input:placeholder-shown",
+                         "input:invalid", "input:autofill", "#done"] {
+            guard case .failure(let refusal) = AgentRules.condition(["selector": selector], own: true) else {
+                return XCTFail("took \(selector)")
+            }
+            XCTAssertEqual(refusal.code, "bad_condition")
+        }
+        guard case .success(let own) = AgentRules.condition(["text": "Hello", "role": "button", "name": "Send"], own: true)
+        else { return XCTFail("text, role and name, on its own tab") }
+        XCTAssertEqual(own.page.count, 3)
+        for key in ["text", "role", "name"] {
+            guard case .failure = AgentRules.condition([key: "x"], own: false) else { return XCTFail("\(key) on your tab") }
+        }
+        guard case .success(let yours) = AgentRules.condition(["url": "/done", "title": "done"], own: false)
+        else { return XCTFail("url and title on your tab") }
+        XCTAssertTrue(yours.page.isEmpty)
+        XCTAssertTrue(yours.met(page: true, url: "https://a.test/done?pw=hunter2", title: "done"))
+        // The address's secret is never something to wait on.
+        guard case .success(let probing) = AgentRules.condition(["url": "pw=h"], own: false) else { return XCTFail() }
+        XCTAssertFalse(probing.met(page: true, url: "https://a.test/done?pw=hunter2", title: ""))
+        guard case .success(let gone) = AgentRules.condition(["title": "Loading", "gone": true], own: false) else { return XCTFail() }
+        XCTAssertTrue(gone.met(page: true, url: "", title: "Done"))
+    }
+
+    // L3
+    func testSecretsTakenOutOfAddresses() {
+        XCTAssertEqual(AgentRules.url("https://a.test/done?name=Ada&pw=hunter2"), "https://a.test/done?name=Ada&pw=redacted")
+        XCTAssertEqual(AgentRules.url("https://a.test/?password=x&otp=123456&code=9&token=t&q=cats"),
+                       "https://a.test/?password=redacted&otp=redacted&code=redacted&token=redacted&q=cats")
+        XCTAssertEqual(AgentRules.url("https://a.test/cb#access_token=abc&state=1"), "https://a.test/cb#access_token=redacted&state=1")
+        XCTAssertEqual(AgentRules.url("https://a.test/?q=pass"), "https://a.test/?q=pass", "a value is only hidden by its name")
+        XCTAssertEqual(AgentRules.url("https://a.test/#top"), "https://a.test/#top")
+        XCTAssertEqual(AgentRules.url(""), "")
+    }
+
+    // M4
+    func testOnlyAClickInThatWindowAnswers() throws {
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 200, height: 100), styleMask: [.titled],
+                              backing: .buffered, defer: false)
+        let other = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 200, height: 100), styleMask: [.titled],
+                             backing: .buffered, defer: false)
+        func mouse(_ type: NSEvent.EventType, in window: NSWindow) -> NSEvent? {
+            NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                               context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+        }
+        XCTAssertFalse(AgentRules.isClick(nil, in: window), "Accessibility's press has no event")
+        XCTAssertTrue(AgentRules.isClick(mouse(.leftMouseUp, in: window), in: window))
+        XCTAssertTrue(AgentRules.isClick(mouse(.leftMouseDown, in: window), in: window))
+        XCTAssertFalse(AgentRules.isClick(mouse(.leftMouseUp, in: other), in: window), "a click in another window")
+        XCTAssertFalse(AgentRules.isClick(mouse(.rightMouseUp, in: window), in: window))
+        let key = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                   context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)
+        XCTAssertFalse(AgentRules.isClick(key, in: window), "Return never allows")
+        XCTAssertFalse(AgentRules.isClick(mouse(.leftMouseUp, in: window), in: nil))
     }
 
     func testClientNames() {
@@ -232,14 +289,17 @@ final class AgentControlTests: XCTestCase {
 
     func testSocketIsThisUsersOnly() throws {
         let control = AgentControl.shared
-        let path = AgentControl.socket.path
-        try FileManager.default.createDirectory(at: AgentControl.socket.deletingLastPathComponent(), withIntermediateDirectories: true)
-        // Something left there before, open to everyone, is not reused.
+        let path = AgentControl.socket.path, dir = AgentControl.folder.path
+        try FileManager.default.createDirectory(at: AgentControl.folder, withIntermediateDirectories: true)
+        // A folder left open to everyone, and a file there before, are not kept as they were.
+        chmod(dir, 0o777)
         FileManager.default.createFile(atPath: path, contents: Data(), attributes: [.posixPermissions: 0o666])
+        let mask = umask(0o022)
+        umask(mask)
         control.start()
         defer {
             control.stop()
-            try? FileManager.default.removeItem(at: AgentControl.socket.deletingLastPathComponent())
+            try? FileManager.default.removeItem(at: AgentControl.folder)
         }
         XCTAssertTrue(control.running)
         var info = stat()
@@ -247,8 +307,115 @@ final class AgentControlTests: XCTestCase {
         XCTAssertEqual(info.st_mode & S_IFMT, S_IFSOCK)
         XCTAssertEqual(info.st_mode & 0o777, 0o600)
         XCTAssertEqual(info.st_uid, getuid())
+        XCTAssertEqual(lstat(dir, &info), 0)
+        XCTAssertEqual(info.st_mode & S_IFMT, S_IFDIR)
+        XCTAssertEqual(info.st_mode & 0o777, 0o700, "the folder only this user can open")
         XCTAssertTrue(path.hasPrefix(Store.folder.path), "in Search's own folder")
+        let now = umask(0o022)
+        umask(now)
+        XCTAssertEqual(now, mask, "the process's umask is left alone")
         control.stop()
         XCTAssertFalse(FileManager.default.fileExists(atPath: path), "gone when turned off")
     }
+
+    // L4: a folder that is a link to somewhere else is not listened in.
+    func testALinkedFolderIsRefused() throws {
+        let elsewhere = FileManager.default.temporaryDirectory.appendingPathComponent("agent-elsewhere-\(getpid())")
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: AgentControl.folder.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: AgentControl.folder)
+        try FileManager.default.createSymbolicLink(at: AgentControl.folder, withDestinationURL: elsewhere)
+        defer {
+            AgentControl.shared.stop()
+            try? FileManager.default.removeItem(at: AgentControl.folder)
+            try? FileManager.default.removeItem(at: elsewhere)
+        }
+        XCTAssertNil(AgentControl.listen())
+        AgentControl.shared.start()
+        XCTAssertFalse(AgentControl.shared.running)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent("agent.sock").path))
+    }
+
+    // M3: what Search fills, and any box once a password, stay secret.
+    func testWhatSearchFillsStaysSecret() async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: FormRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world))
+        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
+        PageRoom.shared.made().contentView?.addSubview(web)
+        defer { web.removeFromSuperview() }
+        web.loadHTMLString("""
+            <!doctype html><title>fill</title>
+            <form><label>Email <input id=user type=email></label>
+            <label>Secret <input id=pass type=password></label></form>
+            <div id=cells><input id=c0 maxlength=1 autocomplete=one-time-code inputmode=numeric><input id=c1 maxlength=1 inputmode=numeric>
+            <input id=c2 maxlength=1 inputmode=numeric><input id=c3 maxlength=1 inputmode=numeric></div>
+            <label>Later <input id=later type=password></label>
+            """, baseURL: URL(string: "https://agent-fill.invalid/"))
+        for _ in 0..<100 where web.isLoading || web.url == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let filled = try await web.evaluateJavaScript("""
+            var ok = window.__officeForms.fill('ada@example.test', 'filled-pw-1');
+            document.getElementById('c0').focus();
+            var coded = window.__officeForms.code('4831');
+            // A password box focused and typed in, never read before it is shown as text.
+            var later = document.getElementById('later'); later.focus(); later.value = 'typed-pw-2';
+            later.dispatchEvent(new Event('input', { bubbles: true }));
+            // Every box shown as plain text, as "show password" would.
+            ['pass', 'later'].forEach(function (id) { document.getElementById(id).type = 'text'; });
+            ['c0', 'c1', 'c2', 'c3'].forEach(function (id) { document.getElementById(id).removeAttribute('autocomplete'); });
+            JSON.stringify([ok, coded, document.getElementById('c1').value]);
+            """, contentWorld: Web.world) as? String
+        XCTAssertEqual(filled, #"[true,true,"8"]"#, "Search filled the password and the code")
+        let read = try await run(web, PageScripts.read(key: "__test", snap: 1, most: 50, longest: 5000, text: true))
+        let all = String(data: try JSONSerialization.data(withJSONObject: read), encoding: .utf8) ?? ""
+        for secret in ["filled-pw-1", "typed-pw-2", "\"value\":\"4\"", "\"value\":\"8\"", "\"value\":\"3\"", "\"value\":\"1\""] {
+            XCTAssertFalse(all.contains(secret), "\(secret) left the page")
+        }
+        XCTAssertTrue(all.contains("ada@example.test"), "the name Search filled is not a secret")
+        let boxes = try await run(web, PageScripts.secrets)
+        XCTAssertEqual((boxes["boxes"] as? [[Double]])?.count, 6, "the password, the four cells and the later one")
+    }
+
+    // M2: whatever can't be read is blacked out of a picture.
+    func testPicturesBlackOutWhatCantBeRead() async throws {
+        let web = try await page("""
+            <!doctype html><title>frames</title>
+            <iframe srcdoc="<p>same origin</p>" style="width:200px;height:100px"></iframe>
+            <iframe src="https://elsewhere.invalid/" style="width:200px;height:100px"></iframe>
+            <embed type="text/plain" style="width:100px;height:50px">
+            <closed-thing style="display:block;width:120px;height:40px"></closed-thing>
+            <script>customElements.define('closed-thing', class extends HTMLElement {
+              constructor() { super(); this.attachShadow({ mode: 'closed' }).innerHTML = '<input value="4242">'; } });</script>
+            <open-thing style="display:block;width:120px;height:40px"></open-thing>
+            <script>customElements.define('open-thing', class extends HTMLElement {
+              constructor() { super(); this.attachShadow({ mode: 'open' }).innerHTML = '<input type=password value="x">'; } });</script>
+            <p>Plain <input value="shown"></p>
+            """)
+        defer { web.removeFromSuperview() }
+        let boxes = try await run(web, PageScripts.secrets)
+        // Two frames, the embed, the closed root's host, the open root's password.
+        XCTAssertEqual((boxes["boxes"] as? [[Double]])?.count, 5, "\(boxes)")
+    }
+
+    // H2, tried for real: ctrl+k in a password box, ctrl+y in a text box.
+    // Refused in `press` either way; this records what WebKit itself does.
+    func testWhatEmacsKeysDoToAPassword() async throws {
+        let web = try await page("<!doctype html><input id=pw type=password value=hunter2><input id=out>")
+        defer { web.removeFromSuperview() }
+        _ = try await web.evaluateJavaScript("var p = document.getElementById('pw'); p.focus(); p.setSelectionRange(0, 0); true")
+        PageRoom.shared.made().makeFirstResponder(web)
+        PageHands.key(web, code: 40, characters: "\u{0b}", flags: .control)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        _ = try await web.evaluateJavaScript("document.getElementById('out').focus(); true")
+        PageHands.key(web, code: 16, characters: "\u{19}", flags: .control)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let out = try await web.evaluateJavaScript("document.getElementById('out').value") as? String ?? ""
+        let pw = try await web.evaluateJavaScript("document.getElementById('pw').value") as? String ?? ""
+        print("AgentControlTests: ctrl+k in a password box left it \(pw.isEmpty ? "empty" : "as it was"); ctrl+y yanked “\(out.isEmpty ? "" : out == "hunter2" ? "the password" : "something else")”")
+        XCTAssertNil(AgentRules.key("ctrl+k"))
+        XCTAssertNil(AgentRules.key("ctrl+y"))
+    }
+
 }

@@ -34,6 +34,7 @@ import json
 import os
 import signal
 import socket
+import stat
 import sys
 
 HOME = os.path.expanduser("~")
@@ -57,7 +58,24 @@ def folder(world):
     return f"{HOME}/Library/Application Support/Search ({'test' if world in ('', '1') else world})"
 
 
-SOCKET = f"{folder(world_from_args())}/agent.sock"
+SOCKET = f"{folder(world_from_args())}/Agent/agent.sock"
+
+
+def yours(path):
+    """The socket, and its folder, are this user's and nothing else: a
+    socket, not a link, in a folder only this user can open. Anything else
+    could be some other program standing in for Search."""
+    try:
+        sock, room = os.lstat(path), os.lstat(os.path.dirname(path))
+    except OSError:
+        return False
+    return (
+        stat.S_ISSOCK(sock.st_mode)
+        and sock.st_uid == os.getuid()
+        and stat.S_ISDIR(room.st_mode)
+        and room.st_uid == os.getuid()
+        and stat.S_IMODE(room.st_mode) & 0o077 == 0
+    )
 
 
 class Refusal(Exception):
@@ -92,6 +110,12 @@ class Search:
         self.asking = None
 
     def connect(self):
+        if os.path.lexists(SOCKET) and not yours(SOCKET):
+            raise Refusal(
+                "not_search",
+                "The socket isn't one Search made for this user",
+                "Don't use it. Turning the setting off and on again in Search makes it afresh.",
+            )
         if not os.path.exists(SOCKET):
             raise Refusal(
                 "not_listening",

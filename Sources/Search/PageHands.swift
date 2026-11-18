@@ -277,19 +277,28 @@ enum PageScripts {
     """#
 
     /// Where a picture of the page must be blacked out, in CSS pixels of the
-    /// viewport: every secret field, and every frame that looks like a
-    /// payment provider's card form, which is somebody else's page and
-    /// can't be read to tell.
+    /// viewport: every secret field (by what it says it is, or because
+    /// Search filled it or saw it as a password: the shared secret set), and
+    /// everything whose inside isn't read here and so can't be vouched for —
+    /// every frame, whoever's it is, every embed and object, and an element
+    /// that draws something but shows no inside to read, as one with a
+    /// closed shadow root does.
     private static let secretsBody = #"""
     (function () {
-      var out = [], found = candidates();
-      for (var i = 0; i < found.length; i++) {
-        var el = found[i], frame = el.tagName === 'IFRAME';
-        if (!frame && !secret(el)) continue;
-        if (frame && !/card|pay|stripe|braintree|adyen|checkout|secure|3ds|cvc|cvv|bank/i.test(
-          [el.src, el.title, el.name, el.id].join(' '))) continue;
+      var out = [], roots = [document];
+      function box(el) {
         var r = el.getBoundingClientRect();
         if (r.width && r.height) out.push([r.left - 2, r.top - 2, r.width + 4, r.height + 4]);
+      }
+      while (roots.length) {
+        var root = roots.shift(), all = root.querySelectorAll('*');
+        for (var i = 0; i < all.length; i++) {
+          var el = all[i], t = el.tagName;
+          if (el.shadowRoot) roots.push(el.shadowRoot);
+          if (/^(IFRAME|FRAME|EMBED|OBJECT|PORTAL|FENCEDFRAME)$/.test(t)) { box(el); continue; }
+          if ((t === 'INPUT' || t === 'TEXTAREA') && secret(el)) { box(el); continue; }
+          if (t.indexOf('-') > 0 && !el.shadowRoot && !el.children.length && !(el.textContent || '').trim()) box(el);
+        }
       }
       return JSON.stringify({ boxes: out, width: innerWidth, height: innerHeight });
     })()

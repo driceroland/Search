@@ -5,7 +5,9 @@ import SwiftUI
 // Both rise from the foot of the window with the page's own questions, in
 // the window it asked in only. Neither takes the keys: Return never allows,
 // and nothing an agent sends reaches these buttons, which only a click of
-// yours presses.
+// yours presses: a press through Accessibility, with no mouse event in the
+// window behind it, is ignored (AgentRules.isClick). Mouse events made up by
+// another process trusted with Accessibility and input are out of scope.
 
 struct AgentBar: View {
     @ObservedObject var browser: Browser
@@ -63,13 +65,13 @@ private struct AgentQuestion: View {
                 .padding(.leading, 23)
             HStack(spacing: 12) {
                 Spacer(minLength: 8)
-                Button { AgentControl.shared.answer(allow: false, seesTabs: false) } label: {
+                Button { AgentControl.shared.answer(allow: false, seesTabs: false, event: NSApp.currentEvent) } label: {
                     Text("Don't Allow")
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
                         .contentShape(Rectangle())
                 }
-                Button { AgentControl.shared.answer(allow: true, seesTabs: seesTabs) } label: {
+                Button { AgentControl.shared.answer(allow: true, seesTabs: seesTabs, event: NSApp.currentEvent) } label: {
                     Text("Allow")
                         .foregroundStyle(Palette.ground)
                         .padding(.horizontal, 12)

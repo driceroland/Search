@@ -161,6 +161,20 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
     (function () {
       if (window.__officeForms) return;
 
+      // Fields that hold a secret, kept in Search's own world where no page
+      // reaches: a password box from the moment it is focused or typed in,
+      // and every box Search fills with a password or a code. A coding
+      // agent's reads, checks and pictures (PageScripts, AgentControl)
+      // keep their values back for good, even after a "show password"
+      // button turns one into a text box.
+      var secrets = globalThis.__searchSecrets || (globalThis.__searchSecrets = new WeakSet());
+      function keepSecret(box) { try { if (box) secrets.add(box); } catch (e) {} }
+      function passwordBox(el) { return !!el && el.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'password'; }
+      ['focusin', 'input', 'change'].forEach(function (kind) {
+        document.addEventListener(kind, function (e) { if (passwordBox(e.target)) keepSecret(e.target); }, true);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('input[type="password"]'), keepSecret);
+
       // The password box, and the last box before it that could hold a name.
       function pair() {
         var boxes = document.querySelectorAll('input[type="password"]');
@@ -684,6 +698,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           var both = pair();
           if (!both) return false;
           if (both.user && !both.user.value) put(both.user, user);
+          keepSecret(both.pass);
           put(both.pass, password);
           return true;
         },
@@ -701,9 +716,9 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           var box = codeBox(document.activeElement) ? document.activeElement : codeAt;
           if (!box || !box.isConnected || !codeBox(box)) return false;
           var row = cells(box);
-          if (!row) { put(box, value); return true; }
+          if (!row) { keepSecret(box); put(box, value); return true; }
           if (row.length !== value.length) return false;
-          row.forEach(function (b, i) { put(b, value.charAt(i)); });
+          row.forEach(function (b, i) { keepSecret(b); put(b, value.charAt(i)); });
           return true;
         },
         // Whether a box is offered codes, for the tests.

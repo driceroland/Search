@@ -158,7 +158,7 @@ final class Bench {
         running = false
         // The tabs a script left open go with it.
         if let browser {
-            for tab in browser.tabs where tab.bench { browser.close(tab) }
+            for tab in browser.tabs where tab.bench && !tab.agent { browser.close(tab) }
         }
     }
 
@@ -346,7 +346,7 @@ final class Bench {
 
         case "close":
             if (request["id"] as? String) == "all" {
-                let mine = browser.tabs.filter { $0.bench }
+                let mine = browser.tabs.filter { $0.bench && !$0.agent }
                 mine.forEach { browser.close($0) }
                 answer(["closed": mine.count])
                 return
@@ -508,8 +508,11 @@ final class Bench {
             guard Store.testing else { answer(["error": "agents only works on a --test run"]); return }
             let agents = AgentControl.shared
             switch request["action"] as? String ?? "state" {
-            case "allow": agents.answer(allow: true, seesTabs: request["tabs"] as? Bool ?? false, now: .distantFuture)
-            case "deny": agents.answer(allow: false, seesTabs: false, now: .distantFuture)
+            case "allow": agents.answerForTest(allow: true, seesTabs: request["tabs"] as? Bool ?? false)
+            case "deny": agents.answerForTest(allow: false, seesTabs: false)
+            // The question's Allow pressed with no click behind it, as
+            // Accessibility would press it: ignored.
+            case "press": agents.answer(allow: true, seesTabs: true, event: nil)
             case "stop": agents.stopSession()
             // The switch in Settings turned off, as its click would.
             case "off": browser.prefs.agents = false
@@ -4766,7 +4769,8 @@ final class Bench {
     /// `window.open` carries no flask and would be out of reach otherwise.
     private func find(_ request: [String: Any], in browser: Browser) -> Tab? {
         guard let ref = (request["id"] as? String)?.lowercased(), !ref.isEmpty else { return nil }
-        return browser.tabs.first { (Store.testing || $0.bench) && $0.id.uuidString.lowercased().hasPrefix(ref) }
+        // A coding agent's tab is the agent's, and yours: never a script's.
+        return browser.tabs.first { (Store.testing || $0.bench) && !$0.agent && $0.id.uuidString.lowercased().hasPrefix(ref) }
     }
 
     private func missing(_ request: [String: Any]) -> [String: Any] {

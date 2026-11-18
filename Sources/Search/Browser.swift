@@ -6753,7 +6753,8 @@ final class Browser: NSObject, ObservableObject {
 
         tab.onCredentials = { [weak self] tab, host, user, password, clear in
             // an extension's own page isn't a site: Bitwarden's unlock pin was offered as its password.
-            guard let self, prefs.savesPasswords, !password.isEmpty, !tab.shy,
+            // Nor a sign-in a coding agent sent: it is not yours to keep.
+            guard let self, prefs.savesPasswords, !password.isEmpty, !tab.shy, !tab.agent,
                   !Vault.isNever(host), tab.address.flatMap(Browser.extensionHost(of:)) == nil
             else { return }
             // A password manager extension that asked Chrome's way to do the
@@ -8330,6 +8331,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// sits in: allowing the bubble must not give the site the camera.
     func askedForCapture(_ webView: WKWebView, origin: WKSecurityOrigin, frame: WKFrameInfo, type: WKMediaCaptureType,
                          decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        // A coding agent's tab never sees or hears you, whatever a site was
+        // allowed before: a grant you gave the site was given to you.
+        if tab(for: webView)?.agent == true { return decisionHandler(.deny) }
         // An extension capturing, however it went about it: the pill says so.
         if #available(macOS 15.4, *) { ExtensionCapture.shared.watchCapture(webView, frame: frame) }
         let asker = frame.securityOrigin
@@ -8382,6 +8386,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     @objc(_webView:requestDisplayCapturePermissionForOrigin:initiatedByFrame:withSystemAudio:decisionHandler:)
     func askedToShareScreen(_ webView: WKWebView, origin: WKSecurityOrigin, frame: WKFrameInfo,
                             systemAudio: Bool, decisionHandler: @escaping (Int) -> Void) {
+        if tab(for: webView)?.agent == true { return decisionHandler(0) }
         guard decideDisplay == nil, decide == nil, let tab = (tabs + parkedTabs).first(where: { $0.built === webView })
         else { return decisionHandler(0) }
         let request = UUID()
@@ -8431,6 +8436,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         frame: WKFrameInfo,
         decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
+        if tab(for: webView)?.agent == true { return decisionHandler(.deny) }
         let give: (WKPermissionDecision) -> Void = { decision in
             guard Store.testing else { return decisionHandler(decision) }
             Browser.locationAnswered = decision == .grant ? "granted" : "denied"
@@ -8465,6 +8471,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// tab, or Settings › Privacy's switch off, is refused without a card.
     @objc(_webView:requestNotificationPermissionForSecurityOrigin:decisionHandler:)
     func askedForNotifications(_ webView: WKWebView, origin: WKSecurityOrigin, decisionHandler: @escaping (Bool) -> Void) {
+        if tab(for: webView)?.agent == true { return decisionHandler(false) }
         let site = Browser.origin(origin.protocol, origin.host, origin.port)
         guard prefs.siteNotifications, let tab = tab(for: webView), !tab.shy, webView.configuration.websiteDataStore.isPersistent,
               !origin.host.isEmpty,
