@@ -193,7 +193,7 @@ struct SideBar: View {
                 // The space's colour, if it has one: over the ground, so the
                 // column stays opaque and folded out over the page it brings
                 // the same wash along.
-                SpaceWash(colour: browser.washColour)
+                SpaceWash(look: browser.wash)
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }

@@ -498,6 +498,8 @@ struct ContentView: View {
     @State private var immersionRevision = 0
     /// The window's width, for a side panel that leaves the page some room.
     @State private var across: CGFloat = 0
+    /// And its height, for a space's gradient to run across the whole window.
+    @State private var tall: CGFloat = 0
     /// The column's and the side panel's widths while their edges are held.
     @StateObject private var edges = HeldEdges()
 
@@ -514,7 +516,7 @@ struct ContentView: View {
             // As cards, the column, the bookmarks bar and the gaps around the
             // page share that ground, so the space's colour washes all of it
             // alike. Edge to edge the column and the strip bring their own.
-            if cards { SpaceWash(colour: browser.washColour) }
+            if cards { SpaceWash(look: browser.wash) }
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
@@ -564,8 +566,9 @@ struct ContentView: View {
         }
         .ignoresSafeArea()
         .background { fullscreenWatch }
-        .background { GeometryReader { geo in Color.clear.onAppear { across = geo.size.width }
-            .onChange(of: geo.size.width) { _, width in across = width } } }
+        .background { GeometryReader { geo in Color.clear.onAppear { across = geo.size.width; tall = geo.size.height }
+            .onChange(of: geo.size.width) { _, width in across = width }
+            .onChange(of: geo.size.height) { _, height in tall = height } } }
         .animation(Motion.glide, value: browser.prefs.sidebar)
         .animation(Motion.glide, value: browser.prefs.sidePosition)
         .onAppear { if room == nil { room = chrome } }
@@ -865,6 +868,8 @@ struct ContentView: View {
                 if let job = browser.fileImport { ImportProgress(browser: browser, job: job) }
             }
             .environment(\.tabShortcutNumbers, browser.tabShortcutNumbers)
+            // One gradient across the column, the bars and the ground alike.
+            .environment(\.washRoom, CGSize(width: across, height: tall))
             // The field comes on its spring, and goes quickly: once Return
             // is pressed the page is on its way, and the field is not what
             // there is to watch.

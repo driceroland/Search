@@ -36,6 +36,10 @@ struct Space: Codable, Identifiable, Equatable {
     /// The profile it belongs to (see Profiles.swift); nil for Personal,
     /// which every space from before profiles is in.
     var profile: UUID?
+    /// Two or three colours in place of the one (see SpaceGradient.swift);
+    /// nil, as every space from before has, for the colour alone. Its
+    /// colour is kept beside it, and comes back when it is removed.
+    var gradient: SpaceGradient? = nil
 
     var profileID: UUID { profile ?? Profile.personalID }
 
@@ -49,8 +53,11 @@ struct Space: Codable, Identifiable, Equatable {
     var symbol: String { icon.flatMap { Spaces.icons.contains($0) ? $0 : nil } ?? (isFirst ? "house" : "briefcase") }
 
     /// Its colour, or nil for none — an index out of range from a newer
-    /// Search included.
-    var tint: Color? { colour > 0 && Spaces.colours.indices.contains(colour) ? Spaces.colours[colour] : nil }
+    /// Search included. With a gradient, the gradient's first colour.
+    var tint: Color? {
+        if let gradient, gradient.usable { return gradient.lead }
+        return colour > 0 && Spaces.colours.indices.contains(colour) ? Spaces.colours[colour] : nil
+    }
 }
 
 enum Spaces {
@@ -330,11 +337,18 @@ struct Parked {
 extension Browser {
     var space: Space { spaces.first { $0.id == spaceID } ?? spaces[0] }
 
-    /// The colour the chrome is washed with (see Spaces.wash): the space on
-    /// screen's, so it follows a swipe, ⌃1–⌃9 and the profile shown. None
-    /// with spaces off, and while a new one is being made, as the dot has.
+    /// What the chrome is washed with (see Spaces.wash): the space on
+    /// screen's colour or gradient, so it follows a swipe, ⌃1–⌃9 and the
+    /// profile shown. None with spaces off, and while a new one is being
+    /// made, as the dot has.
+    var wash: SpaceLook? {
+        prefs.usesSpaces && !makingSpace ? space.look : nil
+    }
+
+    /// The wash's colour, when it is one of the colours rather than a gradient.
     var washColour: Int? {
-        prefs.usesSpaces && !makingSpace && space.tint != nil ? space.colour : nil
+        if case .colour(let colour)? = wash { return colour }
+        return nil
     }
 
     /// Every tab of the spaces not on screen, for the sleep timer.
@@ -529,6 +543,18 @@ extension Browser {
     func setSpaceColour(_ id: UUID, to colour: Int) {
         guard let at = spaces.firstIndex(where: { $0.id == id }), Spaces.colours.indices.contains(colour) else { return }
         spaces[at].colour = colour
+        // A colour picked is the colour wanted: the gradient goes.
+        spaces[at].gradient = nil
+        Spaces.write(spaces, profile: profileID)
+    }
+
+    /// The space's gradient, or none to go back to its colour. One that
+    /// can't be drawn (fewer than two colours) is none.
+    func setSpaceGradient(_ id: UUID, to gradient: SpaceGradient?) {
+        guard let at = spaces.firstIndex(where: { $0.id == id }) else { return }
+        let gradient = gradient.flatMap { $0.usable ? $0 : nil }
+        guard spaces[at].gradient != gradient else { return }
+        spaces[at].gradient = gradient
         Spaces.write(spaces, profile: profileID)
     }
 
@@ -579,22 +605,32 @@ extension Browser {
 /// tabs in the row. One icon however many spaces there are; a click opens
 /// the menu. When the space changes the icon turns over the way the spaces
 /// went — out on one side, the next one in from the other.
-/// A space's colour laid faintly over the chrome's own ground. Handed the
-/// colour rather than the browser, so it is drawn again only when the
-/// colour changes, not on everything the browser announces. A change
-/// crossfades once and is done: nothing runs while it stays.
+/// A space's colour, or its gradient, laid faintly over the chrome's own
+/// ground. Handed the look rather than the browser, so it is drawn again
+/// only when the look changes, not on everything the browser announces. A
+/// change crossfades once and is done: nothing runs while it stays.
 struct SpaceWash: View {
-    let colour: Int?
+    let look: SpaceLook?
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         ZStack {
-            if let colour, let opacity = Spaces.wash(colour, dark: scheme == .dark) {
-                Spaces.colours[colour].opacity(opacity)
+            switch look {
+            case .colour(let colour)?:
+                if let opacity = Spaces.wash(colour, dark: scheme == .dark) {
+                    Spaces.colours[colour].opacity(opacity)
+                }
+            case .gradient(let gradient)?:
+                // One gradient for another crossfades, as a colour does.
+                GradientWash(gradient: gradient, strength: scheme == .dark ? Spaces.washDark : Spaces.washLight)
+                    .id(gradient)
+                    .transition(.opacity)
+            case nil:
+                EmptyView()
             }
         }
         .allowsHitTesting(false)
-        .animation(Motion.quick, value: colour)
+        .animation(Motion.quick, value: look)
     }
 }
 
@@ -641,7 +677,7 @@ struct SpaceDot: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(Motion.quick, value: browser.space.colour)
+        .animation(Motion.quick, value: browser.space.look)
         .help("\(browser.space.name) — ⌃1–⌃9, or two fingers \(browser.prefs.sidebar ? "sideways" : "up or down") over the tabs, to switch")
         .onChange(of: key) { _, now in
             let symbol = symbol
@@ -712,10 +748,10 @@ enum SpaceMenu {
     }
 
     /// A space's icon for the menu, in its colour if it has one.
-    private static func image(_ symbol: String, colour: Int) -> NSImage? {
+    private static func image(_ symbol: String, tint: Color?) -> NSImage? {
         let plain = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        guard colour > 0, Spaces.colours.indices.contains(colour) else { return plain }
-        return plain?.withSymbolConfiguration(.init(paletteColors: [NSColor(Spaces.colours[colour])]))
+        guard let tint else { return plain }
+        return plain?.withSymbolConfiguration(.init(paletteColors: [NSColor(tint)]))
     }
 
     /// A dot of the colour for the Colour menu; an empty ring for none.
@@ -737,6 +773,7 @@ enum SpaceMenu {
     }
 
     static func show(for browser: Browser) {
+        GradientPopover.anchor = NSEvent.mouseLocation
         menu(for: browser).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
@@ -758,7 +795,7 @@ enum SpaceMenu {
                 let entry = item(space.name, key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
                     browser.switchSpace(to: space.id)
                 }
-                entry.image = image(space.symbol, colour: space.colour)
+                entry.image = image(space.symbol, tint: space.tint)
                 menu.addItem(entry)
                 index += 1
             }
@@ -789,13 +826,24 @@ enum SpaceMenu {
         icon.submenu = icons
         menu.addItem(icon)
         let colours = NSMenu()
+        let gradient = here.gradient?.usable == true
         for (index, name) in Spaces.colourNames.enumerated() {
-            let choice = item(name, checked: here.colour == index || (index == 0 && here.tint == nil)) {
+            let choice = item(name, checked: !gradient && (here.colour == index || (index == 0 && here.tint == nil))) {
                 browser.setSpaceColour(here.id, to: index)
             }
             choice.image = swatch(index)
             colours.addItem(choice)
             if index == 0 { colours.addItem(.separator()) }
+        }
+        // Two or three colours instead (see SpaceGradient.swift), for
+        // whoever wants them; and back to the one colour.
+        colours.addItem(.separator())
+        colours.addItem(item("Gradient…", checked: gradient) {
+            // Once the menu has gone: a popover shown while it tracks closes with it.
+            DispatchQueue.main.async { GradientPopover.show(for: browser) }
+        })
+        if gradient {
+            colours.addItem(item("Remove Gradient") { browser.setSpaceGradient(here.id, to: nil) })
         }
         let colour = NSMenuItem(title: "Colour", action: nil, keyEquivalent: "")
         colour.submenu = colours

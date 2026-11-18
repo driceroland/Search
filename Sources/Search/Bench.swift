@@ -3793,6 +3793,13 @@ final class Bench {
             case "colour":
                 // The space on screen's colour, by index into Spaces.colours.
                 browser.setSpaceColour(browser.spaceID, to: request["colour"] as? Int ?? 0)
+            case "gradient":
+                // The space on screen's gradient, as the editor sets it:
+                // colours ("#RRGGBB"), angle and grain; no colours removes it.
+                let colours = request["colours"] as? [String] ?? []
+                browser.setSpaceGradient(browser.spaceID, to: colours.isEmpty ? nil : SpaceGradient(
+                    colours: colours, angle: request["angle"] as? Double ?? SpaceGradient.defaultAngle,
+                    grain: request["grain"] as? Bool ?? false))
             case "menu":
                 // A space chosen from the space's menu, by its title, as a click would.
                 let menu = SpaceMenu.menu(for: browser)
@@ -3816,7 +3823,21 @@ final class Bench {
                 "tabs": browser.tabs.count,
                 "making": browser.makingSpace,
                 // The colour the chrome is washed with, by name; "" for none.
-                "wash": browser.washColour.map { Spaces.colourNames[$0] } ?? "",
+                "wash": browser.washColour.map { Spaces.colourNames[$0] } ?? (browser.wash == nil ? "" : "Gradient"),
+                // The gradient the chrome is washed with, as drawn: its
+                // colours held to the wash's band, its angle and grain.
+                "gradient": { () -> Any in
+                    guard case .gradient(let gradient)? = browser.wash else { return "" }
+                    return ["colours": gradient.drawn.map(\.hex), "angle": gradient.angle, "grain": gradient.grain,
+                            "stops": gradient.stops().count] as [String: Any]
+                }(),
+                // Each space's own colour and gradient, as kept.
+                "looks": browser.spaces.map { space -> [String: Any] in
+                    ["name": space.name, "colour": space.colour, "gradient": space.gradient?.colours ?? []]
+                },
+                // The Colour submenu, as it would open.
+                "colourMenu": SpaceMenu.menu(for: browser).items.first { $0.title == "Colour" }?.submenu?.items
+                    .filter { !$0.isSeparatorItem }.map { ["title": $0.title, "on": $0.state == .on] } ?? [],
                 "swipe": Double(browser.spaceSwipe),
                 // Each space off screen as a swipe draws it passing by
                 // (Parked.drawn): its groups, folded or not, and their tabs.

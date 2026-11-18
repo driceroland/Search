@@ -30,9 +30,9 @@ import SystemConfiguration
 // item by item with stamps and tombstones (see SyncMerge.swift for the
 // rules and the format).
 //
-// What syncs: spaces (name, colour, icon, order, and whether a space has
-// sign-ins of its own — never the sign-ins themselves, its cookies, tabs or
-// downloads folder), pins (each space's and the ones every space shows,
+// What syncs: spaces (name, colour or gradient, icon, order, and whether a
+// space has sign-ins of its own — never the sign-ins themselves, its cookies,
+// tabs or downloads folder), pins (each space's and the ones every space shows,
 // their letter, name, page and order), bookmarks, and the settings listed in
 // SyncSettings. What never does: history, passwords, cookies and site data,
 // open tabs that aren't pinned, tab groups (they hold open tabs), private
