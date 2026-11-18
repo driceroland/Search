@@ -569,7 +569,7 @@ extension Browser {
         // Back to this space's own, on a swipe brought back short.
         if id == spaceID {
             pageAhead = nil
-            if let window, let active { PaneStage.stages.object(forKey: window)?.show(now: active) }
+            if let window, let active { PaneStage.stages.object(forKey: window)?.show(now: active, fading: true) }
             return
         }
         guard let row = parked[id] else { return }
@@ -577,7 +577,7 @@ extension Browser {
         guard let front, !(prefs.splitView && row.splits.contains { $0.contains(front.id) }) else { return }
         if !front.wake() { front.revive() }
         pageAhead = front
-        if let window { PaneStage.stages.object(forKey: window)?.show(now: front) }
+        if let window { PaneStage.stages.object(forKey: window)?.show(now: front, fading: true) }
     }
 
     /// Where space `index` lies in the map (SideBar.others), in pages from

@@ -232,13 +232,15 @@ final class SpaceSwipe {
         // Drawn out of its order: the map is drawn again, even mid-swipe.
         if moved, slot != to - here { browser.mapDrawn.value += 1 }
         landing?.cancel()
-        // Its page comes as its rows stop: put in front as they set off,
-        // the stage's work (and a page asleep woken) stalled the slide's
-        // first frames, and on a run across the spaces each one's page was
-        // loaded on the way.
-        SwipeGlide.start(browser, to: -CGFloat(slot) * width, speed: letGoSpeed) { [weak self, weak browser] in
-            guard let self, let browser, browser.spaceComing == id || id == browser.spaceID else { return }
+        // Its page comes halfway: put in front as they set off, the
+        // stage's work (and a page asleep woken) stalled the slide's first
+        // frames, and on a run across the spaces each one's page was loaded
+        // on the way; put there as they stopped, the page fell behind them.
+        SwipeGlide.start(browser, to: -CGFloat(slot) * width, speed: letGoSpeed, halfway: { [weak browser] in
+            guard let browser, browser.spaceComing == id || id == browser.spaceID else { return }
             browser.showAhead(id)
+        }) { [weak self, weak browser] in
+            guard let self, let browser, browser.spaceComing == id || id == browser.spaceID else { return }
             self.landSoon(browser)
         }
     }
@@ -837,6 +839,8 @@ final class SwipeGlide: NSObject {
     /// handed back. Taken only once they stood still, the step that takes
     /// it fell late — a stroke begun before had to wait for it first.
     private var land: (() -> CGFloat)?
+    /// What to do once the rows are halfway there, once (SpaceSwipe.glide).
+    private var halfway: (() -> Void)?
     private let done: () -> Void
     private var began: CFTimeInterval?
     private var stepped: CFTimeInterval = 0
@@ -850,22 +854,25 @@ final class SwipeGlide: NSObject {
     /// next stroke often had to wait for it.
     private static let pull: Double = 34
 
-    private init(_ browser: Browser, to: CGFloat, speed: CGFloat?, land: (() -> CGFloat)?, done: @escaping () -> Void) {
+    private init(_ browser: Browser, to: CGFloat, speed: CGFloat?, land: (() -> CGFloat)?,
+                 halfway: (() -> Void)?, done: @escaping () -> Void) {
         self.browser = browser
         from = browser.spaceSwipe
         self.to = to
         self.speed = speed
         self.land = land
+        self.halfway = halfway
         self.done = done
     }
 
     /// From where the rows are now to `to`, setting off at `speed` points a
     /// second — the fingers' own; without, at half the spring's own pace —
-    /// `land` as they come within a few points of it, and then `done`.
+    /// `halfway` once half the way is behind them, `land` as they come
+    /// within a few points of it, and then `done`.
     static func start(_ browser: Browser, to: CGFloat = 0, speed: CGFloat? = nil,
-                      land: (() -> CGFloat)? = nil, done: @escaping () -> Void = {}) {
+                      land: (() -> CGFloat)? = nil, halfway: (() -> Void)? = nil, done: @escaping () -> Void = {}) {
         stop()
-        let glide = SwipeGlide(browser, to: to, speed: speed, land: land, done: done)
+        let glide = SwipeGlide(browser, to: to, speed: speed, land: land, halfway: halfway, done: done)
         guard let view = browser.window?.contentView else {
             glide.finish()
             return
@@ -917,6 +924,10 @@ final class SwipeGlide: NSObject {
 
     /// In its place: landed, if it hadn't, and done.
     private func finish() {
+        if let halfway {
+            self.halfway = nil
+            halfway()
+        }
         if let land {
             self.land = nil
             to = land()
@@ -953,6 +964,10 @@ final class SwipeGlide: NSObject {
         // A flick faster than the spring would have it goes all the way and
         // stops there, rather than past its place and back.
         if x * x0 < 0 { x = 0 }
+        if abs(x) <= abs(x0) / 2, let halfway {
+            self.halfway = nil
+            halfway()
+        }
         if abs(x) < 3, let land {
             self.land = nil
             to = land()
