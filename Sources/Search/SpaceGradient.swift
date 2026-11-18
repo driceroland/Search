@@ -3,7 +3,7 @@ import AppKit
 
 // A space's gradient: two or three colours instead of one, the way Arc and
 // Ardia theme a space. Only for whoever wants one (the space's menu ›
-// Colour › Gradient…): a space without one is washed with its colour, or
+// Colour…, see SpaceLookPicker below): a space without one is washed with its colour, or
 // nothing, exactly as before, and reads and writes spaces.json as it
 // always did. Removing it gives the space back its colour.
 //
@@ -332,25 +332,104 @@ enum Grain {
     }()
 }
 
-// MARK: - the editor
+// MARK: - choosing
 
-/// Gradient…: the colours, the way they run and the grain, in a small
-/// popover by the space's icon. Every change is made to the space as it is
-/// made, so the window itself is the preview; Done (or a click elsewhere)
-/// keeps it, Remove Gradient or Cancel gives the space back its colour.
-struct GradientEditor: View {
-    let apply: (SpaceGradient?) -> Void
-    let close: () -> Void
-    let hadOne: Bool
-    @State private var draft: SpaceGradient
-    /// The colour the swatches set.
+/// What a space wears, as the picker names it: nothing, one of the colours,
+/// one of the ready-made gradients, or a gradient of one's own.
+enum SpaceLookChoice: Equatable {
+    case none
+    case colour(Int)
+    case preset(Int)
+    case custom
+}
+
+extension Space {
+    var lookChoice: SpaceLookChoice {
+        if let gradient, gradient.usable {
+            let at = SpaceGradient.presets.firstIndex { $0.gradient.colours == gradient.colours }
+            return at.map(SpaceLookChoice.preset) ?? .custom
+        }
+        return colour > 0 && Spaces.colours.indices.contains(colour) ? .colour(colour) : .none
+    }
+
+    /// What the picker's preview says it is.
+    var lookName: String {
+        switch lookChoice {
+        case .none: return "No colour"
+        case .colour(let colour): return Spaces.colourNames[colour]
+        case .preset(let at): return SpaceGradient.presets[at].name
+        case .custom: return "Custom gradient"
+        }
+    }
+}
+
+extension Browser {
+    /// A choice in the picker, made to the space at once: the window is the
+    /// preview. A colour (or none) takes the gradient away; a ready-made
+    /// gradient keeps the direction and grain the space's gradient had.
+    func chooseLook(_ id: UUID, _ choice: SpaceLookChoice) {
+        guard let space = spaces.first(where: { $0.id == id }) else { return }
+        let current = space.gradient.flatMap { $0.usable ? $0 : nil }
+        switch choice {
+        case .none: setSpaceColour(id, to: 0)
+        case .colour(let colour): setSpaceColour(id, to: colour)
+        case .preset(let at):
+            guard SpaceGradient.presets.indices.contains(at) else { return }
+            setSpaceGradient(id, to: SpaceGradient(colours: SpaceGradient.presets[at].gradient.colours,
+                                                   angle: current?.angle ?? SpaceGradient.defaultAngle,
+                                                   grain: current?.grain ?? false))
+        case .custom:
+            setSpaceGradient(id, to: current ?? SpaceGradient.starting(from: space.colour))
+        }
+    }
+
+    /// The space's own gradient changed by `change`: its current one, or a
+    /// first one from its colour.
+    func editGradient(_ id: UUID, _ change: (inout SpaceGradient) -> Void) {
+        guard let space = spaces.first(where: { $0.id == id }) else { return }
+        var gradient = space.gradient.flatMap { $0.usable ? $0 : nil } ?? SpaceGradient.starting(from: space.colour)
+        change(&gradient)
+        setSpaceGradient(id, to: gradient)
+    }
+
+    /// Back to a look as it was: Escape in the picker.
+    func restoreLook(_ id: UUID, colour: Int, gradient: SpaceGradient?) {
+        setSpaceColour(id, to: colour)
+        if gradient != nil { setSpaceGradient(id, to: gradient) }
+    }
+}
+
+// MARK: - the picker
+
+/// Colour…: everything a space can wear, in one popover by its icon. At the
+/// top, the space's icon on its look and the look's name; under it the
+/// colours with None, then the ready-made gradients, then a gradient of
+/// one's own, folded until wanted. The ring is on what the space has. Every
+/// pick is made to the space at once, so the window is the preview too; a
+/// click elsewhere keeps it, Escape puts back what was there.
+struct SpaceLookPicker: View {
+    @ObservedObject var browser: Browser
+    let id: UUID
+    @State private var customOpen: Bool
+    /// The colour the swatches below the wells set.
     @State private var well = 0
 
-    init(start: SpaceGradient, hadOne: Bool, apply: @escaping (SpaceGradient?) -> Void, close: @escaping () -> Void) {
-        _draft = State(initialValue: start)
-        self.hadOne = hadOne
-        self.apply = apply
-        self.close = close
+    static let width: CGFloat = 288
+    static let dot: CGFloat = 22
+
+    init(browser: Browser, id: UUID, customOpen: Bool? = nil) {
+        self.browser = browser
+        self.id = id
+        let space = browser.spaces.first { $0.id == id } ?? browser.space
+        _customOpen = State(initialValue: customOpen ?? (space.lookChoice == .custom))
+    }
+
+    private var space: Space { browser.spaces.first { $0.id == id } ?? browser.space }
+    private var choice: SpaceLookChoice { space.lookChoice }
+    /// The gradient the custom part shows: the space's, or the one a first
+    /// change would make.
+    private var shownGradient: SpaceGradient {
+        space.gradient.flatMap { $0.usable ? $0 : nil } ?? SpaceGradient.starting(from: space.colour)
     }
 
     static let directions: [(angle: Double, symbol: String, name: String)] = [
@@ -360,134 +439,172 @@ struct GradientEditor: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(LinearGradient(stops: draft.stops(), startPoint: draft.points(frame: CGRect(x: 0, y: 0, width: 1, height: 1), room: .zero).start,
-                                     endPoint: draft.points(frame: CGRect(x: 0, y: 0, width: 1, height: 1), room: .zero).end))
-                .overlay {
-                    if draft.grain {
-                        Image(nsImage: Grain.tile).resizable(resizingMode: .tile).opacity(0.10)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        VStack(alignment: .leading, spacing: 16) {
+            preview
+
+            section("Colour") {
+                HStack(spacing: 10) {
+                    swatch(selected: choice == .none, name: "None", action: { browser.chooseLook(id, .none) }) {
+                        ZStack {
+                            Circle().strokeBorder(Palette.faint, lineWidth: 1)
+                            Rectangle().fill(Palette.faint).frame(width: 1, height: Self.dot - 4).rotationEffect(.degrees(45))
+                        }
+                    }
+                    ForEach(1..<Spaces.colours.count, id: \.self) { index in
+                        swatch(selected: choice == .colour(index), name: Spaces.colourNames[index],
+                               action: { browser.chooseLook(id, .colour(index)) }) {
+                            Circle().fill(Spaces.colours[index])
+                        }
                     }
                 }
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
-                .frame(height: 52)
-                .accessibilityHidden(true)
+            }
 
+            section("Gradient") {
+                HStack(spacing: 10) {
+                    ForEach(SpaceGradient.presets.indices, id: \.self) { at in
+                        let preset = SpaceGradient.presets[at]
+                        swatch(selected: choice == .preset(at), name: preset.name,
+                               action: { browser.chooseLook(id, .preset(at)) }) {
+                            Circle().fill(LinearGradient(stops: preset.gradient.stops(count: 8),
+                                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Button {
+                    withAnimation(Motion.quick) { customOpen.toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .rotationEffect(.degrees(customOpen ? 90 : 0))
+                        Text("Custom gradient")
+                            .font(.system(size: 11, weight: .medium))
+                        if choice == .custom {
+                            Circle().fill(Palette.ink.opacity(0.7)).frame(width: 5, height: 5)
+                                .accessibilityLabel("Chosen")
+                        }
+                    }
+                    .foregroundStyle(Palette.muted)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if customOpen { custom.transition(.opacity) }
+            }
+        }
+        .padding(16)
+        .frame(width: Self.width, alignment: .leading)
+    }
+
+    // MARK: pieces
+
+    /// The space's icon on its look, as large as the eye needs to see which
+    /// it is, and the look's name.
+    private var preview: some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return ZStack(alignment: .bottomLeading) {
+            switch choice {
+            case .none: shape.fill(Palette.hover)
+            case .colour(let colour): shape.fill(Spaces.colours[colour])
+            case .preset, .custom:
+                let ends = shownGradient.points(frame: CGRect(x: 0, y: 0, width: 1, height: 1), room: .zero)
+                shape.fill(LinearGradient(stops: shownGradient.stops(), startPoint: ends.start, endPoint: ends.end))
+                    .overlay {
+                        if shownGradient.grain {
+                            Image(nsImage: Grain.tile).resizable(resizingMode: .tile).opacity(0.10).clipShape(shape)
+                        }
+                    }
+            }
+            Image(systemName: space.symbol)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(choice == .none ? Palette.muted : Color.white)
+                .shadow(color: .black.opacity(choice == .none ? 0 : 0.18), radius: 2, y: 1)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text(space.lookName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(choice == .none ? Palette.muted : Color.white.opacity(0.92))
+                .shadow(color: .black.opacity(choice == .none ? 0 : 0.18), radius: 2, y: 1)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
+        }
+        .frame(height: 76)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(space.name): \(space.lookName)")
+    }
+
+    private var custom: some View {
+        let gradient = shownGradient
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                ForEach(SpaceGradient.presets, id: \.name) { preset in
-                    Button { draft.colours = preset.gradient.colours } label: {
-                        Circle()
-                            .fill(LinearGradient(stops: preset.gradient.stops(count: 8), startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 22, height: 22)
-                            .padding(3)
-                            .overlay(Circle().strokeBorder(draft.colours == preset.gradient.colours ? Palette.ink.opacity(0.55) : .clear, lineWidth: 1.5))
+                ForEach(gradient.colours.indices, id: \.self) { index in
+                    swatch(selected: well == index, name: "Colour \(index + 1)", action: { well = index }) {
+                        Circle().fill(colour(gradient.colours[index]))
+                    }
+                }
+                if gradient.colours.count < SpaceGradient.most {
+                    round("plus", "Add a Colour") {
+                        browser.editGradient(id) { $0.colours.append($0.colours.last ?? SpaceGradient.swatches[0].hex) }
+                        well = min(gradient.colours.count, SpaceGradient.most - 1)
+                    }
+                } else {
+                    round("minus", "Remove the Last Colour") {
+                        browser.editGradient(id) { $0.colours.removeLast() }
+                        well = min(well, gradient.colours.count - 2)
+                    }
+                }
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(Self.dot), spacing: 10), count: 7), alignment: .leading, spacing: 10) {
+                ForEach(SpaceGradient.swatches, id: \.hex) { pick in
+                    let on = gradient.colours.indices.contains(well) && gradient.colours[well] == pick.hex
+                    Button {
+                        browser.editGradient(id) { if $0.colours.indices.contains(well) { $0.colours[well] = pick.hex } }
+                    } label: {
+                        Circle().fill(colour(pick.hex))
+                            .frame(width: Self.dot, height: Self.dot)
+                            .overlay {
+                                if on { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white) }
+                            }
                     }
                     .buttonStyle(.plain)
-                    .help(preset.name)
-                    .accessibilityLabel(preset.name)
+                    .help(pick.name)
+                    .accessibilityLabel(pick.name)
                 }
             }
-
-            section("Colours") {
-                HStack(spacing: 8) {
-                    ForEach(draft.colours.indices, id: \.self) { index in
-                        Button { well = index } label: {
-                            Circle()
-                                .fill(colour(draft.colours[index]))
-                                .frame(width: 20, height: 20)
-                                .padding(3)
-                                .overlay(Circle().strokeBorder(well == index ? Palette.ink.opacity(0.55) : Palette.hairline, lineWidth: well == index ? 1.5 : 1))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Colour \(index + 1)")
-                    }
-                    Spacer(minLength: 0)
-                    if draft.colours.count < SpaceGradient.most {
-                        small("plus", "Add a Colour") {
-                            draft.colours.append(draft.colours.last ?? SpaceGradient.swatches[0].hex)
-                            well = draft.colours.count - 1
-                        }
-                    } else {
-                        small("minus", "Remove the Last Colour") {
-                            draft.colours.removeLast()
-                            well = min(well, draft.colours.count - 1)
-                        }
-                    }
-                }
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(20), spacing: 9), count: 7), alignment: .leading, spacing: 9) {
-                    ForEach(SpaceGradient.swatches, id: \.hex) { swatch in
-                        Button { if draft.colours.indices.contains(well) { draft.colours[well] = swatch.hex } } label: {
-                            Circle()
-                                .fill(colour(swatch.hex))
-                                .frame(width: 18, height: 18)
-                                .overlay(Circle().strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
-                                .overlay {
-                                    if draft.colours.indices.contains(well), draft.colours[well] == swatch.hex {
-                                        Image(systemName: "checkmark").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
-                                    }
+            HStack(spacing: 0) {
+                ForEach(Self.directions, id: \.angle) { direction in
+                    let on = Int(gradient.angle.rounded()) == Int(direction.angle)
+                    Button { browser.editGradient(id) { $0.angle = direction.angle } } label: {
+                        Image(systemName: direction.symbol)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(on ? Palette.ink : Palette.muted)
+                            .frame(width: 30, height: 22)
+                            .background {
+                                if on {
+                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                        .fill(Palette.ground)
+                                        .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
                                 }
-                        }
-                        .buttonStyle(.plain)
-                        .help(swatch.name)
-                        .accessibilityLabel(swatch.name)
+                            }
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .help(direction.name)
+                    .accessibilityLabel(direction.name)
                 }
             }
-
-            section("Direction") {
-                HStack(spacing: 2) {
-                    ForEach(Self.directions, id: \.angle) { direction in
-                        let on = Int(draft.angle.rounded()) == Int(direction.angle)
-                        Button { draft.angle = direction.angle } label: {
-                            Image(systemName: direction.symbol)
-                                .font(.system(size: 10.5, weight: .semibold))
-                                .foregroundStyle(on ? Palette.ink : Palette.muted)
-                                .frame(width: 26, height: 22)
-                                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(on ? Palette.hover.opacity(0.9) : .clear))
-                                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(on ? Palette.hairline : .clear, lineWidth: 1))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help(direction.name)
-                        .accessibilityLabel(direction.name)
-                    }
-                }
-            }
-
+            .padding(2)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Palette.hover))
             HStack {
-                Text("Grain")
-                    .font(.system(size: 12))
+                Text("Grain").font(.system(size: 12)).foregroundStyle(Palette.ink)
                 Spacer()
-                Toggle("Grain", isOn: $draft.grain)
+                Toggle("Grain", isOn: Binding(get: { gradient.grain }, set: { on in browser.editGradient(id) { $0.grain = on } }))
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .labelsHidden()
             }
-
-            Divider()
-
-            HStack {
-                // The space as it was: its colour. Cancel, for one that
-                // had no gradient when the editor opened.
-                Button(hadOne ? "Remove Gradient" : "Cancel") { apply(nil); close() }
-                    .controlSize(.small)
-                Spacer()
-                Button("Done") { close() }
-                    .controlSize(.small)
-                    .keyboardShortcut(.defaultAction)
-            }
         }
-        .padding(16)
-        .frame(width: 266)
-        .onChange(of: draft) { _, now in apply(now) }
-        .onAppear { apply(draft) }
-    }
-
-    private func colour(_ hex: String) -> Color {
-        guard let lab = OKLab(hex: hex) else { return .gray }
-        let (r, g, b) = lab.srgb
-        return Color(.sRGB, red: r, green: g, blue: b)
     }
 
     private func section(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
@@ -499,47 +616,84 @@ struct GradientEditor: View {
         }
     }
 
-    private func small(_ symbol: String, _ name: String, _ run: @escaping () -> Void) -> some View {
+    /// One size for every choice: the dot, and a ring round the one chosen.
+    private func swatch(selected: Bool, name: String, action: @escaping () -> Void,
+                        @ViewBuilder _ fill: () -> some View) -> some View {
+        Button(action: action) {
+            fill()
+                .frame(width: Self.dot, height: Self.dot)
+                .padding(3)
+                .overlay(Circle().strokeBorder(selected ? Palette.ink.opacity(0.75) : .clear, lineWidth: 1.5))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(name)
+        .accessibilityLabel(name)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func round(_ symbol: String, _ name: String, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
             Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(Palette.muted)
-                .frame(width: 22, height: 22)
+                .frame(width: Self.dot, height: Self.dot)
                 .background(Circle().fill(Palette.hover))
+                .padding(3)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .help(name)
         .accessibilityLabel(name)
     }
+
+    private func colour(_ hex: String) -> Color {
+        guard let lab = OKLab(hex: hex) else { return .gray }
+        let (r, g, b) = lab.srgb
+        return Color(.sRGB, red: r, green: g, blue: b)
+    }
 }
 
-/// The editor, shown by the space's icon where the menu was opened.
+/// The picker, shown by the space's icon where its menu was opened.
 @MainActor
-enum GradientPopover {
-    private static var shown: NSPopover?
+enum SpaceLookPopover {
+    private final class Watch: NSObject, NSPopoverDelegate {
+        var keys: Any?
+        func popoverDidClose(_ notification: Notification) {
+            if let keys { NSEvent.removeMonitor(keys) }
+            keys = nil
+            SpaceLookPopover.shown = nil
+        }
+    }
+
+    fileprivate static var shown: NSPopover?
+    private static let watch = Watch()
     /// Where the space's menu was last opened, on screen: the icon.
     static var anchor: NSPoint?
 
     static func show(for browser: Browser) {
-        // A probe's window is never shown (Tests/space_gradient.py sets the
-        // gradient through the bench), and a popover is a window.
+        // A probe's window is never shown (Tests/space_gradient.py chooses
+        // through the bench), and a popover is a window.
         guard ProcessInfo.processInfo.environment["SEARCH_PROBE"] == nil,
               let window = browser.window, window.isVisible, let content = window.contentView else { return }
         shown?.close()
         let space = browser.space
-        let editor = GradientEditor(
-            start: space.gradient.flatMap { $0.usable ? $0 : nil } ?? SpaceGradient.starting(from: space.colour),
-            hadOne: space.gradient?.usable == true,
-            apply: { [weak browser] gradient in browser?.setSpaceGradient(space.id, to: gradient) },
-            close: { shown?.close() })
-        let host = NSHostingController(rootView: editor)
+        let before = (colour: space.colour, gradient: space.gradient)
+        let host = NSHostingController(rootView: SpaceLookPicker(browser: browser, id: space.id))
         host.sizingOptions = .preferredContentSize
         let popover = NSPopover()
         popover.contentViewController = host
         popover.behavior = .transient
         popover.animates = !Motion.instant
+        popover.delegate = watch
         shown = popover
+        // Escape puts back what the space had; a click elsewhere keeps it.
+        watch.keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak browser, weak popover] event in
+            guard event.keyCode == 53, let popover, event.window === popover.contentViewController?.view.window else { return event }
+            browser?.restoreLook(space.id, colour: before.colour, gradient: before.gradient)
+            popover.close()
+            return nil
+        }
 
         let flipped = content.isFlipped
         var spot: NSRect
@@ -551,8 +705,7 @@ enum GradientPopover {
             spot = NSRect(x: bounds.minX + 24, y: flipped ? bounds.maxY - 24 : bounds.minY + 24, width: 1, height: 1)
         }
         if !content.bounds.contains(spot.origin) { spot.origin = NSPoint(x: content.bounds.midX, y: content.bounds.midY) }
-        let column = browser.prefs.sidebar
-        let edge: NSRectEdge = column
+        let edge: NSRectEdge = browser.prefs.sidebar
             ? (browser.prefs.sidePosition == .right ? .minX : .maxX)
             : (flipped ? .maxY : .minY)
         popover.show(relativeTo: spot, of: content, preferredEdge: edge)

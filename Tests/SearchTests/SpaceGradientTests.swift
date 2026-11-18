@@ -262,6 +262,62 @@ final class SpaceGradientTests: XCTestCase {
         XCTAssertNil(browser.wash)
     }
 
+    /// The picker: what it rings, what its preview says, and what each
+    /// choice does to the space. One item in the space's menu opens it.
+    func testThePickerChoosesAndNamesTheLook() {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        let browser = Browser(record: WindowRecord())
+        let oldUsesSpaces = browser.prefs.usesSpaces
+        let oldSpaces = browser.spaces
+        defer {
+            browser.closeAll()
+            browser.prefs.usesSpaces = oldUsesSpaces
+            browser.spaces = oldSpaces
+        }
+        browser.prefs.usesSpaces = true
+        let id = browser.spaceID
+        browser.spaces = [Space(id: id, name: "Home", colour: 0)]
+        XCTAssertEqual(browser.space.lookChoice, .none)
+        XCTAssertEqual(browser.space.lookName, "No colour")
+
+        browser.chooseLook(id, .colour(2))
+        XCTAssertEqual(browser.space.lookChoice, .colour(2))
+        XCTAssertEqual(browser.space.lookName, "Green")
+
+        browser.chooseLook(id, .custom)
+        XCTAssertEqual(browser.space.gradient, SpaceGradient.starting(from: 2), "a first gradient, from its colour")
+        XCTAssertEqual(browser.space.lookChoice, .custom)
+        XCTAssertEqual(browser.space.colour, 2, "the colour kept beside it")
+
+        browser.editGradient(id) { $0.angle = 270; $0.grain = true }
+        browser.chooseLook(id, .preset(3))
+        XCTAssertEqual(browser.space.lookChoice, .preset(3))
+        XCTAssertEqual(browser.space.lookName, SpaceGradient.presets[3].name)
+        XCTAssertEqual(browser.space.gradient?.angle, 270, "a ready-made gradient keeps the direction")
+        XCTAssertEqual(browser.space.gradient?.grain, true, "and the grain")
+
+        browser.editGradient(id) { $0.colours[0] = SpaceGradient.swatches[0].hex }
+        XCTAssertEqual(browser.space.lookChoice, .custom, "changed: its own now")
+
+        browser.chooseLook(id, .none)
+        XCTAssertNil(browser.space.gradient)
+        XCTAssertEqual(browser.space.lookChoice, .none)
+
+        // Escape: back to what it had when the picker opened.
+        let had = SpaceGradient(colours: SpaceGradient.presets[1].gradient.colours, angle: 90)
+        browser.restoreLook(id, colour: 4, gradient: had)
+        XCTAssertEqual(browser.space.gradient, had)
+        XCTAssertEqual(browser.space.colour, 4)
+        browser.restoreLook(id, colour: 4, gradient: nil)
+        XCTAssertEqual(browser.space.lookChoice, .colour(4))
+
+        let titles = SpaceMenu.menu(for: browser).items.map(\.title)
+        XCTAssertTrue(titles.contains("Colour…"))
+        XCTAssertFalse(titles.contains("Colour"), "no submenu")
+        XCTAssertNil(SpaceMenu.menu(for: browser).items.first { $0.title == "Colour…" }?.submenu)
+    }
+
     func testFoundInSettings() {
         XCTAssertTrue(SettingsIndex.find("gradient").contains { $0.id == "note.spaceGradient" })
         XCTAssertTrue(SettingsIndex.find("space colour").contains { $0.id == "note.spaceGradient" })

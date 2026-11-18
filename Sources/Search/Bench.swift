@@ -3793,6 +3793,21 @@ final class Bench {
             case "colour":
                 // The space on screen's colour, by index into Spaces.colours.
                 browser.setSpaceColour(browser.spaceID, to: request["colour"] as? Int ?? 0)
+            case "pick":
+                // A choice in the Colour… picker, by what it is called there:
+                // None, a colour, a ready-made gradient, or Custom.
+                let name = request["choice"] as? String ?? ""
+                let choice: SpaceLookChoice? = name == "None" ? SpaceLookChoice.none
+                    : name == "Custom" ? .custom
+                    : Spaces.colourNames.firstIndex(of: name).map(SpaceLookChoice.colour)
+                    ?? SpaceGradient.presets.firstIndex { $0.name == name }.map(SpaceLookChoice.preset)
+                guard let choice else { answer(["error": "no choice “\(name)” in the picker"]); return }
+                browser.chooseLook(browser.spaceID, choice)
+            case "restore":
+                // Escape in the picker: the look as it was, given as colour and gradient.
+                let colours = request["colours"] as? [String] ?? []
+                browser.restoreLook(browser.spaceID, colour: request["colour"] as? Int ?? 0,
+                                    gradient: colours.isEmpty ? nil : SpaceGradient(colours: colours))
             case "gradient":
                 // The space on screen's gradient, as the editor sets it:
                 // colours ("#RRGGBB"), angle and grain; no colours removes it.
@@ -3835,9 +3850,19 @@ final class Bench {
                 "looks": browser.spaces.map { space -> [String: Any] in
                     ["name": space.name, "colour": space.colour, "gradient": space.gradient?.colours ?? []]
                 },
-                // The Colour submenu, as it would open.
-                "colourMenu": SpaceMenu.menu(for: browser).items.first { $0.title == "Colour" }?.submenu?.items
-                    .filter { !$0.isSeparatorItem }.map { ["title": $0.title, "on": $0.state == .on] } ?? [],
+                // The Colour… picker as it would open on the space on screen
+                // (SpaceLookPicker): what is ringed and the preview's name.
+                "picker": { () -> [String: Any] in
+                    let kind: String, ringed: String
+                    switch browser.space.lookChoice {
+                    case .none: (kind, ringed) = ("none", "None")
+                    case .colour(let colour): (kind, ringed) = ("colour", Spaces.colourNames[colour])
+                    case .preset(let at): (kind, ringed) = ("gradient", SpaceGradient.presets[at].name)
+                    case .custom: (kind, ringed) = ("custom", "")
+                    }
+                    return ["kind": kind, "ringed": ringed, "preview": browser.space.lookName,
+                            "colours": ["None"] + Spaces.colourNames.dropFirst(), "presets": SpaceGradient.presets.map(\.name)]
+                }(),
                 "swipe": Double(browser.spaceSwipe),
                 // Each space off screen as a swipe draws it passing by
                 // (Parked.drawn): its groups, folded or not, and their tabs.

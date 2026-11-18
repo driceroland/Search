@@ -514,7 +514,7 @@ enum SettingsIndex {
               title: "Search a site from the address field", detail: "Always there: type red, then Tab, and search Reddit",
               keys: ["search.sites"], words: ["tab to search", "site search"], kind: .note, findOnly: true),
         .init(id: "note.spaceGradient", group: "spaces", icon: "paintpalette",
-              title: "A space's colour or gradient", detail: "Always there with Spaces: the space's menu › Colour, or Gradient… for two or three",
+              title: "A space's colour or gradient", detail: "Always there with Spaces: the space's menu › Colour…, one colour or a gradient",
               keys: ["spaces.gradient"], words: ["gradient", "theme", "colour", "color", "tint", "grain", "arc"], kind: .note, findOnly: true),
         .init(id: "note.sharedpins", group: "pins", icon: "pin",
               title: "Pins in every space", detail: "Always there with Spaces: right-click a pin › Keep in Every Space",
