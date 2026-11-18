@@ -8636,7 +8636,8 @@ extension Browser: WKDownloadDelegate {
         let asked = response.url.flatMap { namedDownloads.removeValue(forKey: $0) }
         let chosen = fetches.destination(for: download)
         let name = Browser.fileName(asked ?? suggestedFilename)
-        let file = chosen ?? whereToSave(name)
+        let folders = asked.map(Browser.downloadFolders) ?? []
+        let file = chosen ?? (folders.isEmpty || prefs.asksWhereToSave ? whereToSave(name) : saveInside(folders, name))
         guard let file else {
             if let ended = fetches.destinationCancelled(download) {
                 ended.owner.relinquish(download)
@@ -8750,6 +8751,28 @@ extension Browser: WKDownloadDelegate {
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK else { return nil }
         return panel.url
+    }
+
+    /// The folders in a name an extension asked for ("photos/2026/a.jpg"),
+    /// as Chrome's downloads.download makes them inside Downloads. Nothing
+    /// that could climb out: an absolute path, "..", "." or an empty part
+    /// leaves no folders, and the file lands in Downloads itself.
+    nonisolated static func downloadFolders(_ name: String) -> [String] {
+        let parts = name.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count > 1, !name.hasPrefix("/"), !name.hasPrefix("~") else { return [] }
+        let folders = Array(parts.dropLast())
+        guard folders.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains(":") }) else { return [] }
+        return folders
+    }
+
+    /// In those folders under Downloads, made if missing; Downloads itself
+    /// if they can't be.
+    private func saveInside(_ folders: [String], _ name: String) -> URL? {
+        let folder = folders.reduce(downloadsFolder) { $0.appendingPathComponent($1, isDirectory: true) }
+        guard folder.standardizedFileURL.path.hasPrefix(downloadsFolder.standardizedFileURL.path + "/"),
+              (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil
+        else { return Browser.free(name, in: downloadsFolder) }
+        return Browser.free(name, in: folder)
     }
 
     private static func fileName(_ name: String) -> String {

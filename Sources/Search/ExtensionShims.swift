@@ -4533,8 +4533,9 @@ enum ExtensionShims {
                 throw Unsupported(what: "No page to download through")
             }
             if let name = spec["filename"] as? String, !name.isEmpty {
-                // A name it asks for, which may carry folders: only the last part is kept.
-                browser.namedDownloads[url] = (name as NSString).lastPathComponent
+                // A name it asks for, which may carry folders: as in Chrome,
+                // they are made inside Downloads (Browser.downloadPath).
+                browser.namedDownloads[url] = name
             }
             ExtensionShims.askedDownloads[url] = id
             let download = await web.startDownload(using: URLRequest(url: url))
