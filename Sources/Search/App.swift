@@ -1546,6 +1546,25 @@ struct ContentView: View {
             if event.keyCode == 53 { return true }
         }
 
+        // The accounts hanging from the sign-in box the caret is in: ↓ and ↑
+        // move through them, as in Safari and Chrome, and Return takes the
+        // one lit, as a click would (⇧Return: one of your card's rows into
+        // the box alone). Until an arrow lights one, Return is the page's and
+        // sends its form, and ↑ moves the caret as it always did.
+        // A word still being composed (Japanese, Chinese, Korean input) keeps
+        // ↓, ↑ and Return for its own candidates.
+        if browser.suggesting != nil, let page = event.window?.firstResponder as? PageView,
+           !((page as AnyObject as? NSTextInputClient)?.hasMarkedText() ?? false),
+           flags.intersection([.command, .option, .control]).isEmpty {
+            let shifted = flags.contains(.shift)
+            switch event.keyCode {
+            case 125 where !shifted: if browser.moveChoice(by: 1) { return true }
+            case 126 where !shifted: if browser.moveChoice(by: -1) { return true }
+            case 36, 76: if browser.takeLitChoice(alone: shifted) { return true }
+            default: break
+            }
+        }
+
         // Escape puts the page back. On a blank tab there is no page to put
         // back, so it belongs to whatever else wants it.
         if event.keyCode == 53 {

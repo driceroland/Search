@@ -23,6 +23,10 @@ in [ROADMAP.md](ROADMAP.md).
 - Edit › Spelling and Grammar › Correct Spelling Automatically switched off stays off in every page, open or new, and after a relaunch. Search switched WebKit by flipping it whenever its saved default disagreed with the choice, and once the two had come apart every flip went the wrong way: the menu said off while pages went on correcting. It now sets where WebKit stands, whichever tab is in front.
 - Window managers can move and size the window from its title bar again: Swish played its snap on a swipe across the top of the window and nothing moved. The window told macOS it couldn't be moved whenever the pointer was over the strip of tabs or anywhere over the column, so that a tab dragged along the row wouldn't take the window with it; now it does so only over something in the title bar a press would pick up — a tab, a button in the row — and is movable over the strip's empty run, the lights, the band along the top and the column. `python3 Tests/window_managers.py`
 
+### Added
+
+- The accounts under a sign-in box answer the keyboard, as in Safari and Chrome: ↓ lights the first and moves down, ↑ moves up and from the first goes back to the box, and Return fills the one lit, as a click would (⇧Return puts one of your card's rows into the box alone). Until an arrow lights a row, Return sends the form and ↑ moves the caret as before. Thanks [@kemuri](https://github.com/kemuri) ([#1199](https://github.com/driceroland/Search/pull/1199))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
