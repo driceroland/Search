@@ -2091,12 +2091,23 @@ final class Bench {
             // it — and whether the AI add-on counts as on. Reads only.
             guard Store.testing else { answer(["error": "menus only works on a --test run"]); return }
             var menus: [String: [String]] = [:]
+            // Items that put a window in full screen, wherever they are,
+            // with their keys and action (#1176). Read, never pressed.
+            var fullScreen: [[String: Any]] = []
             for item in NSApp.mainMenu?.items ?? [] {
                 guard let menu = item.submenu else { continue }
                 menu.delegate?.menuNeedsUpdate?(menu)
                 menus[item.title] = menu.items.filter { !$0.isSeparatorItem && !$0.isHidden }.map(\.title)
+                for entry in menu.items where entry.action == #selector(NSWindow.toggleFullScreen(_:))
+                    || (entry.keyEquivalent == "f" && entry.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask) == [.control, .command]) {
+                    fullScreen.append(["menu": item.title, "title": entry.title, "key": entry.keyEquivalent,
+                                       "control": entry.keyEquivalentModifierMask.contains(.control),
+                                       "command": entry.keyEquivalentModifierMask.contains(.command),
+                                       "action": entry.action.map(NSStringFromSelector) ?? "",
+                                       "hidden": entry.isHidden, "enabled": entry.isEnabled])
+                }
             }
-            answer(["menus": menus, "ai": browser.prefs.ai, "shipped": AI.shipped,
+            answer(["menus": menus, "fullScreenItems": fullScreen, "ai": browser.prefs.ai, "shipped": AI.shipped,
                     "settingsPages": SettingsPanel.Page.allCases.filter { $0 != .ai || AI.shipped }.map(\.rawValue),
                     "settingsPage": browser.settingsPage.rawValue])
 
