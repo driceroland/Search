@@ -1100,7 +1100,7 @@ struct BookmarkDoor: View {
                 BookmarkDoor.door(browser, kept: false)
             }
         }
-        .popover(isPresented: $browser.bookmarksOpen, arrowEdge: arrowEdge) {
+        .popover(isPresented: $browser.bookmarksOpen, hangingFrom: arrowEdge) {
             if let id = browser.bookmarkCard {
                 BookmarkCard(browser: browser, bookmarks: browser.bookmarks, id: id)
             } else {
@@ -1171,7 +1171,7 @@ struct BookmarkCard: View {
         }
         .padding(14)
         .frame(width: 280)
-        .popoverGround(card: true)
+        .popoverGround()
         .onAppear {
             title = bookmarks.bookmark(id)?.title ?? ""
             // The popover's window takes the keyboard only after this, and
@@ -1304,7 +1304,7 @@ struct BookmarksDropdown: View {
             .padding(6)
         }
         .frame(width: 280)
-        .popoverGround(card: true)
+        .popoverGround()
     }
 
     /// The list as tall as the whole tree would be with every folder open,

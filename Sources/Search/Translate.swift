@@ -1027,7 +1027,7 @@ struct TranslateSign: View {
             .onHover { hovering = $0 }
             .help(TranslateMenu.heading(mark))
             .accessibilityLabel(TranslateMenu.heading(mark))
-            .popover(isPresented: $showing, arrowEdge: .bottom) {
+            .popover(isPresented: $showing, hangingFrom: .bottom) {
                 TranslateMenu(tab: tab) { showing = false }
             }
             .animation(Motion.quick, value: hovering)
