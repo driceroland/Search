@@ -1307,6 +1307,10 @@ enum ExtensionShims {
           }
         } catch (e) {}
       }
+      // While a worker's importScripts runs, WebKit turns the run loop to
+      // fetch the file: timers fire, and events are handed over, before the
+      // listeners in that file are in (see `hold`).
+      let importing = 0;
       if (worker && typeof root.importScripts === "function") {
         const shipped = new Set(), empty = new Set();
         for (const p of __SEARCH_SCRIPTS__) p.startsWith("-") ? empty.add(p.slice(1)) : shipped.add(p);
@@ -1322,7 +1326,9 @@ enum ExtensionShims {
             }
             wanted.push(u);
           }
-          if (wanted.length) return load(...wanted);
+          if (!wanted.length) return;
+          importing++;
+          try { return load(...wanted); } finally { importing--; }
         };
       }
       // The tab an extension's framed page is in, asked once (see __searchToFrame).
@@ -3865,25 +3871,51 @@ enum ExtensionShims {
       // Extensions.installReason): an install once, an update for one taken
       // up again in this run, and otherwise nothing — Chrome tells a worker
       // nothing of the browser starting but onStartup.
+      //
+      // WebKit may also tell a fresh install as a browser start: onStartup,
+      // and no onInstalled at all. It did for the first extension installed
+      // in each launch, and an extension that sets itself up only on
+      // "install" was never set up. So the worker asks as it starts, and a
+      // fresh install hears "install" once, whatever WebKit sent or in
+      // whichever order, and no "startup", as in Chrome.
+      //
+      // And either event may come while the worker is still importing the
+      // file that listens for it (see `importing`): a worker that adds its
+      // listeners in a file it imports found the event had come and gone.
+      // So the shim listens from the start and holds each event until no
+      // import is running; the worker's listeners hear it then.
       if (background && runtime.onInstalled && typeof runtime.onInstalled.addListener === "function") {
-        let decided = null;
-        const reason = () => decided || (decided = native("background.installReason", []).then((v) => v == null ? null : String(v), () => "install"));
-        const add = runtime.onInstalled.addListener.bind(runtime.onInstalled);
-        const remove = runtime.onInstalled.removeListener.bind(runtime.onInstalled);
-        const wrapped = new Map();
-        put(runtime.onInstalled, "addListener", (listener) => {
-          const w = (details) => {
-            if (!details || details.reason !== "install") return listener(details);
-            reason().then((r) => {
-              if (r === "install") listener(details);
-              else if (r === "update") listener({ ...details, reason: "update", previousVersion: runtime.getManifest().version });
-            });
+        const hold = (event, decide) => {
+          const listeners = [], queue = [];
+          let timer = null;
+          const flush = () => {
+            timer = null;
+            if (importing) { timer = setTimeout(flush, 5); return; }
+            for (const args of queue.splice(0)) {
+              for (const f of [...listeners]) { try { f(...args); } catch (e) { setTimeout(() => { throw e; }); } }
+            }
           };
-          wrapped.set(listener, w);
-          return add(w);
+          const tell = (args) => { queue.push(args); if (!timer) timer = setTimeout(flush); };
+          try { event.addListener((...args) => { Promise.resolve(decide(...args)).then((out) => { if (out) tell(out); }); }); } catch (e) {}
+          put(event, "addListener", (f) => { if (typeof f === "function" && !listeners.includes(f)) listeners.push(f); });
+          put(event, "removeListener", (f) => { const i = listeners.indexOf(f); if (i >= 0) listeners.splice(i, 1); });
+          put(event, "hasListener", (f) => listeners.includes(f));
+          put(event, "hasListeners", () => listeners.length > 0);
+          return tell;
+        };
+        // Asked once per worker life; undefined when the question failed.
+        const asked = native("background.installReason", []).then((v) => v == null ? null : String(v), () => undefined);
+        let toldInstall = false;
+        const install = () => { if (toldInstall) return null; toldInstall = true; return [{ reason: "install" }]; };
+        const installed = hold(runtime.onInstalled, (details) => {
+          if (!details || details.reason !== "install") return [details];
+          return asked.then((r) => r === "install" || r === undefined ? install()
+            : r === "update" ? [{ ...details, reason: "update", previousVersion: runtime.getManifest().version }] : null);
         });
-        put(runtime.onInstalled, "removeListener", (listener) => { const w = wrapped.get(listener); wrapped.delete(listener); return remove(w || listener); });
-        put(runtime.onInstalled, "hasListener", (listener) => wrapped.has(listener));
+        asked.then((r) => { const out = r === "install" && install(); if (out) installed(out); });
+        if (runtime.onStartup && typeof runtime.onStartup.addListener === "function") {
+          hold(runtime.onStartup, (...args) => asked.then((r) => r === "install" ? null : args));
+        }
       }
 
       // A worker may add listeners only while it starts; WebKit throws for
