@@ -194,6 +194,23 @@ enum SettingsIndex {
               title: "Shorter tab bar", detail: "Only a few points above and below the tabs, for more of the page",
               keys: ["tabs.compact"], words: ["compact", "slim", "thin", "height", "padding", "tab bar", "toolbar"],
               parent: "tabs.layout"),
+        .init(id: "window.glass", group: "window", icon: "square.on.square.intersection.dashed",
+              title: "Glass", detail: "What is behind the window shows through the tabs and the frame, blurred",
+              more: "As in Arc and Zen. The glass takes the space's colour; how see-through it is, and its grain, are in the space's menu › Colour…. Not in full screen.",
+              keys: ["window.glass"], words: ["glass", "translucent", "transparent", "blur", "frosted", "vibrancy", "see through", "arc", "zen"]),
+        .init(id: "window.glass.style", group: "window", icon: "drop",
+              title: "Glass style", detail: "Frosted, or the Mac's Liquid Glass",
+              keys: ["window.glass.style"], words: ["liquid glass", "liquid", "frosted", "glass", "tahoe"], parent: "window.glass"),
+        .init(id: "window.glass.clear", group: "window", icon: "circle.lefthalf.filled",
+              title: "Transparency", detail: "From the space's colour on the glass to clear glass",
+              keys: ["window.glass.clear"], words: ["transparency", "tint", "opacity", "glass"], parent: "window.glass"),
+        .init(id: "window.glass.grain", group: "window", icon: "circle.dotted",
+              title: "Grain", detail: "A still noise over the glass",
+              keys: ["window.glass.grain"], words: ["grain", "noise", "texture", "glass"], parent: "window.glass"),
+        .init(id: "tabs.liquid", group: "tablook", icon: "drop.halffull",
+              title: "Liquid Glass tab", detail: "The tab you're on under a pane of Liquid Glass that glides, stretches and settles",
+              more: "It bends the tabs it passes over. Pinned tabs and split pages keep their grey. Under Reduce Motion it goes straight to the tab you pick.",
+              keys: ["tabs.liquid"], words: ["liquid glass", "liquid", "glass", "active tab", "selected tab", "animation", "wobble"]),
         .init(id: "sidebar.roomy", group: "tablook", icon: "textformat.size.larger",
               title: "Roomier tabs", detail: "Taller rows and larger titles in the column",
               keys: ["sidebar.roomy"], words: ["bigger", "larger", "text size", "accessibility"], parent: "tabs.layout"),
@@ -616,6 +633,10 @@ enum SettingsIndex {
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
+        case "tabs.liquid": return LiquidTab.available && !(prefs.sidebar && prefs.sideIcons)
+        case "window.glass.style": return prefs.glass && GlassStyle.liquidAvailable
+        // With spaces on they are in the space's Colour…, beside its colour.
+        case "window.glass.clear", "window.glass.grain": return prefs.glass && !prefs.usesSpaces
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
@@ -638,6 +659,9 @@ enum SettingsIndex {
         case "inspector.dark": return "Only while Search isn't set to Dark"
         case "toolbar.left", "tabs.compact": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
+        case "tabs.liquid": return LiquidTab.available ? "Only with titles in the column, or the tabs across the top" : "Liquid Glass needs macOS 26"
+        case "window.glass.style": return GlassStyle.liquidAvailable ? "Only with Glass on" : "Liquid Glass needs macOS 26"
+        case "window.glass.clear", "window.glass.grain": return "With spaces on, in the space's menu › Colour…"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "profiles.oneWindow": return "Only with more than one profile"
         case "spaces.links": return "Only with Spaces on"

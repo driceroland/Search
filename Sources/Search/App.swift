@@ -530,11 +530,17 @@ struct ContentView: View {
             // that survives the transition is not a white band across the top.
             // With the tabs down the side, the ground the page's card and the
             // column sit on (see CardEdge).
-            (fullscreenTab != nil ? Color.black : cards ? Palette.frame : Palette.ground)
+            if fullscreenTab != nil {
+                Color.black
+            } else if browser.glassy {
+                GlassGround(prefs: browser.prefs, look: browser.wash)
+            } else {
+                cards ? Palette.frame : Palette.ground
+            }
             // As cards, the column, the bookmarks bar and the gaps around the
             // page share that ground, so the space's colour washes all of it
             // alike. Edge to edge the column and the strip bring their own.
-            if cards { SpaceWash(look: browser.wash) }
+            if cards && !browser.glassy { SpaceWash(look: browser.wash) }
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
@@ -908,6 +914,8 @@ struct ContentView: View {
             .environment(\.washRoom, CGSize(width: across, height: tall))
             // And as strongly, Subtle, Rich or Vivid, as the space on screen asks.
             .environment(\.washStrength, browser.washStrength)
+            // The live tab as a pane of Liquid Glass, where the Mac has it.
+            .environment(\.liquidTabs, browser.prefs.liquidTabs && LiquidTab.available)
             // The field comes on its spring, and goes quickly: once Return
             // is pressed the page is on its way, and the field is not what
             // there is to watch.
@@ -916,10 +924,11 @@ struct ContentView: View {
             .onChange(of: browser.prefs.sidebar) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
-            .onChange(of: browser.asCards) { _, cards in
+            .onChange(of: browser.asCards) { _, _ in
                 // The ground the page's card sits on, or the page's own.
-                window?.backgroundColor = cards ? Palette.NS.frame : Palette.NS.ground
+                browser.paintGround(window)
             }
+            .onChange(of: browser.glassy) { _, _ in browser.paintGround(window) }
             // The lights sit on the strip's middle, which moves with its height.
             .onChange(of: browser.prefs.compactStrip) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
@@ -1198,7 +1207,7 @@ struct ContentView: View {
         window.titleVisibility = .hidden
         // A window put back in full screen is so before any notice says it.
         browser.fullScreen = window.styleMask.contains(.fullScreen)
-        window.backgroundColor = browser.asCards ? Palette.NS.frame : Palette.NS.ground
+        browser.paintGround(window)
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false

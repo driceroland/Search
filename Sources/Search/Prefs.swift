@@ -273,6 +273,33 @@ final class Preferences: ObservableObject {
     @Published var cardsInFullScreen: Bool {
         didSet { store.set(cardsInFullScreen, forKey: "layout.cardsFullScreen") }
     }
+    /// The ground the card and the column sit on as glass: what is behind
+    /// the window shows through, blurred (see Glass.swift). Off unless
+    /// turned on.
+    @Published var glass: Bool {
+        didSet { store.set(glass, forKey: "window.glass") }
+    }
+    /// How much grain lies over it, nought to one (GlassGround.mostGrain).
+    @Published var glassGrain: Double {
+        didSet { store.set(glassGrain, forKey: "window.glass.grain") }
+    }
+    /// How see-through the glass is: nought, as much of the space's colour
+    /// as glass takes (GlassGround.mostTint); one, the glass alone, frosted,
+    /// with no colour and no dimming over what shows through. The blur
+    /// itself is always there. Chosen in the space's Colour…
+    /// (SpaceLookPicker), or in Settings with spaces off.
+    @Published var glassClear: Double {
+        didSet { store.set(glassClear, forKey: "window.glass.clear") }
+    }
+    /// The tab you are on under a pane of Liquid Glass that glides from tab
+    /// to tab (see LiquidTab.swift). Off unless turned on; macOS 26 on.
+    @Published var liquidTabs: Bool {
+        didSet { store.set(liquidTabs, forKey: "tabs.liquid") }
+    }
+    /// Frosted, the Mac's blur since Big Sur, or Liquid Glass, from macOS 26.
+    @Published var glassStyle: GlassStyle {
+        didSet { store.set(glassStyle.rawValue, forKey: "window.glass.style") }
+    }
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
     }
@@ -1033,6 +1060,11 @@ final class Preferences: ObservableObject {
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
         cardsInFullScreen = store.bool(forKey: "layout.cardsFullScreen")
+        glass = store.bool(forKey: "window.glass")
+        glassGrain = (store.object(forKey: "window.glass.grain") as? Double).map { min(1, max(0, $0)) } ?? 0.2
+        glassClear = (store.object(forKey: "window.glass.clear") as? Double).map { min(1, max(0, $0)) } ?? 0.5
+        glassStyle = store.string(forKey: "window.glass.style").flatMap(GlassStyle.init) ?? .frosted
+        liquidTabs = store.bool(forKey: "tabs.liquid")
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
@@ -1284,6 +1316,11 @@ final class Preferences: ObservableObject {
             .flatMap { Preferences.sidePanelWidths.contains($0) ? $0 : nil }, or: 380)
         take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)
         take(\.cardsInFullScreen, store.bool(forKey: "layout.cardsFullScreen"))
+        take(\.glass, store.bool(forKey: "window.glass"))
+        take(\.glassGrain, "window.glass.grain", (store.object(forKey: "window.glass.grain") as? Double).map { min(1, max(0, $0)) }, or: 0.2)
+        take(\.glassClear, "window.glass.clear", (store.object(forKey: "window.glass.clear") as? Double).map { min(1, max(0, $0)) }, or: 0.5)
+        take(\.glassStyle, "window.glass.style", store.string(forKey: "window.glass.style").flatMap(GlassStyle.init), or: .frosted)
+        take(\.liquidTabs, store.bool(forKey: "tabs.liquid"))
         take(\.bounces, store.bool(forKey: "pages.bounce"))
         Swipe.bounces = bounces
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)

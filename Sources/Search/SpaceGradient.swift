@@ -563,6 +563,18 @@ struct SpaceLookPicker: View {
 
             section("Strength") { strengthControl }
 
+            // With the window as glass (Settings › Appearance › Window ›
+            // Glass): how much of the colour lies over it, and its grain.
+            // For every space alike, as the glass is the window's.
+            if browser.prefs.glass {
+                section("Glass") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        GlassSlider(name: "Transparency", value: Binding(get: { browser.prefs.glassClear }, set: { browser.prefs.glassClear = $0 }))
+                        GlassSlider(name: "Grain", value: Binding(get: { browser.prefs.glassGrain }, set: { browser.prefs.glassGrain = $0 }))
+                    }
+                }
+            }
+
             VStack(alignment: .leading, spacing: 12) {
                 Button {
                     withAnimation(Motion.quick) { customOpen.toggle() }
@@ -723,13 +735,16 @@ struct SpaceLookPicker: View {
             }
             .padding(2)
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Palette.hover))
-            HStack {
-                Text("Grain").font(.system(size: 12)).foregroundStyle(Palette.ink)
-                Spacer()
-                Toggle("Grain", isOn: Binding(get: { gradient.grain }, set: { on in browser.editGradient(id) { $0.grain = on } }))
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .labelsHidden()
+            // On glass the glass's own Grain, above, is the grain there is.
+            if !browser.glassy {
+                HStack {
+                    Text("Grain").font(.system(size: 12)).foregroundStyle(Palette.ink)
+                    Spacer()
+                    Toggle("Grain", isOn: Binding(get: { gradient.grain }, set: { on in browser.editGradient(id) { $0.grain = on } }))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .labelsHidden()
+                }
             }
         }
     }
@@ -836,5 +851,24 @@ enum SpaceLookPopover {
             ? (browser.prefs.sidePosition == .right ? .minX : .maxX)
             : (flipped ? .maxY : .minY)
         popover.show(relativeTo: spot, of: content, preferredEdge: edge)
+    }
+}
+
+/// One of the glass's amounts: its name, and under it a plain slider as
+/// wide as there is room for.
+struct GlassSlider: View {
+    let name: String
+    @Binding var value: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(name)
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.ink)
+            Slider(value: $value, in: 0...1)
+                .controlSize(.small)
+                .labelsHidden()
+                .accessibilityLabel(name)
+        }
     }
 }

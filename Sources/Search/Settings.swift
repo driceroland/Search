@@ -588,12 +588,17 @@ struct SettingsPanel: View {
                         set: { on in withAnimation(Motion.glide) { prefs.cards = on } }
                      ))
         case "layout.cardsFullScreen": Switch(on: $prefs.cardsInFullScreen)
+        case "window.glass": Switch(on: $prefs.glass)
+        case "window.glass.style": Segmented(options: GlassStyle.allCases.map { ($0, $0.title) }, selection: $prefs.glassStyle)
+        case "window.glass.clear": Slider(value: $prefs.glassClear, in: 0...1).controlSize(.small).frame(width: 160)
+        case "window.glass.grain": Slider(value: $prefs.glassGrain, in: 0...1).controlSize(.small).frame(width: 160)
         case "toolbar.left": Switch(on: $prefs.navigationLeft)
         case "tabs.compact":
             Switch(on: Binding(
                 get: { prefs.compactStrip },
                 set: { on in withAnimation(Motion.glide) { prefs.compactStrip = on } }
             ))
+        case "tabs.liquid": Switch(on: $prefs.liquidTabs)
         case "sidebar.roomy":
             Switch(on: Binding(
                 get: { prefs.roomyTabs },
