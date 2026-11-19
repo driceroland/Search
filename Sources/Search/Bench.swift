@@ -2725,6 +2725,9 @@ final class Bench {
             guard let tab = find(request, in: browser), let web = tab.built else { answer(missing(request)); return }
             // ⌘+ and ⌘−'s kind: the page's own zoom, as View › Zoom In sets it.
             if let zoom = request["zoom"] as? Double { tab.magnify(to: CGFloat(zoom)) }
+            // `by`: ⌘+ (1.1) and ⌘− as they step; `reset`: ⌘0.
+            if let by = request["by"] as? Double { tab.magnify(by: CGFloat(by)) }
+            if request["reset"] as? Bool == true { tab.resetZoom() }
             if let scale = request["scale"] as? Double {
                 let x = request["x"] as? Double ?? Double(web.bounds.midX)
                 let y = request["y"] as? Double ?? Double(web.bounds.midY)
@@ -2732,7 +2735,7 @@ final class Bench {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 answer(["magnification": Double(web.magnification), "zoom": Double(web.pageZoom),
-                        "size": [Double(web.bounds.width), Double(web.bounds.height)]])
+                        "size": [Double(web.bounds.width), Double(web.bounds.height)], "pdf": tab.showsPDF])
             }
 
         case "wheel":

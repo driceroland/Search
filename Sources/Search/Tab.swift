@@ -1103,14 +1103,31 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     /// Between two fifths and three times, which is as far as a page is worth
-    /// pushing in either direction.
+    /// pushing in either direction. A PDF goes as far as WebKit's own bar
+    /// over it does, a fifth to six times: there the zoom is the PDF's scale,
+    /// where 1 is the paper's actual size, and on a wide window three times
+    /// that left the page not much wider than the window (idea 749).
     func magnify(to value: CGFloat) {
-        let wanted = min(3, max(0.4, value))
+        let pdf = showsPDF
+        let wanted = pdf ? min(Tab.pdfZooms.upperBound, max(Tab.pdfZooms.lowerBound, value)) : min(3, max(0.4, value))
         guard abs(wanted - web.pageZoom) > 0.004 else { return }
         web.pageZoom = wanted
         zoom = wanted
-        rememberZoom()
+        // A PDF's scale says nothing about the size its site's pages are
+        // read at: kept for the site, 400% of a paper would open its
+        // pages at 300%.
+        if !pdf { rememberZoom() }
         onZoom?(self, wanted)
+    }
+
+    /// WebKit's own limits for a PDF's scale (UnifiedPDFPlugin's minimum and
+    /// maximum zoom), which its bar's − and + stop at.
+    static let pdfZooms: ClosedRange<CGFloat> = 0.2...6
+
+    /// Whether the page is a PDF that WebKit draws itself, its bar over it.
+    var showsPDF: Bool {
+        guard let web = built, web.responds(to: NSSelectorFromString("_isDisplayingPDF")) else { return false }
+        return (web.value(forKey: "_isDisplayingPDF") as? Bool) == true
     }
 
     func magnify(by factor: CGFloat) { magnify(to: web.pageZoom * factor) }
@@ -1118,7 +1135,8 @@ final class Tab: ObservableObject, Identifiable {
     /// ⌘0 undoes both kinds of zoom at once — whichever one you reached for —
     /// back to the size every site starts at.
     func resetZoom() {
-        magnify(to: Tab.defaultZoom)
+        // A PDF back to its actual size, as the PDF's own Actual Size does.
+        magnify(to: showsPDF ? 1 : Tab.defaultZoom)
         guard web.magnification != 1 else { return }
         web.magnification = 1
         onZoom?(self, 1)
