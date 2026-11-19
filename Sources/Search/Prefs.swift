@@ -421,6 +421,11 @@ final class Preferences: ObservableObject {
     @Published var showsReading: Bool {
         didSet { store.set(showsReading, forKey: "tabs.reading") }
     }
+    /// Tab titles in full ink (black or white) instead of the soft greys
+    /// used for tabs that aren't the one you're on. Off unless asked for.
+    @Published var highContrastText: Bool {
+        didSet { store.set(highContrastText, forKey: "tabs.highContrast") }
+    }
     /// The tab you're on says where its page is, at rest, without a click:
     /// its site, from the address on screen (see AtRest.swift). On unless
     /// turned off.
@@ -1047,6 +1052,7 @@ final class Preferences: ObservableObject {
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
         showsTabShortcuts = store.bool(forKey: "tabs.shortcuts")
         showsReading = store.bool(forKey: "tabs.reading")
+        highContrastText = store.bool(forKey: "tabs.highContrast")
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
         // Security's advice); a choice made before stands.
         showsAddress = store.object(forKey: "tabs.address") as? Bool ?? true

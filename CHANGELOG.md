@@ -29,6 +29,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- High contrast text, off unless you turn it on in Settings › Appearance › Tabs: tab titles, pin letters and the headings of groups and pin folders in full black or white instead of soft grey, in the column, across the top and on pinned squares. Thanks [@elia-orsini](https://github.com/elia-orsini) ([#1218](https://github.com/driceroland/Search/pull/1218))
 - The accounts under a sign-in box answer the keyboard, as in Safari and Chrome: ↓ lights the first and moves down, ↑ moves up and from the first goes back to the box, and Return fills the one lit, as a click would (⇧Return puts one of your card's rows into the box alone). Until an arrow lights a row, Return sends the form and ↑ moves the caret as before. Thanks [@kemuri](https://github.com/kemuri) ([#1199](https://github.com/driceroland/Search/pull/1199))
 
 ### Changed

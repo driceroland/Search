@@ -766,7 +766,8 @@ private struct TabPill: View, Equatable {
                         // letter or icon comes back once it is there.
                         Ring(size: 11)
                     } else if prefs.glyph == .icons, let icon = tab.icon {
-                        Mark(icon: icon, letter: tab.pin ?? "", size: 16, dim: tab.asleep)
+                        Mark(icon: icon, letter: tab.pin ?? "", size: 16, dim: tab.asleep,
+                             contrast: prefs.highContrastText)
                     } else {
                         Text(tab.pin ?? "")
                             .font(.system(size: 12, weight: .medium))
@@ -852,7 +853,8 @@ private struct TabPill: View, Equatable {
                 } else if tab.loading {
                     Ring()
                 } else {
-                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15, dim: tab.asleep)
+                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15, dim: tab.asleep,
+                         contrast: prefs.highContrastText)
                         .overlay(alignment: .bottomTrailing) { AgentMark(tab: tab) }
                 }
             }
@@ -878,7 +880,8 @@ private struct TabPill: View, Equatable {
                     .frame(height: 16)
             } else {
                 if !tab.isBlank {
-                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15)
+                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15,
+                         contrast: prefs.highContrastText)
                         .overlay(alignment: .bottomTrailing) { AgentMark(tab: tab) }
                 }
                 if tab.bench, !tab.agent {
@@ -1013,7 +1016,7 @@ private struct TabPill: View, Equatable {
     }
 
     private var colour: Color {
-        if live { return Palette.ink }
+        if live || prefs.highContrastText { return Palette.ink }
         return hovering ? Palette.ink.opacity(0.7) : greys.muted
     }
 }
