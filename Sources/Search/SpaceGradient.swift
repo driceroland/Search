@@ -490,6 +490,48 @@ extension Browser {
 
 // MARK: - the picker
 
+/// The solid colours used by both the Space and tab group pickers.
+struct ColourSwatches: View {
+    let selected: Int?
+    let choose: (Int) -> Void
+    static let dot: CGFloat = 22
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(Spaces.colours.indices, id: \.self) { index in
+                Self.swatch(selected: selected == index, name: Spaces.colourNames[index],
+                            action: { choose(index) }) {
+                    if index == 0 {
+                        ZStack {
+                            Circle().strokeBorder(Palette.faint, lineWidth: 1)
+                            Rectangle().fill(Palette.faint).frame(width: 1, height: Self.dot - 4)
+                                .rotationEffect(.degrees(45))
+                        }
+                    } else {
+                        Circle().fill(Spaces.colours[index])
+                    }
+                }
+            }
+        }
+    }
+
+    /// One size for every choice: the dot, and a ring round the one chosen.
+    static func swatch(selected: Bool, name: String, action: @escaping () -> Void,
+                        @ViewBuilder _ fill: () -> some View) -> some View {
+        Button(action: action) {
+            fill()
+                .frame(width: Self.dot, height: Self.dot)
+                .padding(3)
+                .overlay(Circle().strokeBorder(selected ? Palette.ink.opacity(0.75) : .clear, lineWidth: 1.5))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(name)
+        .accessibilityLabel(name)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
 /// Colour…: everything a space can wear, in one popover by its icon. At the
 /// top, the space's icon on its look and the look's name; under it the
 /// colours with None, then the ready-made gradients, then a gradient of
@@ -504,7 +546,6 @@ struct SpaceLookPicker: View {
     @State private var well = 0
 
     static let width: CGFloat = 288
-    static let dot: CGFloat = 22
 
     init(browser: Browser, id: UUID, customOpen: Bool? = nil) {
         self.browser = browser
@@ -515,6 +556,13 @@ struct SpaceLookPicker: View {
 
     private var space: Space { browser.spaces.first { $0.id == id } ?? browser.space }
     private var choice: SpaceLookChoice { space.lookChoice }
+    private var solidColour: Int? {
+        switch choice {
+        case .none: return 0
+        case .colour(let index): return index
+        default: return nil
+        }
+    }
     /// The gradient the custom part shows: the space's, or the one a first
     /// change would make.
     private var shownGradient: SpaceGradient {
@@ -532,19 +580,8 @@ struct SpaceLookPicker: View {
             preview
 
             section("Colour") {
-                HStack(spacing: 10) {
-                    swatch(selected: choice == .none, name: "None", action: { browser.chooseLook(id, .none) }) {
-                        ZStack {
-                            Circle().strokeBorder(Palette.faint, lineWidth: 1)
-                            Rectangle().fill(Palette.faint).frame(width: 1, height: Self.dot - 4).rotationEffect(.degrees(45))
-                        }
-                    }
-                    ForEach(1..<Spaces.colours.count, id: \.self) { index in
-                        swatch(selected: choice == .colour(index), name: Spaces.colourNames[index],
-                               action: { browser.chooseLook(id, .colour(index)) }) {
-                            Circle().fill(Spaces.colours[index])
-                        }
-                    }
+                ColourSwatches(selected: solidColour) { index in
+                    browser.chooseLook(id, index == 0 ? .none : .colour(index))
                 }
             }
 
@@ -552,8 +589,8 @@ struct SpaceLookPicker: View {
                 HStack(spacing: 10) {
                     ForEach(SpaceGradient.presets.indices, id: \.self) { at in
                         let preset = SpaceGradient.presets[at]
-                        swatch(selected: choice == .preset(at), name: preset.name,
-                               action: { browser.chooseLook(id, .preset(at)) }) {
+                        ColourSwatches.swatch(selected: choice == .preset(at), name: preset.name,
+                                              action: { browser.chooseLook(id, .preset(at)) }) {
                             Circle().fill(LinearGradient(stops: preset.gradient.stops(count: 8),
                                                          startPoint: .topLeading, endPoint: .bottomTrailing))
                         }
@@ -666,7 +703,7 @@ struct SpaceLookPicker: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 ForEach(gradient.colours.indices, id: \.self) { index in
-                    swatch(selected: well == index, name: "Colour \(index + 1)", action: { well = index }) {
+                    ColourSwatches.swatch(selected: well == index, name: "Colour \(index + 1)", action: { well = index }) {
                         Circle().fill(colour(gradient.colours[index]))
                     }
                 }
@@ -682,14 +719,14 @@ struct SpaceLookPicker: View {
                     }
                 }
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(Self.dot), spacing: 10), count: 7), alignment: .leading, spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(ColourSwatches.dot), spacing: 10), count: 7), alignment: .leading, spacing: 10) {
                 ForEach(SpaceGradient.swatches, id: \.hex) { pick in
                     let on = gradient.colours.indices.contains(well) && gradient.colours[well] == pick.hex
                     Button {
                         browser.editGradient(id) { if $0.colours.indices.contains(well) { $0.colours[well] = pick.hex } }
                     } label: {
                         Circle().fill(colour(pick.hex))
-                            .frame(width: Self.dot, height: Self.dot)
+                            .frame(width: ColourSwatches.dot, height: ColourSwatches.dot)
                             .overlay {
                                 if on { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white) }
                             }
@@ -743,28 +780,12 @@ struct SpaceLookPicker: View {
         }
     }
 
-    /// One size for every choice: the dot, and a ring round the one chosen.
-    private func swatch(selected: Bool, name: String, action: @escaping () -> Void,
-                        @ViewBuilder _ fill: () -> some View) -> some View {
-        Button(action: action) {
-            fill()
-                .frame(width: Self.dot, height: Self.dot)
-                .padding(3)
-                .overlay(Circle().strokeBorder(selected ? Palette.ink.opacity(0.75) : .clear, lineWidth: 1.5))
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help(name)
-        .accessibilityLabel(name)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
     private func round(_ symbol: String, _ name: String, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
             Image(systemName: symbol)
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(Palette.muted)
-                .frame(width: Self.dot, height: Self.dot)
+                .frame(width: ColourSwatches.dot, height: ColourSwatches.dot)
                 .background(Circle().fill(Palette.hover))
                 .padding(3)
                 .contentShape(Circle())

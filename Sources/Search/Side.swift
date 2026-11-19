@@ -84,6 +84,7 @@ struct SideBar: View {
     /// The column's width: the setting, or where the edge is while it is held.
     private var width: CGFloat { live ?? prefs.columnWidth }
     private static let gap: CGFloat = 2
+    private static let groupInset: CGFloat = 4
     private static let square: CGFloat = 34
     private static let pinGap: CGFloat = 4
 
@@ -621,7 +622,7 @@ struct SideBar: View {
     /// among them and the room after it, added up as rowsHeight adds up the
     /// column's own.
     private struct PreviewLine: Identifiable {
-        enum Kind { case pin(PinRowLine), heading(TabGroup), tab(Tab), keep, newTab }
+        enum Kind { case pin(PinRowLine), heading(TabGroup), tab(Tab, inset: Bool = false), keep, newTab }
         let id: AnyHashable
         let kind: Kind
         let y: CGFloat
@@ -666,7 +667,10 @@ struct SideBar: View {
             // A folded group showing none of its tabs still has its empty
             // stack under its heading, and the gap after it.
             add("heading-\(drawn.group.id)", .heading(drawn.group), heading, after: drawn.tabs.isEmpty ? 2 * SideBar.gap : SideBar.gap)
-            for tab in drawn.tabs { add(tab.id, .tab(tab), lines(tab) * rowHeight, front: tab.id == front) }
+            let inset = groupRowInset(drawn.group) > 0
+            for tab in drawn.tabs {
+                add(tab.id, .tab(tab, inset: inset), lines(tab) * rowHeight, front: tab.id == front)
+            }
             if let colour = drawn.group.colour, let last = out.last {
                 tints.append(PreviewTint(id: drawn.group.id, colour: colour, top: top, bottom: last.y + last.height))
             }
@@ -700,9 +704,11 @@ struct SideBar: View {
             }
         case .heading(let group):
             GroupHeading(browser: browser, group: group, compact: icons)
-        case .tab(let tab):
+        case .tab(let tab, let inset):
             rowItem(tab, tabs: row.tabs, splits: row.splits, activeID: row.active,
                     interactive: false, pill: pill, close: {})
+                .padding(.leading, inset ? 14 : 0)
+                .padding(.trailing, inset ? Self.groupInset : 0)
         case .keep:
             KeepLine(clears: false) {}
         case .newTab:
@@ -1229,12 +1235,14 @@ struct SideBar: View {
 
     private func groupRows(_ group: TabGroup, members: [Tab], ghost: Tab?) -> some View {
         let memberSteps = steps(members)
+        let inset = groupRowInset(group)
         return VStack(spacing: SideBar.gap) {
             ForEach(Array(members.enumerated()), id: \.element.id) { index, tab in
                 rowItem(tab, tabs: browser.tabs, splits: browser.splits,
                         activeID: browser.activeID, interactive: true, pill: pill,
                         close: { browser.closeTab(tab) })
                     .padding(.leading, icons ? 0 : 14)
+                    .padding(.trailing, inset)
                     .modifier(Carried(index: index, steps: memberSteps, vertical: true,
                                       space: "rows", onDropTab: { source, point in drop(source, at: point) },
                                       groupDestination: { source, point in destination(source, at: point) },
@@ -1248,6 +1256,7 @@ struct SideBar: View {
             if let carried = ghost {
                 RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
                     .padding(.leading, icons ? 0 : 14)
+                    .padding(.trailing, inset)
             }
         }
         // With icons only, the group's tiles held by a thin bracket in the
@@ -1255,6 +1264,10 @@ struct SideBar: View {
         .overlay(alignment: .leading) {
             if icons && !members.isEmpty { IconGroupBracket(folded: group.collapsed).offset(x: -6) }
         }
+    }
+
+    private func groupRowInset(_ group: TabGroup) -> CGFloat {
+        !icons && Spaces.wash(group.colour, dark: colourScheme == .dark) != nil ? Self.groupInset : 0
     }
 
     // MARK: - carried between the pins and the tabs

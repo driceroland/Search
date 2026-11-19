@@ -241,6 +241,7 @@ private struct GroupHeadingShared: ViewModifier {
     let dragSpace: String?
     @Binding var dropping: Bool
     var showsColour = true
+    @State private var choosingColour = false
 
     func body(content: Content) -> some View {
         content
@@ -271,23 +272,7 @@ private struct GroupHeadingShared: ViewModifier {
                 Button("Rename Group") { browser.editingGroupID = group.id }
                 Button(group.collapsed ? "Expand Group" : "Collapse Group") { browser.toggleTabGroup(group.id) }
                 if showsColour {
-                    Menu("Colour") {
-                        Picker("Colour", selection: Binding(
-                            get: { Spaces.wash(group.colour, dark: false) == nil ? 0 : group.colour ?? 0 },
-                            set: { browser.setTabGroupColour(group.id, to: $0) }
-                        )) {
-                            ForEach(Spaces.colours.indices, id: \.self) { index in
-                                Label {
-                                    Text(Spaces.colourNames[index])
-                                } icon: {
-                                    Image(nsImage: Self.swatch(index))
-                                }
-                                .tag(index)
-                            }
-                        }
-                        .pickerStyle(.inline)
-                        .labelsHidden()
-                    }
+                    Button("Colour…") { choosingColour = true }
                 }
                 // The whole group into another space, still a group there: Arc's
                 // folders came in wherever Arc had them.
@@ -306,20 +291,13 @@ private struct GroupHeadingShared: ViewModifier {
                 Button("Ungroup Tabs") { browser.removeTabGroup(group.id) }
                 Button("Close Group") { browser.closeTabGroup(group.id) }
             }
-    }
-
-    private static func swatch(_ index: Int) -> NSImage {
-        NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
-            let dot = NSBezierPath(ovalIn: rect.insetBy(dx: 2, dy: 2))
-            if index == 0 {
-                NSColor.secondaryLabelColor.setStroke()
-                dot.lineWidth = 1
-                dot.stroke()
-            } else {
-                NSColor(Spaces.colours[index]).setFill()
-                dot.fill()
+            .popover(isPresented: $choosingColour,
+                     hangingFrom: browser.prefs.sidePosition == .right ? .leading : .trailing) {
+                let index = group.colour ?? 0
+                ColourSwatches(selected: Spaces.colours.indices.contains(index) ? index : 0) {
+                    browser.setTabGroupColour(group.id, to: $0)
+                }
+                .padding(16)
             }
-            return true
-        }
     }
 }
