@@ -10,7 +10,7 @@ import SwiftUI
 
 struct BookmarksBar: View {
     @ObservedObject var browser: Browser
-    @ObservedObject var bookmarks: Bookmarks
+    let bookmarks: Bookmarks
     /// On the window's ground, above the page's card, with the tabs down the
     /// side: the ground's colour and no line of its own, the card's edge
     /// being the line (see CardEdge).
@@ -19,6 +19,7 @@ struct BookmarksBar: View {
     static let height: CGFloat = 30
 
     var body: some View {
+        let _ = Bench.count("bar")
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
                 ForEach(bookmarks.roots) { node in
@@ -56,7 +57,14 @@ struct BookmarksBar: View {
                 withAnimation(Motion.glide) { browser.prefs.bookmarksBar = false }
             }
         }
-        .background(onFrame ? Palette.frame : Palette.ground)
+        .background {
+            ZStack {
+                onFrame ? Palette.frame : Palette.ground
+                // The tabs' wash carried on under them, or the colour
+                // stopped at the bar's edge.
+                SpaceWash(look: browser.wash)
+            }
+        }
         .overlay(alignment: .bottom) {
             if !onFrame { Rectangle().fill(Palette.hairline).frame(height: 1) }
         }

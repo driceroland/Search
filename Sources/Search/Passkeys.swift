@@ -207,7 +207,7 @@ final class Passkeys: NSObject {
         guard var waiting = conditional[key], waiting.token == token else { return }
         waiting.offered = offered
         conditional[key] = waiting
-        Passkeys.log.notice("\(offered.count, privacy: .public) offered under the field for \(waiting.rp, privacy: .public)")
+        Passkeys.log.notice("\(offered.count, privacy: .public) offered under the field for \(waiting.rp, privacy: .private)")
         Passkeys.changed(waiting.web)
     }
 
@@ -224,7 +224,7 @@ final class Passkeys: NSObject {
         Passkeys.changed(web)
         Passkeys.asked += 1
         Passkeys.last = ["kind": "get", "rp": waiting.rp, "origin": waiting.origin, "requests": 1, "conditional": true]
-        Passkeys.log.notice("picked under the field for \(waiting.rp, privacy: .public)")
+        Passkeys.log.notice("picked under the field for \(waiting.rp, privacy: .private)")
         if Store.testing {
             var reply = Passkeys.rehearsal("get", rp: waiting.rp, origin: waiting.origin, challenge: waiting.clientData.challenge)
             if waiting.body["prf"] is [String: Any] {
@@ -286,6 +286,12 @@ final class Passkeys: NSObject {
         guard caller.mainFrame || (sameSite && page?.scheme?.lowercased() == scheme) else {
             return refuse(answer, "NotAllowedError", "Passkeys can't be asked for from another site's frame.")
         }
+        // The page's own request comes from the page the tab has open. The
+        // frame and its origin are what the page's process says they are;
+        // the committed address is this side's own.
+        guard !caller.mainFrame || Passkeys.isPage(scheme: scheme, host: host, port: caller.origin.port, of: page) else {
+            return refuse(answer, "NotAllowedError", "The operation either timed out or was not allowed.")
+        }
         let named = kind == "create" ? (body["rp"] as? [String: Any])?["id"] as? String : body["rpId"] as? String
         let rp = (named.flatMap { $0.isEmpty ? nil : $0 } ?? host).lowercased()
         guard Passkeys.fits(rp, host) else {
@@ -337,7 +343,7 @@ final class Passkeys: NSObject {
         Passkeys.asked += 1
         Passkeys.last = ["kind": kind, "rp": rp, "origin": origin, "requests": requests.count,
                          "topOrigin": clientData.topOrigin ?? "", "crossOrigin": clientData.crossOrigin == .crossOrigin]
-        Passkeys.log.notice("\(kind, privacy: .public) for \(rp, privacy: .public) from \(origin, privacy: .public)")
+        Passkeys.log.notice("\(kind, privacy: .public) for \(rp, privacy: .private) from \(origin, privacy: .private)")
         // A test run never shows the sheet: it would open on the screen of
         // whoever is working beside it. It gets a credential made up on the
         // spot instead, so the checks above and the page's side are still
@@ -593,6 +599,16 @@ final class Passkeys: NSObject {
         let address = host.contains(":") || host.allSatisfy { $0.isNumber || $0 == "." }
         guard !address, host.hasSuffix("." + rp), rp.contains("."), let suffix = publicSuffix else { return false }
         return !suffix(rp as CFString)
+    }
+
+    /// Whether an origin is the page's own: the same scheme, host and port,
+    /// a port left out being the scheme's own (an origin's 0, a URL's nil).
+    nonisolated static func isPage(scheme: String, host: String, port: Int, of page: URL?) -> Bool {
+        guard let page, let pageScheme = page.scheme?.lowercased(), let pageHost = page.host()?.lowercased() else { return false }
+        let bare = { (name: String) in name.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]")) }
+        let standard = pageScheme == "https" ? 443 : pageScheme == "http" ? 80 : 0
+        return pageScheme == scheme.lowercased() && bare(pageHost) == bare(host)
+            && (page.port ?? standard) == (port == 0 ? standard : port)
     }
 
     /// The address of the page a view shows, once it is that page's: a

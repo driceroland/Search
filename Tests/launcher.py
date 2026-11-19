@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""The address field from any app (Launcher.swift), in a hidden probe.
+
+Build first (`./build.sh`), then `python3 Tests/launcher.py`. It runs in a
+world of its own (launcher-tests), started hidden, and everything is removed
+afterwards. On a run the bench drives, the key is never asked of macOS and
+the panel never shown: the bench works the launcher's model ("fire" is the
+key pressed). What only shows on screen — the panel over another app, the
+key from there, the click outside — is checked by hand.
+"""
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import split_view as sv  # noqa: E402
+
+sv.use("launcher-tests")
+t = sv.T()
+
+
+def la(action="state", **fields):
+    return sv.cmd({"do": "launcher", "action": action, **fields})
+
+
+try:
+    # Address-bar commands on, for the command on top at the end.
+    sv.setup(commandbar=True)
+    sv.launch()
+
+    s = la()
+    t.ok("off unless turned on, with no key", s["on"] is False and s["key"] == "" and s["wants"] is False, s)
+    t.ok("off, the key raises nothing", la("fire")["up"] is False)
+
+    la("on", on=True)
+    s = la()
+    t.ok("on with no key chosen, no key is taken", s["wants"] is False, s)
+    s = la("key", key="suggested")
+    t.ok("⇧⌘Space chosen: the key is wanted while Search is behind", s["key"] == "⇧⌘Space" and s["wants"] is True, s)
+    t.ok("a run the bench drives never asks macOS for it", s["registered"] is False, s)
+
+    # An ordinary page, then a private one in front.
+    plain = sv.page("launcher-plain")
+    sv.sp("private")
+    time.sleep(0.3)
+    sv.sp("open", url=f"{sv.BASE}/launcher-secret")
+    time.sleep(0.7)
+    s = la()
+    secret = [x for x in s["tabs"] if x["address"].endswith("/launcher-secret")]
+    t.ok("(the private page is in front)", secret and secret[0]["private"] and s["active"] == secret[0]["id"], s["tabs"])
+
+    s = la("fire")
+    t.ok("the key raises the field, empty", s["up"] is True and s["typed"] == "" and s["offers"] == [], s)
+    s = la("type", text=f"{sv.BASE}/launcher-new")
+    t.ok("the window's own field stays down", s["editing"] is False, s)
+    count = len(s["tabs"])
+    s = la("submit")
+    new = [x for x in s["tabs"] if x["address"].endswith("/launcher-new")]
+    t.ok("Return opens what was typed in a new tab, in front", s["up"] is False and len(new) == 1
+         and s["active"] == new[0]["id"] and len(s["tabs"]) == count + 1, s)
+    t.ok("…an ordinary tab, though a private one was in front", bool(new) and new[0]["private"] is False, new)
+
+    la("fire")
+    s = la("type", text="launcher-")
+    opened = [o for o in s["offers"] if o["open"]]
+    t.ok("a page already open is offered", any(o["url"].endswith("/launcher-plain") for o in opened), s["offers"])
+    t.ok("a private tab never is", not any("launcher-secret" in o["url"] for o in s["offers"]), s["offers"])
+    pick = next((i for i, o in enumerate(s["offers"]) if o["open"] and o["url"].endswith("/launcher-plain")), None)
+    if pick is not None:
+        la("pick", index=pick)
+    count = len(s["tabs"])
+    s = la("submit")
+    t.ok("Return on it goes to that tab", s["up"] is False and s["active"] == plain, s)
+    t.ok("…with no tab opened for it", len(s["tabs"]) == count, (count, len(s["tabs"])))
+
+    # Typed out, nothing picked: the tab that has it, never a private one.
+    la("fire")
+    la("type", text=f"{sv.BASE}/launcher-secret")
+    s = la("submit")
+    again = [x for x in s["tabs"] if x["address"].endswith("/launcher-secret")]
+    front = next((x for x in again if x["id"] == s["active"]), {})
+    t.ok("an address open only in a private tab gets an ordinary tab of its own",
+         len(s["tabs"]) == count + 1 and len(again) == 2 and front.get("private") is False, s["tabs"])
+    count = len(s["tabs"])
+    la("fire")
+    la("type", text=f"{sv.BASE}/launcher-plain")
+    s = la("submit")
+    t.ok("an address already open, typed out, goes to its tab",
+         s["up"] is False and s["active"] == plain and len(s["tabs"]) == count, s)
+
+    la("fire")
+    la("type", text="kept words")
+    s = la("escape")
+    t.ok("Escape puts it away, nothing opened", s["up"] is False and len(s["tabs"]) == count, s)
+    s = la("fire")
+    t.ok("…and the words come back with it next time", s["typed"] == "kept words", s)
+    t.ok("the key again puts it away", la("fire")["up"] is False)
+
+    la("fire")
+    s = la("on", on=False)
+    t.ok("turned off while up, it goes and wants no key", s["up"] is False and s["wants"] is False, s)
+    la("on", on=True)
+    s = la("key", key="none")
+    t.ok("the key taken away, none is wanted", s["key"] == "" and s["wants"] is False, s)
+
+    # A command typed whole stays over the open pages, where Return runs it.
+    la("key", key="suggested")
+    sv.page("launcher-history")
+    la("fire")
+    s = la("type", text="history")
+    kinds = [o["kind"] for o in s["offers"]]
+    t.ok("a command typed whole stays on top of the open pages",
+         bool(kinds) and kinds[0].startswith("command") and "open" in kinds[1:], s["offers"])
+    s = la("submit")
+    front = next((x for x in s["tabs"] if x["id"] == s["active"]), {})
+    t.ok("…and Return runs it rather than searching the web",
+         s["up"] is False and not front.get("address", "").startswith("http"), front)
+
+    # Open in a small window (Arc's ⌥⌘N, Little Arc): off unless asked for.
+    t.ok("small window: off unless asked for", la()["little"] is False)
+    la("little", on=True)
+    la("fire")
+    la("type", text=f"{sv.BASE}/launcher-little")
+    before = len(la()["tabs"])
+    s = la("submit")
+    t.ok("small window on: Return opens the page in a small window",
+         s["up"] is False and f"{sv.BASE}/launcher-little" in s["littles"], s.get("littles"))
+    t.ok("…and no new tab in Search's window", len(s["tabs"]) == before, s["tabs"])
+    sv.cmd({"do": "little", "what": "close"})
+    la("little", on=False)
+finally:
+    t.done()
+    sv.finish()
+sys.exit(1 if t.failed else 0)

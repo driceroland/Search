@@ -135,8 +135,20 @@ enum Reader {
         }
         if (letters < 400) return 0;
         // A rail of related links has plenty of text and nothing to read.
-        var links = el.querySelectorAll('a').length;
-        return letters / (1 + links * 14);
+        // What tells such a rail from an article is not how many links it
+        // holds but how much of it they are: a rail is almost all link, an
+        // article that cites its sources a tenth of itself at most. Counting
+        // them punished every article with citations, by 14 apiece, until a
+        // stray box of four link-free paragraphs outscored the article it sat
+        // beside (#757). The ratio is taken from textContent, which asks for
+        // no layout, and both halves of it are measured the same way.
+        var whole = (el.textContent || '').length;
+        if (!whole) return 0;
+        var inside = 0, links = el.querySelectorAll('a');
+        for (var j = 0; j < links.length; j++) {
+          inside += (links[j].textContent || '').length;
+        }
+        return letters * (1 - Math.min(inside / whole, 1));
       }
 
       function best() {
@@ -145,8 +157,23 @@ enum Reader {
         );
         var top = null, mark = 0;
         for (var i = 0; i < candidates.length; i++) {
-          var score = prose(candidates[i]);
-          if (score > mark) { mark = score; top = candidates[i]; }
+          var el = candidates[i], score = prose(el);
+          if (!score) continue;
+          if (!top) { top = el; mark = score; continue; }
+          // Between a box and one it holds, the smaller is taken unless the
+          // larger is clearly better, not merely bigger. The box around an
+          // article and its comments scores a little above the article, a
+          // dozen short comments being text too, and reading mode would
+          // bring the comments in. The two sit within a sixth of each other
+          // there; a quarter is the margin, and any box further ahead than
+          // that is a better one rather than a wider one.
+          if (top.contains(el)) {
+            if (score * 1.25 > mark) { top = el; mark = score; }
+          } else if (el.contains(top)) {
+            if (score > mark * 1.25) { top = el; mark = score; }
+          } else if (score > mark) {
+            top = el; mark = score;
+          }
         }
         return top;
       }

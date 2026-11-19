@@ -41,6 +41,13 @@ final class TabSwitcher: ObservableObject {
     /// The tabs left, latest first, in every space: going back to a space
     /// finds its order where it was. Kept only while the switcher is on.
     private var recentIDs: [Tab.ID] = []
+    /// The grid's order: the tabs left and the links opened behind the page,
+    /// latest first: of a dozen links opened from one page, the newest keep
+    /// their cards and the oldest go out. A link never on screen was never
+    /// left, and fell after every tab left, past the tenth card.
+    /// Apart from `recentIDs` so that `lastLeft`, which closing a tab and a
+    /// pin's number go back to, still names only tabs you were on.
+    private var usedIDs: [Tab.ID] = []
     @Published private(set) var candidates: [Tab.ID] = []
     /// The small windows (Little.swift), the one in front first: out of the
     /// grid, beside it, as a moon is beside its planet. They aren't the
@@ -115,6 +122,9 @@ final class TabSwitcher: ObservableObject {
     private var ring: [Tab.ID] { moonsLead ? moons + candidates : candidates + moons }
 
     private var previewRequests: [Tab.ID: UUID] = [:]
+    /// Tabs just left, to be pictured once the switching stops (see `left`).
+    private var leftBehind: [Tab.ID: Tab] = [:]
+    private var picturing: DispatchWorkItem?
     private var reveal: DispatchWorkItem?
     private var previewRequested = false
     private var generation = UUID()
@@ -130,8 +140,24 @@ final class TabSwitcher: ObservableObject {
     /// Tabs that are gone fall out, and only the ten latest keep a picture.
     func left(_ tab: Tab, alive: Set<Tab.ID>) {
         recentIDs = [tab.id] + recentIDs.filter { $0 != tab.id && alive.contains($0) }
+        usedIDs = [tab.id] + usedIDs.filter { $0 != tab.id && alive.contains($0) }
         prune { kept($0) }
-        if tab.isWeb { requestPreview(of: tab, gesture: nil) }
+        guard tab.isWeb else { return }
+        // Pictured a moment after the switching stops, rather than at it:
+        // the page left had to draw itself for the picture in the very frame
+        // the page arriving needed for its first, and ⌘1–⌘9 hopped along a
+        // row asked for one picture a hop.
+        leftBehind[tab.id] = tab
+        picturing?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let tabs = leftBehind.values
+            leftBehind = [:]
+            picturing = nil
+            for tab in tabs where tab.isWeb { requestPreview(of: tab, gesture: nil) }
+        }
+        picturing = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     /// The first ⌃Tab of a gesture takes the space's tabs in that order, the
@@ -139,10 +165,10 @@ final class TabSwitcher: ObservableObject {
     /// before this one: a quick press goes back to the last tab, and the
     /// next comes back again. ⇧ starts from the far end, which is the last
     /// moon when there are any: the walk is one ring, grid then moons.
-    func step(row: [Tab.ID], current: Tab.ID, backwards: Bool, moons: [Tab.ID] = []) {
+    func step(row: [Tab.ID], current: Tab.ID, backwards: Bool, moons: [Tab.ID] = [], behindFirst: Bool = false) {
         guard active else {
             guard row.contains(current) else { return }
-            let planet = ordered(row: row, current: current)
+            let planet = ordered(row: row, current: current, behindFirst: behindFirst)
             begin(home: current, planet: planet, moons: moons.filter { !planet.contains($0) },
                   moonsLead: false, backwards: backwards)
             return
@@ -165,17 +191,28 @@ final class TabSwitcher: ObservableObject {
         walk(backwards: backwards)
     }
 
-    /// A row's tabs as the grid shows them: the one on screen, the ones left
-    /// latest first, then the rest in the row's order; ten at most.
-    func ordered(row: [Tab.ID], current: Tab.ID?) -> [Tab.ID] {
+    /// A row's tabs as the grid shows them: the one on screen, the tabs left
+    /// and the links opened behind, latest first, then the rest in the row's
+    /// order; ten at most. Without `behindFirst` (Settings › Tabs) the last
+    /// tab left keeps the second card, so a quick ⌃Tab still goes back to it.
+    func ordered(row: [Tab.ID], current: Tab.ID?, behindFirst: Bool) -> [Tab.ID] {
         let valid = Set(row)
+        let back = behindFirst ? [] : recentIDs.first { $0 != current && valid.contains($0) }.map { [$0] } ?? []
         var seen: Set<Tab.ID> = []
-        return Array(([current].compactMap { $0 } + recentIDs + row)
+        return Array(([current].compactMap { $0 } + back + usedIDs + row)
             .filter { valid.contains($0) && seen.insert($0).inserted }
             .prefix(10))
     }
 
+    /// A link just opened behind the page: the latest in the grid.
+    func openedBehind(_ id: Tab.ID) {
+        usedIDs = [id] + usedIDs.filter { $0 != id }
+    }
+
     private func begin(home: Tab.ID, planet: [Tab.ID], moons: [Tab.ID], moonsLead: Bool, backwards: Bool) {
+        // The tab just left, still waiting for its picture: taken now, for
+        // the card it is about to have.
+        if let picturing { picturing.perform(); picturing.cancel() }
         candidates = planet
         self.moons = Array(moons.prefix(Self.maxMoons))
         self.moonsLead = moonsLead
@@ -285,6 +322,7 @@ final class TabSwitcher: ObservableObject {
     func reset() {
         cancel()
         recentIDs = []
+        usedIDs = []
         previewRequests = [:]
         if !previews.isEmpty { previews = [:] }
     }
@@ -301,6 +339,14 @@ final class TabSwitcher: ObservableObject {
         return cached.image
     }
 
+    /// A tab's picture, unless it holds no page and kept no picture to wake
+    /// with: a pin put down (or a tab brought back) draws its mark, not the
+    /// page it showed before (#1050).
+    func preview(for tab: Tab) -> NSImage? {
+        guard !tab.asleep || tab.keptPicture != nil else { return nil }
+        return preview(for: tab.id, address: tab.address)
+    }
+
     func cachePreview(_ image: NSImage, for id: Tab.ID, address: URL) {
         let shown = ring.contains(id) || candidates.contains { partners[$0] == id }
         guard kept(id) || (visible && shown) else { return }
@@ -315,11 +361,11 @@ final class TabSwitcher: ObservableObject {
         let firsts = [selectedID].compactMap { $0 } + ring.filter { $0 != selectedID }
         let orderedIDs = firsts.flatMap { id in [id] + [partners[id]].compactMap { $0 } }
         let ordered = orderedIDs.compactMap(tab)
-            .filter { $0.id == current || preview(for: $0.id, address: $0.address) == nil }
+            .filter { $0.id == current || preview(for: $0) == nil }
         for (index, tab) in ordered.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.04) { [weak self, weak tab] in
                 guard let self, let tab, self.generation == token, self.visible else { return }
-                guard tab.id == current || self.preview(for: tab.id, address: tab.address) == nil else { return }
+                guard tab.id == current || self.preview(for: tab) == nil else { return }
                 self.requestPreview(of: tab, gesture: token)
             }
         }
@@ -530,7 +576,7 @@ struct TabSwitcherOverlay: View {
     private func picture(_ tab: Tab, width: CGFloat, height: CGFloat, mark: CGFloat = 26) -> some View {
         ZStack {
             Palette.hover
-            if let preview = switcher.preview(for: tab.id, address: tab.address) {
+            if let preview = switcher.preview(for: tab) {
                 Image(nsImage: preview)
                     .resizable()
                     .scaledToFill()

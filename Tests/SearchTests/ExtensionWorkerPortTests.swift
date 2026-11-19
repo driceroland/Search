@@ -190,6 +190,54 @@ final class ExtensionWorkerPortTests: XCTestCase {
         XCTAssertEqual(other.count, 1)
     }
 
+    func testWorkerSocketClosedWhileConnectingNeverOpens() throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("ExtensionWorkerRecovery/shim-harness.js")
+        let harness = try String(contentsOf: fixture, encoding: .utf8)
+        let js = try XCTUnwrap(JSContext())
+        js.evaluateScript("const console = { log() {}, error() {} };\n" + harness)
+        // JavaScriptCore alone has none of a worker's DOM: just enough of it
+        // for the shim's WebSocket, with this context standing in as the worker.
+        js.evaluateScript("""
+        const fixture = recoveryFixture(false);
+        Object.assign(globalThis, fixture.root);
+        window = globalThis; top = globalThis;
+        class ServiceWorkerGlobalScope { static [Symbol.hasInstance](x) { return x === globalThis; } }
+        class Event { constructor(type) { this.type = type; } }
+        class MessageEvent extends Event { constructor(type, init) { super(type); Object.assign(this, init); } }
+        class EventTarget { dispatchEvent() { return true; } }
+        class DOMException extends Error {}
+        globalThis.WebSocket = function () {};
+        globalThis.URL = class { constructor(href) { this.href = href; this.protocol = "wss:"; this.hash = ""; this.origin = "wss://socket.test"; } };
+        const sockets = [];
+        chrome.runtime.connectNative = (name) => { const port = fixture.makePort(); sockets.push(port); return port; };
+        """)
+        js.evaluateScript(ExtensionShims.script.replacingOccurrences(of: "__SEARCH_WORKER_GENERATION__", with: "0"))
+        XCTAssertNil(js.exception?.toString())
+        js.evaluateScript("""
+        globalThis.seen = [];
+        const watch = (ws, name) => { ws.onopen = () => seen.push(name + ":open"); ws.onclose = (e) => seen.push(name + ":close " + e.code); };
+        const kept = new WebSocket("wss://socket.test/"), closed = new WebSocket("wss://socket.test/");
+        watch(kept, "kept"); watch(closed, "closed");
+        closed.close();
+        """)
+        drain(js)
+        // The browser opens both: the close came before the hello, or was lost.
+        js.evaluateScript("""
+        const [keptPort, closedPort] = sockets.filter((port) => port.posts.some((m) => m && m.open));
+        keptPort.onMessage.fire({ opened: "" }); closedPort.onMessage.fire({ opened: "" });
+        globalThis.states = [kept.readyState, closed.readyState];
+        globalThis.closes = JSON.stringify(closedPort.posts.filter((m) => "close" in m));
+        closedPort.onMessage.fire({ closed: 1006, reason: "", clean: false });
+        """)
+        drain(js)
+        XCTAssertNil(js.exception?.toString())
+        XCTAssertEqual(js.evaluateScript("JSON.stringify(states)")?.toString(), "[1,2]")
+        XCTAssertEqual(js.evaluateScript("closes")?.toString(), #"[{"close":1000,"reason":""},{"close":1000,"reason":""}]"#, "Said again once it opened")
+        XCTAssertEqual(js.evaluateScript("JSON.stringify(seen)")?.toString(), #"["kept:open","closed:close 1006"]"#)
+        XCTAssertEqual(js.evaluateScript("closed.readyState")?.toInt32(), 3)
+    }
+
     @MainActor
     func testLiveFixtureParsesWithoutWebKitErrors() async throws {
         let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent()

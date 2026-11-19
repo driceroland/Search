@@ -27,6 +27,11 @@ import WebKit
 // Half an hour is Normal. Settings › Tabs › How soon tabs sleep makes it
 // two hours (Later) or ten minutes (Sooner).
 //
+// In Low Power Mode, with Settings › General › Save power in Low Power Mode
+// turned on, the wait is never longer than Sooner's ten minutes: a page asleep
+// runs no timers and wakes no processor. A Mac that is only hot keeps the pace
+// chosen. The look reads the wait each time, so it follows the switch at once.
+//
 // When macOS says memory is short, the wait shrinks, whatever was chosen: to
 // five minutes on a warning, to nothing when it is critical.
 
@@ -74,10 +79,13 @@ enum SleepPace: String, CaseIterable, Identifiable {
 
 extension Browser {
     /// How long a tab has to go without being looked at: the chosen pace's
-    /// wait, or `sleep.after` in seconds — for the bench and the measurements.
+    /// wait, no longer than Sooner's in Low Power Mode when the switch for it
+    /// is on, or `sleep.after` in seconds, for the bench and the measurements.
     static var sleepAfter: TimeInterval {
         let set = Store.settings.double(forKey: "sleep.after")
-        return set > 0 ? set : SleepPace.chosen.wait
+        if set > 0 { return set }
+        let wait = SleepPace.chosen.wait
+        return Motion.savingPower ? min(wait, SleepPace.sooner.wait) : wait
     }
 
     /// Started once, at launch. The same look closes the tabs left alone
@@ -115,7 +123,26 @@ extension Browser {
         let idle = (tabs + parkedTabs)
             .filter { now.timeIntervalSince($0.touched) >= wait && awake(because: $0) == nil }
             .sorted { $0.touched < $1.touched }
-        for tab in idle { self.sleep(tab) }
+        // One after another, not all at once: each is pictured at the screen's
+        // pixels first, and under memory pressure every idle tab pictured
+        // together asked for most memory in the very moment there was least.
+        // A page that never answers holds up the rest for a moment at most.
+        var rest = idle[...]
+        func next() {
+            guard let tab = rest.popFirst() else { return }
+            // Looked at since the list was made, while the ones before it
+            // slept: not idle any more.
+            guard Date().timeIntervalSince(tab.touched) >= wait else { return next() }
+            var moved = false
+            let onward = {
+                guard !moved else { return }
+                moved = true
+                next()
+            }
+            sleep(tab) { _ in onward() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { onward() }
+        }
+        next()
     }
 
     /// The last window closed with the app running (Browsers.closing):
@@ -222,7 +249,7 @@ extension Browser {
             return
         }
         tab.unsaved { [weak self, weak tab] typed in
-            guard let self, let tab else { return }
+            guard let self, let tab else { done?("gone"); return }
             if typed {
                 done?("holding something typed")
                 return
@@ -232,7 +259,7 @@ extension Browser {
                 return
             }
             tab.snapshot { [weak self, weak tab] picture in
-                guard let self, let tab else { return }
+                guard let self, let tab else { done?("gone"); return }
                 if let reason = self.awake(because: tab) {
                     done?(reason)
                     return

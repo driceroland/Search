@@ -56,7 +56,9 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
         // pictures, and every one of them a link to open in a new tab. Its
         // Copy Image and Download Image are told which picture they are for,
         // to be this app's (PageView), or that there is none.
-        if (src && !linked(e)) {
+        // An extension with right-click items keeps WebKit's menu too: its
+        // items for a picture are only ever in WebKit's (see keepMenu).
+        if (src && !linked(e) && !window.__officeImagesKeep) {
           e.preventDefault();
           relay.postMessage({ src: src });
         } else {
@@ -75,6 +77,11 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
       }
     })();
     """
+
+    /// Set ahead of `watch` while an extension may put items in a page's
+    /// right-click menu (contextMenus): WebKit adds them to its own menu
+    /// only, and this app's picture menu would leave them out.
+    static let keepMenu = "window.__officeImagesKeep = true;"
 
     func userContentController(
         _ controller: WKUserContentController,
@@ -113,15 +120,21 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
 extension Browser {
     /// For Copy Image: no cookies at all — not kept, not sent, not shared
     /// between a normal tab's copy and a private one's — nothing cached.
-    static let fetcher: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpCookieStorage = nil
-        configuration.httpShouldSetCookies = false
-        configuration.urlCache = nil
-        configuration.urlCredentialStorage = nil
-        configuration.timeoutIntervalForRequest = 30
-        return URLSession(configuration: configuration)
-    }()
+    /// Kept by Proxy.swift rather than here: a session holds the proxy it
+    /// was born with, so one made once would copy pictures directly for the
+    /// rest of the run after a proxy was turned on.
+    static var fetcher: URLSession {
+        ProxyNetwork.kept("copy-image") {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.httpCookieStorage = nil
+            configuration.httpShouldSetCookies = false
+            configuration.urlCache = nil
+            configuration.urlCredentialStorage = nil
+            configuration.timeoutIntervalForRequest = 30
+            ProxyNetwork.stamp(configuration)
+            return URLSession(configuration: configuration)
+        }
+    }
 
     /// The most a copied picture may weigh, and the most pixels it may
     /// unpack to: a small file can claim to be enormous, and it is this

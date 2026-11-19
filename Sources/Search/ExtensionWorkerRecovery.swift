@@ -118,6 +118,9 @@ final class ExtensionWorkerRecovery {
               backgrounds[id]?.view !== view else { return }
         let background = Background(view)
         backgrounds[id] = background
+        // The worker before this one is gone, and its hosts with it.
+        ExtensionNative.stopWorkerHosts(of: id)
+        ExtensionWatch.workerGone(of: id)
         createdWorker(id, lifetime: background.lifetime)
     }
 
@@ -143,10 +146,15 @@ final class ExtensionWorkerRecovery {
         let id: String
         unowned let owner: ExtensionWorkerRecovery
         let world: WKContentWorld
+        /// Beside it in the same world, with the same life: a content
+        /// script's own script that a page's policy refused (see
+        /// ExtensionPageScript).
+        let pageScript: ExtensionPageScript.Handler
 
         init(id: String, owner: ExtensionWorkerRecovery) {
             self.id = id
             self.owner = owner
+            pageScript = ExtensionPageScript.Handler(id: id)
             // WebKit uses this shared named world for isolated scripts.
             // Retained through recovery; no website main-world handler is added.
             world = .world(name: "WebExtension-" + id)
@@ -155,10 +163,12 @@ final class ExtensionWorkerRecovery {
 
         func attach(_ controller: WKUserContentController) {
             controller.addScriptMessageHandler(self, contentWorld: world, name: "searchWorkerRecovery")
+            pageScript.attach(controller)
         }
 
         func detach(_ controller: WKUserContentController) {
             controller.removeScriptMessageHandler(forName: "searchWorkerRecovery", contentWorld: world)
+            pageScript.detach(controller)
         }
 
         func userContentController(_ userContentController: WKUserContentController,

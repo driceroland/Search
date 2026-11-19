@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import WebKit
 import XCTest
 @testable import Search
@@ -35,6 +36,71 @@ final class ShortcutTests: XCTestCase {
         store.reset("spaces.1")
         XCTAssertEqual(store.customCommand(on: original)?.id, "spaces.1")
         XCTAssertFalse(store.anyChanged)
+    }
+
+    /// ⌘1–⌘9 switch spaces and ⌃1–⌃9 pick tabs once the switch is on, as
+    /// in Arc — only while spaces are on; a space's own key stays yours.
+    func testSpacesOnCommandSwapsTheNumberKeys() {
+        let settings = Store.settings
+        let saved = (settings.object(forKey: "spaces"), settings.object(forKey: Preferences.spacesOnCommandKey))
+        defer {
+            settings.set(saved.0, forKey: "spaces")
+            settings.set(saved.1, forKey: Preferences.spacesOnCommandKey)
+        }
+        let command3 = KeyCombo("3")
+        let control3 = KeyCombo("3", command: false, control: true)
+
+        // Off: as always.
+        settings.set(true, forKey: "spaces")
+        settings.set(false, forKey: Preferences.spacesOnCommandKey)
+        XCTAssertFalse(KeyCombo.spacesOnCommand)
+        XCTAssertTrue(KeyCombo.isReserved(command3))
+        XCTAssertFalse(KeyCombo.isReserved(control3))
+        XCTAssertEqual(ShortcutStore().customCommand(on: control3)?.id, "spaces.3")
+        XCTAssertEqual(KeyCombo.tabNumbers, "⌘1–⌘9")
+        XCTAssertTrue(KeyCombo.holdsTabNumbers(.command))
+        XCTAssertFalse(KeyCombo.holdsTabNumbers(.control))
+
+        // The switch on, spaces off: nothing changes.
+        settings.set(false, forKey: "spaces")
+        settings.set(true, forKey: Preferences.spacesOnCommandKey)
+        XCTAssertFalse(KeyCombo.spacesOnCommand)
+        XCTAssertEqual(ShortcutStore().key(for: "spaces.3"), control3)
+
+        // Both on: swapped.
+        settings.set(true, forKey: "spaces")
+        XCTAssertTrue(KeyCombo.spacesOnCommand)
+        let store = ShortcutStore()
+        XCTAssertEqual(store.key(for: "spaces.3"), command3)
+        XCTAssertEqual(store.customCommand(on: command3)?.id, "spaces.3")
+        XCTAssertNil(store.customCommand(on: control3))
+        XCTAssertTrue(KeyCombo.isReserved(control3))
+        XCTAssertFalse(KeyCombo.isReserved(command3))
+        XCTAssertTrue(control3.isTabNumber)
+        XCTAssertFalse(command3.isTabNumber)
+        XCTAssertEqual(KeyCombo.tabNumber(9), KeyCombo("9", command: false, control: true))
+        XCTAssertEqual(KeyCombo.tabNumbers, "⌃1–⌃9")
+        XCTAssertTrue(KeyCombo.holdsTabNumbers([.control, .shift]))
+        XCTAssertFalse(KeyCombo.holdsTabNumbers(.command))
+        XCTAssertFalse(store.anyChanged, "a swapped default is not a change of yours")
+
+        // Words written for the usual keys say where they are now.
+        XCTAssertEqual(store.relabel("Spaces, switched with ⌃1–⌃9"), "Spaces, switched with ⌘1–⌘9")
+        XCTAssertEqual(store.relabel("Which tab each ⌘1–9 selects"), "Which tab each ⌃1–9 selects")
+
+        // A space's key you moved stays moved, and the default comes back ⌘N.
+        let option3 = KeyCombo("3", option: true)
+        store.assign(option3, to: "spaces.3")
+        XCTAssertEqual(ShortcutStore().key(for: "spaces.3"), option3)
+        XCTAssertEqual(store.relabel("⌃3"), "⌥⌘3")
+        store.reset("spaces.3")
+        XCTAssertEqual(store.key(for: "spaces.3"), command3)
+        XCTAssertFalse(store.anyChanged)
+
+        // Off again: back to ⌃N, with nothing kept.
+        settings.set(false, forKey: Preferences.spacesOnCommandKey)
+        XCTAssertEqual(ShortcutStore().key(for: "spaces.3"), control3)
+        XCTAssertEqual(store.relabel("⌃1–⌃9"), "⌃1–⌃9")
     }
 
     /// ⌃Tab's switcher on a key of its own, as Arc allows: ⇧ walks back,
@@ -98,6 +164,91 @@ final class ShortcutTests: XCTestCase {
             modifierFlags: [.control], timestamp: 0, windowNumber: 0, context: nil,
             characters: "&", charactersIgnoringModifiers: "&", isARepeat: false, keyCode: 18))
         XCTAssertEqual(KeyCombo(event: event), KeyCombo("1", command: false, control: true))
+    }
+
+    func testCommandArrowsMoveTheCaret() {
+        XCTAssertTrue(KeyCombo("left").movesCaret)
+        XCTAssertTrue(KeyCombo("right", shift: true).movesCaret)
+        XCTAssertTrue(KeyCombo("up").movesCaret)
+        XCTAssertTrue(KeyCombo("down", shift: true).movesCaret)
+        XCTAssertTrue(KeyCombo("left", command: false, option: true).movesCaret)
+        XCTAssertTrue(KeyCombo("down", command: false, shift: true, option: true).movesCaret)
+        XCTAssertFalse(KeyCombo("left", control: true).movesCaret)
+        XCTAssertFalse(KeyCombo("left", option: true).movesCaret)
+        XCTAssertFalse(KeyCombo("[").movesCaret)
+        XCTAssertFalse(KeyCombo("t").movesCaret)
+        XCTAssertFalse(KeyCombo("delete").movesCaret)
+    }
+
+    /// Back and Forward set to ⌘← and ⌘→ stay out of a text field. Outside
+    /// one they still navigate. The event is handed on, so the field — not
+    /// the command — receives it.
+    func testReboundArrowsYieldWhileTyping() async throws {
+        _ = NSApplication.shared
+        ShortcutStore.shared.resetAll()
+        let browser = Browser(record: WindowRecord())
+        let tab = try XCTUnwrap(browser.active)
+        tab.show(InternalPage(.history))
+        tab.show(InternalPage(.bookmarks))
+        XCTAssertEqual(tab.page?.kind, .bookmarks)
+        XCTAssertTrue(tab.canGoBack)
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 900, height: 600),
+                              styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: ContentView(browser: browser))
+        window.orderBack(nil)
+        defer {
+            ShortcutStore.shared.resetAll()
+            ContentView.forget(browser)
+            window.contentView = nil
+            window.close()
+            browser.closeAll()
+        }
+        var hook: ((NSEvent) -> NSEvent?)?
+        for _ in 0..<50 {
+            hook = ContentView.keyHooks[ObjectIdentifier(browser)]
+            if hook != nil { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let take = try XCTUnwrap(hook)
+
+        ShortcutStore.shared.assign(KeyCombo("left"), to: "tabs.back")
+        ShortcutStore.shared.assign(KeyCombo("right"), to: "tabs.forward")
+
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        text.string = "hello"
+        window.contentView?.addSubview(text)
+        XCTAssertTrue(window.makeFirstResponder(text))
+
+        let inField = try arrow(123, in: window)
+        XCTAssertTrue(take(inField) === inField, "⌘← is the field's while it is editing")
+        XCTAssertEqual(tab.page?.kind, .bookmarks)
+        let forwardInField = try arrow(124, in: window)
+        XCTAssertTrue(take(forwardInField) === forwardInField)
+        XCTAssertEqual(tab.page?.kind, .bookmarks)
+
+        tab.typing = true
+        XCTAssertTrue(window.makeFirstResponder(window.contentView))
+        let onPage = try arrow(123, in: window)
+        XCTAssertTrue(take(onPage) === onPage, "A page's own field keeps ⌘← too")
+        XCTAssertEqual(tab.page?.kind, .bookmarks)
+
+        tab.typing = false
+        XCTAssertNil(take(try arrow(123, in: window)))
+        XCTAssertEqual(tab.page?.kind, .history)
+        tab.typing = true
+        let stay = try arrow(124, in: window)
+        XCTAssertTrue(take(stay) === stay, "⌘→ stays put while typing")
+        XCTAssertEqual(tab.page?.kind, .history)
+        tab.typing = false
+        XCTAssertNil(take(try arrow(124, in: window)))
+        XCTAssertEqual(tab.page?.kind, .bookmarks)
+    }
+
+    private func arrow(_ code: UInt16, in window: NSWindow) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+            characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code))
     }
 
     func testPeekChoicePersistsAndInvalidValueKeepsDefault() {

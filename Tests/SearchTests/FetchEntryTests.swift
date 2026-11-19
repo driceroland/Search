@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import WebKit
 import XCTest
@@ -64,6 +65,28 @@ final class FetchEntryTests: XCTestCase {
         XCTAssertFalse(entry.canResume)
         XCTAssertTrue(entry.canRetry)
         XCTAssertTrue(try XCTUnwrap(entry.errorDescription).contains("doesn't let this download pause"))
+    }
+
+    func testACancelInFlightRedrawsTheRow() {
+        let entry = FetchEntry(name: "archive.zip", request: nil, webView: nil)
+        _ = entry.preparingToStop(.pause)
+        XCTAssertEqual(entry.stopping, "Pausing…")
+        var redraws = 0
+        let watching = entry.objectWillChange.sink { redraws += 1 }
+
+        // What upgradeStopToCancel does when Cancel is pressed mid-pause.
+        entry.pendingStop = .cancel
+
+        XCTAssertEqual(redraws, 1)
+        XCTAssertEqual(entry.stopping, "Cancelling…")
+        watching.cancel()
+    }
+
+    func testCancelSaysCancellingWhileItStops() {
+        let entry = FetchEntry(name: "archive.zip", request: nil, webView: nil)
+        _ = entry.preparingToStop(.cancel)
+        XCTAssertEqual(entry.state, .pausing)
+        XCTAssertEqual(entry.stopping, "Cancelling…")
     }
 
     func testBeginResumeRejectsDuplicateActionWhileWebKitStarts() async throws {

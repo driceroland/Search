@@ -4,14 +4,15 @@ import SwiftUI
 import WebKit
 
 // Split View's stage, while the switch is on: one AppKit view that holds
-// every page on screen, one or two, and is never rebuilt — not from one tab
-// to the next, not from one page to two. Each page keeps a StageView of its
+// every page on screen, one to four, and is never rebuilt — not from one tab
+// to the next, not from one page to two or more. Each page keeps a StageView of its
 // own (see Stage.swift), so everything that stage learned about taking a
 // page back holds here too. With the switch off none of this exists, and the
 // window's stage is the one it always was.
 //
-// The divider is this view's own: it follows the pointer, lays the pages out
-// as it goes, and tells the pair once, when the button comes up. Nothing is
+// The dividers are this view's own: one between each two pages, each follows
+// the pointer, lays the pages out as it goes, and tells the split once, when
+// the button comes up. Nothing is
 // published while it moves — not to the window, the row or the menus.
 
 /// The stage, for SwiftUI. Its identity never changes; what it shows does.
@@ -59,7 +60,6 @@ final class PaneStage: NSView {
         didSet {
             guard corner != oldValue else { return }
             for slot in slots { slot.corner = corner }
-            for cue in cues { cue.corner = corner }
             paint()
             needsLayout = true
         }
@@ -168,16 +168,23 @@ final class PaneStage: NSView {
         needsLayout = true
     }
     fileprivate var slots: [StageView] = []
-    private var cues: [FocusCue] = []
+    /// Between the first two pages: always there, so what is laid over or
+    /// under the pages has one place to be put against.
     fileprivate let divider = PaneDivider()
+    /// Between the second and third, the third and fourth, as there are pages.
+    private var moreDividers: [PaneDivider] = []
+    /// Each divider, the one after page `index` at `index`.
+    fileprivate var dividers: [PaneDivider] { [divider] + moreDividers }
     private var watching: [AnyCancellable] = []
     private var watched: [ObjectIdentifier] = []
     private var queued = false
     private var monitor: Any?
     private var told: [Tab.ID: CGRect] = [:]
 
-    /// The first page's share while the divider is held; nil otherwise.
-    private var live: Double?
+    /// Each page's share while a divider is held; nil otherwise.
+    private var live: [Double]?
+    /// The divider held: the one after this page.
+    private var liveIndex = 0
     private var snapped = false
     /// Just let go of: the pair then told of it is no move to show.
     fileprivate var dragged = false
@@ -251,7 +258,7 @@ final class PaneStage: NSView {
         self.tabs = tabs
         self.split = split
         self.focused = focused
-        if live != nil, split == nil { live = nil }
+        if live != nil, split == nil || live?.count != tabs.count { live = nil }
         refill()
     }
 
@@ -282,11 +289,14 @@ final class PaneStage: NSView {
             shadow.actions = ["bounds": NSNull(), "position": NSNull(), "hidden": NSNull()]
             layer?.insertSublayer(shadow, at: 0)
             shadows.append(shadow)
-            let cue = FocusCue()
-            cue.corner = corner
-            cue.alphaValue = 0
-            addSubview(cue, positioned: .below, relativeTo: divider)
-            cues.append(cue)
+        }
+        while moreDividers.count < max(0, tabs.count - 2) {
+            let more = PaneDivider()
+            more.stage = self
+            more.index = moreDividers.count + 1
+            more.card = corner > 0
+            addSubview(more, positioned: .above, relativeTo: divider)
+            moreDividers.append(more)
         }
         // Which page each slot holds is put right with where the slots are,
         // in layout(), not here: told from SwiftUI's update, a page filling
@@ -306,7 +316,7 @@ final class PaneStage: NSView {
     /// without corners, where the pages fill the stage as they always did.
     private func paint() {
         let card = corner > 0
-        divider.card = card
+        for line in dividers { line.card = card }
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let edge = NSColor.labelColor.withAlphaComponent(CardEdge.edge).cgColor
             let ground = Palette.NS.ground.cgColor
@@ -346,12 +356,24 @@ final class PaneStage: NSView {
 
     // MARK: - where things go
 
-    /// The first page's share, as it is drawn now.
-    private var share: Double { live ?? split?.fraction ?? 0.5 }
+    /// Each page's share, as it is drawn now.
+    private var shares: [Double] {
+        if let live, live.count == tabs.count { return live }
+        if let sizes = split?.sizes, sizes.count == tabs.count { return sizes }
+        return TabSplit.even(tabs.count)
+    }
 
-    /// Two pages side by side, with room enough for both.
+    /// The first page's share, as it is drawn now.
+    private var share: Double { shares.first ?? 0.5 }
+
+    /// Room for `count` pages side by side, none narrower than `narrowest`.
+    private func fits(_ count: Int) -> Bool {
+        bounds.width - CGFloat(max(0, count - 1)) * Self.gutter >= CGFloat(count) * Self.narrowest
+    }
+
+    /// Two or more pages side by side, with room enough for all.
     private var paired: Bool {
-        tabs.count == 2 && immersed == nil && bounds.width - Self.gutter >= 2 * Self.narrowest
+        tabs.count >= 2 && immersed == nil && fits(tabs.count)
     }
 
     /// A page lent to WebKit's full screen window: its slot has the stage.
@@ -367,7 +389,7 @@ final class PaneStage: NSView {
     private func shown(_ index: Int) -> Bool {
         if tabs.count < 2 { return true }
         if let immersed { return index == immersed }
-        if bounds.width - Self.gutter >= 2 * Self.narrowest || bounds.width == 0 { return true }
+        if fits(tabs.count) || bounds.width == 0 { return true }
         return tabs[index].id == (focused ?? tabs[0].id)
     }
 
@@ -375,16 +397,28 @@ final class PaneStage: NSView {
         super.layout()
         let area = bounds
         var frames: [CGRect] = Array(repeating: .zero, count: tabs.count)
+        let lines = dividers
         if paired {
-            let room = area.width - Self.gutter
-            let left = clampLeft(room * CGFloat(share), room: room)
-            frames[0] = CGRect(x: 0, y: 0, width: left, height: area.height)
-            frames[1] = CGRect(x: left + Self.gutter, y: 0, width: room - left, height: area.height)
-            divider.frame = CGRect(x: left, y: 0, width: Self.gutter, height: area.height)
-            divider.isHidden = false
+            let widths = self.widths(room: room)
+            var x: CGFloat = 0
+            for index in tabs.indices {
+                frames[index] = CGRect(x: x, y: 0, width: widths[index], height: area.height)
+                x += widths[index]
+                if index < lines.count {
+                    let line = lines[index]
+                    if index < tabs.count - 1 {
+                        line.frame = CGRect(x: x, y: 0, width: Self.gutter, height: area.height)
+                        line.isHidden = false
+                        x += Self.gutter
+                    } else {
+                        line.isHidden = true
+                    }
+                }
+            }
+            for line in lines.dropFirst(max(0, tabs.count - 1)) { line.isHidden = true }
         } else {
             for index in tabs.indices where shown(index) { frames[index] = area }
-            divider.isHidden = true
+            for line in lines { line.isHidden = true }
         }
         for (index, slot) in slots.enumerated() {
             let frame = index < frames.count ? frames[index] : .zero
@@ -397,16 +431,9 @@ final class PaneStage: NSView {
                 shadow.frame = frame
                 shadow.isHidden = corner == 0 || !visible
             }
-            // Only with two pages on screen does it matter which one keys go to.
-            let cue = cues[index]
-            cue.frame = frame
-            let lit = paired && index < tabs.count && tabs[index].id == focused
-            if (cue.alphaValue == 1) != lit {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = Motion.reduced ? 0 : 0.14
-                    cue.animator().alphaValue = lit ? 1 : 0
-                }
-            }
+            // No line round the page the keys go to: as a card or edge to
+            // edge, it read as a stray frame on one page of two (Drice,
+            // 18 Nov 2026). The page clicked last is the one they go to.
         }
         // A window made too narrow for two takes the other page off, and
         // gives it back once there is room.
@@ -450,24 +477,57 @@ final class PaneStage: NSView {
         }
     }
 
+    /// The pages' width between the dividers.
+    private var room: CGFloat { bounds.width - CGFloat(max(0, tabs.count - 1)) * Self.gutter }
+
     /// Neither page narrower than `narrowest` while both are on screen.
     private func clampLeft(_ left: CGFloat, room: CGFloat) -> CGFloat {
         min(max(left, Self.narrowest), room - Self.narrowest)
     }
 
-    // MARK: - the divider, held
+    /// Each page's width from its share, none narrower than `narrowest`:
+    /// what a page under it is short is taken from the others, in
+    /// proportion to what they have over it. Of two, the first page's
+    /// share clamped, as it always was.
+    private func widths(room: CGFloat) -> [CGFloat] {
+        let shares = self.shares
+        if shares.count == 2 {
+            let left = clampLeft(room * CGFloat(shares[0]), room: room)
+            return [left, room - left]
+        }
+        var widths = shares.map { room * CGFloat($0) }
+        let short = widths.reduce(0) { $0 + max(0, Self.narrowest - $1) }
+        guard short > 0 else { return widths }
+        let spare = widths.reduce(0) { $0 + max(0, $1 - Self.narrowest) }
+        guard spare > 0 else { return Array(repeating: room / CGFloat(widths.count), count: widths.count) }
+        widths = widths.map { $0 < Self.narrowest ? Self.narrowest : $0 - ($0 - Self.narrowest) / spare * short }
+        return widths
+    }
 
-    fileprivate func dividerBegan() {
-        live = split?.fraction ?? 0.5
-        snapped = abs(live! - 0.5) < 0.0001
+    // MARK: - a divider, held
+
+    fileprivate func dividerBegan(_ index: Int) {
+        guard index + 1 < tabs.count else { return }
+        let room = self.room
+        // Of three or four, as drawn, so the pages don't jump when the hand
+        // first moves; of two, as kept, as it always was.
+        live = tabs.count > 2 && room > 0 ? widths(room: room).map { Double($0 / room) } : shares
+        liveIndex = index
+        let pair = live![index] + live![index + 1]
+        snapped = abs(live![index] - pair / 2) < 0.0001
     }
 
     fileprivate func dividerMoved(to x: CGFloat) {
-        guard live != nil else { return }
-        let room = bounds.width - Self.gutter
+        guard var shares = live, liveIndex + 1 < shares.count else { return }
+        let room = self.room
         guard room > 0 else { return }
-        var left = clampLeft(x - Self.gutter / 2, room: room)
-        let even = room / 2
+        let index = liveIndex
+        // The two pages either side of it share their room between them;
+        // the others stay as they are.
+        let start = CGFloat(shares[..<index].reduce(0, +)) * room + CGFloat(index) * Self.gutter
+        let both = CGFloat(shares[index] + shares[index + 1]) * room
+        var left = clampLeft(x - Self.gutter / 2 - start, room: both)
+        let even = both / 2
         if snapped {
             if abs(left - even) > Self.unsnap { snapped = false } else { left = even }
         } else if abs(left - even) <= Self.snap {
@@ -475,9 +535,12 @@ final class PaneStage: NSView {
             left = even
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
-        let fraction = Double(left / room)
-        guard fraction != live else { return }
-        live = fraction
+        let first = Double(left / room)
+        let second = Double((both - left) / room)
+        guard first != shares[index] else { return }
+        shares[index] = first
+        shares[index + 1] = tabs.count == 2 ? 1 - first : second
+        live = shares
         // Laid out now, not on the next pass: the pages are to keep up with
         // the hand.
         needsLayout = true
@@ -485,22 +548,47 @@ final class PaneStage: NSView {
     }
 
     fileprivate func dividerEnded() {
-        guard let fraction = live else { return }
+        guard let shares = live else { return }
         let id = split?.id
         live = nil
-        // Already where the hand left it: the pair being told is no move.
+        // Already where the hand left it: the split being told is no move.
         dragged = true
         needsLayout = true
-        if let id { onCommit?(id, [fraction, 1 - fraction]) }
+        if let id { onCommit?(id, shares) }
     }
 
-    /// Double-clicked, or asked by VoiceOver: even, or a step either way.
-    fileprivate func setShare(_ fraction: Double) {
-        guard let id = split?.id else { return }
-        onCommit?(id, TabSplit.clamp([fraction, 1 - fraction]))
+    /// Double-clicked, or asked by VoiceOver: the two pages either side of
+    /// divider `index` made even, or the line between them a step either
+    /// way. Of two, the whole stage.
+    fileprivate func setShare(_ fraction: Double, at index: Int = 0) {
+        guard let id = split?.id, index + 1 < tabs.count else { return }
+        var shares = self.shares
+        if shares.count == 2 {
+            onCommit?(id, TabSplit.clamp([fraction, 1 - fraction]))
+            return
+        }
+        let before = shares[..<index].reduce(0, +)
+        let both = shares[index] + shares[index + 1]
+        let least = TabSplit.least(shares.count)
+        let first = min(max(fraction - before, least), both - least)
+        shares[index] = first
+        shares[index + 1] = both - first
+        onCommit?(id, TabSplit.clamp(shares))
     }
 
-    fileprivate var currentShare: Double { share }
+    /// Where divider `index` stands, as a share of the stage from its left.
+    fileprivate func currentShare(at index: Int = 0) -> Double {
+        shares.prefix(index + 1).reduce(0, +)
+    }
+
+    /// Where the two pages either side of divider `index` would be even.
+    fileprivate func evenShare(at index: Int) -> Double {
+        let shares = self.shares
+        guard index + 1 < shares.count else { return 0.5 }
+        return shares[..<index].reduce(0, +) + (shares[index] + shares[index + 1]) / 2
+    }
+
+    fileprivate var pageCount: Int { tabs.count }
 
     fileprivate func act(_ action: Action) { onAction?(action) }
 
@@ -510,7 +598,7 @@ final class PaneStage: NSView {
     /// it, and is still the page's click. Watched rather than taken: the
     /// click belongs to WebKit.
     private func watchClicks() {
-        let wanted = tabs.count == 2 && window != nil
+        let wanted = tabs.count >= 2 && window != nil
         if wanted, monitor == nil {
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
                 self?.clicked(event)
@@ -543,6 +631,37 @@ final class PaneStage: NSView {
         watchClicks()
     }
 
+    /// Keeps `stages` pointing only at the window the stage is in.
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if let window, Self.stages.object(forKey: window) === self { Self.stages.removeObject(forKey: window) }
+        if let newWindow { Self.stages.setObject(self, forKey: newWindow) }
+    }
+
+    /// Each window's stage, so a tab switch can reach it before SwiftUI does.
+    static let stages = NSMapTable<NSWindow, PaneStage>.weakToWeakObjects()
+
+    /// Puts the picked tab on the stage right away instead of waiting for
+    /// SwiftUI to update the whole window. WebKit paints the page meanwhile,
+    /// and both still reach the screen in the same frame. Only one page
+    /// replacing another is handled here. Everything else is left to SwiftUI.
+    func show(now tab: Tab, fading: Bool = false) {
+        guard window != nil, tabs.count == 1, split == nil, immersedID == nil, page(tab) != nil else { return }
+        // Another space's page: the one going fades into it, as the rows
+        // slide, rather than giving way to it in a single frame.
+        if fading, !Motion.reduced, tabs.first !== tab, let layer {
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = 0.15
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.add(fade, forKey: "space")
+        }
+        // The usual way in, so a move under way is cut short as any change of
+        // pages cuts it: one page to another is never a move.
+        show([tab], split: nil, focused: tab.id)
+        layoutSubtreeIfNeeded()
+    }
+
     // MARK: - the page under the pointer
 
     override func updateTrackingAreas() {
@@ -572,24 +691,6 @@ final class PaneStage: NSView {
     }
 }
 
-/// A hairline round the page the keys go to, with two pages up. Mid-grey,
-/// which shows on a white page and a dark one alike; drawn rather than a
-/// layer's border, so a picture of the window has it too. It takes no clicks.
-final class FocusCue: NSView {
-    /// Round, when the pages are cards.
-    var corner: CGFloat = 0 { didSet { if corner != oldValue { needsDisplay = true } } }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func draw(_ dirtyRect: NSRect) {
-        Palette.NS.muted.withAlphaComponent(0.55).setStroke()
-        let inner = bounds.insetBy(dx: 0.5, dy: 0.5)
-        let line = corner > 0
-            ? NSBezierPath(roundedRect: inner, xRadius: corner - 0.5, yRadius: corner - 0.5)
-            : NSBezierPath(rect: inner)
-        line.lineWidth = 1
-        line.stroke()
-    }
-}
-
 /// Between two pages: a narrow gutter that takes the pointer, with a small
 /// pill in its middle (see Grip) — faint at rest, longer and darker under the
 /// pointer and while held. As cards, the gap is what parts the pages; edge to
@@ -598,6 +699,8 @@ final class FocusCue: NSView {
 /// keeps them.
 final class PaneDivider: NSView {
     weak var stage: PaneStage?
+    /// The page it follows: the first divider is after the first page.
+    var index = 0
     /// The pages are cards (see PaneStage.paint): no hairline then.
     var card = false {
         didSet { if card != oldValue { needsDisplay = true } }
@@ -695,13 +798,13 @@ final class PaneDivider: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let stage else { return }
         if event.clickCount == 2 {
-            stage.setShare(0.5)
+            stage.setShare(stage.evenShare(at: index), at: index)
             return
         }
         dragging = true
         dwell?.cancel()
         light(true)
-        stage.dividerBegan()
+        stage.dividerBegan(index)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -725,8 +828,9 @@ final class PaneDivider: NSView {
     /// may be folded away.
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
+        let all = (stage?.pageCount ?? 2) > 2 ? "Close All" : "Close Both"
         for (title, action) in [("Swap Pages", PaneStage.Action.swap), ("Even Out", .even),
-                                ("Separate", .separate), ("Close Both", .closeBoth)] {
+                                ("Separate", .separate), (all, .closeBoth)] {
             let item = NSMenuItem(title: title, action: #selector(chose(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = action
@@ -746,12 +850,12 @@ final class PaneDivider: NSView {
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .splitter }
     override func accessibilityLabel() -> String? { "Divider between the pages" }
-    override func accessibilityValue() -> Any? { Int(((stage?.currentShare ?? 0.5) * 100).rounded()) }
+    override func accessibilityValue() -> Any? { Int(((stage?.currentShare(at: index) ?? 0.5) * 100).rounded()) }
     override func accessibilityPerformIncrement() -> Bool {
-        stage.map { $0.setShare($0.currentShare + 0.05) } != nil
+        stage.map { $0.setShare($0.currentShare(at: index) + 0.05, at: index) } != nil
     }
     override func accessibilityPerformDecrement() -> Bool {
-        stage.map { $0.setShare($0.currentShare - 0.05) } != nil
+        stage.map { $0.setShare($0.currentShare(at: index) - 0.05, at: index) } != nil
     }
 }
 
@@ -773,16 +877,19 @@ extension PaneStage {
     fileprivate func motion(to next: [Tab], split next2: TabSplit?) -> Move? {
         let old = tabs.map(\.id), new = next.map(\.id)
         defer { dragged = false }
-        guard bounds.width - PaneStage.gutter >= 2 * PaneStage.narrowest, immersedID == nil else { return nil }
-        if old.count == 1, new.count == 2, new.contains(old[0]), let other = new.first(where: { $0 != old[0] }) {
+        guard fits(max(2, old.count, new.count)), immersedID == nil, !old.isEmpty else { return nil }
+        // One page more, the others as they were: the new one arriving.
+        if new.count == old.count + 1, old.allSatisfy(new.contains), let other = new.first(where: { !old.contains($0) }) {
             return .enter(other)
         }
-        if old.count == 2, new.count == 1, old.contains(new[0]), let other = old.first(where: { $0 != new[0] }) {
+        // One page fewer: that one going, the others taking its room.
+        if old.count >= 2, new.count == old.count - 1, new.allSatisfy(old.contains),
+           let other = old.first(where: { !new.contains($0) }) {
             return .leave(other)
         }
-        if old.count == 2, old == Array(new.reversed()) { return .swap }
-        if old.count == 2, old == new, !dragged, let was = split, let now = next2, was.id == now.id,
-           abs(was.fraction - now.fraction) > 0.001 {
+        if old.count >= 2, old == Array(new.reversed()) { return .swap }
+        if old.count >= 2, old == new, !dragged, let was = split, let now = next2, was.id == now.id,
+           was.sizes.count == now.sizes.count, zip(was.sizes, now.sizes).contains(where: { abs($0 - $1) > 0.001 }) {
             return .resize
         }
         return nil
@@ -886,21 +993,23 @@ extension PaneStage {
             let slot = slots[index]
             slot.alphaValue = 0
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = reduced ? 0.15 : 0.3
+                context.duration = Motion.seconds(reduced ? 0.15 : 0.3)
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 slot.animator().alphaValue = 1
             }
         }
-        if case .enter = move, !divider.isHidden {
-            divider.alphaValue = 0
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = reduced ? 0 : 0.14
-                divider.animator().alphaValue = 1
+        if case .enter = move {
+            for line in dividers where !line.isHidden {
+                line.alphaValue = 0
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = reduced ? 0 : 0.14
+                    line.animator().alphaValue = 1
+                }
             }
         }
         let fade = { [weak self] in
             NSAnimationContext.runAnimationGroup({ context in
-                context.duration = reduced ? 0.15 : 0.12
+                context.duration = Motion.seconds(reduced ? 0.15 : 0.12)
                 for (view, _) in moving { view.animator().alphaValue = 0 }
             }, completionHandler: { [weak self] in
                 MainActor.assumeIsolated {
@@ -910,7 +1019,7 @@ extension PaneStage {
             })
         }
         // Under Reduce Motion nothing travels: the old pictures dissolve
-        // into the new layout.
+        // into the new layout. With Reduce animations, not even that.
         guard !reduced else { return fade() }
         NSAnimationContext.runAnimationGroup({ context in
             // Search's glide, as near as a curve comes to its spring:
@@ -933,6 +1042,13 @@ extension PaneStage {
     fileprivate func clearPictures() {
         for view in pictures { view.removeFromSuperview() }
         pictures.removeAll()
+    }
+
+    /// Each divider on screen, in the stage from its top-left: for the bench.
+    var dividerFrames: [[Double]] {
+        dividers.filter { !$0.isHidden && $0.superview != nil }.map { line in
+            [line.frame.minX, line.frame.minY, line.frame.width, line.frame.height].map { Double($0) }
+        }
     }
 
     /// The pictures moving now, where each started and where it is going,

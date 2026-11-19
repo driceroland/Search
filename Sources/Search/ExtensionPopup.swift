@@ -66,7 +66,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         return ["id": "popup", "url": url.absoluteString, "visible": isUp, "focused": isUp && web?.window?.isKeyWindow == true]
     }
 
-    func show(_ url: URL, for context: WKWebExtensionContext, from anchor: NSView?) {
+    func show(_ url: URL, for context: WKWebExtensionContext, from anchor: NSView?, in browser: Browser? = nil) {
         close()
         guard let configuration = context.webViewConfiguration else { return }
         // Sized the way Chrome sizes a popup (see preferred), unseen, while
@@ -94,32 +94,40 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         popover.contentViewController = host
         popover.contentSize = stage.frame.size
         popover.behavior = .transient
-        popover.animates = true
+        popover.animates = !Motion.instant
         popover.delegate = self
 
         self.web = web
         self.popover = popover
         extensionID = context.uniqueIdentifier
-        button = anchor != nil && anchor === Extensions.shared.anchors[context.uniqueIdentifier]?.view ? anchor : nil
-        let page = PopupPage(web: web)
+        button = anchor != nil && Extensions.shared.isOwnButton(anchor, for: context.uniqueIdentifier) ? anchor : nil
+        let targetBrowser = browser ?? anchor?.window.flatMap(Browsers.browser(for:))
+        let page = PopupPage(web: web, browser: targetBrowser)
         self.page = page
         Extensions.shared.controller.didOpenTab(page)
 
         shown = false
+        placement = anchor.map(ExtensionPopup.describe) ?? ["from": "window"]
         if let anchor, anchor.window != nil {
-            popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
-        } else if let content = (NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain && $0.frame.minX > -10_000 }))?.contentView {
+            // Above or under the button, its arrow kept clear of the
+            // popover's corners near the screen's sides (PopoverSide).
+            PopoverSide.show(popover, relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        } else if let content = (targetBrowser?.window ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain && $0.frame.minX > -10_000 }))?.contentView {
             // No button to hang from — the column or the strip folded away:
             // where the buttons would be, the column's foot or the strip's
             // far end. The window's content is SwiftUI's, a flipped view,
             // whose top is at minY: measured from maxY, "the top right" was
             // the bottom right, across the window from the column's buttons.
+            // The column's foot is on the side the column is on, and the
+            // popup hangs inward from it.
             let bounds = content.bounds, flipped = content.isFlipped
-            let column = Extensions.shared.browser?.prefs.sidebar == true
+            let prefs = (targetBrowser ?? Extensions.shared.browser)?.prefs
+            let column = prefs?.sidebar == true, right = prefs?.sidePosition == .right
             let spot = column
-                ? NSRect(x: bounds.minX + 24, y: flipped ? bounds.maxY - 24 : bounds.minY + 24, width: 1, height: 1)
+                ? NSRect(x: right ? bounds.maxX - 24 : bounds.minX + 24, y: flipped ? bounds.maxY - 24 : bounds.minY + 24, width: 1, height: 1)
                 : NSRect(x: bounds.maxX - 60, y: flipped ? bounds.minY + 40 : bounds.maxY - 40, width: 1, height: 1)
-            popover.show(relativeTo: spot, of: content, preferredEdge: column ? .maxX : (flipped ? .maxY : .minY))
+            let edge: NSRectEdge = column ? (right ? .minX : .maxX) : (flipped ? .maxY : .minY)
+            PopoverSide.show(popover, relativeTo: spot, of: content, preferredEdge: edge)
         }
         // Sized once loaded — or after a moment regardless, for a page that
         // never finishes loading.
@@ -137,6 +145,21 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         }
     }
 
+    /// Where the last popup was hung from, for the bench.
+    private(set) var placement: [String: Any] = [:]
+
+    static func describe(_ view: NSView) -> [String: Any] {
+        guard let window = view.window, let content = window.contentView else { return ["from": "view", "inWindow": false] }
+        let r = view.convert(view.bounds, to: nil)
+        var alpha = view.alphaValue
+        var up = view.superview
+        while let v = up { alpha *= v.alphaValue; up = v.superview }
+        return ["from": "view", "inWindow": true, "hidden": view.isHiddenOrHasHiddenAncestor, "alpha": Double(alpha),
+                "rect": [Int(r.minX), Int(r.minY), Int(r.width), Int(r.height)],
+                "content": [Int(content.bounds.width), Int(content.bounds.height)],
+                "onWindow": content.convert(content.bounds, to: nil).intersects(r)]
+    }
+
     /// Each extension's popup size, so the next opening starts there.
     private static var lastSize: [String: NSSize] = [:]
     private var shown = false
@@ -148,7 +171,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         web.frame = NSRect(origin: .zero, size: popover?.contentSize ?? stage.bounds.size)
         web.autoresizingMask = [.width, .height]
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
+            context.duration = Motion.seconds(0.12)
             web.animator().alphaValue = 1
         }
     }
@@ -377,10 +400,16 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
 @MainActor
 final class PopupPage: NSObject, WKWebExtensionTab {
     weak var web: WKWebView?
+    weak var browser: Browser?
 
-    init(web: WKWebView) { self.web = web }
+    init(web: WKWebView, browser: Browser? = nil) {
+        self.web = web
+        self.browser = browser
+    }
 
-    func window(for context: WKWebExtensionContext) -> (any WKWebExtensionWindow)? { Extensions.shared.window }
+    func window(for context: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
+        (browser ?? Extensions.shared.browser).map(Extensions.shared.window(of:))
+    }
     func indexInWindow(for context: WKWebExtensionContext) -> Int { NSNotFound }
     func webView(for context: WKWebExtensionContext) -> WKWebView? { web }
     func title(for context: WKWebExtensionContext) -> String? { web?.title }

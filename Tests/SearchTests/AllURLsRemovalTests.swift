@@ -3,7 +3,7 @@ import WebKit
 import XCTest
 @testable import Search
 
-/// <all_urls>, once given, is held as *://*/* as well (Extensions.fence),
+/// <all_urls>, once given, may be held as *://*/* (Extensions.fence),
 /// so giving it back must take both: permissions.remove reaches
 /// "permissions.removeWebsites" for that (#675).
 @available(macOS 15.4, *)
@@ -35,7 +35,8 @@ final class AllURLsRemovalTests: XCTestCase {
         Extensions.fence(context)
         let site = URL(string: "https://example.com/")!
         XCTAssertTrue(context.hasAccess(to: site), "given: every website")
-        XCTAssertTrue(context.grantedPermissionMatchPatterns.keys.contains { $0.string == "*://*/*" })
+        // Held as <all_urls>, or as *://*/* where the refusals took that.
+        XCTAssertTrue(context.grantedPermissionMatchPatterns.keys.contains { ["<all_urls>", "*://*/*"].contains($0.string) })
 
         // The shim answers only with a browser window to answer for.
         let browser = Browser(record: WindowRecord())

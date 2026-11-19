@@ -9,5 +9,8 @@
   <!-- Likewise for a page asking where you are, which Search puts to you
        first, site by site (see Browser.askedForLocation). -->
   <key>com.apple.security.personal-information.location</key><true/>
+  <!-- Your own card in Contacts, for filling in forms (MeCard.swift), once
+       you turn it on. -->
+  <key>com.apple.security.personal-information.addressbook</key><true/>
 </dict>
 </plist>

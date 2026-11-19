@@ -9,6 +9,9 @@
   <!-- Likewise for a page asking where you are, which Search puts to you
        first, site by site (see Browser.askedForLocation). -->
   <key>com.apple.security.personal-information.location</key><true/>
+  <!-- Your own card in Contacts, for filling in forms (MeCard.swift), once
+       you turn it on. -->
+  <key>com.apple.security.personal-information.addressbook</key><true/>
   <!-- Passkeys, for any site. Apple grants this to browsers on request; it
        only works with the matching Developer ID provisioning profile
        embedded in the app, which build.sh does when Search.provisionprofile

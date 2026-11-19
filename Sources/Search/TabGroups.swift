@@ -43,6 +43,45 @@ struct GroupDropFrames: PreferenceKey {
     }
 }
 
+/// Where each tab in no group is drawn, in the row's space, for where a tab
+/// carried out of its group lands among them (#1009). Written as the rows
+/// are laid out and read once, when the tab is let go: a box rather than a
+/// preference, so a row that moves redraws nothing (see ColumnFrames).
+final class LooseFrames {
+    var rects: [UUID: CGRect] = [:]
+}
+
+/// A tab of a group let go outside every group: in front of the tab in no
+/// group it lands before, or after them all.
+struct LooseDrop: Equatable {
+    var before: UUID? = nil
+}
+
+extension GroupDropFrames {
+    /// Where a tab carried out of its group lands, or nil when it stays:
+    /// let go anywhere along its own group's run, its own place included
+    /// (a hand that barely moved leaves nothing), level with another
+    /// group's, or off to the side of the row. `loose` is the tabs in no
+    /// group, by where they are drawn.
+    static func leaving(_ point: CGPoint, frames: [UUID: GroupDropFrame], loose: [UUID: CGRect],
+                        groups: [TabGroup], source: UUID, vertical: Bool) -> LooseDrop? {
+        guard frames[source]?.tab == source else { return nil }
+        let drawn = frames.values.map(\.rect) + Array(loose.values)
+        let row = drawn.reduce(CGRect.null) { $0.union($1) }
+        guard !row.isNull,
+              vertical ? (row.minX...row.maxX).contains(point.x) : (row.minY...row.maxY).contains(point.y)
+        else { return nil }
+        let position = vertical ? point.y : point.x
+        for group in groups {
+            let run = frames.values.filter { $0.group == group.id }.reduce(CGRect.null) { $0.union($1.rect) }
+            if !run.isNull, (vertical ? run.minY...run.maxY : run.minX...run.maxX).contains(position) { return nil }
+        }
+        let next = loose.filter { position < (vertical ? $0.value.midY : $0.value.midX) }
+            .min { vertical ? $0.value.minY < $1.value.minY : $0.value.minX < $1.value.minX }
+        return LooseDrop(before: next?.key)
+    }
+}
+
 /// A quiet name above the tabs it contains, in either layout.
 struct GroupHeading: View {
     @Environment(\.greys) private var greys
@@ -62,14 +101,31 @@ struct GroupHeading: View {
 
     private var editing: Bool { browser.editingGroupID == group.id }
 
+    /// Soft grey by default; full ink with Settings › Appearance › Tabs ›
+    /// High contrast text, as a tab's title is.
+    private func titleColour(hovering: Bool) -> Color {
+        if browser.prefs.highContrastText { return Palette.ink }
+        return hovering ? Palette.ink.opacity(0.7) : Palette.muted
+    }
+
     /// Its height in the column, a little under a tab's.
     static let height: CGFloat = 24
     /// And in the column of icons.
     static let compactHeight: CGFloat = 18
 
+    /// Measured once a name: the row asks for every heading's on every redraw.
+    private static var measured: [String: CGFloat] = [:]
+    private static let font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
     static func width(for name: String, numbered: Bool = false) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
-        return ceil((name as NSString).size(withAttributes: [.font: font]).width) + 20 + (numbered ? 23 : 0)
+        let text: CGFloat
+        if let known = measured[name] {
+            text = known
+        } else {
+            text = ceil((name as NSString).size(withAttributes: [.font: font]).width)
+            if measured.count > 500 { measured.removeAll() }
+            measured[name] = text
+        }
+        return text + 20 + (numbered ? 23 : 0)
     }
 
     var body: some View {
@@ -85,7 +141,7 @@ struct GroupHeading: View {
                 .font(.system(size: 6.5, weight: .bold))
                 .rotationEffect(.degrees(group.collapsed ? -90 : 0))
         }
-        .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
+        .foregroundStyle(titleColour(hovering: hovering))
         .frame(maxWidth: .infinity)
         .frame(height: Self.compactHeight)
         .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -98,7 +154,7 @@ struct GroupHeading: View {
         .accessibilityLabel(group.name)
         // Rename Group: no room for the name here, so it is typed beside.
         .popover(isPresented: Binding(get: { editing }, set: { if !$0 { browser.editingGroupID = nil } }),
-                 arrowEdge: browser.prefs.sidePosition == .right ? .leading : .trailing) {
+                 hangingFrom: browser.prefs.sidePosition == .right ? .leading : .trailing) {
             TextField("Group name", text: $draft)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12.5, weight: .medium))
@@ -145,7 +201,7 @@ struct GroupHeading: View {
                     .opacity(hovering ? 1 : 0)
             }
         }
-        .foregroundStyle(Palette.muted)
+        .foregroundStyle(titleColour(hovering: false))
         .padding(.horizontal, 10)
         .frame(height: horizontal ? 28 : Self.height)
         .frame(maxWidth: horizontal ? nil : .infinity, alignment: .leading)

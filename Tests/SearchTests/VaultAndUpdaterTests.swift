@@ -93,6 +93,14 @@ final class VaultAndUpdaterTests: XCTestCase {
         )
     }
 
+    func testACheckThatFindsNothingLeavesASwapUnderWay() {
+        let next = release(minimum: nil)
+        XCTAssertEqual(Updater.nothingNewer(after: .fetching(next)), .fetching(next))
+        XCTAssertEqual(Updater.nothingNewer(after: .ready(next)), .ready(next))
+        XCTAssertEqual(Updater.nothingNewer(after: .waiting(next)), .none)
+        XCTAssertEqual(Updater.nothingNewer(after: .offered(next)), .none)
+    }
+
     func testReleaseWithoutAMinimumRunsHere() {
         XCTAssertTrue(release(minimum: nil).runsHere)
     }

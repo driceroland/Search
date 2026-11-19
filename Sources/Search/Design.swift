@@ -86,11 +86,39 @@ struct Greys {
     let hover: Color
     let tile: Color
     let pinLive: Color
+    /// The live and hovered greys for a row lying on a tile (a Split View
+    /// tab's panes), so the two together land where the plain ones do.
+    let washOnTile: Color
+    let hoverOnTile: Color
+    /// The quiet ink of a tab's title that isn't live, the same way: on
+    /// the plain ground Palette.muted exactly, on a space's Rich or Vivid
+    /// colour as far from it as Palette.muted is from the plain ground,
+    /// where the opaque grey lost a third of its contrast.
+    let muted: Color
+    /// The faintest ink, New tab's, the same way: on Vivid the opaque grey
+    /// all but vanished into the colour.
+    let faint: Color
 
-    static let white = Greys(wash: Palette.wash, hover: Palette.hover,
-                             tile: Palette.wash.opacity(0.55), pinLive: Palette.pinLive)
-    static let frame = Greys(wash: Palette.sideWash, hover: Palette.sideHover,
-                             tile: Palette.sideTile, pinLive: Palette.sidePinLive)
+    // Black in a light window, white in a dark one, at the strength that
+    // lands on the same grey as Palette's over the ground they lie on (the
+    // white, or the frame beside the card). On that ground nothing changes;
+    // on a space's colour or gradient they take its tint, where an opaque
+    // grey sat on it as a grey patch (Drice, 18 Nov 2026).
+    static let white = Greys(wash: shade(0.063, 0.073), hover: shade(0.035, 0.045),
+                             tile: shade(0.063, 0.073).opacity(0.55), pinLive: shade(0.10, 0.112),
+                             washOnTile: shade(0.0294, 0.0342), hoverOnTile: shade(0.004, 0.005),
+                             muted: shade(0.45, 0.5281), faint: shade(0.17, 0.236))
+    static let frame = Greys(wash: shade(0.0628, 0.0865), hover: shade(0.0419, 0.0595),
+                             tile: shade(0.0314, 0.0432), pinLive: shade(0.0995, 0.1243),
+                             washOnTile: shade(0.0324, 0.0452), hoverOnTile: shade(0.0108, 0.0169),
+                             muted: shade(0.4241, 0.5459), faint: shade(0.1309, 0.2649))
+
+    private static func shade(_ light: CGFloat, _ dark: CGFloat) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                ? NSColor(white: 1, alpha: dark) : NSColor(white: 0, alpha: light)
+        })
+    }
 }
 
 private struct GreysKey: EnvironmentKey {
@@ -149,8 +177,12 @@ enum Metrics {
     /// The tab strip. The window's title bar is grown to match it so the
     /// traffic lights come down with the tabs — otherwise giving the row room
     /// to breathe just leaves it sitting below three buttons it used to line
-    /// up with.
-    static let strip: CGFloat = 52
+    /// up with. Shorter tab bar, with the tabs across the top, takes it down
+    /// to a few points above and below the 28-point tabs: a strip, not a
+    /// toolbar. The column keeps the full band, as its first row shares it.
+    @MainActor static var strip: CGFloat {
+        Shared.prefs.compactStrip && !Shared.prefs.sidebar ? 36 : 52
+    }
     /// With the tabs down the side the page is a card: this far from the
     /// window's edges (and from the column, folded away), and its corners
     /// this round.
@@ -231,13 +263,39 @@ struct EdgeGrip: View {
 // One spring for anything that moves between two places, one for anything that
 // arrives or leaves. Using the same two everywhere is most of why a thing feels
 // like a single piece of software rather than a pile of views.
-// When macOS Reduce Motion is on in System Settings, transitions become
-// immediate so the interface does not jump or slide.
+// When macOS Reduce Motion is on in System Settings, or Reduce animations in
+// Search's own, transitions become immediate so the interface does not jump
+// or slide.
 enum Motion {
     /// Whether interface transitions should be immediate, following the
-    /// Mac's own accessibility setting.
+    /// Mac's own accessibility setting or Search's Reduce animations.
     static var reduced: Bool {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        instant || (testReduceMotion ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
+    /// A test run's stand-in for the Mac's Reduce Motion, so what Reduce
+    /// animations does alone can be seen on a Mac that has it on.
+    nonisolated(unsafe) static var testReduceMotion: Bool?
+
+    /// Settings › Appearance › Reduce animations, for Search alone: every
+    /// transition is immediate, as under Reduce Motion, and so are the fades
+    /// Reduce Motion keeps. The tab ⌘1–⌘9 picks is lit at once, the page
+    /// shows at once, a panel is there or gone. Kept here rather than read
+    /// from the settings each time, since quick is asked for in nearly every
+    /// row's body; Preferences sets it as it reads and writes the switch.
+    nonisolated(unsafe) static var instant = false
+
+    nonisolated static let instantKey = "motion.instant"
+
+    /// `seconds`, or none with Reduce animations on: for the fades that run
+    /// on a length of their own rather than on the animations below.
+    static func seconds(_ seconds: TimeInterval) -> TimeInterval {
+        instant ? 0 : seconds
+    }
+
+    /// `animation`, or none with Reduce animations on, the same way.
+    static func timed(_ animation: Animation) -> Animation? {
+        instant ? nil : animation
     }
 
     /// Whether the Mac is short of power: Low Power Mode is on, or it is hot
@@ -251,11 +309,26 @@ enum Motion {
     /// Only once it is turned on in Settings › General (Preferences.lightMotion).
     static var light: Bool {
         guard Store.settings.bool(forKey: lightKey) else { return false }
-        let info = ProcessInfo.processInfo
-        return info.isLowPowerModeEnabled || info.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+        return lowPowerMode || ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+    }
+
+    /// The same switch, with Low Power Mode on and nothing else: idle tabs
+    /// sleep sooner then (see Browser.sleepAfter). Heat alone doesn't count,
+    /// since what a sleeping tab gives back is mostly memory, and a hot Mac
+    /// has enough of that.
+    static var savingPower: Bool {
+        Store.settings.bool(forKey: lightKey) && lowPowerMode
     }
 
     nonisolated static let lightKey = "motion.light"
+
+    /// Low Power Mode, from Battery in System Settings, or a test run's stand-in
+    /// for it: only an admin can turn the real one on.
+    nonisolated(unsafe) static var testLowPower: Bool?
+
+    private static var lowPowerMode: Bool {
+        testLowPower ?? ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
 
     static var glide: Animation? {
         reduced ? nil : light ? .easeOut(duration: 0.16) : .spring(response: 0.34, dampingFraction: 0.82)
@@ -285,9 +358,37 @@ enum Motion {
     }
 
     static func folding(out: Bool) -> Animation? {
+        if reduced { return nil }
+        if let slide = slide(out: out) {
+            return out ? .easeOut(duration: slide) : .easeIn(duration: slide)
+        }
         let spring = fold(out: out)
-        return reduced ? nil : .spring(response: spring.response, dampingFraction: spring.damping)
+        return .spring(response: spring.response, dampingFraction: spring.damping)
     }
+
+    /// Settings › Appearance › Slide the column in and out: the column comes
+    /// out on an ease-out and goes back on an ease-in, over this long, as
+    /// Arc's does, rather than on the short springs above. Nil when off.
+    /// Read at the moment it moves, as `light` is.
+    static func slide(out: Bool) -> TimeInterval? {
+        guard Store.settings.bool(forKey: slidesKey) else { return nil }
+        return out ? 0.26 : 0.22
+    }
+
+    nonisolated static let slidesKey = "sidebar.slides"
+
+    /// Slide the column in and out with the Mac's Reduce Motion on: the
+    /// column fades in place where it would slide, as Apple's own sidebars
+    /// do under Reduce Motion, rather than doing nothing at all, which read
+    /// as a switch that does nothing. Search's own Reduce animations still
+    /// means at once (see `instant`).
+    static var fadesColumn: Bool {
+        !instant && slide(out: true) != nil
+            && (testReduceMotion ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
+    /// That fade's length.
+    static let fade: TimeInterval = 0.2
 }
 
 /// Search's mark — Drice's Subtract.svg, a pill with an S cut out of it,
@@ -390,29 +491,23 @@ struct Shake: GeometryEffect {
 
 extension View {
     /// What a popover holds, on the ground colour. From macOS 26 a popover
-    /// clips what it holds to its own rounded glass; before, an opaque
-    /// background was drawn out to the content's square edges, past the
-    /// popover's rounded corners (macOS 15, by email). There the popover is
-    /// handed the colour and fills its own shape with it, arrow included.
-    /// `card`: drawn as its own rounded card, with an edge, on macOS 26.
-    func popoverGround(card: Bool = false) -> some View {
-        modifier(PopoverGround(card: card))
+    /// clips what it holds to its own rounded glass, and the background
+    /// fills its arrow too; before, an opaque background was drawn out to the
+    /// content's square edges, past the popover's rounded corners (macOS 15,
+    /// by email). There the popover is handed the colour and fills its own
+    /// shape with it, arrow included. The bookmarks list and card were drawn
+    /// as a rounded card of their own inside the popover, which left the
+    /// arrow in the popover's lighter glass beside the darker card; they're
+    /// on the ground as the rest are now.
+    func popoverGround() -> some View {
+        modifier(PopoverGround())
     }
 }
 
 private struct PopoverGround: ViewModifier {
-    let card: Bool
-
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
-            if card {
-                content
-                    .background(Palette.ground)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
-            } else {
-                content.background(Palette.ground)
-            }
+            content.background(Palette.ground)
         } else {
             content.presentationBackground(Palette.ground)
         }

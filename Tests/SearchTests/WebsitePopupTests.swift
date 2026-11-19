@@ -35,9 +35,7 @@ final class WebsitePopupTests: XCTestCase {
         popup.showRow([tab], active: tab.id)
         tab.web.loadHTMLString("<script>window.webkit.messageHandlers.fixtureCapture.postMessage(true)</script>",
                                baseURL: URL(string: "https://popup.invalid"))
-        for _ in 0..<100 where popup.asking == nil {
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
+        try await waitForQuestion(popup)
         XCTAssertEqual(popup.asking?.wants, "microphone")
         XCTAssertTrue(relay.decisions.isEmpty)
         popup.closeAll()
@@ -61,9 +59,7 @@ final class WebsitePopupTests: XCTestCase {
             popup.showRow([tab], active: tab.id)
             tab.web.loadHTMLString("<script>window.webkit.messageHandlers.fixtureCapture.postMessage('\(kind)')</script>",
                                   baseURL: URL(string: "https://popup.invalid"))
-            for _ in 0..<100 where popup.asking == nil {
-                try await Task.sleep(nanoseconds: 20_000_000)
-            }
+            try await waitForQuestion(popup)
             XCTAssertEqual(popup.asking?.wants, kind)
             popup.cancelCapture()
             XCTAssertEqual(relay.decisions, [.deny])
@@ -93,6 +89,17 @@ final class WebsitePopupTests: XCTestCase {
         Browsers.register(popup)
         XCTAssertFalse(Browsers.saved.contains { $0 === popup })
         XCTAssertTrue(NSApp.windows.allSatisfy { !$0.isVisible })
+    }
+}
+
+/// Until the page has asked, for as long as a page can take to come up:
+/// two seconds was enough on its own, and not at the end of a full run,
+/// with a few hundred pages' processes started before this one.
+@MainActor
+private func waitForQuestion(_ popup: Browser) async throws {
+    let deadline = Date().addingTimeInterval(15)
+    while popup.asking == nil, Date() < deadline {
+        try await Task.sleep(nanoseconds: 20_000_000)
     }
 }
 

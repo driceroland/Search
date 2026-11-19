@@ -37,8 +37,23 @@ enum Fuzzy {
         return rest.isEmpty
     }
 
-    private static func contains(_ text: UnsafeBufferPointer<UInt8>, _ word: [UInt8]) -> Bool {
+    static func contains(_ text: UnsafeBufferPointer<UInt8>, _ word: [UInt8]) -> Bool {
         word.withUnsafeBytes { memmem(text.baseAddress, text.count, $0.baseAddress, $0.count) != nil }
+    }
+
+    /// Whether `word` starts a word of `text`: "api" in "team/api", not "rapid".
+    static func startsWord(_ word: [UInt8], in text: UnsafeBufferPointer<UInt8>) -> Bool {
+        guard let base = text.baseAddress, !word.isEmpty, text.count >= word.count else { return false }
+        let anywhere = !inWord(word[0])
+        return word.withUnsafeBytes { word in
+            var from = 0
+            while from < text.count, let hit = memmem(base + from, text.count - from, word.baseAddress, word.count) {
+                let at = UnsafeRawPointer(base).distance(to: hit)
+                if anywhere || at == 0 || !inWord(text[at - 1]) { return true }
+                from = at + 1
+            }
+            return false
+        }
     }
 
     /// Letters and digits, and anything outside ASCII.
@@ -52,9 +67,11 @@ enum Fuzzy {
         // Edit distance to the start of each word, where swapping two
         // letters counts as one. Rows are reused across words.
         let width = typed.count + allowed + 1
-        var before = [Int](repeating: 0, count: width)
-        var above = before
-        var row = before
+        // Made at the first word worth measuring: most texts have none, and
+        // this runs for every page in the history on every key.
+        var before: [Int] = []
+        var above: [Int] = []
+        var row: [Int] = []
         var start = 0
         while start < text.count {
             guard inWord(text[start]) else { start += 1; continue }
@@ -67,6 +84,11 @@ enum Fuzzy {
             guard word.count >= 2, word.count >= typed.count - allowed,
                   word[0] == typed[0] || (word[0] == typed[1] && word[1] == typed[0])
             else { continue }
+            if row.isEmpty {
+                before = [Int](repeating: 0, count: width)
+                above = before
+                row = before
+            }
             let columns = min(word.count, width - 1)
             for j in 0...columns { above[j] = j }
             var far = false

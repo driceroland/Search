@@ -25,6 +25,7 @@ final class TabCaptureTests: XCTestCase {
     }
 
     override func tearDown() {
+        browser.forgetCaptureChoices()
         browser.closeAll()
         browser = nil
         for window in windows {
@@ -79,15 +80,65 @@ final class TabCaptureTests: XCTestCase {
         XCTAssertTrue(browser.tabs.isEmpty)
     }
 
-    private func capture() async throws -> Tab {
-        let configuration = Web.configuration(shy: true)
+    func testRefusingCameraStopsOnlyMatchingSiteAndDevice() async throws {
+        let target = try await capture(shy: false, origin: "http://localhost")
+        let other = try await capture(shy: false, origin: "http://localhost:8001")
+        let privateTab = try await capture(shy: true, origin: "http://localhost")
+        let web = target.web, otherWeb = other.web, privateWeb = privateTab.web
+        let microphone = web.microphoneCaptureState
+        let otherCamera = otherWeb.cameraCaptureState, otherMic = otherWeb.microphoneCaptureState
+        let privateCamera = privateWeb.cameraCaptureState, privateMic = privateWeb.microphoneCaptureState
+        XCTAssertNotEqual(web.cameraCaptureState, .none)
+        XCTAssertNotEqual(otherCamera, .none)
+        XCTAssertNotEqual(privateCamera, .none)
+        browser.setSitePermission(false, kind: .camera, origin: "http://localhost")
+        try await waitUntil("camera stops") { web.cameraCaptureState == .none }
+        let videoState = try await web.evaluateJavaScript("window.captureStream.getVideoTracks()[0].readyState") as? String
+        XCTAssertEqual(videoState, "ended")
+        XCTAssertEqual(web.microphoneCaptureState, microphone)
+        XCTAssertEqual(otherWeb.cameraCaptureState, otherCamera)
+        XCTAssertEqual(otherWeb.microphoneCaptureState, otherMic)
+        XCTAssertEqual(privateWeb.cameraCaptureState, privateCamera)
+        XCTAssertEqual(privateWeb.microphoneCaptureState, privateMic)
+    }
+
+    func testRefusingMicrophoneStopsMatchingTabsAcrossWindows() async throws {
+        let otherBrowser = Browser(record: WindowRecord())
+        Browsers.register(otherBrowser)
+        defer { otherBrowser.closeAll() }
+        let first = try await capture(shy: false)
+        let second = try await capture(shy: false, owner: otherBrowser)
+        let firstWeb = first.web, secondWeb = second.web
+        let firstCamera = firstWeb.cameraCaptureState, secondCamera = secondWeb.cameraCaptureState
+        XCTAssertNotEqual(firstWeb.microphoneCaptureState, .none)
+        XCTAssertNotEqual(secondWeb.microphoneCaptureState, .none)
+        browser.setSitePermission(false, kind: .microphone, origin: "http://localhost")
+        try await waitUntil("microphones stop") { firstWeb.microphoneCaptureState == .none && secondWeb.microphoneCaptureState == .none }
+        for web in [firstWeb, secondWeb] {
+            let audioState = try await web.evaluateJavaScript("window.captureStream.getAudioTracks()[0].readyState") as? String
+            XCTAssertEqual(audioState, "ended")
+        }
+        XCTAssertEqual(firstWeb.cameraCaptureState, firstCamera)
+        XCTAssertEqual(secondWeb.cameraCaptureState, secondCamera)
+    }
+
+    func testRefusingCombinedRequestStopsBothDevices() async throws {
+        let target = try await capture(shy: false, origin: "http://localhost")
+        let web = target.web
+        browser.setSitePermission(false, kind: .cameraAndMicrophone, origin: "http://localhost")
+        try await ended(web)
+    }
+
+    private func capture(shy: Bool = true, origin: String = "http://localhost", owner: Browser? = nil) async throws -> Tab {
+        let configuration = Web.configuration(shy: shy)
         // Refuse to use real hardware if WebKit removes its mock-device seam.
         guard configuration.preferences.responds(to: NSSelectorFromString("_setMockCaptureDevicesEnabled:")) else {
             throw XCTSkip("WebKit mock capture devices are unavailable")
         }
-        let tab = Tab(shy: true, configuration: configuration)
-        browser.prepare(tab)
-        browser.insert(tab, at: browser.tabs.count)
+        let tab = Tab(shy: shy, configuration: configuration)
+        let targetBrowser = owner ?? browser!
+        targetBrowser.prepare(tab)
+        targetBrowser.insert(tab, at: targetBrowser.tabs.count)
         let web = tab.web
         web.uiDelegate = permission
         let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 640, height: 480),
@@ -98,7 +149,7 @@ final class TabCaptureTests: XCTestCase {
         window.orderBack(nil)
         XCTAssertFalse(Bench.onScreen(window))
         windows.append(window)
-        web.loadHTMLString("<title>Capture fixture</title>", baseURL: URL(string: "http://localhost"))
+        web.loadHTMLString("<title>Capture fixture</title>", baseURL: URL(string: origin))
         try await waitUntil("load") { web.title == "Capture fixture" && !web.isLoading }
         _ = try await web.evaluateJavaScript("""
             window.captureResult = 'pending';

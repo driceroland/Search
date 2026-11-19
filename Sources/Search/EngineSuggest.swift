@@ -123,7 +123,9 @@ enum EngineSuggest {
     /// One session for every question: nothing kept on disk, no cookies
     /// either way, no credentials, no cache, no referrer (a session's
     /// requests carry none), and a short timeout.
-    static let session: URLSession = {
+    static var session: URLSession { ProxyNetwork.kept("suggestions", make: made) }
+
+    private static func made() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieAcceptPolicy = .never
         configuration.httpShouldSetCookies = false
@@ -134,8 +136,11 @@ enum EngineSuggest {
         configuration.timeoutIntervalForRequest = patience
         configuration.timeoutIntervalForResource = patience
         configuration.httpMaximumConnectionsPerHost = 2
+        // What you type goes to the engine the way a page would, or a proxy
+        // would be given every word of every address bar question.
+        ProxyNetwork.stamp(configuration)
         return URLSession(configuration: configuration, delegate: NoRedirects.shared, delegateQueue: nil)
-    }()
+    }
 
     /// An engine that answers by sending us somewhere else isn't followed
     /// there: the words would go to a host nobody picked.

@@ -1,7 +1,8 @@
+import CryptoKit
 import WebKit
 
 // The ad blocker. No settings, no counter, no shield icon going green — it is
-// compiled once at launch and then it is simply true that the page is lighter.
+// prepared at launch and then it is simply true that the page is lighter.
 //
 // A content rule list is enforced inside WebKit's networking, before a request
 // is made and before a stylesheet is applied, so this costs nothing at run time
@@ -11,8 +12,19 @@ import WebKit
 final class Shield: ObservableObject {
     static let shared = Shield()
 
+    private let store: WKContentRuleListStore?
+
+    convenience init() {
+        self.init(store: WKContentRuleListStore.default())
+    }
+
+    init(store: WKContentRuleListStore?) {
+        self.store = store
+    }
+
     private(set) var list: WKContentRuleList?
     private var waiting: [WKUserContentController] = []
+    private var preparing = false
 
     /// Set the one time compiling the list didn't work. The toggle in
     /// Settings can say "on" all it wants; nothing is actually blocked until
@@ -47,9 +59,22 @@ final class Shield: ObservableObject {
     /// doing this at the navigation is what makes "off for this site" true
     /// for the whole page rather than for the second half of it.
     func tune(_ controller: WKUserContentController, for host: String?) {
+        guard list != nil else { return }
+        set(controller, on: enabled && !isPaused(on: host))
+    }
+
+    /// Whether each page's controller has the list, as it was last given or
+    /// taken: one heading to another page with Shield on, as before, is left
+    /// as it is, rather than the list taken out and put back — sent to the
+    /// page's process both ways — on every link followed.
+    private let holding = NSMapTable<WKUserContentController, NSNumber>.weakToStrongObjects()
+
+    private func set(_ controller: WKUserContentController, on: Bool, again: Bool = false) {
         guard let list else { return }
+        if !again, holding.object(forKey: controller)?.boolValue == on { return }
         controller.remove(list)
-        if enabled, !isPaused(on: host) { controller.add(list) }
+        if on { controller.add(list) }
+        holding.setObject(NSNumber(value: on), forKey: controller)
     }
 
     /// Third parties whose only job is to watch or to sell. First-party
@@ -105,7 +130,7 @@ final class Shield: ObservableObject {
     }
 
     func compile() {
-        guard list == nil else { return }
+        guard list == nil, !preparing else { return }
         trouble = nil
         var rules: [[String: Any]] = Shield.unwanted.map { domain in
             return [
@@ -129,39 +154,62 @@ final class Shield: ObservableObject {
             ]
         }
 
-        guard let data = try? JSONSerialization.data(withJSONObject: rules),
+        guard let data = try? JSONSerialization.data(withJSONObject: rules, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8)
         else {
             trouble = "Couldn't build the block list"
             return
         }
 
-        guard let store = WKContentRuleListStore.default() else {
+        guard let store else {
             trouble = "WebKit has nowhere to compile it"
             return
         }
-        store.compileContentRuleList(
-            forIdentifier: "office-shield",
-            encodedContentRuleList: json
-        ) { [weak self] compiled, error in
+        // Dictionary order isn't stable between launches; the sorted JSON is
+        // both the rules WebKit sees and the identity of their compiled form.
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let identifier = "office-shield-" + hash
+        preparing = true
+        store.lookUpContentRuleList(forIdentifier: identifier) { [weak self] found, _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                guard let compiled else {
-                    self.trouble = error?.localizedDescription ?? "Compiling the block list failed"
-                    return
+                if let found {
+                    self.ready(found, store: store, identifier: identifier)
+                } else {
+                    store.compileContentRuleList(forIdentifier: identifier, encodedContentRuleList: json) { [weak self] compiled, error in
+                        MainActor.assumeIsolated {
+                            guard let self else { return }
+                            guard let compiled else {
+                                self.preparing = false
+                                self.trouble = error?.localizedDescription ?? "Compiling the block list failed"
+                                return
+                            }
+                            self.ready(compiled, store: store, identifier: identifier)
+                        }
+                    }
                 }
-                self.list = compiled
-                // Tabs that opened while this was still compiling get it now.
-                if self.enabled { self.waiting.forEach { $0.add(compiled) } }
-                self.waiting = []
+            }
+        }
+    }
+
+    private func ready(_ compiled: WKContentRuleList, store: WKContentRuleListStore, identifier: String) {
+        preparing = false
+        list = compiled
+        // Tabs that opened while this was still preparing get it now.
+        if enabled { waiting.forEach { set($0, on: true, again: true) } }
+        waiting = []
+        // Leave other users of WebKit's store alone, including extensions.
+        store.getAvailableContentRuleListIdentifiers { identifiers in
+            for old in identifiers ?? [] where old != identifier && (old == "office-shield" || old.hasPrefix("office-shield-")) {
+                store.removeContentRuleList(forIdentifier: old) { _ in }
             }
         }
     }
 
     /// Every tab asks for it; whoever asks before it is ready is remembered.
     func protect(_ controller: WKUserContentController) {
-        if let list {
-            if enabled { controller.add(list) }
+        if list != nil {
+            if enabled { set(controller, on: true, again: true) }
         } else {
             waiting.append(controller)
         }
@@ -169,10 +217,7 @@ final class Shield: ObservableObject {
 
     /// Switched on or off for every page that is already open.
     func apply(to controllers: [WKUserContentController]) {
-        guard let list else { return }
-        for controller in controllers {
-            controller.remove(list)
-            if enabled { controller.add(list) }
-        }
+        guard list != nil else { return }
+        for controller in controllers { set(controller, on: enabled, again: true) }
     }
 }

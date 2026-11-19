@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import CryptoKit
 import Foundation
+import OSLog
 import Security
 
 // Apple Passwords under the sign-in box (idea 260, #425), the way Safari
@@ -21,10 +22,21 @@ import Security
 //   six-digit code, you type it into Search. The key it yields lives in
 //   memory only and dies with the helper; next launch asks for a code again,
 //   as the extension does. Nothing about it is written anywhere.
+// - The key is good only with the helper process it was made with: a new
+//   helper never knows an old key (it shows a new code for every pairing,
+//   and Apple's extension pairs again whenever its helper restarts). So the
+//   helper is kept running for as long as the pairing lasts: told every few
+//   minutes, and on wake, that a tab came to the front, as Apple's extension
+//   tells it on every tab switch. Not while unpaired. Why a helper ended is
+//   logged (#1122): `log show --predicate 'subsystem == "com.officecommun.search"
+//   AND category == "ApplePasswords"' --info --last 1d`.
 // - Only names are asked for, when the caret is in a sign-in box on an https
 //   page of an ordinary tab. A password is asked for once you pick its
 //   account, and macOS may ask for Touch ID then. It goes into the page's
 //   own fields and is not kept.
+// - Verification codes go the same way: which accounts have one is asked for
+//   when the caret is in a box for a code, the code once you pick its account,
+//   and macOS may ask for Touch ID then. Never kept.
 // - Never in a private tab, never over plain http, never in a frame (the
 //   form script is the main frame's only), and only for the site the page is
 //   on: an account the helper keeps for another site is not offered.
@@ -49,6 +61,7 @@ final class HelperLink: AppleLink {
     var onMessage: (([String: Any]) -> Void)?
     var onEnd: (() -> Void)?
     private let pipe: HostPipe
+    private var started = Date()
 
     init(program: URL, origin: String = AppleHelper.origin) {
         pipe = HostPipe(program: program, origin: origin)
@@ -59,9 +72,16 @@ final class HelperLink: AppleLink {
         pipe.onExit = { [weak self] in
             DispatchQueue.main.async { self?.onEnd?() }
         }
+        pipe.onTerminated = { [weak self] note in
+            let lived = Int(Date().timeIntervalSince(self?.started ?? Date()))
+            ApplePasswords.log.notice("Helper process ended: \(note, privacy: .public), after \(lived, privacy: .public)s")
+        }
     }
 
-    func start() throws { try pipe.start() }
+    func start() throws {
+        started = Date()
+        try pipe.start()
+    }
     func send(_ message: [String: Any]) throws { try pipe.write(message) }
     func stop() { pipe.stop() }
 }
@@ -102,6 +122,11 @@ enum AppleHelper {
 @MainActor
 final class ApplePasswords: ObservableObject {
     static let shared = ApplePasswords(prefs: Shared.prefs)
+    /// Why the helper ended or a pairing was dropped (#1122): states,
+    /// durations, command numbers. Never a key, a code, a name or a site.
+    nonisolated static let log = Logger(subsystem: "com.officecommun.search", category: "ApplePasswords")
+    /// How often a paired helper is told a tab came to the front.
+    nonisolated static let keepAliveEvery: TimeInterval = 240
 
     enum State: Equatable {
         /// Not talking to the helper.
@@ -116,7 +141,9 @@ final class ApplePasswords: ObservableObject {
         case paired
     }
 
-    @Published private(set) var state: State = .idle
+    @Published private(set) var state: State = .idle {
+        didSet { if state != oldValue { changed(from: oldValue) } }
+    }
     /// Why the last attempt didn't work, in plain words; cleared by the next.
     @Published private(set) var trouble: String?
 
@@ -128,18 +155,35 @@ final class ApplePasswords: ObservableObject {
     private var client: SRPClient?
     private var numbers: (serverKey: [UInt8], salt: [UInt8])?
     private var key: SymmetricKey?
+    /// Counts the pairings dropped, so a code still being checked when its
+    /// pairing goes can tell, and leave the next one alone.
+    private var dropped = 0
     private var waiters: [Int: (id: Int, continuation: CheckedContinuation<[String: Any], Error>)] = [:]
     private var nextWaiter = 0
     private var busy = false
     private var queue: [CheckedContinuation<Void, Never>] = []
     private var tabNumbers: [UUID: Int] = [:]
     private var bag = Set<AnyCancellable>()
+    /// Whether this Mac's helper says it hands out verification codes.
+    private var fillsCodes = false
+    private let keepAliveEvery: TimeInterval
+    private var keepAlive: Task<Void, Never>?
+    /// For the log only: when the helper was started, the pairing made, the
+    /// Mac last slept and woke, and which command is waiting on an answer.
+    private var linkStarted: Date?
+    private var pairedAt: Date?
+    private var lastSleep: Date?
+    private var lastWake: Date?
+    private var asking: Int?
+    private var lastTab = 1
 
     struct Unavailable: LocalizedError {
         let errorDescription: String?
     }
 
-    init(makeLink: (() throws -> AppleLink)? = nil, prefs: Preferences? = nil) {
+    init(makeLink: (() throws -> AppleLink)? = nil, prefs: Preferences? = nil,
+         keepAliveEvery: TimeInterval = ApplePasswords.keepAliveEvery) {
+        self.keepAliveEvery = keepAliveEvery
         self.makeLink = makeLink ?? {
             // A test run never runs Apple's helper: it would put its window
             // on the screen of whoever is working beside it, and ask their
@@ -154,10 +198,17 @@ final class ApplePasswords: ObservableObject {
         // Turned off: the helper is told goodbye and stopped, and the key
         // goes with it.
         prefs?.$applePasswords.dropFirst()
-            .sink { [weak self] on in if !on { self?.disconnect() } }
+            .sink { [weak self] on in if !on { self?.disconnect(because: "turned off in Settings") } }
             .store(in: &bag)
         NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
-            .sink { [weak self] _ in MainActor.assumeIsolated { self?.disconnect() } }
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.disconnect(because: "Search quit") } }
+            .store(in: &bag)
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspace.publisher(for: NSWorkspace.willSleepNotification)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.lastSleep = Date() } }
+            .store(in: &bag)
+        workspace.publisher(for: NSWorkspace.didWakeNotification)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.woke() } }
             .store(in: &bag)
     }
 
@@ -177,12 +228,14 @@ final class ApplePasswords: ObservableObject {
                     link.onEnd = { [weak self] in self?.ended() }
                     self.link = link
                     try link.start()
+                    linkStarted = Date()
                 }
                 let hello = try await request(AppleMessages.hello(), timeout: 5)
                 let capabilities = hello["capabilities"] as? [String: Any] ?? [:]
                 if let version = capabilities["secretSessionVersion"] as? Int, version != 1 {
                     throw Unavailable(errorDescription: "This Mac's Passwords helper is too old")
                 }
+                fillsCodes = capabilities["canFillOneTimeCodes"] as? Bool ?? false
                 let client = SRPClient(base64: capabilities["shouldUseBase64"] as? Bool ?? false)
                 let reply = try await request(AppleMessages.start(client), timeout: 15)
                 numbers = try AppleMessages.readStart(reply, client)
@@ -200,31 +253,40 @@ final class ApplePasswords: ObservableObject {
         guard state == .code, code.count == 6, let client, let numbers else { return }
         state = .checking
         trouble = nil
+        let pairing = dropped
         do {
             let proof = try await Task.detached(priority: .userInitiated) {
                 try client.prove(serverKey: numbers.serverKey, salt: numbers.salt, code: code)
             }.value
-            try await exclusive {
+            let sent = try await exclusive {
+                guard pairing == dropped else { return false }
                 let reply = try await request(AppleMessages.verify(client, proof: proof), timeout: 15)
                 try AppleMessages.readVerify(reply, client, proof: proof)
+                return true
             }
+            guard sent, pairing == dropped else { return }
             key = proof.key
             self.numbers = nil
             state = .paired
         } catch ApplePasswordsError.wrongCode {
+            guard pairing == dropped else { return }
             // The helper is done with that code: a new pairing shows a new one.
             self.numbers = nil
             self.client = nil
             state = .idle
             trouble = "That code didn't match. Connect again for a new one."
         } catch {
+            guard pairing == dropped else { return }
             fail(error, stop: true)
         }
     }
 
     /// Back to nothing: the helper told goodbye and stopped, every secret
     /// dropped. Also when the switch goes off and when Search quits.
-    func disconnect() {
+    func disconnect(because why: String = "asked in Search") {
+        if link != nil || state != .idle {
+            Self.log.notice("Disconnecting: \(why, privacy: .public), \(self.context, privacy: .public)")
+        }
         if let link {
             try? link.send(AppleMessages.end())
             link.onEnd = nil
@@ -271,6 +333,39 @@ final class ApplePasswords: ObservableObject {
         }
     }
 
+    /// Whose verification codes the helper keeps for `host`: nothing secret.
+    func codes(for host: String, tab: UUID, wanted: @MainActor () -> Bool = { true }) async -> [AppleCode] {
+        guard state == .paired, fillsCodes else { return [] }
+        do {
+            return try await exclusive {
+                guard wanted(), let client, let key else { return [] }
+                let reply = try await request(
+                    AppleMessages.codes(host: host, tab: number(of: tab), client: client, key: key), timeout: 8)
+                return try AppleMessages.readCodes(AppleMessages.readSealed(reply, client, key: key))
+            }
+        } catch {
+            dropIfSessionLost(error)
+            return []
+        }
+    }
+
+    /// The code of the account picked, as it stands now. macOS may ask for
+    /// Touch ID first; that can take a while, so no short timeout.
+    func code(of wanted: AppleCode, host: String, tab: UUID) async -> String? {
+        guard state == .paired, fillsCodes else { return nil }
+        do {
+            return try await exclusive {
+                guard let client, let key else { return nil }
+                let reply = try await request(
+                    AppleMessages.code(host: host, tab: number(of: tab), client: client, key: key), timeout: 120)
+                return try AppleMessages.readCode(AppleMessages.readSealed(reply, client, key: key), for: wanted)
+            }
+        } catch {
+            dropIfSessionLost(error)
+            return nil
+        }
+    }
+
     // MARK: - the line
 
     /// One question at a time: the helper's answers carry no number to tell
@@ -287,6 +382,8 @@ final class ApplePasswords: ObservableObject {
 
     private func request(_ message: [String: Any], timeout: TimeInterval) async throws -> [String: Any] {
         guard let link, let command = message["cmd"] as? Int else { throw ApplePasswordsError.gone }
+        asking = command
+        defer { asking = nil }
         nextWaiter += 1
         let id = nextWaiter
         return try await withCheckedThrowingContinuation { continuation in
@@ -315,7 +412,7 @@ final class ApplePasswords: ObservableObject {
         switch command {
         case AppleCommand.passwordsDisabled.rawValue, AppleCommand.reloginNeeded.rawValue:
             // iCloud Keychain turned off, or signed out: the pairing is over.
-            disconnect()
+            disconnect(because: "the helper said \(command == AppleCommand.passwordsDisabled.rawValue ? "passwords are off" : "sign in again")")
             trouble = "Apple Passwords needs you to sign in again"
         default:
             resolve(command, with: .success(message))
@@ -325,12 +422,14 @@ final class ApplePasswords: ObservableObject {
     /// The helper went: everything that was waiting fails, and the pairing
     /// with it.
     private func ended() {
+        Self.log.notice("Helper ended: \(self.context, privacy: .public)")
         link = nil
         reset()
         state = .idle
     }
 
     private func reset() {
+        dropped += 1
         let pending = waiters.values
         waiters = [:]
         pending.forEach { $0.continuation.resume(throwing: ApplePasswordsError.gone) }
@@ -338,7 +437,60 @@ final class ApplePasswords: ObservableObject {
         client = nil
         numbers = nil
         key = nil
+        fillsCodes = false
         tabNumbers = [:]
+        lastTab = 1
+        linkStarted = nil
+    }
+
+    // MARK: - keeping the helper running
+
+    /// Paired: the helper is told now and then that a tab came to the
+    /// front, so it is never left idle. Not paired: nothing is sent.
+    private func changed(from old: State) {
+        if state == .paired {
+            pairedAt = Date()
+            keepAlive?.cancel()
+            let every = UInt64(keepAliveEvery * 1_000_000_000)
+            keepAlive = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: every)
+                    guard !Task.isCancelled, let self else { return }
+                    self.nudge("keep-alive")
+                }
+            }
+        } else if old == .paired {
+            keepAlive?.cancel()
+            keepAlive = nil
+            pairedAt = nil
+        }
+    }
+
+    /// The Mac woke: a paired helper is told a tab came to the front,
+    /// which finds out at once whether it is still there.
+    func woke() {
+        lastWake = Date()
+        Self.log.info("Mac woke: \(self.context, privacy: .public)")
+        nudge("wake")
+    }
+
+    private func nudge(_ why: String) {
+        guard state == .paired, let link else { return }
+        do {
+            try link.send(AppleMessages.tabEvent(tab: lastTab))
+        } catch {
+            Self.log.notice("The \(why, privacy: .public) nudge didn't reach the helper (\(String(describing: error), privacy: .public)): \(self.context, privacy: .public)")
+        }
+    }
+
+    /// What Search was doing, for the log: no site, no name, no secret.
+    private var context: String {
+        let now = Date()
+        func ago(_ date: Date?) -> String { date.map { "\(Int(now.timeIntervalSince($0)))s" } ?? "never" }
+        let asleep = (lastSleep ?? .distantPast) > (lastWake ?? .distantPast)
+        return "state \(state), helper up \(ago(linkStarted)), paired \(ago(pairedAt)), "
+            + "woke \(ago(lastWake)) ago\(asleep ? " (asleep)" : ""), "
+            + (asking.map { "waiting on command \($0)" } ?? "nothing asked")
     }
 
     private func fail(_ error: Error, stop: Bool) {
@@ -349,18 +501,18 @@ final class ApplePasswords: ObservableObject {
     private func dropIfSessionLost(_ error: Error) {
         switch error {
         case ApplePasswordsError.status(9), ApplePasswordsError.gone, ApplePasswordsError.notTheHelper:
-            disconnect()
+            disconnect(because: "a request failed (\(String(describing: error)))")
             trouble = "Apple Passwords was disconnected. Connect again to use it."
         default:
-            break
+            Self.log.info("A request failed, pairing kept: \(String(describing: error), privacy: .public), \(self.context, privacy: .public)")
         }
     }
 
     private func number(of tab: UUID) -> Int {
-        if let known = tabNumbers[tab] { return known }
-        let next = tabNumbers.count + 1
-        tabNumbers[tab] = next
-        return next
+        let number = tabNumbers[tab] ?? tabNumbers.count + 1
+        tabNumbers[tab] = number
+        lastTab = number
+        return number
     }
 
     nonisolated static func words(for error: Error) -> String {
@@ -397,6 +549,15 @@ final class ApplePasswords: ObservableObject {
             let site = bare(Vault.host(of: site).isEmpty ? site : Vault.host(of: site))
             return site == bare(host) || (wide && registrable(site) == domain)
         }
+    }
+
+    /// The accounts kept for the host itself first, then the site's others
+    /// (admin.example.com's own before admin-qa's).
+    nonisolated static func exactFirst(_ logins: [AppleLogin], to host: String, wide: Bool = true,
+                                       registrable: (String) -> String = Vault.registrable) -> [AppleLogin] {
+        let site = logins.filter { belongs($0.sites, to: host, wide: wide, registrable: registrable) }
+        let own = site.filter { belongs($0.sites, to: host, wide: false, registrable: registrable) }
+        return own + site.filter { !own.contains($0) }
     }
 
     nonisolated private static func bare(_ host: String) -> String {

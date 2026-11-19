@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 // The column of tabs, folded away with ⌘S.
 //
@@ -14,8 +15,11 @@ import SwiftUI
 // corner — a logo, a menu button. They come back with the column when it
 // slides out, which is also where the window is dragged from.
 //
-// Folding lasts the session. A browser opening with no tabs anywhere on
-// screen, for a reason set days ago, reads as a broken one.
+// Folding lasts as long as you leave it: each window's fold is written
+// down with the window (windows.json) and comes back with it at the next
+// launch and with ⇧⌘T, as Safari and Arc keep a hidden sidebar hidden
+// (idea 738). A new window folds as the one it came from. Switching
+// between the column and the strip still brings the tabs back out.
 //
 // Unless that is the reason: Settings can keep the column folded for good,
 // Arc's way, and then the fold is where it rests, at launch and after every
@@ -44,14 +48,230 @@ import SwiftUI
 extension Browser {
     /// ⌘S. The column, or the strip across the top, out of the way, or back.
     func toggleFold() {
-        peeking = false
-        withAnimation(Motion.folding(out: folded)) { folded.toggle() }
+        // Asked to keep the tabs in sight: the column goes to icons only and
+        // back to its titles, the layout Settings calls Icons only, and is
+        // not folded away. One folded before the switch was turned on comes
+        // out first, as it always did.
+        if prefs.shrinks, !folded {
+            withAnimation(Motion.glide) { prefs.sideIcons.toggle() }
+            return
+        }
+        // Out over the page already (the pointer at the edge brought it):
+        // it stays where it is, beside the page now. Put away first and then
+        // brought out, it went for a frame — the page bare where the column
+        // had been, the window's buttons over it — and slid out again.
+        if folded, peeking {
+            foldTicket += 1
+            moveColumn(out: true) {
+                self.peeking = false
+                self.folded = false
+            }
+            return
+        }
+        // Only if it was out: set at all, every row of the column is built
+        // again, 30 of them with 30 tabs, before the slide starts.
+        if peeking { peeking = false }
+        foldTicket += 1
+        // Going away, however the column or the strip moves, what a page
+        // grows into is in its own colour until WebKit has drawn it there
+        // (see cover). Called off, it shrinks back and the cover goes.
+        if !folded, !foldingAway { Browser.cover(shownPages) }
+        // Pressed again before the column went: it stays.
+        if foldingAway {
+            foldingAway = false
+            return
+        }
+        // Going away, the page is given the column's room first, and the
+        // column slides only once WebKit has drawn the page at that size.
+        // Given it as the slide started, the page grew while it slid, and
+        // what WebKit hadn't drawn yet came in from the far edge as a bar
+        // of the web view's own ground, black or white with the theme. Out
+        // over the far edge, where the room goes, nothing of it shows.
+        let pages = shownPages
+        if !folded, prefs.sidebar, !Motion.reduced, !pages.isEmpty {
+            let ticket = foldTicket
+            foldingAway = true
+            Browser.drawn(pages, within: 0.12) { [weak self] in
+                guard let self, ticket == self.foldTicket, self.foldingAway else { return }
+                self.moveColumn(out: false) {
+                    self.foldingAway = false
+                    self.folded = true
+                }
+            }
+            return
+        }
+        moveColumn(out: folded) { self.folded.toggle() }
+    }
+
+    /// `change`, which brings the column out (`out`) or puts it away, on
+    /// the column's motion: its slide (Motion.folding), nothing under
+    /// Reduce Motion, or with Slide the column in and out on under Reduce
+    /// Motion a fade where it stands (Motion.fadesColumn). Fading, the
+    /// column is held in its place (`fadeHeld`) while its opacity goes, and
+    /// only then sent off the window's edge, where it waits for the next
+    /// time; coming back, it is put in its place, still clear, a turn
+    /// before it fades in.
+    func moveColumn(out: Bool, _ change: @escaping () -> Void) {
+        guard prefs.sidebar, Motion.fadesColumn else {
+            withAnimation(Motion.folding(out: out)) { change() }
+            return
+        }
+        fadeTicket += 1
+        let ticket = fadeTicket
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { fadeHeld = true }
+        // Nothing else moves, as under Reduce Motion: the page takes or
+        // gives its room at once. Only the column's opacity is animated, by
+        // its own modifier (see Fold).
+        if out {
+            DispatchQueue.main.async { withTransaction(Transaction()) { change() } }
+        } else {
+            withTransaction(Transaction()) { change() }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Motion.fade + 0.05) { [weak self] in
+            guard let self, ticket == self.fadeTicket else { return }
+            withTransaction(still) { self.fadeHeld = false }
+        }
+    }
+
+    /// The pages on screen beside the column: the one in front, and its
+    /// other half in Split View.
+    private var shownPages: [WKWebView] {
+        guard let active else { return [] }
+        let tabs = activeSplit.map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? [active]
+        return tabs.compactMap { $0.isWeb && !$0.asleep && !$0.floating ? $0.built : nil }
+    }
+
+    /// `done` once each of `pages` has its new size and WebKit has put it
+    /// on screen drawn at that size — its next presentation after the
+    /// resize, asked of its private side — or after `within` seconds,
+    /// whichever is first: a WebKit without that question, or a page too
+    /// busy to answer, holds nothing up for long.
+    static func drawn(_ pages: [WKWebView], within: TimeInterval, _ done: @escaping @MainActor () -> Void) {
+        var finished = false
+        let finish = {
+            guard !finished else { return }
+            finished = true
+            done()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + within) { MainActor.assumeIsolated { finish() } }
+        // Asked before the layout that resizes them, the next presentation
+        // is the one already on its way, at the old size.
+        let sizes = pages.map(\.frame.size)
+        func resized() {
+            guard !finished else { return }
+            guard zip(pages, sizes).contains(where: { $0.frame.size != $1 }) else {
+                DispatchQueue.main.async { MainActor.assumeIsolated { resized() } }
+                return
+            }
+            presented(pages, finish)
+        }
+        DispatchQueue.main.async { MainActor.assumeIsolated { resized() } }
+    }
+
+    /// What each of `pages` grows into, once its size changes, covered in
+    /// the page's own colour until WebKit has drawn it at that size.
+    ///
+    /// WebKit draws a page that has grown at its old size until its web
+    /// process has laid it out again, and the rest of the view shows the web
+    /// view's own ground: black or white with the theme, the column's width
+    /// across. A page waited for (see `drawn`) is ready before the column
+    /// moves; one busy for longer than that wait — a large app, a page that
+    /// does work on resize — had the bar slide into the window on the far
+    /// side and stay there until it was ready (idea 737, seen frame by
+    /// frame at 250 ms). Reduce Motion and the strip across the top, which
+    /// give the page its room at once, showed it too. The cover lies over
+    /// only what the page hasn't drawn, in the colour WebKit gives the
+    /// page's surround, and goes once the page has been put on screen at
+    /// its new size, or after a second whatever happens.
+    static func cover(_ pages: [WKWebView]) {
+        guard !pages.isEmpty else { return }
+        let sizes = pages.map(\.frame.size)
+        let until = CFAbsoluteTimeGetCurrent() + 0.25
+        func resized() {
+            let grown = zip(pages, sizes).filter { page, size in
+                page.frame.width > size.width + 0.5 || page.frame.height > size.height + 0.5
+            }
+            guard !grown.isEmpty else {
+                guard CFAbsoluteTimeGetCurrent() < until,
+                      zip(pages, sizes).allSatisfy({ $0.frame.size == $1 }) else { return }
+                DispatchQueue.main.async { MainActor.assumeIsolated { resized() } }
+                return
+            }
+            var covers: [NSView] = []
+            for (page, old) in grown {
+                for rect in undrawn(page, old: old) {
+                    let cover = FoldCover(frame: rect)
+                    cover.wantsLayer = true
+                    cover.layer?.backgroundColor = page.underPageBackgroundColor.cgColor
+                    page.addSubview(cover)
+                    covers.append(cover)
+                }
+            }
+            Bench.foldCovers = covers.count
+            var gone = false
+            let remove = {
+                guard !gone else { return }
+                gone = true
+                covers.forEach { $0.removeFromSuperview() }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { MainActor.assumeIsolated { remove() } }
+            presented(grown.map(\.0), remove)
+        }
+        DispatchQueue.main.async { MainActor.assumeIsolated { resized() } }
+    }
+
+    /// The part of `page`, now larger than `old`, that WebKit has yet to
+    /// draw: past the old width, and below the old height. Its drawing
+    /// keeps to the top left corner.
+    static func undrawn(_ page: NSView, old: CGSize) -> [CGRect] {
+        let size = page.bounds.size
+        var rects: [CGRect] = []
+        if size.width > old.width {
+            rects.append(CGRect(x: old.width, y: 0, width: size.width - old.width, height: size.height))
+        }
+        if size.height > old.height {
+            let tall = size.height - old.height
+            rects.append(CGRect(x: 0, y: page.isFlipped ? old.height : 0, width: min(old.width, size.width), height: tall))
+        }
+        return rects
+    }
+
+    private static func presented(_ pages: [WKWebView], _ finish: @escaping @MainActor () -> Void) {
+        var left = pages.count
+        let ask = NSSelectorFromString("_doAfterNextPresentationUpdate:")
+        for page in pages {
+            guard page.responds(to: ask), let imp = page.method(for: ask) else { continue }
+            typealias Then = @convention(block) () -> Void
+            typealias After = @convention(c) (AnyObject, Selector, Then) -> Void
+            let then: Then = {
+                MainActor.assumeIsolated {
+                    left -= 1
+                    if left == 0 { finish() }
+                }
+            }
+            unsafeBitCast(imp, to: After.self)(page, ask, then)
+        }
     }
 
     /// The folded column out over the page, or back in.
     func peek(_ out: Bool) {
-        withAnimation(Motion.folding(out: out)) { peeking = out }
+        moveColumn(out: out) { self.peeking = out }
     }
+
+    /// A page filling the screen in front of this window. With
+    /// Preferences.keepsWindow, one settled in a Space of its own isn't, once
+    /// this window's Space is the one in view: the window is whole again, to
+    /// be used beside the video.
+    func fillsHere(_ tab: Tab) -> Bool {
+        guard tab.immersed else { return false }
+        guard prefs.keepsWindow, let window, tab.built?.fullscreenState == .inFullscreen else { return true }
+        return !window.isOnActiveSpace
+    }
+
+    /// The tab in front is such a page.
+    var frontFillsHere: Bool { active.map(fillsHere) ?? false }
 
     /// Whether something of the window's lies over `page` at `point`, in the
     /// window's own coordinates: a peek over the page in front (not over its
@@ -60,15 +280,15 @@ extension Browser {
     /// hears nothing of the pointer there (see PageView.underCover).
     func covers(_ page: NSView, at point: NSPoint) -> Bool {
         guard let window, page.window === window else { return false }
-        if let peek = peekTab, peek.built !== page { return true }
+        if peekInFront, let peek = peekTab, peek.built !== page { return true }
         // The address field raised over the page in front, by ⌘L or by ⌘T's
         // floating field, dims all of that page and only that page: with
         // Split View on, the other pane is still there to point at.
         if editing, let active, !active.isBlank, active.built === page { return true }
         // What comes over the whole window: the ⌃Tab switcher, the hidden
-        // elements' list (a click beside it puts it away), Welcome and
-        // What's New.
-        if tabSwitcher.visible || reviewing || welcoming || newsShowing { return true }
+        // elements' list and a site's style (a click beside either puts it
+        // away), Welcome and What's New.
+        if tabSwitcher.visible || reviewing || styling != nil || welcoming || newsShowing { return true }
         // The Find bar is a pill over one corner of the page: whatever a
         // click there would land on decides. Asking the window costs far more
         // than the flags above, so only while the bar is open.
@@ -77,18 +297,21 @@ extension Browser {
            hit !== page, !hit.isDescendant(of: page) {
             return true
         }
-        guard folded, peeking, active?.immersed != true, let size = window.contentView?.bounds.size else { return false }
+        guard folded, peeking, !frontFillsHere, let size = window.contentView?.bounds.size else { return false }
         if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
         return prefs.sidePosition == .right ? point.x >= size.width - prefs.columnWidth : point.x <= prefs.columnWidth
     }
 }
 
-/// Over the window while the column or the strip is folded: the column or
-/// the strip itself while it is out, brought out by the pointer at the
+/// Over the window: the column, beside the page or folded away, and the
+/// strip while it is folded; out over the page once the pointer is at the
 /// window's chosen side, or its top edge.
 struct Fold: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
+    /// The column's width while its edge is held, for the page beside it
+    /// (see HeldEdges).
+    var onDrag: (CGFloat?) -> Void = { _ in }
 
     /// The column going back in, a moment after the pointer left it.
     @State private var leaving: DispatchWorkItem?
@@ -131,7 +354,7 @@ struct Fold: View {
             // the page the top edge too, and the same band: there was nothing
             // to take hold of until the strip came down. Unfolded, the strip
             // is its own title bar, and no band lies over its tabs.
-            if prefs.sidebar || folding, browser.active?.immersed != true {
+            if prefs.sidebar || folding, !browser.frontFillsHere {
                 DragStrip()
                     .frame(height: Fold.top)
                     .frame(maxWidth: .infinity)
@@ -152,7 +375,15 @@ struct Fold: View {
             }
             ZStack(alignment: onRight ? .trailing : .leading) {
                 Color.clear.frame(width: 0)
-                if folding, prefs.sidebar {
+                if prefs.sidebar {
+                    // The one column, beside the page or folded away: ⌘S
+                    // slides it rather than trading it for another. Two
+                    // columns, one beside the page and one here for the fold,
+                    // had every row built four times over on each ⌘S, 130 to
+                    // 165ms of the main thread with 30 tabs before the slide's
+                    // first frame, against a slide of 150ms (measured
+                    // 2026-11-06, bench foldtime).
+                    //
                     // Kept while folded, off the window's edge, and slid out
                     // and back rather than made anew each time. Made anew,
                     // every row was built again on every peek, about 60ms of
@@ -173,14 +404,26 @@ struct Fold: View {
                     // rectangle either way. It wears the window's ground, as
                     // it does beside the page's card (see CardEdge), or its
                     // own white where the page is no card.
-                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards)
-                        .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true, strength: browser.peeking ? 1 : 0))
-                        .offset(x: browser.peeking ? 0 : (onRight ? prefs.columnWidth : -prefs.columnWidth))
-                        .allowsHitTesting(browser.peeking)
+                    // Away exactly when the lights are, which ride with it.
+                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: onDrag)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
+                                             strength: browser.folded && browser.peeking ? 1 : 0))
+                        // Faded rather than slid under Reduce Motion with
+                        // Slide the column in and out on (Browser.moveColumn).
+                        .animation(Motion.fadesColumn ? .easeInOut(duration: Motion.fade) : nil) { column in
+                            column.opacity(lightsOff && Motion.fadesColumn ? 0 : 1)
+                        }
+                        .offset(x: lightsOff && !browser.fadeHeld ? (onRight ? prefs.columnWidth : -prefs.columnWidth) : 0)
+                        .allowsHitTesting(!lightsOff)
+                        .transition(.move(edge: onRight ? .trailing : .leading))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity,
                    alignment: onRight ? .trailing : .leading)
+            // As the page beside it moves (see ContentView).
+            .animation(Motion.glide, value: prefs.sidebar)
+            .animation(Motion.glide, value: prefs.sidePosition)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: onRight ? .topTrailing : .topLeading)
@@ -240,7 +483,7 @@ struct Fold: View {
             resetPending()
             guard prefs.sidebar else { return }
             browser.peeking = false
-            withAnimation(Motion.folding(out: !hides)) { browser.folded = hides }
+            browser.moveColumn(out: !hides) { browser.folded = hides }
         }
         // The address typed into a row is done with, and the pointer went
         // elsewhere while it was: the column goes the way it would have.
@@ -265,7 +508,7 @@ struct Fold: View {
 
     /// Folded, and not taken over by a page filling the screen.
     private var folding: Bool {
-        browser.folded && browser.active?.immersed != true
+        browser.folded && !browser.frontFillsHere
     }
 
     private var lightsOff: Bool {
@@ -347,10 +590,30 @@ struct Fold: View {
             // Off the window, so whatever is under the pointer isn't it. The
             // wait starts again with every move: the column comes once the
             // pointer stops, not while it is on its way somewhere else.
-            arrive(resting: true)
+            // Unless it is pinned against the screen's own edge, with no
+            // display beyond: it has nowhere else to be going. A window kept
+            // off the screen's edge by a tiling window manager's gaps
+            // otherwise always waited here, and a hand still settling after
+            // the fling started the wait again with every move. Not with the
+            // Dock hidden on that side, which the same push brings out.
+            let further = NSPoint(x: screen.x + (onRight ? 1 : -1), y: screen.y)
+            if NSScreen.screens.contains(where: { NSMouseInRect(further, $0.frame, false) })
+                || Fold.dockHides(right: onRight) {
+                arrive(resting: true)
+            } else {
+                pass()
+                peek(true)
+            }
         } else {
             pass()
         }
+    }
+
+    /// Whether the Dock hides on the screen's `right` (or left) edge, and
+    /// comes out there when the pointer pushes against it.
+    static func dockHides(right: Bool) -> Bool {
+        guard let dock = UserDefaults(suiteName: "com.apple.dock"), dock.bool(forKey: "autohide") else { return false }
+        return dock.string(forKey: "orientation") == (right ? "right" : "left")
     }
 
     /// The pointer on the edge: out at once, or after the dwell when the
@@ -447,6 +710,29 @@ struct Fold: View {
             bar.isHidden = off
             return
         }
+        // Faded in place with the column (Browser.moveColumn).
+        if !up, Motion.fadesColumn {
+            layer.removeAnimation(forKey: "fold")
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = bar.isHidden ? 0 : (layer.presentation()?.opacity ?? 1)
+            fade.toValue = off ? 0 : 1
+            fade.duration = Motion.fade
+            fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            fade.fillMode = .forwards
+            fade.isRemovedOnCompletion = false
+            bar.isHidden = false
+            CATransaction.begin()
+            CATransaction.setCompletionBlock {
+                MainActor.assumeIsolated {
+                    guard turn == slides else { return }
+                    layer.removeAnimation(forKey: "fold")
+                    bar.isHidden = off
+                }
+            }
+            layer.add(fade, forKey: "fold")
+            CATransaction.commit()
+            return
+        }
         // With Reduce Motion on, the column comes and goes at once, and the
         // lights with it.
         if Motion.reduced {
@@ -475,14 +761,23 @@ struct Fold: View {
             bar.isHidden = off
             return
         }
-        let fold = Motion.fold(out: !off)
-        let spring = CASpringAnimation(keyPath: path)
-        spring.mass = 1
-        spring.stiffness = pow(2 * .pi / fold.response, 2)
-        spring.damping = 4 * .pi * fold.damping / fold.response
+        let spring: CABasicAnimation
+        if let slide = Motion.slide(out: !off) {
+            // The column's eased slide (Slide the column in and out).
+            spring = CABasicAnimation(keyPath: path)
+            spring.timingFunction = CAMediaTimingFunction(name: off ? .easeIn : .easeOut)
+            spring.duration = slide
+        } else {
+            let fold = Motion.fold(out: !off)
+            let bounce = CASpringAnimation(keyPath: path)
+            bounce.mass = 1
+            bounce.stiffness = pow(2 * .pi / fold.response, 2)
+            bounce.damping = 4 * .pi * fold.damping / fold.response
+            bounce.duration = bounce.settlingDuration
+            spring = bounce
+        }
         spring.fromValue = from
         spring.toValue = to
-        spring.duration = spring.settlingDuration
         spring.fillMode = .forwards
         spring.isRemovedOnCompletion = false
         bar.isHidden = false
@@ -568,4 +863,11 @@ private final class Pointer {
         global = nil
         window?.acceptsMouseMovedEvents = accepted
     }
+}
+
+/// What a page has yet to draw while it grows (see Browser.cover): its
+/// own colour, never in the way of the pointer.
+final class FoldCover: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var isOpaque: Bool { true }
 }

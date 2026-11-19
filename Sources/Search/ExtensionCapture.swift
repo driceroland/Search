@@ -428,12 +428,12 @@ final class ExtensionCapture: NSObject, WKScriptMessageHandlerWithReply, Observa
             guard let web = entry.web else { continue }
             let selector = NSSelectorFromString("_setDisplayCaptureState:completionHandler:")
             if web.responds(to: selector), let method = class_getMethodImplementation(type(of: web), selector) {
-                unsafeBitCast(method, to: SetDisplay.self)(web, selector, 0, nil)
+                unsafeBitCast(method, to: SetDisplay.self)(web, selector, 0, {})
             }
             // A site's Stop ends only its screen: the call it is on goes on.
             guard entry.extensionID != nil else { continue }
-            web.setCameraCaptureState(.none, completionHandler: nil)
-            web.setMicrophoneCaptureState(.none, completionHandler: nil)
+            web.setCameraCaptureState(.none) {}
+            web.setMicrophoneCaptureState(.none) {}
         }
     }
 

@@ -4,18 +4,38 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const source = process.argv[2] ? fs.readFileSync(process.argv[2], 'utf8') : fs.readFileSync(path.join(__dirname, '../../Sources/Search/ExtensionShims.swift'), 'utf8');
 const script = source.split('nonisolated static let script = #"""\n')[1].split('\n    """#')[0];
+// A content script carries only the shim's part up to its early return
+// (ExtensionShims.contentShim); the content-script cases run that part, as
+// installed.
+const end = "/* Search: a content script's shim ends here */";
+const contentScript = script.includes(end) ? 'if (!globalThis.__searchShim) ' + script.slice(0, script.indexOf(end)).replace(/^\s+/, '') + '})();\n' : script;
 const harness = fs.readFileSync(path.join(__dirname, 'shim-harness.js'), 'utf8');
 const fixture = vm.runInNewContext(harness + '\nrecoveryFixture', { console });
 const drain = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
 function load(content, generation = 0, alter = () => {}) {
   const state = fixture(content, generation);
   alter(state);
-  vm.runInNewContext(script.replaceAll('__SEARCH_WORKER_GENERATION__', String(generation)), state.root);
+  vm.runInNewContext((content ? contentScript : script).replaceAll('__SEARCH_WORKER_GENERATION__', String(generation)), state.root);
   return state;
 }
 let passed = 0;
 async function test(name, run) { await run(); console.log('PASS ' + name); passed++; }
 (async () => {
+  await test('content-script: its part of the shim leaves what the whole shim left', async () => {
+    assert.ok(contentScript.length < script.length / 2, 'the content part is cut');
+    const shape = (state) => {
+      const keys = (o) => o ? Object.getOwnPropertyNames(o).sort() : null;
+      return JSON.stringify({ root: keys(state.root), chrome: keys(state.root.chrome), runtime: keys(state.runtime),
+        handlers: Object.keys(state.handlers).sort(), calls: state.calls, timers: state.timers.length });
+    };
+    const whole = fixture(true);
+    vm.runInNewContext(script.replaceAll('__SEARCH_WORKER_GENERATION__', '0'), whole.root);
+    assert.equal(shape(load(true)), shape(whole));
+    // A second entry's copy in the same frame leaves it as the first did.
+    const twice = load(true);
+    vm.runInNewContext(contentScript.replaceAll('__SEARCH_WORKER_GENERATION__', '0'), twice.root);
+    assert.equal(shape(twice), shape(whole));
+  });
   for (const content of [true, false]) {
     const kind = content ? 'content-script' : 'extension-page';
     await test(kind + ': restart, duplicate notification, no replay/reconnect', async () => {

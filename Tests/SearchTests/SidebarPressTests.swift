@@ -42,6 +42,44 @@ final class SidebarPressTests: XCTestCase {
         XCTAssertEqual(browser.editingTab, first.id, "A fresh click on the active row still edits")
     }
 
+    func testEditedRowTakesTheKeys() async throws {
+        let browser = makeBrowser()
+        let window = makeWindow(browser)
+        try await settle()
+        let point = rowPoint(0, in: window)
+        for _ in 0..<2 {
+            try await send(.leftMouseDown, at: point, in: window)
+            try await send(.leftMouseUp, at: point, in: window)
+        }
+        try await settle()
+        XCTAssertEqual(browser.editingTab, browser.tabs[0].id)
+        let editor = try XCTUnwrap(window.firstResponder as? NSTextView, "The row's field must have the keys")
+        XCTAssertEqual(editor.selectedRange().length, (editor.string as NSString).length)
+        XCTAssertFalse(editor.string.isEmpty)
+    }
+
+    func testRowLeftPickedAloneSelectsOnPressAgain() async throws {
+        let browser = makeBrowser()
+        let active = try XCTUnwrap(browser.active)
+        let index = try XCTUnwrap(browser.shownTabs.firstIndex { $0.id != active.id })
+        let other = browser.shownTabs[index]
+        let window = makeWindow(browser)
+        try await settle()
+        // ⌘ picks it along with the tab you're on.
+        browser.extendTabSelection(to: other, modifiers: .command)
+        try await settle()
+        XCTAssertTrue(browser.isPickedAmongOthers(other))
+        // Still picked, but alone now: its row's press is a plain press again.
+        browser.extendTabSelection(to: active, modifiers: .command)
+        try await settle()
+        XCTAssertEqual(browser.selectedTabIDs, [other.id])
+        XCTAssertFalse(browser.isPickedAmongOthers(other))
+        let point = rowPoint(index, in: window)
+        try await send(.leftMouseDown, at: point, in: window)
+        XCTAssertEqual(browser.activeID, other.id, "The page must change while the button is held")
+        try await send(.leftMouseUp, at: point, in: window)
+    }
+
     func testPressThenDragStillReordersWithoutEditing() async throws {
         let browser = makeBrowser()
         let first = browser.tabs[0]
@@ -199,10 +237,13 @@ final class SidebarPressTests: XCTestCase {
         let window = makeWindow(root: ControlsFixture(select: { selected += 1 }, mute: {}, close: {}))
         try await settle()
         let point = NSPoint(x: 60, y: 20)
+        // Through the app's own queue, as a real click comes: which button
+        // went down is the event's, and only an event the app took off its
+        // queue says so.
         for (down, up) in [(NSEvent.EventType.rightMouseDown, NSEvent.EventType.rightMouseUp),
                            (.otherMouseDown, .otherMouseUp)] {
-            try await send(down, at: point, in: window)
-            try await send(up, at: point, in: window)
+            try await post(down, at: point, in: window)
+            try await post(up, at: point, in: window)
         }
         XCTAssertEqual(selected, 0, "Only the left button selects on press; right-click stays the menu's")
     }
@@ -338,6 +379,23 @@ final class SidebarPressTests: XCTestCase {
 
     private func settle() async throws {
         try await Task.sleep(for: .milliseconds(250))
+    }
+
+    /// As PinStuckTests posts: to this app alone, taken off the queue here.
+    private func post(_ type: NSEvent.EventType, at point: NSPoint, in window: NSWindow) async throws {
+        NSApp.postEvent(try event(type, at: point, in: window), atStart: false)
+        // Until this one is through, however many are queued before it:
+        // what earlier tests left on the queue (their windows' AppKit events,
+        // forty and more by this point of a full run) ran past a count of
+        // twenty, and the press was never sent.
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            guard let queued = NSApp.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 0.2),
+                                               inMode: .default, dequeue: true) else { break }
+            NSApp.sendEvent(queued)
+            if queued.type == type, queued.window === window { break }
+        }
+        try await Task.sleep(for: .milliseconds(30))
     }
 
     private func send(_ type: NSEvent.EventType, at point: NSPoint, in window: NSWindow, clicks: Int = 1) async throws {

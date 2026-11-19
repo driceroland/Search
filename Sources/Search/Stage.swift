@@ -81,23 +81,23 @@ struct Page: View {
                     .transition(.opacity)
             }
 
-            Swiping(pull: tab.pull)
+            Swiping(pulling: tab.pulling)
         }
         .animation(Motion.quick, value: tab.page?.kind)
         .animation(Motion.quick, value: tab.failure)
         .animation(Motion.quick, value: tab.floating)
         .animation(Motion.quick, value: tab.reader)
-        .animation(.easeOut(duration: 0.2), value: tab.cover == nil)
-        .animation(.easeOut(duration: 0.16), value: tab.pull == nil)
+        .animation(Motion.timed(.easeOut(duration: 0.2)), value: tab.cover == nil)
     }
 }
 
 /// What a sideways swipe puts over the page: the disc, or the list a held
 /// one opens. The page's own stage, and a small window's (Little.swift).
 struct Swiping: View {
-    let pull: Pull?
+    @ObservedObject var pulling: Pulling
 
     var body: some View {
+        let pull = pulling.pull
         ZStack {
             if let pull, pull.stops != nil {
                 // In the disc's place, grown from its own edge: it sits in a
@@ -121,6 +121,7 @@ struct Swiping: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
         }
+        .animation(Motion.timed(.easeOut(duration: 0.16)), value: pull == nil)
     }
 }
 
@@ -169,7 +170,7 @@ private struct Disc: View {
         .offset(x: (pull.back ? 1 : -1) * (10 + reach * 0.2 + (pull.going ? 12 : 0)))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pull.back ? .leading : .trailing)
         .allowsHitTesting(false)
-        .animation(.easeOut(duration: 0.22), value: pull.going)
+        .animation(Motion.timed(.easeOut(duration: 0.22)), value: pull.going)
     }
 }
 
@@ -218,8 +219,8 @@ private struct HistoryList: View {
         .offset(x: (pull.back ? 1 : -1) * (10 + reach * 0.2), y: slide)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pull.back ? .leading : .trailing)
         .allowsHitTesting(false)
-        .animation(.spring(response: 0.22, dampingFraction: 0.9), value: pull.picked)
-        .animation(.easeOut(duration: 0.26), value: pull.going)
+        .animation(Motion.timed(.spring(response: 0.22, dampingFraction: 0.9)), value: pull.picked)
+        .animation(Motion.timed(.easeOut(duration: 0.26)), value: pull.going)
     }
 
     @ViewBuilder
@@ -458,8 +459,9 @@ final class StageView: NSView {
             }
             // Nothing of its own here: the last tab's page, left as it was,
             // stood at its old size in a stage grown to the whole window,
-            // with an empty band beside it where the column had been.
-            if homecoming != nil { clearUnwanted() }
+            // with an empty band beside it where the column had been. Nor
+            // the tab shown in front of it while it filled the screen.
+            if homecoming != nil || Shared.prefs.keepsWindow { clearUnwanted() }
             return
         }
 
@@ -475,6 +477,13 @@ final class StageView: NSView {
     private func clearUnwanted() {
         let docked = inspecting
         for view in subviews where view !== wanted && !(docked && Self.isInspector(view)) {
+            // Another tab in front while this page fills the screen: WebKit
+            // brings the page home to its placeholder, so that stays, under
+            // the tab in front, and so does the page on its way back.
+            if Shared.prefs.keepsWindow {
+                if Self.isPlaceholder(view) { continue }
+                if let page = view as? WKWebView, page.fullscreenState != .notInFullscreen { continue }
+            }
             // Unseen, and still drawn: WebKit asks whether its view is in a
             // window and not hidden, not whether anything shows of it.
             if view === parting {
@@ -705,6 +714,31 @@ struct DragStrip: NSViewRepresentable {
     /// the tabs, where a double-click opens a new tab instead of zooming the
     /// window.
     var onDoubleClick: (() -> Void)? = nil
+    /// What a right-click on the strip brings up, if anything: the
+    /// column's own menu (ColumnMenu), made when it is asked for.
+    var menu: (() -> NSMenu?)? = nil
+    /// A right-click asked about by the bench (`columnmenu`), where there
+    /// is no event: the strips answer the hit test as they would for one.
+    @MainActor static var probingRightClick = false
+
+    /// Whether the pointer at `point` (in the window's coordinates) is over
+    /// something in the title bar a press would pick up rather than the
+    /// window: what a press there would land on is neither a strip, which
+    /// moves the window itself, nor the title bar's own (the lights).
+    /// Below the title bar macOS never drags the window, so nothing there.
+    @MainActor static func holdsWindow(at point: NSPoint, in window: NSWindow) -> Bool {
+        guard !window.styleMask.contains(.fullScreen), let frame = window.contentView?.superview else { return false }
+        let bar = window.standardWindowButton(.closeButton)?.superview?.superview
+        let band = bar.map(\.frame.height) ?? (window.frame.height - window.contentLayoutRect.height)
+        guard point.y >= window.frame.height - band else { return false }
+        guard let hit = frame.hitTest(frame.convert(point, from: nil)) else { return false }
+        if hit is Strip { return false }
+        if let bar, hit.isDescendant(of: bar) { return false }
+        return true
+    }
+
+    /// See Strip.hover: for the bench.
+    @MainActor static func hover(_ window: NSWindow, at point: NSPoint) -> Bool { Strip.hover(window, at: point) }
 
     func makeNSView(context: Context) -> NSView { Strip() }
 
@@ -713,13 +747,15 @@ struct DragStrip: NSViewRepresentable {
         (view as? Strip)?.below = below
         (view as? Strip)?.trailing = trailing
         (view as? Strip)?.onDoubleClick = onDoubleClick
+        (view as? Strip)?.rightMenu = menu
     }
 
     private final class Strip: NSView {
-        var reserved: CGFloat = 0
-        var below: CGFloat = 0
-        var trailing: CGFloat = 0
+        var reserved: CGFloat = 0 { didSet { if reserved != oldValue { aimCursor() } } }
+        var below: CGFloat = 0 { didSet { if below != oldValue { aimCursor() } } }
+        var trailing: CGFloat = 0 { didSet { if trailing != oldValue { aimCursor() } } }
         var onDoubleClick: (() -> Void)?
+        var rightMenu: (() -> NSMenu?)?
 
         private var pressed: NSEvent?
         private var moved = false
@@ -737,31 +773,51 @@ struct DragStrip: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? {
             let inside = convert(point, from: superview)
             guard inside.x >= reserved, inside.x <= bounds.width - trailing else { return nil }
+            // A right-click over the rows, with a menu to give: the strip
+            // lies behind them, so it is asked only where no row, heading
+            // or button took it first — the gaps between them.
+            let right = NSApp.currentEvent?.type == .rightMouseDown || DragStrip.probingRightClick
             // AppKit measures up from the bottom; the reservation is from the top.
-            guard bounds.height - inside.y >= below else { return nil }
+            guard bounds.height - inside.y >= below || (right && rightMenu != nil) else { return nil }
             return super.hitTest(point)
         }
 
-        /// The window is not movable while the pointer is over a strip: macOS
-        /// starts a title bar's drag before the app sees the press, so a tab
-        /// picked up in the row carried the window off unless the window was
-        /// unmovable already. Elsewhere it is movable, for Window › Move &
-        /// Resize, tiling and window managers (#286).
+        override func menu(for event: NSEvent) -> NSMenu? {
+            rightMenu?() ?? super.menu(for: event)
+        }
+
+        /// The window is not movable while the pointer is over something in
+        /// the title bar a press would pick up — a tab, a button in the row:
+        /// macOS starts a title bar's drag before the app sees the press, so
+        /// a tab picked up in the row carried the window off unless the
+        /// window was unmovable already (#668). Everywhere else it is
+        /// movable, the strip's own empty run, the lights and everything
+        /// under the title bar included, for Window › Move & Resize, tiling
+        /// and window managers (#286). It was unmovable over the whole of
+        /// every strip, the column of tabs included, and a window manager
+        /// worked from the title bar — Swish's swipes are made there — found
+        /// a window that said it couldn't be moved (idea 744).
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
             for area in trackingAreas { removeTrackingArea(area) }
-            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: self))
         }
 
-        override func mouseEntered(with event: NSEvent) { hover(true) }
-        override func mouseExited(with event: NSEvent) { hover(false) }
+        override func mouseEntered(with event: NSEvent) { aim(event.locationInWindow) }
+        override func mouseMoved(with event: NSEvent) { aim(event.locationInWindow) }
+        override func mouseExited(with event: NSEvent) { hold(false) }
 
         override func viewWillMove(toWindow newWindow: NSWindow?) {
-            hover(false)
+            hold(false)
             super.viewWillMove(toWindow: newWindow)
         }
 
-        private func hover(_ on: Bool) {
+        private func aim(_ point: NSPoint) {
+            guard let window else { return }
+            hold(DragStrip.holdsWindow(at: point, in: window))
+        }
+
+        private func hold(_ on: Bool) {
             guard let window, on != over else { return }
             over = on
             let id = ObjectIdentifier(window)
@@ -770,9 +826,41 @@ struct DragStrip: NSViewRepresentable {
             window.isMovable = count == 0
         }
 
+        /// The bench's hover (`hit … hover`): the pointer put at `point` over
+        /// every strip under it, whether the window is movable then, and the
+        /// pointer taken away again. A hidden probe's window has no pointer.
+        static func hover(_ window: NSWindow, at point: NSPoint) -> Bool {
+            var under: [Strip] = []
+            func walk(_ view: NSView) {
+                if let strip = view as? Strip, !strip.isHiddenOrHasHiddenAncestor,
+                   strip.bounds.contains(strip.convert(point, from: nil)) { under.append(strip) }
+                for sub in view.subviews { walk(sub) }
+            }
+            if let frame = window.contentView?.superview { walk(frame) }
+            for strip in under { strip.aim(point) }
+            let movable = window.isMovable
+            for strip in under { strip.hold(false) }
+            return movable
+        }
+
+        /// A title bar's pointer is the arrow. The strip had no say in it,
+        /// so the I-beam a page or a field last set came along onto the
+        /// title bar and stayed through the whole drag of the window (#1094).
+        /// Only over the run the strip takes clicks in (see hitTest).
+        override func resetCursorRects() {
+            let room = NSRect(x: reserved, y: 0,
+                              width: max(0, bounds.width - trailing - reserved),
+                              height: max(0, bounds.height - below))
+            guard room.width > 0, room.height > 0 else { return }
+            addCursorRect(room, cursor: .arrow)
+        }
+
+        private func aimCursor() { window?.invalidateCursorRects(for: self) }
+
         override func mouseDown(with event: NSEvent) {
             pressed = event
             moved = false
+            NSCursor.arrow.set()
         }
 
         /// Here the window is let go for the one drag, handed to the system's

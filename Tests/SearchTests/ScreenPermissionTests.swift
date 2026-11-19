@@ -127,6 +127,48 @@ final class ScreenPermissionTests: XCTestCase {
         }
     }
 
+    func testCameraCardEndsWhenItsTabIsLeftOrGoes() async throws {
+        for event in ["switch", "navigate", "close"] {
+            let (browser, tab, frame) = try await fixture()
+            var replies: [WKPermissionDecision] = []
+            browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .camera) { replies.append($0) }
+            XCTAssertEqual(browser.asking?.wants, "camera", event)
+            switch event {
+            case "switch": browser.newTab()
+            case "navigate":
+                tab.web.loadHTMLString("<p>A different document</p>", baseURL: URL(string: "https://screen.example/next"))
+                try await Task.sleep(nanoseconds: 200_000_000)
+            default: browser.close(tab)
+            }
+            XCTAssertEqual(replies, [.deny], event)
+            XCTAssertNil(browser.asking, event)
+            try await Task.sleep(nanoseconds: 550_000_000)
+            browser.allowCapture()
+            browser.closeAll()
+            XCTAssertEqual(replies, [.deny], "\(event) answers exactly once")
+        }
+    }
+
+    func testHeldScreenQuestionLeavesTheTabInFrontFreeToAsk() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.closeAll() }
+        browser.newTab()
+        let other = try XCTUnwrap(browser.active)
+        other.web.loadHTMLString("<p>Front</p>", baseURL: URL(string: "https://screen.example/front"))
+        var screen: [Int] = []
+        ask(browser, tab, frame) { screen.append($0) }
+        XCTAssertNil(browser.asking)
+        var camera: [WKPermissionDecision] = []
+        browser.askedForCapture(other.web, origin: frame.securityOrigin, frame: frame, type: .camera) { camera.append($0) }
+        XCTAssertEqual(browser.asking?.wants, "camera")
+        XCTAssertTrue(camera.isEmpty)
+        browser.select(tab)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(camera, [.deny])
+        XCTAssertEqual(browser.asking?.wants, "screen")
+        XCTAssertTrue(screen.isEmpty)
+    }
+
     func testCompletionCanRequestAgainWithoutLosingTheNewCard() async throws {
         let (browser, tab, frame) = try await fixture()
         defer { browser.closeAll() }
@@ -196,6 +238,246 @@ final class ScreenPermissionTests: XCTestCase {
         browser.focusPane(other)
         XCTAssertEqual(replies, [0])
         XCTAssertNil(browser.asking)
+    }
+
+    func testCombinedRequestCannotBypassIndividualRefusal() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.forgetCaptureChoices(); browser.closeAll() }
+        let origin = "https://screen.example"
+        CaptureChoices.set(true, for: .cameraAndMicrophone, origin: origin)
+        CaptureChoices.set(false, for: .camera, origin: origin)
+        var reply: WKPermissionDecision?
+        browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .cameraAndMicrophone) { reply = $0 }
+        XCTAssertEqual(reply, .deny)
+        XCTAssertNil(browser.asking)
+        XCTAssertTrue(CaptureChoices.combinedBlocked(origin: origin))
+    }
+
+    func testPrivatePeekDoesNotUseSavedCombinedPermission() async throws {
+        let (browser, _, frame) = try await fixture(shy: true)
+        defer { browser.forgetCaptureChoices(); browser.closePeek(); browser.closeAll() }
+        let peek = Tab(shy: true)
+        browser.prepare(peek)
+        browser.peekTab = peek
+        let origin = "https://screen.example"
+        CaptureChoices.set(true, for: .camera, origin: origin)
+        CaptureChoices.set(true, for: .microphone, origin: origin)
+        var answer: WKPermissionDecision?
+        browser.askedForCapture(peek.web, origin: frame.securityOrigin, frame: frame, type: .cameraAndMicrophone) { answer = $0 }
+        XCTAssertNil(answer)
+        XCTAssertEqual(browser.asking?.wants, "camera and microphone")
+        try await Task.sleep(for: .milliseconds(550))
+        browser.allowCapture()
+        XCTAssertEqual(answer, .grant)
+        XCTAssertNil(Store.settings.object(forKey: "capture.\(origin)|\(WKMediaCaptureType.cameraAndMicrophone.rawValue)"))
+    }
+
+    func testIndividualPromptsUpdateBothAliasesAndAllowCombinedRequest() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.forgetCaptureChoices(); browser.closeAll() }
+        let origin = "https://screen.example"
+        for type: WKMediaCaptureType in [.camera, .microphone] {
+            var answer: WKPermissionDecision?
+            browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: type) { answer = $0 }
+            XCTAssertNil(answer)
+            try await Task.sleep(for: .milliseconds(550))
+            browser.allowCapture()
+            XCTAssertEqual(answer, .grant)
+        }
+        XCTAssertEqual(CaptureChoices.choice(.camera, origin: origin), .allow)
+        XCTAssertEqual(CaptureChoices.choice(.microphone, origin: origin), .allow)
+        XCTAssertTrue(CaptureChoices.combinedAllowed(origin: origin))
+        var answer: WKPermissionDecision?
+        browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .cameraAndMicrophone) { answer = $0 }
+        XCTAssertEqual(answer, .grant)
+    }
+
+    func testCombinedRequestUsesBothIndividualAllows() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.forgetCaptureChoices(); browser.closeAll() }
+        let origin = "https://screen.example"
+        CaptureChoices.set(false, for: .cameraAndMicrophone, origin: origin)
+        CaptureChoices.set(true, for: .camera, origin: origin)
+        CaptureChoices.set(true, for: .microphone, origin: origin)
+        var answer: WKPermissionDecision?
+        browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .cameraAndMicrophone) { answer = $0 }
+        XCTAssertEqual(answer, .grant)
+        XCTAssertTrue(CaptureChoices.combinedAllowed(origin: origin))
+    }
+
+    func testCombinedGrantIsRememberedForEachDevice() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.forgetCaptureChoices(); browser.closeAll() }
+        let origin = "https://screen.example"
+        var answer: WKPermissionDecision?
+        browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .cameraAndMicrophone) { answer = $0 }
+        XCTAssertEqual(browser.asking?.wants, "camera and microphone")
+        try await Task.sleep(for: .milliseconds(550))
+        browser.allowCapture()
+        XCTAssertEqual(answer, .grant)
+        XCTAssertEqual(CaptureChoices.choice(.camera, origin: origin), .allow)
+        XCTAssertEqual(CaptureChoices.choice(.microphone, origin: origin), .allow)
+    }
+
+    func testLegacyCombinedGrantDoesNotBypassIndividualAsk() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.forgetCaptureChoices(); browser.closeAll() }
+        let origin = "https://screen.example"
+        CaptureChoices.set(true, for: .camera, origin: origin)
+        for key in CaptureChoices.keys(.cameraAndMicrophone, origin: origin) { Store.settings.set(true, forKey: key) }
+        var answer: WKPermissionDecision?
+        browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .cameraAndMicrophone) { answer = $0 }
+        XCTAssertNil(answer)
+        XCTAssertEqual(browser.asking?.wants, "microphone")
+        browser.cancelCapture()
+    }
+
+    func testCombinedRefusalPreservesPreviouslyAllowedDevice() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.forgetCaptureChoices(); browser.closeAll() }
+        let origin = "https://screen.example"
+        CaptureChoices.set(true, for: .camera, origin: origin)
+        var answer: WKPermissionDecision?
+        browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .cameraAndMicrophone) { answer = $0 }
+        XCTAssertEqual(browser.asking?.wants, "microphone")
+        try await Task.sleep(for: .milliseconds(550))
+        browser.denyCapture()
+        XCTAssertEqual(answer, .deny)
+        XCTAssertEqual(CaptureChoices.choice(.camera, origin: origin), .allow)
+        XCTAssertEqual(CaptureChoices.choice(.microphone, origin: origin), .refuse)
+    }
+
+    func testLegacyCombinedRefusalDoesNotHideIndividualChoices() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.forgetCaptureChoices(); browser.closeAll() }
+        let origin = "https://screen.example"
+        for key in CaptureChoices.keys(.cameraAndMicrophone, origin: origin) { Store.settings.set(false, forKey: key) }
+        var answer: WKPermissionDecision?
+        browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .cameraAndMicrophone) { answer = $0 }
+        XCTAssertNil(answer)
+        XCTAssertEqual(browser.asking?.wants, "camera and microphone")
+        try await Task.sleep(for: .milliseconds(550))
+        browser.denyCapture()
+        XCTAssertEqual(answer, .deny)
+        XCTAssertEqual(CaptureChoices.choice(.camera, origin: origin), .refuse)
+        XCTAssertEqual(CaptureChoices.choice(.microphone, origin: origin), .refuse)
+    }
+
+    func testChangingSettingCancelsVisibleRequestInAnotherWindow() async throws {
+        let (first, _, _) = try await fixture()
+        let (second, tab, frame) = try await fixture()
+        Browsers.register(first)
+        Browsers.register(second)
+        defer { first.forgetCaptureChoices(); first.closeAll(); second.closeAll() }
+        var replies: [WKPermissionDecision] = []
+        second.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .camera) { replies.append($0) }
+        XCTAssertNotNil(second.asking)
+        let changed = CaptureChoices.set(false, for: .camera, origin: "https://screen.example")
+        Browser.cancelSiteQuestions(keys: changed, including: first)
+        XCTAssertEqual(replies, [.deny])
+        XCTAssertNil(second.asking)
+    }
+
+    func testRefusingCameraCancelsOtherWindowsCombinedPrompt() async throws {
+        let (first, firstTab, firstFrame) = try await fixture()
+        let (second, secondTab, secondFrame) = try await fixture()
+        Browsers.register(first)
+        Browsers.register(second)
+        defer { first.forgetCaptureChoices(); first.closeAll(); second.closeAll() }
+        var combined: [WKPermissionDecision] = []
+        var camera: [WKPermissionDecision] = []
+        first.askedForCapture(firstTab.web, origin: firstFrame.securityOrigin, frame: firstFrame, type: .cameraAndMicrophone) { combined.append($0) }
+        second.askedForCapture(secondTab.web, origin: secondFrame.securityOrigin, frame: secondFrame, type: .camera) { camera.append($0) }
+        try await Task.sleep(for: .milliseconds(550))
+        second.denyCapture()
+        first.allowCapture()
+        XCTAssertEqual(camera, [.deny])
+        XCTAssertEqual(combined, [.deny])
+        XCTAssertNil(first.asking)
+        XCTAssertEqual(CaptureChoices.choice(.camera, origin: "https://screen.example"), .refuse)
+        XCTAssertEqual(CaptureChoices.choice(.microphone, origin: "https://screen.example"), .ask)
+    }
+
+    func testStaleVisiblePromptCannotOverrideNewAnswer() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.forgetCaptureChoices(); browser.closeAll() }
+        var replies: [WKPermissionDecision] = []
+        browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .cameraAndMicrophone) { replies.append($0) }
+        CaptureChoices.set(false, for: .camera, origin: "https://screen.example")
+        try await Task.sleep(for: .milliseconds(550))
+        browser.allowCapture()
+        XCTAssertEqual(replies, [.deny])
+        XCTAssertEqual(CaptureChoices.choice(.camera, origin: "https://screen.example"), .refuse)
+        XCTAssertEqual(CaptureChoices.choice(.microphone, origin: "https://screen.example"), .ask)
+    }
+
+    func testNotificationAnswerInvalidatesQueuedRequest() async throws {
+        let (first, firstTab, firstFrame) = try await fixture()
+        let (second, secondTab, secondFrame) = try await fixture()
+        Browsers.register(first)
+        Browsers.register(second)
+        defer { first.forgetCaptureChoices(); first.closeAll(); second.closeAll() }
+        first.prefs.siteNotifications = true
+        second.prefs.siteNotifications = true
+        second.newTab()
+        var firstReply: [Bool] = []
+        var queued: [Bool] = []
+        first.askedForNotifications(firstTab.web, origin: firstFrame.securityOrigin) { firstReply.append($0) }
+        second.askedForNotifications(secondTab.web, origin: secondFrame.securityOrigin) { queued.append($0) }
+        try await Task.sleep(for: .milliseconds(550))
+        first.denyCapture()
+        second.select(secondTab)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(firstReply, [false])
+        XCTAssertEqual(queued, [false])
+        XCTAssertNil(second.asking)
+    }
+
+    func testLocationAnswerCancelsOtherVisiblePrompt() async throws {
+        let (first, firstTab, firstFrame) = try await fixture()
+        let (second, secondTab, secondFrame) = try await fixture()
+        Browsers.register(first)
+        Browsers.register(second)
+        defer { first.forgetCaptureChoices(); first.closeAll(); second.closeAll() }
+        var other: [WKPermissionDecision] = []
+        first.askedForLocation(firstTab.web, origin: firstFrame.securityOrigin, frame: firstFrame) { _ in }
+        second.askedForLocation(secondTab.web, origin: secondFrame.securityOrigin, frame: secondFrame) { other.append($0) }
+        try await Task.sleep(for: .milliseconds(550))
+        first.denyCapture()
+        second.allowCapture()
+        XCTAssertEqual(other, [.deny])
+        XCTAssertNil(second.asking)
+        XCTAssertEqual(CaptureChoices.choice(.location, origin: "https://screen.example"), .refuse)
+    }
+
+    func testChangingSettingInvalidatesQueuedRequest() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.forgetCaptureChoices(); browser.closeAll() }
+        browser.newTab()
+        var replies: [WKPermissionDecision] = []
+        browser.askedForCapture(tab.web, origin: frame.securityOrigin, frame: frame, type: .camera) { replies.append($0) }
+        XCTAssertTrue(replies.isEmpty)
+        let changed = CaptureChoices.set(false, for: .camera, origin: "https://screen.example")
+        Browser.cancelSiteQuestions(keys: changed, including: browser)
+        browser.select(tab)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(replies, [.deny])
+        XCTAssertNil(browser.asking)
+    }
+
+    func testChangingNotificationInvalidatesQueuedRequest() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.forgetCaptureChoices(); browser.closeAll() }
+        browser.prefs.siteNotifications = true
+        browser.newTab()
+        var replies: [Bool] = []
+        browser.askedForNotifications(tab.web, origin: frame.securityOrigin) { replies.append($0) }
+        XCTAssertTrue(replies.isEmpty)
+        let changed = CaptureChoices.set(false, for: .notifications, origin: "https://screen.example")
+        Browser.cancelSiteQuestions(keys: changed, including: browser)
+        browser.select(tab)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(replies, [false])
     }
 
     private func ask(_ browser: Browser, _ tab: Tab, _ frame: WKFrameInfo, reply: @escaping (Int) -> Void) {

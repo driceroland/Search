@@ -23,6 +23,8 @@ final class HeldQuestion {
     }
 
     func present() {
+        // A dismissed or already presented question must not be shown again.
+        guard drop != nil else { return }
         drop = nil
         show()
     }
@@ -112,15 +114,17 @@ extension Browser {
     /// background — or in another space — waits until you go to that tab, as
     /// in Safari and Chrome: over the tab in front, a prompt() asking for a
     /// password would pass for that page's. A tab closed first gets the
-    /// answer a dismissed dialog gives.
+    /// answer a dismissed dialog gives. A peek hidden behind another tab
+    /// (see peekInFront) waits the same way, until it is in front again.
     @discardableResult
     func ask(from webView: WKWebView, show: @escaping () -> Void, drop: @escaping () -> Void) -> HeldQuestion? {
-        let known = tabs + parkedTabs
+        let known = tabs + parkedTabs + [peekTab].compactMap { $0 }
         // Questions from tabs that have gone some other way than close(_:).
         for id in heldDialogs.keys where !known.contains(where: { $0.id == id }) {
             heldDialogs.removeValue(forKey: id)?.forEach { $0.dismiss() }
         }
-        guard let tab = known.first(where: { $0.built === webView }), tab.id != activeID else {
+        guard let tab = known.first(where: { $0.built === webView }), tab.id != activeID,
+              tab.id != peekTab?.id || !peekInFront else {
             show()
             return nil
         }
@@ -198,6 +202,12 @@ extension Browser {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping ([URL]?) -> Void
     ) {
+        // A coding agent's page never has a file chosen for it: that is
+        // yours to do, in a tab of yours.
+        if tab(for: webView)?.agent == true {
+            AgentControl.log.notice("a file chooser in an agent's tab was refused")
+            return completionHandler(nil)
+        }
         // Over its own page only, as its other questions are (see ask): a
         // page behind, or the other page of a pair, choosing a file would
         // have it chosen under the page you are looking at. A test run never
@@ -385,11 +395,11 @@ extension Browser {
         guard let tab = tab(for: webView) else { return }
         dropQuestions(for: tab.id)
         let host = tab.address?.host() ?? ""
-        // In front of you: straight back, a reload beats a white page with a
-        // button on it — unless it keeps dying (see recoverFromCrash). Behind
-        // another tab: the moment you come back to it.
+        // On screen, either half of a pair: straight back, a reload beats a
+        // white page with a button on it — unless it keeps dying (see
+        // recoverFromCrash). Behind another tab: the moment you come back to it.
         let outcome: String
-        if tab.id == activeID, !tab.isBlank {
+        if visibleTabIDs.contains(tab.id), !tab.isBlank {
             outcome = tab.recoverFromCrash(end) ? "loaded again" : "kept dying, left for Try again"
         } else {
             tab.stale = true

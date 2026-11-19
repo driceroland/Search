@@ -101,7 +101,9 @@ enum Crx {
     static func fetch(_ id: String) async throws -> Data {
         var request = URLRequest(url: downloadURL(for: id))
         request.timeoutInterval = 60
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // Not URLSession.shared, which takes no configuration and so could
+        // never be proxied: the Web Store would name every extension you add.
+        let (data, response) = try await ProxyNetwork.session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw Refused.download(http.statusCode)
         }

@@ -264,7 +264,12 @@ final class PinStuckTests: XCTestCase {
     /// untouched.
     private func post(_ type: NSEvent.EventType, at point: NSPoint, in window: NSWindow) async throws {
         NSApp.postEvent(try event(type, at: point, in: window), atStart: false)
-        for _ in 0..<20 {
+        // Until this one is through, however many are queued before it:
+        // what earlier tests left on the queue (their windows' AppKit events,
+        // forty and more by this point of a full run) ran past a count of
+        // twenty, and the press was never sent.
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
             guard let queued = NSApp.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 0.2),
                                                inMode: .default, dequeue: true) else { break }
             NSApp.sendEvent(queued)

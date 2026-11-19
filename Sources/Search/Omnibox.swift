@@ -1,12 +1,24 @@
 import SwiftUI
 import AppKit
 
+/// What is typed in a window's field and what answers it (`Browser.typing`):
+/// the field and its list watch it, and nothing else has to.
+@MainActor
+final class FieldState: ObservableObject {
+    @Published var typed = ""
+    @Published var offers: [Suggestion] = []
+    @Published var ending: String?
+    @Published var picked: Int?
+    @Published var siteOffer: SearchSite?
+}
+
 /// One field, in the middle, and the few places it thinks you mean. It takes
 /// addresses and only addresses: type something that isn't a place and it
 /// shivers and says so, rather than quietly handing your keystrokes to a
 /// search engine.
 struct Omnibox: View {
     @ObservedObject var browser: Browser
+    @ObservedObject private var typing: FieldState
     /// Raised over a page by ⌘L, rather than standing on an empty tab.
     let over: Bool
 
@@ -22,6 +34,14 @@ struct Omnibox: View {
     var fitted = false
     /// The page whose pane this field stands on, with Split View on.
     var tab: Tab.ID?
+
+    init(browser: Browser, over: Bool, fitted: Bool = false, tab: Tab.ID? = nil) {
+        self.browser = browser
+        self.typing = browser.typing
+        self.over = over
+        self.fitted = fitted
+        self.tab = tab
+    }
 
     var body: some View {
         Group {
@@ -225,6 +245,12 @@ struct Omnibox: View {
                         .truncationMode(.tail)
                 }
                 Spacer(minLength: 0)
+                // A command's key, as Arc's Command Bar shows it.
+                if case .command(let command) = offer.kind, let key = command.key {
+                    Text(key)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                }
                 if offer.kind == .bookmark {
                     // Kept by you, not only visited: the bookmark's mark,
                     // at the end now that the site's icon leads the row.
@@ -426,8 +452,15 @@ private struct Breath: NSViewRepresentable {
 /// needs a real text field and its delegate.
 struct AddressField: NSViewRepresentable {
     @ObservedObject var browser: Browser
+    @ObservedObject private var typing: FieldState
     /// The pane's page, for a field standing on one (see Coordinator.focus).
     var tab: Tab.ID?
+
+    init(browser: Browser, tab: Tab.ID? = nil) {
+        self.browser = browser
+        self.typing = browser.typing
+        self.tab = tab
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
 
@@ -538,7 +571,7 @@ struct AddressField: NSViewRepresentable {
     /// field had no window to ask: the request went nowhere and nothing asked
     /// again, so ⌘T left a field with no caret and typing that went nowhere
     /// until it was clicked. Now the request waits for the window.
-    final class Field: NSTextField {
+    final class Field: RoomyField {
         var arrived: (() -> Void)?
 
         override func viewDidMoveToWindow() {
@@ -652,6 +685,11 @@ struct AddressField: NSViewRepresentable {
             let length = field.stringValue.count
             guard start <= length else { return }
             editor.selectedRange = NSRange(location: start, length: length - start)
+            // The start in view, not the end: selecting a long completion
+            // scrolled the field to its last characters, hiding what was
+            // typed and the site it goes to (#1055). The ending stays
+            // selected, so the next key still replaces it.
+            editor.scrollRangeToVisible(NSRange(location: 0, length: 0))
         }
 
         func control(
@@ -695,5 +733,48 @@ struct AddressField: NSViewRepresentable {
                 return false
             }
         }
+    }
+}
+
+/// A one-line field whose text stops a little short of its trailing edge.
+///
+/// Scrolled to the end of a long query, the field editor put the caret and
+/// the last letter right against the field's edge, a fraction of a point in
+/// (0.2 to 1 measured), where anything that clips the field there — the row
+/// or the pill around it, a wider caret — hid the caret and part of the last
+/// letter (idea 736). The text is now laid out, drawn and edited in a rect
+/// `margin` short of that edge, so the editor scrolls the caret that far in.
+class RoomyField: NSTextField {
+    override class var cellClass: AnyClass? {
+        get { RoomyFieldCell.self }
+        set {}
+    }
+}
+
+final class RoomyFieldCell: NSTextFieldCell {
+    /// What is kept clear past the caret at the end of the text.
+    static let margin: CGFloat = 4
+
+    private static func short(_ rect: NSRect) -> NSRect {
+        var inner = rect
+        inner.size.width = max(0, inner.width - margin)
+        return inner
+    }
+
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        Self.short(super.drawingRect(forBounds: rect))
+    }
+
+    // The field editor is laid in the frame it is handed here, not in the
+    // drawing rect above.
+    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
+                       delegate: Any?, event: NSEvent?) {
+        super.edit(withFrame: Self.short(rect), in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+
+    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
+                         delegate: Any?, start selStart: Int, length selLength: Int) {
+        super.select(withFrame: Self.short(rect), in: controlView, editor: textObj, delegate: delegate,
+                     start: selStart, length: selLength)
     }
 }

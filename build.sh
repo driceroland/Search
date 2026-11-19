@@ -205,6 +205,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
       <key>CFBundleURLSchemes</key>
       <array><string>http</string><string>https</string></array>
     </dict>
+    <!-- mailto, so Search can be the Mac's email app: an email link then
+         opens the webmail chosen in Settings › General › Email links open
+         in (Webmail.swift). Only ever made the default from that page's
+         button; with no webmail chosen, a link that comes anyway goes on to
+         the next mail app. -->
+    <dict>
+      <key>CFBundleURLName</key><string>Email address</string>
+      <key>CFBundleURLSchemes</key>
+      <array><string>mailto</string></array>
+    </dict>
   </array>
   <key>CFBundleDocumentTypes</key>
   <array>
@@ -257,6 +267,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <string>Websites you visit can ask for your location. Search asks you each time a site does, unless you choose Always allow for it; Settings › Privacy forgets those choices.</string>
   <key>NSDownloadsFolderUsageDescription</key>
   <string>Files you download are saved to your Downloads folder.</string>
+  <!-- Only once you turn on Settings › Passwords › Fill in your contact
+       details: your own card, never anyone else's (MeCard.swift). -->
+  <key>NSContactsUsageDescription</key>
+  <string>Search fills in forms with the details on your own card in Contacts, once you pick them under a box. It reads no one else's card and saves no copy of yours.</string>
 </dict>
 </plist>
 PLIST

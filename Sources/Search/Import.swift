@@ -488,7 +488,8 @@ enum Chromium {
             bookmarks: Bookmarks.count(bookmarks(in: source, profile: profile)),
             places: min(limit, places),
             passwords: passwords,
-            extensions: extensions(in: source, profile: profile)
+            extensions: extensions(in: source, profile: profile),
+            session: sessions(in: source, profile: profile)
         )
     }
 
@@ -1456,6 +1457,9 @@ enum ImportSource: Identifiable, Hashable {
         var passwords = 0
         /// Chrome Web Store ids, for a Chromium browser.
         var extensions: [String] = []
+        /// The open tabs and tab groups, for a Chromium browser: read here,
+        /// off the main thread, and brought in from this as it is.
+        var session = SessionImport.Snapshot()
     }
 
     func preview(profile: String?) -> Preview {

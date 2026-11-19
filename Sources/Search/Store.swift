@@ -204,14 +204,26 @@ enum Disk {
         let turn = count
         newest[file] = turn
         lock.unlock()
-        let put: @Sendable () -> Void = {
-            guard let data = encode() else { return }
+        // Overtaken: something newer of this file was asked for since.
+        let current: @Sendable () -> Bool = {
             lock.lock()
             defer { lock.unlock() }
-            // Overtaken: something newer of this file was asked for since.
-            guard newest[file] == turn else { return }
-            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: file, options: .atomic)
+            return newest[file] == turn
+        }
+        let put: @Sendable () -> Void = {
+            guard current(), let data = encode() else { return }
+            // Written beside it with no lock held, and only put in its place
+            // under the lock: held for the whole write, a write at once on the
+            // main thread waited for whatever was being written in the
+            // background — the whole history, say.
+            let folder = file.deletingLastPathComponent()
+            let aside = folder.appendingPathComponent(".\(file.lastPathComponent).\(turn).writing")
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            guard (try? data.write(to: aside)) != nil else { return }
+            lock.lock()
+            defer { lock.unlock() }
+            if newest[file] == turn, rename(aside.path, file.path) == 0 { return }
+            try? FileManager.default.removeItem(at: aside)
         }
         if now { put() } else { queue.async(execute: put) }
     }

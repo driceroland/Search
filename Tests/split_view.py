@@ -47,12 +47,24 @@ class H(BaseHTTPRequestHandler):
             body = f"<!doctype html><title>asker</title><iframe src='http://localhost:{port}/frame'></iframe>".encode()
         elif self.path == "/long":
             body = b"<!doctype html><title>long</title><div style='height:20000px'>long</div>"
+        elif self.path == "/tall":
+            body = b"<!doctype html><title>tall</title><style>body{margin:0}</style><div id=top style='height:4800px;background:#fff'><div id=box style='margin:40px;width:300px;height:150px;background:#0a0'></div></div><div style='height:200px;background:#f00'></div>"
         elif self.path == "/frame":
             body = b"<!doctype html><script>setTimeout(function(){ alert('from the frame') }, 1200)</script>"
+        elif self.path == "/feed.xml":
+            # A live folder's feed (live_folders.py): FEED_POSTS posts, newest first.
+            posts = "".join(f"<item><title>Post {n}</title><link>/post/{n}</link></item>" for n in range(FEED_POSTS, 0, -1))
+            body = f"<?xml version='1.0'?><rss version='2.0'><channel><title>Probe Feed</title>{posts}</channel></rss>".encode()
+            self.send_response(200); self.send_header("Content-Type", "application/rss+xml"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            return
+        elif self.path == "/blog":
+            body = b"<!doctype html><title>blog</title><link rel='alternate' type='application/rss+xml' href='/feed.xml'><p>blog"
         else:
             body = f"<!doctype html><title>{self.path.strip('/')}</title><p>{self.path}".encode()
         self.send_response(200); self.send_header("Content-Type", "text/html"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
+# How many posts /feed.xml has; a probe raises it to see a refresh.
+FEED_POSTS = 3
 srv = ThreadingHTTPServer(("127.0.0.1", 0), H); threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = f"http://127.0.0.1:{srv.server_port}"
 # Only ever a probe of this world: the one this run started, or one a run

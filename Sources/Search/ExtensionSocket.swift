@@ -21,8 +21,28 @@ enum ExtensionSocket {
     static let name = ExtensionShims.application + ".socket"
 
     /// One session for every socket; each task has its connection as its
-    /// own delegate.
-    private static let session = URLSession(configuration: .default, delegate: nil, delegateQueue: .main)
+    /// own delegate. Made again when the proxy changes: a session holds the
+    /// configuration it was born with.
+    private static var session: URLSession {
+        ProxyNetwork.kept("extension-socket") {
+            let configuration = Self.configuration
+            ProxyNetwork.stamp(configuration)
+            return URLSession(configuration: configuration, delegate: nil, delegateQueue: .main)
+        }
+    }
+
+    /// Nothing kept between sockets: no cookies, no cache, no saved
+    /// sign-ins. One session serves every extension and profile.
+    static var configuration: URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        return configuration
+    }
+
     /// Held from the port's opening until either end lets go.
     private static var open: [ObjectIdentifier: Connection] = [:]
 
@@ -71,7 +91,7 @@ enum ExtensionSocket {
                 // worker says "open" until it hears back, so a repeat is
                 // only answered.
                 post(["ready": true])
-                guard task == nil else { return }
+                guard task == nil, !ended else { return }
                 start(address, protocols: message["protocols"] as? [String] ?? [], userAgent: message["userAgent"] as? String)
             } else if let text = message["send"] as? String {
                 task?.send(.string(text)) { _ in }
@@ -80,7 +100,10 @@ enum ExtensionSocket {
             } else if message["close"] != nil {
                 let code = (message["close"] as? Int).flatMap(URLSessionWebSocketTask.CloseCode.init(rawValue:)) ?? .normalClosure
                 let reason = (message["reason"] as? String).map { Data($0.utf8) }
-                task?.cancel(with: code, reason: reason)
+                // Closed before the opening arrived: a WebSocket closed while
+                // connecting fails, and this one is never started.
+                guard let task else { return fail() }
+                task.cancel(with: code, reason: reason)
             }
         }
 

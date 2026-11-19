@@ -31,6 +31,9 @@ struct WindowRecord: Codable {
     /// the one on screen (see OneWindow.swift). Nil for a window of its own.
     var merge: UUID?
     var tucked: Bool?
+    /// Its column, or the strip across the top, folded away with ⌘S (see
+    /// Fold.swift). Nil, as in any line written before it was kept: shown.
+    var folded: Bool?
 
     init(space: UUID = Space.firstID) { self.space = space }
 
@@ -42,6 +45,7 @@ struct WindowRecord: Codable {
         rows = (try? values.decode([String: Session.Shape].self, forKey: .rows)) ?? [:]
         merge = try? values.decode(UUID.self, forKey: .merge)
         tucked = try? values.decode(Bool.self, forKey: .tucked)
+        folded = try? values.decode(Bool.self, forKey: .folded)
     }
 
     var rect: NSRect? { frame.map(NSRectFromString).flatMap { $0.width > 100 && $0.height > 100 ? $0 : nil } }
@@ -122,6 +126,9 @@ enum Browsers {
 
     /// A window of ours came to the front.
     static func becameKey(_ browser: Browser) {
+        // One kept away for a small window, brought forward by something
+        // other than bringBack: off screen again (see putAway).
+        if keptAway, isAway(browser.window) { return putAway() }
         // A tucked window brought forward by something else — SwiftUI
         // showing its own window again, a script: it is the one in front
         // now, and the one it was tucked behind steps out of sight.
@@ -147,7 +154,10 @@ enum Browsers {
             show(kept)
             return
         }
-        let browser = Browser(record: WindowRecord(space: front?.spaceID ?? Space.firstID))
+        // Folded or not as the window it came from, as in Safari and Arc.
+        var fresh = WindowRecord(space: front?.spaceID ?? Space.firstID)
+        if front?.isPopup == false, front?.folded == true { fresh.folded = true }
+        let browser = Browser(record: fresh)
         open(browser, frame: nil)
     }
 
@@ -253,6 +263,11 @@ enum Browsers {
             return
         }
         window.makeKeyAndOrderFront(nil)
+        // The window just opened is the one in front from now on. Its own
+        // didBecomeKey goes by before its view knows its window (WindowSetup
+        // waits a turn), so the menus, Bookmarks among them, went on acting
+        // on the window behind until you clicked away and back (#1146).
+        becameKey(browser)
         // Never in a test run: full screen would put a probe's window on a screen.
         if fullScreen, !Store.testing { window.toggleFullScreen(nil) }
         comeForward()
@@ -276,7 +291,17 @@ enum Browsers {
     private(set) static var keptAway = false
     private static var away: [NSWindow] = []
 
-    static func keepAway() { keptAway = true }
+    static func keepAway() {
+        keptAway = true
+        // Shown again after ⌘H — as the small window coming forward shows
+        // it — the app brings back every window it had when it was hidden:
+        // the browser's came up beside the small one. They go again.
+        guard unhiding == nil else { return }
+        unhiding = NotificationCenter.default.addObserver(
+            forName: NSApplication.didUnhideNotification, object: nil, queue: .main
+        ) { _ in MainActor.assumeIsolated { putAway() } }
+    }
+    private static var unhiding: Any?
 
     /// Whether a window is one kept off screen — for the bench.
     static func isAway(_ window: NSWindow?) -> Bool { away.contains { $0 === window } }
@@ -284,12 +309,16 @@ enum Browsers {
     /// Every browser window there is now goes off screen, kept as it is.
     /// Asked as the app finishes launching and as each window is dressed,
     /// so SwiftUI's window, which it opens at every launch and asks nobody
-    /// about, goes before it is drawn.
+    /// about, goes before it is drawn; and whenever one of them is back on
+    /// screen while they are kept away — the app shown again after ⌘H, or
+    /// SwiftUI bringing its window forward after all — since only
+    /// bringBack is meant to bring them. One in the Dock stays there.
     static func putAway() {
         guard keptAway else { return }
-        for window in NSApp.windows where isBrowserWindow(window) && !isAway(window) {
+        for window in NSApp.windows where isBrowserWindow(window) && !window.isMiniaturized
+            && (!isAway(window) || window.isVisible) {
             window.orderOut(nil)
-            away.append(window)
+            if !isAway(window) { away.append(window) }
         }
     }
 
@@ -391,6 +420,12 @@ enum Browsers {
             if closed.count > 10 { closed.removeFirst(closed.count - 10) }
         }
         all.removeAll { $0 === browser }
+        // Its tabs in small windows (Open in Small Window) stay open: another
+        // window of the profile keeps them, and writes them down now.
+        if let heir = all.first(where: { $0.isOpen && !$0.isPopup && $0.profileID == browser.profileID }) {
+            LittleWindow.rehome(from: browser, to: heir)
+            heir.writeSession(now: true)
+        }
         if #available(macOS 15.4, *) { Extensions.shared.detach(browser) }
         browser.closeAll()
         ContentView.forget(browser)
@@ -453,6 +488,7 @@ enum Browsers {
         if rows { record.rows = browser.allRows(keeping: keeping) }
         record.merge = browser.mergeID
         record.tucked = browser.tucked ? true : nil
+        record.folded = browser.folded ? true : nil
         return record
     }
 
@@ -545,6 +581,11 @@ enum Browsers {
     static func flush() {
         for browser in all { browser.flushSession() }
         save(now: true)
+        // A visit or an icon from the last second or so, still waiting to be
+        // written.
+        Profiles.flushHistories()
+        Spaces.flushHistories()
+        Favicons.shared.flush()
     }
 
     /// The window has moved or changed size.
