@@ -641,6 +641,7 @@ struct SettingsPanel: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.muted)
             }
+        case "tabs.sleep.dim": Switch(on: $prefs.dimsSleepingTabs)
         case "tabs.close.after":
             Picker("", selection: $prefs.tabLife) {
                 ForEach(TabLife.allCases) { life in
