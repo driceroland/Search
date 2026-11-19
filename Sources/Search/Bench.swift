@@ -1977,8 +1977,18 @@ final class Bench {
         case "history":
             // History on a --test run: "take" puts an address in as an import
             // would, since a bench tab's visits never enter it; "forget" drops
-            // one as the panel's cross does. Answers with every address kept.
+            // one as the panel's cross does; "clear" is Clear… with "all" or a
+            // space's id chosen, and "scopes" what it offers to choose from.
+            // Answers with every address kept.
             guard Store.testing else { answer(["error": "history only works on a --test run"]); return }
+            if let clear = request["clear"] as? String {
+                guard clear == "all" || UUID(uuidString: clear) != nil else { answer(["error": "clear takes all or a space's id"]); return }
+                browser.clearHistory(in: UUID(uuidString: clear))
+            }
+            if request["scopes"] as? Bool == true {
+                answer(["scopes": browser.historyScopes.map { ["space": $0.space.uuidString, "name": $0.name] }])
+                return
+            }
             if let text = request["take"] as? String, let url = Address.url(from: text) {
                 browser.history.take(url, title: text, count: request["count"] as? Int ?? 1, last: Date())
                 browser.history.settle()

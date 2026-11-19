@@ -215,12 +215,7 @@ enum Spaces {
     /// store there always was — for the first space of each profile and any
     /// space made signed in with the others; a store of its own otherwise.
     @MainActor static func store(for id: UUID) -> WKWebsiteDataStore {
-        let space = known[id]
-        let profile = space?.profileID ?? Profile.personalID
-        if id == Space.firstID || space?.sharesSignIns == true
-            || (profile != Profile.personalID && Profiles.shared.profile(profile).home == id) {
-            return Profiles.store(profile)
-        }
+        guard ownsStore(id) else { return Profiles.store(profile(of: id)) }
         if let made = stores[id] { return made }
         let made = WKWebsiteDataStore(forIdentifier: id)
         if Store.keepsSignIns { Store.followSignIns(made) } else { Store.followCookies(made) }
@@ -228,6 +223,46 @@ enum Spaces {
         stores[id] = made
         return made
     }
+
+    /// Whether a space is signed out of the others, with a store of its own:
+    /// any but the first space of a profile and the ones made signed in with it.
+    @MainActor static func ownsStore(_ id: UUID) -> Bool {
+        let space = known[id]
+        let profile = space?.profileID ?? Profile.personalID
+        return !(id == Space.firstID || space?.sharesSignIns == true
+            || (profile != Profile.personalID && Profiles.shared.profile(profile).home == id))
+    }
+
+    /// The space whose own store this is, if it is one.
+    @MainActor static func owner(of store: WKWebsiteDataStore) -> UUID? {
+        stores.first { $0.value === store }?.key
+    }
+
+    @MainActor private static var histories: [UUID: History] = [:]
+
+    /// Where a space's pages are remembered: its profile's history, or for
+    /// a space signed out of the others, a history of its own, so what is
+    /// visited there never comes up in another space's suggestions (#758).
+    @MainActor static func history(for id: UUID) -> History {
+        guard ownsStore(id) else { return Profiles.history(profile(of: id)) }
+        if let made = histories[id] { return made }
+        let made = History(file: historyFile(id))
+        histories[id] = made
+        return made
+    }
+
+    /// Every history a profile's spaces write to: its own, then each
+    /// signed-out space's.
+    @MainActor static func histories(of profile: UUID) -> [History] {
+        [Profiles.history(profile)] + read(profile: profile).filter { ownsStore($0.id) }.map { history(for: $0.id) }
+    }
+
+    /// Quitting: every space's own history made so far, written now.
+    @MainActor static func flushHistories() {
+        for history in histories.values { history.flush() }
+    }
+
+    private static func historyFile(_ id: UUID) -> String { "history-space-\(id.uuidString).json" }
 
     /// The shared store and every space's own made so far. Not a private
     /// tab's: each has a store of its own, out of this list on purpose, so
@@ -260,6 +295,8 @@ enum Spaces {
         // its cookies again: they go with it.
         stores[id] = nil
         eraseStore(store, id: id)
+        // Its history goes with its cookies, opened this run or not.
+        if let history = histories.removeValue(forKey: id) { history.retire() } else { Disk.remove(Store.file(historyFile(id))) }
     }
 
     /// A store made by identifier, emptied now and removed once WebKit lets

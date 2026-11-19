@@ -578,6 +578,7 @@ enum Browsers {
         // A visit or an icon from the last second or so, still waiting to be
         // written.
         Profiles.flushHistories()
+        Spaces.flushHistories()
         Favicons.shared.flush()
     }
 
