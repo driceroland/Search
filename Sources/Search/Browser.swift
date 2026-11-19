@@ -5722,7 +5722,8 @@ final class Browser: NSObject, ObservableObject {
         // opened since launch — is drawn dimmed as closed, so ⌘1–9 counts
         // past it, as ⌃Tab does (#1092): ⌘1 went to a group's closed tabs
         // before the open ones under them (#1159). The tab you're on still
-        // counts, and a folded group is still one place, whatever it holds.
+        // counts. A folded group is one place while it holds a page, and
+        // passed over like those tabs when none of its tabs does (#1186).
         let here = activeID
         let groups = tabGroups.flatMap { group -> [(id: UUID, tab: Tab)] in
             let members = (buckets[group.id] ?? []).filter { !off.contains($0.id) }
@@ -5730,7 +5731,8 @@ final class Browser: NSObject, ObservableObject {
                 return members.filter { !$0.asleep || $0.id == here }.map { ($0.id, $0) }
             }
             let current = active.flatMap { self.group(of: $0) == group.id ? $0 : nil }
-            guard let tab = current ?? members.max(by: { $0.touched < $1.touched }) else { return [] }
+            guard current != nil || members.contains(where: { !$0.asleep }),
+                  let tab = current ?? members.max(by: { $0.touched < $1.touched }) else { return [] }
             return [(group.id, tab)]
         }
         return row.filter { $0.pin != nil }.map { ($0.id, $0) }

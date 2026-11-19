@@ -64,6 +64,48 @@ final class TabShortcutHintTests: XCTestCase {
         XCTAssertTrue(browser.tabShortcutNumbers.isEmpty)
     }
 
+    /// A folded group whose tabs all hold no page is passed over by ⌘1–9,
+    /// and its heading has no number; one open tab makes it a place again
+    /// (#1186).
+    func testFoldedGroupHoldingNoPageIsPassedOver() {
+        _ = NSApplication.shared
+        let browser = Browser(record: WindowRecord())
+        let prefs = browser.prefs
+        let saved = (prefs.showsTabShortcuts, prefs.usesTabGroups)
+        defer {
+            browser.closeAll()
+            prefs.showsTabShortcuts = saved.0
+            prefs.usesTabGroups = saved.1
+        }
+        prefs.showsTabShortcuts = true
+        prefs.usesTabGroups = true
+        browser.commandHeld = true
+        for count in 1...4 {
+            if count > 1 { browser.newTab() }
+            browser.tabs.last?.restore(url: URL(string: "about:blank#\(count)")!, title: "Tab \(count)")
+        }
+        let tabs = browser.tabs
+        _ = tabs[0].wake()
+        _ = tabs[3].wake()
+        let group = browser.addTabGroup(containing: tabs[1])
+        browser.move(tabs[2], toGroup: group)
+        browser.select(tabs[3])
+        if browser.tabGroups.first(where: { $0.id == group })?.collapsed != true { browser.toggleTabGroup(group) }
+        XCTAssertTrue(tabs[1].asleep && tabs[2].asleep, "Restored and never shown, they hold no page")
+        XCTAssertFalse(browser.tabShortcutTargets.contains { $0.id == group }, "A folded group holding no page is no place")
+        XCTAssertNil(browser.tabShortcutNumbers[group], "Its heading has no number")
+        assertNumbers(browser)
+        let order = browser.tabShortcutTargets.map(\.id)
+        XCTAssertEqual(order, [tabs[0].id, tabs[3].id])
+        browser.select(tabs[0])
+        browser.select(index: 1)
+        XCTAssertEqual(browser.activeID, tabs[3].id, "⌘2 goes past the folded group to the next open tab")
+        _ = tabs[2].wake()
+        XCTAssertTrue(browser.tabShortcutTargets.contains { $0.id == group }, "One open tab: one place again")
+        XCTAssertEqual(browser.tabShortcutNumbers[group], 1, "Groups come before the ungrouped tabs")
+        assertNumbers(browser)
+    }
+
     func testCommandEventsAndFocusLoss() async throws {
         _ = NSApplication.shared
         let browser = Browser(record: WindowRecord())
