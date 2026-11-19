@@ -29,6 +29,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - The accounts under a sign-in box answer the keyboard, as in Safari and Chrome: ↓ lights the first and moves down, ↑ moves up and from the first goes back to the box, and Return fills the one lit, as a click would (⇧Return puts one of your card's rows into the box alone). Until an arrow lights a row, Return sends the form and ↑ moves the caret as before. Thanks [@kemuri](https://github.com/kemuri) ([#1199](https://github.com/driceroland/Search/pull/1199))
 
+### Changed
+
+- The highlight in the Settings sidebar slides to the section you pick, as the live tab's slides in the tab column, with a little give at the end. It jumps as before with Reduce Motion on. Thanks [@aaravmaloo](https://github.com/aaravmaloo) ([#1169](https://github.com/driceroland/Search/pull/1169))
+
 ### Held back
 
 Not in this version, kept on main for a later one:

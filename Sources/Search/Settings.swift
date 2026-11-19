@@ -30,6 +30,9 @@ struct SettingsPanel: View {
     /// A site shortcut being written, kept out of Preferences until it's saved.
     @State private var draft: Keyword?
     @State private var page: Page = Page.named(Store.settings.string(forKey: "settings.page") ?? "") ?? .general
+    /// The chosen section's white, slid from one to the next as the tab
+    /// column slides its live tab's (Side.swift).
+    @Namespace private var chosen
     /// What is typed in Find a setting.
     @State private var query = ""
     @FocusState private var finding: Bool
@@ -174,7 +177,7 @@ struct SettingsPanel: View {
                 }
                 ForEach(block) { item in
                     PageRow(page: item, on: !searching && page == item,
-                            count: searching ? counts[item] ?? 0 : nil) {
+                            count: searching ? counts[item] ?? 0 : nil, chosen: chosen) {
                         query = ""
                         page = item
                     }
@@ -182,10 +185,18 @@ struct SettingsPanel: View {
             }
             Spacer(minLength: 0)
         }
+        .animation(slide, value: page)
         .padding(8)
         .frame(width: SettingsPanel.rail, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Palette.wash.opacity(0.45), in: Rectangle())
+    }
+
+    /// The white's move: the tab column's glide, a touch longer and with a
+    /// little give at the end, so the eye follows it down the rail. None
+    /// with Reduce Motion, and a plain ease in Low Power Mode, as glide.
+    private var slide: Animation? {
+        Motion.reduced ? nil : Motion.light ? .easeOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.72)
     }
 
     /// Find a setting: the wash, the glass, ⌘F beside it until something
@@ -236,6 +247,7 @@ struct SettingsPanel: View {
         let on: Bool
         /// While searching: how many rows of this section match.
         let count: Int?
+        let chosen: Namespace.ID
         let act: () -> Void
         @State private var hovering = false
 
@@ -261,11 +273,17 @@ struct SettingsPanel: View {
                 .opacity(count == 0 ? 0.4 : 1)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(on ? Palette.ground : (hovering ? Palette.hover : .clear))
-                        .shadow(color: .black.opacity(on ? 0.06 : 0), radius: 3, y: 1)
-                )
+                .background {
+                    if on {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Palette.ground)
+                            .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
+                            .matchedGeometryEffect(id: "chosen", in: chosen)
+                    } else if hovering {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Palette.hover)
+                    }
+                }
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.plain)
