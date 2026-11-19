@@ -3432,6 +3432,86 @@ enum ExtensionShims {
         return !!(c && typeof c.regexFilter === "string" && c.requestDomains !== undefined
           && (type === "redirect" || type === "modifyHeaders"));
       };
+      // WebKit's patterns lack some of what Chrome's (RE2's) have: `\d`,
+      // `\w` and counts are refused, measured on 27.2 with isRegexSupported.
+      // Each is written out the long way, as the same pattern: `\d` as
+      // `[0-9]`, `\w` as `[A-Za-z0-9_]` (in a class, its members), `x{3,}`
+      // as `xxx+`. Chrome takes all three, and WebKit refused each such rule
+      // outright. A count on a
+      // group is written out only where no substitution reads the groups by
+      // number, which copies of the group would renumber; a count over 16
+      // is left as it was.
+      const widen = (re, numbered) => {
+        let out = "", i = 0, inClass = false, last = null, lastGroup = false, hyphen = false;
+        const opens = [];
+        while (i < re.length) {
+          const ch = re[i];
+          if (ch === "\\" && i + 1 < re.length) {
+            const n = re[i + 1];
+            const sub = n === "d" ? (inClass ? "0-9" : "[0-9]") : n === "w" ? (inClass ? "A-Za-z0-9_" : "[A-Za-z0-9_]") : "\\" + n;
+            if (!inClass) { last = out.length; lastGroup = false; }
+            out += sub; i += 2;
+            // `[\w-%]`: the hyphen after a class escape is a hyphen, but
+            // after its members written out it would make a range. It goes
+            // last in the class, where it is a hyphen again.
+            if (inClass && sub !== "\\" + n && re[i] === "-" && re[i + 1] !== "]") { hyphen = true; i++; }
+            continue;
+          }
+          if (inClass) {
+            if (ch === "]") { if (hyphen) out += "-"; hyphen = false; inClass = false; }
+            out += ch; i++; continue;
+          }
+          if (ch === "[") {
+            last = out.length; lastGroup = false; inClass = true; out += ch; i++;
+            if (re[i] === "^") { out += "^"; i++; }
+            if (re[i] === "]") { out += "]"; i++; }
+            continue;
+          }
+          if (ch === "(") { opens.push(out.length); out += ch; i++; last = null; continue; }
+          if (ch === ")") { const start = opens.pop(); out += ch; i++; last = start === undefined ? null : start; lastGroup = true; continue; }
+          if (ch === "{") {
+            const m = /^\{(\d+)(,(\d*))?\}/.exec(re.slice(i));
+            const least = m ? Number(m[1]) : 0;
+            const most = !m ? 0 : m[2] === undefined ? least : m[3] === "" ? Infinity : Number(m[3]);
+            if (m && last !== null && !(lastGroup && numbered) && least <= 16 && most >= least && (most === Infinity || most - least <= 16)) {
+              const atom = out.slice(last);
+              out = out.slice(0, last) + (most === Infinity
+                ? (least ? atom.repeat(least - 1) + atom + "+" : atom + "*")
+                : atom.repeat(least) + (atom + "?").repeat(most - least));
+              i += m[0].length; last = null; continue;
+            }
+            out += ch; i++; last = null; continue;
+          }
+          if ("|^$*+?".includes(ch)) last = null; else { last = out.length; lastGroup = false; }
+          out += ch; i++;
+        }
+        return out;
+      };
+      // `\.site\.com\/rest` becomes `^[^:\/?#]+:\/\/[^\/?#]*\.site\.com\/rest`:
+      // the same text, now only where it ends the address's host. Only for a
+      // pattern that opens on a site it lists (bare, after `\.` or after
+      // `\/`), with no sites excluded beside it and no substitution whose
+      // groups would be renumbered. Rules against one site's own scripts
+      // are often of this shape.
+      const pinToSite = (r) => {
+        const c = r.condition, redirect = r.action && r.action.redirect;
+        if (!Array.isArray(c.requestDomains) || c.excludedRequestDomains || (redirect && redirect.regexSubstitution)) return null;
+        const re = c.regexFilter;
+        // An alternative (`a|b`) would sit outside the prefix and match
+        // anywhere once the list is let go: such a rule stays left out.
+        if (re.includes("|")) return null;
+        for (const site of c.requestDomains) {
+          if (typeof site !== "string" || !site) continue;
+          const name = site.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\/";
+          const host = re.startsWith("\\." + name) ? "[^\\/?#]*\\."
+            : re.startsWith("\\/" + name) ? ""
+            : re.startsWith(name) ? "([^\\/?#]*\\.)?" : null;
+          if (host === null) continue;
+          const { requestDomains, ...rest } = c;
+          return { ...r, condition: { ...rest, regexFilter: "^[^:\\/?#]+:\\/\\/" + host + (re.startsWith(name) ? re : re.slice(2)) } };
+        }
+        return null;
+      };
       const mendRule = (rule) => {
         if (!rule || typeof rule !== "object") return rule;
         const r = { ...rule, action: rule.action && { ...rule.action }, condition: rule.condition && { ...rule.condition } };
@@ -3445,14 +3525,32 @@ enum ExtensionShims {
           if (!c.resourceTypes.length) return null;
         }
         if (c && Array.isArray(c.excludedResourceTypes)) c.excludedResourceTypes = c.excludedResourceTypes.filter((t) => !unknownTypes.has(t));
+        // An empty list of sites to leave out leaves out none, in Chrome. To
+        // the retry below it read as a rule for all but some, so a block
+        // rule with `excludedInitiatorDomains: []` was left out with that
+        // kind.
+        if (c) for (const key of ["excludedRequestDomains", "excludedInitiatorDomains", "excludedDomains"]) {
+          if (Array.isArray(c[key]) && !c[key].length) delete c[key];
+        }
+        if (c && typeof c.regexFilter === "string") c.regexFilter = widen(c.regexFilter, !!(redirect && redirect.regexSubstitution));
         // A pattern beside a list of sites: WebKit drops the list and takes
         // the rule for every address its pattern matches (see
-        // misreadByWebKit in ExtensionShims.swift). A redirect or a header
-        // change of that shape is left out rather than carried out
-        // everywhere: uBlock Origin Lite's strict blocking, `^https?://.*`
-        // for thousands of named sites, sent every page to its warning (#709).
-        // So is a rule on a response's headers, which WebKit has no word for
-        // and would carry out on every request it otherwise matches.
+        // misreadByWebKit in ExtensionShims.swift). Where the pattern opens
+        // on one of the sites it lists — `\.site\.com\/…` — it is pinned to
+        // that site as the address's host, and the list let go: the rule
+        // then acts on no more than it named, if on a little less. A pinned
+        // rule WebKit would still misread (one on a response's headers) is
+        // left out below like any other.
+        if (misread(r)) {
+          const pinned = pinToSite(r);
+          if (pinned && !misread(pinned)) return pinned;
+        }
+        // Otherwise a redirect or a header change of that shape is left out
+        // rather than carried out everywhere: uBlock Origin Lite's strict
+        // blocking, `^https?://.*` for thousands of named sites, sent every
+        // page to its warning (#709). So is a rule on a response's headers,
+        // which WebKit has no word for and would carry out on every request
+        // it otherwise matches.
         if (misread(r)) {
           try { native("debug.error", ["declarativeNetRequest: " + (r.action && r.action.type) + " rule " + r.id + " left out — WebKit would carry it out beyond what it names"]).catch(() => {}); } catch (x) {}
           return null;
@@ -3462,6 +3560,8 @@ enum ExtensionShims {
       if (dnr && typeof dnr.isRegexSupported === "function") {
         const original = dnr.isRegexSupported.bind(dnr);
         put(dnr, "isRegexSupported", (options, callback) => {
+          // Asked of the pattern as a rule would carry it (see `widen`).
+          if (options && typeof options.regex === "string") options = { ...options, regex: widen(options.regex, false) };
           const p = Promise.resolve(original(options)).then((r) => r || { isSupported: false, reason: "syntaxError" },
             () => ({ isSupported: false, reason: "syntaxError" }));
           if (typeof callback !== "function") return p;
