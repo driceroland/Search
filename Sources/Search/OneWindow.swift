@@ -174,24 +174,21 @@ extension Browsers {
             bring(next, over: current)
             return next
         }
-        let space = Store.settings.string(forKey: "space.current.\(id.uuidString)").flatMap(UUID.init)
-            .flatMap { last in Spaces.read(profile: id).first { $0.id == last }?.id }
-            ?? Profiles.shared.profile(id).home
-        let next = sibling(of: current, in: id, at: space)
+        let next = sibling(of: current, in: id, at: lastSpace(profile: id))
         bring(next, over: current)
         return next
     }
 
     /// The window of `profile` in `current`'s merged window: the one already
-    /// there, a window of that profile standing on its own (it joins), or a
-    /// new one, made out of sight at `space`.
-    private static func sibling(of current: Browser, in profile: UUID, at space: UUID) -> Browser {
+    /// there, a window of that profile standing on its own, on screen or
+    /// out of sight (it joins), or a new one, made out of sight at `space`.
+    static func sibling(of current: Browser, in profile: UUID, at space: UUID) -> Browser {
         let group = current.mergeID ?? UUID()
         current.mergeID = group
         current.window?.animationBehavior = .none
         if let there = OneWindow.siblings(of: current).first(where: { $0.profileID == profile }) { return there }
         if let alone = all.last(where: { other in
-            other.profileID == profile && other.isOpen && !other.isPopup && other.mergeID == nil
+            other.profileID == profile && (other.isOpen || other.tucked) && !other.isPopup && other.mergeID == nil
                 && other.window?.styleMask.contains(.fullScreen) != true
         }) {
             alone.mergeID = group

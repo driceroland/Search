@@ -708,6 +708,15 @@ final class Preferences: ObservableObject {
     @Published var spaceRoutes: [SpaceRoute] {
         didSet { store.set(spaceRoutes.map(\.plist), forKey: SpaceRoutes.rulesKey) }
     }
+    /// With links from other apps: ask which space each opens in, before it
+    /// loads (see LinkChooser.swift). Off unless asked for.
+    @Published var asksSpaceForLinks: Bool {
+        didSet { store.set(asksSpaceForLinks, forKey: "links.ask") }
+    }
+    /// Where each site went last, newest first, for that panel to pick first.
+    @Published var linkChoices: [LinkChooser.Choice] {
+        didSet { store.set(linkChoices.map(\.plist), forKey: "links.ask.last") }
+    }
     /// The downloads button always in the chrome, not only while something
     /// downloads (see Fetching.swift). Off unless asked for.
     @Published var alwaysShowsDownloads: Bool {
@@ -1180,6 +1189,8 @@ final class Preferences: ObservableObject {
         webmail = store.string(forKey: "mail.webmail").flatMap(Webmail.init(rawValue:)) ?? .none
         sendsLinksToSpaces = store.bool(forKey: SpaceRoutes.key)
         spaceRoutes = (store.array(forKey: SpaceRoutes.rulesKey) ?? []).compactMap(SpaceRoute.init(plist:))
+        asksSpaceForLinks = store.bool(forKey: "links.ask")
+        linkChoices = (store.array(forKey: "links.ask.last") ?? []).compactMap(LinkChooser.Choice.init(plist:))
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
         downloadsOpening = store.string(forKey: "downloads.open").flatMap(DownloadsOpening.init(rawValue:)) ?? .tab

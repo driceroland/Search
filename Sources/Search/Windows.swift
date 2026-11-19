@@ -28,7 +28,8 @@ struct WindowRecord: Codable {
     /// Rows by space, keyed by the space's identifier.
     var rows: [String: Session.Shape] = [:]
     /// The merged window it was one of, and whether it was tucked behind
-    /// the one on screen (see OneWindow.swift). Nil for a window of its own.
+    /// the one on screen (see OneWindow.swift). A window of its own has no
+    /// merge, and is tucked only while out of sight (see Browsers.outOfSight).
     var merge: UUID?
     var tucked: Bool?
     /// Its column, or the strip across the top, folded away with ⌘S (see
@@ -110,6 +111,12 @@ enum Browsers {
     static var front: Browser? { Front.shared.browser ?? all.last }
     /// The browser to act on when a menu or a link needs one.
     static var acting: Browser { front ?? SceneSlot.shared.browser }
+    /// As `acting`, but never a popup's: with one in front, the first
+    /// window's. The one whose space a link from another app takes when
+    /// nothing asks for another.
+    static var frontBrowser: Browser {
+        front.flatMap { !$0.isPopup ? $0 : nil } ?? primary ?? SceneSlot.shared.browser
+    }
 
     static func register(_ browser: Browser) {
         guard !all.contains(where: { $0 === browser }) else { return }
@@ -136,6 +143,11 @@ enum Browsers {
             bring(browser, over: head)
             return
         }
+        // One out of sight on its own (see outOfSight), its window made key
+        // by something other than show, which brings it into sight first
+        // (the bench's windows front, for one): a window like any other
+        // now, or closing it would retire it.
+        if browser.tucked, browser.mergeID == nil { OneWindow.untuck(browser) }
         register(browser)
         browser.shut = false
         Front.shared.set(browser)
@@ -171,6 +183,9 @@ enum Browsers {
                 return
             }
             browser.tucked = false
+            // Out of sight on its own (see outOfSight): a window like any
+            // other from now on.
+            browser.window?.isExcludedFromWindowsMenu = false
         }
         browser.shut = false
         if let window = browser.window {
@@ -195,6 +210,34 @@ enum Browsers {
         let kept = all.first { $0.shut && !$0.isPopup } ?? all.first ?? SceneSlot.shared.browser
         show(kept)
         return kept
+    }
+
+    /// A window showing the space `id`, found from the one ensureWindow
+    /// gives (see SpaceRoutes.window). Nil when the space is gone, and
+    /// while spaces are off, even for a space a window shows.
+    static func window(showing id: UUID) -> Browser? {
+        // Before ensureWindow, which brings the windows kept away back:
+        // for a choice that opens nowhere, they stay away.
+        guard Shared.prefs.usesSpaces, let space = Spaces.known[id] else { return nil }
+        return SpaceRoutes.window(for: space, from: ensureWindow())
+    }
+
+    /// A browser of `profile` for a small window's page, so that its visits
+    /// and bookmarks are that profile's, with the window in front left in
+    /// its own profile: one already there, or one made out of sight, as a
+    /// merged window's tucked ones are, until a space of the profile is
+    /// chosen (see open(profile:)). Not by keepAway, which takes every
+    /// browser window off screen.
+    static func outOfSight(profile id: UUID) -> Browser {
+        if let there = all.last(where: { $0.profileID == id && !$0.isPopup }) { return there }
+        let space = lastSpace(profile: id)
+        // With profiles in one window, tucked behind the one in front, where
+        // choosing that profile's space looks for it.
+        if OneWindow.on { return sibling(of: frontBrowser, in: id, at: space) }
+        let made = Browser(record: WindowRecord(space: space))
+        made.tucked = true
+        open(made, frame: nil)
+        return made
     }
 
     /// A window around `browser`, made here rather than by SwiftUI.
@@ -284,18 +327,19 @@ enum Browsers {
 
     /// A launch made for a link's small window keeps every browser window
     /// off screen until one is wanted: Open in Search, another link, the
-    /// Dock icon or ⌘N (see Links.little). Put away, never closed: a window
-    /// closed while another is open is retired (see closing), its tabs out
-    /// of the session and windows.json, and a launch with several windows
-    /// came back with one.
+    /// Dock icon or ⌘N (see Links.little). So does one made for the panel
+    /// that asks which space a link opens in: a tab chosen there brings
+    /// them back. Put away, never closed: a window closed while another is
+    /// open is retired (see closing), its tabs out of the session and
+    /// windows.json, and a launch with several windows came back with one.
     private(set) static var keptAway = false
     private static var away: [NSWindow] = []
 
     static func keepAway() {
         keptAway = true
-        // Shown again after ⌘H — as the small window coming forward shows
-        // it — the app brings back every window it had when it was hidden:
-        // the browser's came up beside the small one. They go again.
+        // Each time the app is shown again after ⌘H, it brings back every
+        // window it had when it was hidden: the browser's came up beside
+        // the small window or the panel. They go again.
         guard unhiding == nil else { return }
         unhiding = NotificationCenter.default.addObserver(
             forName: NSApplication.didUnhideNotification, object: nil, queue: .main
@@ -347,6 +391,18 @@ enum Browsers {
         (front?.window ?? windows.first)?.makeKeyAndOrderFront(nil)
         comeForward()
         return true
+    }
+
+    /// Hidden again (⌘H), as the app was when a link came that opened
+    /// nothing: the windows kept away go back behind every other app's
+    /// first, never in front, or ⌘Tab would bring the app back with none.
+    /// Never while it is hidden: a window ordered in shows it, a hidden
+    /// probe's too.
+    static func hideAgain() {
+        keptAway = false
+        for window in away { window.orderBack(nil) }
+        away = []
+        NSApp.hide(nil)
     }
 
     /// An extension unloaded, turned off or removed: the popup windows it
@@ -560,6 +616,10 @@ enum Browsers {
             let browser = Browser(record: record)
             if merging, let merge = record.merge {
                 browser.mergeID = merge
+                browser.tucked = record.tucked == true
+            } else if record.merge == nil {
+                // Out of sight on its own (see outOfSight), it stays so
+                // until a space of its profile is chosen.
                 browser.tucked = record.tucked == true
             }
             open(browser, frame: record.rect)

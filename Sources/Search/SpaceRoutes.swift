@@ -159,8 +159,32 @@ extension Browser {
     /// sends it to. False when no rule sends it out of the page's space.
     func sendToSpace(_ url: URL, from source: Tab?) -> Bool {
         guard !isPopup, let source, !source.shy, let space = SpaceRoutes.space(for: url) else { return false }
-        let here = parked.first { $0.value.tabs.contains { $0 === source } }?.key ?? spaceID
+        // A small window's page is in the space chosen for it, if one was.
+        let here = parked.first { $0.value.tabs.contains { $0 === source } }?.key
+            ?? LittleWindow.holding(source.id)?.chosenSpace ?? spaceID
         guard space.id != here, let target = SpaceRoutes.window(for: space, from: self) else { return false }
+        target.open(url, foreground: true)
+        if target !== self { Browsers.show(target) }
+        return true
+    }
+
+    /// A link a small window's page opens in a new tab, opened in front as
+    /// sendToSpace opens one: in the space a rule sends it to, else the
+    /// space chosen for that window (see Links.open). False when none was
+    /// chosen, or this window shows the chosen space and isn't tucked: the
+    /// page has its sign-ins, and the tab opens here as always. Never here
+    /// instead: a space gone is asked about again, as Open in Search asks
+    /// (LittleWindow.keep); with spaces off, nothing opens.
+    func sendToChosenSpace(_ url: URL, from source: Tab?) -> Bool {
+        guard let source, let chosen = LittleWindow.holding(source.id)?.chosenSpace else { return false }
+        // Tucked: the browser kept out of sight for another profile's small
+        // window, maybe at the chosen space itself (see Browsers.outOfSight).
+        guard chosen != spaceID || tucked else { return false }
+        let space = SpaceRoutes.space(for: url)?.id ?? chosen
+        guard let target = Browsers.window(showing: space) else {
+            if Spaces.known[space] == nil { LinkChooserPanel.shared.ask(url, sender: nil) }
+            return true
+        }
         target.open(url, foreground: true)
         if target !== self { Browsers.show(target) }
         return true
