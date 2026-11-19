@@ -191,6 +191,23 @@ final class Links: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Handoff from iOS or another Mac: macOS passes an NSUserActivity of type
+    /// NSUserActivityTypeBrowsingWeb carrying the webpage URL.
+    func application(
+        _ application: NSApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([NSUserActivityRestoring]) -> Void
+    ) -> Bool {
+        guard !Store.testing else { return false }
+        guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+              let url = userActivity.webpageURL,
+              Links.takes(url) else {
+            return false
+        }
+        Links.take(url)
+        return true
+    }
+
     /// The Dock icon clicked with the window closed: bring the window back
     /// rather than doing nothing, which is what a hidden-title-bar SwiftUI
     /// window does by default.
