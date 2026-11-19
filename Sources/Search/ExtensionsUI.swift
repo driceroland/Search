@@ -167,6 +167,15 @@ struct ExtensionsPage: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .textSelection(.enabled)
                         }
+                        // Running, but without what it is for (#1208).
+                        if let limit = context.flatMap({ Extensions.cantDo($0.webExtension.manifest) }) {
+                            Text(limit)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Palette.unsafe)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
                     }
                     Spacer(minLength: 8)
                     if sites {

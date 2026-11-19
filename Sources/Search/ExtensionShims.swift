@@ -3871,9 +3871,43 @@ enum ExtensionShims {
           const contexts = [...new Set(props.contexts.map((c) => c === "browser_action" || c === "page_action" ? "action" : c).filter((c) => c !== "launcher"))];
           return { ...props, contexts: contexts.length ? contexts : ["page"] };
         };
+        // A link pattern WebKit can't read (uBlock Origin's "abp:*", for
+        // its subscribe links) fails the whole call, where Chrome takes it;
+        // uBlock Origin then stopped making its menu at that entry. The
+        // entry is made with the patterns WebKit reads, or not at all when
+        // none are left: with none, it would show on every link.
+        const readable = (made, props, callback) => {
+          for (;;) {
+            try { return made(props, callback); } catch (e) {
+              const text = String(e && e.message || e);
+              const bad = /'([^']*)' is not a valid pattern/.exec(text), key = /'(targetUrlPatterns|documentUrlPatterns)'/.exec(text);
+              const list = bad && key && props && props[key[1]];
+              if (!Array.isArray(list) || !list.includes(bad[1])) throw e;
+              const left = list.filter((u) => u !== bad[1]);
+              if (!left.length) { if (typeof callback === "function") setTimeout(callback); return props.id; }
+              props = { ...props, [key[1]]: left };
+            }
+          }
+        };
         const create = menus.create.bind(menus), update = menus.update.bind(menus);
-        put(menus, "create", (props, callback) => create(mend(props), callback));
-        put(menus, "update", (id, props, callback) => update(id, mend(props), callback));
+        put(menus, "create", (props, callback) => readable(create, mend(props), callback));
+        put(menus, "update", (id, props, callback) => readable((p, cb) => update(id, p, cb), mend(props), callback));
+      }
+
+      // alarms.create with a callback last, as Chrome has taken since 111:
+      // WebKit reads the callback as the alarm's details and refuses the
+      // call, so the alarm was never set. uBlock Origin passes one to every
+      // call, and none of its timers (saving its filters, updating its
+      // lists) ever fired (#1208).
+      if (chrome.alarms && typeof chrome.alarms.create === "function") {
+        const alarms = chrome.alarms, create = alarms.create.bind(alarms);
+        put(alarms, "create", (...args) => {
+          const callback = args.length && typeof args[args.length - 1] === "function" ? args.pop() : null;
+          if (!callback) return create(...args);
+          let made;
+          try { made = Promise.resolve(create(...args)); } catch (e) { made = Promise.reject(e); }
+          made.then(() => callback(), (e) => withLastError(e, callback));
+        });
       }
 
       // webRequest listeners with options WebKit doesn't take — blocking

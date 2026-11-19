@@ -717,6 +717,21 @@ final class Extensions: NSObject, ObservableObject {
         notStarted[id] = Extensions.reason(error)
     }
 
+    /// What an extension that runs can't do here, though it asked to: an
+    /// extension that blocks requests with "webRequestBlocking" (uBlock
+    /// Origin's Manifest V2 build) starts, and its filters inside pages
+    /// work, but WebKit gives extensions no way to stop or change a request
+    /// that way, so not one request is blocked (#1208). Said in Settings and
+    /// at install rather than leaving a row that looked like any other.
+    static func cantDo(_ manifest: [String: Any]) -> String? {
+        let asked = (manifest["permissions"] as? [Any] ?? []).compactMap { $0 as? String }
+        // One that also has request rules blocks with those.
+        guard asked.contains("webRequestBlocking"), !asked.contains(where: { $0.hasPrefix("declarativeNetRequest") }) else { return nil }
+        let lite = (manifest["name"] as? String)?.hasPrefix("uBlock Origin") == true
+            ? " uBlock Origin Lite, from the Chrome Web Store, blocks them here." : ""
+        return "Can’t block requests: Safari’s engine doesn’t let extensions block them with webRequestBlocking. What it does inside pages still works." + lite
+    }
+
     /// WebKit's error in a line: the manifest problem it names, where it
     /// names one, rather than its general "couldn't be loaded".
     static func reason(_ error: Error) -> String {
@@ -1108,7 +1123,8 @@ final class Extensions: NSObject, ObservableObject {
         guard installed.contains(where: { $0.id == id }) else { return }
         installing.insert(id)
         if await load(item) {
-            browser?.announce("\(name) is installed")
+            let limit = contexts[id].flatMap { Extensions.cantDo($0.webExtension.manifest) }
+            browser?.announce("\(name) is installed" + (limit.map { ", but \($0.prefix(1).lowercased() + $0.dropFirst())" } ?? ""))
         } else {
             browser?.announce("\(name) is installed, but couldn't start" + (notStarted[id].map { ": \($0)" } ?? ""))
         }

@@ -7,7 +7,10 @@ A hidden probe in a world of its own (split_view.py's harness):
 - an unpacked Manifest V2 extension shaped like uBlock Origin's, with a
   background page that stays open (persistent) and webRequestBlocking,
   installs and starts: this Mac's WebKit takes a persistent background page,
-  so that alone is no reason to refuse one;
+  so that alone is no reason to refuse one. WebKit gives it no
+  webRequestBlocking, which Settings says (Bench "extensions" → cantDo);
+  its alarms made with a callback, and its menu entries with a link pattern
+  WebKit can't read, are made, as in Chrome;
 - its installed copy is then broken on disk and the probe started again:
   the extension is still switched on, isn't running, and Settings has
   WebKit's reason for it (Bench "extensions" → failure);
@@ -40,7 +43,16 @@ MANIFEST = {
 FILES = {
     "manifest.json": json.dumps(MANIFEST),
     "background.html": '<!doctype html><script src="bg.js"></script>',
-    "bg.js": "chrome.storage.local.set({ up: Date.now() });",
+    # uBlock Origin's calls that WebKit refused: an alarm made with a
+    # callback last (its promise wrapper adds one to every call), and a menu
+    # entry for links with a pattern WebKit can't read ("abp:*").
+    "bg.js": """chrome.storage.local.set({ up: Date.now() });
+chrome.alarms.create('later', { delayInMinutes: 30 }, () => chrome.storage.local.set({ alarm: chrome.runtime.lastError ? chrome.runtime.lastError.message : 'ok' }));
+try {
+  chrome.contextMenus.create({ id: 'subscribe', title: 'Subscribe', contexts: ['link'], targetUrlPatterns: ['abp:*', 'https://subscribe.adblockplus.org/*'] });
+  chrome.contextMenus.create({ id: 'after', title: 'After' });
+  chrome.storage.local.set({ menus: 'ok' });
+} catch (e) { chrome.storage.local.set({ menus: String(e && e.message || e) }); }""",
     "content.js": "void 0;",
     "popup.html": "<!doctype html><p>popup",
 }
@@ -81,6 +93,14 @@ def main():
         sv.ev(page, f"window.{key}=null;try{{chrome.storage.local.get('up', v=>window.{key}=String((v&&v.up)||''))}}catch(e){{window.{key}='error: '+e}};1")
         up = until(lambda: sv.ev(page, f"window.{key}"), 10)
         t.ok("its background page ran", bool(up), up)
+        t.ok(f"it is said to block no requests here ({ext['cantDo'][:40]!r}…)", "webRequestBlocking" in ext["cantDo"], ext)
+        def stored(name):
+            sv.ev(page, f"window.__{name}=null;chrome.storage.local.get('{name}', v=>window.__{name}=String(v.{name}||''));1")
+            return until(lambda: sv.ev(page, f"window.__{name}"), 5)
+        t.ok("alarms.create with a callback last sets the alarm and calls back", stored("alarm") == "ok", stored("alarm"))
+        sv.ev(page, "window.__a=null;chrome.alarms.get('later', a=>window.__a=a?a.name:'none');1")
+        t.ok("the alarm is there", until(lambda: sv.ev(page, "window.__a"), 5) == "later", sv.ev(page, "window.__a"))
+        t.ok("a menu entry with a pattern WebKit can't read is made, and the menu goes on", stored("menus") == "ok", stored("menus"))
 
         # Broken on disk, then a launch: WebKit can't read it now.
         sv.quit()
