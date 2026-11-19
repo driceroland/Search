@@ -42,6 +42,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- View › Actual Size (⌘0) still goes to the page zoom set in Settings › Browsing › Pages › Page zoom, as in Safari, and now says so when that isn't 100%: "Actual Size (95%)". At 100% it reads Actual Size, and the title follows the setting as you change it. `python3 Tests/actual_size_title.py`. Thanks [@flow-digital-ny](https://github.com/flow-digital-ny) for reporting ([#1210](https://github.com/driceroland/Search/issues/1210))
 - The highlight in the Settings sidebar slides to the section you pick, as the live tab's slides in the tab column, with a little give at the end. It jumps as before with Reduce Motion on. Thanks [@aaravmaloo](https://github.com/aaravmaloo) ([#1169](https://github.com/driceroland/Search/pull/1169))
 
 ### Held back

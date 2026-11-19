@@ -533,6 +533,12 @@ final class Preferences: ObservableObject {
     @Published var pageZoom: Double {
         didSet { store.set(pageZoom, forKey: "pageZoom") }
     }
+    /// View › Actual Size goes to that zoom, as in Safari; away from 100%
+    /// its title says where (#1210).
+    var actualSizeTitle: String {
+        let percent = Int((pageZoom * 100).rounded())
+        return percent == 100 ? "Actual Size" : "Actual Size (\(percent)%)"
+    }
     /// The stops the setting steps through — every 5%, from as small as
     /// anyone reads to as big as a page is worth.
     static let zooms: [Double] = stride(from: 50, through: 300, by: 5).map { Double($0) / 100 }
