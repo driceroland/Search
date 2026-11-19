@@ -157,6 +157,16 @@ struct ExtensionsPage: View {
                             .foregroundStyle(Palette.muted)
                             .lineLimit(1)
                             .help(item.source ?? "")
+                        // Switched on and not running: said as such, with
+                        // WebKit's reason, not a row like any other (#1208).
+                        if item.enabled, context == nil, let reason = extensions.notStarted[item.id] {
+                            Text("Couldn’t start: \(reason)")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Palette.unsafe)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
                     }
                     Spacer(minLength: 8)
                     if sites {
@@ -234,7 +244,7 @@ struct ExtensionsPage: View {
 
         private func detail(_ context: WKWebExtensionContext?) -> String {
             var parts = ["Version \(item.version)", item.fromStore ? "Chrome Web Store" : folder]
-            if item.enabled, context == nil { parts.append("couldn't start") }
+            if item.enabled, context == nil, extensions.notStarted[item.id] == nil { parts.append("couldn't start") }
             if extensions.newTabPageID == item.id {
                 parts.append("shows in new tabs")
             }

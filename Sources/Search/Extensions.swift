@@ -73,6 +73,11 @@ final class Extensions: NSObject, ObservableObject {
     /// Errors an extension's pages and worker ran into, newest last, a few
     /// dozen at most per extension.
     @Published private(set) var errors: [String: [String]] = [:]
+    /// Why each extension that is switched on isn't running: WebKit's own
+    /// words from the last time it was taken up, until it next starts or
+    /// is switched off. Settings › Extensions shows it in place of a row
+    /// that looked like any other (#1208).
+    @Published private(set) var notStarted: [String: String] = [:]
 
     /// Something an extension's button or its row shows changed outside
     /// this file (where it runs, ExtensionSiteAccess.swift).
@@ -634,7 +639,10 @@ final class Extensions: NSObject, ObservableObject {
         // One installed from a folder before links were looked at.
         if item.source != nil {
             do { try await Task.detached(priority: .userInitiated) { try Extensions.unlinkOutside(folder) }.value }
-            catch { return false }
+            catch {
+                failed(item.id, ticket: ticket, because: error)
+                return false
+            }
         }
         let generation = ExtensionWorkerRecovery.shared.generation(for: item.id)
         try? await Task.detached(priority: .userInitiated) { try ExtensionShims.prepare(folder, workerGeneration: generation) }.value
@@ -689,6 +697,7 @@ final class Extensions: NSObject, ObservableObject {
             watch(context)
             if contexts[item.id] == nil, loadsThisRun.contains(item.id) { loadedBefore.insert(item.id); installing.remove(item.id) }
             loadsThisRun.insert(item.id)
+            notStarted[item.id] = nil
             contexts[item.id] = context
             openAside(in: context)
             // Keys you gave its commands in Settings › Shortcuts (#189).
@@ -697,13 +706,30 @@ final class Extensions: NSObject, ObservableObject {
             return true
         } catch {
             NSLog("Extensions: couldn't load %@: %@", item.id, error.localizedDescription)
+            failed(item.id, ticket: ticket, because: error)
             return false
         }
+    }
+
+    /// Kept for Settings, unless another load or a switch-off came since.
+    private func failed(_ id: String, ticket: Int, because error: Error) {
+        guard loadTickets[id] == ticket, installed.contains(where: { $0.id == id && $0.enabled }) else { return }
+        notStarted[id] = Extensions.reason(error)
+    }
+
+    /// WebKit's error in a line: the manifest problem it names, where it
+    /// names one, rather than its general "couldn't be loaded".
+    static func reason(_ error: Error) -> String {
+        let error = error as NSError
+        let under = (error.userInfo[NSUnderlyingErrorKey] as? NSError)?.localizedDescription
+        let text = [error.localizedDescription, under].compactMap { $0 }.filter { !$0.isEmpty }
+        return text.isEmpty ? "unknown error" : text.joined(separator: " ")
     }
 
     @discardableResult
     private func unload(_ id: String, replacingContext: Bool = true) -> Bool {
         loadTickets[id, default: 0] += 1
+        notStarted[id] = nil
         guard let context = contexts[id] else { return false }
         var unloaded = false
         do { try controller.unload(context); unloaded = true } catch {}
@@ -915,7 +941,7 @@ final class Extensions: NSObject, ObservableObject {
                 save()
             }
             guard let item = installed.first(where: { $0.id == id }), item.enabled else { return }
-            browser?.announce(await load(item) ? "\(item.name) reloaded" : "\(item.name) couldn't start — see Settings › Extensions")
+            browser?.announce(await load(item) ? "\(item.name) reloaded" : "\(item.name) couldn't start" + (notStarted[id].map { ": \($0)" } ?? " — see Settings › Extensions"))
         }
     }
 
@@ -1084,7 +1110,7 @@ final class Extensions: NSObject, ObservableObject {
         if await load(item) {
             browser?.announce("\(name) is installed")
         } else {
-            browser?.announce("\(name) is installed, but WebKit couldn't start it")
+            browser?.announce("\(name) is installed, but couldn't start" + (notStarted[id].map { ": \($0)" } ?? ""))
         }
     }
 

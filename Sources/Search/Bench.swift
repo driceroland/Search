@@ -4989,6 +4989,7 @@ final class Bench {
                 return [
                     "id": item.id, "name": item.name, "version": item.version, "enabled": item.enabled,
                     "loaded": context != nil, "private": context?.hasAccessToPrivateData ?? false,
+                    "failure": extensions.notStarted[item.id] ?? "",
                     "base": context?.baseURL.absoluteString ?? "",
                     "errors": (context.map(Extensions.errors(of:)) ?? []).map { e in
                         let under = Extensions.errors(in: [e.userInfo[NSUnderlyingErrorKey]].compactMap { $0 } as NSArray).first.map { " ← \($0.text) \($0.userInfo)" } ?? ""
