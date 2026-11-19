@@ -3337,8 +3337,15 @@ final class Browser: NSObject, ObservableObject {
            Pins.setShared(shared, from: self) {
             for space in Array(parked.keys) { pinsChanged(in: space) }
         }
-        writeRow(spaceID, session(tabs, active: activeID, groups: tabGroups, splits: splits), now: now)
+        writeRow(spaceID, session(tabs, active: activeID, groups: tabGroups, splits: splits,
+                                  aside: lifted(from: spaceID, besides: tabs)), now: now)
         twinsSoon()
+    }
+
+    /// Tabs lifted from a space into small windows, not back in its row.
+    /// A quit would otherwise forget them: they come back in the row.
+    private func lifted(from space: UUID, besides row: [Tab]) -> [Tab] {
+        LittleWindow.parked(beside: self, space: space).filter { tab in !row.contains { $0.id == tab.id } }
     }
 
     // MARK: - pins, the same in every window
@@ -3830,10 +3837,16 @@ final class Browser: NSObject, ObservableObject {
             let saved = readRow(space.id)
             if !saved.tabs.isEmpty { rows[space.id.uuidString] = saved }
         }
-        rows[spaceID.uuidString] = session(tabs, active: activeID, groups: tabGroups, splits: splits, keeping: keeping)
+        // Tabs lifted into small windows, as writeSession writes them: in a
+        // window after the first, its rows are its record (Windows.save).
+        // Not for a window going away (`keeping`): ⇧⌘T bringing it back
+        // would bring them twice.
+        func aside(_ space: UUID, _ row: [Tab]) -> [Tab] { keeping ? [] : lifted(from: space, besides: row) }
+        rows[spaceID.uuidString] = session(tabs, active: activeID, groups: tabGroups, splits: splits, keeping: keeping,
+                                           aside: aside(spaceID, tabs))
         for (space, row) in parked {
             rows[space.uuidString] = session(row.tabs, active: row.active, groups: row.groups ?? readRow(space).groups,
-                                             splits: row.splits, keeping: keeping)
+                                             splits: row.splits, keeping: keeping, aside: aside(space, row.tabs))
         }
         return rows
     }
@@ -3890,15 +3903,18 @@ final class Browser: NSObject, ObservableObject {
         tabs = []
     }
 
+    /// `aside`: tabs lifted into small windows, written after the row and
+    /// marked as theirs (see dropLifted).
     func session(_ tabs: [Tab], active id: Tab.ID?, groups: [TabGroup]? = nil, splits: [TabSplit] = [],
-                         keeping: Bool = false) -> Session.Shape {
+                         keeping: Bool = false, aside: [Tab] = []) -> Session.Shape {
         var entries: [Session.Entry] = []
         // A row with nothing in front — a space not yet gone to since a fresh
         // start — stays that way in its file, rather than its first tab (a
         // pin) coming to the front next time.
         var active = id == nil ? -1 : 0
         var indices: [Tab.ID: Int] = [:]
-        for tab in tabs {
+        let liftedIDs = Set(aside.map(\.id))
+        for tab in tabs + aside {
             guard kept(tab), let url = tab.pending ?? tab.address ?? tab.page?.url else { continue }
             if tab.id == id { active = entries.count }
             indices[tab.id] = entries.count
@@ -3917,7 +3933,8 @@ final class Browser: NSObject, ObservableObject {
                 keepsake: keeping ? tab.keepsake.map(Keepsake.init) : nil,
                 // Only with Same tabs in every window on: off, the file is
                 // what it always was.
-                twinID: prefs.mirrorsTabs && twinnable(tab) ? tab.twinID : nil
+                twinID: prefs.mirrorsTabs && twinnable(tab) ? tab.twinID : nil,
+                lifted: liftedIDs.contains(tab.id) ? tab.id : nil
             ))
         }
         // The tab you were on isn't kept — a private one: the one kept just
@@ -3963,7 +3980,8 @@ final class Browser: NSObject, ObservableObject {
     /// space would lose every group it had.
     func writeSession(now: Bool, space: UUID, row: Parked) {
         let groups = row.groups ?? readRow(space).groups
-        writeRow(space, session(row.tabs, active: row.active, groups: groups, splits: row.splits), now: now)
+        writeRow(space, session(row.tabs, active: row.active, groups: groups, splits: row.splits,
+                                aside: lifted(from: space, besides: row.tabs)), now: now)
         twinsSoon()
     }
 
@@ -5366,6 +5384,53 @@ final class Browser: NSObject, ObservableObject {
         return !window.frame.insetBy(dx: -12, dy: -12).contains(point)
     }
 
+    /// A lifted tab's small window was closed, or the tab was kept: the
+    /// space it came from forgets it. The space on screen and a parked one
+    /// are written again without it. One only on disk loses the entry
+    /// written for this tab, found by its mark (Session.Entry.lifted): two
+    /// tabs can have the same address, and only one of them was lifted.
+    func dropLifted(_ tab: Tab, from space: UUID) {
+        if space == spaceID {
+            writeSession(now: true)
+        } else if let row = parked[space] {
+            writeSession(now: true, space: space, row: row)
+        } else {
+            var saved = readRow(space)
+            let count = saved.tabs.count
+            saved.tabs.removeAll { $0.lifted == tab.id }
+            // Not there, as in a space deleted since: nothing to write.
+            if saved.tabs.count < count { writeRow(space, saved, now: true) }
+        }
+    }
+
+    /// Whether Open in Small Window can take this tab: a page of the row,
+    /// not a pin (the row's), not a private tab, and a bench tab only on a
+    /// test run. The menus ask this too, so they agree with what it does.
+    func liftable(_ tab: Tab) -> Bool {
+        !isPopup && tab.pin == nil && !tab.shy && tab.isWeb && (!tab.bench || Store.testing)
+            && tabs.contains { $0.id == tab.id }
+    }
+
+    /// A lifted tab's small window closed: ⇧⌘T brings it back, at the end
+    /// of the row, as it would a tab closed there.
+    func rememberLifted(_ tab: Tab) { remember(tab, at: tabs.count) }
+
+    /// Into the small window a link from another app uses (see Little.swift):
+    /// the page as it is, beside this window. Open in Search puts it back.
+    /// A pin stays: it is the row's. A bench tab only on a test run.
+    func openInLittleWindow(_ tab: Tab) {
+        guard liftable(tab) else { return }
+        // A tab asleep, or not yet woken since launch, has only its address:
+        // the small window draws the page, so the page is loaded first.
+        if !tab.wake() { tab.revive() }
+        // Its video, in macOS's picture in picture, comes back into the page
+        // first: once out of the row, nothing here could bring it back.
+        if pictured == tab.id { unpicture() }
+        detach(tab)
+        LittleWindow.show(tab, for: self, front: !Store.testing, lifted: true)
+        writeSession(now: true)
+    }
+
     /// Out of this row, not closed: it is on its way to another window.
     private func detach(_ tab: Tab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
@@ -6344,6 +6409,9 @@ final class Browser: NSObject, ObservableObject {
             // An empty page is never written; the first builds of Split View
             // on main wrote one for an empty half.
             guard let saved = URL(string: entry.url), entry.url != "about:blank" else { continue }
+            // A tab still in its small window: written so a quit keeps it,
+            // not made a second time while it is open.
+            if let lifted = entry.lifted, LittleWindow.holding(lifted) != nil { continue }
             // A row read from disk is a browser or window opened afresh: with
             // pins going home, a pin comes back at the page it was pinned at,
             // wherever it had been taken since.

@@ -37,7 +37,12 @@ enum Session {
         /// so not written, otherwise.
         var twinID: UUID? = nil
 
-        enum CodingKeys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, twinID }
+        /// The id of the tab this entry is, while it sits in a small window
+        /// (Browser.openInLittleWindow). Closing that window takes out this
+        /// entry and no other: two tabs can have the same address.
+        var lifted: UUID? = nil
+
+        enum CodingKeys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, twinID, lifted }
     }
 
     struct Shape: Codable {
@@ -143,7 +148,7 @@ enum Session {
 // key it isn't asked for. In extensions, so the memberwise initialisers stay.
 
 extension Session.Entry {
-    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, twinID }
+    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, twinID, lifted }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -159,6 +164,7 @@ extension Session.Entry {
         listed = try? c.decodeIfPresent(Bool.self, forKey: .listed)
         muted = (try? c.decodeIfPresent(Bool.self, forKey: .muted)) ?? false
         twinID = try? c.decodeIfPresent(UUID.self, forKey: .twinID)
+        lifted = try? c.decodeIfPresent(UUID.self, forKey: .lifted)
     }
 }
 
