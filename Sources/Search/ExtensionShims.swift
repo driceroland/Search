@@ -5283,8 +5283,13 @@ enum ExtensionShims {
             let named = found.requestedPermissions.union(found.optionalPermissions)
             // Sites as the manifest names them, optional ones included —
             // which allRequestedMatchPatterns leaves out.
-            let places = Set(found.allRequestedMatchPatterns.union(found.optionalPermissionMatchPatterns).map(\.string))
-            guard wanted.allSatisfy(named.contains), origins.allSatisfy({ places.contains($0.string) }) else {
+            let places = found.allRequestedMatchPatterns.union(found.optionalPermissionMatchPatterns)
+            // A manifest wildcard permits asking for an individual site, not
+            // just the literal pattern. Match in that direction only, as
+            // WebKit does for permissions.request, with host paths ignored.
+            guard wanted.allSatisfy(named.contains), origins.allSatisfy({ origin in
+                places.contains { $0.matches(origin, options: .ignorePaths) }
+            }) else {
                 throw Unsupported(what: "Only permissions specified in the manifest may be requested.")
             }
             let missing = wanted.filter { context.permissionStatus(for: $0) != .grantedExplicitly }
