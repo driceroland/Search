@@ -1364,7 +1364,13 @@ enum ExtensionShims {
       // WebKit doesn't bring every message to every page. Not waited for
       // until they say something about one they heard.
       const deaf = new Set();
-      const keyOf = (message) => { try { const k = JSON.stringify(message); return k && k.length < 4000 ? k : null; } catch (e) { return null; } };
+      // WebKit's JSON transport may reorder object members; a structured
+      // clone over BroadcastChannel keeps their insertion order. Both must
+      // name the same message, including inside arrays and nested objects.
+      const messageJSON = (message) => JSON.stringify(message, (_, value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value);
+      const keyOf = (message) => { try { const k = messageJSON(message); return k && k.length < 4000 ? k : null; } catch (e) { return null; } };
       const tell = (message, verdict, heard) => {
         const key = channel && keyOf(message);
         if (key) channel.postMessage({ key, from: background ? "worker" : me, verdict, heard, at: Date.now() });
@@ -1379,7 +1385,7 @@ enum ExtensionShims {
       // alike, is never taken for one, and an unpaired copy is forgotten
       // after a few seconds (Security).
       const relayKey = (message) => {
-        try { const text = JSON.stringify(message); return text === undefined ? null : text; } catch (e) { return null; }
+        try { const text = messageJSON(message); return text === undefined ? null : text; } catch (e) { return null; }
       };
       const ownPlace = (() => { try { return runtime.getURL(""); } catch (e) { return ""; } })();
       const fromOwnPages = (sender) => !!sender && sender.id === runtime.id && typeof sender.url === "string" && !!ownPlace
@@ -1420,17 +1426,98 @@ enum ExtensionShims {
         setTimeout(ask, 100);
       };
       let deliverRelayed = null, relaying = false;
-      const relay = (message) => { if (channel && !inContent) try { channel.postMessage({ relay: message, from: me, url: location.href }); } catch (e) {} };
+      const relayReplies = new Map();
+      let relaySequence = 0;
+      const relay = (message) => {
+        if (!channel || inContent) return null;
+        const id = me + ":" + (++relaySequence);
+        const key = relayKey(message);
+        let finish, timer = null, held = false, settled = false, expected = null;
+        const emptyFrom = new Set();
+        const answer = new Promise((resolve) => { finish = resolve; });
+        // An empty reply is not an answer: another page may still be holding
+        // the real one. Once every page this copy was sent to has replied
+        // empty, there is nothing left to wait for. The countdown is only
+        // for a page that never replies at all.
+        const settle = (value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          timer = null;
+          relayReplies.delete(id);
+          finish(value);
+        };
+        const countDown = () => { if (!settled && !timer) timer = setTimeout(() => settle(undefined), 10000); };
+        const everyEmpty = () => expected && [...expected].every((peer) => emptyFrom.has(peer));
+        relayReplies.set(id, {
+          key,
+          held: () => { held = true; clearTimeout(timer); timer = null; },
+          reply: (value, from) => {
+            if (value !== undefined) settle(value);
+            else {
+              if (from) emptyFrom.add(from);
+              if (everyEmpty()) settle(undefined);
+              else countDown();
+            }
+          },
+          alone: () => { if (!held) settle(undefined); },
+        });
+        countDown();
+        Promise.resolve().then(() => {
+          expected = new Set(peers);
+          if (expected.size === 0 || everyEmpty()) settle(undefined);
+        });
+        try {
+          const value = JSON.parse(JSON.stringify(message));
+          channel.postMessage({ relay: value, from: me, url: location.href, replyTo: id });
+        } catch (e) { settle(undefined); }
+        return { answer, cancel: () => settle(undefined), alone: () => { if (!held) settle(undefined); } };
+      };
+      const firstReply = (original, relayed) => {
+        if (!relayed) return original;
+        return new Promise((resolve, reject) => {
+          let left = 2, failure, done = false;
+          const win = (value) => { if (!done) { done = true; resolve(value); } };
+          const none = () => { if (--left === 0) failure ? reject(failure) : win(undefined); };
+          original.then((value) => {
+            if (value !== undefined) win(value);
+            // No other page joined, and the worker had nothing to say.
+            // Main returns at once; the relay has nobody left to ask.
+            else if (peers.size === 0) { relayed.alone(); win(undefined); }
+            else none();
+          }, (error) => { failure = error; none(); });
+          relayed.answer.then((value) => value !== undefined ? win(value) : none());
+        }).finally(relayed.cancel);
+      };
       if (channel) {
         channel.onmessage = ({ data }) => {
           if (!data || data.from === me) return;
+          if (data.replyTo && data.to === me) {
+            const pending = relayReplies.get(data.replyTo);
+            if (pending) data.held ? pending.held() : pending.reply(data.value, data.from);
+            return;
+          }
           if (data.relay !== undefined) {
             const key = relayKey(data.relay);
             if (!background && deliverRelayed) setTimeout(() => {
               if (key && pending(heardNatively, key)) { count(heardNatively, key, -1); return; }
               if (key) count(heardRelayed, key, 1);
+              let replied = false;
+              const respond = (value) => {
+                replied = true;
+                if (!data.replyTo) return;
+                // runtime messaging carries JSON, even though this channel
+                // can clone more. Preserve the native API's value types.
+                try { value = value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
+                catch (e) { value = undefined; }
+                channel.postMessage({ replyTo: data.replyTo, to: data.from, from: me, value });
+              };
               relaying = true;
-              try { deliverRelayed(data.relay, { id: runtime.id, url: data.url, origin: location.origin }); } finally { relaying = false; }
+              try {
+                const kept = deliverRelayed(data.relay, { id: runtime.id, url: data.url, origin: location.origin }, respond);
+                if (!replied && kept === true && data.replyTo) channel.postMessage({ replyTo: data.replyTo, to: data.from, from: me, held: true });
+                else if (!replied && kept !== true) respond(undefined);
+              } finally { relaying = false; }
             }, 50);
             return;
           }
@@ -1681,7 +1768,7 @@ enum ExtensionShims {
         }
         put(event, "addListener", (listener) => {
           listeners.add(listener);
-          if (told) { join(); deliverRelayed = (m, s) => dispatch(m, s, () => {}); }
+          if (told) { join(); deliverRelayed = (m, s, respond) => dispatch(m, s, respond || (() => {})); }
           if (!attached) { attached = true; add(dispatch); }
         });
         put(event, "removeListener", (listener) => {
@@ -2110,9 +2197,9 @@ enum ExtensionShims {
           // Never heard back by the one that sends it, so said for it.
           if (!inContent) tell(typeof args[0] === "string" && args.length > 1 && typeof args[1] !== "function" ? args[1] : args[0], "passes");
           checkWorker();
-          const answer = send(...args).then((r) => { if (r !== undefined) heard = Date.now(); return r; });
-          if (typeof args[0] !== "string" && !(args[0] && Object.keys(args[0]).some((k) => k.startsWith("__search")))) relay(args[0]);
-          return replied(answer, callback, "The message port closed before a response was received.");
+          const original = send(...args).then((r) => { if (r !== undefined) heard = Date.now(); return r; });
+          const relayed = typeof args[0] !== "string" && !(args[0] && Object.keys(args[0]).some((k) => k.startsWith("__search"))) ? relay(args[0]) : null;
+          return replied(firstReply(original, relayed), callback, "The message port closed before a response was received.");
         });
       }
       // A message for a tab reaches only its content scripts in WebKit. In
