@@ -715,6 +715,9 @@ struct Mark: View {
     let letter: String
     var size: CGFloat = 16
     var dim = false
+    /// Full ink for the letter (Settings › Appearance › Tabs › High contrast
+    /// text), instead of the soft grey a resting mark usually wears.
+    var contrast = false
 
     var body: some View {
         Group {
@@ -737,7 +740,7 @@ struct Mark: View {
             } else {
                 Text(letter)
                     .font(.system(size: size * 0.56, weight: .medium))
-                    .foregroundStyle(Palette.muted)
+                    .foregroundStyle(contrast ? Palette.ink : Palette.muted)
                     .frame(width: size, height: size)
                     .background(
                         RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)

@@ -59,7 +59,7 @@ struct PinFolderHeading: View {
                 .font(.system(size: 6.5, weight: .bold))
                 .rotationEffect(.degrees(folder.collapsed ? -90 : 0))
         }
-        .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
+        .foregroundStyle(titleColour(hovering: hovering))
         .frame(maxWidth: .infinity)
         .frame(height: GroupHeading.compactHeight)
         .help(folder.collapsed ? "\(folder.name) — folded" : (tip.isEmpty ? folder.name : "\(folder.name) — \(tip)"))
@@ -97,7 +97,7 @@ struct PinFolderHeading: View {
             }
             Spacer(minLength: 0)
         }
-        .foregroundStyle(Palette.muted)
+        .foregroundStyle(titleColour(hovering: false))
         .padding(.horizontal, 10)
         .padding(.leading, CGFloat(depth) * Self.indent)
         .frame(height: Self.height(prefs, compact: false))
@@ -121,6 +121,13 @@ struct PinFolderHeading: View {
     private var glyph: String {
         if folder.isLive { return "dot.radiowaves.up.forward" }
         return folder.collapsed ? "folder" : "folder.fill"
+    }
+
+    /// Soft grey by default; full ink with Settings › Appearance › Tabs ›
+    /// High contrast text, as a tab's title is.
+    private func titleColour(hovering: Bool) -> Color {
+        if prefs.highContrastText { return Palette.ink }
+        return hovering ? Palette.ink.opacity(0.7) : Palette.muted
     }
 
     /// A live folder's feed, or that its last fetch failed: nothing louder.
@@ -210,7 +217,7 @@ struct FeedItemRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .foregroundStyle(hovering ? Palette.ink : Palette.ink.opacity(0.75))
+        .foregroundStyle(prefs.highContrastText || hovering ? Palette.ink : Palette.ink.opacity(0.75))
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(hovering ? greys.hover : .clear))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onTapGesture { if interactive { browser.openFeedItem(item) } }

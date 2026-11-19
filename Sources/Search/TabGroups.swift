@@ -101,6 +101,13 @@ struct GroupHeading: View {
 
     private var editing: Bool { browser.editingGroupID == group.id }
 
+    /// Soft grey by default; full ink with Settings › Appearance › Tabs ›
+    /// High contrast text, as a tab's title is.
+    private func titleColour(hovering: Bool) -> Color {
+        if browser.prefs.highContrastText { return Palette.ink }
+        return hovering ? Palette.ink.opacity(0.7) : Palette.muted
+    }
+
     /// Its height in the column, a little under a tab's.
     static let height: CGFloat = 24
     /// And in the column of icons.
@@ -134,7 +141,7 @@ struct GroupHeading: View {
                 .font(.system(size: 6.5, weight: .bold))
                 .rotationEffect(.degrees(group.collapsed ? -90 : 0))
         }
-        .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
+        .foregroundStyle(titleColour(hovering: hovering))
         .frame(maxWidth: .infinity)
         .frame(height: Self.compactHeight)
         .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -194,7 +201,7 @@ struct GroupHeading: View {
                     .opacity(hovering ? 1 : 0)
             }
         }
-        .foregroundStyle(Palette.muted)
+        .foregroundStyle(titleColour(hovering: false))
         .padding(.horizontal, 10)
         .frame(height: horizontal ? 28 : Self.height)
         .frame(maxWidth: horizontal ? nil : .infinity, alignment: .leading)
