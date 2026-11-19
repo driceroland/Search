@@ -3244,6 +3244,98 @@ final class Bench {
                 answer(state())
             }
 
+        case "rate":
+            // How often the tab on screen gets an animation frame: its
+            // requestAnimationFrame callbacks counted for a second or two.
+            // A hidden app draws nothing, so the tab's stage is lent to the
+            // borderless window off every screen, as `film float` does, with
+            // WebKit told not to count it as covered; then it goes back. The
+            // probe stays hidden throughout. Only from a probe started hidden.
+            guard Store.testing else { answer(["error": "rate only works on a --test run"]); return }
+            guard NSApp.isHidden else { answer(["error": "rate needs a probe started hidden"]); return }
+            guard let window = browser.window ?? Links.window, let tab = browser.active, let web = tab.built
+            else { answer(["error": "rate needs a tab on screen with a page"]); return }
+            func stages(in view: NSView) -> [StageView] {
+                (view as? StageView).map { [$0] } ?? view.subviews.flatMap(stages)
+            }
+            guard let root = window.contentView,
+                  let stage = stages(in: root).filter({ !$0.isHiddenOrHasHiddenAncestor })
+                      .max(by: { $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height }),
+                  let home = stage.superview
+            else { answer(["error": "no stage in the window"]); return }
+            let seconds = min(4, max(0.5, request["seconds"] as? Double ?? 2))
+            let hall = self.hall ?? {
+                let hall = NSWindow(contentRect: NSRect(x: -20000, y: -22000, width: 100, height: 100),
+                                    styleMask: [.borderless], backing: .buffered, defer: false)
+                hall.isReleasedWhenClosed = false
+                hall.isExcludedFromWindowsMenu = true
+                hall.collectionBehavior = [.transient, .ignoresCycle, .stationary]
+                hall.hasShadow = false
+                hall.canHide = false
+                self.hall = hall
+                return hall
+            }()
+            hall.setFrame(NSRect(x: -20000, y: -22000, width: stage.frame.width, height: stage.frame.height), display: false)
+            hall.orderBack(nil)
+            let place = stage.frame
+            let after = home.subviews.firstIndex(of: stage).flatMap { home.subviews.indices.contains($0 + 1) ? home.subviews[$0 + 1] : nil }
+            stage.removeFromSuperview()
+            stage.frame = NSRect(origin: .zero, size: place.size)
+            hall.contentView?.addSubview(stage)
+            let occlusion = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+            typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+            if web.responds(to: occlusion) {
+                unsafeBitCast(web.method(for: occlusion), to: Setter.self)(web, occlusion, false)
+            }
+            func giveBack() {
+                if web.responds(to: occlusion) {
+                    unsafeBitCast(web.method(for: occlusion), to: Setter.self)(web, occlusion, true)
+                }
+                stage.removeFromSuperview()
+                stage.frame = place
+                if let after, after.superview === home {
+                    home.addSubview(stage, positioned: .below, relativeTo: after)
+                } else {
+                    home.addSubview(stage)
+                }
+                hall.orderOut(nil)
+            }
+            // Half a second to settle in the window, then counted.
+            let count = """
+            return await new Promise(function (done) {
+              var times = [], t0 = 0;
+              function frame(t) {
+                if (!t0) t0 = t;
+                times.push(t);
+                if (t - t0 < \(Int(seconds * 1000))) requestAnimationFrame(frame);
+                else done({ frames: times.length - 1, ms: t - t0, visible: document.visibilityState,
+                            gaps: times.slice(1).map(function (x, i) { return Math.round((x - times[i]) * 10) / 10; }) });
+              }
+              setTimeout(function () { requestAnimationFrame(frame); }, 500);
+              setTimeout(function () { done({ frames: times.length ? times.length - 1 : 0, ms: times.length ? times[times.length - 1] - times[0] : 0,
+                                              visible: document.visibilityState, gaps: [], timedOut: true }); }, \(Int(seconds * 1000) + 3000));
+            });
+            """
+            web.callAsyncJavaScript(count, arguments: [:], in: nil, in: .page) { result in
+                MainActor.assumeIsolated {
+                    giveBack()
+                    guard case .success(let value) = result, let found = value as? [String: Any] else {
+                        if case .failure(let error) = result { answer(["error": error.localizedDescription]) }
+                        else { answer(["error": "no answer from the page"]) }
+                        return
+                    }
+                    let frames = (found["frames"] as? NSNumber)?.doubleValue ?? 0
+                    let ms = (found["ms"] as? NSNumber)?.doubleValue ?? 0
+                    let gaps = (found["gaps"] as? [NSNumber] ?? []).map(\.doubleValue).sorted()
+                    answer(["fps": ms > 0 ? (frames / ms * 10000).rounded() / 10 : 0,
+                            "medianGap": gaps.isEmpty ? 0 : gaps[gaps.count / 2],
+                            "frames": Int(frames), "visible": found["visible"] as? String ?? "",
+                            "timedOut": found["timedOut"] as? Bool ?? false,
+                            "screenHz": window.screen?.maximumFramesPerSecond ?? NSScreen.main?.maximumFramesPerSecond ?? 0,
+                            "url": web.url?.absoluteString ?? ""])
+                }
+            }
+
         case "film" where ["float", "land"].contains(request["action"] as? String ?? ""):
             // The video going out into its floating window, or back into its
             // tab (#257), recorded by the page itself on every frame it
