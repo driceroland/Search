@@ -30,7 +30,7 @@ enum Web {
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name, MediaKeys.name,
                      StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name, DuskRelay.name,
-                     TranslateRelay.name] {
+                     TranslateRelay.name, WindowFullscreen.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
@@ -116,9 +116,9 @@ enum Web {
         // page comes back.
         config.applicationNameForUserAgent = Web.userAgentName
         config.allowsAirPlayForMediaPlayback = true
-        // Off by default on macOS, which is why a full-screen button on a video
-        // did nothing at all: the page asks, and WebKit refuses without a word.
-        config.preferences.isElementFullscreenEnabled = true
+        // Off: a page that asks for the screen is answered by Search, which
+        // takes the window there with the page still in it (WindowFullscreen).
+        config.preferences.isElementFullscreenEnabled = false
         // WebKit's synchronous popup check rejects async POST sign-ins.
         // The UI delegate instead consumes a recent trusted interaction
         // recorded in Search's isolated world (see PopupGesture.swift).
@@ -337,6 +337,7 @@ final class Tab: ObservableObject, Identifiable {
 
     func didCommit() {
         popupGesture.clear()
+        windowFullscreen.pageLeft()
         // What the old page was refused went with it.
         if !blockedPopups.isEmpty { blockedPopups = [] }
         // A translated page is gone; its frames with it.
@@ -629,6 +630,7 @@ final class Tab: ObservableObject, Identifiable {
     private let relay = ScrollRelay()
     private let veils_ = VeilRelay()
     private let forms = FormRelay()
+    private let windowFullscreen = WindowFullscreen()
     private let images = ImageRelay()
     private let media = MediaKeys()
     /// Counting down once the page's sound stops, to give the media keys
@@ -936,6 +938,8 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(shop, contentWorld: Web.world, name: StoreRelay.name)
         controller.add(iconChanges, contentWorld: Web.world, name: IconRelay.name)
         controller.add(forms, contentWorld: Web.world, name: FormRelay.name)
+        windowFullscreen.tab = self
+        controller.add(windowFullscreen, contentWorld: .page, name: WindowFullscreen.name)
         controller.addScriptMessageHandler(passkeyRelay, contentWorld: Web.world, name: PasskeyRelay.name)
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
@@ -1077,6 +1081,9 @@ final class Tab: ObservableObject, Identifiable {
         )
         controller.addUserScript(
             WKUserScript(source: FormRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
+        )
+        controller.addUserScript(
+            WKUserScript(source: WindowFullscreen.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page)
         )
         controller.addUserScript(
             WKUserScript(source: IconRelay.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Web.world)
