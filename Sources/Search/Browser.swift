@@ -3194,22 +3194,12 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
-        // WebKit read the defaults once at the start and keeps its own copy.
-        // The only way to change its mind while running is the same action
-        // the Edit menu would send it, which also writes the default back.
+        // Autocorrect reaches WebKit from Preferences (switchWebKit), for
+        // every page at once; each window only says so.
         prefs.$autocorrect
             .dropFirst()
             .sink { [weak self] on in
-                guard let self, let web = active?.built else { return }
-                let selector = NSSelectorFromString("toggleAutomaticSpellingCorrection:")
-                guard web.responds(to: selector) else { return }
-                // Toggling is all there is, so it is only sent when the two
-                // actually disagree.
-                if UserDefaults.standard.bool(forKey: "WebAutomaticSpellingCorrectionEnabled") != on {
-                    web.perform(selector, with: nil)
-                }
-                Preferences.tellWebKit(autocorrect: on)
-                announce(on ? "Autocorrect on" : "Autocorrect off")
+                self?.announce(on ? "Autocorrect on" : "Autocorrect off")
             }
             .store(in: &bag)
     }

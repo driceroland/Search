@@ -2100,8 +2100,16 @@ final class Bench {
                     answer(["error": "textcheck toggle only works in a copy under its own bundle id — it would switch the real Search's setting"])
                     return
                 }
-                guard let kind = Substitution(rawValue: name) else { answer(["error": "toggle quotes|dashes|replacement"]); return }
-                browser.toggleSubstitution(kind, in: web)
+                if name == "autocorrect" {
+                    // Edit › Spelling and Grammar › Correct Spelling
+                    // Automatically, as its Toggle sets it.
+                    browser.prefs.autocorrect.toggle()
+                } else {
+                    guard let kind = Substitution(rawValue: name) else {
+                        answer(["error": "toggle quotes|dashes|replacement|autocorrect"]); return
+                    }
+                    browser.toggleSubstitution(kind, in: web)
+                }
             }
             // The menu bar is drawn again a moment after the browser changes.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -2121,7 +2129,25 @@ final class Bench {
                             .map { ["title": $0.title, "on": $0.state == .on] }
                     }
                 }
-                answer(["mac": mac, "page": page, "kept": kept, "menu": items, "web": web != nil])
+                // Autocorrect: WebKit's own answer, as it ticks a menu item —
+                // only given while a field has the caret — the default it
+                // keeps, the setting, and the Spelling and Grammar tick.
+                let correct = NSMenuItem(title: "", action: NSSelectorFromString("toggleAutomaticSpellingCorrection:"), keyEquivalent: "")
+                let field = web.map { $0.validateUserInterfaceItem(correct) } ?? false
+                var tick: Any = NSNull()
+                if let edit = NSApp.mainMenu?.items.first(where: { $0.title == "Edit" })?.submenu,
+                   let spelling = edit.items.first(where: { $0.title == "Spelling and Grammar" })?.submenu {
+                    spelling.delegate?.menuNeedsUpdate?(spelling)
+                    if let item = spelling.items.first(where: { $0.title == "Correct Spelling Automatically" }) {
+                        tick = item.state == .on
+                    }
+                }
+                let autocorrect: [String: Any] = [
+                    "page": field ? correct.state == .on : NSNull(),
+                    "kept": domain[Preferences.autocorrectKey] ?? NSNull(),
+                    "setting": browser.prefs.autocorrect, "menu": tick,
+                ]
+                answer(["mac": mac, "page": page, "kept": kept, "menu": items, "web": web != nil, "autocorrect": autocorrect])
             }
 
         case "menu":
