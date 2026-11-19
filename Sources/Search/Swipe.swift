@@ -65,12 +65,42 @@ enum Swipe {
     /// Whether a sideways swipe here would scroll something. Said once per
     /// change of mind, and at most ten times a second, so the page is never
     /// made to shout.
+    ///
+    /// A box at its edge is free only when it was resting there. WebKit
+    /// scrolls a sideways box before the page hears of the wheel event, so
+    /// a swipe that carried a box to its edge found it there already, and
+    /// went back (#1219): the box's own scroll events say it was moving.
     static let watch = """
     (function () {
       if (window.__officeSwipe) return;
       window.__officeSwipe = true;
 
       var was = null, said = 0;
+      // When each box, and the page itself, last moved sideways. Only
+      // sideways: a page scrolled down a moment ago can still be swiped,
+      // and so can one pinched in whose side bounces under the swipe
+      // without its place changing.
+      var moved = new WeakMap(), at = new WeakMap();
+      function mark(el) {
+        var root = el === document.documentElement, vv = window.visualViewport;
+        var x = root ? (vv ? vv.pageLeft : window.scrollX) : el.scrollLeft;
+        // A side bouncing past its edge is not moving along: held to it.
+        var max = root ? document.documentElement.scrollWidth - (vv ? vv.width : window.innerWidth) : el.scrollWidth - el.clientWidth;
+        x = Math.max(0, Math.min(Math.max(0, max), x));
+        if (at.has(el) && Math.abs(at.get(el) - x) < 1) return;
+        at.set(el, x);
+        moved.set(el, Date.now());
+      }
+      window.addEventListener('scroll', function (e) {
+        var t = e.target;
+        mark(t === document || t === document.body ? document.documentElement : t);
+      }, { passive: true, capture: true });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('scroll', function () { mark(document.documentElement); }, { passive: true });
+      }
+      // The boxes under the pointer that scroll that way and are at their
+      // edge: free only if they were resting there.
+      var edges = [];
 
       function rootCanScroll() {
         var html = getComputedStyle(document.documentElement).overflowX;
@@ -105,10 +135,16 @@ enum Swipe {
           }
           if (can && max > 1) {
             if (e.deltaX > 0 ? left < max - 1 : left > 1) return true;
+            edges.push(root ? document.documentElement : el);
           }
           el = el.parentElement;
         }
         return false;
+      }
+
+      function resting(edges) {
+        var now = Date.now();
+        return edges.every(function (el) { return now - (moved.get(el) || 0) > 400; });
       }
 
       function say(t) {
@@ -120,15 +156,22 @@ enum Swipe {
 
       window.addEventListener('wheel', function (e) {
         if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+        edges = [];
         if (taken(e)) return say(true);
+        var those = edges;
         // A whiteboard or a map pans with its own wheel handler and nothing
         // under it has overflow to scroll. Its preventDefault is its claim,
         // as Safari and Chrome read it; it can only be seen once every
-        // handler has run, and this one runs first.
-        setTimeout(function () { say(e.defaultPrevented); }, 0);
+        // handler has run, and this one runs first. A box's scroll event
+        // comes with the next frame, so that is waited for too.
+        setTimeout(function () { say(e.defaultPrevented || !resting(those)); }, 50);
       }, { passive: true, capture: true });
     })();
     """
+
+    /// Asked as the fingers lift (PageView.heard): settled once every wheel
+    /// event before it has been answered, which the 50 ms above allows for.
+    static let heard = "await new Promise(function (done) { setTimeout(done, 80); }); return true;"
 }
 
 /// Where a sideways swipe has got to, for the disc that shows it.

@@ -51,6 +51,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 - View › Actual Size (⌘0) still goes to the page zoom set in Settings › Browsing › Pages › Page zoom, as in Safari, and now says so when that isn't 100%: "Actual Size (95%)". At 100% it reads Actual Size, and the title follows the setting as you change it. `python3 Tests/actual_size_title.py`. Thanks [@flow-digital-ny](https://github.com/flow-digital-ny) for reporting ([#1210](https://github.com/driceroland/Search/issues/1210))
 - The highlight in the Settings sidebar slides to the section you pick, as the live tab's slides in the tab column, with a little give at the end. It jumps as before with Reduce Motion on. Thanks [@aaravmaloo](https://github.com/aaravmaloo) ([#1169](https://github.com/driceroland/Search/pull/1169))
+- A two-finger scroll sideways in Google Sheets, or over anything else on a page that scrolls sideways, scrolls it instead of going back or forward a page, as in Safari. A swipe means Back or Forward only when nothing under the pointer can go further that way and it was already resting at its edge when the fingers set off: a box carried to its edge by the same swipe, or by its glide, is not a swipe, and neither is a quick flick across a busy page's grid, which used to go before the page had said the scroll was its own. A page with nothing to scroll sideways swipes as before. ([#1219](https://github.com/driceroland/Search/issues/1219), [#1184](https://github.com/driceroland/Search/issues/1184)) `python3 Tests/swipe_scrollers.py`
 
 ### Held back
 

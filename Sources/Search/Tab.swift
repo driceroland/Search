@@ -2983,6 +2983,13 @@ final class PageView: WKWebView {
     private var asked: Date?
     /// Already went somewhere, or was refused: nothing more this gesture.
     private var spent = false
+    /// The page said this gesture is its own, at any point — even after the
+    /// fingers lifted, which is when a busy page's word can arrive.
+    private var refused = false
+    /// When the page last said a sideways scroll was its own. A gesture
+    /// begun within a moment of that is the same scrolling going on (the
+    /// page repeats itself at most ten times a second, see Swipe.watch).
+    private var lastTaken: Date?
     private var armedNow = false
     private var showing = false
     private var going = false
@@ -3130,6 +3137,7 @@ final class PageView: WKWebView {
             free = nil
             asked = nil
             spent = false
+            refused = lastTaken.map { Date().timeIntervalSince($0) < 0.15 } ?? false
             armedNow = false
             showing = false
             holding?.cancel()
@@ -3159,9 +3167,10 @@ final class PageView: WKWebView {
                     return
                 }
                 back = sideways > 0
-                // Nowhere to go that way: nothing to show, and nothing more
-                // to read from this gesture.
-                if back ? !canGoBack && leave == nil : !canGoForward {
+                // Nowhere to go that way, or the page was scrolling sideways
+                // a moment ago: nothing to show, and nothing more to read
+                // from this gesture.
+                if refused || (back ? !canGoBack && leave == nil : !canGoForward) {
                     spent = true
                     return
                 }
@@ -3184,6 +3193,10 @@ final class PageView: WKWebView {
 
     /// The page has said whether the swipe would scroll something.
     func answer(free yes: Bool) {
+        if !yes {
+            lastTaken = Date()
+            if axis != .down { refused = true }
+        }
         guard axis != .down, !spent else { return }
         guard yes else {
             free = false
@@ -3298,8 +3311,30 @@ final class PageView: WKWebView {
             settle(nil)
             return
         }
-        going = true
+        // The glide is not the page's either way (see `went`).
         went = true
+        let gesture = pulls
+        // The page has the last word. WebKit scrolls a sideways box before
+        // the page hears of the wheel event, and a page busy with each one —
+        // a large Google Sheet — answers long after the fingers have lifted:
+        // it was taken for a page with nothing to say, and the swipe went
+        // back instead of scrolling the grid (#1219, #1184). Asked once
+        // more, it answers after every wheel event it was sent, and says
+        // which were its own.
+        heard { [weak self] in
+            guard let self, pulls == gesture else { return }
+            guard !refused else {
+                // Its own after all: the rest of the glide is the page's.
+                went = false
+                settle(nil)
+                return
+            }
+            go()
+        }
+    }
+
+    private func go() {
+        going = true
         settle(Pull(back: back, travel: travel, armed: true, going: true, stops: stops, picked: picked, leaves: leaves))
         if stops != nil, items.indices.contains(picked) {
             let item = items[picked]
@@ -3318,6 +3353,24 @@ final class PageView: WKWebView {
             going = false
             settle(nil)
         }
+    }
+
+    /// Once the page has said all it has to about the wheel events it was
+    /// sent: its answers come back in order, ahead of this one. A page that
+    /// can't answer — a PDF, a page that failed — or that is stuck for a
+    /// second is not waited on longer.
+    private func heard(_ then: @escaping () -> Void) {
+        final class Once { var done = false }
+        let once = Once()
+        let finish = {
+            guard !once.done else { return }
+            once.done = true
+            then()
+        }
+        callAsyncJavaScript(Swipe.heard, arguments: [:], in: nil, in: Web.world) { _ in
+            MainActor.assumeIsolated { finish() }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { finish() }
     }
 
     /// Pinched in, the sides still bounce (Swipe.calm), and a swipe back
