@@ -2682,22 +2682,52 @@ final class Browser: NSObject, ObservableObject {
     /// sign-ins, its history and bookmarks.
     let profileID: UUID
     @Published var spaceID = Space.firstID
+    /// The space on its way in while its rows slide into place, before the
+    /// column takes it (SpaceSwipe.bring): drawn in the place beside this one.
+    var spaceComing: UUID?
+    /// Where it lies in the map, in pages from this space: next to the
+    /// space it came from, wherever it is among the spaces (mapSlot).
+    var comingSlot = 0
+    /// Its page, in front already in place of this space's (SplitStage).
+    var pageAhead: Tab?
+    /// The key each loose row of the column is drawn under (see rowKey).
+    var rowKeys: [Tab.ID: Int] = [:]
+    var lastRowKey = 0
     var parked: [UUID: Parked] = [:]
     /// How far the column's rows have followed two fingers sideways, and
     /// whether the card for a new space stands in for them (see SpaceSwipe).
     /// The distance changes with every event of the swipe, so it is kept
     /// apart, for the views that move with it alone (SwipeShift): published
     /// here, each event drew the whole window again, every row and the menu
-    /// bar with it. The window hears only which way it goes, which is what
-    /// decides whether a neighbour's rows are drawn.
+    /// bar with it. Which way it goes, which decides whether a neighbour's
+    /// rows are drawn, is kept apart too (SwipeSide).
     let spaceSwipeOffset = SwipeOffset()
-    @Published private(set) var spaceSwipeSide = 0
+    let swipeSide = SwipeSide()
+    /// Told when a space is drawn out of its order in the map (comingSlot).
+    let mapDrawn = SwipeSide()
+    /// How far the column's rows are scrolled, in which space, and how far
+    /// down the map draws each space's, its tab in front in the middle
+    /// (SideBar.mapPage).
+    var columnScrolled: (space: UUID, y: CGFloat)?
+    var mapScrolled: [UUID: CGFloat] = [:]
+    /// What the map was last told of the column's scroll (mapScroll).
+    var mapDrew: (fits: Bool, scrolled: CGFloat?) = (true, nil)
+
+    /// Where the map draws this space's rows scrolled to: as the column is,
+    /// unless that is where it would draw them anyway, its tab in front in
+    /// the middle, as it is once the space has come. Told every time, its
+    /// rows in sight were all made again as a swipe set off.
+    func mapScroll(fits: Bool) -> CGFloat? {
+        let scrolled = fits ? 0 : columnScrolled.flatMap { $0.space == spaceID ? $0.y : nil }
+        guard let scrolled, abs(scrolled - (mapScrolled[spaceID] ?? scrolled)) >= 0.5 else { return nil }
+        return scrolled
+    }
     var spaceSwipe: CGFloat {
         get { spaceSwipeOffset.value }
         set {
             spaceSwipeOffset.value = newValue
             let side = newValue > 0 ? 1 : newValue < 0 ? -1 : 0
-            if side != spaceSwipeSide { spaceSwipeSide = side }
+            if side != swipeSide.value { swipeSide.value = side }
         }
     }
     @Published var makingSpace = false
@@ -2714,7 +2744,10 @@ final class Browser: NSObject, ObservableObject {
     /// it is up (see PeekBadge).
     @Published var peekFrom: UUID?
     /// Which way the last change of space went: 1 to the next, -1 back.
-    @Published var spaceStep = 1
+    /// Read by the space's icon as the space changes (SpaceDot), which draws
+    /// it again then anyway. Published, it drew the whole window again as a
+    /// slide began, the page and the toolbar too, before anything moved.
+    var spaceStep = 1
 
     // MARK: - beginning and ending
 

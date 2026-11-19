@@ -1329,6 +1329,58 @@ final class Bench {
                         "coveredAfter": web.subviews.filter { $0 is FoldCover }.count])
             }
 
+        case "spacetime":
+            // ⌃N to the Nth space, timed as foldtime times ⌘S: the switch
+            // itself, then each pass of the main run loop for the next 1.8 s
+            // (a slide lands a moment after its rows stop), with the rows
+            // built in it. Test runs only.
+            guard Store.testing else { answer(["error": "spacetime is for test runs"]); return }
+            let index = (request["index"] as? Int ?? 1) - 1
+            guard browser.spaces.indices.contains(index) else { answer(["error": "no space \(index + 1)"]); return }
+            let pressed = CFAbsoluteTimeGetCurrent()
+            let done = Bench.timePasses(for: 1.8, from: pressed, watching: browser)
+            // "glide": slid in as on screen, where a hidden window switches at once.
+            SpaceSwipe.glidesHidden = request["glide"] as? Bool ?? false
+            browser.switchSpace(index: index)
+            SpaceSwipe.glidesHidden = false
+            let call = ((CFAbsoluteTimeGetCurrent() - pressed) * 10000).rounded() / 10
+            done { passes in
+                answer(["space": browser.space.name, "tabs": browser.tabs.count, "callMs": call, "passes": passes])
+            }
+
+        case "swipetime":
+            // Two fingers sideways over the column, as "space swipe" moves
+            // them but a frame apart ("steps" moves "every" seconds apart),
+            // then let go: each pass of the main run loop from the first
+            // move until 1.5 s after the fingers let go (the space lands a
+            // moment after its rows stop), with the rows built in it. Test
+            // runs only.
+            guard Store.testing else { answer(["error": "swipetime is for test runs"]); return }
+            let dx = request["dx"] as? Double ?? -200
+            let steps = max(1, request["steps"] as? Int ?? 12)
+            let every = request["every"] as? Double ?? 1.0 / 60
+            let from = browser.spaceID
+            let start = CFAbsoluteTimeGetCurrent()
+            let done = Bench.timePasses(for: Double(steps) * every + 1.5, from: start, watching: browser)
+            SpaceSwipe.shared.start(for: browser)
+            SpaceSwipe.shared.began()
+            func step(_ n: Int) {
+                guard n < steps else {
+                    // Where the rows coming in were drawn, as the fingers let go.
+                    let previews = browser.mapScrolled
+                    SpaceSwipe.shared.ended()
+                    done { passes in
+                        answer(["landed": browser.spaceID != from, "space": browser.space.name,
+                                "tabs": browser.tabs.count, "passes": passes,
+                                "preview": previews[browser.spaceID].map(Double.init) as Any])
+                    }
+                    return
+                }
+                SpaceSwipe.shared.moved(along: dx / Double(steps))
+                DispatchQueue.main.asyncAfter(deadline: .now() + every) { step(n + 1) }
+            }
+            step(0)
+
         case "bookmarksweep":
             // Bookmarks kept and then let go, one a frame, as the star or a
             // folder's menu would: how many rows of the column and how many
@@ -3673,6 +3725,12 @@ final class Bench {
                     }
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + every * 8) { SpaceSwipe.shared.ended() }
+            case "space":
+                // ⌃N to the Nth space ("index", from 1), as the key makes it,
+                // slid in as on screen.
+                SpaceSwipe.glidesHidden = true
+                browser.switchSpace(index: (request["index"] as? Int ?? 1) - 1)
+                SpaceSwipe.glidesHidden = false
             default: break
             }
 
@@ -5563,6 +5621,62 @@ private final class LayoutRecord {
         look()
         timer?.invalidate()
         if let observer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+    }
+}
+
+extension Bench {
+    /// How far the column's rows are scrolled, if they scroll.
+    @MainActor static func columnOffset(_ browser: Browser) -> Double? {
+        guard let window = browser.window, let frame = window.contentView?.superview, browser.prefs.sidebar else { return nil }
+        let width = Double(browser.prefs.columnWidth), whole = Double(window.frame.width)
+        let onRight = browser.prefs.sidePosition == .right
+        func scrolls(in view: NSView) -> [NSScrollView] {
+            (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrolls)
+        }
+        let column = scrolls(in: frame).first { view in
+            let rect = view.convert(view.bounds, to: nil)
+            return rect.height > 60 && Double(rect.width) <= width + 1
+                && (onRight ? Double(rect.minX) >= whole - width - 1 : Double(rect.maxX) <= width + 1)
+        }
+        return column.map { Double($0.contentView.bounds.minY) }
+    }
+
+    /// Each pass of the main run loop for `seconds`, from waking to going
+    /// back to sleep: when it started after `start`, how long it took and
+    /// the rows built in it ("spacetime", "swipetime"). The passes are
+    /// handed over when the time is up and the call given is made.
+    @MainActor static func timePasses(for seconds: Double, from start: CFAbsoluteTime,
+                                      watching browser: Browser? = nil) -> (@escaping ([[String: Any]]) -> Void) -> Void {
+        var passes: [[String: Any]] = []
+        var woke: CFAbsoluteTime = 0
+        var rows = 0
+        Bench.bodies = [:]
+        let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { _, _ in
+            woke = CFAbsoluteTimeGetCurrent()
+        }
+        let sleep = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
+            let now = CFAbsoluteTimeGetCurrent()
+            let began = woke > 0 ? woke : start
+            let built = Bench.bodies["row", default: 0]
+            var pass: [String: Any] = ["at": ((began - start) * 1000).rounded(), "ms": ((now - began) * 10000).rounded() / 10,
+                                       "rows": built - rows]
+            // Where the column's scroll stands as the pass ends: a jump shows.
+            if let browser, let offset = Bench.columnOffset(browser) { pass["offset"] = offset }
+            // Whether the column's own rows are the ones on show, not the map's.
+            if let browser { pass["shown"] = browser.spaceSwipe == 0 }
+            passes.append(pass)
+            rows = built
+            woke = 0
+        }
+        let observers = [wake, sleep].compactMap { $0 }
+        for observer in observers { CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes) }
+        let ends = Date().addingTimeInterval(seconds)
+        return { finish in
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(0, ends.timeIntervalSinceNow)) {
+                for observer in observers { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+                finish(passes)
+            }
+        }
     }
 }
 

@@ -188,6 +188,17 @@ struct IconTile: View {
             Bench.rowDisappeared(tab.id)
             IconTiles.gone(tab.id, tile: me)
         }
+        // Another space's tab come into this tile (Browser.rowKey): the
+        // tile is the same, where it is too, and now stands for that tab.
+        .onChange(of: tab.id) { was, now in
+            guard interactive else { return }
+            let frame = IconTiles.frame(of: me)
+            Bench.rowDisappeared(was)
+            IconTiles.gone(was, tile: me)
+            Bench.rowAppeared(now, hover: { hovering = $0 })
+            IconTiles.appeared(now, tile: me)
+            if let frame { IconTiles.seen(now, tile: me, frame: frame, tip: tip) }
+        }
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
             if interactive { IconTiles.seen(tab.id, tile: me, frame: frame, tip: tip) }
         }
@@ -219,7 +230,7 @@ struct IconTile: View {
         if live {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(greys.pinLive)
-                .matchedGeometryEffect(id: "live", in: pill)
+                .modifier(LiveMatch(id: LivePill.id(browser), in: pill))
         } else if browser.selectedTabIDs.contains(tab.id) {
             RoundedRectangle(cornerRadius: 9, style: .continuous).fill(greys.wash)
         } else if hovering {
@@ -290,6 +301,12 @@ struct IconPair: View {
         .onDisappear {
             if interactive && Store.testing, let first, let last, IconTiles.pairs[first] == last { IconTiles.pairs[first] = nil }
         }
+        // Another space's pair come into this place (Browser.rowKey).
+        .onChange(of: [first, last]) { was, now in
+            guard interactive && Store.testing else { return }
+            if let a = was[0], let b = was[1], IconTiles.pairs[a] == b { IconTiles.pairs[a] = nil }
+            if let a = now[0], let b = now[1] { IconTiles.pairs[a] = b }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Split tabs")
     }
@@ -303,7 +320,7 @@ struct IconPair: View {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .fill(greys.pinLive)
                         .padding(2)
-                        .matchedGeometryEffect(id: "live", in: pill)
+                        .modifier(LiveMatch(id: LivePill.id(browser), in: pill))
                 }
             }
     }

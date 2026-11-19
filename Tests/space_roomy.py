@@ -53,6 +53,9 @@ def main():
         r = sv.cmd({"do": "film", "action": "swipe", "path": f"{out}/f", "frames": 16, "every": 0.03})
         files = [x.get("file") for x in r["frames"]]
         t.ok("filmed", all(files), r["frames"][:2])
+        # A space lands once its rows stand still (SpaceSwipe.bring), a moment
+        # after the fingers let go.
+        time.sleep(1.5)
         t.ok("landed in the second space", sv.cmd({"do": "space"})["current"] == "Two")
         last = pitch(files[-1], 20)
         t.ok("landed: rows 38 points apart (roomy)", last and abs(last - 38) <= 1, last)

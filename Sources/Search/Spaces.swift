@@ -446,13 +446,18 @@ extension Browser {
             return visible.contains { $0 == floating || $0 == pictured }
         } ?? false
         if !returningVideo { leavingSpace() }
-        writeSession(now: true)
+        // Off the main thread: the row is parked in memory just below, and
+        // quitting writes whatever is still waiting (Disk.drain). Written at
+        // once, a long row held the switch until it was on disk.
+        writeSession()
         for tab in tabs where visibleTabIDs.contains(tab.id) { tab.touch() }
 
         // The row on screen is parked as it is, sound and all: music or a
         // stream keeps playing in the space you left, as it does in a tab
         // you left. ⌘⇧M, or its speaker, stops it.
         parked[spaceID] = Parked(tabs: tabs, active: activeID, splits: splits, groups: tabGroups)
+        // Its loose rows, for the space coming in (see rowKey).
+        let leaving = looseRow
 
         spaceID = id
         sitePanelFollowsSpace()
@@ -477,10 +482,14 @@ extension Browser {
             for tab in tabs where visibleTabIDs.contains(tab.id) {
                 if !tab.wake() { tab.revive() }
             }
+            // The page now, as a tab switch does (see PaneStage.show(now:)),
+            // rather than after the whole column has been built again.
+            if activeSplit == nil, let active, let window { PaneStage.stages.object(forKey: window)?.show(now: active) }
         } else {
             showRow([], active: nil)
             restoreSession()
         }
+        handOverRowKeys(leaving)
         returnSpaceVideo()
         editing = active?.isBlank ?? true
         typed = ""
@@ -491,6 +500,50 @@ extension Browser {
         // Beside the space's icon when the tabs are on screen (SpaceDot);
         // folded away, at the bottom.
         if folded && !peeking { announce(space.name) }
+    }
+
+    /// The key a loose row of the column is drawn under: the tab's own, kept
+    /// with it as it moves, so a tab opened, closed or carried among the
+    /// others moves as it always has — until another space comes in, whose
+    /// tabs are given the rows of the one going, place by place
+    /// (handOverRowKeys). Drawn under their own ids, every row of the space
+    /// going was taken down and every row of the one coming was built anew,
+    /// 2 ms a row, close to half a second for a space of 200 tabs; given
+    /// the same rows, each is only told its new tab.
+    func rowKey(_ tab: Tab) -> Int {
+        if let key = rowKeys[tab.id] { return key }
+        lastRowKey += 1
+        rowKeys[tab.id] = lastRowKey
+        return lastRowKey
+    }
+
+    /// The tabs the column draws loose, out of any group (SideBar.looseTabs).
+    var looseRow: [Tab] {
+        displayedTabs.filter { $0.pin == nil && (!prefs.usesTabGroups || group(of: $0) == nil) }
+    }
+
+    /// The rows of `leaving`, the loose tabs of the space gone, for the
+    /// loose tabs now on screen, in their order; past its end, each tab its
+    /// own key, or a new one where that key went to one of the others. Only
+    /// this row's tabs keep one.
+    private func handOverRowKeys(_ leaving: [Tab]) {
+        let handed = leaving.map(rowKey)
+        var kept: [Tab.ID: Int] = [:]
+        var taken = Set(handed)
+        for (index, tab) in looseRow.enumerated() {
+            if index < handed.count {
+                kept[tab.id] = handed[index]
+                continue
+            }
+            var key = rowKeys[tab.id] ?? 0
+            if key == 0 || taken.contains(key) {
+                lastRowKey += 1
+                key = lastRowKey
+            }
+            taken.insert(key)
+            kept[tab.id] = key
+        }
+        rowKeys = kept
     }
 
     /// Every other space's row, made ahead of time, so the column can show
@@ -523,7 +576,56 @@ extension Browser {
     func switchSpace(index: Int) {
         let list = everySpace
         guard list.indices.contains(index) else { return }
-        switchSpace(to: list[index].id)
+        goToSpace(list[index].id)
+    }
+
+    /// ⌃1–⌃9 and the space's menu: the space's page in front at once, its
+    /// rows sliding in, and the column taking it once they stand still
+    /// (SpaceSwipe.bring). Taken at once, the column's whole row was made
+    /// over before the rows could move, and the slide began late, with a
+    /// jolt. Anything else, with Reduce Motion, or in a hidden window (whose
+    /// frames are never drawn, so the bench's), the space at once.
+    func goToSpace(_ id: UUID) {
+        let shown = spaceComing ?? spaceID
+        guard prefs.usesSpaces, id != shown, !makingSpace, !Motion.reduced,
+              let to = spaces.firstIndex(where: { $0.id == id }),
+              let here = spaces.firstIndex(where: { $0.id == shown }),
+              !NSApp.isHidden || SpaceSwipe.glidesHidden
+        else {
+            SpaceSwipe.shared.land(self)
+            return switchSpace(to: id)
+        }
+        SpaceSwipe.shared.bring(self, id, step: to > here ? 1 : -1)
+    }
+
+    /// The page in front of space `id`, put on the stage now (pageAhead),
+    /// before the column has taken the space: woken if it sleeps, as the
+    /// space would wake it. Not a pair of Split View: that one comes with
+    /// the space.
+    func showAhead(_ id: UUID) {
+        // Back to this space's own, on a swipe brought back short.
+        if id == spaceID {
+            pageAhead = nil
+            if let window, let active { PaneStage.stages.object(forKey: window)?.show(now: active, fading: true) }
+            return
+        }
+        guard let row = parked[id] else { return }
+        let front = row.active.flatMap { active in row.tabs.first { $0.id == active } } ?? row.tabs.first { $0.pin == nil }
+        guard let front, !(prefs.splitView && row.splits.contains { $0.contains(front.id) }) else { return }
+        if !front.wake() { front.revive() }
+        pageAhead = front
+        if let window { PaneStage.stages.object(forKey: window)?.show(now: front, fading: true) }
+    }
+
+    /// Where space `index` lies in the map (SideBar.others), in pages from
+    /// the one at `at`: in the spaces' order, but for one on its way in from
+    /// further along (⌃1–⌃9), drawn where comingSlot says, and the one that
+    /// lies there out of the way.
+    func mapSlot(_ index: Int, from at: Int) -> Int {
+        guard let coming = spaceComing, let from = spaces.firstIndex(where: { $0.id == coming }),
+              comingSlot != from - at else { return index - at }
+        if index == from { return comingSlot }
+        return index - at == comingSlot ? 1000 : index - at
     }
 
     /// The icon a new space gets unless told: the first no space wears yet.
@@ -840,7 +942,7 @@ enum SpaceMenu {
             if let name = list.name { menu.addItem(.sectionHeader(title: name)) }
             for space in list.spaces {
                 let entry = item(space.name, key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
-                    browser.switchSpace(to: space.id)
+                    browser.goToSpace(space.id)
                 }
                 entry.image = image(space.symbol, tint: space.tint)
                 menu.addItem(entry)

@@ -645,8 +645,17 @@ final class PaneStage: NSView {
     /// SwiftUI to update the whole window. WebKit paints the page meanwhile,
     /// and both still reach the screen in the same frame. Only one page
     /// replacing another is handled here. Everything else is left to SwiftUI.
-    func show(now tab: Tab) {
+    func show(now tab: Tab, fading: Bool = false) {
         guard window != nil, tabs.count == 1, split == nil, immersedID == nil, page(tab) != nil else { return }
+        // Another space's page: the one going fades into it, as the rows
+        // slide, rather than giving way to it in a single frame.
+        if fading, !Motion.reduced, tabs.first !== tab, let layer {
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = 0.15
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.add(fade, forKey: "space")
+        }
         // The usual way in, so a move under way is cut short as any change of
         // pages cuts it: one page to another is never a move.
         show([tab], split: nil, focused: tab.id)
