@@ -818,6 +818,14 @@ final class Preferences: ObservableObject {
     @Published var keepsWindow: Bool {
         didSet { store.set(keepsWindow, forKey: "fullscreen.keepsWindow") }
     }
+    /// A page's full screen takes this window there in one move, the page
+    /// still in it, as in Chrome (see WindowFullscreen). Off unless asked
+    /// for: WebKit lends the page to a window of its own, as in Safari. Read
+    /// when a tab is made, so it holds for tabs opened after.
+    @Published var zoomsWindow: Bool {
+        didSet { store.set(zoomsWindow, forKey: Preferences.zoomsKey) }
+    }
+    nonisolated static let zoomsKey = "fullscreen.zoomsWindow"
     /// A newer build is fetched, checked and put in place on its own, as it
     /// always was. Off, Search still looks every hour and says so, and waits
     /// for Install in Settings (see Updater.installsOnItsOwn).
@@ -1164,6 +1172,7 @@ final class Preferences: ObservableObject {
         floatStyle = store.string(forKey: "float.style").flatMap(FloatStyle.init(rawValue:)) ?? .search
         escapeTwice = store.bool(forKey: "fullscreen.escapeTwice")
         keepsWindow = store.bool(forKey: "fullscreen.keepsWindow")
+        zoomsWindow = store.bool(forKey: Preferences.zoomsKey)
         waitsForPlay = store.bool(forKey: Preferences.waitsKey)
         translateTarget = store.string(forKey: "translate.target") ?? ""
         translateAlways = Set(store.stringArray(forKey: PageTranslator.alwaysKey) ?? [])

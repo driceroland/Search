@@ -6,12 +6,13 @@ import WebKit
 // window. WebKit's own element full screen lends the page to a window of its
 // own and gives it back behind a frozen picture, held until the page has
 // drawn again in ours (240 to 400 ms on YouTube, measured 8 Nov 2026; a bare
-// WKWebView holds it 80 ms, Safari 100 to 150). Here WebKit's is switched off
-// (Web.configuration), the page's Fullscreen API is answered by the script
-// below, and the window itself goes full screen, the chrome stepping aside as
-// it always has for a page filling the screen (Tab.immersed). One move each
-// way: of a picture of the window, which gives way to the page itself as soon
-// as the page has drawn at its new size.
+// WKWebView holds it 80 ms, Safari 100 to 150). With Settings › Video › Full
+// screen takes the window on (off unless asked for), WebKit's is switched off
+// for tabs made after (Web.configuration), the page's Fullscreen API is
+// answered by the script below, and the window itself goes full screen, the
+// chrome stepping aside as it always has for a page filling the screen
+// (Tab.immersed). One move each way: of a picture of the window, which gives
+// way to the page itself as soon as the page has drawn at its new size.
 
 
 final class WindowFullscreen: NSObject, WKScriptMessageHandler {

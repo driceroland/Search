@@ -119,9 +119,11 @@ enum Web {
         // page comes back.
         config.applicationNameForUserAgent = Web.userAgentName
         config.allowsAirPlayForMediaPlayback = true
-        // Off: a page that asks for the screen is answered by Search, which
-        // takes the window there with the page still in it (WindowFullscreen).
-        config.preferences.isElementFullscreenEnabled = false
+        // A page that asks for the screen is WebKit's to answer, in a window
+        // of its own. With Full screen takes the window on, Search answers
+        // instead and takes this window there, the page still in it
+        // (WindowFullscreen).
+        config.preferences.isElementFullscreenEnabled = !Store.settings.bool(forKey: Preferences.zoomsKey)
         // WebKit's synchronous popup check rejects async POST sign-ins.
         // The UI delegate instead consumes a recent trusted interaction
         // recorded in Search's isolated world (see PopupGesture.swift).
@@ -685,6 +687,10 @@ final class Tab: ObservableObject, Identifiable {
     private let veils_ = VeilRelay()
     private let forms = FormRelay()
     private let windowFullscreen = WindowFullscreen()
+    /// Search answers this page's Fullscreen API, WebKit's own being off for
+    /// it (Web.configuration): decided when the tab was made, so the script,
+    /// its handler and WebKit's switch always agree.
+    var answersFullScreen: Bool { !configuration.preferences.isElementFullscreenEnabled }
     private let images = ImageRelay()
     private let media = MediaKeys()
     /// Counting down once the page's sound stops, to give the media keys
@@ -1014,8 +1020,10 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(shop, contentWorld: Web.world, name: StoreRelay.name)
         controller.add(iconChanges, contentWorld: Web.world, name: IconRelay.name)
         controller.add(forms, contentWorld: Web.world, name: FormRelay.name)
-        windowFullscreen.tab = self
-        controller.add(windowFullscreen, contentWorld: .page, name: WindowFullscreen.name)
+        if answersFullScreen {
+            windowFullscreen.tab = self
+            controller.add(windowFullscreen, contentWorld: .page, name: WindowFullscreen.name)
+        }
         controller.addScriptMessageHandler(passkeyRelay, contentWorld: Web.world, name: PasskeyRelay.name)
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
@@ -1175,7 +1183,9 @@ final class Tab: ObservableObject, Identifiable {
         if FormRelay.contacts {
             add(FormRelay.contactsOn, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
-        add(WindowFullscreen.script, .atDocumentStart, mainFrameOnly: true, in: .page)
+        if answersFullScreen {
+            add(WindowFullscreen.script, .atDocumentStart, mainFrameOnly: true, in: .page)
+        }
         add(IconRelay.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
         if AutoScroll.on {
             add(AutoScroll.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)

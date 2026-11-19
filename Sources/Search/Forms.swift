@@ -75,6 +75,10 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
                 // WebKit started to give the page back is stale.
                 let on = body["on"] as? Bool ?? false
                 if on, tab?.built?.fullscreenState == .exitingFullscreen { break }
+                // The window's own full screen (WindowFullscreen) says so
+                // itself. This world still sees WebKit's state, which is off
+                // for such a page and would say "out" on the way in.
+                if tab?.answersFullScreen == true { break }
                 if tab?.immersed != on { tab?.immersed = on }
             default:
                 break
@@ -974,6 +978,22 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       }
       window.addEventListener('scroll', moved, true);
       window.addEventListener('resize', moved);
+
+      // A page's full screen, in and out. WebKit's own state says it first
+      // (Tab.immersed follows web.fullscreenState): in once WebKit has the
+      // page in its window, back as it starts to give it back. This comes
+      // after each and is only a fallback. It used to be said early, on the
+      // request itself, which laid the page out at the whole window's size
+      // in ours a moment before WebKit took it, and the way back then
+      // started from that size.
+      function immersed() {
+        var on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        window.webkit.messageHandlers.officeForms.postMessage({
+          kind: 'fullscreen', on: on
+        });
+      }
+      document.addEventListener('fullscreenchange', immersed, true);
+      document.addEventListener('webkitfullscreenchange', immersed, true);
 
       document.addEventListener('focusin', caret, true);
       document.addEventListener('focusout', function () { setTimeout(caret, 0); }, true);

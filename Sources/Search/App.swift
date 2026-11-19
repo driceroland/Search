@@ -1318,6 +1318,8 @@ struct ContentView: View {
             // left, and the tab they went to was there only after Esc (#1042).
             if let page = ContentView.pageFillingScreen(event), ContentView.movesTab(event) {
                 page.evaluateInSearch("if (document.fullscreenElement) document.exitFullscreen(); void 0")
+                // The window's own full screen is the page world's to end.
+                page.evaluateJavaScript(WindowFullscreen.exit, in: nil, in: .page)
             }
             // A key typed while the field is on its way is the field's (holdKey),
             // Escape in a full-screen window included.
