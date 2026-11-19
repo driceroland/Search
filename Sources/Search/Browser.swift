@@ -362,8 +362,11 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// ⌘S: the column folded away, and slid out over the page for a look
-    /// while it is (see Fold.swift).
-    @Published var folded = false
+    /// while it is (see Fold.swift). Written down with the window, so it is
+    /// still folded at the next launch (idea 738).
+    @Published var folded = false {
+        didSet { if folded != oldValue, !isPopup { Browsers.saveSoon() } }
+    }
     @Published var peeking = false
     /// ⌘S on its way to folding the column: the page already has the room,
     /// the column has not moved yet (see Browser.toggleFold).
@@ -2745,6 +2748,12 @@ final class Browser: NSObject, ObservableObject {
         }
         // Asked to stay out of the way: it starts that way (see Fold.swift).
         folded = prefs.sidebar && prefs.sideHides
+        // Otherwise as it was left: folded with ⌘S when the window was last
+        // open, it is folded again (idea 738). The first window's line is
+        // the first in windows.json; another's, or a new one's, is its record.
+        if !folded, !websitePopup {
+            folded = (record ?? Browsers.read().first)?.folded == true
+        }
 
         // The History menu lists the last few places, and the menu is drawn
         // from this object's changes — so a change to those is passed on.

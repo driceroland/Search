@@ -15,8 +15,11 @@ import WebKit
 // corner — a logo, a menu button. They come back with the column when it
 // slides out, which is also where the window is dragged from.
 //
-// Folding lasts the session. A browser opening with no tabs anywhere on
-// screen, for a reason set days ago, reads as a broken one.
+// Folding lasts as long as you leave it: each window's fold is written
+// down with the window (windows.json) and comes back with it at the next
+// launch and with ⇧⌘T, as Safari and Arc keep a hidden sidebar hidden
+// (idea 738). A new window folds as the one it came from. Switching
+// between the column and the strip still brings the tabs back out.
 //
 // Unless that is the reason: Settings can keep the column folded for good,
 // Arc's way, and then the fold is where it rests, at launch and after every
