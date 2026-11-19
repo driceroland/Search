@@ -11,13 +11,13 @@ final class ExtensionSiteGrantTests: XCTestCase {
         super.setUp()
     }
 
-    private func fixture(_ patterns: [String]) async throws -> (URL, WKWebExtension) {
+    private func fixture(_ patterns: [String], optional: Bool = false) async throws -> (URL, WKWebExtension) {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("site-grants-\(UUID())")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let manifest: [String: Any] = [
             "manifest_version": 3, "name": "Site grants", "version": "1",
-            "host_permissions": patterns,
-            "content_scripts": [["matches": patterns.filter { !$0.hasPrefix("file:") }, "js": ["content.js"]]],
+            (optional ? "optional_host_permissions" : "host_permissions"): patterns,
+            "content_scripts": [["matches": optional ? [] : patterns.filter { !$0.hasPrefix("file:") }, "js": ["content.js"]]],
         ]
         try JSONSerialization.data(withJSONObject: manifest).write(to: folder.appendingPathComponent("manifest.json"))
         try Data("document.documentElement.dataset.injected = 'yes';".utf8).write(to: folder.appendingPathComponent("content.js"))
@@ -74,6 +74,62 @@ final class ExtensionSiteGrantTests: XCTestCase {
         ], from: compact, owner: Extensions.shared) as? [String: Any]
         XCTAssertEqual(denied?["value"] as? Bool, false, "a denied subdomain must not inherit approval")
         XCTAssertFalse(compact.hasAccess(to: URL(string: "https://news.example.com/article")!))
+    }
+
+    func testAfterClickRequestsSitesCoveredByOptionalWildcards() async throws {
+        let (folder, ext) = try await fixture(["http://*/*", "https://*/*"], optional: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let context = WKWebExtensionContext(for: ext)
+        let browser = Browser(record: WindowRecord())
+        Browsers.register(browser)
+        defer { browser.closeAll() }
+        let previousAnswer = Extensions.shared.answerForTests
+        Extensions.shared.answerForTests = true
+        defer { Extensions.shared.answerForTests = previousAnswer }
+        let origins = ["http://example.com/*", "http://*.example.com/*",
+                       "https://example.com/*", "https://*.example.com/*"]
+        Extensions.clicked[context.uniqueIdentifier] = Date()
+        let reply = try await ExtensionShims.answer([
+            "api": "permissions.afterClick", "args": [[], origins],
+        ], from: context, owner: Extensions.shared) as? [String: Any]
+        XCTAssertEqual(reply?["value"] as? Bool, true, String(describing: reply))
+        for text in ["http://example.com/", "https://sub.example.com/"] {
+            XCTAssertTrue(context.hasAccess(to: try XCTUnwrap(URL(string: text))), text)
+        }
+        XCTAssertFalse(context.hasAccess(to: try XCTUnwrap(URL(string: "https://unrelated.invalid/"))))
+        XCTAssertFalse(context.grantedPermissionMatchPatterns.keys.contains { $0.matchesAllHosts })
+    }
+
+    func testAfterClickWildcardRequestsRespectManifestAndConsent() async throws {
+        let (folder, ext) = try await fixture(["https://*.example.com/*"], optional: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let context = WKWebExtensionContext(for: ext)
+        let browser = Browser(record: WindowRecord())
+        Browsers.register(browser)
+        defer { browser.closeAll() }
+        let previousAnswer = Extensions.shared.answerForTests
+        Extensions.shared.answerForTests = true
+        defer { Extensions.shared.answerForTests = previousAnswer }
+        for origin in ["http://example.com/*", "https://unrelated.invalid/*", "https://*/*"] {
+            Extensions.clicked[context.uniqueIdentifier] = Date()
+            let reply = try await ExtensionShims.answer([
+                "api": "permissions.afterClick", "args": [[], [origin]],
+            ], from: context, owner: Extensions.shared) as? [String: Any]
+            XCTAssertNotNil(reply?["error"], origin)
+        }
+        let origins = ["https://news.example.com/*"]
+        Extensions.clicked[context.uniqueIdentifier] = nil
+        let withoutClick = try await ExtensionShims.answer([
+            "api": "permissions.afterClick", "args": [[], origins],
+        ], from: context, owner: Extensions.shared) as? [String: Any]
+        XCTAssertNotNil(withoutClick?["error"])
+        Extensions.shared.answerForTests = false
+        Extensions.clicked[context.uniqueIdentifier] = Date()
+        let denied = try await ExtensionShims.answer([
+            "api": "permissions.afterClick", "args": [[], origins],
+        ], from: context, owner: Extensions.shared) as? [String: Any]
+        XCTAssertEqual(denied?["value"] as? Bool, false, String(describing: denied))
+        XCTAssertTrue(context.grantedPermissionMatchPatterns.isEmpty)
     }
 
     func testDifferentPathsAndSchemesAreKept() async throws {
