@@ -470,7 +470,7 @@ enum SettingsIndex {
         .init(id: "clear.cookies", group: "clear", icon: "person.crop.circle.badge.xmark",
               title: "Cookies and sign-ins", detail: "Signs you out of every site", words: ["cookies", "sign out"]),
         .init(id: "clear.cache", group: "clear", icon: "internaldrive",
-              title: "Cache", detail: "Only what was fetched to draw pages", words: ["clear cache"]),
+              title: "Cache", detail: "Only what was fetched to draw pages", words: ["clear cache", "empty caches", "cache storage"]),
 
         // Keyboard & Mouse
         .init(id: "links.peek", group: "mouse", icon: "eye",

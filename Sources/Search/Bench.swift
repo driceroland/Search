@@ -4484,6 +4484,12 @@ final class Bench {
             }
             if request["finishedit"] as? Bool == true { browser.finishTabEdit() }
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }
+            // Settings › Privacy › Clear › Cache, answered once every store
+            // of the profile has let go of it.
+            if request["clearcache"] as? Bool == true {
+                browser.clearCache { answer(["ok": true]) }
+                return
+            }
             answer(["ok": true])
 
         case "sidepanel":
