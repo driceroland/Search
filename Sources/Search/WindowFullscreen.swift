@@ -23,6 +23,9 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
     /// Whether this page's full screen took the window there, so that coming
     /// back gives it back; a window already full screen stays.
     private var tookWindow = false
+    /// That window, for the way back once another tab is in front of the
+    /// page and the page is out of it.
+    private weak var taken: NSWindow?
     private var exitWatch: NSObjectProtocol?
 
     /// The window's frame before it took the screen, to zoom from and back to.
@@ -37,10 +40,15 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
 
     @MainActor private func set(_ on: Bool) {
         guard let tab else { return }
-        guard let window = tab.built?.window else {
+        let shown = tab.built?.window
+        guard let window = shown ?? (on ? nil : taken) else {
             if tab.immersed != on { tab.immersed = on }
             return
         }
+        // Another tab in front by now (⌘T or ⌃Tab on the video, which also
+        // end its full screen, #1042): there is no page here to time a zoom
+        // by, so the window goes back as macOS moves it.
+        if !on, shown == nil { letGo(window) }
         let full = window.styleMask.contains(.fullScreen)
         // Moving the window here: the chrome goes with it, inside the zoom
         // below, which tells the page. A window already full screen, or one
@@ -53,6 +61,7 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
             watchExit(of: window)
             if moving {
                 tookWindow = true
+                taken = window
                 if zooming {
                     resting = window.frame
                     standIn(for: window)
@@ -63,6 +72,7 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
             stopWatching()
             if moving { window.toggleFullScreen(nil) }
             tookWindow = false
+            taken = nil
         }
         if !zooming { tab.built?.evaluateJavaScript(Self.tell, in: nil, in: .page) }
     }
@@ -115,7 +125,29 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
 
     private static var filled: [String: NSRect] = [:]
 
+    /// A zoom macOS asked the windows for and has yet to start.
+    private var awaited = false
+
+    /// The move over without the zoom: macOS asks for its windows and then
+    /// skips the animation when the window's Space is not the one in view
+    /// (another app in front; 1 exit in 11 with another build's window
+    /// taking the front, 19 Nov 2026). What the zoom would have left, at
+    /// once: the picture gone, or it stays over every Space; the chrome as
+    /// it should be; the window in the frame it had; the page told.
+    @MainActor fileprivate func settle(_ window: NSWindow, immersed: Bool) {
+        guard awaited else { return }
+        awaited = false
+        cover?.orderOut(nil)
+        cover = nil
+        if !immersed, let resting, !window.styleMask.contains(.fullScreen), window.frame != resting {
+            window.setFrame(resting, display: true)
+        }
+        if let tab, tab.immersed != immersed { tab.immersed = immersed }
+        tab?.built?.evaluateJavaScript(Self.tell, in: nil, in: .page)
+    }
+
     @MainActor fileprivate func entered(_ window: NSWindow) {
+        settle(window, immersed: true)
         // In full screen the buttons are macOS's to show, in the bar that
         // comes down with the menu bar (Fold.hideLights).
         if lightsWere != nil { window.standardWindowButton(.closeButton)?.superview?.isHidden = false }
@@ -138,6 +170,7 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
     private var cover: NSWindow?
 
     @MainActor fileprivate func moving(with window: NSWindow) -> [NSWindow] {
+        awaited = true
         glide?.finish()
         cover?.orderOut(nil)
         cover = Glide.cover(of: window)
@@ -145,6 +178,7 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
     }
 
     @MainActor private func zoom(_ window: NSWindow, from start: NSRect, to end: NSRect, immersed: Bool) {
+        awaited = false
         glide?.finish()
         let picture = cover
         cover = nil
@@ -230,6 +264,10 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
         if let lightsWere { window.standardWindowButton(.closeButton)?.superview?.isHidden = lightsWere }
         lightsWere = nil
         if let tab, tab.immersed { tab.immersed = false }
+        // The picture made for the way in goes too, or it stays over every Space.
+        awaited = false
+        cover?.orderOut(nil)
+        cover = nil
         letGo(window)
     }
 
@@ -381,8 +419,11 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
           });
         });
       });
+      // Escape ends the full screen and goes no further, as WebKit's own
+      // never reaches the page: left to go on, AppKit took a window that
+      // was full screen already (the green button) out of it as well.
       document.addEventListener('keydown', function (e) {
-        if (current && e.key === 'Escape') { leave(); }
+        if (current && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); leave(); }
       }, true);
       Object.defineProperty(window, '__searchFullscreen', { value: { exit: leave, tell: tell } });
     })();
@@ -432,7 +473,11 @@ private final class ZoomDelegate: NSObject, NSWindowDelegate {
 
     func windowDidExitFullScreen(_ notification: Notification) {
         original?.windowDidExitFullScreen?(notification)
-        MainActor.assumeIsolated { if let window = notification.object as? NSWindow { owner?.letGo(window) } }
+        MainActor.assumeIsolated {
+            guard let window = notification.object as? NSWindow else { return }
+            owner?.settle(window, immersed: false)
+            owner?.letGo(window)
+        }
     }
 
     func windowDidFailToEnterFullScreen(_ window: NSWindow) {
