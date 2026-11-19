@@ -721,6 +721,25 @@ struct DragStrip: NSViewRepresentable {
     /// is no event: the strips answer the hit test as they would for one.
     @MainActor static var probingRightClick = false
 
+    /// Whether the pointer at `point` (in the window's coordinates) is over
+    /// something in the title bar a press would pick up rather than the
+    /// window: what a press there would land on is neither a strip, which
+    /// moves the window itself, nor the title bar's own (the lights).
+    /// Below the title bar macOS never drags the window, so nothing there.
+    @MainActor static func holdsWindow(at point: NSPoint, in window: NSWindow) -> Bool {
+        guard !window.styleMask.contains(.fullScreen), let frame = window.contentView?.superview else { return false }
+        let bar = window.standardWindowButton(.closeButton)?.superview?.superview
+        let band = bar.map(\.frame.height) ?? (window.frame.height - window.contentLayoutRect.height)
+        guard point.y >= window.frame.height - band else { return false }
+        guard let hit = frame.hitTest(frame.convert(point, from: nil)) else { return false }
+        if hit is Strip { return false }
+        if let bar, hit.isDescendant(of: bar) { return false }
+        return true
+    }
+
+    /// See Strip.hover: for the bench.
+    @MainActor static func hover(_ window: NSWindow, at point: NSPoint) -> Bool { Strip.hover(window, at: point) }
+
     func makeNSView(context: Context) -> NSView { Strip() }
 
     func updateNSView(_ view: NSView, context: Context) {
@@ -767,32 +786,61 @@ struct DragStrip: NSViewRepresentable {
             rightMenu?() ?? super.menu(for: event)
         }
 
-        /// The window is not movable while the pointer is over a strip: macOS
-        /// starts a title bar's drag before the app sees the press, so a tab
-        /// picked up in the row carried the window off unless the window was
-        /// unmovable already. Elsewhere it is movable, for Window › Move &
-        /// Resize, tiling and window managers (#286).
+        /// The window is not movable while the pointer is over something in
+        /// the title bar a press would pick up — a tab, a button in the row:
+        /// macOS starts a title bar's drag before the app sees the press, so
+        /// a tab picked up in the row carried the window off unless the
+        /// window was unmovable already (#668). Everywhere else it is
+        /// movable, the strip's own empty run, the lights and everything
+        /// under the title bar included, for Window › Move & Resize, tiling
+        /// and window managers (#286). It was unmovable over the whole of
+        /// every strip, the column of tabs included, and a window manager
+        /// worked from the title bar — Swish's swipes are made there — found
+        /// a window that said it couldn't be moved (idea 744).
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
             for area in trackingAreas { removeTrackingArea(area) }
-            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: self))
         }
 
-        override func mouseEntered(with event: NSEvent) { hover(true) }
-        override func mouseExited(with event: NSEvent) { hover(false) }
+        override func mouseEntered(with event: NSEvent) { aim(event.locationInWindow) }
+        override func mouseMoved(with event: NSEvent) { aim(event.locationInWindow) }
+        override func mouseExited(with event: NSEvent) { hold(false) }
 
         override func viewWillMove(toWindow newWindow: NSWindow?) {
-            hover(false)
+            hold(false)
             super.viewWillMove(toWindow: newWindow)
         }
 
-        private func hover(_ on: Bool) {
+        private func aim(_ point: NSPoint) {
+            guard let window else { return }
+            hold(DragStrip.holdsWindow(at: point, in: window))
+        }
+
+        private func hold(_ on: Bool) {
             guard let window, on != over else { return }
             over = on
             let id = ObjectIdentifier(window)
             let count = max(0, (Strip.hovered[id] ?? 0) + (on ? 1 : -1))
             Strip.hovered[id] = count == 0 ? nil : count
             window.isMovable = count == 0
+        }
+
+        /// The bench's hover (`hit … hover`): the pointer put at `point` over
+        /// every strip under it, whether the window is movable then, and the
+        /// pointer taken away again. A hidden probe's window has no pointer.
+        static func hover(_ window: NSWindow, at point: NSPoint) -> Bool {
+            var under: [Strip] = []
+            func walk(_ view: NSView) {
+                if let strip = view as? Strip, !strip.isHiddenOrHasHiddenAncestor,
+                   strip.bounds.contains(strip.convert(point, from: nil)) { under.append(strip) }
+                for sub in view.subviews { walk(sub) }
+            }
+            if let frame = window.contentView?.superview { walk(frame) }
+            for strip in under { strip.aim(point) }
+            let movable = window.isMovable
+            for strip in under { strip.hold(false) }
+            return movable
         }
 
         /// A title bar's pointer is the arrow. The strip had no say in it,
