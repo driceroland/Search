@@ -52,7 +52,7 @@ enum FrameRate {
             } else {
                 // Only the pages this changed are given WebKit's own rate
                 // back; the rest were never touched.
-                for preferences in changed.allObjects { set(true, in: preferences) }
+                for preferences in changed.allObjects { if let near60 { set(true, near60, in: preferences) } }
                 changed.removeAllObjects()
             }
             nudge()
@@ -117,8 +117,15 @@ enum FrameRate {
     /// Before a page's view is made, which is when WebKit reads the flag:
     /// a new tab, one opened by a site, and one woken from sleep.
     @MainActor static func apply(to preferences: WKPreferences) {
-        guard fast, near60 != nil else { return }
-        set(false, in: preferences)
+        // Blurs and other filters drawn on the GPU, with Core Image, where
+        // WebKit draws them on the CPU by default. A page that animates
+        // under big blurred shapes, www.kiraa.ai's background, redrew them
+        // all every frame and ran at 2 fps here and in Safari, smooth in
+        // Chrome; with this, 18. Off in WebKit as shipped, so on for every
+        // page, whatever the rate.
+        if let gpuFilters { set(true, gpuFilters, in: preferences) }
+        guard fast, let near60 else { return }
+        set(false, near60, in: preferences)
         changed.add(preferences)
     }
 
@@ -138,18 +145,23 @@ enum FrameRate {
     /// each step is asked first, and a WebKit without it is left alone.
     /// Looked up once: the list has a few hundred entries, and walking it
     /// for every tab would be for nothing.
-    private static let near60: NSObject? = {
+    private static let features: [NSObject] = {
         let list = NSSelectorFromString("_features")
         let type: AnyObject = WKPreferences.self
-        guard type.responds(to: list),
-              let all = type.perform(list)?.takeUnretainedValue() as? [NSObject]
-        else { return nil }
-        return all.first { $0.value(forKey: "key") as? String == "PreferPageRenderingUpdatesNear60FPSEnabled" }
+        guard type.responds(to: list) else { return [] }
+        return type.perform(list)?.takeUnretainedValue() as? [NSObject] ?? []
     }()
 
-    private static func set(_ on: Bool, in preferences: WKPreferences) {
+    private static func feature(_ key: String) -> NSObject? {
+        features.first { $0.value(forKey: "key") as? String == key }
+    }
+
+    private static let near60 = feature("PreferPageRenderingUpdatesNear60FPSEnabled")
+    private static let gpuFilters = feature("AcceleratedFiltersEnabled")
+
+    private static func set(_ on: Bool, _ flag: NSObject, in preferences: WKPreferences) {
         let set = NSSelectorFromString("_setEnabled:forFeature:")
-        guard let flag = near60, preferences.responds(to: set) else { return }
+        guard preferences.responds(to: set) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, Bool, AnyObject) -> Void
         unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, on, flag)
     }
