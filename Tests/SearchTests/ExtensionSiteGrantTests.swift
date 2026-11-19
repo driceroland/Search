@@ -14,11 +14,13 @@ final class ExtensionSiteGrantTests: XCTestCase {
     private func fixture(_ patterns: [String], optional: Bool = false) async throws -> (URL, WKWebExtension) {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("site-grants-\(UUID())")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let manifest: [String: Any] = [
+        var manifest: [String: Any] = [
             "manifest_version": 3, "name": "Site grants", "version": "1",
             (optional ? "optional_host_permissions" : "host_permissions"): patterns,
-            "content_scripts": [["matches": optional ? [] : patterns.filter { !$0.hasPrefix("file:") }, "js": ["content.js"]]],
         ]
+        if !optional {
+            manifest["content_scripts"] = [["matches": patterns.filter { !$0.hasPrefix("file:") }, "js": ["content.js"]]]
+        }
         try JSONSerialization.data(withJSONObject: manifest).write(to: folder.appendingPathComponent("manifest.json"))
         try Data("document.documentElement.dataset.injected = 'yes';".utf8).write(to: folder.appendingPathComponent("content.js"))
         return (folder, try await WKWebExtension(resourceBaseURL: folder))
