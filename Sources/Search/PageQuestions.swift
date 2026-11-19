@@ -28,11 +28,15 @@ struct CaptureQuestion: View {
 
     private var question: some View {
         HStack(spacing: 12) {
-            Image(systemName: ask.wants == "location" ? "location" : ask.wants == "microphone" ? "mic" : ask.wants == "notifications" ? "bell" : "video")
+            Image(systemName: ask.wants == "location" ? "location" : ask.wants == "microphone" ? "mic" : ask.wants == "notifications" ? "bell"
+                  : ask.wants == "cookies" ? "person.crop.circle" : "video")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Palette.muted)
             Text(ask.wants == "location" ? "\(ask.host) wants to know your location"
                  : ask.wants == "notifications" ? "\(ask.host) wants to send you notifications"
+                 // Safari's question, in fewer words: a yes lets the framed
+                 // site know you were on this one.
+                 : ask.wants == "cookies" ? "\(ask.host) wants to use its cookies and website data on \(ask.under), which also lets it see you were there"
                  : "\(ask.host) wants to use your \(ask.wants)")
                 .font(.system(size: 12.5))
                 .foregroundStyle(Palette.ink)

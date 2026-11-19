@@ -1863,6 +1863,8 @@ final class Browser: NSObject, ObservableObject {
         var screen = false
         /// The page also asks for the Mac's own sound with the screen.
         var sound = false
+        /// For a frame asking for its cookies: the site of the page it is in.
+        var under = ""
         /// When it came up. A page can time a click to land where Allow is
         /// about to be: the card takes none in its first half second.
         var shown = Date()
@@ -7904,6 +7906,12 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         cancelDisplay(for: webView)
+        // What the page behind asked and is still waiting to ask goes with
+        // the page: shown later, it would pass for the next page's question.
+        if let tab = anyTab(for: webView) ?? (peekTab?.built === webView ? peekTab : nil),
+           let held = heldDialogs.removeValue(forKey: tab.id) {
+            held.forEach { $0.dismiss() }
+        }
         guard let navigation else { return }
         tab(for: webView)?.extensionReturn.started(navigation, at: webView.url)
     }
@@ -8613,6 +8621,45 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             askedRevision = revision
             asking = CaptureAsk(host: origin.host, wants: "notifications")
         }, drop: { decisionHandler(false) })
+    }
+
+    /// A site framed in another asking for its own cookies and website
+    /// data there (document.requestStorageAccess, after a click in the
+    /// frame): Teams' Shared tab is SharePoint's page in a frame, and
+    /// without its sign-in it says the browser won't let it show. Prevent
+    /// cross-site tracking keeps a framed site's cookies from it; WebKit
+    /// lets it have them on asking only once it has been visited as a site
+    /// of its own, and then asks the app, through a delegate method that
+    /// isn't public. Unanswered, the page's request never settled at all
+    /// (idea 745). Asked over its own page as the camera is, as Safari asks;
+    /// WebKit keeps a yes for that pair of sites itself, so nothing is kept
+    /// here, and Prevent cross-site tracking stays as it is for every other
+    /// site and frame. A coding agent's tab is refused.
+    @objc(_webView:requestStorageAccessPanelForDomain:underCurrentDomain:completionHandler:)
+    func askedForStorageAccess(_ webView: WKWebView, domain: String, under current: String,
+                               completionHandler: @escaping (Bool) -> Void) {
+        // Only a page of this window's own: a tab, in this space or another,
+        // or its peek. A small window's page (Little.swift) has this window
+        // as its delegate but no card of its own, and its question would come
+        // up over this window and outlive it: refused.
+        func owner() -> Tab? { anyTab(for: webView) ?? (peekTab?.built === webView ? peekTab : nil) }
+        guard let asker = owner(), !asker.agent else { return completionHandler(false) }
+        guard !domain.isEmpty, !current.isEmpty, domain != current else { return completionHandler(false) }
+        ask(from: webView, show: { [weak self, weak webView] in
+            guard let self, !permissionBusy, let webView,
+                  let tab = owner(), !tab.agent,
+                  // Still the site that asked: a question held for a tab
+                  // behind is asked when you go to it, and the tab may have
+                  // gone elsewhere meanwhile.
+                  let host = webView.url?.host()?.lowercased(),
+                  host == current.lowercased() || host.hasSuffix("." + current.lowercased())
+            else { return completionHandler(false) }
+            decide = { completionHandler($0 == .grant) }
+            decideTab = tab
+            askedAbout = ""
+            askedRevision = nil
+            asking = CaptureAsk(host: domain, wants: "cookies", under: current)
+        }, drop: { completionHandler(false) })
     }
 
     /// "scheme://host[:port]", the way an origin is kept for its answers.
