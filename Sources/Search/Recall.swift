@@ -344,7 +344,7 @@ struct DownloadsPanel: View {
         if fetches.entries.isEmpty && loot.kept.isEmpty {
             Card { Nothing("Nothing downloaded yet.") }
         } else {
-            ScrollView(showsIndicators: false) {
+            FadingScroll {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if !fetches.entries.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
@@ -383,7 +383,54 @@ struct DownloadsPanel: View {
                 }
                 .padding(.bottom, 2)
             }
+            // Hairlines from edge to edge, as Settings' are: the cards hold
+            // icons, not text, at the inset a rule would start from.
+            .environment(\.ruleInset, 0)
             .listHeight(420)
+        }
+    }
+
+    /// The list's scroll, fading out at its foot while more lies below
+    /// rather than cutting a line in half; less as the end comes up, and
+    /// not at all once it is in view. A mask, so it is the same in light
+    /// and dark and over whatever the list is drawn on.
+    private struct FadingScroll<Content: View>: View {
+        @ViewBuilder let content: () -> Content
+        /// Where the list ends, and how tall the scroll is: the end lies
+        /// below the foot by the difference.
+        @State private var end: CGFloat = 0
+        @State private var height: CGFloat = 0
+        private let fade: CGFloat = 24
+        private static var space: String { "downloads.list" }
+
+        var body: some View {
+            ScrollView(showsIndicators: false) {
+                content()
+                    // Read where it is rather than sent up as a preference:
+                    // one from inside the scroll never came out of it here.
+                    .background(GeometryReader { list in
+                        let bottom = list.frame(in: .named(Self.space)).maxY
+                        Color.clear
+                            .onAppear { end = bottom }
+                            .onChange(of: bottom) { _, new in end = new }
+                    })
+            }
+            .coordinateSpace(name: Self.space)
+            // Measured beside the scroll, not around it, so it sizes itself
+            // as it always has.
+            .background(GeometryReader { view in
+                Color.clear
+                    .onAppear { height = view.size.height }
+                    .onChange(of: view.size.height) { _, new in height = new }
+            })
+            .mask {
+                VStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(colors: [.black, .black.opacity(1 - min(1, max(0, end - height) / fade))],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: fade)
+                }
+            }
         }
     }
 
