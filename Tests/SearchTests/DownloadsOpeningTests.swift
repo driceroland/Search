@@ -114,13 +114,55 @@ final class DownloadsOpeningTests: XCTestCase {
         }
     }
 
-    func testTheFloatingCardIsAQuarterOfTheWindow() {
+    /// As tall as what it lists, up to half the window (idea 739): an empty
+    /// list is a short card, not a quarter of the window of nothing.
+    func testTheFloatingCardFollowsWhatItLists() {
         let frame = NSRect(x: 0, y: 0, width: 1180, height: 780)
         let button = NSRect(x: 1120, y: 746, width: 26, height: 26)
-        let spot = DownloadsFloat.layout(edge: .bottom, button: button,
-                                         room: frame.insetBy(dx: 8, dy: 8), width: 380, windowHeight: 780)
-        XCTAssertEqual(spot.card.height, 195)
-        XCTAssertEqual(spot.card.width, 380)
-        XCTAssertEqual(spot.card.maxX, button.maxX, "its right edge with the button's")
+        func card(_ content: CGFloat?) -> NSRect {
+            DownloadsFloat.layout(edge: .bottom, button: button, room: frame.insetBy(dx: 8, dy: 8), width: 380,
+                                  windowHeight: 780, content: content).card
+        }
+        XCTAssertEqual(card(150).height, 150, "as tall as its list")
+        XCTAssertEqual(card(149.2).height, 150, "whole points")
+        XCTAssertEqual(card(900).height, 390, "half the window at most")
+        XCTAssertEqual(card(nil).height, 390)
+        XCTAssertEqual(card(40).height, 120, "never less than its title and a line")
+        XCTAssertEqual(card(150).width, 380)
+        XCTAssertEqual(card(150).maxX, button.maxX, "its right edge with the button's")
+        XCTAssertEqual(card(150).maxY, button.minY - Metrics.cardGap, "hanging from under the button")
+    }
+
+    /// Its shadow and edge have room on every side, the button's too: with
+    /// none there, the card beside the column was cut off flat on its left
+    /// (idea 739). Its window reaches the button's edge, never over it.
+    func testTheFloatingCardHasRoomOnTheButtonsSide() {
+        let room = NSRect(x: 8, y: 8, width: 1164, height: 764)
+        let button = NSRect(x: 150, y: 10, width: 26, height: 26)
+        let spot = DownloadsFloat.layout(edge: .trailing, button: button, room: room, width: 380,
+                                         windowHeight: 780, content: 200)
+        XCTAssertGreaterThan(spot.card.minX, spot.window.minX, "room for its shadow on its left")
+        XCTAssertEqual(spot.window.minX, button.maxX, "up to the button, not over it")
+        XCTAssertEqual(spot.card.minY, button.minY, "level with the button's bottom")
+        XCTAssertEqual(spot.card.height, 200)
+    }
+
+    /// The card's own height is what it holds: more downloads, a taller card.
+    func testTheCardIsMeasuredByWhatItHolds() throws {
+        let browser = Browser(record: WindowRecord())
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("float-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder); browser.loot.forgetAll() }
+        browser.loot.forgetAll()
+        let empty = DownloadsFloat.height(of: browser, width: 380)
+        for index in 0..<3 {
+            let file = folder.appendingPathComponent("file \(index).pdf")
+            FileManager.default.createFile(atPath: file.path, contents: Data())
+            browser.loot.add(Keep(name: file.lastPathComponent, from: "example.com", path: file.path, date: Date()))
+        }
+        let three = DownloadsFloat.height(of: browser, width: 380)
+        XCTAssertGreaterThan(empty, 60)
+        XCTAssertLessThan(empty, 170, "an empty list is a short card")
+        XCTAssertGreaterThan(three, empty + 150, "three downloads, three rows taller")
     }
 }
