@@ -11,6 +11,11 @@ by the bench, and keys are pressed on them through the app's own event queue
 A test run takes no links from outside, so a launch made by a link is a
 launch handed SEARCH_LINK, taken where the Apple Event would be.
 
+Keys are pressed where this Mac's keyboard layout has them (keyboard.py):
+Search reads a shortcut from the key, so the US key's code for ⌘= is ⌘- on
+a French keyboard. A check whose key the layout types only with ⇧ or ⌥
+([ and ] on AZERTY) is skipped, and says so.
+
 Copying writes the Mac's pasteboard; the text on it before is put back.
 """
 import json
@@ -24,6 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
+import keyboard  # noqa: E402
 
 sv.use("little-tests")
 t = sv.T()
@@ -49,6 +55,19 @@ EDITOR = f"http://127.0.0.1:{editor.server_port}/editor"
 
 def little(what): return sv.cmd({"do": "little", "what": what})
 def press(code, chars, *mods): sv.cmd({"do": "press", "code": code, "chars": chars, "mods": list(mods), "little": True}); time.sleep(0.3)
+def typed(chars, *mods):
+    """Press the key that types chars on this Mac's layout (keyboard.py):
+    the US key's code on a French keyboard is another key. False, pressing
+    nothing, where no key types it without ⇧ or ⌥."""
+    code = keyboard.code(chars)
+    if code is None: return False
+    press(code, chars, *mods); return True
+def key_in_little(chars):
+    code = keyboard.code(chars)
+    if code is not None: sv.cmd({"do": "little", "what": "key", "chars": chars, "code": code})
+    return code is not None
+def unpressable(chars, checks):
+    print(f"  skip  {checks}: no key types {chars} on this keyboard layout")
 def paste(): return subprocess.run(["pbpaste"], capture_output=True, text=True).stdout
 def windows(**f): return sv.cmd({"do": "windows", **f})
 def records(): return json.load(open(f"{sv.SUPPORT}/windows.json"))
@@ -112,18 +131,18 @@ try:
     # behind it in the browser's window, which the menu would copy.
     little(f"{sv.BASE}/copied"); time.sleep(2)
     subprocess.run(["pbcopy"], input=b"before")
-    press(8, "c", "cmd", "shift")
+    typed("c", "cmd", "shift")
     t.ok("⌘⇧C copies the small window's address", paste() == f"{sv.BASE}/copied", paste())
     t.ok("⌘⇧C says so in the small window", little("look")["said"] == "Address copied", little("look"))
     time.sleep(2)
     t.ok("and then stops saying it", little("look")["said"] == "")
 
     # Zoom: its page, by the browser's steps, said at its own foot.
-    press(24, "=", "cmd")
+    typed("=", "cmd")
     st = little("look")
     t.ok("⌘+ zooms the small window's page", abs(st["zoom"] - 1.1) < 0.01, st["zoom"])
     t.ok("and says so there", st["said"] == "110%", st["said"])
-    press(27, "-", "cmd"); press(27, "-", "cmd")
+    typed("-", "cmd"); typed("-", "cmd")
     t.ok("⌘- zooms it out", little("look")["zoom"] < 1, little("look")["zoom"])
     press(29, "0", "cmd")
     t.ok("⌘0 puts it back", abs(little("look")["zoom"] - 1) < 0.01, little("look")["zoom"])
@@ -136,60 +155,67 @@ try:
     sv.cmd({"do": "open", "url": f"{sv.BASE}/row-second"}); time.sleep(0.5)
     active = little("look")["activeID"]
     t.ok("the row behind has two tabs", len(sv.cmd({"do": "tabs"})["tabs"]) >= 2, sv.cmd({"do": "tabs"}))
-    press(30, "]", "cmd", "shift")
-    t.ok("one small window: next tab keeps the row's tab", little("look")["activeID"] == active, little("look"))
+    if typed("]", "cmd", "shift"):
+        t.ok("one small window: next tab keeps the row's tab", little("look")["activeID"] == active, little("look"))
+    else: unpressable("]", "next tab with one small window")
     sv.cmd({"do": "little", "what": "go", "url": f"{sv.BASE}/onward"}); time.sleep(1.5)
     t.ok("the small window went on to another page", little("look")["littles"][-1].endswith("/onward"), little("look"))
-    press(33, "[", "cmd"); time.sleep(0.6)
-    st = little("look")
-    t.ok("⌘[ goes back in the small window", st["littles"][-1].endswith("/copied"), st)
-    t.ok("⌘[ keeps the browser's tab on its page", st["activeID"] == active and front_url().endswith("/behind-two"), (st, front_url()))
-    # A page that uses ⌘[ itself gets it first, as in the browser's window:
-    # the editor outdents, and the small window doesn't go back.
-    sv.cmd({"do": "little", "what": "go", "url": EDITOR})
-    def editor_ready(): return sv.cmd({"do": "little", "what": "js", "js": "!!document.getElementById('e')"}).get("value") is True
-    t.ok("the small window went on to an editor", until(editor_ready), little("look"))
-    def outdents(): return sv.cmd({"do": "little", "what": "js", "js": "window.outdents"}).get("value")
-    sv.cmd({"do": "little", "what": "js", "js": "document.getElementById('e').focus(); 0"})
-    sv.cmd({"do": "little", "what": "key", "chars": "[", "code": 33})
-    t.ok("⌘[ in an editor is the editor's", until(lambda: outdents() == 1), outdents())
-    time.sleep(0.5)
-    t.ok("and the small window stays on its page", little("look")["pages"][-1] == EDITOR, little("look")["pages"])
-    # On a page with no use for it, the same key comes back unused: Back.
-    sv.cmd({"do": "little", "what": "go", "url": f"{sv.BASE}/plain"})
-    until(lambda: sv.cmd({"do": "little", "what": "js", "js": "location.pathname == '/plain' && document.readyState == 'complete'"}).get("value") is True)
-    sv.cmd({"do": "little", "what": "key", "chars": "[", "code": 33})
-    t.ok("⌘[ a page leaves unused is Back", until(lambda: little("look")["pages"][-1] == EDITOR), little("look")["pages"])
-    def loaded(path): return sv.cmd({"do": "little", "what": "js", "js": f"location.pathname == '{path}' && document.readyState == 'complete'"}).get("value") is True
-    sv.cmd({"do": "little", "what": "js", "js": "document.activeElement.blur(); 0"})
-    sv.cmd({"do": "little", "what": "key", "chars": "]", "code": 30})
-    t.ok("⌘] a page leaves unused is Forward", until(lambda: loaded("/plain")), little("look")["pages"])
-    # Pressed twice before WebKit answers the first: both stay this
-    # window's, and the browser's tab stays where it was. (WebKit takes two
-    # Backs that close together as one.)
-    sv.cmd({"do": "little", "what": "go", "url": f"{sv.BASE}/plain-two"}); until(lambda: loaded("/plain-two"))
-    sv.cmd({"do": "little", "what": "key", "chars": "[", "code": 33})
-    sv.cmd({"do": "little", "what": "key", "chars": "[", "code": 33})
-    t.ok("⌘[ twice quickly goes back here", until(lambda: not little("look")["pages"][-1].endswith("/plain-two")), little("look")["pages"])
-    t.ok("and keeps the browser's tab on its page", front_url().endswith("/behind-two"), front_url())
+    if typed("[", "cmd"):
+        time.sleep(0.6)
+        st = little("look")
+        t.ok("⌘[ goes back in the small window", st["littles"][-1].endswith("/copied"), st)
+        t.ok("⌘[ keeps the browser's tab on its page", st["activeID"] == active and front_url().endswith("/behind-two"), (st, front_url()))
+    else: unpressable("[", "⌘[ back in the small window")
+    if keyboard.code("[") is not None and keyboard.code("]") is not None:
+        # A page that uses ⌘[ itself gets it first, as in the browser's window:
+        # the editor outdents, and the small window doesn't go back.
+        sv.cmd({"do": "little", "what": "go", "url": EDITOR})
+        def editor_ready(): return sv.cmd({"do": "little", "what": "js", "js": "!!document.getElementById('e')"}).get("value") is True
+        t.ok("the small window went on to an editor", until(editor_ready), little("look"))
+        def outdents(): return sv.cmd({"do": "little", "what": "js", "js": "window.outdents"}).get("value")
+        sv.cmd({"do": "little", "what": "js", "js": "document.getElementById('e').focus(); 0"})
+        key_in_little("[")
+        t.ok("⌘[ in an editor is the editor's", until(lambda: outdents() == 1), outdents())
+        time.sleep(0.5)
+        t.ok("and the small window stays on its page", little("look")["pages"][-1] == EDITOR, little("look")["pages"])
+        # On a page with no use for it, the same key comes back unused: Back.
+        sv.cmd({"do": "little", "what": "go", "url": f"{sv.BASE}/plain"})
+        until(lambda: sv.cmd({"do": "little", "what": "js", "js": "location.pathname == '/plain' && document.readyState == 'complete'"}).get("value") is True)
+        key_in_little("[")
+        t.ok("⌘[ a page leaves unused is Back", until(lambda: little("look")["pages"][-1] == EDITOR), little("look")["pages"])
+        def loaded(path): return sv.cmd({"do": "little", "what": "js", "js": f"location.pathname == '{path}' && document.readyState == 'complete'"}).get("value") is True
+        sv.cmd({"do": "little", "what": "js", "js": "document.activeElement.blur(); 0"})
+        key_in_little("]")
+        t.ok("⌘] a page leaves unused is Forward", until(lambda: loaded("/plain")), little("look")["pages"])
+        # Pressed twice before WebKit answers the first: both stay this
+        # window's, and the browser's tab stays where it was. (WebKit takes two
+        # Backs that close together as one.)
+        sv.cmd({"do": "little", "what": "go", "url": f"{sv.BASE}/plain-two"}); until(lambda: loaded("/plain-two"))
+        key_in_little("[")
+        key_in_little("[")
+        t.ok("⌘[ twice quickly goes back here", until(lambda: not little("look")["pages"][-1].endswith("/plain-two")), little("look")["pages"])
+        t.ok("and keeps the browser's tab on its page", front_url().endswith("/behind-two"), front_url())
+    else: unpressable("[ or ]", "⌘[ and ⌘] in a page")
 
     # Three small windows: next and previous go round them in the order
     # they were opened, from the newest, which has the keys.
     little(f"{sv.BASE}/second"); time.sleep(1.2)
     little(f"{sv.BASE}/third"); time.sleep(1.2)
     first = little("look")["littles"][0]
-    press(30, "]", "cmd", "shift")
-    st = little("look")
-    t.ok("⇧⌘] from the newest goes round to the first", st["fronted"] == first, st)
-    t.ok("⇧⌘] keeps the browser's tab", st["activeID"] == active, st)
-    press(33, "[", "cmd", "shift")
-    t.ok("⇧⌘[ goes the other way, to the one before", little("look")["fronted"].endswith("/second"), little("look"))
+    if typed("]", "cmd", "shift"):
+        st = little("look")
+        t.ok("⇧⌘] from the newest goes round to the first", st["fronted"] == first, st)
+        t.ok("⇧⌘] keeps the browser's tab", st["activeID"] == active, st)
+    else: unpressable("]", "⇧⌘] round the small windows")
+    if typed("[", "cmd", "shift"):
+        t.ok("⇧⌘[ goes the other way, to the one before", little("look")["fronted"].endswith("/second"), little("look"))
+    else: unpressable("[", "⇧⌘[ round the small windows")
     for _ in range(3): little("close"); time.sleep(0.3)
 
     # ⌘W and Escape close it; the browser's row is as it was.
     little(f"{sv.BASE}/closing"); time.sleep(1.2)
     tabs = little("look")["tabs"]
-    press(13, "w", "cmd")
+    typed("w", "cmd")
     st = little("look")
     t.ok("⌘W closes the small window", st["littles"] == [], st["littles"])
     t.ok("⌘W leaves the browser's tabs alone", st["tabs"] == tabs, (tabs, st["tabs"]))
@@ -333,7 +359,7 @@ try:
     sv.cmd({"do": "little", "what": "lift", "id": lifted}); time.sleep(0.5)
     press(53, "\x1b")
     t.ok("Escape leaves a lifted tab's window open", little("look")["littles"] == [gone], little("look"))
-    press(13, "w", "cmd")
+    typed("w", "cmd")
     t.ok("⌘W closes it", until(lambda: little("look")["littles"] == []), little("look"))
     sv.cmd({"do": "press", "code": 17, "chars": "t", "mods": ["cmd", "shift"]})
     t.ok("⇧⌘T brings it back in the row", until(lambda: gone in [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]]),
