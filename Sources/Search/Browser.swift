@@ -5532,6 +5532,15 @@ final class Browser: NSObject, ObservableObject {
         writeSession(now: true)
     }
 
+    func setTabGroupColour(_ id: UUID, to colour: Int) {
+        guard Spaces.colours.indices.contains(colour),
+              let index = tabGroups.firstIndex(where: { $0.id == id }) else { return }
+        let choice: Int? = colour == 0 ? nil : colour
+        guard tabGroups[index].colour != choice else { return }
+        tabGroups[index].colour = choice
+        writeSession(now: true)
+    }
+
     /// Fold All Groups / Unfold All Groups, in the space's menu and the View
     /// menu, as in Arc: every group of the space on screen at once, each
     /// keeping its tabs and its place. A folded group still shows the tab in

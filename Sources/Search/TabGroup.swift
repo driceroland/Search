@@ -6,10 +6,11 @@ struct TabGroup: Codable, Identifiable, Equatable {
     var id: UUID
     var name: String
     var collapsed: Bool
+    var colour: Int? = nil
 }
 
 extension TabGroup {
-    private enum Keys: String, CodingKey { case id, name, collapsed }
+    private enum Keys: String, CodingKey { case id, name, collapsed, colour }
 
     /// A group saved without its folded state is an open one.
     init(from decoder: Decoder) throws {
@@ -17,6 +18,7 @@ extension TabGroup {
         id = try c.decode(UUID.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
         collapsed = (try? c.decodeIfPresent(Bool.self, forKey: .collapsed)) ?? false
+        colour = try? c.decodeIfPresent(Int.self, forKey: .colour)
     }
 }
 

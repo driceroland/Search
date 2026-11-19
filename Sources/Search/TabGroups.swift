@@ -210,7 +210,8 @@ struct GroupHeading: View {
             .fill(dropping ? greys.wash : (hovering ? greys.hover : .clear)))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onTapGesture { if !editing { browser.toggleTabGroup(group.id) } }
-        .modifier(GroupHeadingShared(browser: browser, group: group, dragSpace: dragSpace, dropping: $dropping))
+        .modifier(GroupHeadingShared(browser: browser, group: group, dragSpace: dragSpace, dropping: $dropping,
+                                     showsColour: !horizontal))
         .onHover { hovering = $0 }
         .onChange(of: editing) { _, now in
             if now {
@@ -239,6 +240,7 @@ private struct GroupHeadingShared: ViewModifier {
     let group: TabGroup
     let dragSpace: String?
     @Binding var dropping: Bool
+    var showsColour = true
 
     func body(content: Content) -> some View {
         content
@@ -268,6 +270,25 @@ private struct GroupHeadingShared: ViewModifier {
             .contextMenu {
                 Button("Rename Group") { browser.editingGroupID = group.id }
                 Button(group.collapsed ? "Expand Group" : "Collapse Group") { browser.toggleTabGroup(group.id) }
+                if showsColour {
+                    Menu("Colour") {
+                        Picker("Colour", selection: Binding(
+                            get: { Spaces.wash(group.colour, dark: false) == nil ? 0 : group.colour ?? 0 },
+                            set: { browser.setTabGroupColour(group.id, to: $0) }
+                        )) {
+                            ForEach(Spaces.colours.indices, id: \.self) { index in
+                                Label {
+                                    Text(Spaces.colourNames[index])
+                                } icon: {
+                                    Image(nsImage: Self.swatch(index))
+                                }
+                                .tag(index)
+                            }
+                        }
+                        .pickerStyle(.inline)
+                        .labelsHidden()
+                    }
+                }
                 // The whole group into another space, still a group there: Arc's
                 // folders came in wherever Arc had them.
                 if browser.prefs.usesSpaces, browser.spaces.count > 1 {
@@ -285,5 +306,20 @@ private struct GroupHeadingShared: ViewModifier {
                 Button("Ungroup Tabs") { browser.removeTabGroup(group.id) }
                 Button("Close Group") { browser.closeTabGroup(group.id) }
             }
+    }
+
+    private static func swatch(_ index: Int) -> NSImage {
+        NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
+            let dot = NSBezierPath(ovalIn: rect.insetBy(dx: 2, dy: 2))
+            if index == 0 {
+                NSColor.secondaryLabelColor.setStroke()
+                dot.lineWidth = 1
+                dot.stroke()
+            } else {
+                NSColor(Spaces.colours[index]).setFill()
+                dot.fill()
+            }
+            return true
+        }
     }
 }
