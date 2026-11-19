@@ -1566,6 +1566,136 @@ enum ExtensionShims {
         delete plain.tab;
         return plain;
       };
+      // An extension's blob: URLs cannot be fetched from its content world
+      // in WebKit. Keep the Blob where it was made; only this extension's
+      // authenticated runtime messages may read it. Nothing is published to
+      // a website, another extension, or the native network stack.
+      const blobURLs = new Map(), blobReads = new Map();
+      const blobReaderPrefix = (root.crypto?.randomUUID?.() || me) + ":";
+      let blobReaderSequence = 0;
+      const releaseBlob = (key) => {
+        const entry = blobReads.get(key);
+        if (entry) clearTimeout(entry.timer);
+        blobReads.delete(key);
+      };
+      const touchBlob = (key, entry) => {
+        clearTimeout(entry.timer);
+        entry.timer = setTimeout(() => releaseBlob(key), 120000);
+      };
+      const blobBase = "blob:" + runtime.getURL("");
+      // Attached only after this page creates a blob, and not joined to the
+      // message channel: a listener on every extension page is someone the
+      // worker waits on for every message.
+      let noteBlob = () => {};
+      const blobChunkSize = 192 * 1024;
+      const blobEncode = (bytes) => {
+        let text = "";
+        for (let i = 0; i < bytes.length; i += 8192) text += String.fromCharCode(...bytes.subarray(i, i + 8192));
+        return btoa(text);
+      };
+      if (!inContent && typeof URL?.createObjectURL === "function") {
+        const create = URL.createObjectURL, revoke = URL.revokeObjectURL;
+        put(URL, "createObjectURL", function (value) {
+          const url = create.apply(this, arguments);
+          if (value instanceof Blob && url.startsWith(blobBase)) { blobURLs.set(url, value); noteBlob(); }
+          return url;
+        });
+        put(URL, "revokeObjectURL", function (url) {
+          blobURLs.delete(String(url));
+          return revoke.apply(this, arguments);
+        });
+      }
+      const readBlob = async (request) => {
+        if (request.open) {
+          const blob = blobURLs.get(request.open);
+          if (!blob) return null;
+          if (blobReads.size >= 64) return { error: "Too many open blob readers" };
+          const key = blobReaderPrefix + (++blobReaderSequence);
+          const entry = { blob, timer: null };
+          blobReads.set(key, entry);
+          touchBlob(key, entry);
+          return { key, size: blob.size, type: blob.type };
+        }
+        const entry = blobReads.get(request.key);
+        if (!entry) return typeof request.key === "string" && request.key.startsWith(blobReaderPrefix)
+          ? request.close ? { closed: true } : { error: "Blob reader expired" } : null;
+        if (request.close) { releaseBlob(request.key); return { closed: true }; }
+        const offset = request.offset;
+        if (!Number.isSafeInteger(offset) || offset < 0 || offset > entry.blob.size) return { error: "Invalid blob offset" };
+        touchBlob(request.key, entry);
+        const bytes = new Uint8Array(await entry.blob.slice(offset, offset + blobChunkSize).arrayBuffer());
+        const end = offset + bytes.length === entry.blob.size;
+        if (end) releaseBlob(request.key);
+        return { chunk: blobEncode(bytes), end };
+      };
+      if (typeof root.fetch === "function" && typeof root.ReadableStream === "function") {
+        const original = root.fetch;
+        const send = Object.getPrototypeOf(runtime).sendMessage;
+        const ask = (request, signal) => new Promise((resolve, reject) => {
+          let timer, settled = false;
+          const finish = (error, value) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", abort);
+            error ? reject(error) : resolve(value);
+          };
+          const abort = () => finish(new DOMException("The operation was aborted.", "AbortError"));
+          if (signal?.aborted) return abort();
+          signal?.addEventListener("abort", abort, { once: true });
+          timer = setTimeout(() => finish(new TypeError("Blob owner did not respond")), 10000);
+          Promise.resolve(send.call(runtime, { __searchBlob: request })).then(
+            (reply) => {
+              if (settled && request.open && reply?.key) ask({ key: reply.key, close: true }).catch(() => {});
+              if (reply && !reply.error) finish(null, reply);
+              else finish(new TypeError(reply?.error || "Blob URL is unavailable"));
+            },
+            (error) => finish(error));
+        });
+        put(root, "fetch", function (input, init) {
+          let url;
+          try { url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url; } catch (e) {}
+          if (typeof url !== "string" || !url.startsWith(blobBase)) return original.apply(this, arguments);
+          const objectURL = url.split("#", 1)[0];
+          if (blobURLs.has(objectURL)) return original.apply(this, arguments);
+          let request;
+          try { request = new Request(input, init); } catch (e) { return Promise.reject(e); }
+          if (request.method !== "GET" || request.mode !== "cors" || request.integrity || request.headers.has("Range")) return original.apply(this, arguments);
+          return (async () => {
+            const signal = request.signal;
+            const opened = await ask({ open: objectURL }, signal);
+            let done = false, offset = 0, controller;
+            const close = () => {
+              if (done) return;
+              done = true;
+              signal.removeEventListener("abort", abort);
+              ask({ key: opened.key, close: true }).catch(() => {});
+            };
+            const abort = () => { close(); controller?.error(new DOMException("The operation was aborted.", "AbortError")); };
+            const stream = new ReadableStream({
+              start(value) { controller = value; },
+              async pull(value) {
+                if (done) return;
+                try {
+                  const reply = await ask({ key: opened.key, offset }, signal);
+                  if (done) return;
+                  const text = atob(reply.chunk), bytes = new Uint8Array(text.length);
+                  for (let i = 0; i < text.length; ++i) bytes[i] = text.charCodeAt(i);
+                  offset += bytes.length;
+                  if (bytes.length) value.enqueue(bytes);
+                  if (reply.end) { close(); value.close(); }
+                } catch (error) { if (!done) { close(); value.error(error); } }
+              },
+              cancel() { close(); },
+            }, { highWaterMark: 0 });
+            signal.addEventListener("abort", abort, { once: true });
+            if (signal.aborted) abort();
+            const response = new Response(stream, { statusText: "OK", headers: { "Content-Type": opened.type, "Content-Length": String(opened.size) } });
+            Object.defineProperty(response, "url", { value: objectURL });
+            return response;
+          })();
+        });
+      }
       const gather = (event, told) => {
         if (!event || typeof event.addListener !== "function") return;
         const add = event.addListener.bind(event);
@@ -1603,6 +1733,13 @@ enum ExtensionShims {
           if (!local && message && message.__searchOffscreenRelay === true && sender.id === runtime.id) {
             native("offscreen.sendMessage", [message.token, message.message, sender])
               .then(sendResponse, (error) => sendResponse({ relayError: String(error) }));
+            return true;
+          }
+          if (message && message.__searchBlob) {
+            if (!internalMessages || inContent || sender?.id !== runtime.id) return;
+            readBlob(message.__searchBlob).then((reply) => { if (reply) sendResponse(reply); },
+              () => sendResponse({ error: "Could not read blob" }));
+            // Non-owners stay silent; an empty answer would beat the owner.
             return true;
           }
           // Only the worker answers; any other page stays out of it.
@@ -1681,6 +1818,9 @@ enum ExtensionShims {
               .then((value) => sendResponse({ value }), (e) => sendResponse({ error: String(e && e.message || e) }));
             return true;
           }
+          // A page that only serves its own blobs must not answer, or hold,
+          // any other message. That would put it in the set the worker waits on.
+          if (servingBlobs && listeners.size === 0 && !background && !relayHost) return;
           sender = untabbed(sender);
           for (const listener of [...listeners]) {
             let result;
@@ -1774,7 +1914,7 @@ enum ExtensionShims {
         put(event, "removeListener", (listener) => {
           listeners.delete(listener);
           if (told && listeners.size === 0 && !relayHost) leave();
-          if (attached && listeners.size === 0 && !(internalMessages && (background || relayHost))) {
+          if (attached && listeners.size === 0 && !(internalMessages && (background || relayHost || servingBlobs))) {
             attached = false; remove(dispatch);
           }
         });
@@ -1783,6 +1923,14 @@ enum ExtensionShims {
         // A worker may only add listeners while it starts; one that adds its
         // first later would be refused. So in a worker the one listener is
         // WebKit's from the start.
+        let servingBlobs = false;
+        if (internalMessages) noteBlob = () => {
+          if (inContent || background || relayHost) return;
+          servingBlobs = true;
+          if (attached) return;
+          attached = true;
+          add(dispatch);
+        };
         if (background || relayHost) { attached = true; add(dispatch); if (told) join(); }
       };
       if (runtime) {
