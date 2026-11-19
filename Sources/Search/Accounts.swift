@@ -9,32 +9,64 @@ import SwiftUI
 /// your card in Contacts, and a click fills the form. ↓ and ↑ light a row
 /// from the keyboard and Return takes it, as a click (App.swift's `take`).
 /// It follows the box when the page scrolls, and goes when the caret does.
+/// Many accounts for one site (#1215): the list is no taller than the room
+/// under the box, or above it when there is more room there, and scrolls;
+/// a row lit from the keyboard is scrolled to.
 struct AccountList: View {
     @ObservedObject var browser: Browser
     let asked: Browser.Suggesting
     /// Where the card came out in its host, for a host that has to know
     /// where it is to keep a click on it (see PaneStage's AccountHost).
     var onFrame: ((CGRect) -> Void)? = nil
+    /// How far below the top of its host the page starts (a small window's
+    /// bar): the box's spot is from the page's top-left.
+    var top: CGFloat = 0
+
+    /// Kept clear between the list and the host's edge.
+    static let margin: CGFloat = 8
+    /// Less room than this under the box, and more above it: the list goes
+    /// above. Never shorter than this either, if the page is that small.
+    static let least: CGFloat = 140
+
+    /// Where the list goes for a box at `spot` on a page `height` tall:
+    /// under it or above it, and how tall it may be.
+    nonisolated static func place(spot: CGRect, height: CGFloat) -> (up: Bool, room: CGFloat) {
+        let below = height - spot.maxY - 6 - margin
+        let above = spot.minY - 6 - margin
+        let up = below < least && above > below
+        return (up, max(up ? above : below, least))
+    }
 
     var body: some View {
+        GeometryReader { space in
+            let spot = asked.spot.offsetBy(dx: 0, dy: top)
+            let place = Self.place(spot: spot, height: space.size.height)
+            card(room: place.room)
+                // Measured inside the offset, so where it is drawn, not laid out.
+                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(FromTopLeft<AccountList>.space)) }) { onFrame?($0) }
+                // Above the box: its foot 6 points over the box's top.
+                .frame(height: place.up ? max(0, spot.minY - 6) : nil, alignment: .bottom)
+                // Just under the box (or over it), left edges lined up. The
+                // offset is from the stage's top-left, which is also the web view's.
+                .offset(x: spot.minX, y: place.up ? 0 : spot.maxY + 6)
+        }
+    }
+
+    private func card(room: CGFloat) -> some View {
+        Capped(room: room) {
         VStack(alignment: .leading, spacing: 0) {
-            // The rows in the order ↓ walks them (Suggesting.choices): the
-            // Mac's passkeys, the page's own host's accounts from both places,
-            // then the rest of its site's under a line, so a login saved for
-            // example.com is still there on admin.example.com without passing
-            // for admin's; codes, the rows about Apple Passwords, your card.
-            let choices = asked.choices
-            ForEach(Array(choices.enumerated()), id: \.offset) { at, choice in
-                if at == asked.othersFrom {
-                    Text("Other accounts on \(Vault.registrable(asked.host))")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Palette.faint)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            // As tall as the rows when they fit; otherwise they scroll under
+            // a footer that stays.
+            ScrollViewReader { scroller in
+                ViewThatFits(in: .vertical) {
+                    rows(marked: false)
+                    ScrollView(.vertical) { rows(marked: true) }
+                        .scrollIndicators(.automatic)
                 }
-                row(choice, lit: asked.lit == at)
+                .onChange(of: asked.lit) { _, lit in
+                    guard let lit else { return }
+                    scroller.scrollTo(lit)
+                }
             }
             if !offerOnly {
             HStack(spacing: 6) {
@@ -51,6 +83,7 @@ struct AccountList: View {
             }
         }
         .frame(width: max(240, min(360, asked.spot.width)), alignment: .leading)
+        }
         .background(Palette.ground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
@@ -58,11 +91,31 @@ struct AccountList: View {
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.14), radius: 22, y: 8)
-        // Measured inside the offset, so where it is drawn, not laid out.
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(FromTopLeft<AccountList>.space)) }) { onFrame?($0) }
-        // Just under the box, left edges lined up. The offset is from the
-        // stage's top-left, which is also the web view's.
-        .offset(x: asked.spot.minX, y: asked.spot.maxY + 6)
+    }
+
+    /// The rows in the order ↓ walks them (Suggesting.choices): the Mac's
+    /// passkeys, the page's own host's accounts from both places, then the
+    /// rest of its site's under a line, so a login saved for example.com is
+    /// still there on admin.example.com without passing for admin's; codes,
+    /// the rows about Apple Passwords, your card.
+    /// `marked`: each row carries its number, for the scroller to find; only
+    /// in the one that scrolls, so it never looks in the other.
+    private func rows(marked: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            let choices = asked.choices
+            ForEach(Array(choices.enumerated()), id: \.offset) { at, choice in
+                if at == asked.othersFrom {
+                    Text("Other accounts on \(Vault.registrable(asked.host))")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Palette.faint)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
+                }
+                if marked { row(choice, lit: asked.lit == at).id(at) } else { row(choice, lit: asked.lit == at) }
+            }
+        }
     }
 
     @ViewBuilder
@@ -116,6 +169,24 @@ struct AccountList: View {
     }
 
     private enum Mark { case letter(String), symbol(String) }
+
+    /// Offers its content no more than `room` and is as tall as the content
+    /// then is: a short list keeps its own height, a long one stops at
+    /// `room` (where its rows scroll). `.frame(maxHeight:)` would make the
+    /// short one `room` tall too.
+    private struct Capped: Layout {
+        let room: CGFloat
+
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            guard let only = subviews.first else { return .zero }
+            let size = only.sizeThatFits(ProposedViewSize(width: proposal.width, height: room))
+            return CGSize(width: size.width, height: min(size.height, room))
+        }
+
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(bounds.size))
+        }
+    }
 
     /// "Use your Apple passwords?", at the bottom: smaller and greyer than
     /// an account, so it never reads as one. A click turns Apple Passwords
