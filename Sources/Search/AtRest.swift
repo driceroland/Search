@@ -43,7 +43,15 @@ struct AtRest: Equatable {
     /// only a warning with it off.
     static func said(_ url: URL?, always: Bool) -> AtRest? {
         guard let rest = of(url), always || rest.warns else { return nil }
+        // An extension's page standing in for the new tab is a new tab: its
+        // title says so, where "Extension page" didn't (#1214).
+        if rest.kind == .other, let url, MainActor.assumeIsolated({ isNewTabPage(url) }) { return nil }
         return rest
+    }
+
+    @MainActor private static func isNewTabPage(_ url: URL) -> Bool {
+        guard #available(macOS 15.4, *), let page = Extensions.shared.newTabPage else { return false }
+        return url.scheme == page.scheme && url.host() == page.host() && url.path == page.path
     }
 
     /// All of it as one line, as read aloud and as the bench reports it.
