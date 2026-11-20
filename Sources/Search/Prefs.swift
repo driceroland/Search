@@ -228,6 +228,13 @@ final class Preferences: ObservableObject {
     @Published var roomyTabs: Bool {
         didSet { store.set(roomyTabs, forKey: "sidebar.roomy") }
     }
+    /// The foot's doors — spaces, extensions, bookmarks, downloads — up in
+    /// the lights' row, right of back, forward and reload, and no foot.
+    /// Only where they fit; a column too narrow keeps them at the bottom.
+    /// Off unless asked for.
+    @Published var doorsUp: Bool {
+        didSet { store.set(doorsUp, forKey: "sidebar.doorsUp") }
+    }
     /// The column as icons only: each tab its site's mark, no titles, a
     /// fixed narrow width, and nothing that grows under the pointer (idea
     /// 413). Off unless asked for; Settings › Appearance › Tabs, Icons only.
@@ -1067,6 +1074,7 @@ final class Preferences: ObservableObject {
         sideHides = store.bool(forKey: "sidebar.hides")
         slidesColumn = store.bool(forKey: Motion.slidesKey)
         roomyTabs = store.bool(forKey: "sidebar.roomy")
+        doorsUp = store.bool(forKey: "sidebar.doorsUp")
         sideIcons = store.bool(forKey: "sidebar.icons")
         foldsToIcons = store.bool(forKey: "sidebar.foldIcons")
         showsPlayer = store.bool(forKey: "sidebar.player")
@@ -1325,6 +1333,7 @@ final class Preferences: ObservableObject {
         take(\.sideHides, store.bool(forKey: "sidebar.hides"))
         take(\.slidesColumn, store.bool(forKey: Motion.slidesKey))
         take(\.roomyTabs, store.bool(forKey: "sidebar.roomy"))
+        take(\.doorsUp, store.bool(forKey: "sidebar.doorsUp"))
         take(\.sideIcons, store.bool(forKey: "sidebar.icons"))
         take(\.foldsToIcons, store.bool(forKey: "sidebar.foldIcons"))
         take(\.sideWidth, "sidebar.width", (store.object(forKey: "sidebar.width") as? Double).map { CGFloat($0) }

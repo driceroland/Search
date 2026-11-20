@@ -23,6 +23,8 @@ import WebKit
 @MainActor
 final class Bench {
     static let shared = Bench()
+    /// The column's edge held at a width by "edgetime", or let go (nil).
+    static let edgeHeld = Notification.Name("search.bench.edgeHeld")
     private var awake: NSObjectProtocol?
 
     private weak var browser: Browser?
@@ -1380,6 +1382,46 @@ final class Bench {
                 DispatchQueue.main.asyncAfter(deadline: .now() + every) { step(n + 1) }
             }
             step(0)
+
+        case "edgetime":
+            // The column's edge taken from one width to another a frame at a
+            // time ("steps" of "every" seconds), as a hand drags it: each
+            // pass of the main run loop until 0.8 s after. Test runs only.
+            guard Store.testing else { answer(["error": "edgetime is for test runs"]); return }
+            let from = request["from"] as? Double ?? 340
+            let to = request["to"] as? Double ?? 220
+            let steps = max(1, request["steps"] as? Int ?? 60)
+            let every = request["every"] as? Double ?? 1.0 / 60
+            let held = request["held"] as? Bool ?? true
+            browser.prefs.sideWidth = CGFloat(from)
+            let start = CFAbsoluteTimeGetCurrent()
+            let done = Bench.timePasses(for: Double(steps) * every + 0.8, from: start, watching: browser)
+            // Where the page in front is drawn at each step, and its window's
+            // width: the page's ends against the column's edge and the far one.
+            var drawn: [[String: Double]] = []
+            func look(_ width: CGFloat?) {
+                guard let web = browser.active?.web, let window = web.window else { return }
+                let frame = web.convert(web.bounds, to: nil)
+                drawn.append(["edge": Double(width ?? browser.prefs.columnWidth), "minX": Double(frame.minX),
+                              "maxX": Double(frame.maxX), "window": Double(window.frame.width)])
+            }
+            func step(_ n: Int) {
+                guard n <= steps else {
+                    if held {
+                        NotificationCenter.default.post(name: Bench.edgeHeld, object: nil)
+                        browser.prefs.sideWidth = CGFloat(to)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { look(nil) }
+                    done { passes in answer(["passes": passes, "drawn": drawn]) }
+                    return
+                }
+                if n > 1 { look(CGFloat(from + (to - from) * Double(n - 1) / Double(steps))) }
+                let width = CGFloat(from + (to - from) * Double(n) / Double(steps))
+                if held { NotificationCenter.default.post(name: Bench.edgeHeld, object: width) }
+                else { browser.prefs.sideWidth = width }
+                DispatchQueue.main.asyncAfter(deadline: .now() + every) { step(n + 1) }
+            }
+            step(1)
 
         case "bookmarksweep":
             // Bookmarks kept and then let go, one a frame, as the star or a
@@ -3690,7 +3732,10 @@ final class Bench {
             // The column's corner — the lights, the pins, the first rows — is
             // what moves; the whole window would take longer to draw than a
             // frame lasts. Written out once the filming is over.
-            let corner = NSRect(x: 0, y: frame.bounds.height - 460, width: min(380, frame.bounds.width), height: 460)
+            // With "bottom", the column's foot instead.
+            let corner = request["bottom"] as? Bool == true
+                ? NSRect(x: 0, y: 0, width: min(380, frame.bounds.width), height: 200)
+                : NSRect(x: 0, y: frame.bounds.height - 460, width: min(380, frame.bounds.width), height: 460)
             // The pages under it take a third of a second each to draw into a
             // picture, longer than the whole animation: they sit the filming
             // out, and come back after.
@@ -3730,6 +3775,8 @@ final class Bench {
             case "peek": browser.peek(true)
             case "unpeek": browser.peek(false)
             case "fold": browser.toggleFold()
+            // The column let go at a width, as its edge is (sidebar.doorsUp).
+            case "width": browser.prefs.sideWidth = CGFloat(request["width"] as? Double ?? Double(Metrics.side))
             case "select": if let tab = find(request, in: browser) { browser.select(tab) }
             case "swipe":
                 // Two fingers along the column, a step every frame for the

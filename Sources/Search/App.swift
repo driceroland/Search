@@ -618,6 +618,14 @@ struct ContentView: View {
         .animation(Motion.glide, value: browser.prefs.sidePosition)
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
+        // The column's edge let go where it was: the page its room at last.
+        .onChange(of: edges.side == nil) { _, free in
+            guard free, roomed != chrome else { return }
+            roomTicket += 1
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { room = chrome }
+        }
         // ⌘S folding the column: the page its room now, the column still
         // out over it, its far side past the window's edge; called off, the
         // column's room back. Never slid: what moves is the column, after.
@@ -758,6 +766,19 @@ struct ContentView: View {
     /// A column being dragged wider or narrower is followed as it goes.
     private func make(room new: CGSize, after old: CGSize) {
         let now = roomed
+        // The column's edge held: the page slides with it rather than being
+        // laid out again at every width it goes through. Wider, it runs on
+        // past the window's far edge; narrower, it is resized only every 40
+        // points, each time with that much to spare. Let go, it is resized
+        // once, to its room (below).
+        if edges.side != nil, new.height == now.height, new.width > Metrics.cardGap {
+            roomTicket += 1
+            guard new.width < now.width else { return }
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { room = CGSize(width: max(Metrics.sideMin, new.width - 40), height: new.height) }
+            return
+        }
         // Given already, with the chrome itself (see `immersing`).
         if now == new {
             roomTicket += 1

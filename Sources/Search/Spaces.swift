@@ -498,8 +498,10 @@ extension Browser {
         closeLeftAlone()
         askFocus()
         // Beside the space's icon when the tabs are on screen (SpaceDot);
-        // folded away, at the bottom.
-        if folded && !peeking { announce(space.name) }
+        // folded away, or with the icon up beside the helm, at the bottom.
+        if folded && !peeking || SideBar.doorsUp(prefs, width: prefs.columnWidth, fullScreen: fullScreen) {
+            announce(space.name)
+        }
     }
 
     /// The key a loose row of the column is drawn under: the tab's own, kept
@@ -811,6 +813,8 @@ struct SpaceDot: View {
     /// The space's name, for a moment after a switch (see naming()).
     @State private var named: String?
     @State private var naming = 0
+    /// Its name beside it after a switch; off where something else says it.
+    var names = true
 
     static let width: CGFloat = 26
 
@@ -853,7 +857,7 @@ struct SpaceDot: View {
                 withAnimation(Motion.reduced ? nil : .easeOut(duration: 0.22)) { shown = (now, symbol) }
             }
         }
-        .onChange(of: browser.spaceID) { _, _ in name() }
+        .onChange(of: browser.spaceID) { _, _ in if names { name() } }
         // The name, beside the icon that stands for it, the moment you get
         // there — right of it in the bar, over the first tabs (below, the
         // page would cover it), above it at the column's foot — and
