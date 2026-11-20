@@ -217,6 +217,9 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
         // 0.5 s), and the move then skipped that far ahead.
         let glide = Glide(window, under: picture, from: start, to: end, pace: immersed ? .goingIn : .comingBack) { [weak self] in self?.glide = nil }
         self.glide = glide
+        // Going in, the picture has faded before macOS ends the move. Coming
+        // back it fades after, and waits for that (see `left`).
+        if immersed { glide.land() }
         // The page hears of the change now, laid out at the size it ends at,
         // and the picture goes once it has drawn so. (Told only once it had
         // the size, YouTube still sized its video twice coming back, 0.3 to
@@ -231,7 +234,10 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
                 Self.presented(page) { glide.uncover() }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { glide.uncover() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            glide.uncover()
+            glide.land()
+        }
     }
 
     /// Once what the page has drawn is on screen. WebKit puts a page's new
@@ -269,6 +275,24 @@ final class WindowFullscreen: NSObject, WKScriptMessageHandler {
         cover?.orderOut(nil)
         cover = nil
         letGo(window)
+    }
+
+    /// macOS has said the window is back. The picture may fade once the main
+    /// thread next comes to rest, and no sooner. Until then the screen showed
+    /// the fade only where the window itself drew again (its sidebar and
+    /// toolbar through a picture otherwise whole), for as long as the main
+    /// thread was kept, and WebKit keeps it 50 to 400 ms around here. Kept
+    /// 0.3 s on purpose just after this, 26 exits of 26 stuck so on film,
+    /// and none of 5 with the fade held until here; with 28 busy processes
+    /// beside it, 12 of 16 against none of 13 (20 Nov 2026). At rest: the
+    /// last observer as the run loop goes to wait, so all that was queued
+    /// has run and Core Animation has committed.
+    @MainActor fileprivate func left() {
+        guard let glide else { return }
+        let rest = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, false, CFIndex.max) { _, _ in
+            MainActor.assumeIsolated { glide.land() }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), rest, .commonModes)
     }
 
     @MainActor fileprivate func letGo(_ window: NSWindow) {
@@ -477,6 +501,7 @@ private final class ZoomDelegate: NSObject, NSWindowDelegate {
             guard let window = notification.object as? NSWindow else { return }
             owner?.settle(window, immersed: false)
             owner?.letGo(window)
+            owner?.left()
         }
     }
 
@@ -490,7 +515,8 @@ private final class ZoomDelegate: NSObject, NSWindowDelegate {
 /// picture of it as it was, in a window of its own, does the moving from the
 /// first frame; the window itself takes its new frame under the picture,
 /// drawn at a point until it has (see zoom), then
-/// in the same rectangle as the picture, which fades once the page has drawn.
+/// in the same rectangle as the picture, which fades once the page has drawn
+/// and, on the way back, once macOS is done with the window.
 /// Faded by the window server too: a fade of its layer, set from the main
 /// thread, reached the screen 100 ms and more after it was over.
 ///
@@ -507,6 +533,9 @@ private final class ZoomDelegate: NSObject, NSWindowDelegate {
     private let done: () -> Void
     /// When the picture began to fade, for the thread that moves the windows.
     private let uncovered: OSAllocatedUnfairLock<CFTimeInterval?>
+    /// When macOS was done with the window and the main thread at rest
+    /// after it (WindowFullscreen.left), for the same thread.
+    private let landed: OSAllocatedUnfairLock<CFTimeInterval?>
     private var timer: DispatchSourceTimer?
     private var finished = false
 
@@ -570,8 +599,10 @@ private final class ZoomDelegate: NSObject, NSWindowDelegate {
         self.done = done
         let uncovered = OSAllocatedUnfairLock<CFTimeInterval?>(initialState: nil)
         self.uncovered = uncovered
+        let landed = OSAllocatedUnfairLock<CFTimeInterval?>(initialState: nil)
+        self.landed = landed
         timer = Self.ticker(UInt32(window.windowNumber), cover: cover.map { UInt32($0.windowNumber) }, from: start, to: end,
-                            top: WindowServer.top, light: Motion.light, pace: pace, uncovered: uncovered) { [weak self] in
+                            top: WindowServer.top, light: Motion.light, pace: pace, uncovered: uncovered, landed: landed) { [weak self] in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.finish() } }
         }
     }
@@ -581,6 +612,7 @@ private final class ZoomDelegate: NSObject, NSWindowDelegate {
     /// faded as it has got. Over once the move is and the picture is gone.
     private nonisolated static func ticker(_ number: UInt32, cover: UInt32?, from start: NSRect, to end: NSRect, top: CGFloat,
                                            light: Bool, pace: Pace, uncovered: OSAllocatedUnfairLock<CFTimeInterval?>,
+                                           landed: OSAllocatedUnfairLock<CFTimeInterval?>,
                                            over: @escaping @Sendable () -> Void) -> DispatchSourceTimer {
         let timer = DispatchSource.makeTimerSource(flags: .strict, queue: DispatchQueue(label: "search.fullscreen.glide", qos: .userInteractive))
         // Counted from the first frame drawn: the first is still held some
@@ -605,10 +637,11 @@ private final class ZoomDelegate: NSObject, NSWindowDelegate {
                               width: between(start.width, end.width), height: between(start.height, end.height))
             var shown = 0.0
             if let cover {
-                shown = uncovered.withLock { $0 }.map { said in
-                    let from = max(said, (began ?? now) + pace.whole)
-                    return min(1, max(0, 1 - (now - from) / pace.fade))
-                } ?? 1
+                shown = 1
+                if let said = uncovered.withLock({ $0 }), let there = landed.withLock({ $0 }) {
+                    let from = max(said, there, (began ?? now) + pace.whole)
+                    shown = min(1, max(0, 1 - (now - from) / pace.fade))
+                }
                 WindowServer.draw(cover, in: rect, top: top)
                 WindowServer.fade(cover, to: shown)
             }
@@ -620,6 +653,11 @@ private final class ZoomDelegate: NSObject, NSWindowDelegate {
         }
         timer.resume()
         return timer
+    }
+
+    /// macOS is done with the window: the picture may fade.
+    func land() {
+        landed.withLock { if $0 == nil { $0 = CACurrentMediaTime() } }
     }
 
     /// The page has drawn, and it is on screen: the picture fades from over it.
