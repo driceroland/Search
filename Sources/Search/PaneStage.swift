@@ -182,6 +182,10 @@ final class PaneStage: NSView {
     private var told: [Tab.ID: CGRect] = [:]
     /// Where the pages are while a divider is held (see dividerMoved).
     private var held: [Tab.ID: CGRect] = [:]
+    /// The pages whose own background is off for a resize, and when it
+    /// comes back (see backPages).
+    private let unbacked = NSHashTable<WKWebView>.weakObjects()
+    private var rebacking: DispatchWorkItem?
 
     /// Each page's share while a divider is held; nil otherwise.
     private var live: [Double]?
@@ -399,6 +403,7 @@ final class PaneStage: NSView {
         super.layout()
         let area = bounds
         var frames: [CGRect] = Array(repeating: .zero, count: tabs.count)
+        var resized = false // see backPages
         let lines = dividers
         if paired {
             let widths = self.widths(room: room)
@@ -426,6 +431,7 @@ final class PaneStage: NSView {
             let frame = index < frames.count ? frames[index] : .zero
             let visible = index < tabs.count && shown(index) && frame.width > 0
             slot.isHidden = !visible
+            if visible, slot.frame.size != frame.size, slot.frame.width > 0 { resized = true }
             if slot.frame != frame { slot.frame = frame }
             if index < shadows.count {
                 // Pages run the stage's full height, so its flip is no matter.
@@ -440,6 +446,7 @@ final class PaneStage: NSView {
         // A window made too narrow for two takes the other page off, and
         // gives it back once there is room.
         feed()
+        if resized { backPages() }
         if let bar = findBar {
             let page = focused.flatMap { id in tabs.firstIndex { $0.id == id } }
                 .flatMap { frames.indices.contains($0) ? frames[$0] : nil }
@@ -571,6 +578,49 @@ final class PaneStage: NSView {
         if let id { onCommit?(id, shares) }
     }
 
+    // MARK: - the pages' own colour behind them while they resize
+
+    /// Behind each page while the stage's pages change size — the divider
+    /// held, the window resized, the column sliding — the page's own colour,
+    /// until half a second after the last change. WebKit draws a page at its
+    /// new size a frame or more after its view is resized, and the room it
+    /// hadn't drawn yet showed the web view's own background, dark grey in
+    /// dark mode: a strip at a white page's edge chasing the hand. That
+    /// background is WebKit's to draw and has no public switch on macOS, so
+    /// it's turned off with `_setDrawsBackground:` (private, checked for
+    /// first) and the stage's slot shows `underPageBackgroundColor` there
+    /// instead, as Safari does. Nothing runs while nothing resizes.
+    private func backPages() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            for (index, slot) in slots.enumerated() {
+                let web = index < tabs.count ? page(tabs[index]) as? WKWebView : nil
+                slot.layer?.backgroundColor = web?.underPageBackgroundColor.cgColor
+                if let web, !unbacked.contains(web), Self.drawsBackground(web, false) { unbacked.add(web) }
+            }
+        }
+        rebacking?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.unbackPages() }
+        rebacking = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    /// Each page drawing its own background again, as it always does.
+    private func unbackPages() {
+        rebacking?.cancel()
+        rebacking = nil
+        for web in unbacked.allObjects { _ = Self.drawsBackground(web, true) }
+        unbacked.removeAllObjects()
+        for slot in slots { slot.layer?.backgroundColor = nil }
+    }
+
+    /// WebKit's switch for the background a web view draws where its page
+    /// isn't drawn; false where this WebKit doesn't have it.
+    private static func drawsBackground(_ web: WKWebView, _ on: Bool) -> Bool {
+        guard web.responds(to: NSSelectorFromString("_setDrawsBackground:")) else { return false }
+        web.setValue(on, forKey: "drawsBackground")
+        return true
+    }
+
     /// Double-clicked, or asked by VoiceOver: the two pages either side of
     /// divider `index` made even, or the line between them a step either
     /// way. Of two, the whole stage.
@@ -648,6 +698,7 @@ final class PaneStage: NSView {
     /// Keeps `stages` pointing only at the window the stage is in.
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil { unbackPages() } // see backPages
         if let window, Self.stages.object(forKey: window) === self { Self.stages.removeObject(forKey: window) }
         if let newWindow { Self.stages.setObject(self, forKey: newWindow) }
     }
