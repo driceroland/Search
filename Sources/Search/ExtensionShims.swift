@@ -858,23 +858,33 @@ enum ExtensionShims {
       // pages, so a page is given one that posts to the worker over the same
       // channel, and a message either way says who sent it. A port handed
       // over with a message can't cross the channel: it stays with the
-      // sender, and what is posted to the one the other side is given comes
-      // back over the channel to it.
+      // sender, and each side keeps its end under the same key, so what is
+      // posted on either end comes out of the other — both ways, as in
+      // Chrome (Zotero's offscreen page says it is ready on its port). Each
+      // message says which side it is for: two pages at one address both
+      // hold a port the worker hands "that page", and neither is the worker.
       const clientsChannel = typeof BroadcastChannel === "function" && !inContent && !embedded ? new BroadcastChannel("search-clients") : null;
       const heldPorts = new Map();
+      const side = worker ? "worker" : "page", other = worker ? "page" : "worker";
       const handOver = (transfer) => (Array.isArray(transfer) ? transfer : (transfer && transfer.transfer) || [])
         .filter((p) => p instanceof MessagePort)
-        .map((port) => { const key = Math.random().toString(36).slice(2); heldPorts.set(key, port); return key; });
+        .map((port) => {
+          const key = Math.random().toString(36).slice(2);
+          heldPorts.set(key, port);
+          port.onmessage = (e) => { try { clientsChannel.postMessage({ port: key, to: other, data: e.data }); } catch (x) {} };
+          return key;
+        });
       const answered = (data) => {
         if (typeof data.port !== "string") return false;
-        const port = heldPorts.get(data.port);
+        const port = data.to === side ? heldPorts.get(data.port) : null;
         if (port) port.postMessage(data.data);
         return true;
       };
       const messageFrom = (source, data, keys) => {
         const ports = (Array.isArray(keys) ? keys : []).map((key) => {
           const pair = new MessageChannel();
-          pair.port1.onmessage = (e) => clientsChannel.postMessage({ port: key, data: e.data });
+          heldPorts.set(key, pair.port1);
+          pair.port1.onmessage = (e) => clientsChannel.postMessage({ port: key, to: other, data: e.data });
           return pair.port2;
         });
         const event = new MessageEvent("message", { data, ports, origin: location.origin });
