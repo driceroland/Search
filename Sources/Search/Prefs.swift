@@ -273,6 +273,14 @@ final class Preferences: ObservableObject {
     @Published var cardsInFullScreen: Bool {
         didSet { store.set(cardsInFullScreen, forKey: "layout.cardsFullScreen") }
     }
+    /// The page's address always in sight (see AddressLine.swift).
+    @Published var addressLine: Bool {
+        didSet { store.set(addressLine, forKey: "address.shown") }
+    }
+    /// How wide it is before the tabs across the top.
+    @Published var addressWidth: AddressWidth {
+        didSet { store.set(addressWidth.rawValue, forKey: "address.width") }
+    }
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
     }
@@ -1039,6 +1047,8 @@ final class Preferences: ObservableObject {
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
         cardsInFullScreen = store.bool(forKey: "layout.cardsFullScreen")
+        addressLine = store.bool(forKey: "address.shown")
+        addressWidth = store.string(forKey: "address.width").flatMap(AddressWidth.init) ?? .small
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
@@ -1291,6 +1301,8 @@ final class Preferences: ObservableObject {
             .flatMap { Preferences.sidePanelWidths.contains($0) ? $0 : nil }, or: 380)
         take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)
         take(\.cardsInFullScreen, store.bool(forKey: "layout.cardsFullScreen"))
+        take(\.addressLine, store.bool(forKey: "address.shown"))
+        take(\.addressWidth, "address.width", store.string(forKey: "address.width").flatMap(AddressWidth.init), or: .small)
         take(\.bounces, store.bool(forKey: "pages.bounce"))
         Swipe.bounces = bounces
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)

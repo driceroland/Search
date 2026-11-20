@@ -198,6 +198,12 @@ enum SettingsIndex {
               title: "Shorter tab bar", detail: "Only a few points above and below the tabs, for more of the page",
               keys: ["tabs.compact"], words: ["compact", "slim", "thin", "height", "padding", "tab bar", "toolbar"],
               parent: "tabs.layout"),
+        .init(id: "address.shown", group: "window", icon: "link",
+              title: "Always show the address bar", detail: "The page's full address, to type in",
+              keys: ["address.shown"], words: ["address bar", "url", "location", "url bar", "omnibox", "full address"]),
+        .init(id: "address.width", group: "window", icon: "arrow.left.and.right",
+              title: "Address width", detail: "Before the tabs across the top",
+              keys: ["address.width"], words: ["address bar", "url", "width", "wide"], parent: "address.shown"),
         .init(id: "sidebar.roomy", group: "tablook", icon: "textformat.size.larger",
               title: "Roomier tabs", detail: "Taller rows and larger titles in the column",
               keys: ["sidebar.roomy"], words: ["bigger", "larger", "text size", "accessibility"], parent: "tabs.layout"),
@@ -620,6 +626,7 @@ enum SettingsIndex {
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
+        case "address.width": return prefs.addressLine && !prefs.sidebar
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
@@ -640,7 +647,7 @@ enum SettingsIndex {
         switch item.id {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "inspector.dark": return "Only while Search isn't set to Dark"
-        case "toolbar.left", "tabs.compact": return "Only with the tabs across the top"
+        case "toolbar.left", "tabs.compact", "address.width": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "profiles.oneWindow": return "Only with more than one profile"

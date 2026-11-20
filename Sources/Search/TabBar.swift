@@ -25,7 +25,10 @@ struct TabBar: View {
     @State private var nearby = false
     @State private var plussed = false
     /// The helm's width when it stands before the tabs rather than after them.
-    private var leading: CGFloat { browser.prefs.navigationLeft ? Metrics.helm - 8 + Metrics.tabGap : 0 }
+    private var leading: CGFloat {
+        (browser.prefs.navigationLeft ? Metrics.helm - 8 + Metrics.tabGap : 0)
+            + (browser.prefs.addressLine ? browser.prefs.addressWidth.width + AddressLine.after + Metrics.tabGap : 0)
+    }
     /// How wide the doors at the far end are, extension buttons included.
     @State private var doors: CGFloat = 0
     /// The space whose run was last brought to its tab: another one is a
@@ -60,6 +63,13 @@ struct TabBar: View {
                     // after a switch.
                     // The profile, once there is more than one (see Profiles.swift).
                     if Profiles.shared.several { ProfileBadge(browser: browser) }
+                    // The page's address, when it is to be in sight: before the tabs.
+                    if browser.prefs.addressLine {
+                        AddressLine(browser: browser)
+                            .frame(width: browser.prefs.addressWidth.width)
+                            .padding(.trailing, AddressLine.after)
+                            .zIndex(2)
+                    }
                     if browser.prefs.usesSpaces { SpaceDot(browser: browser).zIndex(1) }
 
                     // The tabs, in a run of their own. While they fit, it is
