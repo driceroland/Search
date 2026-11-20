@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Arc-style tab popup, off unless you turn it on in Settings › Spaces & Pins › Opening and starting, with the new tab in a floating field: as you type in ⌘T's field, the open tabs that match come first, then your pins, then the places a new tab would go, and the best match is picked as you type: an open tab, else a pin, else the place from history the field completes to. Return switches to it instead of opening the page again, and the field keeps what you typed, with the rest of the tab's address after it when you typed its start. ↑ lets go of the tab, and Return opens what you typed.
+
 ### Held back
 
 Not in this version, kept on main for a later one:

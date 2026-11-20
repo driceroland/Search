@@ -1770,6 +1770,11 @@ final class Bench {
                     "on": browser.prefs.engineSuggests, "shy": browser.active?.shy ?? false,
                     "address": browser.active?.address?.absoluteString ?? "",
                     "pending": browser.active?.pending?.absoluteString ?? "",
+                    // The row Return takes, or -1 for what was typed.
+                    "picked": browser.picked ?? -1,
+                    // What the field shows: what was typed and its grey ending,
+                    // or the row walked to.
+                    "completed": browser.completed,
                 ]
                 out.merge(extra) { _, new in new }
                 return out

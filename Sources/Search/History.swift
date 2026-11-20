@@ -13,6 +13,8 @@ struct Suggestion: Identifiable, Equatable {
     let kind: Kind
     /// Set when this is a page you already have open somewhere.
     var tab: UUID?
+    /// Set when that open page is a pin, for the row to say so.
+    var pinned = false
 
     enum Kind: Equatable {
         /// A page that is open right now.
