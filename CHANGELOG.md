@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Changed
+
+- Right-click one of several tabs picked with ⌘ or ⇧ and the menu lists only what can be done to all of them, and does it to all of them: Move to Group, Pin or Unpin, Move to Space, Open in Split View, Move to Window, Copy Addresses, Mute, Put to Sleep, Close and Close Other Tabs. An action shows only when every picked tab can take it, so a pin among loose tabs leaves Pin out rather than pinning some. Moving them to a space with other sign-ins asks once, not once a tab. Rename, Site Information… and the rest that name one tab wait for one.
+
 ### Held back
 
 Not in this version, kept on main for a later one:

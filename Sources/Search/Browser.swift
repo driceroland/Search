@@ -4308,7 +4308,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// The tabs picked in the column (⌘- or ⇧-click) that are shown, in the
     /// column's order.
-    private var pickedTabs: [Tab] {
+    var pickedTabs: [Tab] {
         selectableTabs.filter { selectedTabIDs.contains($0.id) }
     }
 
@@ -4934,6 +4934,19 @@ final class Browser: NSObject, ObservableObject {
         select(keep)
     }
 
+    /// Everything but the tabs picked in the column, and the pages paired
+    /// with them, as Close Other Tabs leaves one.
+    func closeOthers(but keep: [Tab]) {
+        guard let first = keep.first else { return }
+        let kept = Set(keep.flatMap { split(for: $0)?.tabs ?? [$0.id] })
+        let front = keep.first { $0.id == activeID } ?? first
+        select(front)
+        for tab in tabs.filter({ !kept.contains($0.id) }) {
+            close(tab)
+        }
+        select(front)
+    }
+
     /// The row already follows the groups' order, including folded members.
     /// Both pages of the clicked split stay; pins keep their places too.
     func tabsBelow(_ tab: Tab) -> [Tab] {
@@ -5324,6 +5337,57 @@ final class Browser: NSObject, ObservableObject {
         writeSession(now: true)
         if let row = parked[destination.id] { writeSession(now: true, space: destination.id, row: row) }
         announce("Moved \(group.name) to \(destination.name)")
+    }
+
+    /// Move to Space with several tabs picked: each goes as Move to Space
+    /// takes one, and a space with other sign-ins asks first only when a
+    /// page has unsaved form entries, once for all of them.
+    func move(_ moving: [Tab], toSpace id: UUID, then: (() -> Void)? = nil) {
+        guard prefs.usesSpaces, id != spaceID,
+              let destination = spaces.first(where: { $0.id == id })
+        else { return }
+        let members = moving.filter { tab in
+            tabs.contains { $0.id == tab.id } && !tab.bench && !tab.everywhere
+                && tab.address.flatMap({ Browser.extensionHost(of: $0) }) == nil
+        }
+        guard !members.isEmpty else { return }
+        let from = spaceID
+        let complete: () -> Void = { [weak self] in
+            guard let self, self.spaceID == from else { return }
+            let going = members.filter { tab in self.tabs.contains { $0.id == tab.id } }
+            guard !going.isEmpty else { return }
+            // The tab on screen goes too: the nearest one staying comes to
+            // the front, not each of the moving tabs in turn on the way out.
+            if let activeID = self.activeID, going.contains(where: { $0.id == activeID }) {
+                let ids = Set(going.map(\.id))
+                let at = self.tabs.firstIndex { $0.id == activeID } ?? 0
+                let after = self.tabs[at...].first { !ids.contains($0.id) && self.standsInRow($0) }
+                let before = self.tabs[..<at].last { !ids.contains($0.id) && self.standsInRow($0) }
+                if let next = after ?? before { self.select(next, floatPrevious: false) }
+            }
+            for tab in going { self.finishMove(tab, toSpace: id, quietly: true) }
+            self.writeSession(now: true)
+            if let row = self.parked[id] { self.writeSession(now: true, space: id, row: row) }
+            self.announce("Moved \(going.count) tabs to \(destination.name)")
+            then?()
+        }
+        let store = Spaces.store(for: id)
+        guard members.contains(where: { !$0.shy && $0.store !== store }) else { return complete() }
+        var unsaved = false
+        let asked = DispatchGroup()
+        for tab in members where !tab.shy && tab.store !== store {
+            asked.enter()
+            tab.unsaved { if $0 { unsaved = true }; asked.leave() }
+        }
+        asked.notify(queue: .main) {
+            guard unsaved else { return complete() }
+            Ask.sure(
+                "Move Tabs?",
+                detail: "A page among these tabs has unsaved form entries. They will reopen in “\(destination.name)” with that Space’s sign-ins, so the entries may be lost.",
+                confirm: "Move",
+                then: complete
+            )
+        }
     }
 
     @discardableResult
