@@ -22,6 +22,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Stylus's button opens its popup, and the popup opens its style manager. In 1.0.15 the popup stayed at its first frame ("Toggle styles" and ⚙), so the click seemed to do nothing: Stylus reaches its worker over a port handed to `navigator.serviceWorker`, which got through from 1.0.16 on ([#1258](https://github.com/driceroland/Search/pull/1258)). A probe now checks it with Stylus from the Chrome Web Store: `python3 Tests/extension_stylus.py`. Reported by email
 
+### Changed
+
+- Settings › Appearance › Tabs show says what the choice is, "A letter or the site's icon"; where it shows, beside the title and on a pinned square, is behind the (i). The line only said where, and tabs wearing letters were taken for site icons that hadn't loaded ([#1271](https://github.com/driceroland/Search/issues/1271))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
