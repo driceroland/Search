@@ -3536,7 +3536,8 @@ final class Browser: NSObject, ObservableObject {
         writeSession(now: true)
     }
 
-    /// Arc's sidebar brought over (see ImportArc.swift). Each of its spaces
+    /// Arc's sidebar brought over (see ImportArc.swift), or Zen's spaces read
+    /// into its shape (see ImportZen.swift). Each of its spaces
     /// becomes a space here — the one of the same name if there is one,
     /// signed in with the others when Arc's used its first profile — its
     /// pinned list the space's tabs, asleep until gone to, folders opened
@@ -3579,8 +3580,8 @@ final class Browser: NSObject, ObservableObject {
                 if let same = mine.first(where: { $0.name.localizedCaseInsensitiveCompare(arc.name) == .orderedSame }) {
                     targets.append((same.id, arc, profile))
                 } else {
-                    let space = Space(id: UUID(), name: arc.name, colour: 0, icon: arc.symbol, sharesSignIns: true,
-                                      profile: profile == Profile.personalID ? nil : profile)
+                    let space = Space(id: UUID(), name: arc.name, colour: arc.colour, icon: arc.symbol, sharesSignIns: true,
+                                      profile: profile == Profile.personalID ? nil : profile, gradient: arc.gradient)
                     all.append(space)
                     targets.append((space.id, arc, profile))
                     made += 1
@@ -3662,7 +3663,8 @@ final class Browser: NSObject, ObservableObject {
         return (made, pins, added)
     }
 
-    /// Another Chromium browser's open tabs (see ImportSession.swift), from
+    /// Another browser's open tabs (see ImportSession.swift, and
+    /// MozillaSession for Firefox and Zen), from
     /// the snapshot read when the sheet counted them, into this space: its
     /// pinned tabs as pins, the rest asleep at the end of the row, a grouped
     /// tab in the group of that name, made if missing and folded as it was.

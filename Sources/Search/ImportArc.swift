@@ -32,6 +32,10 @@ struct ArcSidebar: Equatable {
         var profile: String
         /// In Arc's order, folders kept as folders.
         var pinned: [Node]
+        /// One of Spaces.colours, and a gradient over it, for a browser
+        /// that keeps one (Zen's space themes); Arc's spaces come without.
+        var colour = 0
+        var gradient: SpaceGradient? = nil
     }
     /// The icons at the top, shared by every space of their profile.
     var favorites: [Item]
@@ -174,7 +178,7 @@ enum Arc {
     }
 
     /// A web address, with any password in it left behind.
-    private static func page(_ text: String?) -> URL? {
+    static func page(_ text: String?) -> URL? {
         guard let text, var parts = URLComponents(string: text),
               let scheme = parts.scheme?.lowercased(), scheme == "http" || scheme == "https"
         else { return nil }
@@ -183,7 +187,7 @@ enum Arc {
         return parts.url
     }
 
-    private static func named(_ text: String?) -> String? {
+    static func named(_ text: String?) -> String? {
         guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
         return String(trimmed.prefix(300))
     }
@@ -201,9 +205,11 @@ enum Arc {
 
     /// Arc's emoji as the nearest of Search's space pictures (Spaces.icons),
     /// then the space's name, then a briefcase. The one table for both.
-    static func symbol(emoji: String?, arcIcon: String? = nil, name: String) -> String {
-        // One of Arc's own icons, {"icon": "bulb"}, in place of an emoji.
+    static func symbol(emoji: String?, arcIcon: String? = nil, zenIcon: String? = nil, name: String) -> String {
+        // One of Arc's own icons, {"icon": "bulb"}, in place of an emoji,
+        // or one of Zen's, by the name of its picture ("game-controller").
         if let arcIcon, let symbol = byArcIcon[arcIcon.lowercased()] { return symbol }
+        if let zenIcon, let symbol = byZenIcon[zenIcon.lowercased()] { return symbol }
         if let emoji {
             // The same emoji with or without the mark asking for its
             // coloured form (U+FE0F), which Arc writes on some.
@@ -230,6 +236,37 @@ enum Arc {
         "leaf": "leaf",
         "pizza": "cup.and.saucer",
     ]
+
+    /// Zen's space icons, by the name of the picture it draws
+    /// (chrome://browser/skin/zen-icons/selectable/<name>.svg).
+    private static let byZenIcon: [String: String] = {
+        var out: [String: String] = [:]
+        let groups: [(String, [String])] = [
+            ("airplane", ["airplane", "globe", "globe-1", "map", "location", "navigate", "planet"]),
+            ("dumbbell", ["american-football", "baseball", "weight"]),
+            ("cart", ["basket", "card", "wallet", "coins", "logo-usd", "shirt", "present"]),
+            ("house", ["bed"]),
+            ("book", ["book", "bookmark", "page", "logo-rss"]),
+            ("briefcase", ["briefcase", "inbox", "mail", "stats-chart", "time", "call", "chat"]),
+            ("paintpalette", ["brush", "palette", "shapes"]),
+            ("camera", ["image"]),
+            ("chevron.left.forwardslash.chevron.right", ["bug", "code", "logo-github", "extension-puzzle", "build", "construct"]),
+            ("terminal", ["terminal"]),
+            ("cup.and.saucer", ["cafe", "cutlery", "fast-food", "pizza", "egg", "ice-cream"]),
+            ("gamecontroller", ["game-controller"]),
+            ("heart", ["heart", "people"]),
+            ("leaf", ["leaf", "water", "paw", "fish"]),
+            ("lightbulb", ["lightning", "flame"]),
+            ("brain.head.profile", ["flask", "nuclear"]),
+            ("graduationcap", ["school"]),
+            ("music.note", ["music", "volume-high"]),
+            ("film", ["video", "ticket"]),
+            ("sparkles", ["star", "star-1", "tada", "rocket"]),
+            ("beach.umbrella", ["sun"]),
+        ]
+        for (symbol, names) in groups { for name in names { out[name] = symbol } }
+        return out
+    }()
 
     private static let byEmoji: [(String, [String])] = [
         ("briefcase", ["💼", "👔", "📊", "📈", "🗂"]),
@@ -276,14 +313,28 @@ enum Arc {
 }
 
 extension ImportSource {
-    /// Arc's spaces and pins, nil for any other browser.
+    /// The browser's spaces and pins — Arc's sidebar, or Zen's spaces read
+    /// into the same shape (see ImportZen.swift) — nil for any other.
     func arcSidebar(profile: String?) -> ArcSidebar? {
-        guard case .chromium(let source) = self, source.name == "Arc" else { return nil }
-        return Arc.sidebar(profile: profile)
+        switch self {
+        case .chromium(let source) where source.name == "Arc": return Arc.sidebar(profile: profile)
+        case .mozilla(let source) where source.keepsSpaces: return Zen.sidebar(in: source, profile: profile)
+        default: return nil
+        }
     }
 
     func arcCounts(profile: String?) -> (spaces: Int, pinned: Int)? {
-        guard case .chromium(let source) = self, source.name == "Arc" else { return nil }
-        return Arc.counts(profile: profile)
+        switch self {
+        case .chromium(let source) where source.name == "Arc": return Arc.counts(profile: profile)
+        case .mozilla(let source) where source.keepsSpaces: return Zen.counts(in: source, profile: profile)
+        default: return nil
+        }
+    }
+
+    /// Whether its open tabs are its pinned tabs again, as Arc's session
+    /// file holds what its spaces do: then they don't come both ways.
+    var sessionRepeatsSpaces: Bool {
+        if case .chromium(let source) = self { return source.name == "Arc" }
+        return false
     }
 }
