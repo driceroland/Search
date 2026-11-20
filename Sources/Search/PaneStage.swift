@@ -180,6 +180,8 @@ final class PaneStage: NSView {
     private var queued = false
     private var monitor: Any?
     private var told: [Tab.ID: CGRect] = [:]
+    /// Where the pages are while a divider is held (see dividerMoved).
+    private var held: [Tab.ID: CGRect] = [:]
 
     /// Each page's share while a divider is held; nil otherwise.
     private var live: [Double]?
@@ -467,9 +469,11 @@ final class PaneStage: NSView {
             host.isHidden = page == nil || page?.width == 0
             if let page, host.frame != page { host.frame = page }
         }
-        guard live == nil else { return }
         var now: [Tab.ID: CGRect] = [:]
         for (index, tab) in tabs.enumerated() where shown(index) { now[tab.id] = frames[index] }
+        // While a divider is held, kept for dividerMoved, which tells
+        // SwiftUI only when it draws one of the pages.
+        guard live == nil else { held = now; return }
         if now != told {
             told = now
             let frames = now
@@ -545,6 +549,16 @@ final class PaneStage: NSView {
         // the hand.
         needsLayout = true
         layoutSubtreeIfNeeded()
+        // A page SwiftUI draws (Settings, History, an empty page) has
+        // no view on the stage to resize: it's placed from the frames the
+        // stage tells, which waited for the button to come up, so it kept
+        // its old width while the divider moved off and left the ground in
+        // between. Told now, as the stage lays out, it follows the hand.
+        // Two web pages tell nothing, as before.
+        if held != told, tabs.indices.contains(where: { shown($0) && page(tabs[$0]) == nil }) {
+            told = held
+            onFrames?(held)
+        }
     }
 
     fileprivate func dividerEnded() {
