@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Stylus's button opens its popup, and the popup opens its style manager. In 1.0.15 the popup stayed at its first frame ("Toggle styles" and ⚙), so the click seemed to do nothing: Stylus reaches its worker over a port handed to `navigator.serviceWorker`, which got through from 1.0.16 on ([#1258](https://github.com/driceroland/Search/pull/1258)). A probe now checks it with Stylus from the Chrome Web Store: `python3 Tests/extension_stylus.py`. Reported by email
 - Passkey sign-in works in Peek and small link windows, including after navigating to another site. Their committed page address was never recorded, so Search refused the request before the Touch ID sheet could appear (#1263). `python3 Tests/passkey_overlays.py` checks it.
 
 ### Held back
