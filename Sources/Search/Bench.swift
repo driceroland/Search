@@ -3713,7 +3713,10 @@ final class Bench {
             // The column's corner — the lights, the pins, the first rows — is
             // what moves; the whole window would take longer to draw than a
             // frame lasts. Written out once the filming is over.
-            let corner = NSRect(x: 0, y: frame.bounds.height - 460, width: min(380, frame.bounds.width), height: 460)
+            // With "bottom", the column's foot instead.
+            let corner = request["bottom"] as? Bool == true
+                ? NSRect(x: 0, y: 0, width: min(380, frame.bounds.width), height: 200)
+                : NSRect(x: 0, y: frame.bounds.height - 460, width: min(380, frame.bounds.width), height: 460)
             // The pages under it take a third of a second each to draw into a
             // picture, longer than the whole animation: they sit the filming
             // out, and come back after.
@@ -3753,6 +3756,8 @@ final class Bench {
             case "peek": browser.peek(true)
             case "unpeek": browser.peek(false)
             case "fold": browser.toggleFold()
+            // The column let go at a width, as its edge is (sidebar.doorsUp).
+            case "width": browser.prefs.sideWidth = CGFloat(request["width"] as? Double ?? Double(Metrics.side))
             case "select": if let tab = find(request, in: browser) { browser.select(tab) }
             case "swipe":
                 // Two fingers along the column, a step every frame for the

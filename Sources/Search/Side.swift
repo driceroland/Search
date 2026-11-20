@@ -104,6 +104,56 @@ struct SideBar: View {
         browser.fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors))
     }
 
+    /// What is left of the lights' row right of back, forward and reload.
+    private var beyondHelm: CGFloat { SideBar.beyondHelm(width, fullScreen: browser.fullScreen) }
+    /// The room right of the helm at the width let go at, for the doors up
+    /// there: how many pinned extensions show, not changing under the pointer.
+    private var upRoom: CGFloat {
+        max(SideBar.beyondHelm(prefs.columnWidth, fullScreen: browser.fullScreen), SideFoot.keptWidth(prefs))
+    }
+    private var doorsUp: Bool { SideBar.doorsUp(prefs, width: width, fullScreen: browser.fullScreen) }
+    /// Where the doors are: up in the lights' row or down at the foot. Not
+    /// doorsUp itself: while the edge is held, the doors up there stay up as
+    /// it pushes them under the helm, and only go once they are under it
+    /// all; let go, they stay only if they fit (settleDoors).
+    @State private var drawnUp: Bool?
+    private var doorsTop: Bool { drawnUp ?? doorsUp }
+    private var doorsFoot: Bool { !doorsTop }
+    /// Room past what the doors need before, with the edge held, they come
+    /// back up: on the line itself, they went up and down with the pointer.
+    private static let doorsSlack: CGFloat = 12
+    /// One end going, quickly, and the other coming after it, slower: at
+    /// once, both were half there together and the doors blinked. Short and
+    /// plain, so it is seen to happen and not watched. The rows' end makes
+    /// room back down at this pace too.
+    private static var doorsOut: Animation? {
+        Motion.reduced ? nil : .easeIn(duration: 0.1)
+    }
+    /// The top fading back in, after the foot has gone.
+    private static var doorsIn: Animation? {
+        Motion.reduced ? nil : .easeOut(duration: 0.5).delay(0.1)
+    }
+    /// The foot rising from under the column's edge with the rows' end:
+    /// soft to start and to stop, so the rise itself is what is seen.
+    private static var footIn: Animation? {
+        Motion.reduced ? nil : .timingCurve(0.25, 0.1, 0.25, 1, duration: 0.45)
+    }
+    /// The foot's height in a row: its doors and the margin beneath.
+    private static let footBox: CGFloat = 26 + 10
+
+    static func beyondHelm(_ width: CGFloat, fullScreen: Bool) -> CGFloat {
+        let lights = fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors))
+        return width - 20 - lights - Metrics.helm
+    }
+    /// The foot's doors up in the lights' row (Preferences.doorsUp): only
+    /// with titles, and only where the doors that always show fit there —
+    /// downloads counted whether running or not, so a download starting
+    /// doesn't send them all back down.
+    @MainActor static func doorsUp(_ prefs: Preferences, width: CGFloat, fullScreen: Bool) -> Bool {
+        prefs.doorsUp && prefs.sidebar && !prefs.iconColumn
+            && beyondHelm(width, fullScreen: fullScreen) >= SideFoot.keptWidth(prefs)
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             // Not under the card for a new space: it isn't made of views that
@@ -128,7 +178,8 @@ struct SideBar: View {
                     Color.clear
                         .frame(width: Metrics.helm)
                         .allowsHitTesting(false)
-                    DragStrip(menu: columnMenu)
+                    // The doors, when they are up here, at its far end.
+                    DragStrip(trailing: doorsTop ? upRoom + 10 : 0, menu: columnMenu)
                 }
                 .frame(height: Metrics.strip)
             }
@@ -152,6 +203,20 @@ struct SideBar: View {
                         Spacer(minLength: 0)
                     }
                     .frame(height: Metrics.strip)
+                    // At the column's far end, fading out as the foot rises,
+                    // and back (settleDoors). Laid over the row, the width
+                    // let go at, not the one held: sized to the edge as it
+                    // moved, they were laid out again at every frame of it.
+                    .overlay(alignment: .trailing) {
+                        if prefs.doorsUp {
+                            SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, up: true, width: upRoom)
+                                .fixedSize()
+                                .opacity(doorsTop ? 1 : 0)
+                                .animation(doorsTop ? SideBar.doorsIn : SideBar.doorsOut, value: doorsTop)
+                                .allowsHitTesting(doorsTop)
+                                .accessibilityHidden(!doorsTop)
+                        }
+                    }
                 }
 
                 // The spaces side by side, as pages: two fingers sideways move
@@ -164,7 +229,12 @@ struct SideBar: View {
             .padding(.horizontal, 10)
             // Clear of the foot, which sits over the sidebar's bottom edge,
             // and of what plays in another tab, over the foot.
-            .padding(.bottom, footHeight + (browser.player == nil ? 0 : rowHeight + SideBar.playerGap)
+            // The rows' end with the foot, as it rises and goes: this inset
+            // alone animated, not the rows under it, which only take it.
+            .animation(doorsFoot ? SideBar.footIn : SideBar.doorsOut) {
+                $0.modifier(EndInset(bottom: footHeight))
+            }
+            .padding(.bottom, (browser.player == nil ? 0 : rowHeight + SideBar.playerGap)
                      + (agentHere && !icons ? SideBar.agentRow + SideBar.playerGap : 0))
 
             VStack(spacing: 0) {
@@ -184,15 +254,43 @@ struct SideBar: View {
                         .padding(.bottom, SideBar.playerGap)
                         .transition(.opacity)
                 }
+                // Up from under the column's edge as the top goes, with the
+                // rows' end: moved, not resized, as the edge held resizes it
+                // every frame; by Rise, as a plain offset only jumped there.
+                // Going, its room shuts at once and it is gone with it.
                 foot
+                    // As far as the rows' end moves (10 to footBox), so the
+                    // two go up together, the doors just under the edge.
+                    .modifier(Rise(y: doorsFoot ? 0 : SideBar.footBox - 10))
+                    .animation(SideBar.footIn, value: doorsFoot)
+                    .frame(height: icons ? nil : doorsFoot ? SideBar.footBox : 0, alignment: .top)
+                    .clipped()
+                    .transaction(value: doorsFoot) { $0.animation = nil }
+                    .allowsHitTesting(doorsFoot)
+                    .accessibilityHidden(!doorsFoot)
             }
         }
+        .onChange(of: width) { _, _ in settleDoors() }
+        .onChange(of: live == nil) { _, _ in settleDoors() }
         // Bench "edgetime": the edge held at a width, or let go (nil).
         .onReceive(NotificationCenter.default.publisher(for: Bench.edgeHeld)) { note in
             guard Store.testing else { return }
             live = note.object as? CGFloat
             grabbed = live == nil ? nil : grabbed ?? prefs.columnWidth
             onDrag(live)
+        }
+        .onChange(of: doorsUp) { was, _ in
+            // Where they were drawn, kept from here on: left to doorsUp,
+            // they were already at the other end by the time settleDoors
+            // looked, and went there without moving.
+            if drawnUp == nil, !icons, prefs.doorsUp, prefs.sidebar {
+                drawnUp = was
+            }
+            settleDoors()
+        }
+        .onChange(of: icons) { _, _ in
+            // Into icons only or out of it, the doors are simply where they go.
+            drawnUp = nil
         }
         .environment(\.greys, greys)
         .frame(width: width)
@@ -1369,7 +1467,8 @@ struct SideBar: View {
     /// The foot's door and its margin beneath; with icons only, its doors
     /// one above the other.
     private var footHeight: CGFloat {
-        icons ? CGFloat(SideFoot.doors(prefs, browser.fetches, hanging: browser.downloadsHanging)) * 28 + 8 : 26 + 10
+        if !doorsFoot { return 10 }
+        return icons ? CGFloat(SideFoot.doors(prefs, browser.fetches, hanging: browser.downloadsHanging)) * 28 + 8 : SideBar.footBox
     }
     /// Between what plays in another tab and the foot's doors.
     private static let playerGap: CGFloat = 4
@@ -1393,6 +1492,26 @@ struct SideBar: View {
         }
     }
 
+    /// The doors from one end of the column to the other, the top fading
+    /// as the foot rises, and back: down once they no longer fit, up once
+    /// they do again — with the edge held, a little past that.
+    private func settleDoors() {
+        guard !icons else { return }
+        guard prefs.doorsUp, prefs.sidebar else { drawnUp = nil; return }
+        let up: Bool
+        let kept = SideFoot.keptWidth(prefs)
+        if doorsTop || live == nil {
+            up = doorsUp
+        } else {
+            up = beyondHelm >= kept + SideBar.doorsSlack
+        }
+        guard up != doorsTop else { return }
+        // No withAnimation: each end moves on its own (doorsIn, doorsOut,
+        // footIn, EndInset). Animated as a whole, every row was laid out
+        // again at each frame of it, and the edge held lagged the pointer.
+        drawnUp = up
+    }
+
     /// One small door at the bottom: the settings.
     private var foot: some View {
         SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, vertical: icons, width: width)
@@ -1412,7 +1531,10 @@ private struct SideFoot: View {
     /// The column of icons: one above the other, centred, no pinned
     /// extensions (their list is still the puzzle's).
     var vertical = false
-    /// The column's width, as it is drawn.
+    /// Up in the lights' row, right of back, forward and reload, laid out
+    /// to its far end: `width` is then what that row has left.
+    var up = false
+    /// The column's width, as it is drawn; up, the room right of the helm.
     let width: CGFloat
 
     var body: some View {
@@ -1428,6 +1550,18 @@ private struct SideFoot: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.bottom, 8)
+        } else if up {
+            // The foot's order: the space first, the puzzle at the far end.
+            // The space's name, after a switch, goes to the foot of the page
+            // instead (Browser.switchSpace): beside the dot it would lie
+            // over the helm.
+            HStack(spacing: 2) {
+                if Profiles.shared.several { ProfileBadge(browser: browser) }
+                if prefs.usesSpaces { SpaceDot(browser: browser, names: false) }
+                FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom)
+                BookmarkDoor(browser: browser, arrowEdge: .bottom)
+                ExtensionSlot(browser: browser, edge: .bottom, room: room)
+            }
         } else {
             HStack(spacing: 2) {
                 if Profiles.shared.several { ProfileBadge(browser: browser) }
@@ -1452,6 +1586,15 @@ private struct SideFoot: View {
         return kept
     }
 
+    /// The doors that always show, and downloads, side by side: what the
+    /// lights' row must have to take them (SideBar.doorsUp).
+    @MainActor static func keptWidth(_ prefs: Preferences) -> CGFloat {
+        var kept = 3  // the puzzle, bookmarks and downloads
+        if prefs.usesSpaces { kept += 1 }
+        if Profiles.shared.several { kept += 1 }
+        return CGFloat(kept) * (26 + 2) - 2
+    }
+
     /// How many pinned extensions fit beside the doors that stay. Every door
     /// is 26 points, with 2 between them.
     private var room: Int {
@@ -1459,8 +1602,9 @@ private struct SideFoot: View {
         var kept = 2  // the puzzle and bookmarks
         if prefs.usesSpaces { kept += 1 }
         if Profiles.shared.several { kept += 1 }
-        if FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
-        let free = width - 2 * 10 + 2 - CGFloat(kept) * door
+        // Up, downloads keep their place whether running or not.
+        if up || FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
+        let free = (up ? width : width - 2 * 10) + 2 - CGFloat(kept) * door
         return max(0, Int((free / door).rounded(.down)))
     }
 }
@@ -2260,5 +2404,24 @@ struct PinCarried: ViewModifier {
         let point = CGPoint(x: start.midX + travel.width, y: start.midY + travel.height)
         func distance(_ cell: CGRect) -> CGFloat { hypot(cell.midX - point.x, cell.midY - point.y) }
         return cells.indices.min { distance(cells[$0]) < distance(cells[$1]) } ?? from
+    }
+}
+
+/// Room left under the rows, laid out again on every frame of a change to it.
+private struct EndInset: ViewModifier, Animatable {
+    var bottom: CGFloat
+    var animatableData: CGFloat { get { bottom } set { bottom = newValue } }
+    func body(content: Content) -> some View { content.padding(.bottom, bottom) }
+}
+
+/// Down by y, drawn again on every frame of a change to it.
+private struct Rise: GeometryEffect {
+    var y: CGFloat
+    var animatableData: CGFloat {
+        get { y }
+        set { y = newValue }
+    }
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        ProjectionTransform(CGAffineTransform(translationX: 0, y: y))
     }
 }
