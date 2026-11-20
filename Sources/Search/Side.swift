@@ -187,6 +187,13 @@ struct SideBar: View {
                 foot
             }
         }
+        // Bench "edgetime": the edge held at a width, or let go (nil).
+        .onReceive(NotificationCenter.default.publisher(for: Bench.edgeHeld)) { note in
+            guard Store.testing else { return }
+            live = note.object as? CGFloat
+            grabbed = live == nil ? nil : grabbed ?? prefs.columnWidth
+            onDrag(live)
+        }
         .environment(\.greys, greys)
         .frame(width: width)
         .frame(maxHeight: .infinity)
@@ -322,7 +329,13 @@ struct SideBar: View {
             // Apart from this space's own rows: those, made again as the
             // swipe set off and as it ended, held the rows back from the
             // fingers for up to a tenth of a second.
-            SwipeSided(side: browser.mapDrawn) { _ in others }
+            //
+            // Not while the edge is held: out of sight then, as no swipe
+            // comes, every space's rows in it were laid out again at each
+            // width the edge went through, and it lagged the pointer (Bench
+            // "edgetime": a frame in ten 30–120ms, now 12ms). Made again as
+            // it is let go, in the time the column's own rows take anyway.
+            if live == nil { SwipeSided(side: browser.mapDrawn) { _ in others } }
         }
         // The card for a new space, with its field, only while the fingers
         // bring it. Over the pages, not among them: among them, each swipe's
