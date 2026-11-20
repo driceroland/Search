@@ -1761,6 +1761,9 @@ extension EnvironmentValues {
 private struct PinSquare: View, Equatable {
     @Environment(\.greys) private var greys
     @Environment(\.tabShortcutNumbers) private var shortcutNumbers
+    /// Drawn in the map of every space's rows, not the column (see SideRow's
+    /// editing): its letter is never changed there.
+    @Environment(\.inSpaceMap) private var inMap
     let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
@@ -1815,7 +1818,7 @@ private struct PinSquare: View, Equatable {
 
     var body: some View {
         Group {
-            if lettering {
+            if lettering, !inMap {
                 PinField(browser: browser, tab: tab)
             } else if let number = shortcutNumbers[tab.id] {
                 TabShortcutNumber(number: number)
@@ -1937,7 +1940,10 @@ private struct SideRow: View, Equatable {
         self.pill = pill
         self.close = close
         self.interactive = interactive
-        editing = browser.editingTab == tab.id
+        // Only the column's own row: the map of every space's rows (SideBar.pages)
+        // holds this space's rows too, and a second field there took the keys
+        // from this one, which ended the edit as soon as it began.
+        editing = interactive && browser.editingTab == tab.id
         selected = browser.selectedTabIDs.contains(tab.id)
         pickedAmongOthers = browser.isPickedAmongOthers(tab)
         peek = browser.peekFrom == tab.id ? browser.peekTab : nil
