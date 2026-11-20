@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Stylus's button opens its popup, and the popup opens its style manager. In 1.0.15 the popup stayed at its first frame ("Toggle styles" and ⚙), so the click seemed to do nothing: Stylus reaches its worker over a port handed to `navigator.serviceWorker`, which got through from 1.0.16 on ([#1258](https://github.com/driceroland/Search/pull/1258)). A probe now checks it with Stylus from the Chrome Web Store: `python3 Tests/extension_stylus.py`. Reported by email
+
 ### Held back
 
 Not in this version, kept on main for a later one:
