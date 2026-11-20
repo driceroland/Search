@@ -11,6 +11,15 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+
+## 1.0.16 — 20 November 2026
+
 ### Fixed
 
 - The window moves from more of its top: below the tabs and the buttons across the top, not only past the last tab, and above and below back, forward and reload in the column; a double-click there does what a title bar's does. With the tabs down a side, the band along the top of the page that moves the window is half again as tall. Thanks [@BaraaAwwad](https://github.com/BaraaAwwad) ([#1257](https://github.com/driceroland/Search/pull/1257))
@@ -72,13 +81,6 @@ in [ROADMAP.md](ROADMAP.md).
 - View › Actual Size (⌘0) still goes to the page zoom set in Settings › Browsing › Pages › Page zoom, as in Safari, and now says so when that isn't 100%: "Actual Size (95%)". At 100% it reads Actual Size, and the title follows the setting as you change it. `python3 Tests/actual_size_title.py`. Thanks [@flow-digital-ny](https://github.com/flow-digital-ny) for reporting ([#1210](https://github.com/driceroland/Search/issues/1210))
 - The highlight in the Settings sidebar slides to the section you pick, as the live tab's slides in the tab column, with a little give at the end. It jumps as before with Reduce Motion on. Thanks [@aaravmaloo](https://github.com/aaravmaloo) ([#1169](https://github.com/driceroland/Search/pull/1169))
 - A two-finger scroll sideways in Google Sheets, or over anything else on a page that scrolls sideways, scrolls it instead of going back or forward a page, as in Safari. A swipe means Back or Forward only when nothing under the pointer can go further that way and it was already resting at its edge when the fingers set off: a box carried to its edge by the same swipe, or by its glide, is not a swipe, and neither is a quick flick across a busy page's grid, which used to go before the page had said the scroll was its own. A page with nothing to scroll sideways swipes as before. ([#1219](https://github.com/driceroland/Search/issues/1219), [#1184](https://github.com/driceroland/Search/issues/1184)) `python3 Tests/swipe_scrollers.py`
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
-
 
 ## 1.0.15 — 18 November 2026
 

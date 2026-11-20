@@ -38,6 +38,21 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Handoff to your iPhone", detail: "The page in front comes up in your iPhone's and iPad's app switcher.",
+               since: "1.0.16", get: { $0.handoff }, set: { $0.handoff = $1 }),
+        Toggle(title: "Always show the address bar", detail: "The page's full address stays in sight, to type in.",
+               since: "1.0.16", get: { $0.addressLine }, set: { $0.addressLine = $1 }),
+        Toggle(title: "Glass window", detail: "The column and the window's edge as frosted glass over your desktop.",
+               since: "1.0.16", get: { $0.glass }, set: { $0.glass = $1 }),
+        Toggle(title: "Buttons at the top", detail: "The column's bottom buttons beside back, forward and reload.",
+               since: "1.0.16", get: { $0.doorsUp }, set: { $0.doorsUp = $1 }),
+        Toggle(title: "Ask which space a link opens in", detail: "For links from other apps.",
+               since: "1.0.16", get: { $0.asksSpaceForLinks }, set: { $0.asksSpaceForLinks = $1 }),
+        Toggle(title: "Dim sleeping tabs", detail: "A tab put to sleep fades until you come back to it.",
+               since: "1.0.16", get: { $0.dimsSleepingTabs }, set: { $0.dimsSleepingTabs = $1 }),
+        Toggle(title: "High contrast tab text", detail: "Tab titles in full black or white.",
+               since: "1.0.16", get: { $0.highContrastText }, set: { $0.highContrastText = $1 }),
+
         Toggle(title: "⌘1–⌘9 switch spaces", detail: "As in Arc: the tabs move to ⌃1–⌃9.",
                since: "1.0.15", get: { $0.spacesOnCommand }, set: { $0.spacesOnCommand = $1 },
                shown: { $0.usesSpaces }),
@@ -133,6 +148,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.16"),
         Release(version: "1.0.15"),
         Release(version: "1.0.14"),
         Release(version: "1.0.13"),
@@ -193,6 +209,27 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.16", date: "20 November 2026",
+            headline: "Sync with your iPhone, Handoff, and two days of your fixes.",
+            new: [
+                "Sync with iCloud: open tabs, pins, spaces and bookmarks with Search on iPhone, in public beta. Settings › General.",
+                "Handoff of the page in front to your iPhone and iPad. Settings › General.",
+                "The address bar always in sight, a glass window, and buttons at the top. Settings › Appearance.",
+                "Choose the space a link from another app opens in. Settings › Spaces & Pins.",
+            ],
+            better: [
+                "Switching spaces is about three times quicker with many tabs.",
+                "The accounts under a sign-in box answer ↓, ↑ and Return.",
+                "A sideways scroll in Google Sheets scrolls the sheet instead of going back.",
+            ],
+            fixed: [
+                "Swish and other window managers moving the window, and ⌃⌘F.",
+                "Teams' Shared tab, PDFs that stopped zooming, and Zotero Connector.",
+                "⌘S forgetting the hidden column, and spelling corrected with correction off.",
+                "A crash on macOS 27.2.",
+            ]
+        ),
         Notes(
             version: "1.0.15", date: "18 November 2026",
             headline: "Space gradients, extensions that work, coding agents, and a day of your fixes.",
