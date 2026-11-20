@@ -319,7 +319,8 @@ struct ImportPanel: View {
                 Rule()
             }
             // A kind the browser has none of is said so, and can't be picked.
-            Line("Passwords", !source.importsPasswords ? "Not supported for \(source.name)" : preview?.passwords == 0 ? "None in \(source.name)" : source.asksForKey
+            Line("Passwords", !source.importsPasswords ? (!source.passwordsInPasswordsApp ? "Not supported for \(source.name)"
+                                                          : "\(source.name) keeps them in the Passwords app: export them from there and bring in the CSV file") : preview?.passwords == 0 ? "None in \(source.name)" : source.asksForKey
                  ? "macOS asks once for \(source.name)'s keychain key"
                  : "Read from \(source.name)'s own files, unless it has a primary password") {
                 option($wantsPasswords, none: !source.importsPasswords || preview?.passwords == 0)
@@ -345,9 +346,11 @@ struct ImportPanel: View {
                 option($wantsHistory, none: preview?.places == 0)
             }
             // Its open tabs and tab groups, asleep at the end of this space.
-            Rule()
-            Line("Open tabs & tab groups", tabsDetail(preview, source)) {
-                option($wantsTabs, none: !bringsTabs(source))
+            if source.readsOpenTabs {
+                Rule()
+                Line("Open tabs & tab groups", tabsDetail(preview, source)) {
+                    option($wantsTabs, none: !bringsTabs(source))
+                }
             }
             // Arc's own, or Zen's: its spaces, what is pinned in them, its
             // favourites or Essentials.
