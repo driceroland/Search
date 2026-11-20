@@ -152,6 +152,13 @@ struct SideBar: View {
                         Spacer(minLength: 0)
                     }
                     .frame(height: Metrics.strip)
+                    // The page's address, when it is to be in sight.
+                    if prefs.addressLine {
+                        AddressLine(browser: browser, height: prefs.sideRow)
+                            .padding(.bottom, 6)
+                            // Its suggestions hang over the rows below.
+                            .zIndex(1)
+                    }
                 }
 
                 // The spaces side by side, as pages: two fingers sideways move

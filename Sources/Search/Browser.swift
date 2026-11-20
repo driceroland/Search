@@ -479,6 +479,10 @@ final class Browser: NSObject, ObservableObject {
 
     var active: Tab? { tabs.first { $0.id == activeID } }
     var fieldShowing: Bool { editing || active?.isBlank ?? true }
+    /// The editing was started in the address line (AddressLine.swift), not
+    /// by ⌘L: the field is that line's, and its suggestions hang under it.
+    @Published var inlineEdit = false
+    var editingInline: Bool { editing && inlineEdit }
 
     /// What Return in the field will do, which the field says with its
     /// placeholder and a mark before the words: ⌘T, ⌘L and ⌘K raise one field
@@ -7554,6 +7558,7 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘L. The current address comes up selected, so typing over it replaces it
     /// and Escape puts it back.
     func edit() {
+        inlineEdit = false
         // Again while it is up over the page: put away, as Escape would.
         if editing, !summoning, !launching, active?.isBlank == false {
             putAway()

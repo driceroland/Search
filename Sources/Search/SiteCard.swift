@@ -73,6 +73,24 @@ enum SiteCardPanel {
         }
     }
 
+    /// From a button of its own, the address bar's (AddressLine.swift): the
+    /// card under `line`, or put away if it is up. There is no edit to end
+    /// it there, so a click anywhere but the card, or the button again,
+    /// puts it away.
+    static func toggle(for tab: Tab, in browser: Browser, under line: NSView, button: NSView) {
+        guard !isShown else { return hide() }
+        show(for: tab, in: browser, under: line)
+        clicks = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak button] event in
+            MainActor.assumeIsolated {
+                // The button's own click toggles it; the card's is the card's.
+                let onButton = button.map { $0.window === event.window && $0.bounds.contains($0.convert(event.locationInWindow, from: nil)) } ?? false
+                if event.window !== panel, !onButton { hide() }
+            }
+            return event
+        }
+    }
+    private static var clicks: Any?
+
     /// Under `field`, the tab's address, in `browser`'s window.
     private static func show(for tab: Tab, in browser: Browser, under field: NSView) {
         guard let window = field.window else { return }
@@ -83,25 +101,37 @@ enum SiteCardPanel {
         }
         let host = FirstClick(rootView: AnyView(card.fixedSize()))
         let size = host.fittingSize
-        let glass = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
-        glass.material = .menu
-        glass.state = .active
-        glass.wantsLayer = true
-        glass.layer?.cornerRadius = MenuMetrics.corner
-        glass.layer?.cornerCurve = .continuous
-        glass.layer?.masksToBounds = true
-        glass.layer?.borderWidth = 0.5
-        glass.layer?.borderColor = MenuMetrics.edge.cgColor
-        // The material behind the window ignores the layer's corners: a pale
-        // square showed past each rounded one, before macOS 26 and on it too.
-        // A mask rounds the material, and the window's shadow with it.
-        glass.maskImage = Self.rounded(MenuMetrics.corner)
-        host.frame = glass.bounds
-        host.autoresizingMask = [.width, .height]
-        glass.addSubview(host)
+        let ground: NSView
+        if #available(macOS 26, *) {
+            // Liquid Glass, as the Mac's own menus are from macOS 26: in the
+            // frosted menu material beside them, the card looked like a menu
+            // from another version of the system.
+            let pane = NSGlassEffectView(frame: NSRect(origin: .zero, size: size))
+            pane.cornerRadius = MenuMetrics.corner
+            pane.contentView = host
+            ground = pane
+        } else {
+            let glass = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
+            glass.material = .menu
+            glass.state = .active
+            glass.wantsLayer = true
+            glass.layer?.cornerRadius = MenuMetrics.corner
+            glass.layer?.cornerCurve = .continuous
+            glass.layer?.masksToBounds = true
+            glass.layer?.borderWidth = 0.5
+            glass.layer?.borderColor = MenuMetrics.edge.cgColor
+            // The material behind the window ignores the layer's corners: a
+            // pale square showed past each rounded one. A mask rounds the
+            // material, and the window's shadow with it.
+            glass.maskImage = Self.rounded(MenuMetrics.corner)
+            host.frame = glass.bounds
+            host.autoresizingMask = [.width, .height]
+            glass.addSubview(host)
+            ground = glass
+        }
 
         let panel = Panel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.contentView = glass
+        panel.contentView = ground
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -155,6 +185,8 @@ enum SiteCardPanel {
     static func hide() {
         if let resign { NotificationCenter.default.removeObserver(resign) }
         resign = nil
+        if let clicks { NSEvent.removeMonitor(clicks) }
+        clicks = nil
         guard let panel else { return }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)

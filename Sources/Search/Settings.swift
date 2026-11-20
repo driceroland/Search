@@ -588,6 +588,8 @@ struct SettingsPanel: View {
                         set: { on in withAnimation(Motion.glide) { prefs.cards = on } }
                      ))
         case "layout.cardsFullScreen": Switch(on: $prefs.cardsInFullScreen)
+        case "address.shown": Switch(on: $prefs.addressLine)
+        case "address.width": Segmented(options: AddressWidth.allCases.map { ($0, $0.title) }, selection: $prefs.addressWidth)
         case "toolbar.left": Switch(on: $prefs.navigationLeft)
         case "tabs.compact":
             Switch(on: Binding(
