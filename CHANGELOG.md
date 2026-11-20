@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Passkey sign-in works in Peek and small link windows, including after navigating to another site. Their committed page address was never recorded, so Search refused the request before the Touch ID sheet could appear (#1263). `python3 Tests/passkey_overlays.py` checks it.
+
 ### Held back
 
 Not in this version, kept on main for a later one:
