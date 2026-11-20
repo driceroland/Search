@@ -26,6 +26,8 @@ struct SideBar: View {
     private var greys: Greys { onFrame ? .frame : .white }
 
     @Namespace private var pill
+    /// The live tab's glass, when it is glass (LiquidTab.swift).
+    @StateObject private var lens = LensMotion()
 
     @State private var landing = false
     /// The width the column had when the edge was picked up.
@@ -219,12 +221,13 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
-                onFrame ? Palette.frame : Palette.ground
+                // On glass the window's ground shows through (Glass.swift).
+                if !browser.glassUnder { onFrame ? Palette.frame : Palette.ground }
                 if landing { greys.hover }
                 // The space's colour, if it has one: over the ground, so the
                 // column stays opaque and folded out over the page it brings
-                // the same wash along.
-                SpaceWash(look: browser.wash)
+                // the same wash along. On glass the glass wears it.
+                if !browser.glassUnder { SpaceWash(look: browser.wash) }
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
@@ -519,6 +522,9 @@ struct SideBar: View {
                     // rows add up to decides at once, what they measure a
                     // frame later, the larger of the two winning.
                     .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
+                    // The live tab as a pane of Liquid Glass, held to the
+                    // room (LiquidTab.swift). Nothing unless it is on.
+                    .liveLens(browser, motion: lens)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
                         room.height = $0
                         refit()
@@ -1502,16 +1508,30 @@ enum LivePill {
 /// matched with each other and with the column's.
 struct LiveMatch: ViewModifier {
     @Environment(\.inSpaceMap) private var inMap
+    @Environment(\.liquidTabs) private var liquid
     let id: String
     let space: Namespace.ID
+    /// The live tab, for the pane of Liquid Glass laid under it instead
+    /// (LiquidTab.swift): its ground says where it is. Nil where the grey
+    /// stays, as on a pinned square.
+    let tab: AnyHashable?
 
-    init(id: String, in space: Namespace.ID) {
+    init(id: String, in space: Namespace.ID, tab: AnyHashable? = nil) {
         self.id = id
         self.space = space
+        self.tab = tab
     }
 
     func body(content: Content) -> some View {
-        if inMap { content } else { content.matchedGeometryEffect(id: id, in: space) }
+        if inMap {
+            content
+        } else if liquid, let tab {
+            content
+                .matchedGeometryEffect(id: id, in: space)
+                .anchorPreference(key: LiveLensKey.self, value: .bounds) { [LiveLensMark(tab: tab, anchor: $0)] }
+        } else {
+            content.matchedGeometryEffect(id: id, in: space)
+        }
     }
 }
 
@@ -1670,6 +1690,7 @@ private struct LooseRow: Identifiable {
 /// again for anything that changed in the window. The Browser is kept for
 /// what a click on the row does.
 private struct SideRow: View, Equatable {
+    @Environment(\.liquidTabs) private var liquid
     @Environment(\.greys) private var greys
     @Environment(\.tabShortcutNumbers) private var shortcutNumbers
     let browser: Browser
@@ -1935,7 +1956,8 @@ private struct SideRow: View, Equatable {
     private var ground: some View {
         if live {
             ZStack(alignment: .leading) {
-                Rectangle().fill(greys.wash)
+                // Under a pane of Liquid Glass, the glass is its ground.
+                Rectangle().fill(liquid ? Color.clear : greys.wash)
                 if prefs.showsReading {
                     GeometryReader { geo in
                         ReadingFill(meter: tab.meter, width: geo.size.width)
@@ -1943,7 +1965,7 @@ private struct SideRow: View, Equatable {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .modifier(LiveMatch(id: LivePill.id(browser), in: pill))
+            .modifier(LiveMatch(id: LivePill.id(browser), in: pill, tab: tab.id))
         } else if selected {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(greys.wash)

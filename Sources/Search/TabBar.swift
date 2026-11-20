@@ -11,6 +11,8 @@ struct TabBar: View {
     @ObservedObject var browser: Browser
 
     @Namespace private var pill
+    /// The live tab's glass, when it is glass (LiquidTab.swift).
+    @StateObject private var lens = LensMotion()
     /// The neighbouring spaces' own grey, apart from this one's.
     @Namespace private var above
     @Namespace private var below
@@ -146,6 +148,9 @@ struct TabBar: View {
                                 // would show over the lights and the doors.
                                 .scrollClipDisabled(carrying && !row.overflowing)
                                 .frame(width: row.run)
+                                // The live tab as a pane of Liquid Glass, held
+                                // to the run (LiquidTab.swift).
+                                .liveLens(browser, motion: lens)
                                 .onAppear {
                                     revealedSpace = browser.spaceID
                                     reveal(reader, in: geo.size.width)
@@ -258,8 +263,8 @@ struct TabBar: View {
                 landing ? Palette.hover : Color.clear
                 // The space's colour, if it has one, over whatever ground the
                 // row lies on: the window's, or the one it brings along when
-                // it comes down over the page.
-                SpaceWash(look: browser.wash)
+                // it comes down over the page. On glass the glass wears it.
+                if !browser.glassUnder { SpaceWash(look: browser.wash) }
                 if browser.prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
@@ -746,6 +751,7 @@ private struct TabPill: View, Equatable {
     @Environment(\.tabShortcutNumbers) private var shortcutNumbers
     /// Black or white with alpha, so on a space's colour the pills take its
     /// tint rather than sit on it as grey patches (see Greys).
+    @Environment(\.liquidTabs) private var liquid
     @Environment(\.greys) private var greys
     @Environment(\.rowCarrying) private var rowCarrying
     let browser: Browser
@@ -1041,8 +1047,9 @@ private struct TabPill: View, Equatable {
             // it says it without adding anything to the window.
             ZStack(alignment: .leading) {
                 // A pinned square among the faint grey of the others: the
-                // darker grey the column's live pin wears too.
-                Rectangle().fill(pinned ? greys.pinLive : greys.wash)
+                // darker grey the column's live pin wears too. Under a pane
+                // of Liquid Glass, the glass is a tab's ground.
+                Rectangle().fill(pinned ? greys.pinLive : (liquid ? Color.clear : greys.wash))
                 // Not on a pinned square, nor a tab down to its mark. Thirty
                 // points of grey filling from the left behind a single letter
                 // says nothing about anything — it needs the width of a title
@@ -1052,7 +1059,7 @@ private struct TabPill: View, Equatable {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .matchedGeometryEffect(id: "live", in: pill)
+            .modifier(LiveMatch(id: "live", in: pill, tab: pinned ? nil : tab.id))
         } else if selected {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(greys.wash)
