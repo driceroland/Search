@@ -335,8 +335,10 @@ struct Fold: View {
     /// window's buttons alone: the menu bar and the title bar macOS brings
     /// down with it.
     static let fullScreenCorner: CGFloat = 60
-    /// The band along the top that is the title bar over the page.
-    private static let top: CGFloat = 8
+    /// The band along the top that is the title bar over the page. At 8
+    /// it was hard to find with the pointer; 12 is still under a page's
+    /// own first line of anything to click.
+    private static let top: CGFloat = 12
     /// How long the pointer rests on the edge before a column folded for
     /// good comes out. Long enough to cross the edge, short enough not to be
     /// waited for.
