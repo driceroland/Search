@@ -491,12 +491,6 @@ struct TabBar: View {
                                        groups: browser.tabGroups, source: tab.id, vertical: false)
     }
 
-    /// How wide the run of tabs is: as wide as the tabs while they fit, as
-    /// wide as the room there is once they don't.
-    private func run(in strip: CGFloat) -> CGFloat {
-        measures(in: strip).run
-    }
-
     private struct Measures {
         let each: CGFloat
         let room: CGFloat

@@ -743,8 +743,6 @@ struct NewSpaceCard: View {
 /// How far a swipe between spaces has carried the rows (`Browser.spaceSwipe`).
 final class SwipeOffset: ObservableObject {
     @Published var value: CGFloat = 0
-    /// One that never moves, for what stands still while the rest move.
-    static let still = SwipeOffset()
 }
 
 /// Which way a swipe between spaces has carried the rows, -1, 0 or 1

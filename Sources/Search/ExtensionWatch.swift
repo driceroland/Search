@@ -131,7 +131,6 @@ final class IdleWatch {
 
     /// Whether anything is scheduled or observed: never, with nobody listening.
     var isRunning: Bool { cancelCheck != nil || stopSignals != nil }
-    var isListened: Bool { !ears.isEmpty }
 
     /// The state chrome.idle reports for a reading: locked beats idle.
     nonisolated static func state(_ reading: Reading, threshold: TimeInterval) -> String {

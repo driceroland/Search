@@ -92,13 +92,6 @@ enum SidebarPosition: String, CaseIterable, Identifiable {
     case left, right
 
     var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .left: return "Left"
-        case .right: return "Right"
-        }
-    }
 }
 
 /// Where the tabs go when the settings have no line for it. Down the side,
@@ -817,12 +810,6 @@ final class Preferences: ObservableObject {
         didSet { store.set(waitsForPlay, forKey: Preferences.waitsKey) }
     }
     nonisolated static let waitsKey = "media.click"
-    /// Translate Page in the page's right-click menu, on this Mac only
-    /// (Translate.swift).
-    /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
-    /// adds a command, so there is no switch. Still a property, for the
-    /// code that asks and the tests that turn it off; never written.
-    @Published var translatesPages = true
     /// Empty follows the Mac's preferred language.
     @Published var translateTarget: String {
         didSet { store.set(translateTarget, forKey: "translate.target") }

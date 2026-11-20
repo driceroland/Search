@@ -15,11 +15,6 @@ import Foundation
 // addresses are kept, as the other imports do.
 
 enum BookmarksFile {
-    /// The file's bookmarks, folders and all; nil for a file that isn't one.
-    static func read(_ url: URL) -> [Bookmark]? {
-        try? read(url, control: ImportFile.Control())
-    }
-
     /// A cancellable form used by the file importer. The progress closure gets
     /// stage names and work deltas, never bookmark contents.
     static func read(
