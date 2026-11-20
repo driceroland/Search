@@ -1052,12 +1052,19 @@ struct SideBar: View {
     /// over, or beside the row it is over — rather than moving along as it
     /// goes; a mark shows where.
     private var foldered: some View {
-        let lines = browser.pinRowLines()
+        // A split pinned whole is one line, drawn at its first page.
+        let lines = browser.pinRowLines().filter { line in
+            if case .pin(let tab, _) = line { return browser.standsInRow(tab) }
+            return true
+        }
         if Store.testing { SideBar.drawnPinLines = lines.map(\.described) }
         let heading = PinFolderHeading.height(prefs, compact: icons)
         let lineSteps = lines.map { line -> CGFloat in
-            if case .folder = line { return heading + SideBar.gap }
-            return rowHeight + SideBar.gap
+            switch line {
+            case .folder: return heading + SideBar.gap
+            case .pin(let tab, _): return rowHeight * CGFloat(browser.split(for: tab)?.tabs.count ?? 1) + SideBar.gap
+            case .item: return rowHeight + SideBar.gap
+            }
         }
         let drop = folderDrop
         let move = folderMove
@@ -1091,18 +1098,10 @@ struct SideBar: View {
                             pinLineFrames.rects[item.id] = $0
                         }
                 case .pin(let tab, let depth):
-                    Group {
-                        if icons {
-                            IconTile(browser: browser, prefs: prefs, tab: tab,
-                                     live: tab.id == browser.activeID, pill: pill,
-                                     close: { browser.close(tab) })
-                        } else {
-                            SideRow(browser: browser, prefs: prefs, tab: tab,
-                                    live: tab.id == browser.activeID, pill: pill,
-                                    close: { browser.close(tab) })
-                                .padding(.leading, CGFloat(depth) * PinFolderHeading.indent)
-                        }
-                    }
+                    // A split pinned whole as a split, as among the tabs.
+                    rowItem(tab, tabs: browser.tabs, splits: browser.splits, activeID: browser.activeID,
+                            interactive: true, pill: pill, close: { browser.close(tab) })
+                        .padding(.leading, icons ? 0 : CGFloat(depth) * PinFolderHeading.indent)
                     .overlay(alignment: drop?.after == true ? .bottom : .top) {
                         if let drop, drop.anchor == tab.id {
                             PinFolderMark().offset(y: (drop.after ? 1 : -1) * (SideBar.gap / 2 + 1))
@@ -1210,7 +1209,8 @@ struct SideBar: View {
 
     /// The pinned rows as they always were, with no folder to draw.
     private var flatListed: some View {
-        let pins = browser.listedPins
+        // A split pinned whole is one row, drawn at its first page.
+        let pins = browser.listedPins.filter { browser.standsInRow($0) }
         let squares = browser.squarePins.count
         let ghost: Int? = if case .listed(let at)? = crossing?.target { at } else { nil }
         let pinSteps = steps(pins)
@@ -1219,17 +1219,8 @@ struct SideBar: View {
                 if ghost == index, let carried = crossingTab {
                     RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
                 }
-                Group {
-                    if icons {
-                        IconTile(browser: browser, prefs: prefs, tab: tab,
-                                 live: tab.id == browser.activeID, pill: pill,
-                                 close: { browser.close(tab) })
-                    } else {
-                        SideRow(browser: browser, prefs: prefs, tab: tab,
-                                live: tab.id == browser.activeID, pill: pill,
-                                close: { browser.close(tab) })
-                    }
-                }
+                rowItem(tab, tabs: browser.tabs, splits: browser.splits, activeID: browser.activeID,
+                        interactive: true, pill: pill, close: { browser.close(tab) })
                     .modifier(Carried(index: index, steps: pinSteps, vertical: true,
                                       space: "listed",
                                       cross: { cross(tab, $0, from: .listed) },
@@ -1442,7 +1433,8 @@ struct SideBar: View {
         case .none:
             return nil
         case .squares:
-            let takes = tab.pin == nil ? browser.pinsByDrag(tab) : (rowsOn && tab.listed)
+            // A split, pinned or not, goes among the rows only.
+            let takes = (tab.pin == nil ? browser.pinsByDrag(tab) : (rowsOn && tab.listed)) && browser.split(for: tab) == nil
             guard takes else { return nil }
             let origin = gridShown ? frames.grid?.origin ?? .zero : .zero
             let slot = PinDrop.gridSlot(CGPoint(x: point.x - origin.x, y: point.y - origin.y),

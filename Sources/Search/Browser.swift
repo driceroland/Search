@@ -167,15 +167,20 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Whether a pair can stand as it is in a row: all its tabs there, next
-    /// to each other in its order, none pinned, of one kind and one group.
+    /// to each other in its order, of one kind and one group, and either
+    /// none pinned or all pinned together in one shape (see pin).
     /// A pair kept while Split View was off may have come apart since.
     static func holds(_ pair: TabSplit, in row: [Tab]) -> Bool {
         let places = pair.tabs.compactMap { id in row.firstIndex { $0.id == id } }
         guard pair.tabs.count >= 2, places.count == pair.tabs.count, let first = places.first,
               places == Array(first..<first + places.count) else { return false }
         let members = places.map { row[$0] }
+        let lead = members[0]
         return members.allSatisfy { tab in
-            tab.pin == nil && !tab.bench && tab.shy == members[0].shy && tab.groupID == members[0].groupID
+            let pinnedAlike = tab.pin == nil
+                ? lead.pin == nil
+                : lead.pin != nil && tab.listed == lead.listed && tab.everywhere == lead.everywhere
+            return pinnedAlike && !tab.bench && tab.shy == lead.shy && tab.groupID == lead.groupID
         }
     }
 
@@ -2111,29 +2116,62 @@ final class Browser: NSObject, ObservableObject {
     var listedPins: [Tab] { prefs.showsPinRows ? tabs.filter { $0.pin != nil && $0.listed } : [] }
 
     /// `listed`: as a row under the squares rather than as a square.
+    /// A page in Split View brings the rest of its split along, pinned
+    /// together and always as rows, which draw a split as one (a square
+    /// has room for one page), when every page of it can be a pin;
+    /// otherwise it leaves the split and is pinned alone.
     func pin(_ tab: Tab, listed: Bool = false) {
+        if tab.pin == nil, let members = pinnableSplit(tab) {
+            for member in members { pin(member, listed: true, keepingSplit: true) }
+            return
+        }
+        pin(tab, listed: listed, keepingSplit: false)
+    }
+
+    /// `keepingSplit`: still in its Split View, for a split pinned whole.
+    private func pin(_ tab: Tab, listed: Bool, keepingSplit: Bool) {
         // Drawn again even when the tab stays where it is (see unpin).
         objectWillChange.send()
         // Pins are the space's, kept on disk and shown in every window: a
         // private tab can't be one, or its page would outlive it there.
-        guard !tab.shy, tab.page == nil else { return }
-        leaveSplit(tab)
-        if tab.pin == nil {
-            let previousGroup = tab.groupID
-            tab.groupID = nil
-            removeEmptyGroup(previousGroup)
-            tab.pin = tab.monogram
-            tab.home = tab.pending ?? tab.address
-            // Pinned tabs live at the head of the row, in the order they were
-            // pinned, so their letters never move under your hand: a square
-            // after the squares, a row after the rows.
-            tab.listed = listed
-            settlePin(tab)
-        }
+        // An already-pinned tab stays as it is: pinned with its pair, it
+        // stays in the pair.
+        guard !tab.shy, tab.page == nil, tab.pin == nil else { return }
+        if !keepingSplit { leaveSplit(tab) }
+        let previousGroup = tab.groupID
+        tab.groupID = nil
+        removeEmptyGroup(previousGroup)
+        tab.pin = tab.monogram
+        tab.home = tab.pending ?? tab.address
+        // Pinned tabs live at the head of the row, in the order they were
+        // pinned, so their letters never move under your hand: a square after
+        // the squares, a row after the rows.
+        tab.listed = listed
+        settlePin(tab)
         // No dialog and no waiting cursor: the letter is taken from the
         // address and applied. Changing it is a separate act, for the day it
         // matters — which is why it is not folded into this one.
         writeSession(now: true)
+    }
+
+    /// The pages of the tab's Split View, when every one of them could be a
+    /// pin: web pages, none private, none pinned yet.
+    func pinnableSplit(_ tab: Tab) -> [Tab]? {
+        guard let pair = split(for: tab) else { return nil }
+        let members = pair.tabs.compactMap { id in tabs.first { $0.id == id } }
+        guard members.count == pair.tabs.count,
+              members.allSatisfy({ $0.pin == nil && $0.isWeb && !$0.shy && !$0.bench && $0.page == nil })
+        else { return nil }
+        return members
+    }
+
+    /// The Split View a pin is in with other pins alone (see pin),
+    /// whether Split View is on or not: off, the pair waits, as other
+    /// pairs do.
+    func pinnedPair(of tab: Tab) -> TabSplit? {
+        guard tab.pin != nil, let pair = splits.first(where: { $0.contains(tab.id) }) else { return nil }
+        let members = pair.tabs.compactMap { id in tabs.first { $0.id == id } }
+        return members.count == pair.tabs.count && members.allSatisfy({ $0.pin != nil }) ? pair : nil
     }
 
     /// A square made a row, or a row a square: it keeps its letter, its
@@ -2141,7 +2179,8 @@ final class Browser: NSObject, ObservableObject {
     /// top of the rows, or the end of the squares), so it travels no
     /// further than the line between them.
     func setListed(_ tab: Tab, _ listed: Bool) {
-        guard tab.pin != nil, tab.listed != listed else { return }
+        // A split pinned whole stays rows (see pin).
+        guard tab.pin != nil, tab.listed != listed, pinnedPair(of: tab) == nil else { return }
         objectWillChange.send()
         if editingPin == tab.id { editingPin = nil }
         tab.listed = listed
@@ -2296,14 +2335,48 @@ final class Browser: NSObject, ObservableObject {
         writeSession(now: true)
     }
 
-    func unpin(_ tab: Tab) {
-        if editingPin == tab.id { editingPin = nil }
+    /// `keepingSplit`: still in its Split View, for a pinned split carried
+    /// out among the tabs whole (see unpinDropped), and for this function
+    /// on its way through a pair's other members.
+    func unpin(_ tab: Tab, keepingSplit: Bool = false) {
         // The row is drawn again whether or not the tab moves. Unpinning the
         // only tab, or the last pin, leaves it where it is; `tabs` didn't
         // change, only the tab did, and the column went on drawing it as a
         // pinned square — with no letter left, an empty tile — and never as
         // a row (from X).
         objectWillChange.send()
+        // Pinned with a pair: both pages come out of the pins, still a
+        // Split View among the tabs (the pair acts as a group).
+        if !keepingSplit, let pair = pinnedPair(of: tab) {
+            let members = pair.tabs.compactMap { id in tabs.first { $0.id == id } }
+            for member in members { clearPin(member) }
+            // The pair stays side by side where the pins were; move it as
+            // one to the head of the loose tabs, in its order.
+            let idSet = Set(members.map(\.id))
+            var row = tabs.filter { !idSet.contains($0.id) }
+            let at = row.firstIndex { $0.pin == nil } ?? row.count
+            row.insert(contentsOf: members, at: at)
+            if !row.elementsEqual(tabs, by: { $0.id == $1.id }) { tabs = row }
+            rememberSession()
+            writeSession(now: true)
+            return
+        }
+        clearPin(tab)
+        defer { writeSession(now: true) }
+        // Back out of the pinned block, to the head of the loose tabs.
+        if let here = tabs.firstIndex(where: { $0.id == tab.id }) {
+            let home = pinnedCount
+            if here != home {
+                tabs.move(fromOffsets: IndexSet(integer: here), toOffset: home > here ? home + 1 : home)
+            }
+        }
+        rememberSession()
+    }
+
+    /// A tab's pin bits dropped; it stays where it is in the row, so a pair
+    /// taken out together keeps its order (see unpin).
+    private func clearPin(_ tab: Tab) {
+        if editingPin == tab.id { editingPin = nil }
         if tab.everywhere, let id = tab.pinID {
             // One every space shows: out of them all, as unpinning in one
             // window is out of every window.
@@ -2316,25 +2389,17 @@ final class Browser: NSObject, ObservableObject {
         tab.pinFolder = nil
         tab.home = nil
         tab.pinID = nil
-        defer { writeSession(now: true) }
-        // Back out of the pinned block, to the head of the loose tabs.
-        if let here = tabs.firstIndex(where: { $0.id == tab.id }) {
-            let home = pinnedCount
-            if here != home {
-                tabs.move(fromOffsets: IndexSet(integer: here), toOffset: home > here ? home + 1 : home)
-            }
-        }
-        rememberSession()
     }
 
     // MARK: - carried onto the pins, and off them
 
     /// Whether a tab carried onto the pins may become one there. Not a
-    /// private tab (see pin), and not a pair: pinning one half would undo
-    /// the pair under the hand. Pin Tab in the menu still pins the half
-    /// it was asked for.
+    /// private tab (see pin). A page in Split View only when the whole
+    /// split can go, pinned together: one half pinned would undo the pair
+    /// under the hand.
     func pinsByDrag(_ tab: Tab) -> Bool {
-        tab.pin == nil && !tab.shy && split(for: tab) == nil && tabs.contains { $0.id == tab.id }
+        tab.pin == nil && !tab.shy && (split(for: tab) == nil || pinnableSplit(tab) != nil)
+            && tabs.contains { $0.id == tab.id }
     }
 
     /// The place a tab let go at `proposed` among the squares (or, with
@@ -2357,6 +2422,8 @@ final class Browser: NSObject, ObservableObject {
     /// it; with pins in every space on, it lands after the shared ones.
     @discardableResult
     func pinDropped(_ tab: Tab, listed: Bool, at slot: Int) -> Bool {
+        // A split goes among the rows, whole, never into the squares.
+        if !listed, split(for: tab) != nil { return false }
         if tab.pin == nil {
             guard pinsByDrag(tab) else { return false }
             pin(tab, listed: listed)
@@ -2365,9 +2432,12 @@ final class Browser: NSObject, ObservableObject {
             setListed(tab, listed)
         }
         let at = pinSlot(tab, listed: listed, proposed: slot)
+        // A split pinned whole lands as one, its pages in their order.
+        let moving = pinnedPair(of: tab).map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? [tab]
+        let carried = Set(moving.map(\.id))
         let pins = tabs.filter { $0.pin != nil }
-        var tier = pins.filter { $0.listed == listed && $0.id != tab.id }
-        tier.insert(tab, at: min(at, tier.count))
+        var tier = pins.filter { $0.listed == listed && !carried.contains($0.id) }
+        tier.insert(contentsOf: moving, at: min(at, tier.count))
         let squares = listed ? pins.filter { !$0.listed } : tier
         let rows = listed ? tier : pins.filter(\.listed)
         let row = squares + rows + tabs.filter { $0.pin == nil }
@@ -2383,14 +2453,22 @@ final class Browser: NSObject, ObservableObject {
     @discardableResult
     func unpinDropped(_ tab: Tab, at slot: Int, group: UUID? = nil) -> Bool {
         guard tab.pin != nil, tabs.contains(where: { $0.id == tab.id }) else { return false }
-        unpin(tab)
+        // A split pinned whole comes out whole, still a split: the last page
+        // first, as each goes to the head of the tabs.
+        let together = pinnedPair(of: tab).map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } }
+        if let together {
+            for member in together.reversed() { unpin(member, keepingSplit: true) }
+        } else {
+            unpin(tab)
+        }
+        let lead = together?.first ?? tab
         if let group, prefs.usesTabGroups, tabGroups.contains(where: { $0.id == group }) {
-            move(tab, toGroup: group)
+            move(lead, toGroup: group)
         } else if prefs.usesTabGroups {
             let peers = tabs(in: nil).filter(standsInRow)
-            move(tab, within: nil, to: min(max(0, slot), peers.count - 1))
+            move(lead, within: nil, to: min(max(0, slot), peers.count - 1))
         } else {
-            moveDisplayedTab(tab, to: min(pinnedCount + max(0, slot), displayedTabs.count - 1))
+            moveDisplayedTab(lead, to: min(pinnedCount + max(0, slot), displayedTabs.count - 1))
         }
         writeSession(now: true)
         return true
@@ -3415,8 +3493,31 @@ final class Browser: NSObject, ObservableObject {
             return PinDef(id: tab.pinID ?? UUID(), letter: letter,
                           home: (tab.home ?? tab.pending ?? tab.address)?.absoluteString ?? "",
                           title: tab.title, name: tab.name, listed: tab.listed ? true : nil,
-                          folder: tab.listed && !tab.everywhere ? tab.pinFolder : nil)
+                          folder: tab.listed && !tab.everywhere ? tab.pinFolder : nil,
+                          pair: pinnedPair(of: tab)?.id)
         }
+    }
+
+    /// The pairs pinned together (see pin) as pins.json has them, for
+    /// a row whose pins were just matched to it: one for each set of pins
+    /// sharing a pair that don't already stand together, and still hold.
+    /// So a pair pinned in one window is a pair in the others too.
+    func pinnedPairs(in row: [Tab], space: UUID, besides kept: [TabSplit]) -> [TabSplit] {
+        let showing = prefs.showsSharedPins
+        let defs = Pins.row(own: Pins.defs(space), shared: showing ? Pins.shared(profileID) : [], showing: showing)
+        let taken = Set(kept.flatMap(\.tabs))
+        var made: [TabSplit] = []
+        var seen = Set<UUID>()
+        for def in defs {
+            guard let id = def.pair, seen.insert(id).inserted else { continue }
+            let members = defs.filter { $0.pair == id }.compactMap { member in row.first { $0.pinID == member.id } }
+            let pair = TabSplit(id: id, tabs: members.map(\.id))
+            guard members.count >= 2, members.count <= TabSplit.most,
+                  !members.contains(where: { taken.contains($0.id) }),
+                  Browser.holds(pair, in: row) else { continue }
+            made.append(pair)
+        }
+        return made
     }
 
     /// A row with the space's pins as they are now: this window's own tab
@@ -3477,12 +3578,14 @@ final class Browser: NSObject, ObservableObject {
             splits.removeAll { pair in
                 !pair.tabs.allSatisfy { id in tabs.contains { $0.id == id } }
             }
+            splits += pinnedPairs(in: tabs, space: space, besides: splits)
             writeRow(spaceID, session(tabs, active: activeID, groups: tabGroups, splits: splits), now: false)
         } else if var row = parked[space] {
             row.tabs = reconcilePins(row.tabs, space: space)
             row.splits.removeAll { pair in
                 !pair.tabs.allSatisfy { id in row.tabs.contains { $0.id == id } }
             }
+            row.splits += pinnedPairs(in: row.tabs, space: space, besides: row.splits)
             if let active = row.active, !row.tabs.contains(where: { $0.id == active }) {
                 row.active = row.tabs.first { $0.pin == nil }?.id ?? row.tabs.first?.id
             }
@@ -4087,8 +4190,10 @@ final class Browser: NSObject, ObservableObject {
     /// Zen's rule for pins: a pin never goes into a pair — it keeps its
     /// place among the pins, in every window (Pins.swift) — but its page
     /// does, as a new tab beside the other page. Anything else is itself.
-    private func splittable(_ tab: Tab) -> Tab {
-        guard tab.pin != nil, let url = tab.address ?? tab.home else { return tab }
+    /// `bothPins`: the pair is of two pins, which stay pins as one pinned
+    /// split (see pair).
+    private func splittable(_ tab: Tab, bothPins: Bool = false) -> Tab {
+        guard !bothPins, tab.pin != nil, let url = tab.address ?? tab.home else { return tab }
         let copy = Tab(configuration: Web.configuration(space: spaceID))
         prepare(copy)
         tabs.insert(copy, at: tabs.count)
@@ -4104,8 +4209,17 @@ final class Browser: NSObject, ObservableObject {
     func pair(_ dragged: Tab, with target: Tab, onLeft: Bool, joining: Bool = true) {
         guard joining ? canJoin(dragged, beside: target) : canSplit(dragged, with: target) else { return }
         if floating == dragged.id || floating == target.id { land() }
-        let dragged = splittable(dragged)
-        let target = splittable(target)
+        // Two unshared pins paired together stay pins, as one pinned split
+        // (always rows, since a square has room for one page). A pin paired
+        // with anything else is copied into the pair as a tab of its own.
+        let bothPins = dragged.pin != nil && target.pin != nil
+            && !dragged.everywhere && !target.everywhere
+        let dragged = splittable(dragged, bothPins: bothPins)
+        let target = splittable(target, bothPins: bothPins)
+        if bothPins {
+            if !dragged.listed { setListed(dragged, true) }
+            if !target.listed { setListed(target, true) }
+        }
         leaveSplit(dragged)
         if !joining { leaveSplit(target) }
         let oldGroup = dragged.groupID
@@ -4815,7 +4929,10 @@ final class Browser: NSObject, ObservableObject {
         if peekFrom == tab.id { closePeek() }
         let pair = split(for: tab)
         let partner = pair.flatMap { pair in tabs.first { $0.id == pair.partner(of: tab.id) } }
-        leaveSplit(tab)
+        // A pin pinned with its pair stays in it (see pin): the pair is
+        // put down whole, below.
+        let together = pinnedPair(of: tab)
+        if together == nil { leaveSplit(tab) }
         heldDialogs.removeValue(forKey: tab.id)?.forEach { $0.dismiss() }
         dropQuestions(for: tab.id)
 
@@ -4831,7 +4948,8 @@ final class Browser: NSObject, ObservableObject {
             // Put down is also gone home with Settings › Tabs › Pins stay on
             // their site, as Arc's pins are: the pin wakes on the page it was
             // pinned at, not wherever its links had taken it.
-            tab.rest(at: prefs.pinsGoHome || prefs.pinsPeek ? tab.home : nil)
+            let going = together.map { pair in tabs.filter { pair.contains($0.id) } } ?? [tab]
+            for each in going { each.rest(at: prefs.pinsGoHome || prefs.pinsPeek ? each.home : nil) }
             leave(tab)
             writeSession(now: true)
             return
@@ -6519,6 +6637,7 @@ final class Browser: NSObject, ObservableObject {
             restoredSplits.append(pair)
             taken.formUnion(pair.tabs)
         }
+        restoredSplits += pinnedPairs(in: row, space: space, besides: restoredSplits)
         let active = said.flatMap { id in row.contains { $0.id == id } ? id : nil }
         return Parked(tabs: row, active: active, splits: restoredSplits)
     }

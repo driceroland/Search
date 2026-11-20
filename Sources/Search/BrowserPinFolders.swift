@@ -90,7 +90,9 @@ extension Browser {
 
     /// Whether a pin can go in a folder: a row of this space's own.
     func takesFolder(_ tab: Tab) -> Bool {
-        tab.pin != nil && tab.listed && !tab.everywhere && !tab.shy
+        // A split pinned whole stays at the top of the rows: a folder's
+        // lines hold one page each.
+        tab.pin != nil && tab.listed && !tab.everywhere && !tab.shy && pinnedPair(of: tab) == nil
     }
 
     /// New Folder: inside `parent`, or beside `tab` in the folder it is in,

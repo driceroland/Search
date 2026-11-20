@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- A split can be pinned as a split: Pin Split View in a page's right-click menu, Pin Tab in the Tabs menu, or the split dragged onto the pinned rows. Every page of it becomes a pin and they stay one split, drawn as one row as among the tabs, so a click on it brings the split back as it was. A pinned split acts as one group: Unpin takes both pages out of the pins and leaves them as a Split View among the tabs, Delete closes both, ⌘W puts the whole split down. Dragged, it moves whole. "Only in This Space" and "Keep in Every Space" are left out for a pinned pair, since a shared pair would break if the partner stayed in one space. Opening a Split View over two pins — Open 2 Tabs in Split View with them picked — merges the pins into a pinned pair rather than copying them into new tabs. A pinned split is always rows: it has no Show as Square and doesn't go into a folder. A split with a page that can't be a pin (a private tab, Settings) still pins only the page asked for.
+
 ### Held back
 
 Not in this version, kept on main for a later one:

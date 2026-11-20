@@ -148,7 +148,7 @@ enum ICloudMerge {
     /// along untouched (SYNC.md, "Fields a device doesn't know ride along").
     /// ICloudSyncTests checks these against the types themselves.
     static let known: [Shape: Set<String>] = [
-        .pins: ["id", "letter", "home", "title", "name", "listed", "folder"],
+        .pins: ["id", "letter", "home", "title", "name", "listed", "folder", "pair"],
         .bookmarks: ["id", "title", "url", "children"],
         .spaces: ["id", "name", "colour", "icon", "sharesSignIns", "downloads", "profile", "gradient", "strength"],
         .settings: ["engine", "custom", "look"],

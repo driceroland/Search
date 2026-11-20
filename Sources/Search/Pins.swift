@@ -29,6 +29,10 @@ struct PinDef: Codable, Equatable {
     /// nil at the top of them. Written only when it is in one, so the file
     /// is unchanged for anyone with no folders.
     var folder: UUID? = nil
+    /// The Split View it was pinned in, with the other pins that share it
+    /// (see Browser.pin). Written only for those, so the file is
+    /// unchanged for anyone who never pins one.
+    var pair: UUID? = nil
 }
 
 @MainActor
