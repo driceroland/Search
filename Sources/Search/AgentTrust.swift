@@ -21,15 +21,15 @@ import Security
 // reads as the parent.
 //
 // Offered only for a parent on a short list of agents' own programs, each
-// signed by its maker's team (AgentLauncher.allowed: Claude Code's
-// `claude`) — never a terminal, an editor, an interpreter or a shell, which
-// run whatever they are given. Checked again on every connection: the
-// parent must pass the requirement remembered, and the client give the same
-// name; anything else and the question is asked. Stop suspends it (asked
-// again until you tick "Always allow" again), and it runs out by itself 30
-// days after it was granted or 7 days after it was last used. It never
-// carries "Let it see my open tabs": let in without asking, an agent sees
-// only its own tabs.
+// signed by its maker's team (AgentLauncher.allowed: Claude Code's `claude`,
+// OpenCode's `opencode-cli` and `opencode`) — never a terminal, an editor, an
+// interpreter or a shell, which run whatever they are given. Checked again
+// on every connection: the parent must pass the requirement remembered, and
+// the client give the same name; anything else and the question is asked.
+// Stop suspends it (asked again until you tick "Always allow" again), and it
+// runs out by itself 30 days after it was granted or 7 days after it was
+// last used. It never carries "Let it see my open tabs": let in without
+// asking, an agent sees only its own tabs.
 //
 // Kept in the keychain's data protection half, under Search's own access
 // group, as the switch's mark is (SwitchMark): only an app signed as Search
@@ -74,17 +74,25 @@ struct AgentLauncher: Equatable {
     /// interpreters and shells all run anything they are given — but of what
     /// to let in: agents' own command-line programs, each signed by its
     /// maker. Codex's CLI isn't here: it ships unsigned through npm and
-    /// Homebrew, so there is no signature to remember it by.
+    /// Homebrew, so there is no signature to remember it by. OpenCode's are
+    /// both here: its desktop app runs the CLI as a sidecar named
+    /// `opencode-cli`, and npm and Homebrew install the same one as
+    /// `opencode`, each signed by Anomaly Innovations.
     static let allowed: [String: String] = [
         "com.anthropic.claude-code": "Q6L2SF6YDW",
+        "opencode-cli": "5NZ4Q7NXJ4",
+        "opencode": "5NZ4Q7NXJ4",
     ]
 
     /// What each of them is checked against, and what is remembered: written
     /// here, never the program's own designated requirement, which is the
     /// program's word. Claude Code's: its identifier, a Developer ID
-    /// certificate from Apple, Anthropic's team.
+    /// certificate from Apple, Anthropic's team; OpenCode's the same, with
+    /// Anomaly Innovations'.
     static let requirements: [String: String] = [
         "com.anthropic.claude-code": #"identifier "com.anthropic.claude-code" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "Q6L2SF6YDW""#,
+        "opencode-cli": #"identifier "opencode-cli" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "5NZ4Q7NXJ4""#,
+        "opencode": #"identifier "opencode" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "5NZ4Q7NXJ4""#,
     ]
 
     /// The requirement this launcher is remembered by: the allowlist's own

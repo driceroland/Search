@@ -522,10 +522,10 @@ enum SettingsIndex {
               more: "Its tabs open beside yours with a flask on them. See ./bench.",
               keys: ["bench"], words: ["automation", "script", "developer"]),
         .init(id: "agents", group: "developer", icon: "cursorarrow.rays",
-              title: "Let coding agents use Search", detail: "Claude Code or Codex can ask to browse in tabs of its own, while you watch",
-              more: "Each time one connects, the window asks you first, unless you ticked “Always allow” for it — offered only for Claude Code's own `claude`, signed by Anthropic; kept 30 days at most and 7 after its last use, never with your tabs, and asked again after you press Stop; forget it here. Nothing is drawn over the page: the tab it works in wears a small dot, and Stop is on the column's foot (or the tab strip) and in File › Stop Agent (⌃⌥⌘.) until it goes. It works in tabs of its own; your tabs it can read only if you tick “Let it see my open tabs”, and never uses. It never sees passwords, card numbers, one-time codes, private tabs, cookies or Settings, and can't download or choose files. It connects through a file on this Mac only, never the network: claude mcp add search -- /path/to/Search/search-mcp.",
+              title: "Let coding agents use Search", detail: "Claude Code, Codex or OpenCode can ask to browse in tabs of its own, while you watch",
+              more: "Each time one connects, the window asks you first, unless you ticked “Always allow” for it — offered only for an agent's own command-line program, signed by its maker: Claude Code's `claude`, and OpenCode's `opencode-cli` or `opencode`; kept 30 days at most and 7 after its last use, never with your tabs, and asked again after you press Stop; forget it here. Nothing is drawn over the page: the tab it works in wears a small dot, and Stop is on the column's foot (or the tab strip) and in File › Stop Agent (⌃⌥⌘.) until it goes. It works in tabs of its own; your tabs it can read only if you tick “Let it see my open tabs”, and never uses. It never sees passwords, card numbers, one-time codes, private tabs, cookies or Settings, and can't download or choose files. It connects through a file on this Mac only, never the network: claude mcp add search -- /path/to/Search/search-mcp.",
               keys: ["agents"],
-              words: ["agent", "ai", "claude", "claude code", "codex", "mcp", "automation", "computer use", "developer"]),
+              words: ["agent", "ai", "claude", "claude code", "codex", "opencode", "mcp", "automation", "computer use", "developer"]),
 
         // Moved to a menu, or always on: only the find field says so.
         .init(id: "autocorrect", group: "pages", icon: "textformat.abc.dottedunderline",

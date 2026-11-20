@@ -19,6 +19,11 @@ final class AgentTrustTests: XCTestCase {
     /// requirement for it (AgentLauncher.requirements).
     nonisolated static let claude = AgentLauncher.requirements["com.anthropic.claude-code"]!
 
+    /// OpenCode's own, as `codesign -d -r-` gives it: the desktop app's
+    /// sidecar, and the CLI npm and Homebrew install.
+    nonisolated static let opencodeDesktop = AgentLauncher.requirements["opencode-cli"]!
+    nonisolated static let opencodeCLI = AgentLauncher.requirements["opencode"]!
+
     /// A launcher that could be remembered, as the signature would say.
     static func signed(_ requirement: String = claude) -> AgentLauncher {
         var out = AgentLauncher(path: "/Users/someone/.local/share/claude/versions/2.1.139",
@@ -125,6 +130,39 @@ final class AgentTrustTests: XCTestCase {
                                               path: "/tmp/claude"), "Claude Code's identifier, signed by someone else")
         XCTAssertNil(Self.signed().unrememberable, "Claude Code, signed by Anthropic, can be")
         XCTAssertEqual(Self.signed().who, "Anthropic PBC")
+    }
+
+    /// OpenCode, through either of the programs that run its client: the
+    /// desktop app's sidecar and the CLI npm and Homebrew install are the
+    /// same one, under two names, each signed by Anomaly Innovations.
+    func testOpenCodeCanBeRememberedByEitherOfItsPrograms() {
+        for (identifier, path, requirement) in [
+            ("opencode-cli", "/Applications/OpenCode.app/Contents/MacOS/opencode-cli", Self.opencodeDesktop),
+            ("opencode", "/opt/homebrew/bin/opencode", Self.opencodeCLI)
+        ] {
+            var launcher = AgentLauncher(path: path, identifier: identifier, team: "5NZ4Q7NXJ4",
+                                         signer: "Developer ID Application: Anomaly Innovations, Inc. (5NZ4Q7NXJ4)",
+                                         requirement: requirement, adhoc: false, signed: true)
+            launcher.unrememberable = AgentLauncher.refusal(signed: true, adhoc: false, team: launcher.team,
+                                                            identifier: identifier, path: path)
+            XCTAssertNil(launcher.unrememberable, "\(identifier), signed by Anomaly Innovations, can be")
+            XCTAssertEqual(launcher.allowlisted, requirement)
+            XCTAssertEqual(launcher.who, "Anomaly Innovations, Inc.")
+            XCTAssertNotNil(AgentLauncher.refusal(signed: true, adhoc: false, team: "EVILTEAM00",
+                                                  identifier: identifier, path: path),
+                            "\(identifier)'s identifier, signed by someone else")
+        }
+    }
+
+    /// Nothing is offered that Search hasn't written what to check it
+    /// against: a name in one list and not the other would ask every time.
+    func testEveryProgramAllowedHasItsRequirement() {
+        XCTAssertEqual(Set(AgentLauncher.allowed.keys), Set(AgentLauncher.requirements.keys))
+        for (identifier, team) in AgentLauncher.allowed {
+            let requirement = AgentLauncher.requirements[identifier] ?? ""
+            XCTAssertTrue(requirement.contains("identifier \"\(identifier)\""), identifier)
+            XCTAssertTrue(requirement.contains("certificate leaf[subject.OU] = \"\(team)\""), identifier)
+        }
     }
 
     // MARK: - what is remembered
@@ -364,6 +402,22 @@ final class AgentTrustTests: XCTestCase {
         XCTAssertEqual(SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &code), errSecSuccess)
         var made: SecRequirement?
         XCTAssertEqual(SecRequirementCreateWithString(Self.claude as CFString, [], &made), errSecSuccess)
+        XCTAssertEqual(SecStaticCodeCheckValidity(try XCTUnwrap(code), [], made), errSecSuccess)
+    }
+
+    /// Search's requirement for OpenCode passes the real `opencode-cli` the
+    /// desktop app stages, where one is installed (read only: nothing is run).
+    func testTheRealOpenCodePassesIt() throws {
+        let support = (NSHomeDirectory() as NSString)
+            .appendingPathComponent("Library/Application Support/ai.opencode.desktop/cli")
+        let versions = (try? FileManager.default.contentsOfDirectory(atPath: support)) ?? []
+        let path = versions.map { "\(support)/\($0)/opencode-cli" }
+            .first { FileManager.default.fileExists(atPath: $0) }
+        guard let path else { throw XCTSkip("no opencode-cli here") }
+        var code: SecStaticCode?
+        XCTAssertEqual(SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &code), errSecSuccess)
+        var made: SecRequirement?
+        XCTAssertEqual(SecRequirementCreateWithString(Self.opencodeDesktop as CFString, [], &made), errSecSuccess)
         XCTAssertEqual(SecStaticCodeCheckValidity(try XCTUnwrap(code), [], made), errSecSuccess)
     }
 }
