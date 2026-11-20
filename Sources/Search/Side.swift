@@ -2319,6 +2319,9 @@ struct Door: View {
     /// What holding the button down opens, as Back and Forward list the
     /// pages that way. Nil, or a nil menu, and a hold is just a slow click.
     var held: (() -> NSMenu?)? = nil
+    /// How far the glyph is moved off its frame's centre, for one whose
+    /// weight sits to a side of its box: centred by the box, it looks off.
+    var nudge: CGFloat = 0
     let act: () -> Void
 
     @State private var hovering = false
@@ -2333,6 +2336,7 @@ struct Door: View {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(on ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
+                .offset(x: nudge)
                 .frame(width: 26, height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)

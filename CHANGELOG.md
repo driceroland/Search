@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- The extensions button at the foot of the column sits where it looks centred between the space's icon and Bookmarks. The puzzle piece was centred by its outline, but its weight is in its body, on the left, so it looked shifted toward the space's icon; it now stands a point to the right.
+
 ### Held back
 
 Not in this version, kept on main for a later one:
