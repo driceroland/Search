@@ -26,6 +26,12 @@ final class FollowFileTests: XCTestCase {
             "look", "navigationLeft", "sidebar", "sidePosition", "sideHides", "roomyTabs", "sideIcons", "sideWidth",
             "sidePanelWidth", "cards", "glyph", "tabsGive", "showsTabShortcuts", "bookmarksBar", "alwaysShowsDownloads",
             "foldsToIcons", "instantMotion", "compactStrip",
+            // Look and layout settings added since, each read again as it was
+            // added: the column's slide, buttons at the top, the card in full
+            // screen, the address bar and its width, the glass window and the
+            // Liquid Glass tab, the bounce, and ⌘1–⌘9 for spaces.
+            "slidesColumn", "doorsUp", "cardsInFullScreen", "addressLine", "addressWidth", "glass", "glassGrain",
+            "glassClear", "glassStyle", "liquidTabs", "bounces", "spacesOnCommand",
         ])
     }
 
