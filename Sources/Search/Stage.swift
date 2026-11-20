@@ -19,9 +19,17 @@ struct Page: View {
     /// The window, for a tab showing one of Search's own pages, which are
     /// drawn here in the web page's place (see InternalPages.swift).
     var browser: Browser?
+    /// For the home background, which is shown on a blank tab only.
+    @ObservedObject private var prefs = Shared.prefs
 
     var body: some View {
         ZStack {
+            // A blank tab owns no page to paint over this, and a tab that
+            // gets one is no longer blank, so the wall goes with the load.
+            // Split panes draw their layers through here too.
+            if tab.isBlank, prefs.homeTheme != .off {
+                HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage)
+            }
             // A tab put down with ⌘W has no view, and asking for one here
             // would build an empty one a frame before the stage moves on.
             //

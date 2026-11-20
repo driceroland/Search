@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- A Themes page in Settings paints the blank tab, off unless you choose it: Wall painting (Limewash, Fresco, Mural, Terrazzo, Botanical), Stickers (Playful, Space, Nature), a solid colour, a gradient, or a picture of your own copied inside Search, with Intensity, Density and Scale to tune. Drawn once and kept, so it costs nothing while you browse; the address field keeps a calm patch to sit on.
 - Coming from Zen brings its spaces too, the way Arc's come: each of its spaces a space here with its name, icon and colours, its pinned tabs that space's, its folders kept as folders where pinned rows hold them, and its Essentials as pins in every space. Read from the file Zen keeps them in, a backup of it when that is torn, or the tables older versions of Zen kept; nothing in Zen changes.
 - Open tabs and tab groups come over from Firefox and Zen too, as they do from Chrome-family browsers: asleep at the end of the space, a group by its name and folded as it was, Firefox's pinned tabs as pins (Zen's come with its spaces). Off in the import sheet unless you turn it on.
 - More browsers to come from: Thorium, Naver Whale, Island and Sidekick, with their passwords; Yandex and ChatGPT Atlas, their bookmarks, history and open tabs (their passwords are locked away where other apps can't read them); Floorp, LibreWolf, Waterfox and Mullvad Browser, as Firefox; and Orion, its bookmarks and history, each profile. A Firefox-family profile is read once, however its folder is spelled.
