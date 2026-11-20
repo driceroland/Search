@@ -11,10 +11,12 @@ must then fill the page's view, as `contain` fits it, and be visible.
 """
 import functools
 import json
+import struct
 import sys
 import tempfile
 import threading
 import time
+import zlib
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -79,6 +81,56 @@ addEventListener('resize',function(){if(innerWidth<920)column.classList.add('rig
 </script>"""
 CHAT_OPEN = "!!document.querySelector('.right-column:not(.right-column--collapsed)')"
 
+# A page's own chrome, visible in line. The isolation hid only the body's
+# children and counted on what visibility inherits; a page that sets its own
+# `visible` — YouTube Music's player page does — kept it over the picture
+# (#1260). Any page that does so is the same.
+CHROME = """<div id=chrome style="position:fixed;left:0;top:0;width:200px;height:40px;
+background:#c00;visibility:visible;z-index:3">chrome</div>"""
+
+# Sound with no picture, as YouTube Music plays a song that only has a cover:
+# a nought-by-nought video carrying an audio stream. The cover is what the
+# media session says is playing, and what the page shows for it.
+AUDIO_ONLY = """<video id=sound muted playsinline style="width:0;height:0"></video>
+<script>
+var ac = new AudioContext(), osc = ac.createOscillator(), dest = ac.createMediaStreamDestination();
+osc.connect(dest); osc.start();
+var sound = document.getElementById('sound');
+sound.srcObject = dest.stream;
+sound.play().catch(function () {});
+</script>"""
+ARTWORK = """<!doctype html><meta charset=utf-8><title>artwork</title><style>body{margin:0}</style>
+<img id=cover src="/cover.png" style="display:block;width:320px;height:320px">""" + AUDIO_ONLY + """
+<script>
+navigator.mediaSession.metadata = new MediaMetadata({title: 'Cover', artist: 'Test',
+  artwork: [{src: location.origin + '/cover.png', sizes: '320x320', type: 'image/png'}]});
+</script>""" + CHROME
+NO_ARTWORK = """<!doctype html><meta charset=utf-8><title>no artwork</title><style>body{margin:0}</style>""" + AUDIO_ONLY + """
+<script>navigator.mediaSession.metadata = new MediaMetadata({title: 'Sound', artist: 'Test'});</script>"""
+
+
+# A square cover, enough pixels to be one: the picture is fitted as `contain`
+# does, and a square one fills the window on one side or the other.
+def cover_png(width=320, height=320, rgba=(200, 40, 40, 255)):
+    raw = b"".join(b"\x00" + bytes(rgba) * width for _ in range(height))
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw))
+            + chunk(b"IEND", b""))
+
+
+ART_PROBE = """(function(){var i=document.querySelector('[data-office-float]'),b=i?i.getBoundingClientRect():{left:0,top:0,width:0,height:0};
+var f=i&&i.naturalWidth&&i.naturalHeight?Math.min(b.width/i.naturalWidth,b.height/i.naturalHeight):0;
+var w=f?i.naturalWidth*f:b.width,h=f?i.naturalHeight*f:b.height;
+var chrome=document.getElementById('chrome'),sound=document.getElementById('sound');
+return JSON.stringify({tag:i?i.tagName:'',x:b.left+(b.width-w)/2,y:b.top+(b.height-h)/2,w:w,h:h,iw:innerWidth,ih:innerHeight,
+seen:i?i.checkVisibility({contentVisibilityAuto:true,opacityProperty:true,visibilityProperty:true}):false,
+fit:i?getComputedStyle(i).objectFit:'',chrome:chrome?getComputedStyle(chrome).visibility:'',sound:sound?getComputedStyle(sound).visibility:''})})()"""
+
 
 def main():
     pages = tempfile.mkdtemp(prefix="search-float-")
@@ -125,6 +177,44 @@ def main():
             after = sv.cmd({"do": "eval", "id": tab, "js": styling})["value"]
             t.ok(f"{name}: returning restores the player's styles", before == after, after)
             sv.sp("close", id=tab)
+
+        # A page's own chrome, visible in line, stays out of the window.
+        Path(pages, "chrome.html").write_text(PAGE.format(name="chrome", style="", video_style="") + CHROME)
+        tab = sv.sp("open", url=f"{base}/chrome.html")["resultID"]
+        time.sleep(1.5)
+        said = sv.cmd({"do": "eval", "id": tab, "js": isolate, "world": "search"}).get("value")
+        shown = sv.cmd({"do": "eval", "id": tab, "js": "getComputedStyle(document.getElementById('chrome')).visibility"}).get("value")
+        marked = sv.cmd({"do": "eval", "id": tab, "js": "(document.querySelector('[data-office-float]') || {tagName: ''}).tagName"}).get("value")
+        t.ok("chrome: a page's own visible chrome stays out of the window",
+             isinstance(said, dict) and said.get("floating") is True and shown == "hidden" and marked == "VIDEO",
+             (said, shown, marked))
+        sv.sp("close", id=tab)
+
+        # A song with only a cover: the cover floats, not the page's player.
+        Path(pages, "cover.png").write_bytes(cover_png())
+        Path(pages, "artwork.html").write_text(ARTWORK)
+        tab = sv.sp("open", url=f"{base}/artwork.html")["resultID"]
+        time.sleep(1.5)
+        said = sv.cmd({"do": "eval", "id": tab, "js": isolate, "world": "search"}).get("value")
+        for width, height in [(1180, 780), (700, 500)]:
+            sv.cmd({"do": "resize", "width": width, "height": height, "steps": 2})
+            p = json.loads(sv.cmd({"do": "eval", "id": tab, "js": ART_PROBE}).get("value"))
+            wide = abs(p["x"]) < 1 and abs(p["w"] - p["iw"]) < 1 and abs(2 * p["y"] + p["h"] - p["ih"]) < 2 and p["h"] <= p["ih"] + 1
+            tall = abs(p["y"]) < 1 and abs(p["h"] - p["ih"]) < 1 and abs(2 * p["x"] + p["w"] - p["iw"]) < 2 and p["w"] <= p["iw"] + 1
+            t.ok(f"artwork {width}x{height}: the cover fills the window, the player stays out",
+                 isinstance(said, dict) and said.get("floating") is True and p["tag"] == "IMG"
+                 and (wide or tall) and p["seen"] and p["fit"] == "contain"
+                 and p["chrome"] == "hidden" and p["sound"] == "hidden", p)
+        sv.sp("close", id=tab)
+
+        # Nothing playing that has a picture or a cover to float: no window.
+        Path(pages, "no-artwork.html").write_text(NO_ARTWORK)
+        tab = sv.sp("open", url=f"{base}/no-artwork.html")["resultID"]
+        time.sleep(1.5)
+        said = sv.cmd({"do": "eval", "id": tab, "js": isolate, "world": "search"}).get("value")
+        t.ok("no-artwork: a sound with no picture and no cover floats nothing",
+             not (isinstance(said, dict) and said.get("floating") is True), said)
+        sv.sp("close", id=tab)
 
         # Back in its tab, Twitch's chat is open again, as it was when the
         # video went out: put back while the page is still the little

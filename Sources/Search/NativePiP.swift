@@ -45,9 +45,10 @@ enum NativePiP {
         for web in Web.pages.allObjects { allow(web.configuration.preferences) }
     }
 
-    /// The largest video playing, into picture in picture. `toggle`: one
-    /// already there comes back instead. Answers "in", "out", "none" (no
-    /// video playing) or "refused".
+    /// The largest video playing with a picture of its own, into picture in
+    /// picture. `toggle`: one already there comes back instead. Answers "in",
+    /// "out", "none" (no video playing) or "refused". A video without a
+    /// picture has nothing to show there, and isn't offered.
     static func script(toggle: Bool) -> String {
         """
         (function () {
@@ -61,12 +62,15 @@ enum NativePiP {
             }
           }
           // Paused by WebKit as the page went out of sight counts as
-          // playing (see Isolate.watch).
+          // playing (see Isolate.watch). A video with no picture of its own
+          // is sound only — YouTube Music plays a song with just a cover
+          // through a nought-by-nought one — and has no window to show.
           var unseen = window.__officeFloatUnseen || function () { return false; };
           var best = null, area = 0;
           for (var j = 0; j < videos.length; j++) {
             var w = videos[j];
             if ((w.paused && !unseen(w)) || w.ended || w.readyState < 2) continue;
+            if (!w.videoWidth || !w.videoHeight) continue;
             var box = w.getBoundingClientRect();
             if (box.width * box.height >= area) { area = box.width * box.height; best = w; }
           }
@@ -75,7 +79,7 @@ enum NativePiP {
           if (!best && toggle) {
             for (var k = 0; k < videos.length; k++) {
               var u = videos[k];
-              if (u.readyState < 2) continue;
+              if (u.readyState < 2 || !u.videoWidth || !u.videoHeight) continue;
               var b = u.getBoundingClientRect();
               if (b.width * b.height >= area) { area = b.width * b.height; best = u; }
             }

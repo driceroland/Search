@@ -31,4 +31,13 @@ final class NativePiPTests: XCTestCase {
         XCTAssertFalse(on.contains("fullscreen"))
         XCTAssertTrue(NativePiP.off.contains("webkitSetPresentationMode('inline')"))
     }
+
+    /// A video with no picture of its own — YouTube Music plays a song that
+    /// only has a cover through a nought-by-nought one — has no window to
+    /// show, and isn't offered (#1260).
+    func testAVideoWithNoPictureIsNotOffered() {
+        let on = NativePiP.script(toggle: true)
+        XCTAssertTrue(on.contains("if (!w.videoWidth || !w.videoHeight) continue;"))
+        XCTAssertTrue(on.contains("if (u.readyState < 2 || !u.videoWidth || !u.videoHeight) continue;"))
+    }
 }

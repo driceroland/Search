@@ -2,7 +2,8 @@ import AppKit
 import WebKit
 
 // A video that keeps playing after you have gone somewhere else, in a small
-// window that stays above everything — other tabs, and other apps.
+// window that stays above everything — other tabs, and other apps. A song
+// with only a cover floats the cover in its place.
 //
 // WebKit will not hand a video to the system's picture-in-picture without a
 // real click on the page, and nothing the app does counts as one. Chromium is
@@ -1168,34 +1169,77 @@ enum Isolate {
     })();
     """
 
-    /// Everything but the video, out of the way. Visibility is inherited, so
-    /// hiding the body and turning it back on for the video alone leaves the
+    /// Everything but what is playing, out of the way. Visibility is inherited,
+    /// so hiding the page and turning it back on for the video alone leaves the
     /// player's own machinery running untouched — which is what keeps the
-    /// stream alive where cutting the DOM about would kill it.
+    /// stream alive where cutting the DOM about would kill it. A page that sets
+    /// `visibility: visible` on its own chrome wins over what it inherits, so
+    /// every element is hidden, not the body's children: YouTube Music's player
+    /// page did, and showed its controls over the picture.
+    ///
+    /// What floats is a video with a picture of its own. A song with only a
+    /// cover has a video with none — YouTube Music plays its sound through a
+    /// nought-by-nought one — so the cover floats in the video's place: the
+    /// image the page shows for what its media session says is playing.
     static let on = """
     (function () {
-      var videos = document.querySelectorAll('video');
       var unseen = window.__officeFloatUnseen || function () { return false; };
-      var best = null, area = 0;
-      for (var i = 0; i < videos.length; i++) {
-        var v = videos[i];
-        if ((v.paused && !unseen(v)) || v.ended || v.readyState < 2) continue;
-        var box = v.getBoundingClientRect();
-        if (box.width * box.height >= area) { area = box.width * box.height; best = v; }
+      // The largest video playing with a picture of its own. One with none is
+      // sound only, and nothing to show.
+      function playing() {
+        var videos = document.querySelectorAll('video'), best = null, area = 0;
+        for (var i = 0; i < videos.length; i++) {
+          var v = videos[i];
+          if ((v.paused && !unseen(v)) || v.ended || v.readyState < 2) continue;
+          if (!v.videoWidth || !v.videoHeight) continue;
+          var box = v.getBoundingClientRect();
+          if (box.width * box.height >= area) { area = box.width * box.height; best = v; }
+        }
+        return best;
       }
+      // Failing that, the cover the site says is playing (the media session's
+      // artwork), as the image in the page that shows it. Only an image whose
+      // address is exactly one of those counts: a page with nothing playing has
+      // no session, and one with a stale one is left alone. Big enough to be
+      // the cover, not a thumbnail beside the title.
+      function artwork() {
+        var metadata = navigator.mediaSession && navigator.mediaSession.metadata;
+        var art = metadata && metadata.artwork ? metadata.artwork : [];
+        if (!art.length) return null;
+        var images = document.querySelectorAll('img'), best = null, area = 0;
+        for (var i = 0; i < images.length; i++) {
+          var img = images[i], src = img.currentSrc || img.src || '';
+          if (!src || !img.naturalWidth || !img.naturalHeight) continue;
+          if (Math.min(img.naturalWidth, img.naturalHeight) < 100) continue;
+          var named = false;
+          for (var j = 0; j < art.length; j++) if (art[j] && art[j].src === src) { named = true; break; }
+          if (!named) continue;
+          var box = img.getBoundingClientRect();
+          if (box.width <= 0 || box.height <= 0) continue;
+          if (box.width * box.height >= area) { area = box.width * box.height; best = img; }
+        }
+        return best;
+      }
+      var best = playing() || artwork();
       if (!best) return 'none';
 
-      var r = best.getBoundingClientRect(), vw = best.videoWidth, vh = best.videoHeight;
-      // Where the video was in the page, at what size of page, for the
-      // landing to wait for (see off). Not while the last float is still
-      // landing: the page isn't as it was yet, and the place it is going
-      // back to is the one kept from before. And whether Twitch's chat was
-      // open, for opening it again (see off).
+      var image = best.tagName === 'IMG';
+      var r = best.getBoundingClientRect();
+      var vw = image ? best.naturalWidth : best.videoWidth;
+      var vh = image ? best.naturalHeight : best.videoHeight;
+      // Where it was in the page, at what size of page, for the landing to wait
+      // for (see off). Not while the last float is still landing: the page
+      // isn't as it was yet, and the place it is going back to is the one kept
+      // from before. And whether Twitch's chat was open, for opening it again
+      // (see off).
       var wait = window.__officeFloatWait;
       if (!window.__officeFloatHome || !(window.__officeFloatLanding || (wait && wait.landing && !wait.settled))) {
         window.__officeFloatHome = {
           box: [r.left + scrollX, r.top + scrollY, r.width, r.height],
-          size: [best.offsetWidth, best.offsetHeight],
+          // An image's own size, not the box the page gave it: a cover the
+          // page shows as a strip is still a square picture, and is fitted
+          // whole in the window.
+          size: image ? [vw, vh] : [best.offsetWidth, best.offsetHeight],
           wide: innerWidth, high: innerHeight,
           chat: !!document.querySelector('.right-column:not(.right-column--collapsed) [data-a-target="right-column__toggle-collapse-btn"]')
         };
@@ -1225,7 +1269,10 @@ enum Isolate {
       sheet.textContent = [
         'html.office-floating, html.office-floating body {',
         'background:#000 !important; overflow:hidden !important; margin:0 !important}',
-        'html.office-floating body > * { visibility:hidden !important }',
+        // Every element, not the body's children: a page that sets its own
+        // `visibility: visible` — YouTube Music's player page does — keeps its
+        // chrome over the picture otherwise.
+        'html.office-floating body * { visibility:hidden !important }',
         'html.office-floating [data-office-float] {',
         'visibility:visible !important; position:fixed !important;',
         'left:0 !important; top:0 !important; right:0 !important; bottom:0 !important;',
@@ -1307,17 +1354,7 @@ enum Isolate {
       clearInterval(window.__officeFloatWatch);
       var remark = function () {
         if (document.querySelector('[data-office-float]')) return;
-        var again = null, most = 0;
-        var all = document.querySelectorAll('video');
-        for (var j = 0; j < all.length; j++) {
-          var one = all[j];
-          if (one.paused || one.ended || one.readyState < 2) continue;
-          var shape = one.getBoundingClientRect();
-          if (shape.width * shape.height >= most) {
-            most = shape.width * shape.height;
-            again = one;
-          }
-        }
+        var again = playing() || artwork();
         if (again) again.setAttribute('data-office-float', '');
       };
       var queued = null;
@@ -1377,7 +1414,7 @@ enum Isolate {
     static func skip(_ seconds: Double) -> String {
         """
         (function () {
-          var video = document.querySelector('[data-office-float]')
+          var video = document.querySelector('video[data-office-float]')
             || document.querySelector('video');
           if (!video) return false;
           video.currentTime = Math.max(0, video.currentTime + (\(seconds)));
@@ -1389,7 +1426,7 @@ enum Isolate {
     /// How far through, and whether it is running.
     static let where_ = """
     (function () {
-      var video = document.querySelector('[data-office-float]')
+      var video = document.querySelector('video[data-office-float]')
         || document.querySelector('video');
       if (!video || !video.duration || !isFinite(video.duration)) return [0, true];
       return [video.currentTime / video.duration, !video.paused];
@@ -1398,7 +1435,7 @@ enum Isolate {
 
     static let toggle = """
     (function () {
-      var video = document.querySelector('[data-office-float]')
+      var video = document.querySelector('video[data-office-float]')
         || document.querySelector('video');
       if (!video) return true;
       if (video.paused) { video.play(); } else { video.pause(); }
@@ -1442,11 +1479,11 @@ enum Isolate {
         root.classList.remove('office-floating');
         var sheet = document.getElementById('office-float');
         if (sheet) sheet.textContent = '';
-        var video = document.querySelector('[data-office-float]');
-        if (video) video.removeAttribute('data-office-float');
-        settle(video);
+        var marked = document.querySelector('[data-office-float]');
+        if (marked) marked.removeAttribute('data-office-float');
+        settle(marked);
         reopen();
-        redraw(video);
+        redraw(document.querySelector('video'));
       }
       // Put back while its tab wasn't in front (the little window closed
       // from another tab), the video was sized to the tab again only as the
