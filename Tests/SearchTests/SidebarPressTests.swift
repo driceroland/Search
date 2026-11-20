@@ -12,7 +12,14 @@ final class SidebarPressTests: XCTestCase {
 
     override func tearDown() async throws {
         for window in windows { window.contentView = nil; window.close() }
-        for browser in browsers { browser.cancelTabEdit(); browser.closeAll() }
+        // Pins are kept for the space in every window (Pins.swift): put down,
+        // or the next test's column starts with them, its rows lower than
+        // rowPoint has them, and a drag from there carries a pin, not the row.
+        for browser in browsers {
+            browser.cancelTabEdit()
+            for tab in browser.tabs where tab.pin != nil { browser.unpin(tab) }
+            browser.closeAll()
+        }
         restorePreferences?()
         if let activationPolicy { NSApp.setActivationPolicy(activationPolicy) }
         windows.removeAll()
