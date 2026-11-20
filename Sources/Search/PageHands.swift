@@ -510,7 +510,15 @@ final class PageRoom {
 
     /// Only a script's or an agent's tab, and only while it has no window.
     func house(_ tab: Tab) {
-        guard tab.bench, tab.web.window == nil else { return }
+        guard tab.bench else { return }
+        lend(tab)
+    }
+
+    /// Any tab but a private one, while it has no window: for an extension
+    /// driving it through chrome.debugger (ExtensionDebugger), which needs
+    /// it laid out and painted while you look at another tab.
+    func lend(_ tab: Tab) {
+        guard !tab.shy, tab.web.window == nil else { return }
         let window = made()
         tab.web.frame = window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
         tab.web.autoresizingMask = [.width, .height]
