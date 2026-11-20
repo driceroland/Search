@@ -262,7 +262,7 @@ final class SpaceSwipe {
             self.land(browser)
         }
         landing = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (fingersDown ? 0.25 : 0.05), execute: work)
     }
 
     /// The pointer moved: the space on its way in taken, once its rows

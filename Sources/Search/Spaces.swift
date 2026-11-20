@@ -384,7 +384,10 @@ struct Parked {
 }
 
 extension Browser {
-    var space: Space { spaces.first { $0.id == spaceID } ?? spaces[0] }
+    var space: Space {
+        let id = spaceComing ?? spaceID
+        return spaces.first { $0.id == id } ?? spaces[0]
+    }
 
     /// What the chrome is washed with (see Spaces.wash): the space on
     /// screen's colour or gradient, so it follows a swipe, ⌃1–⌃9 and the
