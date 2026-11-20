@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Added
 
 - Coming from Zen brings its spaces too, the way Arc's come: each of its spaces a space here with its name, icon and colours, its pinned tabs that space's, its folders kept as folders where pinned rows hold them, and its Essentials as pins in every space. Read from the file Zen keeps them in, a backup of it when that is torn, or the tables older versions of Zen kept; nothing in Zen changes.
+- Open tabs and tab groups come over from Firefox and Zen too, as they do from Chrome-family browsers: asleep at the end of the space, a group by its name and folded as it was, Firefox's pinned tabs as pins (Zen's come with its spaces). Off in the import sheet unless you turn it on.
 
 ### Fixed
 
