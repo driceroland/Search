@@ -6,14 +6,18 @@ Same harness as extension_install_event.py: a copy of build/Search.app under
 a bundle id of its own, in a world of its own, started hidden; the copy, its
 WebKit folders and the world are removed afterwards.
 
-Zotero Connector's offscreen page hands its worker a MessagePort and tells
-the worker it is ready on that port. Search's stand-in for the worker passed
-a port's messages one way only, worker to page: the worker never heard,
-Zotero never finished starting, and its button did nothing (#1236). A local
-extension whose worker answers on any port it is handed:
+Zotero Connector's offscreen page hands its worker a MessagePort, as Chrome
+lets it, through (await navigator.serviceWorker.ready).active, and tells the
+worker it is ready on that port. WebKit's `active` there never reaches the
+extension's worker, and Search's stand-in passed a port's messages one way
+only, worker to page. The worker never heard, Zotero never finished
+starting, and its button did nothing (#1236). A local extension whose worker
+answers on any port it is handed:
 
 - a port handed over through navigator.serviceWorker.controller carries the
   worker's message to the page, and the page's back to the worker;
+- so does one handed over through ready's `active`, and ready still
+  brings WebKit's own registration, with its methods;
 - a port the worker hands "that page" reaches both pages open at its
   address, as before, but one page's messages on it go to the worker, never
   to the other page.
@@ -74,7 +78,14 @@ TALK = """
     for (let i = 0; i < 50 && got.length < 2; i++) await sleep(100);
     return got;
   };
-  return { controller: await talk(navigator.serviceWorker.controller) };
+  const registration = await navigator.serviceWorker.ready;
+  return {
+    registration: Object.prototype.toString.call(registration),
+    showNotification: typeof registration.showNotification,
+    same: navigator.serviceWorker.ready === navigator.serviceWorker.ready,
+    controller: await talk(navigator.serviceWorker.controller),
+    ready: await talk(registration.active),
+  };
 })()
 """
 
@@ -152,6 +163,11 @@ def main():
         both = ["hello", "echo:ping"]
         t.ok("through controller: the worker's message reaches the page", (got.get("controller") or [])[:1] == ["hello"], got)
         t.ok("… and the page's reaches the worker", got.get("controller") == both, got)
+        t.ok("through ready's active: the worker's message reaches the page", (got.get("ready") or [])[:1] == ["hello"], got)
+        t.ok("… and the page's reaches the worker", got.get("ready") == both, got)
+        t.ok("ready brings WebKit's own registration, with its methods",
+             got.get("registration") == "[object ServiceWorkerRegistration]" and got.get("showNotification") == "function", got)
+        t.ok("… and is the same promise each time it is read", got.get("same") is True, got)
         sv.cmd({"do": "close", "id": page})
 
         # Two pages at one address; the first asks the worker for a port.

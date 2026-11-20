@@ -926,14 +926,24 @@ enum ExtensionShims {
           if (!data || answered(data) || data.url !== location.href) return;
           try { container.dispatchEvent(messageFrom(controller, data.data, data.ports)); } catch (e) {}
         };
-        // Only the controller: `ready` is left as WebKit has it, since a
-        // made-up registration has none of a real one's methods
-        // (showNotification…), and a page calling them would throw where it
-        // used to wait.
+        // `ready` brings WebKit's own registration, with every method a real
+        // one has (a made-up one would throw at showNotification…), but its
+        // `active` is the stand-in: WebKit's never reaches the extension's
+        // worker, and pages post to it as Chrome's docs show (Zotero does).
         if (controller) {
           kept.add(container);
           let own = controller;
           try { Object.defineProperty(container, "controller", { configurable: true, get: () => own }); } catch (e) {}
+          const readyOf = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(container), "ready");
+          if (readyOf && typeof readyOf.get === "function") {
+            let ready = null;
+            try {
+              Object.defineProperty(container, "ready", { configurable: true, get: () => ready || (ready = readyOf.get.call(container).then((registration) => {
+                if (registration) { try { Object.defineProperty(registration, "active", { configurable: true, get: () => controller }); } catch (e) {} }
+                return registration;
+              })) });
+            } catch (e) {}
+          }
           // A page that, told a worker controls it, loads a script of its
           // own the extension doesn't ship counts on that worker's fetch
           // handler to make it, as Chrome lets it: Stylus's popup writes in
