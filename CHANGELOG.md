@@ -22,7 +22,8 @@ in [ROADMAP.md](ROADMAP.md).
 ### Fixed
 
 - Stylus's button opens its popup, and the popup opens its style manager. In 1.0.15 the popup stayed at its first frame ("Toggle styles" and ⚙), so the click seemed to do nothing: Stylus reaches its worker over a port handed to `navigator.serviceWorker`, which got through from 1.0.16 on ([#1258](https://github.com/driceroland/Search/pull/1258)). A probe now checks it with Stylus from the Chrome Web Store: `python3 Tests/extension_stylus.py`. Reported by email
-- Settings (and History and Search's other pages) in Split View stays in its own pane. In a pane narrower than Settings needs, 1.0.16 drew it past both edges of its half: over the page beside it, and over the tabs column, whose titles showed through with Glass on. A probe checks it from pictures of a hidden window: `python3 Tests/split_settings_pane.py`. (idea 833)
+- Settings (and History and Search's other pages) in Split View stays in its own pane. In a pane narrower than Settings needs, it was drawn past both edges of its half: over the page beside it, and over the tabs column, whose titles showed through with Glass on. A probe checks it from pictures of a hidden window: `python3 Tests/split_settings_pane.py`. (idea 833)
+- A two-finger swipe between spaces slides once. With the trackpad set to swipe between pages with two fingers, the same stroke can also come as a swipe between pages, told as its glide ends; from 1.0.16 it was ignored only within 0.6 s of the fingers' last move, so after a quick stroke's long glide it slid on to the space after (or the card for a new one). The glide now counts as the stroke. A probe makes the trackpad's events up, glide included, in a hidden window: `python3 Tests/space_swipe_once.py`. (idea 834)
 
 ### Held back
 
