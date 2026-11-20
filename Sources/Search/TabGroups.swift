@@ -210,7 +210,8 @@ struct GroupHeading: View {
             .fill(dropping ? greys.wash : (hovering ? greys.hover : .clear)))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onTapGesture { if !editing { browser.toggleTabGroup(group.id) } }
-        .modifier(GroupHeadingShared(browser: browser, group: group, dragSpace: dragSpace, dropping: $dropping))
+        .modifier(GroupHeadingShared(browser: browser, group: group, dragSpace: dragSpace, dropping: $dropping,
+                                     showsColour: !horizontal))
         .onHover { hovering = $0 }
         .onChange(of: editing) { _, now in
             if now {
@@ -239,6 +240,8 @@ private struct GroupHeadingShared: ViewModifier {
     let group: TabGroup
     let dragSpace: String?
     @Binding var dropping: Bool
+    var showsColour = true
+    @State private var choosingColour = false
 
     func body(content: Content) -> some View {
         content
@@ -268,6 +271,9 @@ private struct GroupHeadingShared: ViewModifier {
             .contextMenu {
                 Button("Rename Group") { browser.editingGroupID = group.id }
                 Button(group.collapsed ? "Expand Group" : "Collapse Group") { browser.toggleTabGroup(group.id) }
+                if showsColour {
+                    Button("Colour…") { choosingColour = true }
+                }
                 // The whole group into another space, still a group there: Arc's
                 // folders came in wherever Arc had them.
                 if browser.prefs.usesSpaces, browser.spaces.count > 1 {
@@ -284,6 +290,14 @@ private struct GroupHeadingShared: ViewModifier {
                 Divider()
                 Button("Ungroup Tabs") { browser.removeTabGroup(group.id) }
                 Button("Close Group") { browser.closeTabGroup(group.id) }
+            }
+            .popover(isPresented: $choosingColour,
+                     hangingFrom: browser.prefs.sidePosition == .right ? .leading : .trailing) {
+                let index = group.colour ?? 0
+                ColourSwatches(selected: Spaces.colours.indices.contains(index) ? index : 0) {
+                    browser.setTabGroupColour(group.id, to: $0)
+                }
+                .padding(16)
             }
     }
 }
