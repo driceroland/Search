@@ -133,7 +133,13 @@ struct InternalPageView: View {
             // Its own state for each kind: History's search box doesn't
             // follow you into Downloads.
             .id(page.kind)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // As large as the room it is given and never larger: Settings
+            // can't be narrower than about 540 points, and in a narrower
+            // pane of a pair its frame grew to that and was drawn centred
+            // on the pane, past both of its edges — over the page beside it
+            // and over the tabs column, seen through with Glass on (idea
+            // 833). Held to the pane, from its leading edge, and cut there.
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
             .background(Palette.ground)
             .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
             // In a pair, a click on this page makes it the one with the keys,
