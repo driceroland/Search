@@ -2000,7 +2000,9 @@ final class Bench {
                     let (spaces, pins, tabs) = browser.takeArc(sidebar, from: source, profile: profile)
                     ImportRecords.note(source.name, spaces: spaces, pinned: pins + tabs)
                     out["arc"] = ["spaces": spaces, "pins": pins, "tabs": tabs,
-                                  "names": browser.spaces.map(\.name), "usesSpaces": browser.prefs.usesSpaces]
+                                  "names": browser.spaces.map(\.name), "usesSpaces": browser.prefs.usesSpaces,
+                                  "colours": browser.spaces.map(\.colour), "icons": browser.spaces.map(\.symbol),
+                                  "gradients": browser.spaces.map { $0.gradient?.colours ?? [] }]
                 } else {
                     out["arc"] = "no Arc sidebar"
                 }

@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Coming from Zen brings its spaces too, the way Arc's come: each of its spaces a space here with its name, icon and colours, its pinned tabs that space's, its folders kept as folders where pinned rows hold them, and its Essentials as pins in every space. Read from the file Zen keeps them in, a backup of it when that is torn, or the tables older versions of Zen kept; nothing in Zen changes.
+
 ### Fixed
 
 - Stylus's button opens its popup, and the popup opens its style manager. In 1.0.15 the popup stayed at its first frame ("Toggle styles" and ⚙), so the click seemed to do nothing: Stylus reaches its worker over a port handed to `navigator.serviceWorker`, which got through from 1.0.16 on ([#1258](https://github.com/driceroland/Search/pull/1258)). A probe now checks it with Stylus from the Chrome Web Store: `python3 Tests/extension_stylus.py`. Reported by email

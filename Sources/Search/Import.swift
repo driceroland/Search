@@ -705,6 +705,10 @@ enum Mozilla {
 
         var id: String { name }
 
+        /// Zen keeps spaces, pins and Essentials of its own (see
+        /// ImportZen.swift); its open tabs then leave its pins behind.
+        var keepsSpaces: Bool { name == "Zen" }
+
         /// Every profile's places.sqlite found on this Mac, newest first, so
         /// the profile in use leads. A folder may point straight at a profile
         /// or at a directory of them.
@@ -1482,7 +1486,7 @@ enum ImportSource: Identifiable, Hashable {
 
 /// Import reads validate the opened descriptor, not just a path checked earlier.
 /// JSON has a byte limit both before and during reading, including file growth.
-private enum ImportRead {
+enum ImportRead {
     static let jsonLimit = 64 * 1024 * 1024
 
     static func openRegular(_ url: URL, inside root: URL? = nil, limit: Int? = nil) throws -> Int32 {
@@ -1508,13 +1512,13 @@ private enum ImportRead {
         }
     }
 
-    static func data(_ url: URL, inside root: URL) throws -> Data {
-        let fd = try openRegular(url, inside: root, limit: jsonLimit)
+    static func data(_ url: URL, inside root: URL, limit: Int = jsonLimit) throws -> Data {
+        let fd = try openRegular(url, inside: root, limit: limit)
         defer { close(fd) }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
         var data = Data()
-        while let chunk = try handle.read(upToCount: min(64 * 1024, jsonLimit - data.count + 1)), !chunk.isEmpty {
-            guard chunk.count <= jsonLimit - data.count else { throw Chromium.Trouble.unreadable }
+        while let chunk = try handle.read(upToCount: min(64 * 1024, limit - data.count + 1)), !chunk.isEmpty {
+            guard chunk.count <= limit - data.count else { throw Chromium.Trouble.unreadable }
             data.append(chunk)
         }
         return data

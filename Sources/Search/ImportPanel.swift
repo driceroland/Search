@@ -36,9 +36,10 @@ struct ImportPanel: View {
     /// What came from this browser before goes, and its bookmarks come
     /// fresh. Off unless asked for; passwords are never taken out.
     @State private var replaceBookmarks = false
-    /// Arc's spaces, their pinned tabs and its favourites (see takeArc).
+    /// Arc's or Zen's spaces, their pinned tabs, and Arc's favourites or
+    /// Zen's Essentials (see takeArc).
     @State private var wantsArc = true
-    /// How many spaces and pinned things Arc has, by browser and profile.
+    /// How many spaces and pinned things Arc or Zen has, by browser and profile.
     @State private var arcCounts: [String: (spaces: Int, pinned: Int)] = [:]
     /// Opened for the extensions: the first browser counted with some is
     /// picked, until you pick one yourself.
@@ -175,9 +176,10 @@ struct ImportPanel: View {
     /// rows are on: with them on, the pages Arc keeps loose become rows under
     /// the pins and the ones it filed stay tabs in a group of that folder's
     /// name, so that neither the keeping nor the folder is lost.
-    private func arcDetail(_ arc: (spaces: Int, pinned: Int)) -> String {
+    private func arcDetail(_ arc: (spaces: Int, pinned: Int), _ source: ImportSource) -> String {
         let spaces = arc.spaces == 1 ? "1 space" : "\(arc.spaces) spaces"
-        let head = "\(spaces), \(arc.pinned) pinned — each a space here, the favourites as pins"
+        let favourites = source.name == "Zen" ? "Essentials" : "favourites"
+        let head = "\(spaces), \(arc.pinned) pinned — each a space here, the \(favourites) as pins"
         if browser.prefs.listsPins && browser.prefs.pinFolders {
             return head + ", its pinned pages as rows under them, in its folders as folders of rows"
         }
@@ -188,8 +190,9 @@ struct ImportPanel: View {
 
     /// Whether Arc's own spaces are coming over: they hold its tabs, which
     /// its session file holds again, so its open tabs then stay behind.
+    /// Zen's open tabs leave its pins out, so both can come.
     private func takesArc(_ source: ImportSource) -> Bool {
-        wantsArc && arcCounts[key(source, profile(of: source))] != nil
+        wantsArc && source.sessionRepeatsSpaces && arcCounts[key(source, profile(of: source))] != nil
     }
 
     /// Whether the open tabs switch, on, would bring anything.
@@ -345,13 +348,14 @@ struct ImportPanel: View {
                     option($wantsTabs, none: !bringsTabs(source))
                 }
             }
-            // Arc's own: its spaces, what is pinned in them, its favourites.
+            // Arc's own, or Zen's: its spaces, what is pinned in them, its
+            // favourites or Essentials.
             if let arc = arcCounts[key(source, profile(of: source))], arc.spaces + arc.pinned > 0 {
                 Rule()
-                Line("Spaces and pinned tabs", arcDetail(arc)) {
+                Line("Spaces and pinned tabs", arcDetail(arc, source)) {
                     Switch(on: $wantsArc)
                 }
-                // Arc's pinned pages only keep their shape as pinned rows, and
+                // Pinned pages only keep their shape as pinned rows, and
                 // those are off until asked for. This is the moment someone
                 // would ask, so the sheet offers the switch here, once, rather
                 // than bringing them in as tabs and leaving the setting to be
@@ -359,19 +363,19 @@ struct ImportPanel: View {
                 if wantsArc, arc.pinned > 0, !browser.prefs.listsPins {
                     Rule()
                     Line("Keep them as pinned rows",
-                         "As in Arc: each pinned page a row with its name, under your pins. Turned on, it stays in Settings › Spaces & Pins › Pinned rows"
+                         "As in \(source.name): each pinned page a row with its name, under your pins. Turned on, it stays in Settings › Spaces & Pins › Pinned rows"
                          + (browser.prefs.sidebar ? "" : "; rows show with the tabs down the side")) {
                         Pill("Turn on pinned rows") {
                             withAnimation(Motion.glide) { browser.prefs.listsPins = true }
                         }
                     }
                 }
-                // Arc's folders, as folders of rows rather than tab groups:
+                // Its folders, as folders of rows rather than tab groups:
                 // offered here, the moment they would be wanted, as the rows are.
                 if wantsArc, arc.pinned > 0, browser.prefs.listsPins, !browser.prefs.pinFolders {
                     Rule()
                     Line("Keep its folders as folders",
-                         "As in Arc: each folder of pinned pages a folder of rows, nested as it was, rather than a tab group. Turned on, it stays in Settings › Spaces & Pins › Folders in pinned rows") {
+                         "As in \(source.name): each folder of pinned pages a folder of rows, nested as it was, rather than a tab group. Turned on, it stays in Settings › Spaces & Pins › Folders in pinned rows") {
                         Pill("Turn on folders") {
                             withAnimation(Motion.glide) { browser.prefs.pinFolders = true }
                         }
@@ -554,7 +558,7 @@ struct ImportPanel: View {
             let (spaces, pins, tabs) = browser.takeArc(sidebar, from: source, profile: profile)
             ImportRecords.note(source.name, spaces: spaces, pinned: pins + tabs)
             func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
-            said[4] = Said(ok: true, text: spaces + pins + tabs == 0 ? "Arc's spaces and pins were all here already"
+            said[4] = Said(ok: true, text: spaces + pins + tabs == 0 ? "\(source.name)'s spaces and pins were all here already"
                            : "\(count(spaces, "new space")), \(count(pins, "pin")), \(count(tabs, "pinned tab"))")
         }
         // From what was read when the sheet counted, not read again here.
