@@ -49,6 +49,8 @@ struct ImportPanel: View {
     /// Whether that import left any bookmarks behind, which is what the
     /// offer to show the bar is for.
     @State private var marksLanded = false
+    /// The steps for exporting from Safari, shown when asked.
+    @State private var safariSteps = false
 
     struct Said: Hashable {
         let ok: Bool
@@ -221,9 +223,16 @@ struct ImportPanel: View {
         if ImportSource.safari || !unreadable.isEmpty || folderError != nil {
             VStack(alignment: .leading, spacing: 4) {
                 if ImportSource.safari {
-                    Text("Safari — macOS keeps its data from other apps: in Safari, File › Export Browsing Data, then bring the file in below.")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Palette.faint)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("Safari — macOS keeps its files from other apps, so it comes over from a file it exports.")
+                        Spacer(minLength: 4)
+                        Pill(safariSteps ? "Hide" : "How") { withAnimation(Motion.settle) { safariSteps.toggle() } }
+                    }
+                    if safariSteps {
+                        Text("In Safari, choose File › Export Browsing Data to File…, keep Bookmarks, History and Passwords, and save. Then press File… below and choose the ZIP it made.")
+                            .foregroundStyle(Palette.muted)
+                            .transition(.opacity)
+                    }
                 }
                 ForEach(unreadable.indices, id: \.self) { index in
                     let missing = unreadable[index]

@@ -1363,7 +1363,7 @@ enum Mozilla {
 enum ImportSource: Identifiable, Hashable {
     case chromium(Chromium.Source)
     case mozilla(Mozilla.Source)
-    /// Orion: bookmarks and history (see ImportWebKit.swift).
+    /// Orion and Safari: bookmarks and history (see ImportWebKit.swift).
     case webkit(WebKitBrowser.Source)
 
     var id: String {
@@ -1531,10 +1531,12 @@ enum ImportSource: Identifiable, Hashable {
             + WebKitBrowser.installed().map(ImportSource.webkit)
     }
 
-    /// Whether Safari is on this Mac: its data is kept from other apps, so
-    /// the sheet says how to export it instead.
+    /// Whether Safari is on this Mac and its files can't be read here (no
+    /// Full Disk Access, which Search never asks for): then the sheet says
+    /// how to export from it. When they can, it is in the list like any other.
     static var safari: Bool {
         FileManager.default.fileExists(atPath: "/Applications/Safari.app")
+            && !WebKitBrowser.installed().contains { $0.kind == .safari }
     }
 }
 

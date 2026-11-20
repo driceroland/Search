@@ -14,8 +14,11 @@ final class WebKitImportTests: XCTestCase {
 
     private var orion: URL { Chromium.base.appendingPathComponent("Orion", isDirectory: true) }
 
+    private var safari: URL { Chromium.base.appendingPathComponent("Safari", isDirectory: true) }
+
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: orion)
+        try? FileManager.default.removeItem(at: safari)
     }
 
     static let favourites: [String: Any] = [
@@ -83,5 +86,64 @@ final class WebKitImportTests: XCTestCase {
         XCTAssertNotNil(WebKitBrowser.written("2026-11-01 10:00:00"))
         XCTAssertEqual(WebKitBrowser.written("0.0"), nil)
         XCTAssertNil(WebKitBrowser.written("yesterday"))
+    }
+
+    // MARK: - Safari
+
+    static let safariBookmarks: [String: Any] = [
+        "WebBookmarkType": "WebBookmarkTypeList", "Title": "", "Children": [
+            ["WebBookmarkType": "WebBookmarkTypeProxy", "Title": "History"],
+            ["WebBookmarkType": "WebBookmarkTypeList", "Title": "BookmarksBar", "Children": [
+                ["WebBookmarkType": "WebBookmarkTypeLeaf", "URLString": "https://apple.example/", "URIDictionary": ["title": "Apple"]],
+                ["WebBookmarkType": "WebBookmarkTypeList", "Title": "Work", "Children": [
+                    ["WebBookmarkType": "WebBookmarkTypeLeaf", "URLString": "https://user:pw@work.example/", "URIDictionary": ["title": "Work"]],
+                ]],
+            ]],
+            ["WebBookmarkType": "WebBookmarkTypeList", "Title": "BookmarksMenu", "Children": [
+                ["WebBookmarkType": "WebBookmarkTypeLeaf", "URLString": "https://menu.example/", "Title": "Menu page"],
+                ["WebBookmarkType": "WebBookmarkTypeLeaf", "URLString": "javascript:alert(1)", "URIDictionary": ["title": "Bookmarklet"]],
+            ]],
+            ["WebBookmarkType": "WebBookmarkTypeList", "Title": "com.apple.ReadingList", "Children": [
+                ["WebBookmarkType": "WebBookmarkTypeLeaf", "URLString": "https://later.example/", "URIDictionary": ["title": "Later"],
+                 "ReadingList": ["PreviewText": "…"]],
+            ]],
+        ],
+    ]
+
+    func testSafariIsReadDirectlyWhenItsFilesOpen() throws {
+        try FileManager.default.createDirectory(at: safari, withIntermediateDirectories: true)
+        XCTAssertNil(ImportSource.installed().first { $0.name == "Safari" }, "no files, no Safari in the list")
+        try PropertyListSerialization.data(fromPropertyList: Self.safariBookmarks, format: .binary, options: 0)
+            .write(to: safari.appendingPathComponent("Bookmarks.plist"))
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(safari.appendingPathComponent("History.db").path, &db), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(db, """
+        CREATE TABLE history_items (id INTEGER PRIMARY KEY, url TEXT, visit_count INTEGER);
+        CREATE TABLE history_visits (id INTEGER PRIMARY KEY, history_item INTEGER, visit_time REAL, title TEXT);
+        INSERT INTO history_items VALUES (1, 'https://often.example/', 7), (2, 'https://once.example/', 1);
+        INSERT INTO history_visits VALUES (1, 1, 780000000.5, 'Old title'), (2, 1, 790000000.0, 'New title'), (3, 2, 785000000.0, 'Once');
+        """, nil, nil, nil), SQLITE_OK)
+        sqlite3_close(db)
+
+        let source = try XCTUnwrap(ImportSource.installed().first { $0.name == "Safari" })
+        let marks = source.bookmarks()
+        XCTAssertEqual(marks.map(\.title), ["Apple", "Work", "Bookmarks Menu", "Reading List"])
+        XCTAssertEqual(marks[1].children?.first?.url, "https://work.example/", "the password in it is left behind")
+        XCTAssertEqual(marks[2].children?.map(\.title), ["Menu page"])
+        let places = source.places()
+        XCTAssertEqual(places.map(\.url.absoluteString), ["https://often.example/", "https://once.example/"])
+        XCTAssertEqual(places[0].title, "New title")
+        XCTAssertEqual(places[0].count, 7)
+        XCTAssertEqual(places[0].last, Date(timeIntervalSince1970: 790_000_000 + WebKitBrowser.appleEpoch))
+        XCTAssertFalse(ImportSource.safari, "read directly, so no export note")
+    }
+
+    func testSafariFilesThatDoNotOpenLeaveItOut() throws {
+        try FileManager.default.createDirectory(at: safari, withIntermediateDirectories: true)
+        let marks = safari.appendingPathComponent("Bookmarks.plist")
+        try Data().write(to: marks)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: marks.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: marks.path) }
+        XCTAssertNil(ImportSource.installed().first { $0.name == "Safari" })
     }
 }
