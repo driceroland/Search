@@ -819,6 +819,11 @@ final class Browser: NSObject, ObservableObject {
         veiling = true
         picking = tab
         tab.startPicking()
+        // The keyboard to the page, for ↑ and ↓ (see Veiling.picker): left
+        // in the address field or the column, they would never reach it.
+        if let web = tab.built, let window = web.window, window.firstResponder !== web {
+            window.makeFirstResponder(web)
+        }
     }
 
     private func stopHiding() {
@@ -830,8 +835,12 @@ final class Browser: NSObject, ObservableObject {
     /// What a private tab took off its page, kept for that page only.
     private var passingVeils: [Tab.ID: [String]] = [:]
 
+    /// Said when the page keeps what you picked on screen whatever its
+    /// stylesheet says. ↑ is usually the way past it: the thing around it.
+    static let keptOnScreen = "The page keeps that on screen — try ↑ for what's around it"
+
     private func passingCSS(_ id: Tab.ID) -> String {
-        (passingVeils[id] ?? []).map { "\n\($0) { display: none !important; }" }.joined()
+        (passingVeils[id] ?? []).map { "\n" + Curtain.rule($0) }.joined()
     }
 
     /// ⌘Z, while pointing: the last thing you took off comes back.
@@ -7238,14 +7247,34 @@ final class Browser: NSObject, ObservableObject {
             if tab.shy {
                 passingVeils[tab.id, default: []].append(selector)
                 tab.applyVeils(curtain.css(on: host) + passingCSS(tab.id))
-                announce("Hidden on this page — ⌘Z puts it back")
+                tab.stillShows(selector) { [weak self, weak tab] shows in
+                    guard let self, let tab else { return }
+                    guard shows else { return announce("Hidden on this page — ⌘Z puts it back") }
+                    passingVeils[tab.id]?.removeAll { $0 == selector }
+                    tab.applyVeils(curtain.css(on: host) + passingCSS(tab.id))
+                    announce(Self.keptOnScreen)
+                }
                 return
             }
             curtain.hide(selector, label: label, note: note, on: host)
             let css = curtain.css(on: host)
             tab.arm(hiding: css)
             tab.applyVeils(css)
-            announce("Hidden — ⌘Z puts it back")
+            // Said once the page shows it gone, not before: a rule the page
+            // outranks was announced as hidden, and listed, while the thing
+            // stayed in front of you (#1270). One that didn't take is
+            // neither kept nor listed.
+            tab.stillShows(selector) { [weak self, weak tab] shows in
+                guard let self, let tab else { return }
+                guard shows else { return announce("Hidden — ⌘Z puts it back") }
+                if let veil = curtain.veils(on: host).first(where: { $0.selector == selector }) {
+                    curtain.restore(veil, on: host)
+                }
+                let css = curtain.css(on: host)
+                tab.arm(hiding: css)
+                tab.applyVeils(css)
+                announce(Self.keptOnScreen)
+            }
         }
         tab.onPickEnd = { [weak self] tab in
             guard let self, picking === tab else { return }
@@ -9275,6 +9304,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             return
         }
         tab.didCommit()
+        // A new document has a picker of its own, asleep: pointing ends with
+        // the page it was in. Left on, the hint stayed up over a page that
+        // took no picks, and the next ⇧⌘H put away what seemed not there.
+        if picking === tab { stopHiding() }
         // A page that went somewhere else starts a new run of links.
         if linkRun?.opener == tab.id { linkRun = nil }
         tab.extensionReturn.finished(navigation)

@@ -834,7 +834,7 @@ struct ContentView: View {
             }
             StoreOffer(browser: browser)
             if browser.veiling {
-                hint("Click anything to hide it   ⌘Z undo   esc done")
+                hint("Click anything to hide it   ↑↓ wider, narrower   ⌘Z undo   esc done")
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
