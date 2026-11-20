@@ -8176,7 +8176,11 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         let from = opener.id
         // The link menu's Open Link in New Tab, asked for in the last second.
         // Read once: reading it takes it.
+        // A window the page opens for a press of the middle button, as Google
+        // Drive's folders do, goes behind too, as a middle-clicked link's tab
+        // does and as Chrome puts it; ⇧ as well brings it forward (#1243).
         let behind = (webView as? PageView)?.takeBehind() == true
+            || (clicked && opener.popupGesture.middle && !action.modifierFlags.contains(.shift))
         // Its Open Link in Split View, the same way.
         let beside = (webView as? PageView)?.takeBeside() == true
         let popup = windowFeatures.width != nil || windowFeatures.height != nil

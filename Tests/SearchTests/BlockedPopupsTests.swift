@@ -93,6 +93,21 @@ final class BlockedPopupsTests: XCTestCase {
         XCTAssertTrue(claimed.spent(now: 2))
     }
 
+    /// #1243: the middle button grants one window as any press does, and
+    /// says it goes behind; the next press of another kind says otherwise.
+    func testMiddlePressGrantsOneWindowBehind() {
+        var gesture = PopupGesture()
+        gesture.record(origin: "https://a.com:443", kind: "middle", now: 1)
+        XCTAssertTrue(gesture.middle)
+        XCTAssertTrue(gesture.take(origin: "https://a.com:443", mainFrame: true, now: 1.2))
+        XCTAssertFalse(gesture.take(origin: "https://a.com:443", mainFrame: true, now: 1.3))
+        gesture.record(origin: "https://a.com:443", kind: "input", now: 2)
+        XCTAssertFalse(gesture.middle)
+        gesture.record(origin: "https://a.com:443", kind: "middle", now: 3)
+        gesture.record(origin: "https://a.com:443", kind: "click", now: 3.1)
+        XCTAssertTrue(gesture.middle)
+    }
+
     func testAlwaysAllowIsSavedFromANormalTabAndClearsTheSign() {
         let page = tab("https://app.hark.com/chat")
         page.noteBlocked(URL(string: "https://app.hark.com/answer/1"))

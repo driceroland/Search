@@ -1340,6 +1340,10 @@ struct SideBar: View {
             case .group(let id): browser.unpinDropped(tab, at: 0, group: id)
             }
         }
+        // The mark among the pinned rows goes with the drop it showed: a tab
+        // let go there from the tabs left it standing until the next carry
+        // moved it (#1245).
+        showFolderDrop(nil)
         return true
     }
 

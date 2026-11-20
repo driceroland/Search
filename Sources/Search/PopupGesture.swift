@@ -11,12 +11,19 @@ struct PopupGesture {
     private var consumed = false
     private var input = false
     private var menu = false
+    /// The interaction was the middle button: a window the page opens for
+    /// it goes behind, as a middle-clicked link's tab does (#1243).
+    private(set) var middle = false
     /// Which interaction this is, kept across clear(), and the tab the
     /// page's own window for it became (see opened(_:) and claim()).
     private var serial = 0
     private var made: (serial: Int, tab: UUID)?
 
     mutating func record(origin: String?, kind: String, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        // A press of the middle button is an input like any other; it only
+        // says where the window it grants goes.
+        let pressedMiddle = kind == "middle"
+        let kind = pressedMiddle ? "input" : kind
         // Click and contextmenu follow mousedown (or keyboard activation). They must not
         // grant a second window after the first event already opened one,
         // even when the button was held for most of the activation window.
@@ -31,6 +38,7 @@ struct PopupGesture {
         consumed = false
         input = kind != "click"
         menu = kind == "menu"
+        middle = pressedMiddle
     }
 
     mutating func take(origin: String?, mainFrame: Bool = false, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
@@ -121,7 +129,8 @@ final class PopupGestureRelay: NSObject, WKScriptMessageHandler {
         // repeat flag. The initial keydown already supplied their one grant.
         if (e.type === 'click' && e.detail === 0 && keys.size) return;
         window.webkit.messageHandlers.officePopupGesture.postMessage(
-          e.type === 'click' ? 'click' : e.type === 'contextmenu' ? 'menu' : 'input');
+          e.type === 'click' ? 'click' : e.type === 'contextmenu' ? 'menu'
+            : e.type === 'mousedown' && e.button === 1 ? 'middle' : 'input');
       }
       addEventListener('mousedown', note, true);
       addEventListener('keydown', note, true);
@@ -147,7 +156,7 @@ final class PopupGestureRelay: NSObject, WKScriptMessageHandler {
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let kind = message.body as? String, ["input", "click", "menu"].contains(kind) else { return }
+        guard let kind = message.body as? String, ["input", "middle", "click", "menu"].contains(kind) else { return }
         MainActor.assumeIsolated {
             guard let webView = message.webView, let tab = Self.tab(for: webView) else { return }
             tab.popupGesture.record(origin: PopupGesture.origin(message.frameInfo), kind: kind)
