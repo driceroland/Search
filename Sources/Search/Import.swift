@@ -1104,7 +1104,8 @@ enum Mozilla {
         return ImportSource.Preview(
             bookmarks: Bookmarks.count(bookmarks(in: source, profile: profile)),
             places: min(limit, places),
-            passwords: passwords
+            passwords: passwords,
+            session: sessions(in: source, profile: profile)
         )
     }
 
@@ -1461,7 +1462,7 @@ enum ImportSource: Identifiable, Hashable {
         var passwords = 0
         /// Chrome Web Store ids, for a Chromium browser.
         var extensions: [String] = []
-        /// The open tabs and tab groups, for a Chromium browser: read here,
+        /// The open tabs and tab groups, for a Chromium or Gecko browser: read here,
         /// off the main thread, and brought in from this as it is.
         var session = SessionImport.Snapshot()
     }
