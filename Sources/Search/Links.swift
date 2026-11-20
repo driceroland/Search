@@ -191,6 +191,16 @@ final class Links: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// A page handed off from your iPhone or another Mac, Search being the
+    /// default browser: opened as a link from another app is, and only an
+    /// http or https address (see Handoff.incoming). A test run takes none.
+    func application(_ application: NSApplication, continue userActivity: NSUserActivity,
+                     restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
+        guard !Store.testing, let url = Handoff.incoming(userActivity) else { return false }
+        Links.take(url)
+        return true
+    }
+
     /// The Dock icon clicked with the window closed: bring the window back
     /// rather than doing nothing, which is what a hidden-title-bar SwiftUI
     /// window does by default.
