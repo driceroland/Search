@@ -709,6 +709,13 @@ struct DragStrip: NSViewRepresentable {
     var below: CGFloat = 0
     /// The run at the trailing end that belongs to a button.
     var trailing: CGFloat = 0
+    /// How tall the things in the reserved runs are, centred in the strip:
+    /// above and below them the strip is title bar again, where a press
+    /// moves the window and a double-click does what a title bar's does.
+    /// Nil, the runs are theirs all the way up and down. The tabs are 28
+    /// points in a 52-point strip, and the 12 above and below each were the
+    /// one stretch of the top of the window nothing could take hold of.
+    var band: CGFloat? = nil
     /// Stands in for the title bar's own double-click, in a strip that is
     /// empty tab-row rather than title bar: the empty space below or after
     /// the tabs, where a double-click opens a new tab instead of zooming the
@@ -746,6 +753,7 @@ struct DragStrip: NSViewRepresentable {
         (view as? Strip)?.reserved = reserved
         (view as? Strip)?.below = below
         (view as? Strip)?.trailing = trailing
+        (view as? Strip)?.band = band
         (view as? Strip)?.onDoubleClick = onDoubleClick
         (view as? Strip)?.rightMenu = menu
     }
@@ -754,6 +762,15 @@ struct DragStrip: NSViewRepresentable {
         var reserved: CGFloat = 0 { didSet { if reserved != oldValue { aimCursor() } } }
         var below: CGFloat = 0 { didSet { if below != oldValue { aimCursor() } } }
         var trailing: CGFloat = 0 { didSet { if trailing != oldValue { aimCursor() } } }
+        var band: CGFloat? { didSet { if band != oldValue { aimCursor() } } }
+
+        /// Whether `inside` (the strip's own, from the bottom) is in a
+        /// reserved run's band: theirs, not the strip's.
+        private func reservedAt(_ inside: NSPoint) -> Bool {
+            guard inside.x < reserved || inside.x > bounds.width - trailing else { return false }
+            guard let band else { return true }
+            return abs(inside.y - bounds.height / 2) <= band / 2
+        }
         var onDoubleClick: (() -> Void)?
         var rightMenu: (() -> NSMenu?)?
 
@@ -772,7 +789,7 @@ struct DragStrip: NSViewRepresentable {
 
         override func hitTest(_ point: NSPoint) -> NSView? {
             let inside = convert(point, from: superview)
-            guard inside.x >= reserved, inside.x <= bounds.width - trailing else { return nil }
+            guard !reservedAt(inside) else { return nil }
             // A right-click over the rows, with a menu to give: the strip
             // lies behind them, so it is asked only where no row, heading
             // or button took it first — the gaps between them.
@@ -851,8 +868,13 @@ struct DragStrip: NSViewRepresentable {
             let room = NSRect(x: reserved, y: 0,
                               width: max(0, bounds.width - trailing - reserved),
                               height: max(0, bounds.height - below))
-            guard room.width > 0, room.height > 0 else { return }
-            addCursorRect(room, cursor: .arrow)
+            if room.width > 0, room.height > 0 { addCursorRect(room, cursor: .arrow) }
+            // Above and below the reserved runs' band, the whole width.
+            guard let band, below == 0 else { return }
+            let edge = max(0, (bounds.height - band) / 2)
+            guard edge > 0 else { return }
+            addCursorRect(NSRect(x: 0, y: 0, width: bounds.width, height: edge), cursor: .arrow)
+            addCursorRect(NSRect(x: 0, y: bounds.height - edge, width: bounds.width, height: edge), cursor: .arrow)
         }
 
         private func aimCursor() { window?.invalidateCursorRects(for: self) }
@@ -885,7 +907,9 @@ struct DragStrip: NSViewRepresentable {
         /// like nothing at all.
         override func mouseUp(with event: NSEvent) {
             guard let window, !moved, event.clickCount == 2 else { return }
-            if let onDoubleClick {
+            // Above or below the tabs is title bar, not empty tab row.
+            let inside = convert(event.locationInWindow, from: nil)
+            if let onDoubleClick, inside.x >= reserved, inside.x <= bounds.width - trailing {
                 onDoubleClick()
                 return
             }

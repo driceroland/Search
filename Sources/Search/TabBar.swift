@@ -11,6 +11,9 @@ struct TabBar: View {
     @ObservedObject var browser: Browser
 
     @Namespace private var pill
+    /// The height the tabs and the bar's buttons take, centred in the bar:
+    /// above and below it the bar is title bar (see DragStrip.band).
+    static let band: CGFloat = 30
     /// The neighbouring spaces' own grey, apart from this one's.
     @Namespace private var above
     @Namespace private var below
@@ -45,8 +48,11 @@ struct TabBar: View {
             let row = measures(in: geo.size.width)
             ZStack(alignment: .leading) {
                 // The empty half of the strip is what you grab to move the
-                // window; the tabs keep the run they sit on.
-                DragStrip(reserved: lights + dot + leading + (making ? min(540, row.room) : row.run) + Metrics.tabGap + Metrics.plusWidth, trailing: doors + 12, onDoubleClick: browser.newTab)
+                // window; the tabs keep the run they sit on, and the buttons
+                // theirs, only as tall as they are: above and below them is
+                // title bar too.
+                DragStrip(reserved: lights + dot + leading + (making ? min(540, row.room) : row.run) + Metrics.tabGap + Metrics.plusWidth, trailing: doors + 12,
+                          band: making ? nil : TabBar.band, onDoubleClick: browser.newTab)
                 // And the corner the lights sit in, which is title bar too —
                 // the one stretch left to take hold of when tabs fill the row.
                 DragStrip()
@@ -125,7 +131,7 @@ struct TabBar: View {
                                             }
                                         }
                                     }
-                                    .frame(height: Metrics.strip)
+                                    .frame(height: TabBar.band)
                                     .environment(\.rowCarrying, carrying)
                                     .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
                                 }
@@ -136,6 +142,11 @@ struct TabBar: View {
                                 // would show over the lights and the doors.
                                 .scrollClipDisabled(carrying && !row.overflowing)
                                 .frame(width: row.run)
+                                // Only as tall as the tabs: a scroll view is
+                                // AppKit's, over the strip that moves the
+                                // window, and as tall as the bar it took every
+                                // press above and below them too.
+                                .frame(height: TabBar.band)
                                 .onAppear {
                                     revealedSpace = browser.spaceID
                                     reveal(reader, in: geo.size.width)

@@ -125,9 +125,10 @@ struct SideBar: View {
                 HStack(spacing: 0) {
                     DragStrip(menu: columnMenu)
                         .frame(width: 10 + lights)
-                    Color.clear
+                    // Back, forward and reload's, as tall as they are: above
+                    // and below them the band is still title bar.
+                    DragStrip(reserved: Metrics.helm, band: 30, menu: columnMenu)
                         .frame(width: Metrics.helm)
-                        .allowsHitTesting(false)
                     DragStrip(menu: columnMenu)
                 }
                 .frame(height: Metrics.strip)
