@@ -679,8 +679,14 @@ private enum WindowServer {
         var frame = CGRect.zero
         guard bounds(connection, number, &frame) == 0 else { return }
         let across = frame.width / rect.width, down = frame.height / rect.height
+        // Placed in whole points. A move's spring stops a fraction short of
+        // the frame, and a window drawn that fraction short showed a whole
+        // point up and to the left of it, then jumped into place as the move
+        // ended, 0.8 s into the way back: 9 exits of 9 on film, none of 14
+        // with this (20 Nov 2026).
         _ = transform(connection, number,
-                      CGAffineTransform(a: across, b: 0, c: 0, d: down, tx: -rect.minX * across, ty: -(top - rect.maxY) * down))
+                      CGAffineTransform(a: across, b: 0, c: 0, d: down,
+                                        tx: (-rect.minX * across).rounded(), ty: (-(top - rect.maxY) * down).rounded()))
     }
 
     /// The window of that number, that much seen.
