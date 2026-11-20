@@ -136,6 +136,7 @@ final class WebKitImportTests: XCTestCase {
         XCTAssertEqual(places[0].count, 7)
         XCTAssertEqual(places[0].last, Date(timeIntervalSince1970: 790_000_000 + WebKitBrowser.appleEpoch))
         XCTAssertFalse(ImportSource.safari, "read directly, so no export note")
+        XCTAssertEqual(source.canBring, ["bookmarks", "history"])
     }
 
     func testSafariFilesThatDoNotOpenLeaveItOut() throws {

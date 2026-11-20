@@ -1434,6 +1434,26 @@ enum ImportSource: Identifiable, Hashable {
         return true
     }
 
+    /// What can come over from it at all, whatever it holds now, in the
+    /// order the sheet lists them: the sheet and the Welcome say so beside it.
+    var canBring: [String] {
+        var out = ["bookmarks", "history"]
+        if importsPasswords { out.append("passwords") }
+        switch self {
+        case .chromium(let s) where s.name == "Arc": out.append("spaces & pins")
+        case .mozilla(let s) where s.keepsSpaces: out.append("spaces & pins")
+        default: break
+        }
+        if readsOpenTabs { out.append("open tabs") }
+        return out
+    }
+
+    /// The same, as a line: "Bookmarks, history, passwords and open tabs".
+    var canBringLine: String {
+        let line = ListFormatter.localizedString(byJoining: canBring)
+        return line.prefix(1).uppercased() + line.dropFirst()
+    }
+
     /// A WebKit browser's passwords are the Mac's own, in the Passwords app.
     var passwordsInPasswordsApp: Bool {
         if case .webkit = self { return true }

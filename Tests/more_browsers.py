@@ -64,6 +64,9 @@ def main():
         for name in ["Naver Whale", "Orion", "Floorp", "LibreWolf", "Waterfox", "Mullvad Browser"]:
             t.ok(f"{name} is found", name in found, found)
         t.ok("each once", len(found) == len(set(found)), found)
+        can = {b["name"]: b.get("can") for b in sv.cmd({"do": "import-preview"})["browsers"]}
+        t.ok("Orion says what it can bring", can.get("Orion") == ["bookmarks", "history"], can.get("Orion"))
+        t.ok("Whale too", can.get("Naver Whale") == ["bookmarks", "history", "passwords", "open tabs"], can.get("Naver Whale"))
 
         out = sv.cmd({"do": "import", "from": "Naver Whale", "what": ["bookmarks"]})
         t.ok("Whale's bookmarks came", (out.get("bookmarks") or {}).get("added") == 2, out.get("bookmarks"))

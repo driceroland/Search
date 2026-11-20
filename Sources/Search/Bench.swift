@@ -2036,7 +2036,7 @@ final class Bench {
             }
             let found = ImportSource.installed().map { source -> [String: Any] in
                 let usual = source.usual
-                return ["name": source.name,
+                return ["name": source.name, "can": source.canBring,
                         "profiles": source.profiles.map { ["id": $0.id, "name": $0.name] },
                         "default": usual ?? "",
                         "counts": counts(source.preview(profile: usual)),

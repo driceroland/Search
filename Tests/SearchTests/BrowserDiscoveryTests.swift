@@ -61,6 +61,13 @@ final class BrowserDiscoveryTests: XCTestCase {
         }
         XCTAssertFalse(ImportSource.installed().first { $0.name == "Yandex" }?.importsPasswords ?? true)
         XCTAssertEqual(ImportSource.installed().first { $0.name == "ChatGPT Atlas" }?.profiles.map(\.id), ["user-abc123"])
+        let found = Dictionary(uniqueKeysWithValues: ImportSource.installed().map { ($0.name, $0.canBring) })
+        XCTAssertEqual(found["Zen"], ["bookmarks", "history", "passwords", "spaces & pins", "open tabs"])
+        XCTAssertEqual(found["LibreWolf"], ["bookmarks", "history", "passwords", "open tabs"])
+        XCTAssertEqual(found["Yandex"], ["bookmarks", "history", "open tabs"])
+        XCTAssertEqual(found["Thorium"], ["bookmarks", "history", "passwords", "open tabs"])
+        XCTAssertEqual(ImportSource.installed().first { $0.name == "Zen" }?.canBringLine.hasPrefix("Bookmarks, history"), true)
+        XCTAssertNil(found["Vivaldi"], "a browser that isn't here isn't listed")
         let zen = try XCTUnwrap(Mozilla.known.first { $0.name == "Zen" })
         XCTAssertEqual(zen.files.count, 1, "\"zen\" and \"Zen\" are one folder here, and its profile is read once")
     }

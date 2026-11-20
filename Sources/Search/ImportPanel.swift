@@ -75,7 +75,7 @@ struct ImportPanel: View {
                 Card {
                     ForEach(Array(sources.enumerated()), id: \.element.id) { index, source in
                         if index > 0 { Rule() }
-                        Row(name: source.name, detail: detail(of: source), chosen: pick == source) {
+                        Row(name: source.name, detail: detail(of: source), can: source.canBringLine, chosen: pick == source) {
                             guard !bringing else { return }
                             pick = source
                             replaceBookmarks = false
@@ -594,6 +594,8 @@ struct ImportPanel: View {
     private struct Row: View {
         let name: String
         let detail: String
+        /// What can come from it at all (ImportSource.canBringLine).
+        let can: String
         let chosen: Bool
         let pick: () -> Void
         @State private var hovering = false
@@ -606,6 +608,7 @@ struct ImportPanel: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.system(size: 13)).foregroundStyle(Palette.ink)
                     Text(detail).font(.system(size: 11.5)).foregroundStyle(Palette.muted).monospacedDigit()
+                    Text(can).font(.system(size: 11)).foregroundStyle(Palette.faint)
                 }
                 Spacer(minLength: 0)
             }
