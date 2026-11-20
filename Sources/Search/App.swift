@@ -1336,10 +1336,12 @@ struct ContentView: View {
             // those of windows that aren't a browser's (a panel). A small
             // window's are its own (LittleWindow.watchKeys).
             // The address field raised from another app answers its own keys
-            // (Launcher.swift): taken here, Escape would put away what is up
-            // in the window behind it, ⌘W close a tab there, and a key typed
-            // while this window's field is on its way be held for it.
-            if Launcher.owns(event.window) { return event }
+            // (Launcher.swift), as does the panel asking which space a link
+            // opens in (LinkChooserPanel.swift): taken here, Escape would put
+            // away what is up in the window behind it, ⌘W close a tab there,
+            // and a key typed while this window's field is on its way be held
+            // for it.
+            if event.window is LauncherPanel { return event }
             guard mine(event) else { return event }
             guard event.type == .keyDown else {
                 // ⌃ with the tab numbers on it (Settings › Spaces & Pins) is
@@ -1569,8 +1571,9 @@ struct ContentView: View {
         // there with or without a browser window. Taken here too, ⌘[ was
         // gone before the page had it.
         if LittleWindow.owning(event.window) != nil { return false }
-        // Nor the address field raised from another app's (Launcher.swift).
-        if Launcher.owns(event.window) { return false }
+        // Nor the address field raised from another app's (Launcher.swift),
+        // or the panel asking which space a link opens in.
+        if event.window is LauncherPanel { return false }
         // A popup window: ⌘W closes it, not a tab of the
         // window menus act on. New tabs return to its browser; Escape
         // dismisses its permission question.

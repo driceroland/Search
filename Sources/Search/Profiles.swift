@@ -203,12 +203,16 @@ extension Browsers {
             show(open)
             return open
         }
-        let space = Store.settings.string(forKey: "space.current.\(id.uuidString)").flatMap(UUID.init)
-            .flatMap { last in Spaces.read(profile: id).first { $0.id == last }?.id }
-            ?? Profiles.shared.profile(id).home
-        let browser = Browser(record: WindowRecord(space: space))
+        let browser = Browser(record: WindowRecord(space: lastSpace(profile: id)))
         open(browser, frame: nil)
         return browser
+    }
+
+    /// The space a profile's window was last in, or its home.
+    static func lastSpace(profile id: UUID) -> UUID {
+        Store.settings.string(forKey: "space.current.\(id.uuidString)").flatMap(UUID.init)
+            .flatMap { last in Spaces.read(profile: id).first { $0.id == last }?.id }
+            ?? Profiles.shared.profile(id).home
     }
 }
 

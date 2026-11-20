@@ -31,6 +31,9 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     private(set) var liftedSpace: UUID?
     /// The browser it was opened for: the planet for ⌃Tab when no window is in front.
     private weak var browser: Browser?
+    /// The space chosen for its page (see Links.open), whose sign-ins it
+    /// loaded with; nil for the space of the window it was opened for.
+    let chosenSpace: UUID?
     private let window: NSWindow
     private var kept = false
     /// Placed a step down from another one, not where anybody put it: the
@@ -45,22 +48,22 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// A link from another app, in a small window in front of it.
     /// `front: false` makes it without showing it — for the bench, which
     /// must never put a window on screen.
-    static func show(_ url: URL, for browser: Browser, front: Bool = true) {
-        let tab = Tab(configuration: Web.configuration(space: browser.spaceID))
+    static func show(_ url: URL, for browser: Browser, front: Bool = true, space: UUID? = nil) {
+        let tab = Tab(configuration: Web.configuration(space: space ?? browser.spaceID))
         browser.prepare(tab)
         tab.go(to: url)
-        show(tab, for: browser, front: front)
+        show(tab, for: browser, front: front, space: space)
     }
 
     /// A page already made for it: a new window a small window's page asked
     /// for (see Browser's createWebViewWith), which WebKit loads itself, or
     /// a tab lifted out of the row (`lifted`).
-    static func show(_ tab: Tab, for browser: Browser, front: Bool = true, lifted: Bool = false) {
+    static func show(_ tab: Tab, for browser: Browser, front: Bool = true, lifted: Bool = false, space: UUID? = nil) {
         // Not in the row until kept: extensions are told of it here, as of a
         // peek (see Extensions.openedAside). A tab lifted from the row is
         // told once the row has let it go (Extensions.follow), not twice.
         if #available(macOS 15.4, *), !lifted { Extensions.shared.openedAside(tab) }
-        let little = LittleWindow(tab: tab, browser: browser)
+        let little = LittleWindow(tab: tab, browser: browser, space: space)
         little.lifted = lifted
         little.liftedSpace = lifted ? browser.spaceID : nil
         // A tab from the row has its own history: back from its first page
@@ -200,9 +203,10 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         ) { _ in MainActor.assumeIsolated { switcher.cancel() } })
     }
 
-    private init(tab: Tab, browser: Browser) {
+    private init(tab: Tab, browser: Browser, space: UUID?) {
         self.tab = tab
         self.browser = browser
+        self.chosenSpace = space
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
             styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
@@ -423,9 +427,10 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// Into the browser's row, after the tab on screen (never among the
     /// pins), and in front; the small window goes. The one time a link in
     /// a small window brings the browser's window: the window in front, or
-    /// one brought back for it.
+    /// one brought back for it, or the one showing the space chosen for it.
+    /// With no window for that space, it isn't kept (see askAgain).
     func keep() {
-        let browser = Browsers.ensureWindow()
+        guard let browser = destination() else { return askAgain() }
         kept = true
         // In the row, back from the first page goes nowhere, as any tab's.
         tab.leave = nil
@@ -437,6 +442,23 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         // Put away in the Dock, it stayed there (#95).
         if front.isMiniaturized { front.deminiaturize(nil) }
         front.makeKeyAndOrderFront(nil)
+    }
+
+    /// A page opened in a space chosen for it goes to a window showing that
+    /// space, not the one on screen, so it keeps those sign-ins. Nil once
+    /// that space is gone, and while spaces are off.
+    private func destination() -> Browser? {
+        guard let chosenSpace else { return Browsers.ensureWindow() }
+        return Browsers.window(showing: chosenSpace)
+    }
+
+    /// Its space gone, the page goes nowhere else: the panel asks again
+    /// which space it opens in, and the small window goes. With spaces off
+    /// the space is still there, and the small window stays as it is.
+    private func askAgain() {
+        guard let chosenSpace, Spaces.known[chosenSpace] == nil, let url = tab.address else { return }
+        LinkChooserPanel.shared.ask(url, sender: nil)
+        window.close()
     }
 
     /// Stepping away puts the switcher away, and makes this the one ⌃Tab

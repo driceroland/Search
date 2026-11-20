@@ -421,6 +421,13 @@ enum SettingsIndex {
               keys: [SpaceRoutes.key, SpaceRoutes.rulesKey],
               words: ["arc", "air traffic control", "route", "routing", "rules", "domain", "site", "open in space", "default space", "links from other apps"],
               parent: "spaces"),
+        .init(id: "links.ask", group: "spaces", icon: "questionmark.square.dashed",
+              title: "Ask which space for links from other apps",
+              detail: "Choose the space a link from another app opens in, before it loads",
+              more: "A small panel lists every space: a number key opens the link in that space, and Return in the marked one. With Send links to a space on, Always saves a rule for its site.",
+              keys: ["links.ask", "links.ask.last"],
+              words: ["choose space", "which space", "links from other apps", "panel", "ask"],
+              parent: "spaces"),
         .init(id: "pins.keep", group: "pins", icon: "pin.circle",
               title: "Pins keep their site", detail: "Links elsewhere open over the pin, and ⌘W takes it back home",
               more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at.",
@@ -662,7 +669,7 @@ enum SettingsIndex {
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
-        case "spaces.links": return prefs.usesSpaces
+        case "spaces.links", "links.ask": return prefs.usesSpaces
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
@@ -687,7 +694,7 @@ enum SettingsIndex {
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "icloud.erase": return "Only while Sync with iCloud is on"
         case "profiles.oneWindow": return "Only with more than one profile"
-        case "spaces.links": return "Only with Spaces on"
+        case "spaces.links", "links.ask": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent": return "Only with the new tab in a floating field"

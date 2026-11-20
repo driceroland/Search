@@ -663,9 +663,10 @@ final class Bench {
             // events — trusted, as a hand's is — where `click` only runs
             // element.click() in the page, which a password manager, for one,
             // is right to ignore. `text=Sign in` picks a button or link by its
-            // words. Only on a SEARCH_PROBE run.
+            // words. "little": true, in the newest small window's page. Only
+            // on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "tap only works on a --test run — it would click in your page"]); return }
-            guard let tab = find(request, in: browser), let selector = request["selector"] as? String else { answer(missing(request)); return }
+            guard let tab = page(request, in: browser), let selector = request["selector"] as? String else { answer(missing(request)); return }
             house(tab)
             let view = tab.web
             view.evaluateJavaScript(Bench.locate(selector)) { value, error in
@@ -805,9 +806,17 @@ final class Bench {
                 guard let n, Browsers.all.indices.contains(n) else { answer(["error": "no window \((n ?? -1) + 1)"]); return }
                 Browsers.becameKey(Browsers.all[n])
             case "link":
-                // A link from another app, the way macOS hands it over.
+                // A link from another app, the way macOS hands it over, and
+                // "sender" the app's name, as its event says.
                 guard let text = request["url"] as? String, let url = URL(string: text) else { answer(["error": "link needs a url"]); return }
-                Links.arrived(url)
+                Links.arrived(url, sender: request["sender"] as? String)
+            case "link-in":
+                // One opened in the space chosen for it, as the chooser opens it.
+                guard let text = request["url"] as? String, let url = URL(string: text),
+                      let space = (request["space"] as? String).flatMap(UUID.init(uuidString:))
+                else { answer(["error": "link-in needs a url and a space"]); return }
+                answer(["opened": Links.open(url, in: space, little: request["little"] as? Bool == true)])
+                return
             case "frame":
                 guard let n, Browsers.all.indices.contains(n), let f = request["frame"] as? [Double], f.count == 4 else { answer(["error": "frame needs N X Y W H"]); return }
                 Browsers.all[n].window?.setFrame(NSRect(x: f[0], y: f[1], width: f[2], height: f[3]), display: false)
@@ -908,9 +917,10 @@ final class Bench {
         case "linkmenu":
             // A right-click at X Y of a tab's page (its own points from the
             // top left), and the item named "pick" chosen from the menu that
-            // comes up. Only on a SEARCH_PROBE run.
+            // comes up; "little": true, in the newest small window's page.
+            // Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "linkmenu only works on a --test run"]); return }
-            guard let tab = find(request, in: browser), let x = request["x"] as? Double, let y = request["y"] as? Double,
+            guard let tab = page(request, in: browser), let x = request["x"] as? Double, let y = request["y"] as? Double,
                   let pick = request["pick"] as? String
             else { answer(missing(request)); return }
             house(tab)
@@ -3969,6 +3979,8 @@ final class Bench {
                 "littles": LittleWindow.all.map { $0.tab.address?.absoluteString ?? "" },
                 // What each one's view has loaded: a tab only waiting to wake has none.
                 "pages": LittleWindow.all.map { $0.tab.built?.url?.absoluteString ?? "" },
+                // Each one's space chosen for it, "" for none (see Links.open).
+                "space": LittleWindow.all.map { $0.chosenSpace?.uuidString ?? "" },
                 "said": LittleWindow.all.last?.said ?? "",
                 "zoom": LittleWindow.all.last?.tab.built.map { Double($0.pageZoom) } ?? 0,
                 "failures": LittleWindow.all.map { $0.tab.failure ?? "" },
@@ -4021,6 +4033,56 @@ final class Bench {
                     "active": front.active.map { Bench.short($0) } ?? "",
                 ])
             }
+
+        case "chooser":
+            // The panel that asks which space a link opens in
+            // (LinkChooserPanel.swift), in its controller alone: on a test
+            // run it is never shown. "shown" is a link waiting there.
+            guard Store.testing else { answer(["error": "chooser only works on a --test run"]); return }
+            let chooser = LinkChooserPanel.shared
+            switch request["action"] as? String ?? "look" {
+            case "ask":
+                guard let text = request["url"] as? String, let url = URL(string: text) else { answer(["error": "ask needs a url"]); return }
+                chooser.ask(url, sender: nil)
+            case "key":
+                // A key down as the panel's monitor hands it over: "flags"
+                // held ("cmd", or the "numericPad" and "function" an arrow's
+                // event carries), "chars" what it types, "repeat" held down.
+                guard let code = (request["code"] as? Int).flatMap(UInt16.init(exactly:)) else { answer(["error": "key needs a code"]); return }
+                let named: [String: NSEvent.ModifierFlags] = [
+                    "cmd": .command, "shift": .shift, "ctrl": .control, "opt": .option,
+                    "numericPad": .numericPad, "function": .function,
+                ]
+                let names = request["flags"] as? [String] ?? []
+                let held = names.compactMap { named[$0] }
+                guard held.count == names.count else { answer(["error": "flags are cmd, shift, ctrl, opt, numericPad or function"]); return }
+                let flags = NSEvent.ModifierFlags(held)
+                let chars = request["chars"] as? String ?? ""
+                guard let event = NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: flags,
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil,
+                    characters: chars, charactersIgnoringModifiers: chars,
+                    isARepeat: request["repeat"] as? Bool == true, keyCode: code
+                ) else { answer(["error": "no event"]); return }
+                chooser.key(event)
+            case "look": break
+            default:
+                answer(["error": "chooser takes ask, key or look"])
+                return
+            }
+            answer([
+                "shown": chooser.link != nil,
+                "url": chooser.link.map { $0.absoluteString as Any } ?? NSNull(),
+                "title": chooser.title,
+                "address": chooser.address,
+                "rows": chooser.rows.enumerated().map { index, row in
+                    ["name": row.name, "digit": row.digit.map { $0 as Any } ?? NSNull(), "picked": index == chooser.marked] as [String: Any]
+                },
+                "always": chooser.always,
+                "alwaysShown": chooser.alwaysShown,
+                "gone": chooser.gone,
+                "queued": chooser.queued,
+            ])
 
         case "site":
             // The site card for the tab on screen, or one step in on its
@@ -5375,6 +5437,12 @@ final class Bench {
         guard let ref = (request["id"] as? String)?.lowercased(), !ref.isEmpty else { return nil }
         // A coding agent's tab is the agent's, and yours: never a script's.
         return browser.tabs.first { (Store.testing || $0.bench) && !$0.agent && $0.id.uuidString.lowercased().hasPrefix(ref) }
+    }
+
+    /// The tab a request names, or with "little": true the newest small
+    /// window's, which is in no row.
+    private func page(_ request: [String: Any], in browser: Browser) -> Tab? {
+        request["little"] as? Bool == true ? LittleWindow.all.last?.tab : find(request, in: browser)
     }
 
     private func missing(_ request: [String: Any]) -> [String: Any] {

@@ -1861,14 +1861,22 @@ final class Browser: NSObject, ObservableObject {
     /// Settings clear it; a space for the history it keeps alone, as Safari
     /// clears one profile's, chosen in History's Clear… (see historyScopes).
     func clearHistory(in space: UUID? = nil) {
+        let all = Spaces.read(profile: profileID).map(\.id)
+        let forgotten: [UUID]
         if let space {
             Spaces.history(for: space).forget()
+            // The spaces that write to that history: it alone, or the ones signed in together.
+            forgotten = Spaces.ownsStore(space) ? [space] : all.filter { !Spaces.ownsStore($0) }
         } else {
+            forgotten = all
             // Everywhere you have been: the signed-out spaces' own histories too.
             for history in Spaces.histories(of: profileID) { history.forget() }
             // The tabs Search closed by itself are pages you have been to.
             archive.clear()
         }
+        // Where links went is a list of where you have been, too.
+        let choices = LinkChooser.cleared(prefs.linkChoices, spaces: Set(forgotten))
+        if choices != prefs.linkChoices { prefs.linkChoices = choices }
         // The sites' icons are a list of where you have been, too, and so
         // are the searches learned from sites visited (SiteSearch.swift).
         // Every space shares them, so they go whichever history does.
@@ -8216,6 +8224,13 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
            let url = action.request.url, sendToSpace(url, from: opener) {
             return nil
         }
+        // The link menu's Open Link in New Tab or Split View on a small
+        // window's page: a tab in the space chosen for that window, as a
+        // ⌘-click's (see openClicked). Its other new windows are small
+        // windows, below.
+        if behind || beside, let url = action.request.url, sendToChosenSpace(url, from: opener) {
+            return nil
+        }
         // WebKit's copy of the opener's configuration still holds the
         // opener's user content controller — its scripts and its message
         // handlers. Shared, the new tab claimed the opener's handlers as its
@@ -8265,10 +8280,11 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // tab in the browser's window, which came forward over it (#1041).
         // A window the page sizes still opens as Settings says below.
         if !behind, !beside, !(prefs.popupWindows && (windowFeatures.width != nil || windowFeatures.height != nil)),
-           LittleWindow.holding(opener.id) != nil {
+           let little = LittleWindow.holding(opener.id) {
             prepare(tab)
             if let url = action.request.url { tab.setAddressOptimistically(url) }
-            LittleWindow.show(tab, for: self)
+            // With the opener's sign-ins, so kept in the opener's space.
+            LittleWindow.show(tab, for: self, space: little.chosenSpace)
             return tab.web
         }
         if prefs.popupWindows, windowFeatures.width != nil || windowFeatures.height != nil {
@@ -8368,6 +8384,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         }
         // To a site Settings sends to another space: there, in front.
         if sendToSpace(url, from: source) { return }
+        // From a small window's page, to the space chosen for it.
+        if sendToChosenSpace(url, from: source) { return }
         open(url, foreground: foreground, from: source, mayWait: true, link: true)
     }
 

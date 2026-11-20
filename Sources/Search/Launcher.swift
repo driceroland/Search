@@ -211,18 +211,10 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         if up { dismiss() }
     }
 
-    /// On the screen with the pointer, a little above the middle, as
-    /// Spotlight's: keys to it, while the app in front stays in front.
     private func present() {
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        let mouse = NSEvent.mouseLocation
-        if let area = (NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main)?.visibleFrame {
-            let size = panel.frame.size
-            panel.setFrameOrigin(NSPoint(x: area.midX - size.width / 2, y: area.maxY - area.height * 0.18 - size.height))
-        }
-        panel.orderFrontRegardless()
-        panel.makeKey()
+        panel.present()
         // A click anywhere else: in another app's window, the panel never
         // sees it, but this does.
         clicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
@@ -232,25 +224,10 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
 
     private func makePanel() -> LauncherPanel {
         let panel = LauncherPanel(
-            contentRect: NSRect(x: 0, y: 0, width: Metrics.fieldWidth + LauncherView.margin * 2, height: 460),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: true
+            size: NSSize(width: Metrics.fieldWidth + LauncherPanel.margin * 2, height: 460),
+            content: NSHostingView(rootView: LauncherView(launcher: self))
         )
-        panel.isFloatingPanel = true
-        // Over every ordinary window, the floating video's included, on
-        // whichever desktop is on screen and over an app in full screen.
-        panel.level = .modalPanel
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
-        panel.hidesOnDeactivate = false
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        // The field and its list draw their own.
-        panel.hasShadow = false
-        panel.isMovable = false
-        panel.isReleasedWhenClosed = false
         panel.delegate = self
-        panel.contentView = NSHostingView(rootView: LauncherView(launcher: self))
         return panel
     }
 
@@ -468,11 +445,58 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     }
 }
 
-/// Takes the keys without bringing Search in front of the app it is over.
-/// Borderless windows refuse to become key by default.
-private final class LauncherPanel: NSPanel {
+/// Takes the keys without bringing Search in front of the app it is over:
+/// the field's, and the one that asks which space a link from another app
+/// opens in (LinkChooserPanel.swift). Borderless windows refuse to become
+/// key by default.
+final class LauncherPanel: NSPanel {
+    /// Room around what it holds for its shadow, which the panel doesn't draw.
+    static let margin: CGFloat = 32
+
+    convenience init(size: NSSize, content: NSView) {
+        self.init(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
+                  backing: .buffered, defer: true)
+        isFloatingPanel = true
+        // Over every ordinary window, the floating video's included, on
+        // whichever desktop is on screen and over an app in full screen.
+        level = .modalPanel
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        hidesOnDeactivate = false
+        isOpaque = false
+        backgroundColor = .clear
+        // What it holds draws its own.
+        hasShadow = false
+        isMovable = false
+        isReleasedWhenClosed = false
+        contentView = content
+    }
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// On the screen with the pointer, a little above the middle, as
+    /// Spotlight's: keys to it, while the app in front stays in front.
+    func present() {
+        if let area = Self.area {
+            setFrameOrigin(NSPoint(x: area.midX - frame.width / 2, y: area.maxY - area.height * Self.drop - frame.height))
+        }
+        orderFrontRegardless()
+        makeKey()
+    }
+
+    /// How tall what it holds can be there: from its top down to the foot
+    /// of the screen, with room for its shadow.
+    static var room: CGFloat? {
+        area.map { $0.height * (1 - drop) - margin * 2 }
+    }
+
+    private static var area: NSRect? {
+        let mouse = NSEvent.mouseLocation
+        return (NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main)?.visibleFrame
+    }
+
+    /// Its top, this far down the screen.
+    private static let drop: CGFloat = 0.18
 }
 
 // MARK: - the field
@@ -480,9 +504,6 @@ private final class LauncherPanel: NSPanel {
 /// The field and its list, as they are over a page, standing over another
 /// app instead.
 private struct LauncherView: View {
-    /// Room around the field for its shadow, which the panel doesn't draw.
-    static let margin: CGFloat = 32
-
     @ObservedObject var launcher: Launcher
     @State private var shake: CGFloat = 0
     @State private var refused = false
@@ -493,7 +514,7 @@ private struct LauncherView: View {
             if !launcher.offers.isEmpty { list }
         }
         .frame(width: Metrics.fieldWidth)
-        .padding(Self.margin)
+        .padding(LauncherPanel.margin)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // A click beside the field, in the panel, puts it away as a click
         // anywhere else does.
