@@ -1830,16 +1830,26 @@ final class Browser: NSObject, ObservableObject {
         announce("Signed out of everything")
     }
 
-    /// Only what was fetched to draw pages, not what identifies you.
-    func clearCache() {
+    /// Only what was fetched to draw pages, not what identifies you: the
+    /// HTTP caches, and the copies sites' service workers keep in Cache
+    /// Storage. Without those a worker answering from its own copy kept
+    /// serving a site's old version through every clear (idea 793). The
+    /// workers themselves stay, with the push subscriptions and offline data
+    /// they hold: one that finds its copy gone fetches the page again, and
+    /// Cookies and sign-ins removes them as it removes everything.
+    func clearCache(then done: @escaping () -> Void = {}) {
         let types: Set<String> = [
             WKWebsiteDataTypeDiskCache,
             WKWebsiteDataTypeMemoryCache,
             WKWebsiteDataTypeOfflineWebApplicationCache,
+            WKWebsiteDataTypeFetchCache,
         ]
+        let cleared = DispatchGroup()
         for store in Spaces.stores(of: profileID) {
-            store.removeData(ofTypes: types, modifiedSince: .distantPast) {}
+            cleared.enter()
+            store.removeData(ofTypes: types, modifiedSince: .distantPast) { cleared.leave() }
         }
+        cleared.notify(queue: .main, execute: done)
         announce("Cache cleared")
     }
 
