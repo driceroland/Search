@@ -29,6 +29,10 @@ in [ROADMAP.md](ROADMAP.md).
 - A two-finger swipe between spaces slides once. With the trackpad set to swipe between pages with two fingers, the same stroke can also come as a swipe between pages, told as its glide ends; from 1.0.16 it was ignored only within 0.6 s of the fingers' last move, so after a quick stroke's long glide it slid on to the space after (or the card for a new one). The glide now counts as the stroke. A probe makes the trackpad's events up, glide included, in a hidden window: `python3 Tests/space_swipe_once.py`. (idea 834)
 - Typing in a page no longer offers the grey rest of a word at the caret ("would you m" → "ind") with Correct Spelling Automatically off. That was macOS's inline predictive text, not autocorrect: WebKit shows it in every page whenever System Settings › Keyboard › Text Input › Show inline predictive text is on, as it is unless turned off, while Chrome and Arc never do. It now has its own switch, Edit › Spelling and Grammar › Show Inline Predictions, off unless turned on, and counting over the Mac's setting in every page and after a relaunch. `python3 Tests/autocorrect.py`
 
+### Changed
+
+- Settings › Appearance › Tabs show says what the choice is, "A letter or the site's icon"; where it shows, beside the title and on a pinned square, is behind the (i). The line only said where, and tabs wearing letters were taken for site icons that hadn't loaded ([#1271](https://github.com/driceroland/Search/issues/1271))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
