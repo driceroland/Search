@@ -1675,9 +1675,13 @@ final class Bench {
                                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks,
                                        pressure: type == .leftMouseUp ? 0 : 1)
                 }
-                for clicks in [1, 2] {
-                    if let down = event(.leftMouseDown, clicks) { hit?.mouseDown(with: down) }
-                    if let up = event(.leftMouseUp, clicks) { hit?.mouseUp(with: up) }
+                if let strip = hit as? DragStrip.Strip {
+                    strip.performDoubleClick(at: strip.convert(point, from: nil))
+                } else {
+                    for clicks in [1, 2] {
+                        if let down = event(.leftMouseDown, clicks) { hit?.mouseDown(with: down) }
+                        if let up = event(.leftMouseUp, clicks) { hit?.mouseUp(with: up) }
+                    }
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                     let after = window.frame
