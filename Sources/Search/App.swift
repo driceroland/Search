@@ -843,12 +843,15 @@ struct ContentView: View {
         // an ordinary tab that is not currently paired. Drawing it here too
         // leaves two offset address fields on a blank tab.
         if !browser.prefs.splitView {
-            Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
-                // Centred on the page, not on the window. The column of tabs
-                // is not what the field is standing over, and dimming it along
-                // with the page says otherwise.
-                .padding(.leading, sidebar && !sideOnRight ? sideWidth : 0)
-                .padding(.trailing, sidebar && sideOnRight ? sideWidth : 0)
+            ZStack {
+                HomeGrid(browser: browser)
+                Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
+            }
+            // Centred on the page, not on the window. The column of tabs
+            // is not what the field is standing over, and dimming it along
+            // with the page says otherwise.
+            .padding(.leading, sidebar && !sideOnRight ? sideWidth : 0)
+            .padding(.trailing, sidebar && sideOnRight ? sideWidth : 0)
         }
     }
 
