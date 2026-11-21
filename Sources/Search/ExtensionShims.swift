@@ -4688,6 +4688,21 @@ enum ExtensionShims {
 
       // Members of namespaces WebKit has.
       if (chrome.i18n && !chrome.i18n.detectLanguage) put(chrome.i18n, "detectLanguage", call("i18n.detectLanguage"));
+      // WebKit's i18n functions answer null (getMessage) when called loose, off
+      // their object: `const t = chrome.i18n.getMessage; t("key")` — how Monarch
+      // Money's bundle reads every string, so its options page had no text.
+      // Chrome's are plain functions. Bound to their object, as Chrome's act.
+      for (const ns of new Set([chrome.i18n, root.browser && root.browser.i18n])) {
+        if (!ns) continue;
+        for (const key of ["getMessage", "getUILanguage", "detectLanguage", "getAcceptLanguages"]) {
+          const fn = ns[key];
+          if (typeof fn === "function" && !fn.__searchBound) {
+            const bound = function () { return fn.apply(ns, arguments); };
+            try { Object.defineProperty(bound, "__searchBound", { value: true }); } catch (e) {}
+            put(ns, key, bound);
+          }
+        }
+      }
       if (runtime && !runtime.getContexts) put(runtime, "getContexts", call("runtime.getContexts"));
 
       // Chrome's old FileSystem API — requestFileSystem, entries, FileWriter and
