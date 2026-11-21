@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- A sidebar button, in Settings › Appearance › Tabs: right of the window's own buttons, before back, forward and reload, it hides the sidebar as ⌘S does, where Safari and Arc keep theirs. With the sidebar out over the page at the window's edge, the same click keeps it out. Only with titles in the column; off unless you turn it on.
 - Settings › Privacy › Try HTTPS first, off unless you turn it on: an http:// link, bookmark or history entry tries HTTPS first and loads as asked only where the site has none. Sites WebKit already knew have HTTPS were upgraded before; with it on, any site is. Local addresses (localhost, .test, .local, IP addresses) are left as they are. macOS 15.2 and later. Thanks [@beatsbypedro](https://github.com/beatsbypedro)
 - Coming from Zen brings its spaces too, the way Arc's come: each of its spaces a space here with its name, icon and colours, its pinned tabs that space's, its folders kept as folders where pinned rows hold them, and its Essentials as pins in every space. Read from the file Zen keeps them in, a backup of it when that is torn, or the tables older versions of Zen kept; nothing in Zen changes.
 - Open tabs and tab groups come over from Firefox and Zen too, as they do from Chrome-family browsers: asleep at the end of the space, a group by its name and folded as it was, Firefox's pinned tabs as pins (Zen's come with its spaces). Off in the import sheet unless you turn it on.

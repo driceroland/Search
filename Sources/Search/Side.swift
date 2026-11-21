@@ -108,11 +108,11 @@ struct SideBar: View {
     }
 
     /// What is left of the lights' row right of back, forward and reload.
-    private var beyondHelm: CGFloat { SideBar.beyondHelm(width, fullScreen: browser.fullScreen) }
+    private var beyondHelm: CGFloat { SideBar.beyondHelm(width, fullScreen: browser.fullScreen, fold: prefs.foldButton) }
     /// The room right of the helm at the width let go at, for the doors up
     /// there: how many pinned extensions show, not changing under the pointer.
     private var upRoom: CGFloat {
-        max(SideBar.beyondHelm(prefs.columnWidth, fullScreen: browser.fullScreen), SideFoot.keptWidth(prefs, spaces: SpaceButtons.count(prefs, browser.spaces)))
+        max(SideBar.beyondHelm(prefs.columnWidth, fullScreen: browser.fullScreen, fold: prefs.foldButton), SideFoot.keptWidth(prefs, spaces: SpaceButtons.count(prefs, browser.spaces)))
     }
     private var doorsUp: Bool { SideBar.doorsUp(prefs, width: width, fullScreen: browser.fullScreen, spaces: SpaceButtons.count(prefs, browser.spaces)) }
     /// Where the doors are: up in the lights' row or down at the foot. Not
@@ -144,17 +144,20 @@ struct SideBar: View {
     /// The foot's height in a row: its doors and the margin beneath.
     private static let footBox: CGFloat = 26 + 10
 
-    static func beyondHelm(_ width: CGFloat, fullScreen: Bool) -> CGFloat {
+    static func beyondHelm(_ width: CGFloat, fullScreen: Bool, fold: Bool = false) -> CGFloat {
         let lights = fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors))
-        return width - 20 - lights - Metrics.helm
+        return width - 20 - lights - foldDoor(fold) - Metrics.helm
     }
+    /// The door that folds the column away, between the lights and back
+    /// (FoldDoor), when it is asked for: one door and the air after it.
+    static func foldDoor(_ shown: Bool) -> CGFloat { shown ? 26 + 4 : 0 }
     /// The foot's doors up in the lights' row (Preferences.doorsUp): only
     /// with titles, and only where the doors that always show fit there —
     /// downloads counted whether running or not, so a download starting
     /// doesn't send them all back down.
     @MainActor static func doorsUp(_ prefs: Preferences, width: CGFloat, fullScreen: Bool, spaces: Int = 0) -> Bool {
         prefs.doorsUp && prefs.sidebar && !prefs.iconColumn
-            && beyondHelm(width, fullScreen: fullScreen) >= SideFoot.keptWidth(prefs, spaces: spaces)
+            && beyondHelm(width, fullScreen: fullScreen, fold: prefs.foldButton) >= SideFoot.keptWidth(prefs, spaces: spaces)
     }
 
     var body: some View {
@@ -180,8 +183,8 @@ struct SideBar: View {
                         .frame(width: 10 + lights)
                     // Back, forward and reload's, as tall as they are: above
                     // and below them the band is still title bar.
-                    DragStrip(reserved: Metrics.helm, band: 30, menu: columnMenu)
-                        .frame(width: Metrics.helm)
+                    DragStrip(reserved: SideBar.foldDoor(prefs.foldButton) + Metrics.helm, band: 30, menu: columnMenu)
+                        .frame(width: SideBar.foldDoor(prefs.foldButton) + Metrics.helm)
                     // The doors, when they are up here, at its far end.
                     DragStrip(trailing: doorsTop ? upRoom + 10 : 0, menu: columnMenu)
                 }
@@ -203,6 +206,10 @@ struct SideBar: View {
                 } else {
                     HStack(spacing: 0) {
                         Color.clear.frame(width: lights)
+                        if prefs.foldButton {
+                            FoldDoor(browser: browser, right: prefs.sidePosition == .right)
+                                .padding(.trailing, SideBar.foldDoor(true) - 26)
+                        }
                         Helm(browser: browser)
                         Spacer(minLength: 0)
                     }
@@ -2520,5 +2527,24 @@ private struct Rise: GeometryEffect {
     }
     func effectValue(size: CGSize) -> ProjectionTransform {
         ProjectionTransform(CGAffineTransform(translationX: 0, y: y))
+    }
+}
+
+/// The column away, as ⌘S puts it, from the lights' row: where Safari and
+/// Arc keep theirs, beside the window's own buttons, so the column can be
+/// folded without a key (Preferences.foldButton). Out over the page (the
+/// pointer at the edge brought it), the same click keeps it out beside the
+/// page, as ⌘S does there.
+private struct FoldDoor: View {
+    @ObservedObject var browser: Browser
+    /// The column down the window's right side: the icon mirrored to it.
+    let right: Bool
+
+    var body: some View {
+        Door(icon: right ? "sidebar.right" : "sidebar.left",
+             help: browser.folded ? "Keep the Sidebar Out   ⌘S" : "Hide Sidebar   ⌘S") {
+            browser.toggleFold()
+        }
+        .accessibilityLabel(browser.folded ? "Show Sidebar" : "Hide Sidebar")
     }
 }

@@ -247,6 +247,12 @@ final class Preferences: ObservableObject {
     @Published var doorsUp: Bool {
         didSet { store.set(doorsUp, forKey: "sidebar.doorsUp") }
     }
+    /// A door right of the window's buttons that folds the column away, as
+    /// ⌘S does (see FoldDoor). Only with titles in the column; off unless
+    /// asked for.
+    @Published var foldButton: Bool {
+        didSet { store.set(foldButton, forKey: "sidebar.foldButton") }
+    }
     /// The column as icons only: each tab its site's mark, no titles, a
     /// fixed narrow width, and nothing that grows under the pointer (idea
     /// 413). Off unless asked for; Settings › Appearance › Tabs, Icons only.
@@ -1143,6 +1149,7 @@ final class Preferences: ObservableObject {
         slidesColumn = store.bool(forKey: Motion.slidesKey)
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         doorsUp = store.bool(forKey: "sidebar.doorsUp")
+        foldButton = store.bool(forKey: "sidebar.foldButton")
         sideIcons = store.bool(forKey: "sidebar.icons")
         foldsToIcons = store.bool(forKey: "sidebar.foldIcons")
         showsPlayer = store.bool(forKey: "sidebar.player")
@@ -1418,6 +1425,7 @@ final class Preferences: ObservableObject {
         take(\.slidesColumn, store.bool(forKey: Motion.slidesKey))
         take(\.roomyTabs, store.bool(forKey: "sidebar.roomy"))
         take(\.doorsUp, store.bool(forKey: "sidebar.doorsUp"))
+        take(\.foldButton, store.bool(forKey: "sidebar.foldButton"))
         take(\.sideIcons, store.bool(forKey: "sidebar.icons"))
         take(\.foldsToIcons, store.bool(forKey: "sidebar.foldIcons"))
         take(\.sideWidth, "sidebar.width", (store.object(forKey: "sidebar.width") as? Double).map { CGFloat($0) }
