@@ -278,7 +278,7 @@ final class ICloudSyncTests: XCTestCase {
             let object = try JSONSerialization.jsonObject(with: ICloudMerge.encode(value)!)
             return Set(((object as? [String: Any]) ?? [:]).keys)
         }
-        let pin = PinDef(id: UUID(), letter: "a", home: "h", title: "t", name: "n", listed: true, folder: UUID())
+        let pin = PinDef(id: UUID(), letter: "a", home: "h", title: "t", name: "n", listed: true, folder: UUID(), pair: UUID())
         XCTAssertEqual(try keys(pin), ICloudMerge.known[.pins])
         let mark = Bookmark(title: "t", url: "u", children: [])
         XCTAssertEqual(try keys(mark), ICloudMerge.known[.bookmarks])

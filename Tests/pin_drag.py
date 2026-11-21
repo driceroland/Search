@@ -77,13 +77,16 @@ try:
     homes = [x["home"].rsplit("/", 1)[-1] for x in next(iter(kept.values()))]
     t.ok("pins.json: the pins in their new order", homes == ["d", "b"], homes)
 
-    # A pair isn't pinned by a drag; the menu's Pin Tab still can.
+    # A pair let go on the pinned rows is pinned whole, as rows, and stays a
+    # pair; never into the squares. Carried out, it comes out whole.
     sv.sp("enabled", on=True)
     sv.sp("pair", id=c, **{"with": a}, side="right")
-    r = pin(a, at=0); st = state()
-    t.ok("pair: not taken", r.get("taken") is False and "a" not in pins(st) and len(st["splits"]) == 1, (r, pins(st), st["splits"]))
-    pin(c, at=0); st = state()
-    t.ok("pair: its other half neither", "c" not in pins(st) and len(st["splits"]) == 1, (pins(st), st["splits"]))
+    r = pin(c, at=0); st = state()
+    t.ok("pair: not into the squares", r.get("taken") is False and "a" not in pins(st) and len(st["splits"]) == 1, (r, pins(st), st["splits"]))
+    r = pin(c, at=0, listed=True); st = state()
+    t.ok("pair: onto the rows, whole, in its order", r.get("taken") is True and rows(st)[:2] == ["a", "c"] and len(st["splits"]) == 1, (r, rows(st), st["splits"]))
+    pin(a, off=True, at=0); st = state()
+    t.ok("pair: carried out whole, both unpinned, still a split", "a" not in pins(st) and "c" not in pins(st) and len(st["splits"]) == 1, (pins(st), st["splits"]))
     sv.sp("detach", id=c)
 
     # A private tab neither.

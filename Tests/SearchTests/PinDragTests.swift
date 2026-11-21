@@ -108,15 +108,20 @@ final class PinDragTests: XCTestCase {
         XCTAssertNil(t[0].home)
     }
 
-    func testAPairIsNotPinnedByADrag() {
+    func testAPairIsPinnedWholeByADrag() {
         let browser = makeBrowser(count: 4)
         let t = browser.tabs
         browser.prefs.splitView = true
         browser.pair(t[2], with: t[1], onLeft: false)
-        XCTAssertFalse(browser.pinsByDrag(t[1]))
-        XCTAssertFalse(browser.pinDropped(t[1], listed: false, at: 0))
-        XCTAssertNil(t[1].pin)
-        XCTAssertNotNil(browser.split(for: t[1]), "the pair stays a pair")
+        XCTAssertTrue(browser.pinsByDrag(t[2]))
+        XCTAssertFalse(browser.pinDropped(t[2], listed: false, at: 0), "never into the squares")
+        XCTAssertNil(t[2].pin)
+        XCTAssertTrue(browser.pinDropped(t[2], listed: true, at: 0))
+        XCTAssertNotNil(t[1].pin)
+        XCTAssertNotNil(t[2].pin)
+        XCTAssertTrue(t[1].listed && t[2].listed, "rows, both")
+        XCTAssertEqual(browser.tabs.prefix(2).map(\.id), [t[1].id, t[2].id], "the split lands whole, in its order")
+        XCTAssertEqual(browser.pinnedPair(of: t[1])?.tabs, [t[1].id, t[2].id], "the pair stays a pair")
     }
 
     // MARK: - the real gestures

@@ -1731,14 +1731,21 @@ struct TabMenu: View {
         groupMenu
         let rows = browser.prefs.showsPinRows
         if tab.pin == nil {
-            Button("Pin") { browser.pin(tab) }
-                .disabled(!tab.isWeb || tab.shy)
-            if rows {
-                Button("Pin as Row") { browser.pin(tab, listed: true) }
+            // A page in Split View pins the whole split, kept together, as
+            // rows (see Browser.pin).
+            if browser.pinnableSplit(tab) != nil {
+                Button("Pin Split View") { browser.pin(tab) }
+            } else {
+                Button("Pin") { browser.pin(tab) }
                     .disabled(!tab.isWeb || tab.shy)
+                if rows {
+                    Button("Pin as Row") { browser.pin(tab, listed: true) }
+                        .disabled(!tab.isWeb || tab.shy)
+                }
             }
         } else {
-            if rows {
+            // A split pinned whole is rows only.
+            if rows && browser.pinnedPair(of: tab) == nil {
                 Button(tab.listed ? "Show as Square" : "Show as Row") { browser.setListed(tab, !tab.listed) }
             }
             // Settings › Tabs › Folders in pinned rows: a row of this
@@ -1776,17 +1783,27 @@ struct TabMenu: View {
             }
             Button("Replace Pinned Page with Current URL") { browser.rehome(tab) }
                 .disabled(!tab.isWeb || tab.home.map { Browser.samePage($0, tab.address) } ?? false)
-            if browser.prefs.showsSharedPins {
+            // A pinned pair can't be shared: a shared pin lives in every space,
+            // but the pair's partner wouldn't — one would stay here, breaking
+            // the pair in every other space.
+            if browser.prefs.showsSharedPins, browser.pinnedPair(of: tab) == nil {
                 Button(tab.everywhere ? "Only in This Space" : "Keep in Every Space") {
                     if tab.everywhere { browser.keepHere(tab) } else { browser.shareEverywhere(tab) }
                 }
             }
             Button("Unpin") { browser.unpin(tab) }
             // Away for good in one go, where Unpin, finding the row and its
-            // × took three (#834); ⇧⌘T brings it back as a tab.
+            // × took three (#834); ⇧⌘T brings it back as a tab. A pinned
+            // pair goes together, so Delete on either is Close Both Pages
+            // with its pins taken off (see unpin).
             Button("Delete") {
+                let members = browser.pinnedPair(of: tab)
+                    .map { pair in pair.tabs.compactMap { id in browser.tabs.first { $0.id == id } } }
+                    ?? [tab]
                 browser.unpin(tab)
-                browser.close(tab)
+                for member in members where browser.tabs.contains(where: { $0.id == member.id }) {
+                    browser.close(member)
+                }
             }
         }
         // A shared pin is in every space already: nowhere to move it.
