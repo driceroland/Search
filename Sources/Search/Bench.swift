@@ -24,6 +24,7 @@ import WebKit
 final class Bench {
     /// The bookmark button's list held off screen for `dropdown popover`.
     static var dropdownHeld: NSViewController?
+    static var dropdownMade: (ms: Double, rows: Int) = (0, 0)
 
     static let shared = Bench()
     /// The column's edge held at a width by "edgetime", or let go (nil).
@@ -1986,10 +1987,18 @@ final class Bench {
                 guard Store.testing else { answer(["error": "dropdown popover only works on a --test run"]); return }
                 switch what {
                 case "open":
+                    // How long the list took to be made and laid out, and how
+                    // many of its rows were built for it (idea 879).
+                    Bench.bodies["bookmarkRow"] = 0
+                    let start = CACurrentMediaTime()
                     let held = NSHostingController(rootView: BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks))
                     held.sizingOptions = [.preferredContentSize]
                     _ = held.view
                     held.view.layoutSubtreeIfNeeded()
+                    held.view.frame.size = held.preferredContentSize
+                    held.view.layoutSubtreeIfNeeded()
+                    held.view.displayIfNeeded()
+                    Bench.dropdownMade = ((CACurrentMediaTime() - start) * 1000, Bench.bodies["bookmarkRow"] ?? 0)
                     Bench.dropdownHeld = held
                 case "close": Bench.dropdownHeld = nil
                 default:
@@ -1999,7 +2008,8 @@ final class Bench {
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                     Bench.dropdownHeld?.view.layoutSubtreeIfNeeded()
-                    answer(["popover": Double(Bench.dropdownHeld?.preferredContentSize.height ?? 0)])
+                    answer(["popover": Double(Bench.dropdownHeld?.preferredContentSize.height ?? 0),
+                            "madeMs": Bench.dropdownMade.ms, "rowsBuilt": Bench.dropdownMade.rows])
                 }
                 return
             }

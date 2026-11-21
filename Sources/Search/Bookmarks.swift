@@ -769,9 +769,48 @@ struct BookmarkOutline: View {
     /// deep without being dropped on the way.
     @State private var spring: DispatchWorkItem?
 
+    /// One line of the list as it shows: a bookmark or folder, with where
+    /// it sits, or the "Empty" under an open folder holding nothing.
+    struct Shown: Identifiable {
+        let node: Bookmark
+        let depth: Int
+        let parent: Bookmark.ID?
+        let index: Int
+        let isOpen: Bool
+        /// The "Empty" line under `node`, an open empty folder.
+        var empty = false
+        var id: String { empty ? "empty " + node.id.uuidString : node.id.uuidString }
+    }
+
+    /// Every line that shows, the folders in `expanded` open, in order.
+    static func lines(_ nodes: [Bookmark], expanded: Set<Bookmark.ID>, depth: Int = 0,
+                      parent: Bookmark.ID? = nil, into out: inout [Shown]) {
+        for (index, node) in nodes.enumerated() {
+            let isOpen = node.isFolder && expanded.contains(node.id)
+            out.append(Shown(node: node, depth: depth, parent: parent, index: index, isOpen: isOpen))
+            guard isOpen else { continue }
+            if let kids = node.children, !kids.isEmpty {
+                lines(kids, expanded: expanded, depth: depth + 1, parent: node.id, into: &out)
+            } else {
+                out.append(Shown(node: node, depth: depth, parent: parent, index: index, isOpen: true, empty: true))
+            }
+        }
+    }
+
+    /// The rows are built as they come into sight, a lazy stack over the
+    /// list laid flat: a folder of thousands, open, had every row built at
+    /// once, and the window stalled for seconds (#1306). What every row
+    /// shares — whether there are folders, the folders to move to — is
+    /// worked out once for the list, not once a row.
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            rows(bookmarks.roots, depth: 0, parent: nil)
+        var showing: [Shown] = []
+        Self.lines(bookmarks.roots, expanded: expanded, into: &showing)
+        let arrows = bookmarks.roots.contains(where: \.isFolder)
+        let folders = Bookmarks.folders(bookmarks.roots)
+        return LazyVStack(alignment: .leading, spacing: 1) {
+            ForEach(showing) { line in
+                if line.empty { empty(under: line) } else { row(line, arrows: arrows, folders: folders) }
+            }
             // Past the last row: the end of the top level, which "after" on
             // an open folder at the bottom can't reach. Only there while a
             // row is carried, or it is an empty band under the list (#391).
@@ -790,85 +829,77 @@ struct BookmarkOutline: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private func rows(_ nodes: [Bookmark], depth: Int, parent: Bookmark.ID?) -> some View {
-        ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
-            let isOpen = node.isFolder && expanded.contains(node.id)
-            Row(
-                node: node,
-                depth: depth,
-                // A folder's arrow has a place in front of every row, so the
-                // icons line up; with no folder at all, it is only a gap.
-                arrows: bookmarks.roots.contains(where: \.isFolder),
-                // An extension can write an address that does not parse,
-                // and the menu below already unwraps this the same way.
-                open: node.isFolder ? nil : { if let text = node.url, let url = URL(string: text) { open(url) } },
-                isOpen: isOpen,
-                dragging: dragging == node.id,
-                aim: aimed?.id == node.id ? aimed?.zone : nil,
-                shown: shown == node.id,
-                toggle: node.isFolder ? { toggle(node.id) } : nil,
-                moveTargets: Bookmarks.folders(bookmarks.roots).filter { !Bookmarks.holds($0.node.id, node) },
-                moveTo: { bookmarks.move(node.id, into: $0) },
-                rename: { bookmarks.askRename(node) },
-                newFolder: node.isFolder ? {
-                    bookmarks.askNewFolder(in: node.id) { _ in expanded.insert(node.id) }
-                } : nil,
-                remove: { bookmarks.askRemove(node) }
-            )
-            .id(node.id)
-            .overlay {
-                if let url = node.url.flatMap(URL.init(string:)) {
-                    MiddleClick { openInNewTab(url) }
-                }
-            }
-            .onDrag {
-                dragging = node.id
-                settleWhenLetGo()
-                return NSItemProvider(object: node.id.uuidString as NSString)
-            }
-            .modifier(Landing(
-                isFolder: node.isFolder,
-                allowed: { allows(node.id) },
-                aim: { aim($0.map { Aim(id: node.id, zone: $0) }) },
-                land: { zone, providers in
-                    drop(providers) { id in
-                        switch zone {
-                        case .before: bookmarks.move(id, into: parent, at: index)
-                        // Below an open folder's row is above its first
-                        // child, so that is where it goes.
-                        case .after where isOpen: bookmarks.move(id, into: node.id, at: 0)
-                        case .after: bookmarks.move(id, into: parent, at: index + 1)
-                        case .into: bookmarks.move(id, into: node.id)
-                        }
-                    }
-                }
-            ))
-
-            if isOpen {
-                if let kids = node.children, !kids.isEmpty {
-                    // Type-erased: a view that calls itself can't let Swift
-                    // infer its own opaque return type from its own body.
-                    AnyView(rows(kids, depth: depth + 1, parent: node.id))
-                } else {
-                    // Where its first bookmark would be, so a drop here goes
-                    // in, shown as the folder's own lower edge shows it.
-                    Text("Empty")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.faint)
-                        .padding(.leading, indent(depth + 1) + 26)
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .modifier(Landing(
-                            isFolder: false,
-                            allowed: { allows(node.id) },
-                            aim: { aim($0.map { _ in Aim(id: node.id, zone: .after) }) },
-                            land: { _, providers in drop(providers) { bookmarks.move($0, into: node.id) } }
-                        ))
-                }
+    private func row(_ line: Shown, arrows: Bool, folders: [(node: Bookmark, depth: Int)]) -> some View {
+        let node = line.node, depth = line.depth, parent = line.parent, index = line.index, isOpen = line.isOpen
+        return Row(
+            node: node,
+            depth: depth,
+            // A folder's arrow has a place in front of every row, so the
+            // icons line up; with no folder at all, it is only a gap.
+            arrows: arrows,
+            // An extension can write an address that does not parse,
+            // and the menu below already unwraps this the same way.
+            open: node.isFolder ? nil : { if let text = node.url, let url = URL(string: text) { open(url) } },
+            isOpen: isOpen,
+            dragging: dragging == node.id,
+            aim: aimed?.id == node.id ? aimed?.zone : nil,
+            shown: shown == node.id,
+            toggle: node.isFolder ? { toggle(node.id) } : nil,
+            moveTargets: { folders.filter { !Bookmarks.holds($0.node.id, node) } },
+            moveTo: { bookmarks.move(node.id, into: $0) },
+            rename: { bookmarks.askRename(node) },
+            newFolder: node.isFolder ? {
+                bookmarks.askNewFolder(in: node.id) { _ in expanded.insert(node.id) }
+            } : nil,
+            remove: { bookmarks.askRemove(node) }
+        )
+        .id(node.id)
+        .overlay {
+            if let url = node.url.flatMap(URL.init(string:)) {
+                MiddleClick { openInNewTab(url) }
             }
         }
+        .onDrag {
+            dragging = node.id
+            settleWhenLetGo()
+            return NSItemProvider(object: node.id.uuidString as NSString)
+        }
+        .modifier(Landing(
+            isFolder: node.isFolder,
+            allowed: { allows(node.id) },
+            aim: { aim($0.map { Aim(id: node.id, zone: $0) }) },
+            land: { zone, providers in
+                drop(providers) { id in
+                    switch zone {
+                    case .before: bookmarks.move(id, into: parent, at: index)
+                    // Below an open folder's row is above its first
+                    // child, so that is where it goes.
+                    case .after where isOpen: bookmarks.move(id, into: node.id, at: 0)
+                    case .after: bookmarks.move(id, into: parent, at: index + 1)
+                    case .into: bookmarks.move(id, into: node.id)
+                    }
+                }
+            }
+        ))
+    }
+
+    /// Where an open empty folder's first bookmark would be, so a drop here
+    /// goes in, shown as the folder's own lower edge shows it.
+    private func empty(under line: Shown) -> some View {
+        let node = line.node
+        return Text("Empty")
+            .font(.system(size: 12))
+            .foregroundStyle(Palette.faint)
+            .padding(.leading, indent(line.depth + 1) + 26)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .modifier(Landing(
+                isFolder: false,
+                allowed: { allows(node.id) },
+                aim: { aim($0.map { _ in Aim(id: node.id, zone: .after) }) },
+                land: { _, providers in drop(providers) { bookmarks.move($0, into: node.id) } }
+            ))
     }
 
     private func toggle(_ id: Bookmark.ID) {
@@ -1003,7 +1034,8 @@ struct BookmarkOutline: View {
         let aim: Zone?
         let shown: Bool
         let toggle: (() -> Void)?
-        let moveTargets: [(node: Bookmark, depth: Int)]
+        /// Worked out as the menu is, not with every row.
+        let moveTargets: () -> [(node: Bookmark, depth: Int)]
         let moveTo: (Bookmark.ID?) -> Void
         let rename: () -> Void
         /// A folder in this one: only on a folder.
@@ -1013,7 +1045,8 @@ struct BookmarkOutline: View {
         @State private var hovering = false
 
         var body: some View {
-            HStack(spacing: 8) {
+            if Store.testing { Bench.bodies["bookmarkRow", default: 0] += 1 }
+            return HStack(spacing: 8) {
                 if node.isFolder {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
@@ -1068,9 +1101,10 @@ struct BookmarkOutline: View {
                 }
                 Menu("Move to") {
                     Button("Top Level", action: { moveTo(nil) })
-                    if !moveTargets.isEmpty {
+                    let targets = moveTargets()
+                    if !targets.isEmpty {
                         Divider()
-                        ForEach(moveTargets, id: \.node.id) { target in
+                        ForEach(targets, id: \.node.id) { target in
                             Button(String(repeating: "   ", count: target.depth) + target.node.title) {
                                 moveTo(target.node.id)
                             }
