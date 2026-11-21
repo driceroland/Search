@@ -11,11 +11,11 @@ import WebKit
 // signed in (#837). Chrome counts a host the extension has been granted as
 // same-site.
 //
-// So the shim sends such a fetch — credentials "include" from the
-// extension's own page or worker, or "same-origin" (the default) from its
-// page, to another http(s) origin, and any fetch from its worker to an
-// app on this Mac (localhost: WebKit holds a worker to CORS there, and
-// Eagle's app sends no CORS headers) — here, over a native port. WebKit
+// So the shim sends such a fetch — credentials "include" or "same-origin"
+// (the default) from the extension's own page or worker to another http(s)
+// origin, and any fetch from its worker to an app on this Mac (localhost:
+// WebKit holds a worker to CORS there, and Eagle's app sends no CORS
+// headers) — here, over a native port. WebKit
 // says which extension opened the port; no page or other extension can
 // speak for it. Here, and only for an address that
 // extension has been granted (checked again on every redirect: a hop to an
