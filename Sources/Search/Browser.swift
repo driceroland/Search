@@ -2588,6 +2588,13 @@ final class Browser: NSObject, ObservableObject {
     /// strip — while a tab's address or name is being edited in the tab: what
     /// was typed is kept, as Return keeps it. An address left as it was loads
     /// nothing again, and a field left empty is let go.
+    /// The same, from the field made for `tab`'s edit: nothing once
+    /// another tab's edit has begun.
+    func finishTabEdit(of tab: Tab.ID?) {
+        guard editingTab == tab else { return }
+        finishTabEdit()
+    }
+
     func finishTabEdit() {
         guard let id = editingTab, let tab = tabs.first(where: { $0.id == id }) else { return }
         if renamingTab {

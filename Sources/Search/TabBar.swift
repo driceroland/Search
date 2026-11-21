@@ -1488,6 +1488,7 @@ struct TabAddressField: NSViewRepresentable {
         field.cell?.isScrollable = true
         field.lineBreakMode = .byClipping
         field.stringValue = browser.tabDraft
+        context.coordinator.tab = browser.editingTab
         context.coordinator.watch(field)
         // The site card stands under whichever field the address is in, and
         // the list of places once something is typed.
@@ -1531,6 +1532,11 @@ struct TabAddressField: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var browser: Browser
+        /// The tab whose edit this field was made for. A field going away
+        /// late, as its row settles, ends only its own edit: a double-click
+        /// on another tab had begun that one's by then, and the old field's
+        /// end took it, card and all (#1310).
+        var tab: Tab.ID?
         var claimed = false
         var typing = false
         /// A key that takes letters off: the field mustn't put the same
@@ -1589,8 +1595,8 @@ struct TabAddressField: NSViewRepresentable {
 
         /// Clicking anywhere else keeps what was typed, as Return does.
         func controlTextDidEndEditing(_ note: Notification) {
-            let browser = browser
-            DispatchQueue.main.async { browser.finishTabEdit() }
+            let browser = browser, tab = tab
+            DispatchQueue.main.async { browser.finishTabEdit(of: tab) }
         }
 
         /// A press on something that takes no focus — the strip's empty
@@ -1606,8 +1612,8 @@ struct TabAddressField: NSViewRepresentable {
                 guard let self, let field, event.window === field.window,
                       !field.bounds.contains(field.convert(event.locationInWindow, from: nil))
                 else { return event }
-                let browser = self.browser
-                DispatchQueue.main.async { browser.finishTabEdit() }
+                let browser = self.browser, tab = self.tab
+                DispatchQueue.main.async { browser.finishTabEdit(of: tab) }
                 return event
             }
         }

@@ -23,6 +23,20 @@ enum SiteCardPanel {
 
     static var isShown: Bool { panel != nil }
 
+    /// Where the card is and the field with the caret it should hang from,
+    /// on the screen, for the bench: [x, y, width, height] each.
+    static func geometry(_ browser: Browser) -> [String: [Double]] {
+        var out: [String: [Double]] = [:]
+        let rect = { (r: NSRect) in [r.minX, r.minY, r.width, r.height].map { Double($0) } }
+        if let panel { out["card"] = rect(panel.frame) }
+        if let window = browser.window ?? Links.window { out["window"] = rect(window.frame) }
+        if let window = browser.window ?? Links.window,
+           let field = (window.firstResponder as? NSTextView)?.delegate as? NSTextField ?? anchor, field.window != nil {
+            out["field"] = rect(window.convertToScreen(field.convert(field.bounds, to: nil)))
+        }
+        return out
+    }
+
     // MARK: - when
 
     /// The field the address is being edited in. SwiftUI can make it and
@@ -59,18 +73,72 @@ enum SiteCardPanel {
             }
     }
 
-    private static func place(_ tab: Tab, _ browser: Browser, tries: Int) {
+    /// Shown once the field it hangs from is on the window and has stopped
+    /// moving: the same place at two looks a moment apart. A double-click
+    /// on a tab you aren't on picks it with the first click and opens its
+    /// address with the second, while the row is still settling around the
+    /// tab now in front, and the field may not be where it ends up yet: the
+    /// card came up near the middle of the screen (#1310).
+    private static func place(_ tab: Tab, _ browser: Browser, tries: Int, last: NSRect? = nil) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
             guard original != nil, browser.editingTab == tab.id, browser.tabDraft == original else { return }
-            // The field with the caret in it is the one on screen; failing
-            // that, the latest one made.
-            let focused = ((browser.window ?? Links.window)?.firstResponder as? NSTextView)?.delegate as? NSTextField
-            guard let field = focused ?? anchor, field.window != nil else {
+            guard let field = field(in: browser), let spot = spot(of: field) else {
                 if tries < 15 { place(tab, browser, tries: tries + 1) }
                 return
             }
+            if spot != last, tries < 15 { return place(tab, browser, tries: tries + 1, last: spot) }
             show(for: tab, in: browser, under: field)
+            keepUnder(browser)
         }
+    }
+
+    /// The field with the caret in it, the one on screen; failing that, the
+    /// latest one made.
+    private static func field(in browser: Browser) -> NSView? {
+        let focused = ((browser.window ?? Links.window)?.firstResponder as? NSTextView)?.delegate as? NSTextField
+        return focused ?? anchor
+    }
+
+    /// Where `field` is on the screen, when it is somewhere the card can hang
+    /// from: in a window, shown, with a size, and inside the window's content.
+    private static func spot(of field: NSView) -> NSRect? {
+        guard let window = field.window, !field.isHiddenOrHasHiddenAncestor, !field.bounds.isEmpty,
+              let content = window.contentView else { return nil }
+        let inWindow = field.convert(field.bounds, to: nil)
+        guard content.frame.intersects(inWindow), !field.visibleRect.isEmpty else { return nil }
+        return window.convertToScreen(inWindow)
+    }
+
+    /// While the card is up, it goes where the field goes: the row moving on
+    /// as a tab opens, closes or settles beside it.
+    private static var follower: Timer?
+    private static func keepUnder(_ browser: Browser) {
+        follower?.invalidate()
+        follower = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak browser] _ in
+            MainActor.assumeIsolated {
+                guard let browser, let panel, let field = field(in: browser), let spot = spot(of: field) else { return }
+                let (origin, _) = placement(panel.frame.size, under: spot, on: field.window?.screen)
+                if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
+            }
+        }
+    }
+
+    /// Under the address, lined up with the tab's own edge — or over it,
+    /// for a tab too near the bottom of the screen to have the room. Only
+    /// ever beside the field: pushed up onto it, the card covered the
+    /// address being edited, and what was typed there with it. True when
+    /// it is over the field.
+    private static func placement(_ size: NSSize, under spot: NSRect, on screen: NSScreen?) -> (NSPoint, Bool) {
+        var origin = NSPoint(x: spot.minX - 12, y: spot.minY - 12 - size.height)
+        var above = false
+        if let screen = screen?.visibleFrame {
+            origin.x = min(max(origin.x, screen.minX + 8), screen.maxX - size.width - 8)
+            if origin.y < screen.minY + 8 {
+                above = true
+                origin.y = min(spot.maxY + 12, screen.maxY - size.height - 8)
+            }
+        }
+        return (origin, above)
     }
 
     /// From a button of its own, the address bar's (AddressLine.swift): the
@@ -125,20 +193,7 @@ enum SiteCardPanel {
         panel.hasShadow = true
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = true
-        // Under the address, lined up with the tab's own edge — or over it,
-        // for a tab too near the bottom of the screen to have the room. Only
-        // ever beside the field: pushed up onto it, the card covered the
-        // address being edited, and what was typed there with it.
-        let spot = window.convertToScreen(field.convert(field.bounds, to: nil))
-        var origin = NSPoint(x: spot.minX - 12, y: spot.minY - 12 - size.height)
-        var above = false
-        if let screen = window.screen?.visibleFrame {
-            origin.x = min(max(origin.x, screen.minX + 8), screen.maxX - size.width - 8)
-            if origin.y < screen.minY + 8 {
-                above = true
-                origin.y = min(spot.maxY + 12, screen.maxY - size.height - 8)
-            }
-        }
+        let (origin, above) = placement(size, under: window.convertToScreen(field.convert(field.bounds, to: nil)), on: window.screen)
         panel.setFrameOrigin(origin)
         window.addChildWindow(panel, ordered: .above)
         // Its size follows the card, keeping the edge nearest the address
@@ -171,6 +226,8 @@ enum SiteCardPanel {
     }
 
     static func hide() {
+        follower?.invalidate()
+        follower = nil
         if let resign { NotificationCenter.default.removeObserver(resign) }
         resign = nil
         if let clicks { NSEvent.removeMonitor(clicks) }

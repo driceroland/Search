@@ -1118,6 +1118,8 @@ final class Bench {
                             "windowFullScreen": (browser.window ?? Links.window)?.styleMask.contains(.fullScreen) ?? false]
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
             out["siteCard"] = SiteCardPanel.isShown
+            out["siteCardFrames"] = SiteCardPanel.geometry(browser)
+            out["tabEditing"] = browser.editingTab.map { String($0.uuidString.prefix(8)).lowercased() } ?? ""
             // "Press Esc again to leave full screen", up over a page filling
             // the screen (Settings › General › Press Esc twice to leave full
             // screen).
@@ -4797,6 +4799,9 @@ final class Bench {
                 browser.beginTabEdit(tab)
                 browser.tabDraft = text
             }
+            // The tab on screen clicked again: its address opened, as typed
+            // into nothing yet, the site card under it.
+            if request["opentab"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab) }
             if request["finishedit"] as? Bool == true { browser.finishTabEdit() }
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }
             // Settings › Privacy › Clear › Cache, answered once every store
