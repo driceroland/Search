@@ -2801,6 +2801,11 @@ final class Browser: NSObject, ObservableObject {
     /// Its window fills the screen. macOS takes the window's buttons away
     /// then, so the room kept for them at the top goes too (idea 184).
     @Published var fullScreen = false
+    /// How far down the top bars sit in full screen while macOS has its menu
+    /// bar and the bar with the window's buttons brought down over the top:
+    /// they move down with it instead of lying under it (see
+    /// FullScreenReveal). Zero when nothing is revealed.
+    @Published var revealInset: CGFloat = 0
     /// The page as a card on the window's ground, the one switch for it
     /// (see CardEdge): with the tabs down the side, unless Settings › Tabs ›
     /// The page as a card is off, and never with the window filling the

@@ -535,6 +535,7 @@ struct ContentView: View {
     @State private var held = WeakWindow()
     private var window: NSWindow? { held.window }
     @State private var resting: RestingLights?
+    @State private var reveal: FullScreenReveal?
     /// The room the page leaves for the column and the strip, set without
     /// animation (see `make(room:after:)`); nil only before the window is up.
     @State private var room: CGSize?
@@ -975,6 +976,10 @@ struct ContentView: View {
             // is pressed the page is on its way, and the field is not what
             // there is to watch.
             .animation(browser.fieldShowing ? Motion.settle : Motion.quick, value: browser.fieldShowing)
+            // The menu bar brought down in full screen takes the top: the bars
+            // start under it (see FullScreenReveal).
+            .padding(.top, browser.revealInset)
+            .ignoresSafeArea()
             .background(windowSetup)
             .onChange(of: browser.prefs.sidebar) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
@@ -1024,10 +1029,10 @@ struct ContentView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { browser.fullScreen = true }
+                if let window, (note.object as? NSWindow) === window { browser.fullScreen = true; reveal?.entering() }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { browser.fullScreen = false }
+                if let window, (note.object as? NSWindow) === window { browser.fullScreen = false; reveal?.leaving() }
             }
             // And as it is once there, or back: a way in that macOS gave up
             // on half way says so only by where the window ends up.
@@ -1262,6 +1267,8 @@ struct ContentView: View {
         window.titleVisibility = .hidden
         // A window put back in full screen is so before any notice says it.
         browser.fullScreen = window.styleMask.contains(.fullScreen)
+        if reveal == nil { reveal = FullScreenReveal(window: window, browser: browser) }
+        if browser.fullScreen { reveal?.entering() }
         browser.paintGround(window)
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.

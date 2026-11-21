@@ -4737,6 +4737,10 @@ final class Bench {
             // The window's own full screen as the chrome sees it, without
             // the window going there: a test run never takes the screen.
             if let on = request["fullscreen"] as? Bool, Store.testing { browser.fullScreen = on }
+            // What macOS's menu bar brought down takes of the window's top in
+            // full screen, as the window would say it (FullScreenReveal),
+            // set without the window going there.
+            if let inset = request["reveal"] as? Double, Store.testing { browser.revealInset = CGFloat(inset) }
             if let on = request["peek"] as? Bool { browser.peeking = on }
             // Settings › Keyboard & Mouse › Peek stays with its tab, moved as
             // its switch moves it.

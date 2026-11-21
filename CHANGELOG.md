@@ -21,6 +21,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- In full screen, the strip of tabs and the bookmarks bar move down with the menu bar and the bar with the window's buttons when you bring the pointer to the top, instead of lying under them out of reach, as Safari's and Chrome's do.
 - Monarch Money | Retail purchase sync no longer shows its options page without any text. Its code reads `chrome.i18n.getMessage` into a variable and calls it from there, and WebKit answers nothing for that; the i18n functions now work however they are called.
 - A security key (a YubiKey, say) works with Settings › Passwords › Offer passkeys off. The switch refused every request for one at once, "The operation either timed out or was not allowed.", before any sheet. Off now means what it says, no passkeys from the Mac, iCloud or a phone: a sign-in that names a key over USB, NFC or Bluetooth, or a key being added as one, brings up the Mac's sheet for the security key alone, and everything else still goes straight on to the password. `python3 Tests/security_key_passkeys_off.py` (idea 846)
 - The rows the column keeps out of sight for a swipe between spaces are hidden until a swipe brings them, not only moved aside. Since 1.0.16 they lay under the page still drawn, so whatever moved in them went on moving there too: a tab loading turned a second ring the whole time it loaded, and the window was drawn again for it at every frame. `python3 Tests/idle_animations.py`
