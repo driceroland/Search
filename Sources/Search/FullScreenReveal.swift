@@ -51,10 +51,14 @@ final class FullScreenReveal: NSObject {
 
     func measure() {
         guard let window, let browser else { return }
-        browser.revealInset = FullScreenReveal.inset(
+        let inset = FullScreenReveal.inset(
             fullScreen: window.styleMask.contains(.fullScreen),
             contentHeight: window.contentView?.frame.height ?? 0,
             layoutTop: window.contentLayoutRect.maxY)
+        // Set only when it moves: each set redraws the whole window and
+        // rebuilds its menus, and the layout rect changes at every step of
+        // a resize.
+        if browser.revealInset != inset { browser.revealInset = inset }
     }
 
     /// How far down from the window's top edge the bars start: what the
