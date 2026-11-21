@@ -747,18 +747,18 @@ struct DragStrip: NSViewRepresentable {
     /// See Strip.hover: for the bench.
     @MainActor static func hover(_ window: NSWindow, at point: NSPoint) -> Bool { Strip.hover(window, at: point) }
 
-    func makeNSView(context: Context) -> NSView { Strip() }
+    func makeNSView(context: Context) -> Strip { Strip() }
 
-    func updateNSView(_ view: NSView, context: Context) {
-        (view as? Strip)?.reserved = reserved
-        (view as? Strip)?.below = below
-        (view as? Strip)?.trailing = trailing
-        (view as? Strip)?.band = band
-        (view as? Strip)?.onDoubleClick = onDoubleClick
-        (view as? Strip)?.rightMenu = menu
+    func updateNSView(_ view: Strip, context: Context) {
+        view.reserved = reserved
+        view.below = below
+        view.trailing = trailing
+        view.band = band
+        view.onDoubleClick = onDoubleClick
+        view.rightMenu = menu
     }
 
-    private final class Strip: NSView {
+    final class Strip: NSView {
         var reserved: CGFloat = 0 { didSet { if reserved != oldValue { aimCursor() } } }
         var below: CGFloat = 0 { didSet { if below != oldValue { aimCursor() } } }
         var trailing: CGFloat = 0 { didSet { if trailing != oldValue { aimCursor() } } }
@@ -782,10 +782,31 @@ struct DragStrip: NSViewRepresentable {
         private static var hovered: [ObjectIdentifier: Int] = [:]
 
         /// The strip moves the window and answers the double-click itself.
-        /// Left to say yes, AppKit takes both on too in the title bar the
-        /// strip sits in, and a double-click answered twice — by AppKit on
-        /// the press, here on the release — ends where it started.
+        /// Left to say yes, AppKit takes drags on too in the title bar the
+        /// strip sits in. Double-clicks are claimed with our own click
+        /// recognizer below: since idea 744 kept the window movable over the
+        /// strip, AppKit's title bar double-click recognizer on NSThemeFrame
+        /// fired alongside mouseUp, zooming twice (back to where it started)
+        /// or zooming the window when double-clicking empty tab space for a
+        /// new tab.
         override var mouseDownCanMoveWindow: Bool { false }
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            installDoubleClick()
+        }
+
+        required init?(coder: NSCoder) {
+            super.init(coder: coder)
+            installDoubleClick()
+        }
+
+        private func installDoubleClick() {
+            let recognizer = NSClickGestureRecognizer(target: self, action: #selector(handleDoubleClick(_:)))
+            recognizer.numberOfClicksRequired = 2
+            recognizer.delaysPrimaryMouseButtonEvents = false
+            addGestureRecognizer(recognizer)
+        }
 
         override func hitTest(_ point: NSPoint) -> NSView? {
             let inside = convert(point, from: superview)
@@ -901,14 +922,20 @@ struct DragStrip: NSViewRepresentable {
 
         /// A double-click does what a title bar's does, unless this strip
         /// stands for empty tab row instead, in which case it opens a new
-        /// tab, the same as the button it is standing in for. It answered
-        /// every click before, so a double-click filled the screen on the
-        /// first click and put the window back on the second, and looked
-        /// like nothing at all.
-        override func mouseUp(with event: NSEvent) {
-            guard let window, !moved, event.clickCount == 2 else { return }
+        /// tab, the same as the button it is standing in for. Claimed via
+        /// NSClickGestureRecognizer rather than mouseUp so AppKit's own
+        /// NSThemeFrame title bar recognizer does not fire on the same click
+        /// while the window stays movable for window managers (idea 744).
+        @objc private func handleDoubleClick(_ recognizer: NSClickGestureRecognizer) {
+            guard !moved else { return }
+            performDoubleClick(at: recognizer.location(in: self))
+        }
+
+        /// Runs the strip's double-click action at a point in the strip's own
+        /// coordinates. Also called by `bench hit … double` on a hidden probe.
+        func performDoubleClick(at inside: NSPoint) {
+            guard let window else { return }
             // Above or below the tabs is title bar, not empty tab row.
-            let inside = convert(event.locationInWindow, from: nil)
             if let onDoubleClick, inside.x >= reserved, inside.x <= bounds.width - trailing {
                 onDoubleClick()
                 return
