@@ -160,6 +160,17 @@ enum Chromium {
         Source(name: "Opera GX", folder: "com.operasoftware.OperaGX", service: "Opera Safe Storage", account: "Opera", app: "Opera GX.app"),
         Source(name: "Helium", folder: "net.imput.helium", service: "Helium Storage Key", account: "Helium", app: "Helium.app"),
         Source(name: "Comet", folder: "Comet", service: "Comet Safe Storage", account: "Comet", app: "Comet.app"),
+        Source(name: "Thorium", folder: "Thorium", service: "Thorium Safe Storage", account: "Thorium", app: "Thorium.app"),
+        Source(name: "Naver Whale", folder: "Naver/Whale", service: "Whale Safe Storage", account: "Whale", app: "Whale.app"),
+        Source(name: "Island", folder: "Island", service: "Island Safe Storage", account: "Island", app: "Island.app"),
+        Source(name: "Sidekick", folder: "Sidekick", service: "Sidekick Safe Storage", account: "Sidekick", app: "Sidekick.app"),
+        // Yandex keeps its passwords in a store of its own ("Ya Passman
+        // Data", behind a second key), and ChatGPT Atlas keeps its key where
+        // only OpenAI's apps may read it: their bookmarks, history and open
+        // tabs still come. Atlas's profiles are "user-…" folders.
+        Source(name: "Yandex", folder: "Yandex/YandexBrowser", service: "", account: "", app: "Yandex.app", importsPasswords: false),
+        Source(name: "ChatGPT Atlas", folder: "com.openai.atlas/browser-data/host", service: "", account: "", app: "ChatGPT Atlas.app",
+               importsPasswords: false),
     ]
 
     /// Where browsers keep their data: ~/Library/Application Support. A test
@@ -724,8 +735,14 @@ enum Mozilla {
                     if FileManager.default.fileExists(atPath: places.path) { out.append(places) }
                 }
             }
+            // One file once, however its folder was spelled: "zen" and "Zen"
+            // are the same folder on a Mac's usual disk.
             var seen = Set<String>()
-            return out.filter { seen.insert($0.path).inserted }.sorted { a, b in
+            return out.filter { file in
+                var info = stat()
+                let key = stat(file.path, &info) == 0 ? "\(info.st_dev):\(info.st_ino)" : file.path
+                return seen.insert(key).inserted
+            }.sorted { a, b in
                 let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
                 let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
                 return da > db
@@ -782,6 +799,10 @@ enum Mozilla {
     static let known: [Source] = [
         Source(name: "Firefox", folders: ["Firefox/Profiles", "Firefox"]),
         Source(name: "Zen", folders: ["zen/Profiles", "Zen/Profiles", "zen", "Zen"]),
+        Source(name: "Floorp", folders: ["Floorp/Profiles", "Floorp"]),
+        Source(name: "LibreWolf", folders: ["librewolf/Profiles", "LibreWolf/Profiles", "librewolf", "LibreWolf"]),
+        Source(name: "Waterfox", folders: ["Waterfox/Profiles", "Waterfox"]),
+        Source(name: "Mullvad Browser", folders: ["MullvadBrowser/Profiles", "MullvadBrowser"]),
     ]
 
     /// Only the Mozilla browsers with a profile to read.
@@ -1342,11 +1363,14 @@ enum Mozilla {
 enum ImportSource: Identifiable, Hashable {
     case chromium(Chromium.Source)
     case mozilla(Mozilla.Source)
+    /// Orion and Safari: bookmarks and history (see ImportWebKit.swift).
+    case webkit(WebKitBrowser.Source)
 
     var id: String {
         switch self {
         case .chromium(let s): return "chromium-\(s.id)"
         case .mozilla(let s): return "mozilla-\(s.id)"
+        case .webkit(let s): return "webkit-\(s.id)"
         }
     }
 
@@ -1354,6 +1378,7 @@ enum ImportSource: Identifiable, Hashable {
         switch self {
         case .chromium(let s): return s.name
         case .mozilla(let s): return s.name
+        case .webkit(let s): return s.name
         }
     }
 
@@ -1366,6 +1391,7 @@ enum ImportSource: Identifiable, Hashable {
         switch self {
         case .chromium(let s): return Chromium.bookmarkRead(in: s, profile: profile)
         case .mozilla(let s): return Mozilla.bookmarkRead(in: s, profile: profile)
+        case .webkit(let s): return WebKitBrowser.bookmarkRead(in: s, profile: profile)
         }
     }
 
@@ -1373,6 +1399,7 @@ enum ImportSource: Identifiable, Hashable {
         switch self {
         case .chromium(let s): return Chromium.places(in: s, profile: profile, limit: limit)
         case .mozilla(let s): return Mozilla.places(in: s, profile: profile, limit: limit)
+        case .webkit(let s): return WebKitBrowser.places(in: s, profile: profile, limit: limit)
         }
     }
 
@@ -1380,6 +1407,7 @@ enum ImportSource: Identifiable, Hashable {
         switch self {
         case .chromium(let s): return Chromium.icons(in: s, profile: profile, for: urls)
         case .mozilla(let s): return Mozilla.icons(in: s, profile: profile, for: urls)
+        case .webkit: return [:]
         }
     }
 
@@ -1387,12 +1415,49 @@ enum ImportSource: Identifiable, Hashable {
         switch self {
         case .chromium(let s): return try Chromium.read(s, profile: profile)
         case .mozilla(let s): return try Mozilla.read(s, profile: profile)
+        case .webkit: throw Chromium.Trouble.unreadable
         }
     }
 
     var importsPasswords: Bool {
-        if case .chromium(let source) = self { return source.importsPasswords }
+        switch self {
+        case .chromium(let source): return source.importsPasswords
+        case .mozilla: return true
+        // Kept in the Mac's own keychain, not the browser's files.
+        case .webkit: return false
+        }
+    }
+
+    /// Whether its open tabs can be read: not a WebKit browser's.
+    var readsOpenTabs: Bool {
+        if case .webkit = self { return false }
         return true
+    }
+
+    /// What can come over from it at all, whatever it holds now, in the
+    /// order the sheet lists them: the sheet and the Welcome say so beside it.
+    var canBring: [String] {
+        var out = ["bookmarks", "history"]
+        if importsPasswords { out.append("passwords") }
+        switch self {
+        case .chromium(let s) where s.name == "Arc": out.append("spaces & pins")
+        case .mozilla(let s) where s.keepsSpaces: out.append("spaces & pins")
+        default: break
+        }
+        if readsOpenTabs { out.append("open tabs") }
+        return out
+    }
+
+    /// The same, as a line: "Bookmarks, history, passwords and open tabs".
+    var canBringLine: String {
+        let line = ListFormatter.localizedString(byJoining: canBring)
+        return line.prefix(1).uppercased() + line.dropFirst()
+    }
+
+    /// A WebKit browser's passwords are the Mac's own, in the Passwords app.
+    var passwordsInPasswordsApp: Bool {
+        if case .webkit = self { return true }
+        return false
     }
 
     /// Whether its passwords are behind a key macOS asks about.
@@ -1427,6 +1492,10 @@ enum ImportSource: Identifiable, Hashable {
             return s.files.map { $0.deletingLastPathComponent().lastPathComponent }
                 .filter { seen.insert($0).inserted }
                 .map { Profile(id: $0, name: names[$0] ?? $0) }
+        case .webkit(let s):
+            let names = s.names
+            return s.profiles.map(\.lastPathComponent)
+                .map { Profile(id: $0, name: names[$0] ?? ($0 == "Defaults" ? "Default" : $0)) }
         }
     }
 
@@ -1448,6 +1517,8 @@ enum ImportSource: Identifiable, Hashable {
         case .mozilla(let s):
             if let usual = s.ini.usual, ids.contains(usual) { return usual }
             // The files come newest first.
+            return ids.first
+        case .webkit:
             return ids.first
         }
     }
@@ -1471,17 +1542,21 @@ enum ImportSource: Identifiable, Hashable {
         switch self {
         case .chromium(let s): return Chromium.preview(of: s, profile: profile)
         case .mozilla(let s): return Mozilla.preview(of: s, profile: profile)
+        case .webkit(let s): return WebKitBrowser.preview(of: s, profile: profile)
         }
     }
 
     static func installed() -> [ImportSource] {
         Chromium.installed().map(ImportSource.chromium) + Mozilla.installed().map(ImportSource.mozilla)
+            + WebKitBrowser.installed().map(ImportSource.webkit)
     }
 
-    /// Whether Safari is on this Mac: its data is kept from other apps, so
-    /// the sheet says how to export it instead.
+    /// Whether Safari is on this Mac and its files can't be read here (no
+    /// Full Disk Access, which Search never asks for): then the sheet says
+    /// how to export from it. When they can, it is in the list like any other.
     static var safari: Bool {
         FileManager.default.fileExists(atPath: "/Applications/Safari.app")
+            && !WebKitBrowser.installed().contains { $0.kind == .safari }
     }
 }
 

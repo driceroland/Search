@@ -118,20 +118,35 @@ final class SpaceSwipe {
     /// for back, -1 for forward, which is how Safari reads it. A swipe of
     /// that kind over the tabs is taken the same way, whoever sends it.
     private func pressed(_ event: NSEvent) -> Bool {
-        let step: Int
         switch event.type {
-        case .otherMouseDown where event.buttonNumber == 3: step = -1
-        case .otherMouseDown where event.buttonNumber == 4: step = 1
-        case .swipe where event.deltaX != 0:
-            // The same stroke over the tabs, sent again as a swipe between
-            // pages (Settings › Trackpad), took a second space after the
-            // first: only a swipe no fingers are moving the rows for counts
-            // — a mouse's, as Logitech's driver sends.
-            guard CACurrentMediaTime() - fingersAt > 0.6 else { return true }
-            step = event.deltaX > 0 ? -1 : 1
+        case .otherMouseDown where event.buttonNumber == 3: return go(-1, event)
+        case .otherMouseDown where event.buttonNumber == 4: return go(1, event)
+        case .swipe where event.deltaX != 0: return swiped(event.deltaX, event)
         default: return false
         }
-        guard let browser = Browsers.browser(for: event.window), !browser.isPopup, browser.prefs.usesSpaces,
+    }
+
+    /// A swipe between pages. The same stroke over the tabs, sent again as
+    /// one (Settings › Trackpad), took a second space after the first: only
+    /// a swipe no fingers are moving the rows for counts — a mouse's, as
+    /// Logitech's driver sends. The stroke's glide is the fingers' too: a
+    /// swipe told as it ended, a second or more after a quick stroke let
+    /// go, slid the rows on to the space after (idea 834).
+    private func swiped(_ deltaX: CGFloat, _ event: NSEvent) -> Bool {
+        guard CACurrentMediaTime() - fingersAt > 0.6 else { return true }
+        return go(deltaX > 0 ? -1 : 1, event)
+    }
+
+    /// The bench's swipe between pages, told which window and where (feed).
+    func feedSwipe(_ deltaX: CGFloat, carrier event: NSEvent, in window: NSWindow, at point: NSPoint) -> Bool {
+        fed = (window, point)
+        defer { fed = nil }
+        return swiped(deltaX, event)
+    }
+
+    /// One space on (1) or back (-1), from a button or a swipe over the tabs.
+    private func go(_ step: Int, _ event: NSEvent) -> Bool {
+        guard let browser = Browsers.browser(for: window(of: event)), !browser.isPopup, browser.prefs.usesSpaces,
               !browser.folded || browser.peeking, overTabs(event, in: browser) else { return false }
         self.browser = browser
         let here = shown(browser)
@@ -336,20 +351,33 @@ final class SpaceSwipe {
 
     /// Where the tabs are: the column, or the bar across the top.
     private func overTabs(_ event: NSEvent, in browser: Browser) -> Bool {
-        guard let window = event.window, window === browser.window else { return false }
+        guard let window = window(of: event), window === browser.window else { return false }
+        let point = point(of: event)
         if browser.prefs.sidebar {
             return browser.prefs.sidePosition == .right
-                ? event.locationInWindow.x >= window.frame.width - browser.prefs.columnWidth
-                : event.locationInWindow.x < browser.prefs.columnWidth
+                ? point.x >= window.frame.width - browser.prefs.columnWidth
+                : point.x < browser.prefs.columnWidth
         }
-        return event.locationInWindow.y > window.frame.height - Metrics.strip
+        return point.y > window.frame.height - Metrics.strip
     }
+
+    /// The bench's way in (Bench "spacestroke"): a trackpad's scroll
+    /// events, made up off any window, read as the monitor reads the real
+    /// ones, told which window they are over and where.
+    func feed(_ event: NSEvent, in window: NSWindow, at point: NSPoint) -> Bool {
+        fed = (window, point)
+        defer { fed = nil }
+        return takes(event)
+    }
+    private var fed: (window: NSWindow, point: NSPoint)?
+    private func window(of event: NSEvent) -> NSWindow? { fed?.window ?? event.window }
+    private func point(of event: NSEvent) -> NSPoint { fed?.point ?? event.locationInWindow }
 
     /// True for an event the swipe keeps for itself.
     private func takes(_ event: NSEvent) -> Bool {
         // The window the fingers are over, at the start of a gesture or a
         // turn of the wheel; the rest of a gesture stays with it.
-        if event.phase == .began || !event.hasPreciseScrollingDeltas, let over = Browsers.browser(for: event.window) {
+        if event.phase == .began || !event.hasPreciseScrollingDeltas, let over = Browsers.browser(for: window(of: event)) {
             browser = over
         }
         guard let browser, browser.prefs.usesSpaces, !browser.folded || browser.peeking else { return false }
@@ -374,7 +402,12 @@ final class SpaceSwipe {
             }
             return true
         }
-        if !event.momentumPhase.isEmpty { return gliding }
+        // The glide after a stroke taken is the stroke's still: a swipe
+        // between pages told as it ends is that same stroke (swiped).
+        if !event.momentumPhase.isEmpty {
+            if gliding { fingersAt = CACurrentMediaTime() }
+            return gliding
+        }
         if tracking || event.phase == .began { fingersAt = CACurrentMediaTime() }
         switch event.phase {
         case .mayBegin:
@@ -883,6 +916,9 @@ final class SwipeGlide: NSObject {
         self.done = done
     }
 
+    /// How many slides have set off, for the bench ("spacestroke").
+    static var started = 0
+
     /// From where the rows are now to `to`, setting off at `speed` points a
     /// second — the fingers' own; without, at half the spring's own pace —
     /// `halfway` once half the way is behind them, `land` as they come
@@ -890,6 +926,7 @@ final class SwipeGlide: NSObject {
     static func start(_ browser: Browser, to: CGFloat = 0, speed: CGFloat? = nil,
                       land: (() -> CGFloat)? = nil, halfway: (() -> Void)? = nil, done: @escaping () -> Void = {}) {
         stop()
+        started += 1
         let glide = SwipeGlide(browser, to: to, speed: speed, land: land, halfway: halfway, done: done)
         guard let view = browser.window?.contentView else {
             glide.finish()

@@ -152,7 +152,7 @@ final class PinDragTests: XCTestCase {
         let browser = makeBrowser(count: 5)
         let t = browser.tabs
         browser.pin(t[0]); browser.pin(t[1])
-        browser.select(t[2])
+        try await wake(t[0], then: t[2], in: browser)
         let window = makeWindow(browser)
         try await settle()
         let room = browser.prefs.sideWidth - 20
@@ -173,7 +173,7 @@ final class PinDragTests: XCTestCase {
         let browser = makeBrowser(count: 20)
         let t = browser.tabs
         browser.pin(t[0]); browser.pin(t[1])
-        browser.select(t[2])
+        try await wake(t[0], then: t[2], in: browser)
         let window = makeWindow(browser)
         try await settle()
         let room = browser.prefs.sideWidth - 20
@@ -275,6 +275,23 @@ final class PinDragTests: XCTestCase {
     }
 
     // MARK: - helpers
+
+    /// `pin`'s page loaded before it is carried, and `front` in front again.
+    /// The press that picks up a sleeping pin wakes it, and a page off every
+    /// window waits a second before it loads (Tab.continueLoadAndVerify,
+    /// exactly a second since #1074): about as long as a carry here takes.
+    /// The ring then put in place of its letter changed the square under the
+    /// hand, and SwiftUI called the carry off (see CarryGuard), so the pin
+    /// stayed put. A hand on screen is pressing a page that loads at once.
+    private func wake(_ pin: Search.Tab, then front: Search.Tab, in browser: Browser) async throws {
+        browser.select(pin)
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline, pin.built?.url == nil || pin.loading {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertNotNil(pin.built?.url, "the pin's page loaded")
+        browser.select(front)
+    }
 
     private func makeBrowser(count: Int, rows: Bool = false) -> Browser {
         _ = NSApplication.shared

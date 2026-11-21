@@ -103,10 +103,17 @@ struct WelcomePanel: View {
                             .font(.system(size: 13))
                             .foregroundStyle(Palette.muted)
                     }
+                    // What can come from it at all; spaces and open tabs
+                    // are in the full sheet (File › Bring Things Over…).
+                    Text("\((source ?? sources[0]).name) can bring: \((source ?? sources[0]).canBringLine.lowercased())")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.faint)
                     if importsPasswords {
                         Choice("Passwords", "macOS will ask once for that browser's keychain key", on: $wantsPasswords)
                     } else {
-                        Text("Passwords from \((source ?? sources[0]).name) aren't supported yet.")
+                        Text((source ?? sources[0]).passwordsInPasswordsApp
+                             ? "\((source ?? sources[0]).name) keeps passwords in the Passwords app: export them there, then bring in the file below."
+                             : "Passwords from \((source ?? sources[0]).name) aren't supported yet.")
                             .font(.system(size: 13)).foregroundStyle(Palette.muted)
                     }
                     Choice("Bookmarks", "Folders and all, behind the bookmark button", on: $wantsBookmarks)

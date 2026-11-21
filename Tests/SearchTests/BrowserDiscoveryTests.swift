@@ -34,6 +34,44 @@ final class BrowserDiscoveryTests: XCTestCase {
         super.setUp()
     }
 
+    /// The browsers added for coming from anywhere, found where they keep
+    /// their data, and a Gecko profile found once however its folder is spelled.
+    func testMoreBrowsersAreFoundOnceEach() throws {
+        let base = Chromium.base
+        let made = ["Naver/Whale/Default", "Thorium/Default", "Yandex/YandexBrowser/Default",
+                    "com.openai.atlas/browser-data/host/user-abc123", "Island/Default"]
+        let gecko = ["Zen/Profiles/one.Default (release)", "LibreWolf/Profiles/lw.default", "Floorp/Profiles/fp.default",
+                     "Waterfox/Profiles/wf.default", "MullvadBrowser/Profiles/mb.default-release"]
+        defer { for top in ["Naver", "Thorium", "Yandex", "com.openai.atlas", "Island", "Zen", "LibreWolf", "Floorp", "Waterfox", "MullvadBrowser"] {
+            try? FileManager.default.removeItem(at: base.appendingPathComponent(top))
+        } }
+        for folder in made {
+            let at = base.appendingPathComponent(folder, isDirectory: true)
+            try FileManager.default.createDirectory(at: at, withIntermediateDirectories: true)
+            try Data("{}".utf8).write(to: at.appendingPathComponent("Bookmarks"))
+        }
+        for folder in gecko {
+            let at = base.appendingPathComponent(folder, isDirectory: true)
+            try FileManager.default.createDirectory(at: at, withIntermediateDirectories: true)
+            try Data().write(to: at.appendingPathComponent("places.sqlite"))
+        }
+        let names = Set(ImportSource.installed().map(\.name))
+        for name in ["Naver Whale", "Thorium", "Yandex", "ChatGPT Atlas", "Island", "Zen", "LibreWolf", "Floorp", "Waterfox", "Mullvad Browser"] {
+            XCTAssertTrue(names.contains(name), name)
+        }
+        XCTAssertFalse(ImportSource.installed().first { $0.name == "Yandex" }?.importsPasswords ?? true)
+        XCTAssertEqual(ImportSource.installed().first { $0.name == "ChatGPT Atlas" }?.profiles.map(\.id), ["user-abc123"])
+        let found = Dictionary(uniqueKeysWithValues: ImportSource.installed().map { ($0.name, $0.canBring) })
+        XCTAssertEqual(found["Zen"], ["bookmarks", "history", "passwords", "spaces & pins", "open tabs"])
+        XCTAssertEqual(found["LibreWolf"], ["bookmarks", "history", "passwords", "open tabs"])
+        XCTAssertEqual(found["Yandex"], ["bookmarks", "history", "open tabs"])
+        XCTAssertEqual(found["Thorium"], ["bookmarks", "history", "passwords", "open tabs"])
+        XCTAssertEqual(ImportSource.installed().first { $0.name == "Zen" }?.canBringLine.hasPrefix("Bookmarks, history"), true)
+        XCTAssertNil(found["Vivaldi"], "a browser that isn't here isn't listed")
+        let zen = try XCTUnwrap(Mozilla.known.first { $0.name == "Zen" })
+        XCTAssertEqual(zen.files.count, 1, "\"zen\" and \"Zen\" are one folder here, and its profile is read once")
+    }
+
     func testChosenFolderIsIgnoredByTestRunsAndNeverPersisted() {
         let source = Chromium.Source(name: "Fixture-\(UUID().uuidString)", folder: "Fixture", service: "", account: "", app: "")
         let selected = FileManager.default.temporaryDirectory.appendingPathComponent("other-browser")

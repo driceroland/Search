@@ -98,8 +98,11 @@ struct GroupHeading: View {
     @State private var hovering = false
     @State private var dropping = false
     @FocusState private var focused: Bool
+    /// Drawn in the map of every space's rows, not the column: renamed only
+    /// in the column, or a second field takes the keys (see SideRow's editing).
+    @Environment(\.inSpaceMap) private var inMap
 
-    private var editing: Bool { browser.editingGroupID == group.id }
+    private var editing: Bool { !inMap && browser.editingGroupID == group.id }
 
     /// Soft grey by default; full ink with Settings › Appearance › Tabs ›
     /// High contrast text, as a tab's title is.

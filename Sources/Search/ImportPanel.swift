@@ -49,6 +49,8 @@ struct ImportPanel: View {
     /// Whether that import left any bookmarks behind, which is what the
     /// offer to show the bar is for.
     @State private var marksLanded = false
+    /// The steps for exporting from Safari, shown when asked.
+    @State private var safariSteps = false
 
     struct Said: Hashable {
         let ok: Bool
@@ -73,7 +75,7 @@ struct ImportPanel: View {
                 Card {
                     ForEach(Array(sources.enumerated()), id: \.element.id) { index, source in
                         if index > 0 { Rule() }
-                        Row(name: source.name, detail: detail(of: source), chosen: pick == source) {
+                        Row(name: source.name, detail: detail(of: source), can: source.canBringLine, chosen: pick == source) {
                             guard !bringing else { return }
                             pick = source
                             replaceBookmarks = false
@@ -221,9 +223,16 @@ struct ImportPanel: View {
         if ImportSource.safari || !unreadable.isEmpty || folderError != nil {
             VStack(alignment: .leading, spacing: 4) {
                 if ImportSource.safari {
-                    Text("Safari — macOS keeps its data from other apps: in Safari, File › Export Browsing Data, then bring the file in below.")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Palette.faint)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("Safari — macOS keeps its files from other apps, so it comes over from a file it exports.")
+                        Spacer(minLength: 4)
+                        Pill(safariSteps ? "Hide" : "How") { withAnimation(Motion.settle) { safariSteps.toggle() } }
+                    }
+                    if safariSteps {
+                        Text("In Safari, choose File › Export Browsing Data to File…, keep Bookmarks, History and Passwords, and save. Then press File… below and choose the ZIP it made.")
+                            .foregroundStyle(Palette.muted)
+                            .transition(.opacity)
+                    }
                 }
                 ForEach(unreadable.indices, id: \.self) { index in
                     let missing = unreadable[index]
@@ -319,7 +328,8 @@ struct ImportPanel: View {
                 Rule()
             }
             // A kind the browser has none of is said so, and can't be picked.
-            Line("Passwords", !source.importsPasswords ? "Not supported for \(source.name)" : preview?.passwords == 0 ? "None in \(source.name)" : source.asksForKey
+            Line("Passwords", !source.importsPasswords ? (!source.passwordsInPasswordsApp ? "Not supported for \(source.name)"
+                                                          : "\(source.name) keeps them in the Passwords app: export them from there and bring in the CSV file") : preview?.passwords == 0 ? "None in \(source.name)" : source.asksForKey
                  ? "macOS asks once for \(source.name)'s keychain key"
                  : "Read from \(source.name)'s own files, unless it has a primary password") {
                 option($wantsPasswords, none: !source.importsPasswords || preview?.passwords == 0)
@@ -345,9 +355,11 @@ struct ImportPanel: View {
                 option($wantsHistory, none: preview?.places == 0)
             }
             // Its open tabs and tab groups, asleep at the end of this space.
-            Rule()
-            Line("Open tabs & tab groups", tabsDetail(preview, source)) {
-                option($wantsTabs, none: !bringsTabs(source))
+            if source.readsOpenTabs {
+                Rule()
+                Line("Open tabs & tab groups", tabsDetail(preview, source)) {
+                    option($wantsTabs, none: !bringsTabs(source))
+                }
             }
             // Arc's own, or Zen's: its spaces, what is pinned in them, its
             // favourites or Essentials.
@@ -582,6 +594,8 @@ struct ImportPanel: View {
     private struct Row: View {
         let name: String
         let detail: String
+        /// What can come from it at all (ImportSource.canBringLine).
+        let can: String
         let chosen: Bool
         let pick: () -> Void
         @State private var hovering = false
@@ -594,6 +608,7 @@ struct ImportPanel: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.system(size: 13)).foregroundStyle(Palette.ink)
                     Text(detail).font(.system(size: 11.5)).foregroundStyle(Palette.muted).monospacedDigit()
+                    Text(can).font(.system(size: 11)).foregroundStyle(Palette.faint)
                 }
                 Spacer(minLength: 0)
             }
