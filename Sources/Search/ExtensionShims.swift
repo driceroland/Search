@@ -1094,12 +1094,15 @@ enum ExtensionShims {
         const fetch = function fetch(input, init) {
           const self = this, args = arguments;
           // Read cheaply first: only credentials "include" is the browser's,
-          // and from a page "same-origin", the default, too: Chrome counts a
-          // granted host as the extension's own origin, so its cookies go
-          // with a plain fetch there. Save to Notion's popup asks Notion's
-          // API so and, given no session, said "Log in" while its tabs were
-          // signed in. Not yet from the worker, whose plain fetches are many
-          // (images, an app on the Mac polled with a short timeout).
+          // and "same-origin", the default, too: Chrome counts a granted
+          // host as the extension's own origin, so its cookies go with a
+          // plain fetch there. Save to Notion's popup asks Notion's API so
+          // and, given no session, said "Log in" while its tabs were signed
+          // in. From the worker as from a page: Brandsearch's asks its site
+          // for the account with its token and no word about credentials,
+          // the site lets a request in on its session cookie alone, and
+          // without it answered with its sign-in page, which the panel read
+          // as the account: it stayed grey.
           // Any other fetch goes on untouched, its body unread.
           let credentials;
           try {
@@ -1120,7 +1123,7 @@ enum ExtensionShims {
               return /^https?:$/.test(u.protocol) && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
             } catch (e) { return false; }
           };
-          if (credentials !== "include" && (worker || credentials !== "same-origin") && !(worker && loopback())) {
+          if (credentials !== "include" && credentials !== "same-origin" && !(worker && loopback())) {
             return original.apply(self, args);
           }
           // A copy to read, so the page's own Request keeps its body for
@@ -1141,7 +1144,7 @@ enum ExtensionShims {
             return await new Promise((resolve, reject) => {
               let port;
               try { port = connect("search.fetch"); } catch (e) { resolve(original.apply(self, args)); return; }
-              let accepted = false, tries = 0, controller = null, done = false;
+              let accepted = false, tries = 0, bounced = 0, controller = null, done = false;
               const close = () => { try { port.disconnect(); } catch (e) {} };
               // The browser never took it: WebKit's fetch, as without it. Not
               // for a request that changes something, which may already have
@@ -1167,6 +1170,11 @@ enum ExtensionShims {
               };
               port.onMessage.addListener((m) => {
                 if (!m || done) return;
+                // A worker's first words on a port can come back to it
+                // instead of reaching the browser (see below). Said again
+                // at once rather than at `again`'s next turn, 100 ms on: a
+                // worker's plain fetches are many.
+                if (m.fetch === id) { if (!accepted && bounced++ < 5) { try { port.postMessage(hello); } catch (e) {} } return; }
                 if (m.accepted === id) { accepted = true; return; }
                 if (m.pass) { done = true; close(); resolve(original.apply(self, args)); return; }
                 if (m.head && m.head.opaqueRedirect) {
