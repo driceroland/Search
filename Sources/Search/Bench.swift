@@ -1122,6 +1122,9 @@ final class Bench {
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
             out["siteCard"] = SiteCardPanel.isShown
             out["siteCardFrames"] = SiteCardPanel.geometry(browser)
+            // The row across the top: its tabs as laid out, the run shown
+            // (narrower only when it scrolls), and whether it scrolls.
+            out["topRun"] = ["tabs": Double(TabBar.laidOut), "run": Double(TabBar.runShown), "scrolls": TabBar.scrolls]
             out["tabEditing"] = browser.editingTab.map { String($0.uuidString.prefix(8)).lowercased() } ?? ""
             // "Press Esc again to leave full screen", up over a page filling
             // the screen (Settings › General › Press Esc twice to leave full
@@ -4830,6 +4833,9 @@ final class Bench {
                 browser.beginTabEdit(tab)
                 browser.tabDraft = text
             }
+            // Every group heading measured this much narrower than it is
+            // drawn, as another macOS's fonts can make it (TabBar.measures).
+            if let short = request["headingShortfall"] as? Double, Store.testing { GroupHeading.testShortfall = CGFloat(short) }
             // The tab on screen clicked again: its address opened, as typed
             // into nothing yet, the site card under it.
             if request["opentab"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab) }

@@ -29,11 +29,18 @@ struct TabBar: View {
     /// The plus only comes out when the pointer is in the row.
     @State private var nearby = false
     @State private var plussed = false
-    /// The helm's width when it stands before the tabs rather than after them.
+    /// What stands before the tabs besides the space's dot: the helm when
+    /// it leads, the profile's badge once there are several profiles, and
+    /// the address when it is in sight. The badge was left out, and the row
+    /// was laid out 28 points wider than the window gave it.
     private var leading: CGFloat {
         (browser.prefs.navigationLeft ? Metrics.helm - 8 + Metrics.tabGap : 0)
+            + (Profiles.shared.several ? ProfileBadge.width + Metrics.tabGap : 0)
             + (browser.prefs.addressLine ? browser.prefs.addressWidth.width + AddressLine.after + Metrics.tabGap : 0)
     }
+    /// How much wider the run's tabs were laid out than they were worked out
+    /// to be (see `measures`).
+    @State private var unaccounted: CGFloat = 0
     /// How wide the doors at the far end are, extension buttons included.
     @State private var doors: CGFloat = 0
     /// The space whose run was last brought to its tab: another one is a
@@ -144,6 +151,13 @@ struct TabBar: View {
                                         }
                                     }
                                     .frame(height: TabBar.band)
+                                    // What the run's tabs really take, against
+                                    // what they were worked out to (see measures).
+                                    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { laid in
+                                        let missed = max(0, (laid - content(in: geo.size.width, each: each)).rounded(.up))
+                                        if missed != unaccounted { unaccounted = missed }
+                                        TabBar.laidOut = laid
+                                    }
                                     .environment(\.rowCarrying, carrying)
                                     .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
                                 }
@@ -154,6 +168,7 @@ struct TabBar: View {
                                 // would show over the lights and the doors.
                                 .scrollClipDisabled(carrying && !row.overflowing)
                                 .frame(width: row.run)
+                                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { TabBar.runShown = $0 }
                                 // Only as tall as the tabs: a scroll view is
                                 // AppKit's, over the strip that moves the
                                 // window, and as tall as the bar it took every
@@ -167,6 +182,7 @@ struct TabBar: View {
                                     reveal(reader, in: geo.size.width)
                                 }
                                 .onChange(of: row.overflowing) { _, _ in reveal(reader, in: geo.size.width) }
+                                .onChange(of: row.overflowing, initial: true) { _, now in TabBar.scrolls = now }
                                 // Another space's run comes in on its tab,
                                 // not gliding there from where the last was.
                                 .onChange(of: browser.activeID) { _, _ in
@@ -510,10 +526,23 @@ struct TabBar: View {
         var overflowing: Bool { content > room + 0.5 }
     }
 
+    /// The run is as wide as its tabs work out to, and what they took past
+    /// that once laid out. A group's heading is its name's own width, and
+    /// the name measured here could come out narrower than SwiftUI draws it
+    /// (another macOS, another font): the run, a few points short, cut its
+    /// last tab off flat with its cross out of reach, and since the row
+    /// seemed to fit it didn't scroll either (#1295). What was missed is
+    /// added, so the run either holds them all or scrolls.
     private func measures(in strip: CGFloat) -> Measures {
         let each = width(in: strip)
-        return Measures(each: each, room: room(in: strip), content: content(in: strip, each: each))
+        return Measures(each: each, room: room(in: strip), content: content(in: strip, each: each) + unaccounted)
     }
+
+    /// The run's tabs as last laid out, and the run they are shown in, for
+    /// the bench.
+    static var laidOut: CGFloat = 0
+    static var runShown: CGFloat = 0
+    static var scrolls = false
 
     /// The line stands between the pins and the tabs that come and go, and
     /// only with something on both sides of it: at either end of the run it
