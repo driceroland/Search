@@ -189,16 +189,22 @@ extension Browser {
         guard !pages.isEmpty else { return }
         let sizes = pages.map(\.frame.size)
         let until = CFAbsoluteTimeGetCurrent() + 0.25
+        // Covered here, so the stage leaves them be (PaneStage.backPages).
+        pages.forEach { FoldCover.coming.add($0) }
         func resized() {
             let grown = zip(pages, sizes).filter { page, size in
                 page.frame.width > size.width + 0.5 || page.frame.height > size.height + 0.5
             }
             guard !grown.isEmpty else {
                 guard CFAbsoluteTimeGetCurrent() < until,
-                      zip(pages, sizes).allSatisfy({ $0.frame.size == $1 }) else { return }
+                      zip(pages, sizes).allSatisfy({ $0.frame.size == $1 }) else {
+                    pages.forEach { FoldCover.coming.remove($0) }
+                    return
+                }
                 DispatchQueue.main.async { MainActor.assumeIsolated { resized() } }
                 return
             }
+            pages.forEach { FoldCover.coming.remove($0) }
             var covers: [NSView] = []
             for (page, old) in grown {
                 for rect in undrawn(page, old: old) {
@@ -873,6 +879,11 @@ private final class Pointer {
 /// What a page has yet to draw while it grows (see Browser.cover): its
 /// own colour, never in the way of the pointer.
 final class FoldCover: NSView {
+    /// Pages about to grow with ⌘S, whose new room a cover is coming for:
+    /// the stage doesn't clear their ground for it as well (see
+    /// PaneStage.backPages).
+    @MainActor static let coming = NSHashTable<WKWebView>.weakObjects()
+
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override var isOpaque: Bool { true }
 }

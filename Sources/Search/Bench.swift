@@ -1303,6 +1303,10 @@ final class Bench {
             }
             walk(0)
 
+        case "foldframes":
+            guard Store.testing else { answer(["error": "foldframes is for test runs"]); return }
+            FoldFrames.run(browser, request, answer)
+
         case "foldtime":
             // ⌘S, timed: each pass of the main run loop for the next 0.7 s,
             // from waking to going back to sleep, with when it started after
