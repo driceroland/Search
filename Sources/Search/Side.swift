@@ -208,6 +208,7 @@ struct SideBar: View {
     }
 
     var body: some View {
+        let _ = Bench.count("column")
         ZStack(alignment: .top) {
             // Not under the card for a new space: it isn't made of views that
             // would take the click first.

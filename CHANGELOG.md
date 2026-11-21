@@ -19,6 +19,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Saved passwords and passkeys show under a sign-in box in a site's sized pop-up window (Settings › Tabs › Open sized pop-ups in small windows), as Google's Add another account from Gmail opens: the list came up but was drawn under the page, so nothing showed and a click there went to the page, while the same sign-in as a tab offered them. It now hangs over the page, as in the browser's window, and so does Apple Passwords' code card. `python3 Tests/popup_signin_accounts.py` (reported by email, idea 1107)
 - Arc's spaces brought over (Settings › Spaces & Pins › Bring Arc's spaces and pins over, or the import sheet) show at once, before or after Set Up Like Arc: the spaces that came were left empty beside the one on screen, for the swipe and the map, until Spaces was turned off and on. `python3 Tests/arc_spaces_show.py` (reported by email, idea 1109)
 - Extensions that ask for Chrome's `chrome.identity.AccountStatus` find it: Fathom AI Note Taker reads it before every request it makes, and each one failed before it was sent. `python3 Tests/extension_copies.py` also checks that a page shaped like a Google Meet call, turning from lobby to call, runs each of an extension's content scripts once (idea 1101)
+- Tabs you aren't looking at load a few at a time (half the Mac's processors), the rest in turn. The tab on screen, and one you go to, never wait. Twenty tabs reloaded at once took every processor, and the window stalled for up to 0.7 s while they loaded, swipes between spaces included. (idea 1057)
 
 ### Held back
 

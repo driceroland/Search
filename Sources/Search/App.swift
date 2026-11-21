@@ -1119,6 +1119,7 @@ struct ContentView: View {
     }
 
     var body: some View {
+        let _ = Bench.count("window")
         window_
             // The column folded away, and out again at the edge (see Fold.swift).
             .overlay(alignment: sideOnRight ? .trailing : .leading) {
