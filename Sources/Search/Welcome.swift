@@ -151,10 +151,10 @@ struct WelcomePanel: View {
         VStack(alignment: .leading, spacing: 22) {
             heading("Two ways to hold it.", "Titles down the side, or across the top. The grey slides to the tab you pick either way, and you can change your mind with ⇧⌘S.")
             HStack(spacing: 12) {
-                Way(title: "Sidebar", sidebar: true, chosen: prefs.sidebar) {
+                Way(title: "Sidebar", sidebar: true, glyph: prefs.glyph, chosen: prefs.sidebar) {
                     withAnimation(Motion.glide) { prefs.sidebar = true }
                 }
-                Way(title: "Tab strip", sidebar: false, chosen: !prefs.sidebar) {
+                Way(title: "Tab strip", sidebar: false, glyph: prefs.glyph, chosen: !prefs.sidebar) {
                     withAnimation(Motion.glide) { prefs.sidebar = false }
                 }
             }
@@ -389,6 +389,7 @@ struct WelcomePanel: View {
     private struct Way: View {
         let title: String
         let sidebar: Bool
+        let glyph: Glyph
         let chosen: Bool
         let pick: () -> Void
         @State private var hovering = false
@@ -404,7 +405,10 @@ struct WelcomePanel: View {
                                     HStack(spacing: 3) { ForEach(0..<3, id: \.self) { _ in Circle().fill(Palette.faint).frame(width: 5, height: 5) } }
                                         .padding(.bottom, 4)
                                     ForEach(0..<4, id: \.self) { i in
-                                        RoundedRectangle(cornerRadius: 3).fill(i == 0 ? Palette.wash : Palette.hover).frame(height: 8)
+                                        HStack(spacing: 3) {
+                                            Wear(glyph: glyph, tab: i)
+                                            RoundedRectangle(cornerRadius: 3).fill(i == 0 ? Palette.wash : Palette.hover).frame(height: 8)
+                                        }
                                     }
                                 }
                                 .padding(8)
@@ -417,7 +421,11 @@ struct WelcomePanel: View {
                                 HStack(spacing: 3) { ForEach(0..<3, id: \.self) { _ in Circle().fill(Palette.faint).frame(width: 5, height: 5) } }
                                     .padding(.trailing, 6)
                                 ForEach(0..<4, id: \.self) { i in
-                                    RoundedRectangle(cornerRadius: 3).fill(i == 0 ? Palette.wash : Palette.hover).frame(width: 30, height: 8)
+                                    HStack(spacing: 3) {
+                                        Wear(glyph: glyph, tab: i)
+                                        RoundedRectangle(cornerRadius: 3).fill(i == 0 ? Palette.wash : Palette.hover).frame(width: 24, height: 8)
+                                    }
+                                    .padding(.trailing, 3)
                                 }
                             }
                             .padding(8)
@@ -444,6 +452,32 @@ struct WelcomePanel: View {
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
             .animation(Motion.settle, value: chosen)
+        }
+    }
+
+    /// What a tab wears in the two small pictures, as Tabs wear has it: a
+    /// letter in a faint square, as Mark draws one, or a patch of colour
+    /// where a site's own icon would be. Seen before it is chosen: letters
+    /// were taken for icons that hadn't loaded (#1271).
+    private struct Wear: View {
+        let glyph: Glyph
+        let tab: Int
+
+        private static let letters = ["G", "M", "Y", "W"]
+        private static let tints: [NSColor] = [.systemRed, .systemBlue, .systemGreen, .systemOrange]
+
+        var body: some View {
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .fill(glyph == .icons ? Color(nsColor: Wear.tints[tab]).opacity(0.7) : Palette.ink.opacity(0.06))
+                .frame(width: 10, height: 10)
+                .overlay {
+                    if glyph == .letters {
+                        Text(Wear.letters[tab])
+                            .font(.system(size: 6.5, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                    }
+                }
+                .animation(Motion.quick, value: glyph)
         }
     }
 
