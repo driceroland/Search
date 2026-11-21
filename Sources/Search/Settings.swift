@@ -660,6 +660,7 @@ struct SettingsPanel: View {
             .fixedSize()
         case "tabs.newAfterLast": Switch(on: $prefs.newTabAfterLast)
         case "tabs.closeGoesBack": Switch(on: $prefs.closeGoesBack)
+        case "home.grid": Switch(on: $prefs.homeGrid)
         case "tabs.undoReopens": Switch(on: $prefs.undoReopensTab)
         case "tabs.switcherBehindFirst": Switch(on: $prefs.switcherBehindFirst)
         case "tabs.switcherLeavesOutPins": Switch(on: $prefs.switcherLeavesOutPins)

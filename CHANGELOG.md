@@ -20,6 +20,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Safari comes over directly when macOS lets Search read its files (with Full Disk Access, which Search never asks for): its bookmarks, Reading List and history. Otherwise the import sheet says in a sentence why it comes from a file, and How shows the steps for Safari's File › Export Browsing Data to File….
 - The import sheet and the Welcome say, under each browser found on this Mac, what can come over from it: bookmarks, history, passwords, spaces & pins, open tabs. Browsers that aren't here aren't listed.
 - Settings › Tabs › Swipe back closes a tab a link opened, off unless you turn it on: on the page a link (or a page's window.open) opened in a new tab, a swipe back shows a cross, closes the tab and goes back to the tab you were on, as a small window's swipe closes it. Pages clicked through in the tab go back as usual first, and a mouse's back button still does nothing there. `swift test --filter SwipeBackClosesTests`. Thanks [@xibrox](https://github.com/xibrox) ([#1337](https://github.com/driceroland/Search/pull/1337), idea 565)
+- A blank tab can show your Home bookmarks: make a bookmark folder called Home, turn on Settings › Tabs › Show the Home bookmarks on a new tab, and up to 16 of its sites stand as tiles under the address field, in Split View too. `swift test --filter HomeGridTests`. Thanks [@harshith-ashok](https://github.com/harshith-ashok) ([#1316](https://github.com/driceroland/Search/pull/1316), [#1308](https://github.com/driceroland/Search/issues/1308))
 
 ### Fixed
 
