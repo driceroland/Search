@@ -227,6 +227,13 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
     /// to the side doesn't count), else, for a page with next to no width
     /// of its own, what its content spans; then, laid out at that width,
     /// the height it names or spans. Nothing of it is left on the page.
+    ///
+    /// A scroll bar counts only when the page asks for one (overflow:
+    /// scroll), or when it is taller than the popup can be and will scroll.
+    /// With System Settings › Appearance › Show scroll bars set to Always,
+    /// the content overflowing the little square (or the popup's size before
+    /// it grew) put classic scroll bars up while it was measured, and their
+    /// room was added each way: popups came out 17 points too large (#1311).
     static let preferred = """
     () => {
       const d = document.documentElement, v = document.compatMode === "BackCompat" ? document.body : d;
@@ -234,6 +241,12 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
       const m = window.__searchSizing || (window.__searchSizing = {});
       const saved = d.getAttribute("style");
       const back = () => saved === null ? d.removeAttribute("style") : d.setAttribute("style", saved);
+      // The overflow the view takes: the root's, or the body's handed up.
+      const root = getComputedStyle(d), body = document.body && getComputedStyle(document.body);
+      const view = root.overflowX === "visible" && root.overflowY === "visible" && body ? body : root;
+      const bar = innerWidth - v.clientWidth, barAcross = innerHeight - v.clientHeight;
+      const across = view.overflowX === "scroll" ? barAcross : 0;
+      let gutter = view.overflowY === "scroll" ? bar : 0;
       const box = d.getBoundingClientRect();
       // A width the page sets for itself shows as one the view doesn't
       // have, excluding its scrollbar; one equal to the view is either
@@ -247,19 +260,27 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         back();
         w = narrowest >= 100 ? narrowest : Math.max(narrowest, d.scrollWidth);
       }
-      const gutter = innerWidth - v.clientWidth;
-      w = Math.min(800, Math.max(25, Math.ceil(w + gutter)));
-      d.style.setProperty("width", (w - gutter) + "px", "important");
-      let h = d.getBoundingClientRect().height;
-      if (Math.abs(h - innerHeight) > 1) m.h = h;
-      else if (m.h && Math.abs(m.h - innerHeight) <= 1) h = m.h;
-      else {
-        d.style.setProperty("height", "auto", "important");
-        d.style.setProperty("min-height", "0", "important");
-        h = d.getBoundingClientRect().height;
-      }
+      let width;
+      const lay = () => {
+        back();
+        width = Math.min(800, Math.max(25, Math.ceil(w + gutter)));
+        d.style.setProperty("width", (width - gutter) + "px", "important");
+        let h = d.getBoundingClientRect().height;
+        if (Math.abs(h - innerHeight) > 1) m.h = h;
+        else if (m.h && Math.abs(m.h - innerHeight) <= 1) h = m.h;
+        else {
+          d.style.setProperty("height", "auto", "important");
+          d.style.setProperty("min-height", "0", "important");
+          h = d.getBoundingClientRect().height;
+        }
+        return h;
+      };
+      let h = lay();
+      // Taller than the popup: it scrolls, and a scroll bar shown always
+      // takes its room across.
+      if (gutter !== bar && h + across > 600) { gutter = bar; h = lay(); }
       back();
-      return [w, Math.min(600, Math.max(25, Math.ceil(h + innerHeight - v.clientHeight)))];
+      return [width, Math.min(600, Math.max(25, Math.ceil(h + across)))];
     }
     """
 

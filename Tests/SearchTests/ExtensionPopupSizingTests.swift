@@ -12,6 +12,10 @@ final class ExtensionPopupSizingTests: XCTestCase {
     }
 
     func testScrollbarDoesNotBecomeThePopupsExplicitWidth() async throws {
+        try await eitherScrollBars { try await self.scrollbarDoesNotBecomeThePopupsExplicitWidth() }
+    }
+
+    private func scrollbarDoesNotBecomeThePopupsExplicitWidth() async throws {
         let (web, window) = try await page("""
             html { overflow-y: scroll; } ::-webkit-scrollbar { width: 15px; }
             footer { width: 400px; padding: 10px; }
@@ -32,6 +36,10 @@ final class ExtensionPopupSizingTests: XCTestCase {
     }
 
     func testExplicitWidthCanShrinkAndGrowWithScrollbars() async throws {
+        try await eitherScrollBars { try await self.explicitWidthCanShrinkAndGrowWithScrollbars() }
+    }
+
+    private func explicitWidthCanShrinkAndGrowWithScrollbars() async throws {
         for doctype in [true, false] {
             let (web, window) = try await page("""
                 html { width: 360px; overflow-y: scroll; } ::-webkit-scrollbar { width: 15px; }
@@ -48,6 +56,10 @@ final class ExtensionPopupSizingTests: XCTestCase {
     }
 
     func testFlexibleDelayedAndOversizedContent() async throws {
+        try await eitherScrollBars { try await self.flexibleDelayedAndOversizedContent() }
+    }
+
+    private func flexibleDelayedAndOversizedContent() async throws {
         let (web, window) = try await page("#content { display:flex; }", "<div id=content><div style='width:240px;flex:none;height:80px'>Loading</div></div>")
         defer { window.close() }
         var size = try await measure(web)
@@ -58,6 +70,33 @@ final class ExtensionPopupSizingTests: XCTestCase {
         _ = try await web.evaluateJavaScript("document.querySelector('#content').innerHTML = '<div style=\"width:1000px;flex:none;height:900px\">Large</div>'")
         size = try await measure(web)
         XCTAssertEqual(size, [800, 600])
+    }
+
+    /// A popup too tall for 600 points scrolls: a scroll bar shown always
+    /// takes its room across, so nothing is cut off at the side.
+    func testTallContentLeavesRoomForAScrollBar() async throws {
+        try await eitherScrollBars {
+            let (web, window) = try await self.page("", "<div style='width:300px;height:1500px'>Long list</div>")
+            defer { window.close() }
+            let size = try await self.measure(web)
+            let gap = try await web.evaluateJavaScript("innerWidth - document.documentElement.clientWidth")
+            let bar = try XCTUnwrap(gap as? Double)
+            XCTAssertEqual(size, [300 + bar, 600])
+            let fits = try await web.evaluateJavaScript("document.documentElement.scrollWidth <= document.documentElement.clientWidth") as? Bool
+            XCTAssertEqual(fits, true, "the scroll bar must not push the list sideways")
+        }
+    }
+
+    /// Each case with System Settings › Appearance › Show scroll bars as
+    /// both kinds, whatever this Mac is set to: overlay scroll bars, and
+    /// the classic ones "Always" gives, which took room while the popup
+    /// was measured at its starting square (#1311).
+    private func eitherScrollBars(_ run: () async throws -> Void) async throws {
+        for style in [NSScroller.Style.overlay, .legacy] {
+            ScrollerStyleOverride.force(style)
+            defer { ScrollerStyleOverride.restore() }
+            try await run()
+        }
     }
 
     private func page(_ css: String, _ body: String, doctype: Bool = true) async throws -> (WKWebView, NSWindow) {
@@ -87,5 +126,30 @@ final class ExtensionPopupSizingTests: XCTestCase {
         web.setFrameSize(NSSize(width: size[0], height: size[1]))
         try await Task.sleep(nanoseconds: 30_000_000)
         return size
+    }
+}
+
+@MainActor
+private enum ScrollerStyleOverride {
+    private final class Forced: NSObject {
+        nonisolated(unsafe) static var style: NSScroller.Style = .overlay
+        @objc class func forcedPreferredScrollerStyle() -> NSScroller.Style { style }
+    }
+    private static var original: IMP?
+
+    static func force(_ style: NSScroller.Style) {
+        Forced.style = style
+        let method = class_getClassMethod(NSScroller.self, #selector(getter: NSScroller.preferredScrollerStyle))!
+        let forced = class_getClassMethod(Forced.self, #selector(Forced.forcedPreferredScrollerStyle))!
+        let previous = method_setImplementation(method, method_getImplementation(forced))
+        if original == nil { original = previous }
+        NotificationCenter.default.post(name: NSScroller.preferredScrollerStyleDidChangeNotification, object: nil)
+    }
+
+    static func restore() {
+        guard let original else { return }
+        method_setImplementation(class_getClassMethod(NSScroller.self, #selector(getter: NSScroller.preferredScrollerStyle))!, original)
+        Self.original = nil
+        NotificationCenter.default.post(name: NSScroller.preferredScrollerStyleDidChangeNotification, object: nil)
     }
 }
