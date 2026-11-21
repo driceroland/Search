@@ -503,6 +503,10 @@ enum SettingsIndex {
               title: "Tell sites not to sell or share your data", detail: "Global Privacy Control, with every request. Private tabs always",
               more: "Sends Sec-GPC: 1, which some laws make a site honour.",
               keys: ["privacy.gpc"], words: ["gpc", "do not sell", "do not track", "dnt", "global privacy control"]),
+        .init(id: "privacy.httpsFirst", group: "blocking", icon: "lock",
+              title: "Try HTTPS first", detail: "An http:// page loads over HTTPS where the site has it",
+              more: "Where it hasn't, the page loads as asked. Local addresses (localhost, .test, .local, IP addresses) are left as they are.",
+              keys: ["privacy.httpsFirst"], words: ["https", "https only", "https first", "secure", "upgrade", "http"]),
         .init(id: "notifications.ask", group: "permissions", icon: "bell.badge",
               title: "Let sites ask to send notifications", detail: "Only a site you allow reaches your Mac's notifications",
               keys: ["notifications.ask"], words: ["notifications", "alerts", "push"]),
@@ -628,6 +632,7 @@ enum SettingsIndex {
         switch item.id {
         case "privacy.clickIDs": return ClickIDs.possible
         case "privacy.gpc": return PrivacySignal.possible
+        case "privacy.httpsFirst": return HTTPSFirst.possible
         default: return true
         }
     }

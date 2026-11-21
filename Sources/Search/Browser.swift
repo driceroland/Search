@@ -7862,6 +7862,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
                 Autoplay.apply(to: preferences, for: url, shy: shy,
                                made: webView.configuration.mediaTypesRequiringUserActionForPlayback)
                 PrivacySignal.apply(to: preferences, shy: shy)
+                HTTPSFirst.apply(to: preferences, for: url)
             }
             decisionHandler(policy, preferences)
         }

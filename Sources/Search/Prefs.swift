@@ -499,6 +499,14 @@ final class Preferences: ObservableObject {
             PrivacySignal.on = sendsPrivacySignal
         }
     }
+    /// http:// pages tried over HTTPS first (see Privacy.swift). Off unless
+    /// turned on.
+    @Published var triesHTTPSFirst: Bool {
+        didSet {
+            store.set(triesHTTPSFirst, forKey: "privacy.httpsFirst")
+            HTTPSFirst.on = triesHTTPSFirst
+        }
+    }
     /// Ad-click IDs taken off links before the page loads (see
     /// Privacy.swift). On unless turned off.
     @Published var removesClickIDs: Bool {
@@ -1155,6 +1163,9 @@ final class Preferences: ObservableObject {
         let signals = store.object(forKey: "privacy.gpc") as? Bool ?? true
         sendsPrivacySignal = signals
         PrivacySignal.on = signals
+        let https = store.bool(forKey: "privacy.httpsFirst")
+        triesHTTPSFirst = https
+        HTTPSFirst.on = https
         let removes = store.object(forKey: "privacy.clickIDs") as? Bool ?? true
         removesClickIDs = removes
         ClickIDs.on = removes

@@ -106,3 +106,52 @@ enum ClickIDs {
         unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, on, flag)
     }
 }
+
+/// Settings › Privacy › Try HTTPS first, off unless turned on.
+///
+/// HTTPS first: a top-level http:// load is tried over
+/// https:// first, and over http:// again only where that fails, so a site
+/// with no HTTPS still loads, quietly, as before. WebKit already upgrades
+/// the hosts it knows have HTTPS (`upgradeKnownHostsToHTTPS`), and a bare
+/// address typed into the field gets https:// (Address.swift); without this,
+/// an http:// link, bookmark or history entry to any other site loaded in
+/// the clear. WebKit's own policy, from macOS 15.2; before that, as it was.
+/// Subframes are WebKit's to decide.
+///
+/// Local addresses (localhost, .localhost, .test, .local, IP addresses, a
+/// one-word host) are left as asked: a dev server rarely has HTTPS, and
+/// shouldn't wait on a failed attempt first.
+enum HTTPSFirst {
+    /// What Settings says. Read on each navigation, so a switch moved
+    /// reaches every page's next load.
+    nonisolated(unsafe) static var on = false
+
+    /// Whether to offer the switch: WebKit's policy is there from 15.2.
+    static var possible: Bool {
+        if #available(macOS 15.2, *) { return true }
+        return false
+    }
+
+    /// Every view's starting policy, from Web.configuration, so pages whose
+    /// navigations no Browser decides (the side panel's) get it too.
+    static func apply(to configuration: WKWebViewConfiguration) {
+        guard on, #available(macOS 15.2, *) else { return }
+        configuration.defaultWebpagePreferences.preferredHTTPSNavigationPolicy = .automaticFallbackToHTTP
+    }
+
+    /// For one top-level navigation, from Browser's policy decision.
+    static func apply(to preferences: WKWebpagePreferences, for url: URL) {
+        guard #available(macOS 15.2, *) else { return }
+        preferences.preferredHTTPSNavigationPolicy = on && !local(url) ? .automaticFallbackToHTTP : .keepAsRequested
+    }
+
+    static func local(_ url: URL) -> Bool {
+        guard let host = url.host()?.lowercased() else { return true }
+        if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".test") || host.hasSuffix(".local") {
+            return true
+        }
+        // An IP address, v4 or v6: no certificate would name it.
+        if host.contains(":") || host.allSatisfy({ $0.isNumber || $0 == "." }) { return true }
+        return !host.contains(".")
+    }
+}
