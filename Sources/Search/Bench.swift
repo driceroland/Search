@@ -3576,6 +3576,35 @@ final class Bench {
                 }
             }
 
+        case "animating":
+            // What in the window keeps animating while nothing else moves:
+            // every layer carrying a Core Animation animation, and whether
+            // it is shown — none of it, nor any layer over it, hidden or
+            // wholly transparent — and runs for ever, as a loading tab's
+            // ring does. A shown one draws the window again at every frame
+            // for as long as it runs (idea 847). Test runs only.
+            guard Store.testing else { answer(["error": "animating only works on a --test run"]); return }
+            guard let root = (browser.window ?? Links.window)?.contentView?.superview?.layer
+            else { answer(["error": "no window"]); return }
+            var found: [[String: Any]] = []
+            func walk(_ layer: CALayer, shown: Bool) {
+                let shown = shown && !layer.isHidden && layer.opacity > 0
+                if let keys = layer.animationKeys(), !keys.isEmpty {
+                    let forever = keys.contains { key in
+                        guard let animation = layer.animation(forKey: key) else { return false }
+                        return animation.repeatCount > 1e6 || animation.repeatDuration > 1e6 || animation.duration > 1e6
+                    }
+                    let place = layer.convert(layer.bounds, to: root)
+                    found.append(["keys": keys, "shown": shown, "forever": forever,
+                                  "x": Int(place.minX), "y": Int(place.minY),
+                                  "width": Int(place.width), "height": Int(place.height)])
+                }
+                for sublayer in layer.sublayers ?? [] { walk(sublayer, shown: shown) }
+            }
+            walk(root, shown: true)
+            answer(["animations": found,
+                    "shownForever": found.filter { $0["shown"] as? Bool == true && $0["forever"] as? Bool == true }.count])
+
         case "film" where ["float", "land"].contains(request["action"] as? String ?? ""):
             // The video going out into its floating window, or back into its
             // tab (#257), recorded by the page itself on every frame it

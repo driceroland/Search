@@ -853,11 +853,21 @@ struct SwipeShift: ViewModifier {
     func body(content: Content) -> some View {
         let shift = place
         return content.offset(x: across ? shift : 0, y: across ? 0 : shift)
+            // Parked, hidden as well as out of the way: it lay over the
+            // page, under it, and whatever moved in its rows — the ring of a
+            // tab loading — drew the window again at every frame, for as
+            // long as the tab took (idea 847).
+            .opacity(parked ? 0 : 1)
+    }
+
+    private var parked: Bool {
+        guard let park else { return false }
+        return offset.value == 0 || abs(offset.value + by) >= park
     }
 
     private var place: CGFloat {
         let shift = offset.value + by
-        if let park, offset.value == 0 || abs(shift) >= park { return 4 * park }
+        if let park, parked { return 4 * park }
         // On the screen's own pixels: moved by fractions of one, the titles
         // were drawn afresh at each frame, a little further between two
         // pixels, and flickered as the rows went slowly by.
