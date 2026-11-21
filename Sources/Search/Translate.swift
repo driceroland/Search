@@ -48,9 +48,6 @@ struct TranslationMark: Equatable {
 
 @MainActor
 final class PageTranslator {
-    /// Where the switch in Settings was kept, before Translate Page was
-    /// always there (24 Oct 2026). Left on disk, read by nothing.
-    static let key = "translate.pages"
     /// The languages translated as their pages open (Settings lists them).
     static let alwaysKey = "translate.always"
 

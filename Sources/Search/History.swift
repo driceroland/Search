@@ -708,12 +708,6 @@ final class History: ObservableObject {
         return found
     }
 
-    /// Often, and lately. A month-old visit counts for about a third of a
-    /// fresh one, which is roughly how long a habit takes to stop being one.
-    private func frecency(_ visit: Visit, now: Date) -> Double {
-        History.score(visit, now: now)
-    }
-
     nonisolated private static func score(_ visit: Visit, now: Date) -> Double {
         let days = max(0, now.timeIntervalSince(visit.last) / 86_400)
         return Double(visit.count) * exp(-days / 30)

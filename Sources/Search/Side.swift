@@ -47,7 +47,6 @@ struct SideBar: View {
     /// two different axes.
     /// The neighbouring spaces' own grey, apart from this one's.
     @Namespace private var before
-    @Namespace private var after
 
     @State private var groupFrames: [UUID: GroupDropFrame] = [:]
     @State private var looseFrames = LooseFrames()

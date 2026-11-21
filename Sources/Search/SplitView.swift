@@ -213,7 +213,6 @@ private struct SplitDropPreview: View {
     /// joins: its pages are shown with the carried one among them.
     var split: TabSplit? = nil
 
-    private var target: Tab? { tabs.first { $0.id == preview.targetID } }
     private var carried: String {
         let label = tabs.first { $0.id == preview.sourceID }?.label ?? ""
         return label.isEmpty ? "New Tab" : label

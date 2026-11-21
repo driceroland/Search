@@ -101,7 +101,6 @@ final class Extensions: NSObject, ObservableObject {
     var clickGrants: [String: [Tab.ID: ClickGrant]] = [:]
     /// Pages you see that are in no window's row (see openedAside).
     private var aside: Set<Tab.ID> = []
-    private var bag = Set<AnyCancellable>()
     /// Each window's adapter, by browser.
     private var windows: [ObjectIdentifier: ExtensionWindow] = [:]
     /// Each window's subscriptions to its row and its tab in front.

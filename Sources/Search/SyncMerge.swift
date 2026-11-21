@@ -129,11 +129,6 @@ enum SyncMerge {
         map.compactMapValues(\.v)
     }
 
-    /// The keys deleted.
-    static func tombstoned(_ map: [String: SyncEntry]) -> Set<String> {
-        Set(map.filter { $0.value.v == nil }.keys)
-    }
-
     /// Deletions older than `tombstoneLife` forgotten.
     static func prune(_ map: [String: SyncEntry], now: Double) -> [String: SyncEntry] {
         map.filter { $0.value.v != nil || $0.value.t >= now - tombstoneLife }

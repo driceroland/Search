@@ -19,12 +19,6 @@ enum PinRowLine: Identifiable {
         }
     }
 
-    var depth: Int {
-        switch self {
-        case .folder(_, let depth), .pin(_, let depth), .item(_, _, let depth): depth
-        }
-    }
-
     /// For the bench: what it is, how far in, and what it says.
     @MainActor var described: [Any] {
         switch self {

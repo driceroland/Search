@@ -369,9 +369,6 @@ final class PaneStage: NSView {
         return TabSplit.even(tabs.count)
     }
 
-    /// The first page's share, as it is drawn now.
-    private var share: Double { shares.first ?? 0.5 }
-
     /// Room for `count` pages side by side, none narrower than `narrowest`.
     private func fits(_ count: Int) -> Bool {
         bounds.width - CGFloat(max(0, count - 1)) * Self.gutter >= CGFloat(count) * Self.narrowest
