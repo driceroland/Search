@@ -21,6 +21,22 @@ final class ShortcutTests: XCTestCase {
         Store.settings.removeObject(forKey: "links.peekClick")
     }
 
+    /// A button's tooltip says its command's key as it stands (shortcutHelp):
+    /// the default, then the one you gave it, then none once it's cleared.
+    func testTooltipsFollowTheKeys() {
+        let store = ShortcutStore()
+        XCTAssertEqual(store.tip("Downloads", "history.downloads"), "Downloads   ⇧⌘J")
+        XCTAssertEqual(store.tip("Back", "tabs.back"), "Back   ⌘[")
+        store.assign(KeyCombo("d", option: true), to: "history.downloads")
+        XCTAssertEqual(store.tip("Downloads", "history.downloads"), "Downloads   ⌥⌘D")
+        store.clear("history.downloads")
+        XCTAssertEqual(store.tip("Downloads", "history.downloads"), "Downloads")
+        XCTAssertNil(store.display("history.downloads"))
+        store.reset("history.downloads")
+        XCTAssertEqual(store.display("history.downloads"), "⇧⌘J")
+        XCTAssertEqual(store.tip("Bookmarks", nil), "Bookmarks")
+    }
+
     func testSpaceKeysCanMoveClearResetAndReload() {
         let store = ShortcutStore()
         let original = KeyCombo("1", command: false, control: true)

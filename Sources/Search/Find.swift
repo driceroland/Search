@@ -66,10 +66,10 @@ struct FindBar: View {
 
             // A pane too narrow for them keeps Return and ⇧Return instead.
             if !narrow {
-                step("chevron.up", label: "Previous match", help: "Find the previous match.") {
+                step("chevron.up", label: "Previous match", help: "Previous Match", shortcut: "edit.findPrevious") {
                     browser.look(forward: false)
                 }
-                step("chevron.down", label: "Next match", help: "Find the next match.") {
+                step("chevron.down", label: "Next match", help: "Next Match", shortcut: "edit.findNext") {
                     browser.look(forward: true)
                 }
             }
@@ -137,6 +137,7 @@ struct FindBar: View {
         _ icon: String,
         label: String,
         help: String,
+        shortcut: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -149,6 +150,6 @@ struct FindBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityHint(help)
-        .help(help)
+        .shortcutHelp(help, shortcut)
     }
 }

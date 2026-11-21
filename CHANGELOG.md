@@ -40,6 +40,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Buttons say their key as it stands in Settings › Shortcuts, and say it again the moment it changes: Back, Forward, Reload, New Tab, Downloads, the find bar's arrows, the site card's zoom, the address, Hide something…, an agent's Stop, and each space's button. The keys were written into their tooltips, so one you changed still showed the old key, and most buttons named none. A command without a key shows its name alone.
 - The floating Downloads card keeps its whole shadow beside the column (its window now leaves 18 points on the button's side, which cut the shadow off flat at 8), and its height changes as one smooth animation of the window when the list grows, shrinks or is cleared, in place of a jump. `swift test --filter DownloadsOpeningTests` (idea 897)
 
 - History from before 1.0.16 shows in your signed-out spaces again. Since 1.0.16 a space with cookies of its own keeps a history of its own (#1166), and those spaces started empty, everything visited before left in the first space. At the first launch now, that history is copied once into each signed-out space there is, as they all saw it before. What a signed-out space visits stays its own, and a space made later starts empty. Spaces signed in with the first keep sharing its history. `python3 Tests/space_history_seed.py` ([#1325](https://github.com/driceroland/Search/issues/1325))

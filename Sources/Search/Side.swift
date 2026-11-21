@@ -1545,12 +1545,13 @@ struct SideBar: View {
     private var newTab: some View {
         if icons {
             Quiet(icon: "plus", title: "", height: rowHeight, size: prefs.sideTitle, centred: true) { browser.launch() }
-                .help("New Tab   ⌘T")
+                .shortcutHelp("New Tab", "file.newTab")
                 // The column's menu on a right-click, as round it.
                 .overlay { RightClick(menu: columnMenu) }
                 .padding(.top, SideBar.gap)
         } else {
             Quiet(icon: "plus", title: "New tab", height: rowHeight, size: prefs.sideTitle) { browser.launch() }
+                .shortcutHelp("New Tab", "file.newTab")
                 .overlay { RightClick(menu: columnMenu) }
                 .padding(.top, SideBar.gap)
         }
@@ -2275,7 +2276,7 @@ struct KeepLine: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Close the tabs under the line. Pins and groups stay; ⇧⌘T brings them all back.")
+                .shortcutHelp { "Close the tabs under the line. Pins and groups stay; \($0.display("file.reopen") ?? "Reopen Closed Tab") brings them all back." }
                 .transition(.opacity)
             }
         }
@@ -2320,6 +2321,9 @@ struct Door: View {
     let icon: String
     var on = false
     var help = ""
+    /// The command this button does too (Shortcuts.swift): its key, as it
+    /// stands in Settings › Shortcuts, joins the tooltip (shortcutHelp).
+    var shortcut: String? = nil
     /// What holding the button down opens, as Back and Forward list the
     /// pages that way. Nil, or a nil menu, and a hold is just a slow click.
     var held: (() -> NSMenu?)? = nil
@@ -2366,7 +2370,7 @@ struct Door: View {
         // A right-click opens the same menu at once, as in Chrome.
         .overlay { if let held { RightClick(menu: held) } }
         .onHover { hovering = $0 }
-        .help(help)
+        .shortcutHelp(help, shortcut)
         .animation(Motion.quick, value: hovering)
         .animation(Motion.quick, value: on)
     }
