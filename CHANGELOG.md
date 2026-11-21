@@ -29,6 +29,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Right-click one of several tabs picked with ⌘ or ⇧ and the menu lists only what can be done to all of them, and does it to all of them: Move to Group, Pin or Unpin, Move to Space, Open in Split View, Move to Window, Copy Addresses, Mute, Put to Sleep, Close and Close Other Tabs. An action shows only when every picked tab can take it, and moving them to a space with other sign-ins asks once, not once a tab. `swift test --filter TabSelectionTests`. Thanks [@xenonwellz](https://github.com/xenonwellz) ([#1287](https://github.com/driceroland/Search/pull/1287), [#1283](https://github.com/driceroland/Search/issues/1283))
 
+### Changed
+
+- Spaces brought over from Arc (or Zen) take the place of the space you started with when nothing was ever put in it (no pins, no tab but an empty one), as in Arc, instead of leaving an unused "Personal" beside them. A first space with anything in it stays. `python3 Tests/space_arc_replace.py` ([#1326](https://github.com/driceroland/Search/issues/1326))
+
 ### Fixed
 
 - Turning Spaces on no longer seems to make a second space. With only one space, a stroke or a notch over the tabs toward a next one gives a little and comes back, instead of bringing the nameless card for a new space that looked like a space nobody made (New Space… still opens it). And a single Arc space brought over with Spaces off gives the one space there is its name and icon, so turned on, Spaces shows the space you brought rather than "Personal". `python3 Tests/space_turn_on.py` (reported by email)

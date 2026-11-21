@@ -3681,6 +3681,9 @@ final class Browser: NSObject, ObservableObject {
     func takeArc(_ sidebar: ArcSidebar, from source: ImportSource? = nil, profile: String? = nil)
         -> (spaces: Int, pins: Int, tabs: Int) {
         var made = 0, pins = 0, added = 0
+        // This profile's home as it was before: replaced by the spaces that
+        // come in, below, if nothing was ever put in it.
+        let home = homeSpaceID
         // Every address this brings in, for its icon below.
         var brought: [URL] = []
         var targets: [(id: UUID, space: ArcSidebar.Space?, profile: UUID)] = []
@@ -3802,8 +3805,24 @@ final class Browser: NSObject, ObservableObject {
                 added += takeAsleep(pages, into: target.id, files: true)
             }
         }
+        // The home there was before, untouched — no pins and no tab but an
+        // empty one — is replaced by the spaces that came, as in Arc, rather
+        // than left beside them as a "Personal" nobody uses.
+        if targets.contains(where: { $0.profile == profileID && $0.id != home }), !targets.contains(where: { $0.id == home }),
+           isUntouched(home) {
+            deleteSpace(home)
+        }
         adoptIcons(for: brought, from: source, profile: profile)
         return (made, pins, added)
+    }
+
+    /// A space nothing was put in: no pins, and no tab but an empty one.
+    func isUntouched(_ id: UUID) -> Bool {
+        guard Pins.defs(id).isEmpty, PinFolders.folders(id).isEmpty else { return false }
+        if let row = id == spaceID ? tabs : parked[id]?.tabs {
+            return row.allSatisfy { $0.pin == nil && $0.isBlank && $0.pending == nil }
+        }
+        return Session.read(space: id).tabs.allSatisfy { $0.pin == nil && ($0.url.isEmpty || $0.url == "about:blank") }
     }
 
     /// Another browser's open tabs (see ImportSession.swift, and

@@ -5,8 +5,9 @@ made-up Arc profile as spaces_quit_keep.py (two spaces, each a loose page
 and a folder) is imported into a hidden probe; each imported space is then
 deleted the way its menu's Delete does (Browser.deleteSpace, through the
 bench), and the probe quits and starts again. The spaces, their files and
-their tabs must be gone, before and after the relaunch; the first space,
-which holds the session there was before spaces, is the one that stays.
+their tabs must be gone, before and after the relaunch. The untouched first
+space was replaced by them (space_arc_replace.py), so a page is opened in it
+first to keep it; the last space left can't be deleted.
 
 Nothing here makes, shows or brings forward a window. The menu itself (the
 space's icon, Delete “…”) is checked by hand.
@@ -38,6 +39,7 @@ def main():
         sv.setup(**{"tabs.groups": True})
         keep.arc()
         sv.launch()
+        sv.page("kept-here")
         out = sv.cmd({"do": "import", "from": "Arc", "what": ["spaces"]}).get("arc") or {}
         t.ok("Arc's two spaces came in", out.get("spaces") == 2, out)
         time.sleep(1.5)
@@ -60,10 +62,10 @@ def main():
         t.ok("Study deleted too: only the first space is left", names() == ["Personal"], names())
         t.ok("no space file left", files() == [], files())
 
-        # The first space can't be: it is where the session was before spaces.
+        # The last space can't be: a profile keeps one.
         sv.cmd({"do": "space", "action": "delete"})
         time.sleep(0.5)
-        t.ok("the first space stays", names() == ["Personal"], names())
+        t.ok("the last space stays", names() == ["Personal"], names())
 
         sv.quit()
         time.sleep(1)
