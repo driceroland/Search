@@ -1763,6 +1763,10 @@ struct ContentView: View {
             browser.keepPeek(beside: flags.contains(.option))
             return true
         }
+        if key == "o", flags.intersection([.command, .shift, .option, .control]) == .command, browser.peekInFront {
+            browser.keepPeek()
+            return true
+        }
 
         // Tab is the page's: it moves between a form's fields and a page's
         // links, as in every browser. It used to walk the row of tabs, which

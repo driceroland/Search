@@ -236,7 +236,7 @@ struct PeekPanel: View {
                         Knob("xmark", help: "Close (esc)") { browser.closePeek() }
                         // ⌥ on it keeps the page beside this one, with Split
                         // View on, as the button under it does.
-                        Knob("arrow.up.left.and.arrow.down.right", help: "Open as a tab (⌘↩)") {
+                        Knob("arrow.up.left.and.arrow.down.right", help: "Open as a tab (⌘O or ⌘↩)") {
                             browser.keepPeek(beside: NSEvent.modifierFlags.contains(.option))
                         }
                         if browser.prefs.splitView {
