@@ -153,10 +153,18 @@ final class SpaceSwipe {
         let target = here + step
         if let other = beyond(browser, target) {
             leave(browser, for: other, step: step)
-        } else if target >= 0, target <= browser.spaces.count {
+        } else if target >= 0, target <= furthest(browser) {
             slide(browser, to: target, from: here)
         }
         return true
+    }
+
+    /// The furthest page a stroke or a notch can bring: the card for a new
+    /// space past the last one, but not while there is only one space. Spaces
+    /// just turned on, a stroke over the tabs brought a nameless card that
+    /// looked like a second space nobody made; New Space… still opens it.
+    private func furthest(_ browser: Browser) -> Int {
+        browser.spaces.count > 1 || browser.makingSpace ? browser.spaces.count : browser.spaces.count - 1
     }
 
     /// With profiles in one window, past this window's first space or its
@@ -399,7 +407,7 @@ final class SpaceSwipe {
             let target = here + (step < 0 ? 1 : -1)
             if let other = beyond(browser, target) {
                 leave(browser, for: other, step: target - here)
-            } else if target >= 0, target <= browser.spaces.count {
+            } else if target >= 0, target <= furthest(browser) {
                 slide(browser, to: target, from: here)
             }
             return true
@@ -550,7 +558,7 @@ final class SpaceSwipe {
             leave(browser, for: other, step: target - here)
             return
         }
-        guard target != here, target >= 0, target <= browser.spaces.count else {
+        guard target != here, target >= 0, target <= furthest(browser) else {
             // Back where they were: the space on screen, or on its way in.
             if let coming = browser.spaceComing, !browser.makingSpace, !Motion.reduced {
                 letGoSpeed = speed
@@ -572,7 +580,7 @@ final class SpaceSwipe {
     /// card for a new space they go heavily, for it not to come by chance.
     private func resisted(_ travel: CGFloat, in browser: Browser) -> CGFloat {
         let here = shown(browser)
-        let blocked = (travel > 0 && here == 0 && browser.profileBeyond(-1) == nil) || (travel < 0 && here == browser.spaces.count)
+        let blocked = (travel > 0 && here == 0 && browser.profileBeyond(-1) == nil) || (travel < 0 && here >= furthest(browser))
         return blocked ? travel / 4 : toCard(travel, in: browser) ? travel * 0.6 : travel
     }
 

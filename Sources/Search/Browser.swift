@@ -3728,6 +3728,17 @@ final class Browser: NSObject, ObservableObject {
             targets = [(Profiles.shared.profile(profile).home, arc, profile)]
         } else {
             targets = [(spaceID, sidebar.spaces.first, profileID)]
+            // The one space there is takes the Arc space's name and look,
+            // while it still has the ones it started with: turned on later,
+            // Spaces shows the space you brought, not a "Personal" beside it.
+            if let arc = sidebar.spaces.first, let at = spaces.firstIndex(where: { $0.id == spaceID }),
+               spaces[at].isFirst, spaces[at].name == Space.first().name, spaces[at].icon == nil, spaces[at].colour == 0 {
+                spaces[at].name = arc.name
+                spaces[at].icon = arc.symbol
+                spaces[at].colour = arc.colour
+                spaces[at].gradient = arc.gradient
+                Spaces.write(spaces, profile: profileID)
+            }
         }
         for target in targets {
             var defs = Pins.defs(target.id)
