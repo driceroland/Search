@@ -430,6 +430,13 @@ final class Preferences: ObservableObject {
     @Published var frontLinksBeside: Bool {
         didSet { store.set(frontLinksBeside, forKey: "tabs.frontBeside") }
     }
+    /// A swipe back from the page a link opened a tab on closes the tab and
+    /// goes back to the one viewed before it, as a small window's does (see
+    /// Browser.armSwipeClose). Off unless asked for: some use back on a
+    /// fresh tab to mean nothing at all.
+    @Published var swipeBackCloses: Bool {
+        didSet { store.set(swipeBackCloses, forKey: "tabs.swipeBackCloses") }
+    }
     /// Every window of a profile lists the same open tabs in each space, as
     /// it lists the same pins: opened, closed, moved, grouped or renamed in
     /// one, so in the others (see Twins.swift). Off unless asked for.
@@ -1134,6 +1141,7 @@ final class Preferences: ObservableObject {
         switcherBehindFirst = store.bool(forKey: "tabs.switcherBehindFirst")
         switcherLeavesOutPins = store.bool(forKey: "tabs.switcherLeavesOutPins")
         frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
+        swipeBackCloses = store.bool(forKey: "tabs.swipeBackCloses")
         mirrorsTabs = store.bool(forKey: "tabs.mirror")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)

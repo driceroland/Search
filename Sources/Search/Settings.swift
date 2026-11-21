@@ -664,6 +664,7 @@ struct SettingsPanel: View {
         case "tabs.switcherBehindFirst": Switch(on: $prefs.switcherBehindFirst)
         case "tabs.switcherLeavesOutPins": Switch(on: $prefs.switcherLeavesOutPins)
         case "tabs.frontBeside": Switch(on: $prefs.frontLinksBeside)
+        case "tabs.swipeBackCloses": Switch(on: $prefs.swipeBackCloses)
         case "tabs.mirror": Switch(on: $prefs.mirrorsTabs)
         case "tabs.lazy": Switch(on: $prefs.lazyTabs)
         case "tabs.popupWindows": Switch(on: $prefs.popupWindows)
