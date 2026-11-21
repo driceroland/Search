@@ -2948,7 +2948,8 @@ final class Browser: NSObject, ObservableObject {
         // moved to. With them on, the last space is chosen below.
         spaceID = prefs.usesSpaces
             ? loaded.first?.id ?? Space.firstID
-            : (profile == Profile.personalID ? Space.firstID : Profiles.shared.profile(profile).home)
+            : { let home = Profiles.shared.profile(profile).home
+                return loaded.contains { $0.id == home } ? home : loaded.first?.id ?? home }()
         super.init()
         let first = !Browser.booted
         Browser.booted = true
@@ -3229,7 +3230,7 @@ final class Browser: NSObject, ObservableObject {
             .sink { [weak self] on in
                 guard let self else { return }
                 if websitePopup {
-                    if !on, spaceID != Space.firstID { window?.close() }
+                    if !on, spaceID != homeSpaceID { window?.close() }
                     return
                 }
                 guard !isPopup else { return }

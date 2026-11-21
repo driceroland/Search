@@ -27,8 +27,10 @@ import WebKit
 struct Profile: Codable, Identifiable, Equatable {
     var id: UUID
     var name: String
-    /// Its first space, which can't be deleted while the profile lives:
-    /// what a window of the profile shows with spaces off.
+    /// Its first space: what a window of the profile shows with spaces
+    /// off. Any space can be deleted while the profile keeps another; the
+    /// home's going makes the next one in the order the home (Personal's
+    /// too, kept in profiles.json; an older Search reads the first back).
     var home: UUID
 
     static let personalID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1") ?? UUID()
@@ -56,7 +58,7 @@ final class Profiles: ObservableObject {
 
     nonisolated static func read() -> [Profile] {
         let saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Profile].self, from: $0) } ?? []
-        let personal = saved.first(where: \.isPersonal).map { Profile(id: Profile.personalID, name: $0.name, home: Space.firstID) } ?? .personal
+        let personal = saved.first(where: \.isPersonal).map { Profile(id: Profile.personalID, name: $0.name, home: $0.home) } ?? .personal
         return [personal] + saved.filter { !$0.isPersonal }
     }
 
@@ -144,6 +146,13 @@ final class Profiles: ObservableObject {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, let at = list.firstIndex(where: { $0.id == id }) else { return }
         list[at].name = name
+        write()
+    }
+
+    /// Its home deleted: the space that takes its place.
+    func rehome(_ id: UUID, to space: UUID) {
+        guard let at = list.firstIndex(where: { $0.id == id }), list[at].home != space else { return }
+        list[at].home = space
         write()
     }
 

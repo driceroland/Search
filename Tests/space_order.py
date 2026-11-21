@@ -5,7 +5,8 @@ Build first (`./build.sh`), then `python3 Tests/space_order.py`. A probe
 with spaces on moves the first space right, then checks that its order
 survives another window and a relaunch. It also adds a space after the home
 has moved, which must go at the right-hand end, and checks where a spaces-off
-window opens.
+window opens. Last, the moved home is deleted: the next space in the order
+becomes the home.
 
 The probe starts hidden. Its second-window check goes through the bench's
 window command; a probe already on screen can therefore bring that window
@@ -48,12 +49,6 @@ try:
     t.ok("the home moves right", names() == ["Two", "Personal"], names())
     t.ok("the move reaches spaces.json", saved() == ["Two", "Personal"], saved())
 
-    sv.cmd({"do": "space", "action": "go", "index": 2})
-    sv.cmd({"do": "space", "action": "delete"})
-    time.sleep(0.4)
-    t.ok("the moved home cannot be deleted",
-         names() == ["Two", "Personal"], names())
-
     # Browser.init reads Spaces.read(profile:) afresh; a notification caused
     # by another window must not put the home back at the left.
     space(action="new", name="Three")
@@ -82,6 +77,18 @@ try:
     time.sleep(1)
     t.ok("with spaces off, the relaunch is the home space",
          space()["current"] == "Personal", space())
+
+    # The moved home can be deleted too (#1326): the next space in the
+    # order, Two, takes its place as the home.
+    sv.cmd({"do": "ui", "spaces": True})
+    time.sleep(0.5)
+    two = next(s["id"] for s in space()["spaces"] if s["name"] == "Two")
+    space(action="go", index=2)
+    time.sleep(0.5)
+    space(action="delete")
+    time.sleep(0.6)
+    t.ok("the moved home deleted: Two and Three left, in order", names() == ["Two", "Three"], names())
+    t.ok("and Two is the home now", space()["home"] == two, space()["home"])
 finally:
     t.done()
     sv.finish()

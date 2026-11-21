@@ -278,7 +278,8 @@ enum ICloudMerge {
             }
             return space
         }
-        if !out.contains(where: \.isFirst) {
+        // Unless it was deleted here, and Personal's home is another space.
+        if !out.contains(where: \.isFirst), Spaces.home(of: Profile.personalID) == Space.firstID {
             out.insert(local.first(where: \.isFirst) ?? Space.first(), at: 0)
         }
         return out

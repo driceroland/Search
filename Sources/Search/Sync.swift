@@ -370,7 +370,7 @@ final class Sync: ObservableObject {
     /// The merged items made so: spaces first, so pins have their space.
     static func apply(_ live: [String: String], to profile: Profile) {
         let id = profile.id
-        let home = id == Profile.personalID ? Space.firstID : profile.home
+        let home = profile.home
         let local = Spaces.read(profile: id)
         let spaces = SyncItems.applySpaces(live, to: local, profile: id, home: home)
         for gone in local where !spaces.contains(where: { $0.id == gone.id }) {
