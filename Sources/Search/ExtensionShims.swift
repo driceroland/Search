@@ -2228,9 +2228,62 @@ enum ExtensionShims {
         if (root.HTMLIFrameElement && runtime && typeof runtime.getURL === "function") {
           const ownBase = runtime.getURL("");
           const given = new WeakMap();
+          // One of the extension's pages in a frame that itself stands in
+          // an empty frame, as Similarweb's panel does: a frame with no
+          // address, out of reach of the site's styles, and the panel's
+          // page in a frame inside it. WebKit checks
+          // web_accessible_resources against the address of the frame just
+          // above (WebExtensionURLSchemeHandler), there about:blank, which
+          // no pattern matches: the page is refused without a word, the
+          // frame stays blank, and Similarweb, waiting for it to load,
+          // never slid its panel in — its button did nothing. Chrome
+          // checks against the site the empty frame has its origin from.
+          //
+          // A document opened by a script of another takes that one's
+          // address (document.open), in WebKit's own record of the frame
+          // too. So the empty frame is opened and closed from here, its
+          // content lifted out before and put back after: the same nodes,
+          // with all that was set on them. Put back, the frame inside
+          // loads again and is let through, checked against the site as
+          // Chrome checks it. Closing fires `load` on the empty frame once
+          // more, a moment later; the extension, which built its panel
+          // when it first loaded, would build a second: that one event
+          // stops here. Not from a script that is in an empty frame
+          // itself: its own address is no better.
+          const empty = (d) => !!d && /^about:(blank|srcdoc)/.test(d.URL);
+          const house = (frame) => {
+            if (!frame.isConnected) return false;
+            const d = frame.ownerDocument;
+            const above = d !== document && empty(d) && !empty(document) && d.defaultView && d.defaultView.frameElement;
+            if (!above) return true;
+            const content = d.documentElement;
+            const hush = (event) => { event.stopImmediatePropagation(); heard(); };
+            const heard = () => above.removeEventListener("load", hush, true);
+            above.addEventListener("load", hush, true);
+            setTimeout(heard, 2000);
+            try {
+              if (content) d.removeChild(content);
+              d.open();
+              d.close();
+            } catch (e) { heard(); }
+            try {
+              if (content && !content.parentNode) {
+                if (d.documentElement) d.replaceChild(content, d.documentElement); else d.appendChild(content);
+              }
+            } catch (e) {}
+            return true;
+          };
+          // Given its address before it is put in a document, more often
+          // than after: looked at once the script that did both is done,
+          // and a few times more for one put in later.
+          const settle = (frame, waits) => {
+            if (house(frame) || !waits.length) return;
+            setTimeout(() => settle(frame, waits.slice(1)), waits[0]);
+          };
           const remember = (frame, value) => {
             const address = String(value);
             if (address.startsWith(ownBase)) given.set(frame, address); else given.delete(frame);
+            if (given.has(frame)) Promise.resolve().then(() => settle(frame, [0, 50, 250, 1000]));
           };
           const proto = HTMLIFrameElement.prototype;
           const d = Object.getOwnPropertyDescriptor(proto, "src");
