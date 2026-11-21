@@ -79,7 +79,39 @@ enum PopoverSide {
         case .under: side = flipped ? .maxY : .minY
         }
         let moved = rect.offsetBy(dx: place.move.dx, dy: flipped ? -place.move.dy : place.move.dy)
-        popover.show(relativeTo: moved, of: view, preferredEdge: side)
+        // Moved off every view that could hold it, the popover hangs from
+        // the button itself, its arrow in the corner as before.
+        let hung = holder(of: moved, in: view, edge: side) ?? (view, rect, side)
+        popover.show(relativeTo: hung.rect, of: hung.view, preferredEdge: hung.edge)
+    }
+
+    /// The view a popover is shown from, for a rect that may have been
+    /// moved off `view`: `view` itself while the rect still touches it,
+    /// else the nearest view above that it touches, with the rect, and the
+    /// side, as that view counts them. Nil when no view above holds it.
+    ///
+    /// NSPopover shows nothing, and says nothing, when the rect it is to
+    /// hang from lies wholly outside the view it is given (macOS 27.0 and
+    /// 27.2: shown with one point of the rect on the view, not with none).
+    /// A button is 26 points wide and the arrow can move up to `clearance`:
+    /// an extension's popup whose button stood first at the column's foot,
+    /// in a window against the screen's left edge, was moved 29 points and
+    /// never opened — the click loaded its page in a view no window held.
+    static func holder(of rect: NSRect, in view: NSView, edge: NSRectEdge) -> (view: NSView, rect: NSRect, edge: NSRectEdge)? {
+        if view.bounds.intersects(rect) { return (view, rect, edge) }
+        var above = view.superview
+        while let host = above {
+            let there = host.convert(rect, from: view)
+            if host.bounds.intersects(there) {
+                // A side is named in the view's own coordinates: top is
+                // maxY in one that counts y upwards, minY in a flipped one.
+                let turned = host.isFlipped != view.isFlipped
+                let side: NSRectEdge = !turned ? edge : edge == .minY ? .maxY : edge == .maxY ? .minY : edge
+                return (host, there, side)
+            }
+            above = host.superview
+        }
+        return nil
     }
 }
 
