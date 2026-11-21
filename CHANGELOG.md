@@ -44,6 +44,7 @@ in [ROADMAP.md](ROADMAP.md).
 - With the tabs across the top, the window moves from above the tabs too, and a double-click there does what a title bar's does. The row's scroll view reached up into the title bar and took every press over the tabs' run, so with a full row only its two ends were left to take hold of. Reported by [@zhitongwu](https://github.com/zhitongwu) ([#1321](https://github.com/driceroland/Search/issues/1321))
 - A download into a folder Search can't write to asks where to save it, as Ask where to save does, instead of stopping at zero KB or failing with "Cannot create file": a downloads folder that's read-only, gone, or one macOS keeps Search out of in System Settings › Privacy & Security › Files and Folders. Reported by [@jolly-0806](https://github.com/jolly-0806) ([#1291](https://github.com/driceroland/Search/issues/1291))
 - Hide Elements (⇧⌘H) hides on sites whose security policy limits styles, as many large sites' does. It said the element was hidden and the page kept showing it: what was taken off went into a stylesheet such a site turns away. `python3 Tests/hide_elements_csp.py` checks it. Reported by [@yuri-urban](https://github.com/yuri-urban) ([#1270](https://github.com/driceroland/Search/issues/1270))
+- The extensions button at the foot of the column sits centred between its neighbours: the puzzle's drawing leans almost a point left in its own box, and looked pulled toward the space's icon. Reported by [@xenonwellz](https://github.com/xenonwellz) ([#1281](https://github.com/driceroland/Search/issues/1281))
 
 ### Held back
 

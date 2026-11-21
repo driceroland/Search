@@ -2394,7 +2394,7 @@ private struct ExtensionButtons: View {
                         .contextMenu { ExtensionActions(id: button.id, name: button.name, browser: browser, extensions: extensions) }
                 }
                 let key = Extensions.menuKey(browser)
-                Door(icon: "puzzlepiece.extension", on: extensions.menuOwner == key, help: "Extensions") {
+                Door(icon: "puzzlepiece.extension", on: extensions.menuOwner == key, help: "Extensions", nudge: 1) {
                     extensions.menuOwner = extensions.menuOwner == key ? nil : key
                 }
                 .background(Anchor(id: Extensions.menuAnchor, browser: browser))
