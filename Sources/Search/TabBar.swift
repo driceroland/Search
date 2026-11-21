@@ -78,7 +78,7 @@ struct TabBar: View {
                             .padding(.trailing, AddressLine.after)
                             .zIndex(2)
                     }
-                    if browser.prefs.usesSpaces { SpaceDot(browser: browser).zIndex(1) }
+                    if browser.prefs.usesSpaces && !browser.prefs.showsSpaceButtons { SpaceDot(browser: browser).zIndex(1) }
 
                     // The tabs, in a run of their own. While they fit, it is
                     // exactly as wide as they are and nothing about the row
@@ -244,6 +244,7 @@ struct TabBar: View {
                             Helm(browser: browser).padding(.trailing, 8)
                         }
                         BookmarkDoor(browser: browser, arrowEdge: .bottom)
+                        SpaceButtons(browser: browser)
                     }
                     .background {
                         GeometryReader { box in
@@ -563,7 +564,11 @@ struct TabBar: View {
     }
 
     /// What the space's dot takes before the tabs, when there are spaces.
-    private var dot: CGFloat { browser.prefs.usesSpaces ? SpaceDot.width + Metrics.tabGap : 0 }
+    /// With a button per space, nothing: they are among the doors at the
+    /// far end (SpaceButtons), measured with them.
+    private var dot: CGFloat {
+        browser.prefs.usesSpaces && !browser.prefs.showsSpaceButtons ? SpaceDot.width + Metrics.tabGap : 0
+    }
 
     /// Every loose tab is the same width, so the cross is always in the same
     /// place. Past a dozen or so they start giving ground; too narrow for a

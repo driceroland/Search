@@ -760,6 +760,15 @@ final class Preferences: ObservableObject {
     @Published var sendsLinksToSpaces: Bool {
         didSet { store.set(sendsLinksToSpaces, forKey: SpaceRoutes.key) }
     }
+    /// Every space as a button of its own beside the bookmarks, centred at
+    /// the column's foot, in place of the one dot and its menu (see
+    /// SpaceButtons). Off unless asked for, and only with spaces on.
+    @Published var spaceButtons: Bool {
+        didSet { store.set(spaceButtons, forKey: Preferences.spaceButtonsKey) }
+    }
+    nonisolated static let spaceButtonsKey = "spaces.buttons"
+    /// Whether the space buttons stand in for the dot: asked for, with spaces on.
+    var showsSpaceButtons: Bool { spaceButtons && usesSpaces }
     /// Which site goes to which space, for that.
     @Published var spaceRoutes: [SpaceRoute] {
         didSet { store.set(spaceRoutes.map(\.plist), forKey: SpaceRoutes.rulesKey) }
@@ -1259,6 +1268,7 @@ final class Preferences: ObservableObject {
         littleFindsTabs = store.bool(forKey: "links.little.tabs")
         webmail = store.string(forKey: "mail.webmail").flatMap(Webmail.init(rawValue:)) ?? .none
         sendsLinksToSpaces = store.bool(forKey: SpaceRoutes.key)
+        spaceButtons = store.bool(forKey: Preferences.spaceButtonsKey)
         spaceRoutes = (store.array(forKey: SpaceRoutes.rulesKey) ?? []).compactMap(SpaceRoute.init(plist:))
         asksSpaceForLinks = store.bool(forKey: "links.ask")
         linkChoices = (store.array(forKey: "links.ask.last") ?? []).compactMap(LinkChooser.Choice.init(plist:))

@@ -391,11 +391,16 @@ extension Browser {
     /// profile shown. None with spaces off, and while a new one is being
     /// made, as the dot has.
     var wash: SpaceLook? {
-        prefs.usesSpaces && !makingSpace ? space.look : nil
+        prefs.usesSpaces && !makingSpace ? washSpace.look : nil
     }
 
     /// How strongly the wash is drawn: the space on screen's strength.
-    var washStrength: SpaceStrength { wash == nil ? .subtle : space.washStrength }
+    var washStrength: SpaceStrength { wash == nil ? .subtle : washSpace.washStrength }
+
+    /// The space the wash is of: the one a click is taking you to, already,
+    /// or the one on screen. Waiting for the switch itself, the old colour
+    /// stayed through the slide and the pause after it.
+    var washSpace: Space { spaceHeading.flatMap { id in spaces.first { $0.id == id } } ?? space }
 
     /// The wash's colour, when it is one of the colours rather than a gradient.
     var washColour: Int? {
@@ -416,6 +421,8 @@ extension Browser {
     /// a space of another profile brings that profile's window into this
     /// one's place (see OneWindow.swift).
     func switchSpace(to id: UUID) {
+        // Here now, or somewhere else after all: the wash goes by spaceID again.
+        if spaceHeading != nil { spaceHeading = nil }
         guard prefs.usesSpaces else { return }
         if merges, !spaces.contains(where: { $0.id == id }), Spaces.known[id] != nil {
             Browsers.join(space: id, from: self)
@@ -499,7 +506,9 @@ extension Browser {
         askFocus()
         // Beside the space's icon when the tabs are on screen (SpaceDot);
         // folded away, or with the icon up beside the helm, at the bottom.
-        if folded && !peeking || SideBar.doorsUp(prefs, width: prefs.columnWidth, fullScreen: fullScreen) {
+        // With a button per space there is no dot to say it: at the bottom.
+        if prefs.showsSpaceButtons || folded && !peeking
+            || SideBar.doorsUp(prefs, width: prefs.columnWidth, fullScreen: fullScreen, spaces: SpaceButtons.count(prefs, spaces)) {
             announce(space.name)
         }
     }
@@ -597,6 +606,8 @@ extension Browser {
             SpaceSwipe.shared.land(self)
             return switchSpace(to: id)
         }
+        // Its colour from the click, while its rows are still on their way.
+        withAnimation(Motion.quick) { spaceHeading = id }
         SpaceSwipe.shared.bring(self, id, step: to > here ? 1 : -1)
     }
 
@@ -893,6 +904,74 @@ struct SpaceDot: View {
             guard turn == naming else { return }
             named = nil
         }
+    }
+}
+
+/// Every space as a button of its own, beside the bookmarks: one click to
+/// any of them, where the dot took a click and a pick from its menu. The
+/// one on screen is marked, and a click on it opens the dot's menu, so New
+/// Space… and the rest stay a click away from here too. In the spaces'
+/// own order, the swipe's and ⌃1–⌃9's, so a button never moves when you
+/// switch. They stand in for the dot, with Settings › Spaces › One
+/// button per space (Preferences.spaceButtons).
+struct SpaceButtons: View {
+    @ObservedObject var browser: Browser
+    /// One above the other, in the column of icons.
+    var vertical = false
+
+    /// How many buttons are drawn, for the foot to make room for them.
+    /// One space still has its button: it is the way to the menu, and to
+    /// New Space…, now that the dot is gone.
+    @MainActor static func count(_ prefs: Preferences, _ spaces: [Space]) -> Int {
+        prefs.showsSpaceButtons ? spaces.count : 0
+    }
+
+    var body: some View {
+        if SpaceButtons.count(browser.prefs, browser.spaces) > 0 {
+            let layout = vertical ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
+            layout {
+                ForEach(Array(browser.spaces.enumerated()), id: \.element.id) { index, space in
+                    SpaceButton(browser: browser, space: space, index: index, current: space.id == (browser.spaceHeading ?? browser.spaceID))
+                }
+            }
+        }
+    }
+}
+
+private struct SpaceButton: View {
+    let browser: Browser
+    let space: Space
+    let index: Int
+    let current: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            if current { SpaceMenu.show(for: browser) } else { browser.goToSpace(space.id) }
+        } label: {
+            Image(systemName: space.symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(space.tint ?? (current || hovering ? Palette.ink : Palette.muted))
+                .opacity(current || hovering ? 1 : 0.75)
+                .frame(width: 26, height: 26)
+                .background(
+                    // The one on screen on a wash, of its colour if it has one.
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(current
+                              ? (space.tint.map { $0.opacity(0.18) } ?? Palette.hover)
+                              : (hovering ? Palette.hover : .clear))
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
+        .animation(Motion.quick, value: current)
+        .help(current
+              ? "\(space.name) — click for the space’s menu"
+              : (index < 9 ? "\(space.name) — \(KeyCombo.spacesOnCommand ? "⌘" : "⌃")\(index + 1)" : space.name))
+        .accessibilityLabel(space.name)
+        .accessibilityAddTraits(current ? .isSelected : [])
     }
 }
 
