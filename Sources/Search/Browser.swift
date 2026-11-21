@@ -2123,6 +2123,8 @@ final class Browser: NSObject, ObservableObject {
             tab.groupID = nil
             removeEmptyGroup(previousGroup)
             tab.pin = tab.monogram
+            // A pin's back from its first page goes nowhere.
+            armSwipeClose(tab)
             tab.home = tab.pending ?? tab.address
             // Pinned tabs live at the head of the row, in the order they were
             // pinned, so their letters never move under your hand: a square
@@ -3136,6 +3138,13 @@ final class Browser: NSObject, ObservableObject {
                 guard !isPopup else { return }
                 if on { preloadSpaces() } else { leaveSpaces() }
             }
+            .store(in: &bag)
+        // Swipe back closes a tab a link opened, switched: the tabs already
+        // open follow it, not only those opened from now on.
+        prefs.$swipeBackCloses
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.armSwipeCloseEverywhere() }
             .store(in: &bag)
         // Same tabs in every window, switched: on, every window's open tabs
         // come together, nothing lost; off, each window keeps what it has.
@@ -4811,7 +4820,37 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘W, or the cross on the tab. Closing the last one leaves a blank tab
     /// behind; closing that blank tab closes the window.
-    func close(_ tab: Tab) {
+    /// Settings › Tabs › Swipe back closes a tab a link opened: on a tab a
+    /// page opened (a target="_blank" link, window.open), back from the page
+    /// it opened on is back to before it existed, so a swipe there closes it
+    /// and lands on the tab viewed before, as a small window's swipe closes
+    /// the window (see PageView.leave). Not on a pin, a sized pop-up, a
+    /// coding agent's tab, or a page in another kind of window, whose own
+    /// leave, if any, is set by that window. Set each time the tab is
+    /// prepared, so a tab moved to another window closes in that one.
+    func armSwipeClose(_ tab: Tab) {
+        // A small window's page: the window sets its own (Little.swift).
+        guard LittleWindow.holding(tab.id) == nil else { return }
+        guard prefs.swipeBackCloses, !websitePopup, !isPopup,
+              tab.opener != nil, tab.pin == nil, !tab.popup, !tab.agent, !tab.bench else {
+            tab.leave = nil
+            return
+        }
+        tab.leave = { [weak self, weak tab] in
+            guard let self, let tab, tab.pin == nil, tabs.contains(where: { $0 === tab }) else { return }
+            close(tab, goingBack: true)
+        }
+    }
+
+    /// The switch flipped: every tab already open follows it.
+    private func armSwipeCloseEverywhere() {
+        for tab in tabs { armSwipeClose(tab) }
+        for state in parked.values { for tab in state.tabs { armSwipeClose(tab) } }
+    }
+
+    /// `goingBack`: lands on the tab viewed before this one whatever Settings
+    /// says, as a swipe back that closes a link's tab means to.
+    func close(_ tab: Tab, goingBack: Bool = false) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         // Its peek, hidden or not, goes with it.
         if peekFrom == tab.id { closePeek() }
@@ -4917,7 +4956,7 @@ final class Browser: NSObject, ObservableObject {
             // it: it was opened at the end of the row, and its neighbour
             // there is a tab you weren't reading.
             let back = tabBefore(tab)
-            let before = prefs.closeGoesBack || tab.page != nil ? back
+            let before = goingBack || prefs.closeGoesBack || tab.page != nil ? back
                 : back.flatMap { $0.id == tab.opener ? $0 : nil }
             select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
         }
@@ -6947,6 +6986,7 @@ final class Browser: NSObject, ObservableObject {
 
     func prepare(_ tab: Tab) {
         tab.delegate = self
+        armSwipeClose(tab)
         // With two pages up, the keys going to the other one — Tab walked
         // past the last field of this one — make it the focused page, so the
         // outline, ⌘L and the site card follow what is being typed into.
