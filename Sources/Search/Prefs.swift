@@ -1077,6 +1077,12 @@ final class Preferences: ObservableObject {
     @Published var recentInNewTab: Bool {
         didSet { store.set(recentInNewTab, forKey: "newtab.recent") }
     }
+    /// The floating field finds your open tabs and pins as you type, above
+    /// the places a new tab would go, and Return goes to the open one, as
+    /// Arc's ⌘T does (Browser.tabOffers). Off unless asked for.
+    @Published var arcTabPopup: Bool {
+        didSet { store.set(arcTabPopup, forKey: "newtab.arc") }
+    }
 
     init() {
         Preferences.settleLittleLinks(in: store)
@@ -1251,6 +1257,7 @@ final class Preferences: ObservableObject {
         launcherLittle = store.bool(forKey: "launcher.little")
         launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
         recentInNewTab = store.bool(forKey: "newtab.recent")
+        arcTabPopup = store.bool(forKey: "newtab.arc")
         // On for everyone who never touched it (24 Oct 2026).
         let history = store.object(forKey: "swipe.history") as? Bool ?? true
         holdsHistory = history

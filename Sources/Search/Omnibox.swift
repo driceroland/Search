@@ -9,6 +9,9 @@ final class FieldState: ObservableObject {
     @Published var offers: [Suggestion] = []
     @Published var ending: String?
     @Published var picked: Int?
+    /// The row was picked by what was typed (Arc-style tab popup), not by
+    /// the arrow keys: Return takes it, and the field keeps what was typed.
+    @Published var pickedByTyping = false
     @Published var siteOffer: SearchSite?
 }
 
@@ -267,6 +270,8 @@ struct Omnibox: View {
                 } else if offer.kind == .elsewhere {
                     // Open on another device: iCloud Tabs' mark.
                     symbol("laptopcomputer.and.iphone")
+                } else if offer.pinned {
+                    symbol("pin")
                 }
             }
             .padding(.horizontal, 12)

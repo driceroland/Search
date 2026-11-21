@@ -457,7 +457,11 @@ final class Browser: NSObject, ObservableObject {
     /// Which row the arrow keys have walked to, if any.
     var picked: Int? {
         get { typing.picked }
-        set { if typing.picked != newValue { typing.picked = newValue } }
+        set {
+            // Walked to, or let go of: the field shows the row again.
+            if typing.pickedByTyping { typing.pickedByTyping = false }
+            if typing.picked != newValue { typing.picked = newValue }
+        }
     }
     /// Bumped when what was typed isn't an address and can't be searched for.
     @Published private(set) var refusals = 0
@@ -507,7 +511,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// Typed plus whatever the field is quietly finishing for you.
     var completed: String {
-        if let picked, offers.indices.contains(picked) { return offers[picked].key }
+        if let picked, offers.indices.contains(picked), !typing.pickedByTyping { return offers[picked].key }
         return typed + (ending ?? "")
     }
 
@@ -7303,7 +7307,76 @@ final class Browser: NSObject, ObservableObject {
         // A row that was picked stops being the right row the moment the
         // question changes.
         picked = nil
+        if launching, prefs.arcTabPopup { offerTabs() }
         askEngine()
+    }
+
+    /// ⌘T's field with Arc-style tab popup on: the open tabs, then the pins,
+    /// that answer to what is typed go above the places a new tab would go,
+    /// and the first of them is picked as you type, so Return goes to the
+    /// page you have rather than opening it again: an open tab, else a pin,
+    /// else, with none, the place from history the field completes to. The
+    /// field keeps what was typed; the rest of the tab's address follows
+    /// it in grey when what was typed starts it. A command on top keeps
+    /// Return, as it does everywhere else.
+    private func offerTabs() {
+        let found = tabOffers(for: typed)
+        guard !found.isEmpty else { return }
+        let shown = Set(found.map { History.identity(for: $0.url) })
+        let rest = offers.filter { $0.kind.isCommand || !shown.contains(History.identity(for: $0.url)) }
+        let command = rest.first.map(\.kind.isCommand) ?? false
+        offers = command ? [rest[0]] + found + rest.dropFirst() : found + rest
+        guard !command, let first = found.first else { return }
+        picked = 0
+        typing.pickedByTyping = true
+        // Grey after the caret only what Return now goes to: the rest of the
+        // tab's address, never history's.
+        let words = typed.trimmingCharacters(in: .whitespaces)
+        let address = Address.pretty(first.url)
+        ending = !words.isEmpty && words == typed && address.lowercased().hasPrefix(words.lowercased()) && address.count > words.count
+            ? String(address.dropFirst(words.count)) : nil
+    }
+
+    /// The open tabs, then the pins, that answer to what is typed, the best
+    /// answer first and, between equals, the one looked at last: at most
+    /// three of the one and two of the other, so the list stays short. Not
+    /// the tab the field was raised over, which is already in front.
+    func tabOffers(for typed: String) -> [Suggestion] {
+        let whole = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        let words = whole.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return [] }
+        let front = activeID
+        let candidates: [Tab] = tabs.filter { $0.id != front && !$0.isBlank && !$0.bench }
+        let scored: [(tab: Tab, score: Int)] = candidates.map { tab in
+            (tab: tab, score: Browser.relevance(of: tab, to: words, whole: whole))
+        }
+        let ranked = scored.filter { $0.score > 0 }.sorted { a, b in
+            if a.score != b.score { return a.score > b.score }
+            return a.tab.touched > b.tab.touched
+        }
+        let matching: [Tab] = ranked.map(\.tab)
+        let open = matching.filter { $0.pin == nil }.prefix(3)
+        let pins = matching.filter { $0.pin != nil }.prefix(2)
+        return (open + pins).compactMap { tab in
+            guard let url = tab.address else { return nil }
+            return Suggestion(key: tab.label, title: Address.pretty(url), url: url, kind: .open, tab: tab.id, pinned: tab.pin != nil)
+        }
+    }
+
+    /// How well what is typed names a tab: 3 when its name or address starts
+    /// with it, 2 when every word typed starts a word of the name or a part
+    /// of the address, 1 when every word is somewhere in them, 0 not at all.
+    /// One letter counts only at the start of a word, or "e" would name
+    /// every tab there is.
+    static func relevance(of tab: Tab, to words: [String], whole: String) -> Int {
+        let name = tab.label.lowercased()
+        let address = tab.address.map { Address.pretty($0).lowercased() } ?? ""
+        if name.hasPrefix(whole) || address.hasPrefix(whole) { return 3 }
+        let text = name + " " + address
+        let parts = text.split { !$0.isLetter && !$0.isNumber }
+        if words.allSatisfy({ word in parts.contains { $0.hasPrefix(word) } }) { return 2 }
+        if whole.count >= 2, words.allSatisfy({ text.contains($0) }) { return 1 }
+        return 0
     }
 
     // MARK: - the engine's suggestions
@@ -7624,6 +7697,9 @@ final class Browser: NSObject, ObservableObject {
     /// The arrow keys walk the list, and walking off the top lets go of it.
     func walk(_ step: Int) {
         guard !offers.isEmpty else { return }
+        // A tab picked by what was typed, let go of: its address goes from
+        // the grey ending too, so Return opens what was typed.
+        if typing.pickedByTyping, picked == 0, step < 0 { ending = nil }
         switch picked {
         case nil:
             picked = step > 0 ? 0 : offers.count - 1
