@@ -59,6 +59,31 @@ if (parent !== window) setTimeout(function () { parent.postMessage(window.__yt, 
 </script>"""
 
 
+# An answer YouTube sends an account it enforces on: OK, with the wall
+# dormant beside it. The page then writes the wall over it, as YouTube's
+# own code does once one of its blocker tests fails.
+WALLED = dict(PLAYER, auxiliaryUi={"messageRenderers": {"bkaEnforcementMessageViewModel": {"signed": "x"}}})
+WALL_REPORT = """
+<script>
+var p = window.ytInitialPlayerResponse;
+p.playabilityStatus = { status: 'ERROR', errorScreen: { enforcementMessageViewModel: {} } };
+p.videoDetails = undefined;
+window.__wall = { status: p.playabilityStatus.status, video: p.videoDetails && p.videoDetails.videoId };
+// Another status is still taken as written.
+var q = JSON.parse(JSON.stringify(window.ytInitialPlayerResponse === p ? %s : {}));
+q.playabilityStatus = { status: 'LOGIN_REQUIRED' };
+window.__wall.other = q.playabilityStatus.status;
+// YouTube's blocker tests: the ad id and an ad report, answered in the page.
+fetch('https://www.youtube.com/ptracking?cpn=fixture').then(function (r) { return r.text().then(function (t) { window.__wall.fetch = r.status + ':' + t.length; }); },
+  function () { window.__wall.fetch = 'failed'; });
+var x = new XMLHttpRequest();
+x.onload = function () { window.__wall.xhr = x.status + ':' + x.responseText.length; };
+x.onerror = function () { window.__wall.xhr = 'failed'; };
+x.open('GET', 'https://googleads.g.doubleclick.net/pagead/id'); x.send();
+window.__wall.beacon = navigator.sendBeacon('https://www.youtube.com/api/stats/ads?ad=1', '');
+</script>""" % json.dumps(WALLED)
+
+
 class H(BaseHTTPRequestHandler):
     def reply(self, body, kind="text/html"):
         body = body.encode()
@@ -71,6 +96,8 @@ class H(BaseHTTPRequestHandler):
             # ?noads: a first answer with no ad schedule in it.
             first = {k: v for k, v in PLAYER.items() if k not in ADS} if "noads" in self.path else PLAYER
             self.reply(f"<!doctype html><title>watch</title><script>var ytInitialPlayerResponse = {json.dumps(first)};</script>{REPORT}")
+        elif self.path == "/walled":
+            self.reply(f"<!doctype html><title>walled</title><script>var ytInitialPlayerResponse = {json.dumps(WALLED)};</script>{WALL_REPORT}")
         elif self.path == "/embedder":
             # Another site framing YouTube's player, as an embed does.
             self.reply(f"""<!doctype html><title>embedder</title>
@@ -155,6 +182,14 @@ try:
                    ready=lambda v: v and "json" in v and "text" in v)
     t.ok("YouTube's player framed in another site: ads out in the frame", framed.get("json") == CLEAN
          and framed.get("inline") == CLEAN, framed)
+    wall = visit(f"http://127.0.0.1:{PORT}/walled", read="window.__wall",
+                 ready=lambda v: v and "fetch" in v and "xhr" in v)
+    t.ok("the wall written over an OK answer: the answer stays OK", wall.get("status") == "OK", wall)
+    t.ok("…and keeps its video", wall.get("video") == "fixture", wall)
+    t.ok("…any other status is taken as written", wall.get("other") == "LOGIN_REQUIRED", wall)
+    t.ok("YouTube's ad report through fetch: answered in the page, empty", wall.get("fetch") == "200:0", wall)
+    t.ok("Google's ad id through XMLHttpRequest: answered in the page, empty", wall.get("xhr") == "200:0", wall)
+    t.ok("an ad beacon: taken, nothing sent", wall.get("beacon") is True, wall)
     t.ok("no window on a screen", visible_windows() == 0)
     sv.quit()
 

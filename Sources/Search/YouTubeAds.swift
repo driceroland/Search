@@ -30,12 +30,14 @@ import WebKit
 // documented; no code is taken from another blocker.
 //
 // What the page-world script can reach, for Security: only the page's own
-// JSON.parse, Response.prototype.json and two window properties
+// JSON.parse, Response.prototype.json, fetch, XMLHttpRequest's open and
+// send, navigator.sendBeacon and two window properties
 // (ytInitialPlayerResponse, ytInitialData), all of which the page itself can
 // already rewrite, and the player's own loadVideoById, which the page calls
 // itself whenever a video is opened. It carries no handler, no message, no
-// Search name or global, sends nothing anywhere and runs nothing it is given
-// (no eval, no Function). A WKUserScript is injected by WebKit, so a page's CSP doesn't
+// Search name or global, sends nothing anywhere (the requests it answers are
+// the ones Shield would have blocked) and runs nothing it is given (no eval,
+// no Function). A WKUserScript is injected by WebKit, so a page's CSP doesn't
 // apply to it and needs no exception. Its source is visible through
 // toString(), as LiveRate's and the passkeys patch are: never hidden.
 //
@@ -44,6 +46,21 @@ import WebKit
 // `ad-showing`, the video is muted and played at 16×, and its sound and speed
 // are put back the moment the ad is over. It never seeks: an ad stitched into
 // the video itself would make a jump to "the end" the end of the video.
+//
+// YouTube also tests, on every watch page, whether a blocker is there: did
+// static.doubleclick.net's ad_status.js run (it sets google_ad_status), did
+// the ad id request and the ad reports go through. Shield's list blocks all
+// three, and for an account YouTube enforces on, a failed test writes its
+// wall ("Ad blockers violate YouTube's Terms of Service") over a player
+// answer that said OK (#1320). So the tests are passed where it costs
+// nothing: ad_status.js, one line setting a flag, is let through on
+// YouTube's pages; the ad id and ad reports that Shield blocks are answered
+// in the page with an empty 200 before they leave, so nothing is sent and
+// nothing fails. And an answer that carries the wall dormant
+// (auxiliaryUi.messageRenderers.bkaEnforcementMessageViewModel) keeps its
+// playabilityStatus and videoDetails when the wall is written over them:
+// the wall's fields are signed, so taking it out or changing it gives
+// "Something went wrong" instead.
 //
 // Both go into a tab only while Shield is on and not paused for the site the
 // tab is on (Settings' "Block on youtube.com" turns them off there), and each
@@ -106,10 +123,35 @@ enum YouTubeAds {
             for (var i = 0; i < ads.length; i++) if (apply(owns, o, [ads[i]])) { delete o[ads[i]]; cut = true; }
             return cut;
           }
+          // The wall, written over an answer that said OK: the answer keeps
+          // its status and its video. Any other status is taken as written.
+          var wall = 'bkaEnforcementMessageViewModel';
+          function walled(v) {
+            return plain(v) && plain(v.errorScreen) && apply(owns, v.errorScreen, ['enforcementMessageViewModel']);
+          }
+          function hold(o) {
+            var aux = o.auxiliaryUi, shown = plain(aux) && plain(aux.messageRenderers) && aux.messageRenderers;
+            if (!shown || !apply(owns, shown, [wall]) || !apply(owns, o, ['playabilityStatus'])) return;
+            var status = o.playabilityStatus, details = o.videoDetails, refused = false;
+            define(o, 'playabilityStatus', {
+              get: function () { return status; },
+              set: function (v) { if (walled(v)) refused = true; else status = v; },
+              enumerable: true, configurable: true
+            });
+            define(o, 'videoDetails', {
+              get: function () { return details; },
+              set: function (v) { if (v !== undefined || !refused) details = v; },
+              enumerable: true, configurable: true
+            });
+          }
           function one(o) {
             if (!plain(o)) return;
             strip(o);
-            if (apply(owns, o, ['playerResponse'])) strip(o.playerResponse);
+            if (youtubes(o)) hold(o);
+            if (apply(owns, o, ['playerResponse']) && plain(o.playerResponse)) {
+              strip(o.playerResponse);
+              if (youtubes(o.playerResponse)) hold(o.playerResponse);
+            }
           }
           // Whatever happens in here, the page gets back what it asked for.
           function prune(value) {
@@ -139,6 +181,54 @@ enum YouTubeAds {
                 value: ({ json() { return apply(then, apply(json, this, []), [prune]); } }).json,
                 writable: true, enumerable: true, configurable: true
               });
+            }
+          } catch (e) {}
+          // The ad id and the ad reports Shield blocks, answered here with
+          // an empty 200 instead of failing: YouTube counts a failure as a
+          // blocker. Nothing is sent.
+          var tested = \(standInPattern);
+          function answered(u) {
+            try { return tested.test(String(new URL(u, location.href))); } catch (e) { return false; }
+          }
+          try {
+            var fetch = window.fetch;
+            if (typeof fetch === 'function') {
+              window.fetch = ({ fetch(input, init) {
+                var u = typeof input === 'string' || input instanceof URL ? input : input && input.url;
+                if (u && answered(u)) return Promise.resolve(new Response('', { status: 200, statusText: 'OK' }));
+                return apply(fetch, this, arguments);
+              } }).fetch;
+            }
+          } catch (e) {}
+          try {
+            var X = XMLHttpRequest.prototype, open = X.open, send = X.send, asked = new WeakMap();
+            X.open = ({ open(method, u) {
+              if (answered(u)) asked.set(this, String(new URL(u, location.href))); else asked.delete(this);
+              return apply(open, this, arguments);
+            } }).open;
+            X.send = ({ send() {
+              var u = asked.get(this);
+              if (!u) return apply(send, this, arguments);
+              var request = this;
+              define(request, 'readyState', { value: 4 });
+              define(request, 'status', { value: 200 });
+              define(request, 'statusText', { value: 'OK' });
+              define(request, 'responseText', { value: '' });
+              define(request, 'response', { value: '' });
+              define(request, 'responseURL', { value: u });
+              setTimeout(function () {
+                request.dispatchEvent(new Event('readystatechange'));
+                request.dispatchEvent(new ProgressEvent('load'));
+                request.dispatchEvent(new ProgressEvent('loadend'));
+              }, 0);
+            } }).send;
+          } catch (e) {}
+          try {
+            var beacon = navigator.sendBeacon;
+            if (typeof beacon === 'function') {
+              navigator.sendBeacon = ({ sendBeacon(u) {
+                return answered(u) ? true : apply(beacon, this, arguments);
+              } }).sendBeacon;
             }
           } catch (e) {}
           // The first page's data is a script's `var ytInitial… = {…}`: a
@@ -240,6 +330,11 @@ enum YouTubeAds {
         "/youtubei/v1/player/ad_break", "/pcs/activeview",
     ]
 
+    /// The requests the page script answers itself: Google's ad id, and
+    /// the ad reports among `paths` and the qoe rule below. Only what Shield
+    /// blocks anyway; the video's own reports go out as before.
+    static let standInPattern = #"/^https?:\/\/(?:googleads\.g\.doubleclick\.net\/pagead\/id|(?:[^\/]+\.)?youtube\.com(?:\/api\/stats\/ads|\/pagead\/|\/ptracking|\/api\/stats\/qoe\?.*adformat=))/"#
+
     static func filter(path: String) -> String {
         "^https?://([^/]+\\.)?youtube\\.com" + path.replacingOccurrences(of: ".", with: "\\.")
     }
@@ -262,6 +357,12 @@ enum YouTubeAds {
                 "action": ["type": "block"],
             ])
         }
+        // YouTube's own blocker test, a one-line script that sets
+        // google_ad_status: let through on YouTube's pages only.
+        rules.append([
+            "trigger": ["url-filter": "^https?://static\\.doubleclick\\.net/instream/ad_status\\.js", "if-domain": youtube],
+            "action": ["type": "ignore-previous-rules"],
+        ])
         return rules
     }
 }
