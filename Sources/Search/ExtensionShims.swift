@@ -5410,10 +5410,16 @@ enum ExtensionShims {
             // The root and the bar answer too: every top-level bookmark names
             // "1" as its parent, and sync extensions such as Floccus walk
             // parentId up with get until a node has none.
-            return keys.compactMap { key in
+            // An id that names nothing is an error, as in Chrome, not an empty
+            // answer: Floccus asks for Firefox's "root________" and falls back
+            // to getTree only when that fails.
+            return try keys.map { key in
                 if key == "0" { return root(browser.bookmarks.roots, deep: false) }
                 if key == "1" { return bar(browser.bookmarks.roots, deep: false) }
-                return find(key, in: browser.bookmarks.roots).map { node($0.node, parent: $0.parent, index: $0.index, deep: false) }
+                guard let hit = find(key, in: browser.bookmarks.roots) else {
+                    throw Unsupported(what: "Can't find bookmark for id.")
+                }
+                return node(hit.node, parent: hit.parent, index: hit.index, deep: false)
             }
         case "bookmarks.getRecent":
             let count = (first as? Int) ?? 10
