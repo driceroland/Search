@@ -21,6 +21,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Pulling the column's edge resizes the page beside it as you go, as a window's edge does, instead of all at once when you let go. With the tabs on the right and Glass on, the column's titles no longer show over the page while you pull.
+- The column's edge shows the left-right arrows whenever the pointer is on it, and keeps them until you let go, where it often showed the plain pointer; and it is easier to take, 20 points wide instead of 9.
 - A security key (a YubiKey, say) works with Settings › Passwords › Offer passkeys off. The switch refused every request for one at once, "The operation either timed out or was not allowed.", before any sheet. Off now means what it says, no passkeys from the Mac, iCloud or a phone: a sign-in that names a key over USB, NFC or Bluetooth, or a key being added as one, brings up the Mac's sheet for the security key alone, and everything else still goes straight on to the password. `python3 Tests/security_key_passkeys_off.py` (idea 846)
 - The rows the column keeps out of sight for a swipe between spaces are hidden until a swipe brings them, not only moved aside. Since 1.0.16 they lay under the page still drawn, so whatever moved in them went on moving there too: a tab loading turned a second ring the whole time it loaded, and the window was drawn again for it at every frame. `python3 Tests/idle_animations.py`
 - Reddit's promoted posts, in the feed, under a post before its comments and in the sidebar, are hidden by the ad blocker, on reddit.com only; switching the blocker off, or off for reddit.com, brings them back.

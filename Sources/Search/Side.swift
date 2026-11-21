@@ -388,30 +388,26 @@ struct SideBar: View {
             .offset(x: onFrame ? 0 : onRight ? -4 : 4)
             .frame(width: 9)
             .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .onHover { over in
-                onEdge = over
-                if over { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        if grabbed == nil { grabbed = prefs.columnWidth }
-                        let delta = onRight ? -value.translation.width : value.translation.width
-                        let wanted = (grabbed ?? prefs.columnWidth) + delta
-                        live = min(Metrics.sideMax, max(Metrics.sideMin, wanted))
-                        onDrag(live)
-                    }
-                    .onEnded { _ in
-                        if let live { prefs.sideWidth = live }
-                        live = nil
-                        grabbed = nil
-                        onDrag(nil)
-                    }
-            )
-            .modifier(OneClick(double: true) {
-                withAnimation(Motion.settle) { prefs.sideWidth = Metrics.side }
-            })
+            // Taken in AppKit, as a window's edge is, so the arrows show over
+            // it: under SwiftUI's own hits the pointer was the plain one.
+            .overlay(EdgeHandle(
+                hover: { onEdge = $0 },
+                moved: { dx in
+                    if grabbed == nil { grabbed = prefs.columnWidth }
+                    let wanted = (grabbed ?? prefs.columnWidth) + (onRight ? -dx : dx)
+                    live = min(Metrics.sideMax, max(Metrics.sideMin, wanted))
+                    onDrag(live)
+                },
+                ended: {
+                    if let live { prefs.sideWidth = live }
+                    live = nil
+                    grabbed = nil
+                    onDrag(nil)
+                },
+                twice: { withAnimation(Motion.settle) { prefs.sideWidth = Metrics.side } })
+                // Wider than the grip, out over the page too: an edge that
+                // takes aiming at is one missed.
+                .frame(width: 20))
             .animation(Motion.quick, value: onEdge)
     }
 
@@ -2519,4 +2515,61 @@ private struct Rise: GeometryEffect {
     func effectValue(size: CGSize) -> ProjectionTransform {
         ProjectionTransform(CGAffineTransform(translationX: 0, y: y))
     }
+}
+
+/// An edge that can be pulled: the left-right arrows over it, as AppKit
+/// gives a window's edge, and the pull itself, as how far the pointer has
+/// gone across since it was pressed. Held, the arrows stay wherever the
+/// pointer goes until it is let go.
+struct EdgeHandle: NSViewRepresentable {
+    let hover: (Bool) -> Void
+    let moved: (CGFloat) -> Void
+    let ended: () -> Void
+    let twice: () -> Void
+
+    final class Edge: NSView {
+        var handle: EdgeHandle?
+        private var start: CGFloat?
+
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+                                           owner: self, userInfo: nil))
+        }
+
+        override func cursorUpdate(with event: NSEvent) { NSCursor.resizeLeftRight.set() }
+        override func mouseEntered(with event: NSEvent) { handle?.hover(true) }
+        override func mouseExited(with event: NSEvent) { if start == nil { handle?.hover(false) } }
+
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 2 { handle?.twice(); return }
+            start = NSEvent.mouseLocation.x
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard let start else { return }
+            NSCursor.resizeLeftRight.set()
+            handle?.moved(NSEvent.mouseLocation.x - start)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            guard start != nil else { return }
+            start = nil
+            handle?.ended()
+            if !bounds.contains(convert(event.locationInWindow, from: nil)) { handle?.hover(false) }
+        }
+    }
+
+    func makeNSView(context: Context) -> Edge {
+        let view = Edge()
+        view.handle = self
+        return view
+    }
+
+    func updateNSView(_ view: Edge, context: Context) { view.handle = self }
 }

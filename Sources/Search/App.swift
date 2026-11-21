@@ -771,17 +771,13 @@ struct ContentView: View {
     /// A column being dragged wider or narrower is followed as it goes.
     private func make(room new: CGSize, after old: CGSize) {
         let now = roomed
-        // The column's edge held: the page slides with it rather than being
-        // laid out again at every width it goes through. Wider, it runs on
-        // past the window's far edge; narrower, it is resized only every 40
-        // points, each time with that much to spare. Let go, it is resized
-        // once, to its room (below).
+        // The column's edge held: the page is resized with it as it goes, as
+        // a window is while its edge is pulled, so nothing snaps on letting go.
         if edges.side != nil, new.height == now.height, new.width > Metrics.cardGap {
             roomTicket += 1
-            guard new.width < now.width else { return }
             var still = Transaction()
             still.disablesAnimations = true
-            withTransaction(still) { room = CGSize(width: max(Metrics.sideMin, new.width - 40), height: new.height) }
+            withTransaction(still) { room = new }
             return
         }
         // Given already, with the chrome itself (see `immersing`).
