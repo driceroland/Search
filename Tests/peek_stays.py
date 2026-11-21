@@ -265,13 +265,17 @@ try:
     sv.sp("closeTab", id=grouped); time.sleep(0.4)
     t.ok("groups: its tab put away, the hidden peek goes", not peeked(probe()), probe()["peekFrom"])
 
-    # Kept from the other page of a pair, beside (⌥⌘↩): paired with the
-    # page it came from, not the one in front.
+    # Kept from the other page of a pair, beside (⌥⌘↩): beside the page it
+    # came from, not the one in front. A split with room takes it in as a
+    # third page (Browser.pair joins), right of the page it came from.
     left, right = pair_and_a_peek()
     sv.sp("focus", id=left); time.sleep(0.4)
     sv.cmd({"do": "ui", "peeklink": "beside"}); time.sleep(0.6)
     pairs = sv.sp("state")["splits"]
-    t.ok("kept beside: paired with the page it came from", any(right in p["tabs"] and left not in p["tabs"] for p in pairs), pairs)
+    def beside_right(p):
+        row = p["tabs"]
+        return right in row and row.index(right) + 1 < len(row) and row[row.index(right) + 1] not in (left, right)
+    t.ok("kept beside: right of the page it came from", any(beside_right(p) for p in pairs), pairs)
 finally:
     t.done(); sv.finish()
 sys.exit(1 if t.failed else 0)
