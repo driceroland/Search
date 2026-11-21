@@ -147,16 +147,36 @@ enum Veiling {
             .replacingOccurrences(of: "$", with: "\\$")
         return """
         (function () {
-          var sheet = document.getElementById('office-veil');
-          if (!sheet) {
-            sheet = document.createElement('style');
-            sheet.id = 'office-veil';
-            (document.head || document.documentElement).appendChild(sheet);
-          }
-          sheet.textContent = `\(escaped)`;
+          \(sheets)
+          window.__officeSheet('office-veil', `\(escaped)`);
         })();
         """
     }
+
+    /// Puts `css` in the sheet named `id`, made the first time. A sheet
+    /// made by script and adopted by the document, not a <style> element:
+    /// a site whose Content-Security-Policy limits styles (style-src) turned
+    /// the element away, and everything Hide Elements took off stayed on the
+    /// page (#1270). The element is kept only for a WebKit without them.
+    static let sheets = """
+    if (!window.__officeSheet) window.__officeSheet = function (id, css) {
+      var all = window.__officeSheets || (window.__officeSheets = {});
+      try {
+        var made = all[id] || (all[id] = new CSSStyleSheet());
+        made.replaceSync(css);
+        var adopted = document.adoptedStyleSheets;
+        if (adopted.indexOf(made) < 0) document.adoptedStyleSheets = adopted.concat([made]);
+        return;
+      } catch (e) {}
+      var s = document.getElementById(id);
+      if (!s) {
+        s = document.createElement('style');
+        s.id = id;
+        (document.head || document.documentElement).appendChild(s);
+      }
+      s.textContent = css;
+    };
+    """
 
     /// The pointing mode. Loaded on every page but asleep: it costs one closure
     /// and a few functions until somebody actually asks for it.
@@ -165,15 +185,7 @@ enum Veiling {
       if (window.__officeVeil) return;
       var frame = null, tag = null, target = null, live = false;
 
-      function sheet(id) {
-        var s = document.getElementById(id);
-        if (!s) {
-          s = document.createElement('style');
-          s.id = id;
-          (document.head || document.documentElement).appendChild(s);
-        }
-        return s;
-      }
+      \(sheets)
 
       function chrome() {
         if (frame) return frame;
@@ -361,17 +373,17 @@ enum Veiling {
         // fighting it with another rule, so the element comes back with the
         // layout it actually had.
         peek: function (css, sel) {
-          sheet('office-veil').textContent = css;
-          sheet('office-peek').textContent = sel +
-            ' { outline: 2px solid rgba(23,23,23,.9) !important; outline-offset: 2px !important; }';
+          window.__officeSheet('office-veil', css);
+          window.__officeSheet('office-peek', sel +
+            ' { outline: 2px solid rgba(23,23,23,.9) !important; outline-offset: 2px !important; }');
           try {
             var el = document.querySelector(sel);
             if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
           } catch (e) {}
         },
         unpeek: function (css) {
-          sheet('office-veil').textContent = css;
-          sheet('office-peek').textContent = '';
+          window.__officeSheet('office-veil', css);
+          window.__officeSheet('office-peek', '');
         }
       };
     })();
