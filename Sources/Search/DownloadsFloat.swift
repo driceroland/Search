@@ -48,6 +48,10 @@ enum DownloadsFloat {
         // card's smallest.
         panel.hasShadow = false
         panel.becomesKeyOnlyIfNeeded = true
+        // The window's frame is moved by place() alone, once, animated:
+        // the hosting view must not also resize it to the card's ideal size
+        // as the list changes, which made the two fight.
+        host.sizingOptions = []
         panel.hidesOnDeactivate = true
         panel.appearance = window.appearance
         self.panel = panel
@@ -57,7 +61,7 @@ enum DownloadsFloat {
         // A download coming in or the list cleared: the card's height
         // follows. Published before the change, so measured after it.
         let relayout: (Any) -> Void = { _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { if self.presence === presence { place() } } }
+            DispatchQueue.main.async { MainActor.assumeIsolated { if self.presence === presence { place(animated: true) } } }
         }
         listening = [browser.loot.$kept.dropFirst().sink(receiveValue: relayout),
                      browser.fetches.$entries.dropFirst().sink(receiveValue: relayout)]
@@ -154,8 +158,13 @@ enum DownloadsFloat {
     /// and edge off flat on that side: its left, beside the column.
     static let margin: CGFloat = 24
 
+    /// What the card keeps from its button, which is also the window's margin
+    /// on that side: the card's shadow (radius 9, which reaches about 17 points) fades out inside it.
+    /// At the column's 8 points it was cut off flat at the window's edge.
+    static let nearGap: CGFloat = 18
+
     static func insets(_ edge: Edge) -> EdgeInsets {
-        let near = Metrics.cardGap
+        let near = nearGap
         return EdgeInsets(top: edge == .bottom ? near : margin, leading: edge == .trailing ? near : margin,
                           bottom: edge == .top ? near : margin, trailing: edge == .leading ? near : margin)
     }
@@ -167,7 +176,7 @@ enum DownloadsFloat {
     /// inside the window and its screen, and never over the button: short
     /// of room on the button's side, it is smaller rather than pushed back
     /// onto it.
-    private static func place() {
+    private static func place(animated: Bool = false) {
         guard let panel, let anchor, let window = anchor.window, let owner else { return }
         let gap = Metrics.cardGap
         let button = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
@@ -178,7 +187,23 @@ enum DownloadsFloat {
                             windowHeight: windowHeight)
         let spot = layout(edge: edge, button: button, room: room, width: owner.prefs.sidePanelWidth,
                           windowHeight: windowHeight, content: height(of: owner, width: widest.card.width))
-        panel.setFrame(spot.window, display: true)
+        move(panel, to: spot.window, animated: animated)
+    }
+
+    /// One animation of the window's frame, by Core Animation, while the
+    /// card inside only follows the window's size: its content has no
+    /// animation of its own to compete with it (a height animated by
+    /// SwiftUI and a frame set every pass together was the jank).
+    static func move(_ panel: NSWindow, to frame: NSRect, animated: Bool) {
+        guard animated, !Motion.reduced, panel.isVisible, panel.frame != frame else {
+            panel.setFrame(frame, display: true)
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Motion.light ? 0.16 : 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(frame, display: true)
+        }
     }
 
     /// How tall the card would be to show all it lists, at `width`.
@@ -196,7 +221,7 @@ enum DownloadsFloat {
     /// may be).
     static func layout(edge: Edge, button: NSRect, room: NSRect, width asked: CGFloat,
                        windowHeight: CGFloat, content: CGFloat? = nil) -> (card: NSRect, window: NSRect) {
-        let gap = Metrics.cardGap
+        let gap = nearGap
         let least: CGFloat = 120
         var width = min(asked, max(240, room.width))
         // As tall as what it lists, up to half the window; at most, enough

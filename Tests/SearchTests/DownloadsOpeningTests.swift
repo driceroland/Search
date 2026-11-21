@@ -130,7 +130,7 @@ final class DownloadsOpeningTests: XCTestCase {
         XCTAssertEqual(card(40).height, 120, "never less than its title and a line")
         XCTAssertEqual(card(150).width, 380)
         XCTAssertEqual(card(150).maxX, button.maxX, "its right edge with the button's")
-        XCTAssertEqual(card(150).maxY, button.minY - Metrics.cardGap, "hanging from under the button")
+        XCTAssertEqual(card(150).maxY, button.minY - DownloadsFloat.nearGap, "hanging from under the button")
     }
 
     /// Its shadow and edge have room on every side, the button's too: with
@@ -164,5 +164,64 @@ final class DownloadsOpeningTests: XCTestCase {
         XCTAssertGreaterThan(empty, 60)
         XCTAssertLessThan(empty, 170, "an empty list is a short card")
         XCTAssertGreaterThan(three, empty + 150, "three downloads, three rows taller")
+    }
+
+    /// The card's shadow fades out inside its window on every side, the
+    /// button's too (idea 897): the pixels along the window's four edges, in
+    /// the real content drawn at the real window size, are clear.
+    func testTheShadowFitsItsWindowOnEverySide() throws {
+        let browser = Browser(record: WindowRecord())
+        defer { browser.closeAll() }
+        let room = NSRect(x: 8, y: 8, width: 1164, height: 764)
+        let button = NSRect(x: 600, y: 300, width: 26, height: 26)
+        for edge in [Edge.bottom, .top, .trailing, .leading] {
+            let spot = DownloadsFloat.layout(edge: edge, button: button, room: room, width: 380,
+                                             windowHeight: 780, content: 200)
+            let presence = DownloadsFloat.Presence()
+            presence.shown = true
+            let host = NSHostingView(rootView: DownloadsFloat.content(browser, edge: edge, presence: presence))
+            host.appearance = NSAppearance(named: .aqua)
+            host.frame = CGRect(origin: .zero, size: spot.window.size)
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            let rep = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: rep)
+            var worst: CGFloat = 0
+            let w = rep.pixelsWide, h = rep.pixelsHigh
+            for x in 0..<w { for y in [0, h - 1] { worst = max(worst, rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) } }
+            for y in 0..<h { for x in [0, w - 1] { worst = max(worst, rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) } }
+            XCTAssertLessThan(worst, 0.01, "the shadow reaches the window's edge: \(edge)")
+            if let folder = ProcessInfo.processInfo.environment["SEARCH_DOWNLOADS_SHOTS"] {
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: folder).appendingPathComponent("float-\(edge).png"))
+            }
+        }
+    }
+
+    /// The window's height changes as one animation: many frames, each a
+    /// small step, ending where asked (idea 897). Staged far off every
+    /// screen, never in front of anything.
+    func testTheWindowResizesInSmallSteps() async throws {
+        let panel = NSPanel(contentRect: NSRect(x: -30000, y: -30000, width: 380, height: 150),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.orderFront(nil)
+        defer { panel.orderOut(nil) }
+        var stamps: [(TimeInterval, CGFloat)] = []
+        let token = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: panel,
+                                                           queue: .main) { _ in
+            stamps.append((ProcessInfo.processInfo.systemUptime, panel.frame.height))
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        let target = NSRect(x: -30000, y: -30000, width: 380, height: 390)
+        DownloadsFloat.move(panel, to: target, animated: true)
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(panel.frame.height, 390, accuracy: 0.5)
+        let heights = stamps.map(\.1)
+        let gaps = zip(stamps, stamps.dropFirst()).map { $1.0 - $0.0 }
+        print("downloads float resize: \(stamps.count) frames, biggest step \((zip(heights, heights.dropFirst()).map { abs($1 - $0) }.max() ?? 0)), longest gap \((gaps.max() ?? 0) * 1000) ms")
+        XCTAssertGreaterThan(stamps.count, 8, "one smooth animation, not a jump")
+        XCTAssertLessThan(zip(heights, heights.dropFirst()).map { abs($1 - $0) }.max() ?? 0, 60)
     }
 }
