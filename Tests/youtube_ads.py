@@ -12,7 +12,8 @@ The stand-in page does what YouTube's does: its player data arrives as an
 inline `var ytInitialPlayerResponse = {…}`, then from /youtubei/v1/player
 through fetch, read with json() and with text() + JSON.parse. Each carries
 adPlacements, playerAds, adSlots and adBreakHeartbeatParams beside the
-video's own data.
+video's own data. Its #movie_player stand-in records each loadVideoById,
+the restart a held first video gets once its pre-roll is taken out.
 """
 import json
 import subprocess
@@ -50,6 +51,10 @@ fetch('/youtubei/v1/player', { method: 'POST', body: '{}' }).then(function (r) {
   .then(function (t) { window.__yt.text = keys(JSON.parse(t)); });
 // Somebody else's JSON with the same key names stays as it is.
 window.__yt.own = keys(JSON.parse('{"adSlots":[1],"mine":true}'));
+// The player's own way to open a video, recorded.
+var player = document.createElement('div'); player.id = 'movie_player';
+player.loadVideoById = function (id, at) { (window.__yt.loads = window.__yt.loads || []).push([id, at]); };
+document.documentElement.appendChild(player);
 if (parent !== window) setTimeout(function () { parent.postMessage(window.__yt, '*'); }, 800);
 </script>"""
 
@@ -62,8 +67,10 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         port = self.server.server_port
-        if self.path == "/watch":
-            self.reply(f"<!doctype html><title>watch</title><script>var ytInitialPlayerResponse = {json.dumps(PLAYER)};</script>{REPORT}")
+        if self.path.split("?")[0] == "/watch":
+            # ?noads: a first answer with no ad schedule in it.
+            first = {k: v for k, v in PLAYER.items() if k not in ADS} if "noads" in self.path else PLAYER
+            self.reply(f"<!doctype html><title>watch</title><script>var ytInitialPlayerResponse = {json.dumps(first)};</script>{REPORT}")
         elif self.path == "/embedder":
             # Another site framing YouTube's player, as an embed does.
             self.reply(f"""<!doctype html><title>embedder</title>
@@ -104,6 +111,14 @@ def visit(url, read="window.__yt", ready=lambda v: v and "json" in v and "text" 
     return got or {}
 
 
+def settled(url):
+    """What the page reports two seconds after it loaded: long enough for
+    a restart, which waits for the player, to have happened."""
+    id = sv.cmd({"do": "open", "url": url})["id"]
+    time.sleep(2.5)
+    return sv.ev(id, "window.__yt") or {}
+
+
 def visible_windows():
     """How many of this probe's windows are on a screen: there must never be
     one. Read from the window server, not from the app."""
@@ -127,6 +142,13 @@ try:
     t.ok("/youtubei/v1/player read with text() + JSON.parse: ads out", yt.get("text") == CLEAN, yt)
     t.ok("the player's formats are intact", yt.get("itag") == 18, yt)
     t.ok("another shape with the same key names is left alone", yt.get("own") == "adSlots,mine", yt)
+    t.ok("no video id: no restart", not yt.get("loads"), yt)
+    held = settled(f"http://127.0.0.1:{PORT}/watch?v=fixture&t=1m5s")
+    t.ok("pre-roll taken out: the video started again once, at its t", held.get("loads") == [["fixture", 65]], held)
+    clean = settled(f"http://127.0.0.1:{PORT}/watch?v=fixture&noads=1")
+    t.ok("no ads in the first answer: no restart", not clean.get("loads"), clean)
+    listed = settled(f"http://127.0.0.1:{PORT}/watch?v=fixture&list=PL1")
+    t.ok("a playlist: no restart", not listed.get("loads"), listed)
     other = visit(f"http://localhost:{PORT}/watch")
     t.ok("another site: untouched", other.get("inline") == FULL and other.get("json") == FULL, other)
     framed = visit(f"http://localhost:{PORT}/embedder", read="window.__frame",
