@@ -28,7 +28,8 @@ struct Page: View {
             // gets one is no longer blank, so the wall goes with the load.
             // Split panes draw their layers through here too.
             if tab.isBlank, prefs.homeTheme != .off {
-                HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage)
+                HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage,
+                               shuffle: prefs.homeShuffle)
             }
             // A tab put down with ⌘W has no view, and asking for one here
             // would build an empty one a frame before the stage moves on.

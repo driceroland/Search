@@ -205,6 +205,10 @@ final class Preferences: ObservableObject {
     @Published var homeTuning: HomeTuning {
         didSet { store.set(homeTuning.text, forKey: "home.tuning") }
     }
+    /// A different wall or sticker pack each day, from the chosen family.
+    @Published var homeShuffle: Bool {
+        didSet { store.set(homeShuffle, forKey: "home.shuffle") }
+    }
     /// Where the chosen picture's copy lives, for the image theme.
     @Published var homeThemeImage: String? {
         didSet {
@@ -1083,8 +1087,9 @@ final class Preferences: ObservableObject {
         }
         let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .system
         look = chosen
-        homeTheme = store.string(forKey: "home.theme").flatMap(HomeTheme.init) ?? .off
+        homeTheme = store.string(forKey: "home.theme").flatMap(HomeTheme.stored) ?? .off
         homeThemeImage = store.string(forKey: "home.theme.image")
+        homeShuffle = store.bool(forKey: "home.shuffle")
         homeTuning = HomeTuning.read(store.string(forKey: "home.tuning")) ?? HomeTuning()
         // Before the first window, and not deferred: the window that is about
         // to be made should be made in the right appearance. Through `shared`
@@ -1353,8 +1358,9 @@ final class Preferences: ObservableObject {
     /// written back.
     func reread() {
         take(\.look, "look", store.string(forKey: "look").flatMap(Look.init), or: .system)
-        take(\.homeTheme, "home.theme", store.string(forKey: "home.theme").flatMap(HomeTheme.init), or: .off)
+        take(\.homeTheme, "home.theme", store.string(forKey: "home.theme").flatMap(HomeTheme.stored), or: .off)
         take(\.homeThemeImage, store.string(forKey: "home.theme.image"))
+        take(\.homeShuffle, store.bool(forKey: "home.shuffle"))
         take(\.homeTuning, "home.tuning", HomeTuning.read(store.string(forKey: "home.tuning")), or: HomeTuning())
         take(\.navigationLeft, store.bool(forKey: "toolbar.left"))
         take(\.compactStrip, store.bool(forKey: "tabs.compact"))

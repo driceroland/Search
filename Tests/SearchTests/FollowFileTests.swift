@@ -32,6 +32,8 @@ final class FollowFileTests: XCTestCase {
             // Liquid Glass tab, the bounce, and ⌘1–⌘9 for spaces.
             "slidesColumn", "doorsUp", "cardsInFullScreen", "addressLine", "addressWidth", "glass", "glassGrain",
             "glassClear", "glassStyle", "liquidTabs", "bounces", "spacesOnCommand",
+            // Themes: the empty tab's background is part of the look.
+            "homeTheme", "homeThemeImage", "homeTuning", "homeShuffle",
         ])
     }
 

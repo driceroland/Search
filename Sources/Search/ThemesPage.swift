@@ -18,6 +18,8 @@ struct ThemesPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            mock
+
             Picker("", selection: Binding(get: { family }, set: choose)) {
                 ForEach(HomeTheme.Family.allCases) { Text($0.title).tag($0) }
             }
@@ -50,9 +52,70 @@ struct ThemesPage: View {
                 image
             }
 
+            if family == .wall || family == .stickers {
+                Toggle("Shuffle: a different one each day", isOn: $prefs.homeShuffle)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+            }
+
             if family != .off && (family != .image || HomeBackground.load(prefs.homeThemeImage) != nil) {
                 sliders
             }
+        }
+    }
+
+    // MARK: - the live preview
+
+    /// The window in small: the tabs where yours are, the address field in
+    /// the middle, and the chosen theme behind it. It is the blank tab's own
+    /// renderer, so it changes when a theme is picked or a slider let go.
+    private var mock: some View {
+        let size = CGSize(width: 480, height: 300)
+        let side = prefs.sidebar
+        let right = prefs.sidePosition == .right
+        return ZStack {
+            Palette.ground
+            if prefs.homeTheme != .off {
+                HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage,
+                               shuffle: prefs.homeShuffle)
+            }
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Palette.ground)
+                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                .overlay(Text("Search or enter address")
+                    .font(.system(size: 11)).foregroundStyle(Palette.muted))
+                .frame(width: 220, height: 30)
+            tabs(side: side, right: right)
+        }
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func tabs(side: Bool, right: Bool) -> some View {
+        let bar = RoundedRectangle(cornerRadius: 3, style: .continuous).fill(Palette.muted.opacity(0.35))
+        if side {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(0..<4, id: \.self) { _ in bar.frame(height: 8) }
+                Spacer()
+            }
+            .padding(10)
+            .frame(width: 70)
+            .frame(maxHeight: .infinity)
+            .background(Palette.ground.opacity(0.55))
+            .frame(maxWidth: .infinity, alignment: right ? .trailing : .leading)
+        } else {
+            HStack(spacing: 6) {
+                ForEach(0..<4, id: \.self) { _ in bar.frame(width: 56, height: 10) }
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .frame(maxWidth: .infinity)
+            .background(Palette.ground.opacity(0.55))
+            .frame(maxHeight: .infinity, alignment: .top)
         }
     }
 
@@ -194,7 +257,7 @@ struct ThemesPage: View {
             ThemeSlider(title: "Intensity", value: prefs.homeTuning.intensity * 100, range: 0...100, unit: "%") {
                 prefs.homeTuning.intensity = $0 / 100
             }
-            if prefs.homeTheme == .stickers || prefs.homeTheme == .terrazzo {
+            if prefs.homeTheme == .stickers {
                 ThemeSlider(title: "Density", value: prefs.homeTuning.density * 100, range: 0...100, unit: "%") {
                     prefs.homeTuning.density = $0 / 100
                 }

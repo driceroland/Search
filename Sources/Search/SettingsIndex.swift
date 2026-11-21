@@ -161,8 +161,8 @@ enum SettingsIndex {
         .init(id: "home.theme", group: "themes", icon: "photo.artframe",
               title: "Home background", detail: "Paint the blank tab: a wall, stickers, a colour, a gradient or your own picture",
               more: "Off by default. Drawn once and kept, so it costs nothing while you browse, and only the blank tab shows it. A picture you choose is copied inside Search; nothing leaves your Mac.",
-              keys: ["home.theme", "home.theme.image", "home.tuning"],
-              words: ["themes", "wallpaper", "background", "mural", "fresco", "stickers", "gradient", "colour", "color", "new tab", "image"],
+              keys: ["home.theme", "home.theme.image", "home.tuning", "home.shuffle"],
+              words: ["themes", "wallpaper", "background", "mural", "painting", "scenery", "shuffle", "stickers", "gradient", "colour", "color", "new tab", "image"],
               kind: .wide),
 
         // Appearance
