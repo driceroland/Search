@@ -7,7 +7,7 @@ uses the split suite's harness in a world of its own (peek-keep-keys): started
 hidden, everything removed afterwards.
 
 ⌘O and ⌘Return both put the peek's page in the row, beside the tab it was
-opened from, and in front. Plain O, or ⌘⇧O, leaves the peek where it is.
+opened from, and in front. ⌘⇧O leaves the peek where it is.
 """
 import sys
 import time
