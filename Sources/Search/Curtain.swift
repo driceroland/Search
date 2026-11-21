@@ -76,8 +76,20 @@ final class Curtain: ObservableObject {
     func css(on host: String?, without spared: String? = nil) -> String {
         veils(on: host)
             .filter { $0.selector != spared }
-            .map { "\($0.selector) { display: none !important; }" }
+            .map { Curtain.rule($0.selector) }
             .joined(separator: "\n")
+    }
+
+    /// One thing taken off. A page that wants its banner seen says so with
+    /// `!important` too, and the more particular of two such rules wins:
+    /// `#consent #banner { display: block !important }` kept `#banner` on
+    /// screen while the list said it was hidden (#1270). Three ids no
+    /// element has lift this rule above any a page is likely to write; only
+    /// a page's own `style="… !important"` still outranks it. `:is()` keeps
+    /// what you picked whole, and one it can't read matches nothing rather
+    /// than taking the rule down.
+    nonisolated static func rule(_ selector: String) -> String {
+        ":is(\(selector)):not(#office-veiled):not(#office-veiled):not(#office-veiled) { display: none !important; }"
     }
 
     // MARK: - the file
@@ -147,16 +159,40 @@ enum Veiling {
             .replacingOccurrences(of: "$", with: "\\$")
         return """
         (function () {
-          var sheet = document.getElementById('office-veil');
-          if (!sheet) {
-            sheet = document.createElement('style');
-            sheet.id = 'office-veil';
-            (document.head || document.documentElement).appendChild(sheet);
-          }
-          sheet.textContent = `\(escaped)`;
+          \(wear)
+          wear(`\(escaped)`);
         })();
         """
     }
+
+    /// The stylesheet, worn. A `<style>` element first, by the name the
+    /// list's peek and Reading Mode know it by. A page whose policy refuses
+    /// inline styles (`style-src` without 'unsafe-inline', or with a nonce)
+    /// leaves that element unread — `sheet` stays null, and everything you
+    /// hid there stayed on screen while Search said it was gone (#1270). A
+    /// constructed sheet isn't the policy's to refuse, so the same rules go
+    /// in one of those as well, from then on — on a page that refused the
+    /// element only: everywhere else `adoptedStyleSheets` stays as the page
+    /// left it.
+    static let wear = """
+    function wear(css) {
+      var s = document.getElementById('office-veil');
+      if (!s) {
+        s = document.createElement('style');
+        s.id = 'office-veil';
+        (document.head || document.documentElement).appendChild(s);
+      }
+      s.textContent = css;
+      try {
+        var built = window.__officeVeilSheet;
+        if (!built && (s.sheet || !css)) return;
+        if (!built) built = window.__officeVeilSheet = new CSSStyleSheet();
+        built.replaceSync(css);
+        var worn = document.adoptedStyleSheets;
+        if (worn.indexOf(built) < 0) document.adoptedStyleSheets = worn.concat([built]);
+      } catch (e) {}
+    }
+    """
 
     /// The pointing mode. Loaded on every page but asleep: it costs one closure
     /// and a few functions until somebody actually asks for it.
@@ -164,6 +200,11 @@ enum Veiling {
     (function () {
       if (window.__officeVeil) return;
       var frame = null, tag = null, target = null, live = false;
+      // What the pointer is over, and the things ↓ steps back into once ↑
+      // has made the outline wider than that.
+      var under = null, trail = [];
+
+      \(wear)
 
       function sheet(id) {
         var s = document.getElementById(id);
@@ -294,8 +335,36 @@ enum Veiling {
         if (!live) return;
         var el = document.elementFromPoint(e.clientX, e.clientY);
         if (!el || el === frame || el === document.documentElement || el === document.body) return;
+        // Still over the same thing: a wider choice made with ↑ stays,
+        // drawn again where it is now.
+        if (el === under && target) return place(target);
+        under = el;
+        trail = [];
         target = el;
         place(el);
+      }
+
+      // ↑ the thing around the one outlined, ↓ back in again. The pointer
+      // lands on what is innermost — the words of a cookie banner, not the
+      // banner — and hiding those left the banner where it was (#1270).
+      function onKey(e) {
+        if (!live || !target || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (e.key === 'ArrowUp') {
+          var up = target.parentElement;
+          if (up && up !== document.body && up !== document.documentElement) {
+            trail.push(target);
+            target = up;
+            place(target);
+          }
+        } else if (e.key === 'ArrowDown') {
+          if (trail.length) {
+            target = trail.pop();
+            place(target);
+          }
+        } else {
+          return;
+        }
+        swallow(e);
       }
 
       // Everything a press can be, swallowed. Real pages act on pointerdown or
@@ -325,11 +394,31 @@ enum Veiling {
           window.webkit.messageHandlers.officeVeil.postMessage({ trouble: String(err) });
         }
         target = null;
+        under = null;
+        trail = [];
         if (frame) frame.style.display = 'none';
       }
 
       var presses = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click',
                      'dblclick', 'contextmenu', 'touchstart'];
+
+      function off() {
+        if (!live) return;
+        live = false;
+        target = null;
+        under = null;
+        trail = [];
+        if (frame) frame.style.display = 'none';
+        document.documentElement.style.cursor = '';
+        document.removeEventListener('mousemove', onMove, true);
+        document.removeEventListener('pointermove', onMove, true);
+        document.removeEventListener('keydown', onKey, true);
+        window.removeEventListener('pagehide', off);
+        presses.forEach(function (kind) {
+          document.removeEventListener(kind, kind === 'pointerdown' ? onPress : swallow, true);
+        });
+        window.webkit.messageHandlers.officeVeil.postMessage({ off: true });
+      }
 
       window.__officeVeil = {
         on: function () {
@@ -339,29 +428,22 @@ enum Veiling {
           document.documentElement.style.cursor = 'crosshair';
           document.addEventListener('mousemove', onMove, true);
           document.addEventListener('pointermove', onMove, true);
+          document.addEventListener('keydown', onKey, true);
+          // The page going away ends the pointing with it. Kept for Back,
+          // it would have come back still swallowing every click, with
+          // Search no longer pointing at anything.
+          window.addEventListener('pagehide', off);
           presses.forEach(function (kind) {
             document.addEventListener(kind, kind === 'pointerdown' ? onPress : swallow, true);
           });
         },
-        off: function () {
-          if (!live) return;
-          live = false;
-          target = null;
-          if (frame) frame.style.display = 'none';
-          document.documentElement.style.cursor = '';
-          document.removeEventListener('mousemove', onMove, true);
-          document.removeEventListener('pointermove', onMove, true);
-          presses.forEach(function (kind) {
-            document.removeEventListener(kind, kind === 'pointerdown' ? onPress : swallow, true);
-          });
-          window.webkit.messageHandlers.officeVeil.postMessage({ off: true });
-        },
+        off: off,
         // Show one hidden thing for as long as the pointer rests on its row.
         // The stylesheet is rebuilt without that one selector rather than
         // fighting it with another rule, so the element comes back with the
         // layout it actually had.
         peek: function (css, sel) {
-          sheet('office-veil').textContent = css;
+          wear(css);
           sheet('office-peek').textContent = sel +
             ' { outline: 2px solid rgba(23,23,23,.9) !important; outline-offset: 2px !important; }';
           try {
@@ -370,7 +452,7 @@ enum Veiling {
           } catch (e) {}
         },
         unpeek: function (css) {
-          sheet('office-veil').textContent = css;
+          wear(css);
           sheet('office-peek').textContent = '';
         }
       };

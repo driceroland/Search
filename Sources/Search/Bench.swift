@@ -4672,6 +4672,8 @@ final class Bench {
             if let text = request["lead"] as? String, let kind = InternalPage.Kind(rawValue: text) { browser.lead(to: InternalPage(kind)) }
             if let text = request["go"] as? String, let url = URL(string: text) { browser.active?.go(to: url) }
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
+            // Hide Elements, on or off, as ⇧⌘H turns it (Browser.toggleHiding).
+            if let on = request["hiding"] as? Bool, on != browser.veiling { browser.toggleHiding() }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
             if let side = request["side"] as? String {
                 guard let position = SidebarPosition(rawValue: side) else {
@@ -5332,6 +5334,9 @@ final class Bench {
             "groupIDs": browser.tabs.map { $0.groupID?.uuidString ?? "" },
             "enabled": browser.prefs.splitView,
             "finding": browser.finding,
+            // Hide Elements pointing, and the last thing Search said.
+            "veiling": browser.veiling,
+            "announced": browser.announcement ?? "",
             "needle": browser.needle,
             "findStatus": browser.findStatus ?? "",
             "pins": browser.tabs.filter { $0.pin != nil }.map { Bench.short($0) },
