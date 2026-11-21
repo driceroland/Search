@@ -31,6 +31,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- Profiles can be put in any order, Personal no longer always first. With Settings › Spaces & Pins › Profiles in one window on, Move Left on a profile's first space, or Move Right on its last, moves the whole profile past the one beside it: the space's menu, ⌃1–⌃9, the swipe and the profiles list follow, and the order is kept. `python3 Tests/profile_order.py` (reported by email)
 - Spaces brought over from Arc (or Zen) take the place of the space you started with when nothing was ever put in it (no pins, no tab but an empty one), as in Arc, instead of leaving an unused "Personal" beside them. A first space with anything in it stays. `python3 Tests/space_arc_replace.py` ([#1326](https://github.com/driceroland/Search/issues/1326))
 
 ### Fixed

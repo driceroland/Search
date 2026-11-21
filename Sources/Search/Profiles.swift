@@ -42,7 +42,8 @@ struct Profile: Codable, Identifiable, Equatable {
 final class Profiles: ObservableObject {
     static let shared = Profiles()
 
-    /// Every profile, Personal first.
+    /// Every profile, in the order the user put them: Personal first
+    /// unless moved (see move). The order is profiles.json's own.
     @Published private(set) var list: [Profile]
 
     private init() { list = Profiles.read() }
@@ -59,7 +60,13 @@ final class Profiles: ObservableObject {
     nonisolated static func read() -> [Profile] {
         let saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Profile].self, from: $0) } ?? []
         let personal = saved.first(where: \.isPersonal).map { Profile(id: Profile.personalID, name: $0.name, home: $0.home) } ?? .personal
-        return [personal] + saved.filter { !$0.isPersonal }
+        let others = saved.filter { !$0.isPersonal }
+        // Where Personal stands in the file is where it was moved to; a file
+        // without it (only ever written by hand) has it first.
+        guard let at = saved.firstIndex(where: \.isPersonal) else { return [personal] + others }
+        var list = others
+        list.insert(personal, at: min(saved[..<at].filter { !$0.isPersonal }.count, list.count))
+        return list
     }
 
     private func write() {
@@ -146,6 +153,14 @@ final class Profiles: ObservableObject {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, let at = list.firstIndex(where: { $0.id == id }) else { return }
         list[at].name = name
+        write()
+    }
+
+    /// One place to the left (-1) or right (1), with its spaces: the order
+    /// of the space's menu, ⌃1–⌃9 and the swipe with profiles in one window.
+    func move(_ id: UUID, by step: Int) {
+        guard let at = list.firstIndex(where: { $0.id == id }), list.indices.contains(at + step) else { return }
+        list.swapAt(at, at + step)
         write()
     }
 
