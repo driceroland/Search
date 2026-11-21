@@ -67,6 +67,8 @@ enum SettingsIndex {
         .init(id: "tablook", page: .appearance, title: "Tabs", icon: "textformat.size"),
         .init(id: "motion", page: .appearance, title: "Motion", icon: "wind"),
 
+        .init(id: "themes", page: .themes, title: "Home background", icon: "photo.artframe"),
+
         .init(id: "newtabs", page: .tabs, title: "New tabs", icon: "plus.square"),
         .init(id: "memory", page: .tabs, title: "Memory", icon: "moon.zzz"),
         .init(id: "tabbar", page: .tabs, title: "In the tab bar", icon: "number"),
@@ -154,6 +156,14 @@ enum SettingsIndex {
               title: "Open Downloads", detail: "From its button, ⇧⌘J and History › Downloads",
               more: "In a tab, as the side panel's card floating by the downloads button, or in the side panel beside the page.",
               keys: ["downloads.open"], words: ["downloads window", "popover", "side panel"]),
+
+        // Themes
+        .init(id: "home.theme", group: "themes", icon: "photo.artframe",
+              title: "Home background", detail: "Paint the blank tab: a wall, stickers, a colour, a gradient or your own picture",
+              more: "Off by default. Drawn once and kept, so it costs nothing while you browse, and only the blank tab shows it. A picture you choose is copied inside Search; nothing leaves your Mac.",
+              keys: ["home.theme", "home.theme.image", "home.tuning", "home.shuffle"],
+              words: ["themes", "wallpaper", "background", "mural", "painting", "scenery", "shuffle", "stickers", "gradient", "colour", "color", "new tab", "image"],
+              kind: .wide),
 
         // Appearance
         .init(id: "look", group: "theme", icon: "circle.lefthalf.filled",

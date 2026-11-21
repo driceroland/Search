@@ -208,6 +208,7 @@ struct WelcomePanel: View {
                 Key("⌘O", "Links from other apps open in a small window; ⌘O keeps one as a tab. Settings › Browsing.")
                 Key("⌘L", "Suggestions from your search engine as you type — off until you turn them on in Settings › Browsing.")
                 Key("⌘", "Held, it can show each tab's number for ⌘1–9. Settings › Tabs.")
+                Key("⌘,", "A painted wall behind the blank tab, if you want one — Settings › Themes. Off until you choose.")
                 Key("⌘1", "Pressed again on its pin, back to where you were.")
                 Key("⇧⌘P", "Float a video in Search's window, or in macOS's picture in picture. Settings › Browsing.")
                 Key("⌃-click", "Claude or ChatGPT in a side panel beside the page: right-click a tab › Open in Side Panel, or View › Side Panel.")
