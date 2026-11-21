@@ -29,6 +29,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Changed
 
 - Right-click one of several tabs picked with ⌘ or ⇧ and the menu lists only what can be done to all of them, and does it to all of them: Move to Group, Pin or Unpin, Move to Space, Open in Split View, Move to Window, Copy Addresses, Mute, Put to Sleep, Close and Close Other Tabs. An action shows only when every picked tab can take it, and moving them to a space with other sign-ins asks once, not once a tab. `swift test --filter TabSelectionTests`. Thanks [@xenonwellz](https://github.com/xenonwellz) ([#1287](https://github.com/driceroland/Search/pull/1287), [#1283](https://github.com/driceroland/Search/issues/1283))
+- Settings › Appearance › Tabs show says what the choice is, "A letter or the site's icon"; where it shows, beside the title and on a pinned square, is behind the (i). The line only said where, and tabs wearing letters were taken for site icons that hadn't loaded. Thanks [@dnhuan](https://github.com/dnhuan) ([#1276](https://github.com/driceroland/Search/pull/1276), [#1271](https://github.com/driceroland/Search/issues/1271))
 
 ### Changed
 
