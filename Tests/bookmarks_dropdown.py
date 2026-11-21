@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The bookmark button's list, sized for the tree, in a hidden probe.
+"""The bookmark button's list, sized for the rows it shows, in a hidden
+probe.
 
 Build first (`./build.sh`), then `python3 Tests/bookmarks_dropdown.py`. A
 tree like one brought in from Dia — one folder of 109 with a folder of 22
@@ -7,9 +8,14 @@ inside it — is taken in from a file, and the list is laid out off every
 screen (bench `dropdown`); no popover or window is opened. The popover
 takes its height once, as it opens, and doesn't grow with a folder opened
 in it: sized by the rows it showed then, one closed folder, the list was a
-row high and the folder opened into a sliver (reported on 1.0.4). Now it is
-as tall as the tree with every folder open, up to 360 points, and a top
-level that is one folder alone opens open, so that height is filled.
+row high and the folder opened into a sliver (reported on 1.0.4). Then it
+was as tall as the tree with every folder open, up to 360 points, which
+left a tall gap above Add This Page with the folders closed (#1309). Now it
+is as tall as the rows it shows, up to 360 points, and the popover follows
+it as a folder opens or closes: checked by the size the list asks its
+popover for, in the controller a popover is given, off every screen (bench
+`dropdown popover`; a hidden probe's window never puts a real one up). A top
+level that is one folder alone opens open.
 """
 import os
 import sys
@@ -69,15 +75,31 @@ def main():
         small = ("Work", [f"https://example.com/w{i}" for i in range(4)] + [("Empty one", [])])
         take([small])
         d = sv.cmd({"do": "dropdown"})
-        t.ok("a small folder: tall enough for it opened, not more", 0 <= d["list"] - d["allOpen"] <= 4 and d["list"] < 360, d)
-        # Only the top folder opens: the empty one inside stays closed, one
-        # "Empty" line short of the list's height for everything open.
-        t.ok("…and alone at the top, it opens open", d["opening"] == 1 and d["closed"] < d["shown"] and d["list"] - d["shown"] <= 30, d)
+        # Only the top folder opens: the empty one inside stays closed, and
+        # the list is as tall as what shows, its "Empty" line left out.
+        t.ok("a small folder: as tall as the rows it shows, no gap", 0 <= d["list"] - d["shown"] <= 4 and d["list"] < d["listAllOpen"], d)
+        t.ok("…and alone at the top, it opens open", d["opening"] == 1 and d["closed"] < d["shown"], d)
 
         sv.setup(sidebar=True); sv.launch()
-        take([("A", ["https://example.com/a1"]), ("B", ["https://example.com/b1"])])
+        a = ("A", [f"https://example.com/a{i}" for i in range(6)])
+        b = ("B", [f"https://example.com/b{i}" for i in range(30)])
+        take([a, b, "https://example.com/loose"])
         d = sv.cmd({"do": "dropdown"})
         t.ok("two folders at the top: both start closed, as before", d["opening"] == 0, d)
+        t.ok("folders closed: the list is their three rows, not the whole tree (#1309)",
+             0 <= d["list"] - d["closed"] <= 4 and d["list"] < 120 and d["listAllOpen"] == 360, d)
+
+        # The size the list asks its popover for follows the rows.
+        shut = sv.cmd({"do": "dropdown", "popover": "open"})
+        t.ok("the list asks its popover for its three rows and its foot", shut["popover"] == d["height"], (shut, d))
+        small_open = sv.cmd({"do": "dropdown", "popover": "A"})
+        t.ok("a folder of six opened: the popover grows by its rows", 6 * 28 - 4 <= small_open["popover"] - shut["popover"] <= 6 * 28 + 4, (shut, small_open))
+        both = sv.cmd({"do": "dropdown", "popover": "B"})
+        t.ok("a folder of thirty opened too: the popover grows to its most and scrolls", both["popover"] - shut["popover"] == 360 - d["list"], (shut, both))
+        sv.cmd({"do": "dropdown", "popover": "A"})
+        again = sv.cmd({"do": "dropdown", "popover": "B"})
+        t.ok("both closed again: the popover is back to its three rows", again["popover"] == shut["popover"], (shut, again))
+        sv.cmd({"do": "dropdown", "popover": "close"})
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 // Bookmarks: folders and sites, kept in a small file.
@@ -1300,6 +1301,9 @@ struct BookmarksDropdown: View {
                     .padding(6)
                 }
                 .frame(height: listHeight)
+                .onReceive(Self.benchToggle) { id in
+                    if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+                }
             }
             Divider().overlay(Palette.hairline)
             VStack(spacing: 1) {
@@ -1314,31 +1318,39 @@ struct BookmarksDropdown: View {
         .popoverGround()
     }
 
-    /// The list as tall as the whole tree would be with every folder open,
-    /// up to 360 points. The popover takes its height once, from what the
-    /// list holds as it opens, and doesn't grow with a folder opened in it:
-    /// a list of one closed folder was one row high, and the folder opened
-    /// into a sliver above Add This Page.
-    var listHeight: CGFloat {
+    /// The list as tall as the rows it shows, up to 360 points: the popover
+    /// follows it, growing as a folder opens and shrinking as one closes.
+    /// It was once sized for the tree with every folder open, which left a
+    /// tall empty gap above Add This Page with them closed (#1309); and
+    /// before that by its rows as it opened, without following them, so a
+    /// folder opened into a sliver.
+    var listHeight: CGFloat { Self.listHeight(bookmarks.roots, open: expanded) }
+
+    static func listHeight(_ roots: [Bookmark], open: Set<Bookmark.ID>?) -> CGFloat {
         let most: CGFloat = 360
         var lines = 0
-        Self.count(bookmarks.roots, into: &lines, upTo: Int(most / Self.line) + 1)
-        return min(most, CGFloat(lines) * Self.line + 12)
+        count(roots, open: open, into: &lines, upTo: Int(most / line) + 1)
+        return min(most, CGFloat(lines) * line + 12)
     }
 
     /// A row's height and the gap under it (see BookmarkOutline.Row).
     private static let line: CGFloat = 28
 
-    /// Every row with every folder open, an empty one's "Empty" included,
-    /// counted only as far as the list can be tall.
-    private static func count(_ nodes: [Bookmark], into lines: inout Int, upTo limit: Int) {
+    /// Every row that shows with the folders in `open` open (every folder,
+    /// for nil), an empty one's "Empty" included, counted only as far as
+    /// the list can be tall.
+    private static func count(_ nodes: [Bookmark], open: Set<Bookmark.ID>?, into lines: inout Int, upTo limit: Int) {
         for node in nodes {
             guard lines < limit else { return }
             lines += 1
-            guard node.isFolder else { continue }
-            if let kids = node.children, !kids.isEmpty { count(kids, into: &lines, upTo: limit) } else { lines += 1 }
+            guard node.isFolder, open?.contains(node.id) ?? true else { continue }
+            if let kids = node.children, !kids.isEmpty { count(kids, open: open, into: &lines, upTo: limit) } else { lines += 1 }
         }
     }
+
+    /// A folder opened or closed in the list by the bench, as a click on
+    /// its row does. Only a test run sends it.
+    static let benchToggle = PassthroughSubject<Bookmark.ID, Never>()
 
     private struct Foot: View {
         let symbol: String?

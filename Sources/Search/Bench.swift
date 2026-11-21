@@ -22,6 +22,9 @@ import WebKit
 
 @MainActor
 final class Bench {
+    /// The bookmark button's list held off screen for `dropdown popover`.
+    static var dropdownHeld: NSViewController?
+
     static let shared = Bench()
     /// The column's edge held at a width by "edgetime", or let go (nil).
     static let edgeHeld = Notification.Name("search.bench.edgeHeld")
@@ -1970,6 +1973,33 @@ final class Bench {
             // The bookmark button's list, laid out off every screen, never in
             // a popover: its height as it opens, the list's part of it, and
             // how tall the tree is with every folder open.
+            // "popover": the list in the controller a popover is given, off
+            // every screen, and the size it asks its popover for (a SwiftUI
+            // popover follows its controller's preferred size); with a
+            // folder's name, that folder opened or closed in it first, as a
+            // click on its row does; "close" lets it go. A hidden probe's
+            // window never puts a real popover up. Only on a SEARCH_PROBE run.
+            if let what = request["popover"] as? String {
+                guard Store.testing else { answer(["error": "dropdown popover only works on a --test run"]); return }
+                switch what {
+                case "open":
+                    let held = NSHostingController(rootView: BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks))
+                    held.sizingOptions = [.preferredContentSize]
+                    _ = held.view
+                    held.view.layoutSubtreeIfNeeded()
+                    Bench.dropdownHeld = held
+                case "close": Bench.dropdownHeld = nil
+                default:
+                    if let folder = Bookmarks.folders(browser.bookmarks.roots).first(where: { $0.node.title == what }) {
+                        BookmarksDropdown.benchToggle.send(folder.node.id)
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    Bench.dropdownHeld?.view.layoutSubtreeIfNeeded()
+                    answer(["popover": Double(Bench.dropdownHeld?.preferredContentSize.height ?? 0)])
+                }
+                return
+            }
             let dropdown = BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks)
             let whole = NSHostingView(rootView: dropdown).fittingSize
             let all = Set(Bookmarks.folders(browser.bookmarks.roots).map(\.node.id))
@@ -1986,6 +2016,7 @@ final class Bench {
                 .padding(6)
                 .frame(width: 280)
             answer(["height": Double(whole.height), "width": Double(whole.width), "list": Double(dropdown.listHeight),
+                    "listAllOpen": Double(BookmarksDropdown.listHeight(browser.bookmarks.roots, open: nil)),
                     "allOpen": Double(NSHostingView(rootView: outline).fittingSize.height),
                     "closed": Double(NSHostingView(rootView: closed).fittingSize.height),
                     "shown": Double(NSHostingView(rootView: shown).fittingSize.height),
