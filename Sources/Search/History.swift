@@ -421,6 +421,26 @@ final class History: ObservableObject {
     /// After a batch of `take`s.
     func settle() { save() }
 
+    /// `run` once this history is read from its file: now, if it is.
+    private func whenLoaded(_ run: @escaping (History) -> Void) {
+        if loading != nil { duringLoad.append(run) } else { run(self) }
+    }
+
+    /// Every visit `other` keeps, taken in as an import takes them, once
+    /// both are read (see Spaces.seedHistories).
+    func takeAll(from other: History) {
+        other.whenLoaded { source in
+            let visits = Array(source.visits.values)
+            self.whenLoaded { history in
+                for visit in visits {
+                    guard let url = URL(string: visit.url) else { continue }
+                    history.take(url, title: visit.title, count: visit.count, last: visit.last)
+                }
+                history.settle()
+            }
+        }
+    }
+
     /// A page's title usually lands a beat after the page does.
     func retitle(_ url: URL, _ title: String) {
         if loading != nil { duringLoad.append { $0.retitle(url, title) } }

@@ -260,6 +260,20 @@ enum Spaces {
         return made
     }
 
+    /// Once, the first launch since 1.0.16 gave each signed-out space a
+    /// history of its own (#1166): what its profile's history held, copied
+    /// into each signed-out space there is now. Before, every space saw it
+    /// all, and since, those spaces started empty (#1325). Only the shared
+    /// history is copied, into them: what a signed-out space visited alone
+    /// never goes anywhere else. Spaces made after this start empty.
+    @MainActor static func seedHistories() {
+        guard !Store.settings.bool(forKey: "history.spacesSeeded") else { return }
+        Store.settings.set(true, forKey: "history.spacesSeeded")
+        for space in read() where ownsStore(space.id) {
+            history(for: space.id).takeAll(from: Profiles.history(space.profileID))
+        }
+    }
+
     /// Every history a profile's spaces write to: its own, then each
     /// signed-out space's.
     @MainActor static func histories(of profile: UUID) -> [History] {

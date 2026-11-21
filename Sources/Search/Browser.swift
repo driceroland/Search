@@ -2958,6 +2958,7 @@ final class Browser: NSObject, ObservableObject {
         // A pop-up window never holds a profile's session files.
         usesFiles = !websitePopup && (record == nil || !Browsers.all.contains { $0.profileID == profile && $0.usesFiles && !$0.isPopup })
         if first {
+            Spaces.seedHistories()
             Shield.shared.enabled = prefs.shielded
             Shield.shared.compile()
             if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
