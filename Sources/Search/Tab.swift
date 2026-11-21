@@ -133,6 +133,7 @@ enum Web {
             PrivacySignal.apply(to: config, shy: shy)
             ClickIDs.apply(to: config.preferences, shy: shy)
         }
+        HTTPSFirst.apply(to: config)
         if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
         inspector(config.preferences)
         backspaceStays(config.preferences)
