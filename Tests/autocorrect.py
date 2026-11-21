@@ -12,6 +12,19 @@ here: the setting, the Edit menu's tick, the default and WebKit's own answer
 agree after switching from Settings, with the default changed behind
 WebKit's back, after a page opened since, and after a relaunch.
 
+Inline predictions (idea 842): the grey rest of a word WebKit offers at the
+caret whenever the Mac's "Show inline predictive text" is on, autocorrect or
+not. Edit › Spelling and Grammar › Show Inline Predictions is off unless
+switched on, and counts over the Mac. The Mac's settings can't be touched
+here, so they are played in the copy's own domain, which AppKit reads before
+the global one: inline predictions, text completion and autocorrect said on
+there before launch (as an app that follows a Mac with them on sees them),
+and again behind Search's back before the relaunch. Checked: the setting,
+the menu's tick, the default and whether the page's view would show a
+prediction at the caret agree, off at launch, on and off from the menu, in a
+page opened since and after a relaunch; and a misspelled sentence typed into
+a textarea and a contenteditable stays as typed.
+
 As in text_replacement.py, the build is copied under a bundle id of its own,
 since the switch lives in the app's standard defaults, and run hidden in a
 world of its own; everything is removed afterwards. WebKit only answers for
@@ -44,7 +57,7 @@ COPY = Path(tempfile.mkdtemp(prefix="ac-probe-")) / "Search.app"
 EXE = str(COPY / "Contents" / "MacOS" / "Search")
 
 PAGE = b"""<!doctype html><title>typing</title>
-<input id=i autocomplete=off><textarea id=t></textarea>"""
+<input id=i autocomplete=off><textarea id=t></textarea><div id=e contenteditable></div>"""
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.send_header("Content-Type", "text/html")
@@ -138,6 +151,30 @@ def agree(t, name, tab, want):
     t.ok(f"{name}: setting, menu, default and WebKit all say {want}",
          a["setting"] is want and a["menu"] is want and a["kept"] is want and a["page"] is want, str(a))
 
+def agree_predictions(t, name, tab, want):
+    a = look_all(tab)["predictions"]
+    t.ok(f"{name}: inline predictions' setting, menu, default and page all say {want}",
+         a["setting"] is want and a["menu"] is want and a["kept"] is want and a["page"] is want, str(a))
+
+def look_all(tab):
+    ev(tab, "document.getElementById('t').focus()")
+    time.sleep(0.3)
+    return cmd({"do": "textcheck", "id": tab})
+
+def mac_says_on():
+    """The Mac's settings as the copy sees them, played in its own domain:
+    what AppKit reads before the global domain."""
+    for key in ("NSAutomaticInlinePredictionEnabled", "NSAutomaticTextCompletionEnabled",
+                "NSAutomaticSpellingCorrectionEnabled"):
+        subprocess.run(["defaults", "write", ID, key, "-bool", "true"])
+    subprocess.run(["defaults", "delete", ID, "WebAutomaticSpellingCorrectionEnabled"], capture_output=True)
+
+def typed_editable(tab, text):
+    ev(tab, "(() => { const e = document.getElementById('e'); e.textContent = ''; e.focus(); return document.activeElement.id })()")
+    cmd({"do": "key", "id": tab, "text": text})
+    time.sleep(1)
+    return ev(tab, "document.getElementById('e').textContent")
+
 def front(tab):
     cmd({"do": "select", "id": tab}); time.sleep(0.3)
 
@@ -158,10 +195,16 @@ def main():
     wipe()
     for k in ["bench", "welcomed", "autocorrect"]: subprocess.run(["defaults", "write", SUITE, k, "-bool", "true"])
     make_copy()
+    mac_says_on()
     t = T()
     try:
         tab = launch()
         agree(t, "at launch, on", tab, True)
+        agree_predictions(t, "at launch, with the Mac's on", tab, False)
+        cmd({"do": "textcheck", "id": tab, "toggle": "predictions"})
+        agree_predictions(t, "switched on from the menu", tab, True)
+        cmd({"do": "textcheck", "id": tab, "toggle": "predictions"})
+        agree_predictions(t, "switched off again", tab, False)
         # Switched from Settings, where no page is in front.
         shown = settings_front()
         t.ok("Settings is in front, with no page view", shown is not None and shown["active"] and shown["view"] == "", str(shown))
@@ -183,9 +226,21 @@ def main():
         fresh = cmd({"do": "open", "url": f"{BASE}/fresh"})["id"]
         cmd({"do": "wait", "id": fresh, "seconds": 10})
         agree(t, "a page opened since", fresh, False)
+        agree_predictions(t, "a page opened since", fresh, False)
+        sentence = "i have an isue would you min teh"
+        v = typed(t, fresh, "t", sentence)
+        t.ok("typed into a textarea, it stays as typed", v == sentence, repr(v))
+        v = typed_editable(fresh, sentence)
+        t.ok("typed into a contenteditable, it stays as typed", v == sentence, repr(v))
+        quit()
+        mac_says_on()
+        tab = launch()
+        agree(t, "off after a relaunch, with the Mac's on", tab, False)
+        agree_predictions(t, "off after a relaunch, with the Mac's on", tab, False)
+        cmd({"do": "textcheck", "id": tab, "toggle": "predictions"})
         quit()
         tab = launch()
-        agree(t, "off after a relaunch", tab, False)
+        agree_predictions(t, "on kept through a relaunch", tab, True)
         settings_front()
         cmd({"do": "textcheck", "id": tab, "toggle": "autocorrect"})
         agree(t, "on again from Settings", tab, True)

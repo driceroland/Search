@@ -138,6 +138,11 @@ struct SearchApp: App {
                         get: { browser.prefs.autocorrect },
                         set: { browser.prefs.autocorrect = $0 }
                     ))
+                    // Off unless switched on here, whatever the Mac says.
+                    Toggle("Show Inline Predictions", isOn: Binding(
+                        get: { browser.prefs.inlinePredictions },
+                        set: { browser.prefs.inlinePredictions = $0 }
+                    ))
                 }
             }
             CommandGroup(replacing: .toolbar) {

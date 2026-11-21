@@ -2343,9 +2343,12 @@ final class Bench {
                     // Edit › Spelling and Grammar › Correct Spelling
                     // Automatically, as its Toggle sets it.
                     browser.prefs.autocorrect.toggle()
+                } else if name == "predictions" {
+                    // Edit › Spelling and Grammar › Show Inline Predictions.
+                    browser.prefs.inlinePredictions.toggle()
                 } else {
                     guard let kind = Substitution(rawValue: name) else {
-                        answer(["error": "toggle quotes|dashes|replacement|autocorrect"]); return
+                        answer(["error": "toggle quotes|dashes|replacement|autocorrect|predictions"]); return
                     }
                     browser.toggleSubstitution(kind, in: web)
                 }
@@ -2386,7 +2389,27 @@ final class Bench {
                     "kept": domain[Preferences.autocorrectKey] ?? NSNull(),
                     "setting": browser.prefs.autocorrect, "menu": tick,
                 ]
-                answer(["mac": mac, "page": page, "kept": kept, "menu": items, "web": web != nil, "autocorrect": autocorrect])
+                // Inline predictions: whether the page's view would show one
+                // at the caret now (WebKit asks AppKit), the default kept,
+                // the setting, the menu's tick.
+                var shows: Any = NSNull()
+                let allows = NSSelectorFromString("_allowsInlinePredictions")
+                if let web, web.responds(to: allows) {
+                    typealias Ask = @convention(c) (AnyObject, Selector) -> Bool
+                    shows = unsafeBitCast(web.method(for: allows), to: Ask.self)(web, allows)
+                }
+                var predictsTick: Any = NSNull()
+                if let edit = NSApp.mainMenu?.items.first(where: { $0.title == "Edit" })?.submenu,
+                   let item = edit.items.first(where: { $0.title == "Spelling and Grammar" })?.submenu?
+                       .items.first(where: { $0.title == "Show Inline Predictions" }) {
+                    predictsTick = item.state == .on
+                }
+                let predictions: [String: Any] = [
+                    "page": shows, "kept": domain[Preferences.inlinePredictionsKey] ?? NSNull(),
+                    "setting": browser.prefs.inlinePredictions, "menu": predictsTick,
+                ]
+                answer(["mac": mac, "page": page, "kept": kept, "menu": items, "web": web != nil,
+                        "autocorrect": autocorrect, "predictions": predictions])
             }
 
         case "menu":

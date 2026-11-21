@@ -753,6 +753,7 @@ struct SettingsPanel: View {
         case "pages.capture": Switch(on: $prefs.capturesPages)
         case "sites.styles": SiteStylesControl(prefs: prefs)
         case "autocorrect": Switch(on: $prefs.autocorrect)
+        case "inlinePredictions": Switch(on: $prefs.inlinePredictions)
         case "note.panel", "note.translate", "note.sitesearch", "note.links", "note.flick": Always()
         default: EmptyView()
         }

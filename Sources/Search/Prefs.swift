@@ -571,6 +571,20 @@ final class Preferences: ObservableObject {
             Preferences.switchWebKit(autocorrect: autocorrect)
         }
     }
+    /// macOS's inline predictive text: the grey rest of a word or phrase
+    /// offered at the caret as you type, taken with Tab. WebKit shows it in
+    /// every text field of every page whenever the Mac's setting is on
+    /// (System Settings › Keyboard › Text Input › Show inline predictive
+    /// text, on unless turned off), whatever autocorrect says; Chrome and
+    /// Arc never show it. Off here unless switched on in Edit › Spelling
+    /// and Grammar, which then counts over the Mac's setting, for pages and
+    /// Search's own fields alike.
+    @Published var inlinePredictions: Bool {
+        didSet {
+            store.set(inlinePredictions, forKey: "inlinePredictions")
+            Preferences.tellWebKit(inlinePredictions: inlinePredictions)
+        }
+    }
     /// How big every site is drawn until it has been zoomed on its own.
     @Published var pageZoom: Double {
         didSet { store.set(pageZoom, forKey: "pageZoom") }
@@ -1289,6 +1303,9 @@ final class Preferences: ObservableObject {
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.
         Preferences.tellWebKit(autocorrect: corrects)
+        let predicts = store.bool(forKey: "inlinePredictions")
+        inlinePredictions = predicts
+        Preferences.tellWebKit(inlinePredictions: predicts)
         Substitution.register()
         pageZoom = store.object(forKey: "pageZoom") as? Double ?? 1
         // Left behind by an assistant this browser no longer has.
@@ -1400,6 +1417,17 @@ final class Preferences: ObservableObject {
     }
 
     static let autocorrectKey = "WebAutomaticSpellingCorrectionEnabled"
+
+    /// Inline predictions are AppKit's, not WebKit's: a page view asks
+    /// NSSpellChecker at each keystroke, which reads this from the app's
+    /// own defaults before the Mac's global ones, and never caches it. So
+    /// writing it here is absolute and takes effect at the next key, in
+    /// every page, open or to come, in every profile (idea 842).
+    static func tellWebKit(inlinePredictions: Bool) {
+        UserDefaults.standard.set(inlinePredictions, forKey: inlinePredictionsKey)
+    }
+
+    static let inlinePredictionsKey = "NSAutomaticInlinePredictionEnabled"
 
     /// Once WebKit has read the default it keeps its own copy, for every
     /// page of the app, and the only way to change it is its own toggle
