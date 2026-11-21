@@ -241,6 +241,8 @@ final class SpaceSwipe {
         let here = taken(browser), from = shown(browser)
         guard let to = browser.spaces.firstIndex(where: { $0.id == id }) else { return }
         let slot = to == here ? 0 : abs(to - from) <= 1 ? to - here : from - here + step
+        // Carried back to its own space: the wash with it, not the one clicked.
+        if to == here, browser.spaceHeading != nil { browser.spaceHeading = nil }
         let moved = browser.spaceComing != (to == here ? nil : id) || browser.comingSlot != slot
         browser.spaceComing = to == here ? nil : id
         browser.comingSlot = slot

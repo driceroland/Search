@@ -786,6 +786,7 @@ struct SettingsPanel: View {
         case "profiles": Pill("New Profile…") { ProfileMenu.askNew() }
         case "profiles.oneWindow": Switch(on: $prefs.profilesInOneWindow)
         case "spaces.links": Switch(on: $prefs.sendsLinksToSpaces)
+        case "spaces.buttons": Switch(on: $prefs.spaceButtons)
         case "links.ask": Switch(on: $prefs.asksSpaceForLinks)
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)

@@ -2795,6 +2795,12 @@ final class Browser: NSObject, ObservableObject {
     /// The space on its way in while its rows slide into place, before the
     /// column takes it (SpaceSwipe.bring): drawn in the place beside this one.
     var spaceComing: UUID?
+    /// The space a click or ⌃1–⌃9 is on its way to (goToSpace), from the
+    /// moment it is asked for: the wash and the space buttons follow it at
+    /// once, where spaceID comes only once the rows stand still, up to most
+    /// of a second later. Published, unlike spaceComing, which a swipe sets
+    /// at every step; this changes once a switch.
+    @Published var spaceHeading: UUID?
     /// Where it lies in the map, in pages from this space: next to the
     /// space it came from, wherever it is among the spaces (mapSlot).
     var comingSlot = 0

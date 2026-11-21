@@ -415,6 +415,12 @@ enum SettingsIndex {
               keys: [Preferences.spacesOnCommandKey],
               words: ["arc", "cmd", "command", "control", "ctrl", "spaces", "numbers", "digits", "shortcut", "keys", "⌘1", "⌃1", "switch spaces", "swap"],
               parent: "spaces"),
+        .init(id: "spaces.buttons", group: "spaces", icon: "square.grid.3x1.below.line.grid.1x2",
+              title: "One button per space", detail: "Every space beside the bookmarks, one click away",
+              more: "In place of the space's single icon and its menu. A click on the space you are in opens that menu. At the foot of the column the buttons are centred.",
+              keys: [Preferences.spaceButtonsKey],
+              words: ["arc", "spaces", "buttons", "icons", "switcher", "dot", "footer", "bottom"],
+              parent: "spaces"),
         .init(id: "profiles", group: "spaces", icon: "person.2",
               title: "Profiles", detail: "Spaces with their own sign-ins, history and bookmarks",
               more: "In windows of their own, unless Profiles in one window is on. Extensions, passwords and settings are shared.",
@@ -689,7 +695,7 @@ enum SettingsIndex {
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
-        case "spaces.links", "links.ask": return prefs.usesSpaces
+        case "spaces.links", "links.ask", "spaces.buttons": return prefs.usesSpaces
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent", "newtab.arc": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
@@ -714,7 +720,7 @@ enum SettingsIndex {
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "icloud.erase": return "Only while Sync with iCloud is on"
         case "profiles.oneWindow": return "Only with more than one profile"
-        case "spaces.links", "links.ask": return "Only with Spaces on"
+        case "spaces.links", "links.ask", "spaces.buttons": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent", "newtab.arc": return "Only with the new tab in a floating field"
