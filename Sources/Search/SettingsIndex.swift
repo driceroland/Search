@@ -493,7 +493,7 @@ enum SettingsIndex {
               keys: ["shield"], words: ["adblock", "ad blocker", "ads", "youtube"]),
         .init(id: "sites.keep", group: "blocking", icon: "eye.slash",
               title: "Prevent cross-site tracking", detail: "As in Safari. Private tabs keep it on",
-              more: "Off, sites you rarely open keep their sign-ins, and trackers inside other sites can follow you across them again, as in Chrome.",
+              more: "On, as in Safari, a site you mostly reach from a tracker's link (YouTube from Google, GitHub from a sign-in button) can lose its saved preferences, and in time its sign-in, after a week of browsing without a click or typing on it. Off, sites you rarely open keep their sign-ins, and trackers inside other sites can follow you across them again, as in Chrome.",
               keys: ["sites.keep"], words: ["itp", "cookies", "tracking"]),
         .init(id: "privacy.clickIDs", group: "blocking", icon: "scissors",
               title: "Remove click trackers from links", detail: "gclid, fbclid and the like go before the page loads. Private tabs always",
