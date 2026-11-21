@@ -5407,8 +5407,13 @@ enum ExtensionShims {
             return kids.enumerated().map { node($1, parent: key, index: $0, deep: false) }
         case "bookmarks.get":
             let keys = (first as? [String]) ?? (first as? String).map { [$0] } ?? []
+            // The root and the bar answer too: every top-level bookmark names
+            // "1" as its parent, and sync extensions such as Floccus walk
+            // parentId up with get until a node has none.
             return keys.compactMap { key in
-                find(key, in: browser.bookmarks.roots).map { node($0.node, parent: $0.parent, index: $0.index, deep: false) }
+                if key == "0" { return root(browser.bookmarks.roots, deep: false) }
+                if key == "1" { return bar(browser.bookmarks.roots, deep: false) }
+                return find(key, in: browser.bookmarks.roots).map { node($0.node, parent: $0.parent, index: $0.index, deep: false) }
             }
         case "bookmarks.getRecent":
             let count = (first as? Int) ?? 10
@@ -6459,8 +6464,10 @@ enum ExtensionShims {
         return out
     }
 
-    private static func root(_ roots: [Bookmark]) -> [String: Any] {
-        ["id": "0", "title": "", "dateAdded": 0, "syncing": false, "children": [bar(roots)]]
+    private static func root(_ roots: [Bookmark], deep: Bool = true) -> [String: Any] {
+        var out: [String: Any] = ["id": "0", "title": "", "dateAdded": 0, "syncing": false]
+        if deep { out["children"] = [bar(roots)] }
+        return out
     }
 
     private static func visit(_ trace: History.Trace) -> [String: Any] {
