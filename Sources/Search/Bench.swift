@@ -2060,7 +2060,12 @@ final class Bench {
                 ["folder": folder.title, "items": BookmarkMenu.shared.walk(folder).map { line($0.depth, $0.item) }]
             }
             var menu: [[String: Any]] = []
-            if let main = NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu {
+            if let bar = NSApp.mainMenu, let main = bar.items.first(where: { $0.title == "Bookmarks" })?.submenu {
+                // The bookmarks go in only while the menu bar is in use
+                // (#1137): told it is, as a click on it would, and let go
+                // of after.
+                NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: bar)
+                defer { NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: bar) }
                 main.delegate?.menuNeedsUpdate?(main)
                 func down(_ items: [NSMenuItem], _ depth: Int) {
                     for item in items where item.tag == 0x5EAC && !item.isSeparatorItem {
