@@ -1352,6 +1352,10 @@ enum ImportSource: Identifiable, Hashable {
         }
     }
 
+    func bookmarks(profile: String? = nil) -> [Bookmark] {
+        bookmarkRead(profile: profile).nodes
+    }
+
     /// The bookmarks, and whether every profile read cleanly.
     func bookmarkRead(profile: String? = nil) -> (nodes: [Bookmark], complete: Bool) {
         switch self {
