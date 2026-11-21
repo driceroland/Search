@@ -1215,6 +1215,11 @@ final class Tab: ObservableObject, Identifiable {
         // an extension's page script can carry the patch either way (see
         // Passkeys.swift and ExtensionShims.passkeys).
         if !FormRelay.passkeysOffered {
+            // A security key still works with passkeys off: Search's handling
+            // goes first, and the off patch hands it only what a key answers.
+            if Passkeys.securityKeysPossible {
+                add(PasskeyRelay.keysOnly, .atDocumentStart, mainFrameOnly: false, in: .page)
+            }
             add(FormRelay.withoutPasskeys, .atDocumentStart, mainFrameOnly: false, in: .page)
         } else {
             add(PasskeyRelay.page, .atDocumentStart, mainFrameOnly: false, in: .page)

@@ -249,11 +249,18 @@ final class Passkeys: NSObject {
         // Switched off in Settings: what reaches here came through an
         // extension's page script, which the patch runs ahead of whatever the
         // setting — the site hears no, as it would from a browser without them.
+        //
+        // Off means no passkeys from the Mac, iCloud or a phone. A security
+        // key isn't one of those: a request only a key can answer (see
+        // forSecurityKey) still goes ahead, offered the key alone.
         let kind = body["kind"] as? String ?? ""
-        guard FormRelay.passkeysOffered else {
+        let keysOnly = !FormRelay.passkeysOffered
+        if keysOnly {
             // One from under the field is never refused: it waits.
             if kind == "get", body["conditional"] as? Bool == true { return answer(Passkeys.failure("Wait", "")) }
-            return refuse(answer, "NotAllowedError", "The operation either timed out or was not allowed.")
+            guard Passkeys.securityKeysPossible, Passkeys.forSecurityKey(body) else {
+                return refuse(answer, "NotAllowedError", "The operation either timed out or was not allowed.")
+            }
         }
         let scheme = caller.origin.protocol.lowercased()
         let host = caller.origin.host.lowercased()
@@ -324,7 +331,7 @@ final class Passkeys: NSObject {
             Passkeys.changed(web)
         }
 
-        let requests: [ASAuthorizationRequest]
+        var requests: [ASAuthorizationRequest]
         switch kind {
         case "get":
             requests = assertion(body, rp: rp, clientData: clientData)
@@ -336,12 +343,18 @@ final class Passkeys: NSObject {
         default:
             return refuse(answer, "NotSupportedError", "Not a passkey request.")
         }
+        if keysOnly {
+            requests = requests.filter {
+                $0 is ASAuthorizationSecurityKeyPublicKeyCredentialAssertionRequest
+                    || $0 is ASAuthorizationSecurityKeyPublicKeyCredentialRegistrationRequest
+            }
+        }
         guard !requests.isEmpty else {
             return refuse(answer, "NotSupportedError", "No authenticator here can make that kind of key.")
         }
 
         Passkeys.asked += 1
-        Passkeys.last = ["kind": kind, "rp": rp, "origin": origin, "requests": requests.count,
+        Passkeys.last = ["kind": kind, "rp": rp, "origin": origin, "requests": requests.count, "keysOnly": keysOnly,
                          "topOrigin": clientData.topOrigin ?? "", "crossOrigin": clientData.crossOrigin == .crossOrigin]
         Passkeys.log.notice("\(kind, privacy: .public) for \(rp, privacy: .private) from \(origin, privacy: .private)")
         // A test run never shows the sheet: it would open on the screen of
@@ -349,7 +362,7 @@ final class Passkeys: NSObject {
         // spot instead, so the checks above and the page's side are still
         // what they are for real.
         if Store.testing {
-            var reply = Passkeys.rehearsal(kind, rp: rp, origin: origin, challenge: challenge)
+            var reply = Passkeys.rehearsal(kind, rp: rp, origin: origin, challenge: challenge, key: keysOnly)
             if body["prf"] is [String: Any] {
                 // Made-up output, sealed the way a real one is, so the page's
                 // side of it is what it is for real.
@@ -361,7 +374,7 @@ final class Passkeys: NSObject {
         }
 
         let token = body["token"] as? String
-        Passkeys.ensure { [weak self] in
+        let start = { [weak self] in
             guard let self else { return }
             if let token, token == self.withdrawn {
                 self.withdrawn = nil
@@ -369,6 +382,36 @@ final class Passkeys: NSObject {
             }
             self.begin(requests, token: token, in: caller.window, answer: answer)
             self.prfKey = Passkeys.pageKey(body)
+        }
+        // macOS's question is about the Mac's own passkeys, not a key's.
+        if keysOnly { start() } else { Passkeys.ensure(start) }
+    }
+
+    /// With passkeys off, whether a security key can still be asked for: in
+    /// a build that can reach one (Apple's browser entitlement; a test run
+    /// rehearses instead), on a macOS that has the key's own request for
+    /// browsers (14.4).
+    static var securityKeysPossible: Bool {
+        guard #available(macOS 14.4, *) else { return false }
+        return Store.testing || Preferences.entitledToPasskeys
+    }
+
+    /// A request only a security key answers: a sign-in whose list of keys
+    /// names one over USB, NFC or Bluetooth (a second step after the
+    /// password, mostly), or a key to be made on one (cross-platform). Never
+    /// one from under the name field, and never a sign-in naming no key —
+    /// with passkeys off, those go on to the password at once, as before.
+    static func forSecurityKey(_ body: [String: Any]) -> Bool {
+        switch body["kind"] as? String {
+        case "get":
+            guard body["conditional"] as? Bool != true else { return false }
+            return (body["allowCredentials"] as? [[String: Any]] ?? []).contains { item in
+                (item["transports"] as? [String] ?? []).contains { ["usb", "nfc", "ble"].contains($0) }
+            }
+        case "create":
+            return body["authenticatorAttachment"] as? String == "cross-platform"
+        default:
+            return false
         }
     }
 
@@ -572,13 +615,14 @@ final class Passkeys: NSObject {
 
     /// For a test run: a credential in the shape the sheet gives, made up
     /// from the request — a P-256 key and all, with nothing signed.
-    private static func rehearsal(_ kind: String, rp: String, origin: String, challenge: Data) -> [String: Any] {
+    private static func rehearsal(_ kind: String, rp: String, origin: String, challenge: Data, key: Bool = false) -> [String: Any] {
         let client = Data(#"{"type":"webauthn.\#(kind)","challenge":"\#(text(challenge))","origin":"\#(origin)","crossOrigin":false}"#.utf8)
         let id = rehearsalID
         // Where the relying party's hash would be, then the flags and the count.
         var auth = Data(count: 32) + Data([kind == "get" ? 0x05 : 0x45]) + Data(count: 4)
         guard kind == "create" else {
-            return assertionReply(id: id, clientData: client, authenticatorData: auth, signature: Data([0x30, 0]), user: Data("user".utf8), attachment: "platform")
+            return assertionReply(id: id, clientData: client, authenticatorData: auth, signature: Data([0x30, 0]), user: Data("user".utf8),
+                                  attachment: key ? "cross-platform" : "platform")
         }
         auth += Data(count: 16) + Data([0, UInt8(id.count)]) + id
         auth += Data([0xA5, 0x01, 0x02, 0x03, 0x26, 0x20, 0x01, 0x21, 0x58, 0x20]) + Data(repeating: 1, count: 32)
@@ -586,7 +630,8 @@ final class Passkeys: NSObject {
         var object = Data([0xA3, 0x63]) + Data("fmt".utf8) + Data([0x64]) + Data("none".utf8)
         object += Data([0x67]) + Data("attStmt".utf8) + Data([0xA0])
         object += Data([0x68]) + Data("authData".utf8) + Data([0x59, UInt8(auth.count >> 8), UInt8(auth.count & 0xFF)]) + auth
-        return registrationReply(id: id, clientData: client, attestation: object, transports: ["hybrid", "internal"], attachment: "platform")
+        return registrationReply(id: id, clientData: client, attestation: object, transports: key ? ["usb"] : ["hybrid", "internal"],
+                                 attachment: key ? "cross-platform" : "platform")
     }
 
     // MARK: - checks
@@ -899,7 +944,15 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
     /// functions, and nothing of Search's is there for a page to find — no
     /// window.webkit, no global of its own. Requests go to Search's side as
     /// events on the window (see `bridge`).
-    static let page = """
+    static let page = script(keysOnly: false)
+
+    /// The same with passkeys off, in a build that can reach a security key
+    /// (see Passkeys.forSecurityKey): put ahead of FormRelay.withoutPasskeys,
+    /// which hands it only what a key answers. What the page is told this
+    /// browser can do stays the off patch's to say.
+    static let keysOnly = script(keysOnly: true)
+
+    private static func script(keysOnly: Bool) -> String { """
     (function () {
       if (!window.PublicKeyCredential || !window.CredentialsContainer) return;
       var proto = CredentialsContainer.prototype;
@@ -1153,6 +1206,11 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         return send(request, options.signal, pk.extensions);
       });
 
+    \(keysOnly ? "" : capabilities + "\n")})();
+    """ }
+
+    /// What this browser says it can do, with passkeys on.
+    private static let capabilities = """
       // What this browser can and can't do, for the pages that ask first:
       // passkeys from the Mac, a phone or a key, under the field too, and
       // none of what WebKit would have answered for itself.
@@ -1175,7 +1233,6 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
           return nativeCapabilities.call(P).then(ours, function () { return ours({}); });
         });
       }
-    })();
     """
 
     /// Search's side of it, in Search's own world (Web.world), where the

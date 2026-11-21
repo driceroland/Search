@@ -121,6 +121,13 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
     /// and the extension is the one they ask. Whatever it leaves to the
     /// browser is refused at once, as if you had said no, where WebKit would
     /// try and fail.
+    ///
+    /// Save for a security key. Where Search's own handling stands ahead of
+    /// this (PasskeyRelay.keysOnly, in a build that can reach a key), a
+    /// request only a key answers goes to it: a sign-in naming a key over
+    /// USB, NFC or Bluetooth, or a key to be made on one. Search's side asks
+    /// the same of it again (Passkeys.forSecurityKey) and offers the key
+    /// alone, never the Mac's passkeys.
     static let withoutPasskeys = """
     (function () {
       var real = window.PublicKeyCredential;
@@ -160,6 +167,16 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         try { Object.defineProperty(real, name, { configurable: true, writable: true, enumerable: true, value: wrapped }); } catch (e) {}
       });
       var proto = CredentialsContainer.prototype;
+      // Search's own handling, if it stands ahead of this: then `native` is it.
+      var relayed = !!proto[Symbol.for('search.passkeys')];
+      function forKey(name, options) {
+        var pk = options.publicKey;
+        if (name === 'create') return !!(pk.authenticatorSelection && pk.authenticatorSelection.authenticatorAttachment === 'cross-platform');
+        if (options.mediation === 'conditional') return false;
+        return Array.prototype.some.call(pk.allowCredentials || [], function (c) {
+          return Array.prototype.some.call((c && c.transports) || [], function (t) { return t === 'usb' || t === 'nfc' || t === 'ble'; });
+        });
+      }
       ['get', 'create'].forEach(function (name) {
         var native = proto[name];
         try {
@@ -169,6 +186,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
               if (!options || !options.publicKey) return native.apply(this, arguments);
               var signal = options.signal;
               if (signal && signal.aborted) return Promise.reject(signal.reason || new DOMException('The operation was aborted.', 'AbortError'));
+              try { if (relayed && forKey(name, options)) return native.apply(this, arguments); } catch (e) {}
               return Promise.reject(refused());
             } }[name]
           });
