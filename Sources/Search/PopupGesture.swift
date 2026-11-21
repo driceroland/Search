@@ -60,6 +60,13 @@ struct PopupGesture {
         recorded && consumed && now >= time && now - time <= 5
     }
 
+    /// Whether the page had a real click or key within the activation
+    /// window, without spending it: pointer lock asks for one (see
+    /// PointerLock) but opens nothing.
+    func recent(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        recorded && now >= time && now - time <= 5
+    }
+
     mutating func clear() {
         let serial = serial
         self = PopupGesture()

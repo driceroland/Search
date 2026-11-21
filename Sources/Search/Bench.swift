@@ -345,6 +345,17 @@ final class Bench {
                 answer(["layouts": record.seen])
             }
 
+        case "pointerlock":
+            // WebKit's question whether a page may have the pointer, asked as
+            // WebKit asks it (PointerLock): a hidden probe's page is never
+            // focused, so WebKit refuses it before Search is asked at all.
+            // The page's own click, and so the gesture, are real (tap).
+            guard Store.testing else { answer(["error": "pointerlock is for test runs"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            browser.askedForPointerLock(tab.web) { given in
+                answer(["given": given, "answered": PointerLock.shared.answered])
+            }
+
         case "tabs":
             // A private tab is nobody's business but yours: a test run has none
             // of yours, so there every tab is listed.
@@ -1111,6 +1122,11 @@ final class Bench {
             // the screen (Settings › General › Press Esc twice to leave full
             // screen).
             out["escapeReminder"] = FullScreenEscape.shared.showing
+            // A page asking for the pointer (PointerLock): the last answer,
+            // whether a page holds it, and whether "Press Esc to show your
+            // pointer" is up.
+            out["pointerLock"] = ["answered": PointerLock.shared.answered, "asked": PointerLock.shared.asked,
+                                  "held": PointerLock.shared.page != nil, "hint": PointerLock.shared.showing]
             // Whether this Mac lets the browser use its passkeys at all — the
             // one-time permission macOS asks a browser other than Safari for.
             switch ASAuthorizationWebBrowserPublicKeyCredentialManager().authorizationStateForPlatformCredentials {

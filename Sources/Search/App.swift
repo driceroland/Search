@@ -1377,6 +1377,10 @@ struct ContentView: View {
                 return event
             }
             ContentView.keyed(event)
+            // Escape while a page holds the pointer (a game, see PointerLock)
+            // is the page's, which lets the pointer go on it, ahead of the
+            // find bar, the field, or a full screen's Esc twice.
+            if PointerLock.shared.escape(event) { return event }
             // Escape on a page filling the screen is WebKit's, which leaves
             // on the first one, as Safari does. Its window isn't a browser's,
             // so the key came here first and put away what was left up in
