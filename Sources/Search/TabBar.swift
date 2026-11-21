@@ -259,6 +259,16 @@ struct TabBar: View {
                 .padding(.leading, lights)
                 .padding(.trailing, 12)
                 .coordinateSpace(name: "strip")
+
+                // Above the tabs is title bar too. The run's scroll view is
+                // AppKit's and reaches up into the title bar however short
+                // it is made, so it took every press there: a strip of its
+                // own lies over it, from end to end (#1321).
+                if !making {
+                    DragStrip()
+                        .frame(height: (Metrics.strip - TabBar.band) / 2)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
