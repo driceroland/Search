@@ -190,6 +190,9 @@ private struct HangingPopover<Popup: View>: ViewModifier {
 
     final class Watched: NSView {
         var moved: (() -> Void)?
+        /// Only there to be measured: a click, a right-click above all,
+        /// goes to what it sits behind (a group's name has its menu).
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             moved?()
