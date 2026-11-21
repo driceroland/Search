@@ -9,6 +9,21 @@ import WebKit
 /// hands down — SwiftUI sees the same reference, re-runs nothing, and the page
 /// arrives in WebKit without ever being put on screen. Watching it here is
 /// what turns that into a redraw.
+/// The wall behind a blank tab, Settings › Themes. A view of its own so
+/// that only a blank tab watches the settings: every page doing it drew
+/// itself again at each change of any setting, the column's width dragged
+/// through included.
+private struct BlankWall: View {
+    @ObservedObject private var prefs = Shared.prefs
+
+    var body: some View {
+        if prefs.homeTheme != .off {
+            HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage,
+                           shuffle: prefs.homeShuffle)
+        }
+    }
+}
+
 struct Page: View {
     @ObservedObject var tab: Tab
     /// False where the page itself is held elsewhere (see PaneStage.swift)
@@ -22,6 +37,10 @@ struct Page: View {
 
     var body: some View {
         ZStack {
+            // A blank tab owns no page to paint over this, and a tab that
+            // gets one is no longer blank, so the wall goes with the load.
+            // Split panes draw their layers through here too.
+            if tab.isBlank { BlankWall() }
             // A tab put down with ⌘W has no view, and asking for one here
             // would build an empty one a frame before the stage moves on.
             //
