@@ -65,8 +65,6 @@ final class PaneQuestion: Identifiable {
         self.reply = reply
     }
 
-    var open: Bool { reply != nil }
-
     func answer(ok: Bool, text: String? = nil) {
         let reply = reply
         self.reply = nil

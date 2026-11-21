@@ -214,11 +214,6 @@ final class Browser: NSObject, ObservableObject {
     @Published var welcoming = false
     /// What's new, once after an update (see WhatsNew.swift).
     @Published var newsShowing = false
-    /// Every version's notes: Settings › About › What's New…, in a tab.
-    var notesShowing: Bool {
-        get { pageTab(.notes) != nil }
-        set { if newValue { show(InternalPage(.notes)) } else { putAway(.notes) } }
-    }
 
     // MARK: - bookmarks
 
@@ -7560,12 +7555,6 @@ final class Browser: NSObject, ObservableObject {
         typed = ""
         siteChip = site
         return true
-    }
-
-    /// Tab, or the right arrow at the end of the line: take what is offered.
-    func acceptEnding() {
-        guard let ending, !ending.isEmpty else { return }
-        typed += ending
     }
 
     /// The arrow keys walk the list, and walking off the top lets go of it.
