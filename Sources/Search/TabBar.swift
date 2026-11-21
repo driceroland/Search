@@ -1627,16 +1627,14 @@ struct TabMenu: View {
     let close: () -> Void
 
     var body: some View {
-        singleMenu
-        if browser.selectedTabIDs.contains(tab.id) && browser.visibleSelectedTabCount > 1 {
-            Divider()
-            Button("Copy Addresses") { browser.copySelectedTabLinks() }
-                .disabled(browser.selectedTabLinkCount == 0)
-        }
+        // Right-clicked among tabs picked in the column: only what can be
+        // done to all of them, and done to all of them. Rename, a pin's
+        // letter or Site Information… name one tab, so they wait for one.
+        if browser.isPickedAmongOthers(tab) { manyMenu } else { singleMenu }
     }
 
     @ViewBuilder
-    private var singleMenu: some View {
+    private var groupMenu: some View {
         if browser.prefs.usesTabGroups && tab.pin == nil && !tab.shy && !tab.bench {
             // Right-clicked among tabs picked in the column: all of them, as
             // a drag onto a group takes them (see carried).
@@ -1657,6 +1655,80 @@ struct TabMenu: View {
                 }
             }
         }
+    }
+
+    /// The menu for several picked tabs. An action shows only when every
+    /// one of them can take it: three tabs and a pin get no Pin, rather
+    /// than a Pin that leaves one out.
+    @ViewBuilder
+    private var manyMenu: some View {
+        let picked = browser.pickedTabs
+        let count = picked.count
+        if picked.allSatisfy({ $0.pin == nil && !$0.shy && !$0.bench }) { groupMenu }
+        if picked.allSatisfy({ $0.pin == nil && $0.isWeb && !$0.shy }) {
+            Button("Pin \(count) Tabs") { for each in picked { browser.pin(each) } }
+            if browser.prefs.showsPinRows {
+                Button("Pin \(count) Tabs as Rows") { for each in picked { browser.pin(each, listed: true) } }
+            }
+        } else if picked.allSatisfy({ $0.pin != nil }) {
+            Button("Unpin \(count) Tabs") { for each in picked { browser.unpin(each) } }
+        }
+        if browser.prefs.usesSpaces, picked.allSatisfy({ !$0.bench && !$0.everywhere
+               && $0.address.flatMap({ Browser.extensionHost(of: $0) }) == nil }) {
+            Menu("Move to Space") {
+                ForEach(browser.spaces.filter { $0.id != browser.spaceID }) { space in
+                    Button {
+                        browser.move(picked, toSpace: space.id)
+                    } label: {
+                        Label(space.name, systemImage: space.symbol)
+                    }
+                }
+                if browser.spaces.count > 1 { Divider() }
+                Button("New Space…") {
+                    browser.askForSpace { space in
+                        browser.move(picked, toSpace: space.id) {
+                            browser.switchSpace(to: space.id)
+                        }
+                    }
+                }
+            }
+            .help("Pages moved to a Space with different sign-ins reopen there.")
+        }
+        if browser.prefs.splitView && !browser.pickedTabsArePaired {
+            Button("Open \(count) Tabs in Split View") { browser.pairPickedTabs(focus: tab) }
+                .disabled(browser.pickedSplit == nil)
+        }
+        // Into a window already open, as Move to Window lists them.
+        let others = Browsers.all.filter { $0 !== browser && $0.isOpen && !$0.isPopup && $0.profileID == browser.profileID }
+        if !others.isEmpty, picked.allSatisfy({ $0.pin == nil && !$0.bench }) {
+            Menu("Move to Window") {
+                ForEach(Array(others.enumerated()), id: \.offset) { _, other in
+                    Button(other.windowName) { for each in picked { browser.moveToWindow(each, other) } }
+                }
+            }
+        }
+        Divider()
+        Button("Copy Addresses") { browser.copySelectedTabLinks() }
+            .disabled(browser.selectedTabLinkCount == 0)
+        // Unmute when every one is muted; otherwise the ones still playing
+        // are muted and the rest left as they are.
+        let muted = picked.allSatisfy(\.muted)
+        Button(muted ? "Unmute \(count) Tabs" : "Mute \(count) Tabs") {
+            for each in picked where each.muted == muted { each.toggleMute() }
+        }
+        Button("Put \(count) Tabs to Sleep") {
+            for each in picked where browser.awake(because: each) == nil { browser.sleep(each) }
+        }
+        .disabled(picked.allSatisfy { browser.awake(because: $0) != nil })
+        Divider()
+        Button("Close \(count) Tabs") { browser.closePickedTabs() }
+        Button("Close Other Tabs") { browser.closeOthers(but: picked) }
+            .disabled(browser.tabs.count <= count)
+    }
+
+    @ViewBuilder
+    private var singleMenu: some View {
+        groupMenu
         let rows = browser.prefs.showsPinRows
         if tab.pin == nil {
             Button("Pin") { browser.pin(tab) }
@@ -1751,13 +1823,6 @@ struct TabMenu: View {
             }
         }
         if browser.prefs.splitView {
-            // Right-clicked among tabs picked in the column: those side by
-            // side, up to four. More can't be, so it is there but off.
-            let picked = browser.selectedTabIDs.contains(tab.id) ? browser.visibleSelectedTabCount : 1
-            if picked > 1 && !browser.pickedTabsArePaired {
-                Button("Open \(picked) Tabs in Split View") { browser.pairPickedTabs(focus: tab) }
-                    .disabled(browser.pickedSplit == nil)
-            }
             if let pair = browser.split(for: tab) {
                 Button("Swap Pages") {
                     browser.focusPane(tab)
@@ -1772,7 +1837,7 @@ struct TabMenu: View {
                     browser.focusPane(tab)
                     browser.closeSplit()
                 }
-            } else if picked == 1 {
+            } else {
                 // Beside the page on screen; on that page itself, an empty
                 // page beside it. On a split with room, one more page in it.
                 let current = browser.active
@@ -1845,14 +1910,7 @@ struct TabMenu: View {
         }
         .disabled(browser.awake(because: tab) != nil)
         Divider()
-        // Right-clicked among tabs picked in the column: all of them, as ⌘W
-        // closes them.
-        let picked = browser.selectedTabIDs.contains(tab.id) ? browser.visibleSelectedTabCount : 1
-        if picked > 1 {
-            Button("Close \(picked) Tabs") { browser.closePickedTabs() }
-        } else {
-            Button("Close Tab", action: close)
-        }
+        Button("Close Tab", action: close)
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }
             .disabled(browser.tabs.count < 2)
         Button(browser.prefs.sidebar ? "Close Tabs Below" : "Close Tabs to the Right") { browser.closeTabsBelow(tab) }
