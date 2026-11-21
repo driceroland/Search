@@ -105,6 +105,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Settings › Liquid Glass tab: in light mode the glass over the tab you're on has a faint tint and a hairline edge, where it all but vanished on a light column. (idea 843)
 - In full screen, a split screen's half included, the window's buttons no longer show twice, one row under the other, while the other app has the focus. (idea 929)
 - With Float the video when you switch apps on, the video stays in its page while the window is still in view beside the app you went to, and floats once the window is out of sight (covered, minimised or on another Space). It floated at the first click in another app. Search left twice before coming back no longer leaves a watch on, which lifted the video at a later change. `python3 Tests/float_away_sight.py` (idea 470)
+- Tabs you aren't looking at load a few at a time (half the Mac's processors), the rest in turn; the tab on screen, and one you go to, never wait. Twenty tabs reloaded at once took every processor, and the window stalled for up to 0.7 s while they loaded, swipes between spaces included. `python3 Tests/tabs_loading.py`
 
 ### Held back
 
