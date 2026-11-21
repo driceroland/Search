@@ -427,6 +427,7 @@ extension Browser {
         if floating == tab.id { land(covering: false) }
         heldDialogs.removeValue(forKey: tab.id)?.forEach { $0.dismiss() }
         dropQuestions(for: tab.id)
+        dropCertificateAsks(for: tab.id)
         leaveSplit(tab)
     }
 

@@ -128,6 +128,7 @@ extension Browser {
             peekFrom = nil
         }
         heldDialogs.removeValue(forKey: page.id)?.forEach { $0.dismiss() }
+        dropCertificateAsks(for: page.id)
         settleCapture(for: page)
         page.close()
     }

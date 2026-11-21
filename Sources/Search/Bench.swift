@@ -4017,6 +4017,20 @@ final class Bench {
             }
             answer(["before": before, "after": Consent.given])
 
+        case "clientcert":
+            // A site's certificate question in a test run (ClientCertificates):
+            // "answer" sets what the next pickers choose — the identity at
+            // `index`, or none (cancelled); "forget" drops this launch's
+            // choices. Always the pickers so far and the sites remembered.
+            guard Store.testing else { answer(["error": "clientcert only works on a --test run"]); return }
+            switch request["action"] as? String {
+            case "answer": ClientCertificates.answerInTest = request["index"] as? Int
+            case "forget": ClientCertificates.chosen.removeAll()
+            default: break
+            }
+            answer(["asked": ClientCertificates.askedInTest, "chosen": ClientCertificates.chosen.keys.map { String($0.split(separator: " ").last ?? "") }.sorted(),
+                    "open": browser.certificateAsks.filter(\.open).count])
+
         case "fold":
             // The strip or the column as it comes out over the page once
             // folded (see Fold.swift), drawn off screen over red: whatever of

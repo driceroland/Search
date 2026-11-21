@@ -2686,6 +2686,10 @@ final class Browser: NSObject, ObservableObject {
     /// Questions asked by a page of the pair on screen, each drawn over its
     /// own page, oldest first (see Dialogs.swift).
     @Published var paneQuestions: [PaneQuestion] = []
+    /// Sites asking a tab for a client certificate, and the tabs whose page
+    /// you refused one (see ClientCertificates.swift).
+    var certificateAsks: [CertificateAsk] = []
+    var certificateDeclined: Set<Tab.ID> = []
     /// What handOff decided, in a test run, for the bench.
     static var handedOff: [String] = []
     /// Downloads from private tabs, which the Downloads list never shows.
@@ -4779,6 +4783,8 @@ final class Browser: NSObject, ObservableObject {
         leaveSplit(tab)
         heldDialogs.removeValue(forKey: tab.id)?.forEach { $0.dismiss() }
         dropQuestions(for: tab.id)
+        dropCertificateAsks(for: tab.id)
+        forgetCertificates(for: tab.id)
         if floating == tab.id { land(covering: false) }
         tab.rest()
         if activeID == tab.id { leave(tab) }
@@ -4825,6 +4831,8 @@ final class Browser: NSObject, ObservableObject {
         leaveSplit(tab)
         heldDialogs.removeValue(forKey: tab.id)?.forEach { $0.dismiss() }
         dropQuestions(for: tab.id)
+        dropCertificateAsks(for: tab.id)
+        forgetCertificates(for: tab.id)
 
         // A tab whose page is out in the little window takes the window with
         // it. Left alone, the window would go on holding a page belonging to a
@@ -8920,6 +8928,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        // Another page now: what the one before was asked goes with it.
+        // (Not at the start of a load: WebKit opens the connection before
+        // that, and its certificate question would be taken down under you.)
+        if let tab = certificateTab(for: webView) { dropCertificateAsks(for: tab.id) }
         if websitePopup { cancelCapture() }
         popupTab(for: webView)?.popupGesture.clear()
         guard let tab = tab(for: webView) else {

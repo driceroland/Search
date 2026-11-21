@@ -1501,6 +1501,10 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     func go(to url: URL) {
+        // You going somewhere: a certificate cancelled on the page before
+        // may be asked for again (ClientCertificates.swift). Not the page
+        // going somewhere by itself, which could ask on and on.
+        (delegate as? Browser)?.certificateDeclined.remove(id)
         if let own = InternalPage(url: url) {
             show(own)
             return
@@ -1954,6 +1958,7 @@ final class Tab: ObservableObject, Identifiable {
     /// A view that has lost its document is given the address back instead:
     /// there is nothing else for it to reload.
     func reload(fromOrigin: Bool = false) {
+        (delegate as? Browser)?.certificateDeclined.remove(id)
         // Search's own pages are drawn from what is there now, always.
         guard page == nil else { return }
         // A pin put down with ⌘W has no view left to reload; waking it is
@@ -2026,6 +2031,7 @@ final class Tab: ObservableObject, Identifiable {
     }
     /// Straight to a page several steps away, as one step.
     func go(to item: WKBackForwardListItem) {
+        (delegate as? Browser)?.certificateDeclined.remove(id)
         loadGeneration &+= 1
         web.go(to: item)
     }

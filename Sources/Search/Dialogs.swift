@@ -252,6 +252,9 @@ extension Browser {
              NSURLAuthenticationMethodHTTPDigest,
              NSURLAuthenticationMethodNTLM:
             signIn(webView, challenge, completionHandler)
+        case NSURLAuthenticationMethodClientCertificate:
+            // Page loads and what they pull in alike (ClientCertificates.swift).
+            clientCertificate(webView, challenge, completionHandler)
         default:
             completionHandler(.performDefaultHandling, nil)
         }
@@ -392,6 +395,7 @@ extension Browser {
 
     private func pageProcessEnded(_ webView: WKWebView, _ end: PageEnd) {
         cancelDisplay(for: webView)
+        if let asking = certificateTab(for: webView) { dropCertificateAsks(for: asking.id) }
         guard let tab = tab(for: webView) else { return }
         dropQuestions(for: tab.id)
         let host = tab.address?.host() ?? ""
