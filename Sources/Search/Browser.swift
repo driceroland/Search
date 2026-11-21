@@ -9110,7 +9110,16 @@ extension Browser: WKDownloadDelegate {
         let chosen = fetches.destination(for: download)
         let name = Browser.fileName(asked ?? suggestedFilename)
         let folders = asked.map(Browser.downloadFolders) ?? []
-        let file = chosen ?? (folders.isEmpty || prefs.asksWhereToSave ? whereToSave(name) : saveInside(folders, name))
+        var file = chosen ?? (folders.isEmpty || prefs.asksWhereToSave ? whereToSave(name) : saveInside(folders, name))
+        // A downloads folder Search can't write to — gone, read-only, or one
+        // macOS keeps it out of (Privacy & Security › Files and Folders) —
+        // failed as "Cannot create file" at zero KB. Asked where instead, as
+        // with Ask where to save on: a folder picked there is one it may use.
+        var askedInstead = false
+        if chosen == nil, !prefs.asksWhereToSave, let to = file, !Browser.canWrite(in: to.deletingLastPathComponent()) {
+            file = askWhere(name)
+            askedInstead = true
+        }
         guard let file else {
             if let ended = fetches.destinationCancelled(download) {
                 ended.owner.relinquish(download)
@@ -9123,7 +9132,7 @@ extension Browser: WKDownloadDelegate {
         fetches.going(download, to: file, cancel: finderCancellation(for: download))
         // A retry is numbered afresh from the name asked for, or the one you
         // gave it: never from "report 2.pdf", whose own " 2" is not its name.
-        if chosen == nil { fetches.entry(for: download)?.retryName = prefs.asksWhereToSave ? file.lastPathComponent : name }
+        if chosen == nil { fetches.entry(for: download)?.retryName = prefs.asksWhereToSave || askedInstead ? file.lastPathComponent : name }
         completionHandler(file)
         announce("Downloading \(file.lastPathComponent)")
     }
@@ -9218,6 +9227,12 @@ extension Browser: WKDownloadDelegate {
     private func whereToSave(_ name: String) -> URL? {
         let name = Browser.fileName(name)
         guard prefs.asksWhereToSave else { return Browser.free(name, in: downloadsFolder) }
+        return askWhere(name)
+    }
+
+    /// The save panel, opened at the downloads folder. Nil when cancelled.
+    private func askWhere(_ name: String) -> URL? {
+        let name = Browser.fileName(name)
         let panel = NSSavePanel()
         panel.nameFieldStringValue = name
         panel.directoryURL = downloadsFolder
@@ -9281,6 +9296,18 @@ extension Browser: WKDownloadDelegate {
         guard let ended = fetches.fail(download, error: error, resumeData: resumeData) else { return }
         ended.owner.relinquish(download)
         if ended.announceFailure { announce("Download failed") }
+    }
+
+    /// Whether a file can be made in `folder`, made first if missing: tried
+    /// for real with an empty file taken away at once, since a folder macOS
+    /// keeps the app out of can look writable to every other question.
+    nonisolated static func canWrite(in folder: URL) -> Bool {
+        let files = FileManager.default
+        try? files.createDirectory(at: folder, withIntermediateDirectories: true)
+        let probe = folder.appendingPathComponent(".search-\(UUID().uuidString)")
+        guard files.createFile(atPath: probe.path, contents: nil) else { return false }
+        try? files.removeItem(at: probe)
+        return true
     }
 
     /// WebKit refuses to write over a file that is already there, so the name
