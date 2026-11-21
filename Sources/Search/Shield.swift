@@ -152,6 +152,21 @@ final class Shield: ObservableObject {
         (["*cnn.com"], ".ad-slot-header__wrapper"),
     ]
 
+    /// Reddit's own promoted posts: custom elements the page puts straight
+    /// in its light DOM (the feed, a post's comments, the sidebar), so a
+    /// plain hiding rule reaches them. Only reddit.com; a normal post is a
+    /// `shreddit-post`, never one of these. Test runs can add a local
+    /// stand-in for Reddit (`test.redditHosts`).
+    private static let reddit = [
+        "shreddit-ad-post", "shreddit-comments-page-ad", "shreddit-sidebar-ad",
+        "shreddit-dynamic-ad-link", "comment-tree-ad", ".promotedlink",
+    ]
+
+    static var redditSites: [String] {
+        let extra = Store.testing ? (Store.settings.stringArray(forKey: "test.redditHosts") ?? []) : []
+        return ["*reddit.com"] + extra.map { "*" + $0 }
+    }
+
     static func networkFilter(for domain: String) -> String {
         let escaped = domain.replacingOccurrences(of: ".", with: "\\.")
         // WebKit's canonical HTTP URLs end the host with a port or a slash.
@@ -182,6 +197,11 @@ final class Shield: ObservableObject {
                 "action": ["type": "css-display-none", "selector": entry.selector],
             ]
         }
+
+        rules.append([
+            "trigger": ["url-filter": ".*", "if-domain": Shield.redditSites],
+            "action": ["type": "css-display-none", "selector": Shield.reddit.joined(separator: ", ")],
+        ])
 
         guard let data = try? JSONSerialization.data(withJSONObject: rules, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8)
