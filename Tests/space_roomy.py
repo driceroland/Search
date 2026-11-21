@@ -13,6 +13,7 @@ Nothing here makes, shows or brings forward a window.
 """
 import os
 import statistics
+import subprocess
 import sys
 import tempfile
 import time
@@ -45,6 +46,9 @@ def main():
     out = tempfile.mkdtemp(prefix="space-roomy-")
     try:
         sv.setup(**{"spaces": True, "sidebar": True, "sidebar.roomy": True, "start.fresh": False})
+        # Rows are found as dark text on a light column: the light look,
+        # whatever the Mac's own is.
+        subprocess.run(["defaults", "write", sv.SUITE, "look", "-string", "light"])
         sv.launch()
         for n in ("a1", "a2", "a3"): sv.page(n)
         sv.cmd({"do": "space", "action": "new", "name": "Two"}); time.sleep(0.8)
