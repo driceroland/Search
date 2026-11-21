@@ -8928,6 +8928,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             // the one in Settings, as a tab does: neither is in the row,
             // and both opened at 100% (#691).
             if let page = peekTab?.built === webView ? peekTab : littleTab(for: webView) {
+                // Passkeys check the committed page, including here where
+                // the tab has no row yet (#1263).
+                page.didCommit()
                 page.applyRememberedZoom()
             }
             return

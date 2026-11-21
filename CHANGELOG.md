@@ -21,6 +21,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Passkey sign-in works in Peek and small link windows, including after navigating to another site. Their committed page address was never recorded, so Search refused the request before the Touch ID sheet could appear (#1263). `python3 Tests/passkey_overlays.py` checks it. Thanks [@guilopeszw](https://github.com/guilopeszw)
 - Floccus can pick a bookmark folder to sync: choosing one said "Folder not found". It finds a folder's path by asking `chrome.bookmarks.get` for each parent in turn, and the bookmarks bar ("1") and the root ("0") came back empty, though `getSubTree` and `getChildren` knew them. Then syncing failed with "this.absoluteRoot.id": an id that names no bookmark came back empty instead of an error, as Chrome gives, so Floccus never fell back from Firefox's root id to `getTree`. Thanks [@xibrox](https://github.com/xibrox)
 - In full screen, the strip of tabs and the bookmarks bar move down with the menu bar and the bar with the window's buttons when you bring the pointer to the top, instead of lying under them out of reach, as Safari's and Chrome's do.
 - Monarch Money | Retail purchase sync no longer shows its options page without any text. Its code reads `chrome.i18n.getMessage` into a variable and calls it from there, and WebKit answers nothing for that; the i18n functions now work however they are called.
