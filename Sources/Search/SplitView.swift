@@ -162,6 +162,7 @@ private struct PaneLayers: View {
             Page(tab: tab, holdsPage: false, corner: corner, browser: browser)
 
             if focused {
+                if tab.isBlank { HomeGrid(browser: browser) }
                 Omnibox(browser: browser, over: !tab.isBlank, fitted: true, tab: tab.id)
             }
 

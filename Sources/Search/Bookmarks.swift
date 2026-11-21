@@ -223,6 +223,13 @@ final class Bookmarks {
         first { $0.id == id }
     }
 
+    /// The sites of the top-level folder called Home, for a blank tab's grid
+    /// (HomeGrid.swift): sixteen at most, four to a row.
+    var homeSites: [Bookmark] {
+        let home = roots.first { $0.isFolder && $0.title.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Home") == .orderedSame }
+        return Array((home?.children ?? []).filter { !$0.isFolder && $0.address != nil }.prefix(16))
+    }
+
     private func first(where test: (Bookmark) -> Bool) -> Bookmark? {
         func walk(_ nodes: [Bookmark]) -> Bookmark? {
             for node in nodes {
