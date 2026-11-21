@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- One button per space, in Settings › Spaces & Pins: every space beside the bookmarks, a click away, in place of the single space icon and its menu. Each wears its space's icon and colour, the one you are in marked, and a click on that one opens the space's menu. At the foot of the column the row is centred; across the top, or up beside back and forward, it stays where it was. Off unless you turn it on.
 - Coming from Zen brings its spaces too, the way Arc's come: each of its spaces a space here with its name, icon and colours, its pinned tabs that space's, its folders kept as folders where pinned rows hold them, and its Essentials as pins in every space. Read from the file Zen keeps them in, a backup of it when that is torn, or the tables older versions of Zen kept; nothing in Zen changes.
 - Open tabs and tab groups come over from Firefox and Zen too, as they do from Chrome-family browsers: asleep at the end of the space, a group by its name and folded as it was, Firefox's pinned tabs as pins (Zen's come with its spaces). Off in the import sheet unless you turn it on.
 - More browsers to come from: Thorium, Naver Whale, Island and Sidekick, with their passwords; Yandex and ChatGPT Atlas, their bookmarks, history and open tabs (their passwords are locked away where other apps can't read them); Floorp, LibreWolf, Waterfox and Mullvad Browser, as Firefox; and Orion, its bookmarks and history, each profile. A Firefox-family profile is read once, however its folder is spelled.
@@ -21,6 +22,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Switching spaces with ⌃1–⌃9 or the space's menu changes the window's colour at once. It waited for the next space's tabs to slide in and settle, up to most of a second, before the colour began to change.
 - A security key (a YubiKey, say) works with Settings › Passwords › Offer passkeys off. The switch refused every request for one at once, "The operation either timed out or was not allowed.", before any sheet. Off now means what it says, no passkeys from the Mac, iCloud or a phone: a sign-in that names a key over USB, NFC or Bluetooth, or a key being added as one, brings up the Mac's sheet for the security key alone, and everything else still goes straight on to the password. `python3 Tests/security_key_passkeys_off.py` (idea 846)
 - The rows the column keeps out of sight for a swipe between spaces are hidden until a swipe brings them, not only moved aside. Since 1.0.16 they lay under the page still drawn, so whatever moved in them went on moving there too: a tab loading turned a second ring the whole time it loaded, and the window was drawn again for it at every frame. `python3 Tests/idle_animations.py`
 - Reddit's promoted posts, in the feed, under a post before its comments and in the sidebar, are hidden by the ad blocker, on reddit.com only; switching the blocker off, or off for reddit.com, brings them back.
