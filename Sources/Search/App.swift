@@ -1444,6 +1444,14 @@ struct ContentView: View {
     /// (see `forget`), and they no longer hold its browser.
     private static var monitors: [ObjectIdentifier: Any] = [:]
 
+    /// The browser whose monitor takes a popup window's keys: the window in
+    /// front that isn't a popup, or else the first that still listens.
+    private static var popupKeys: Browser? {
+        let front = Browsers.frontBrowser
+        if monitors[ObjectIdentifier(front)] != nil { return front }
+        return Browsers.all.first { monitors[ObjectIdentifier($0)] != nil }
+    }
+
     static func forget(_ browser: Browser) {
         let id = ObjectIdentifier(browser)
         if let monitor = monitors.removeValue(forKey: id) { NSEvent.removeMonitor(monitor) }
@@ -1453,8 +1461,11 @@ struct ContentView: View {
     /// Whether a key is this window's to act on.
     private func mine(_ event: NSEvent) -> Bool {
         if let window = event.window, let owner = Browsers.browser(for: window) {
-            // Popup hosts have no ContentView monitor of their own.
-            return owner.isPopup ? Browsers.acting === browser : window === self.window
+            // Popup hosts have no ContentView monitor of their own: a window
+            // behind takes their keys. Not `acting`, which is the popup
+            // itself once it has opened in front (#1146), so no monitor took
+            // them and Escape left its camera question up.
+            return owner.isPopup ? ContentView.popupKeys === browser : window === self.window
         }
         return Browsers.acting === browser
     }
