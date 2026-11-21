@@ -258,15 +258,98 @@ extension Browser {
                 done?(reason)
                 return
             }
-            tab.snapshot { [weak self, weak tab] picture in
+            // Its sessionStorage, for the view that wakes it (KeptSession).
+            KeptSession.keep(tab, in: self) { [weak self, weak tab] in
                 guard let self, let tab else { done?("gone"); return }
-                if let reason = self.awake(because: tab) {
-                    done?(reason)
-                    return
+                tab.snapshot { [weak self, weak tab] picture in
+                    guard let self, let tab else { done?("gone"); return }
+                    if let reason = self.awake(because: tab) {
+                        done?(reason)
+                        return
+                    }
+                    tab.sleep(picture: picture)
+                    done?("asleep")
                 }
-                tab.sleep(picture: picture)
-                done?("asleep")
             }
         }
+    }
+}
+
+// A tab keeps its sessionStorage through sleep.
+//
+// A sleeping tab's history and scroll come back with its view
+// (`interactionState`), but the view made to wake it starts a new browsing
+// session, and sessionStorage goes with the old one. Some sites keep a draft,
+// a form half filled or a step of a checkout only there, so waking lost it.
+// WebKit has no way to hand sessionStorage from one view to the next (nothing
+// on WKWebView or its data store), so the page's own is read as it falls
+// asleep and written back as it wakes, before any of its scripts run.
+//
+// The page itself only: frames inside it lose theirs, as before. Not for a
+// private tab, so nothing of one is held after its view goes. Not past
+// `cap`: sleep is there to give memory back. Held in memory only, never in
+// the session file, and only until the woken page commits; a later page in
+// the same tab never gets it, so nothing the page cleared since comes back.
+// Read and written in Search's world, where a page can't stand in for the
+// functions used, and storage is the same in every world.
+@MainActor
+enum KeptSession {
+    /// What each sleeping tab's page had: `[origin, [[key, value], …]]` as JSON.
+    private static var kept: [UUID: String] = [:]
+
+    /// Past this, a page's storage isn't kept: about half a megabyte.
+    static let cap = 512 * 1024
+
+    private static let read = """
+        (() => {
+          try {
+            const s = sessionStorage;
+            if (!s.length) return null;
+            const items = [];
+            for (let i = 0; i < s.length; i++) { const k = s.key(i); items.push([k, s.getItem(k)]); }
+            return JSON.stringify([location.origin, items]);
+          } catch (e) { return null; }
+        })()
+        """
+
+    /// Before the tab's view goes (Browser.sleep): keeps what its page has,
+    /// then carries on. A page that doesn't answer keeps nothing.
+    static func keep(_ tab: Tab, in browser: Browser, then: @escaping () -> Void) {
+        let open = Set((browser.tabs + browser.parkedTabs).map(\.id))
+        kept = kept.filter { open.contains($0.key) }
+        kept[tab.id] = nil
+        guard !tab.shy, let web = tab.built else { return then() }
+        web.evaluateJavaScript(read, in: nil, in: Web.world) { result in
+            MainActor.assumeIsolated {
+                if let json = (try? result.get()) as? String, json.utf8.count <= cap {
+                    kept[tab.id] = json
+                }
+                then()
+            }
+        }
+    }
+
+    /// For the woken tab's next document (Tab.arm), ahead of its scripts:
+    /// only for the same origin, and only into a session that's still empty.
+    static func script(for tab: Tab) -> String? {
+        guard let json = kept[tab.id] else { return nil }
+        return """
+            (() => {
+              try {
+                const [origin, items] = \(json);
+                if (location.origin !== origin || sessionStorage.length) return;
+                for (const [k, v] of items) sessionStorage.setItem(k, v);
+              } catch (e) {}
+            })();
+            """
+    }
+
+    /// The woken page committed (Tab.didCommit): its copy goes, and the
+    /// answer says the tab should arm again without it. A blank page on the
+    /// way there doesn't count.
+    static func committed(_ tab: Tab) -> Bool {
+        guard kept[tab.id] != nil, let url = tab.built?.url, url.absoluteString != "about:blank" else { return false }
+        kept[tab.id] = nil
+        return true
     }
 }

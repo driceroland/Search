@@ -361,6 +361,8 @@ final class Tab: ObservableObject, Identifiable {
 
     func didCommit() {
         popupGesture.clear()
+        // A woken page has its sessionStorage back; later ones don't get it.
+        if KeptSession.committed(self) { arm(hiding: veils) }
         // What the old page was refused went with it.
         if !blockedPopups.isEmpty { blockedPopups = [] }
         // A translated page is gone; its frames with it.
@@ -1244,6 +1246,10 @@ final class Tab: ObservableObject, Identifiable {
         // SiteStyles.swift).
         if let style = SiteStyles.shared.css(on: SiteStyles.host(of: url ?? pageAddress)) {
             add(SiteStyles.script(style), .atDocumentStart, mainFrameOnly: true, in: Web.world)
+        }
+        // A woken page's sessionStorage, back before its scripts (KeptSession).
+        if let kept = KeptSession.script(for: self) {
+            add(kept, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
         // The same scripts as the document before's, the usual case, are
         // left where they are: taken out and put back, every one was sent to
