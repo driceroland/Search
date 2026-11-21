@@ -38,6 +38,9 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Swipe back closes a link's tab", detail: "On the page a link opened, a swipe back closes the tab and takes you to the one you were on.",
+               since: "1.0.17", get: { $0.swipeBackCloses }, set: { $0.swipeBackCloses = $1 }),
+
         Toggle(title: "Handoff to your iPhone", detail: "The page in front comes up in your iPhone's and iPad's app switcher.",
                since: "1.0.16", get: { $0.handoff }, set: { $0.handoff = $1 }),
         Toggle(title: "Always show the address bar", detail: "The page's full address stays in sight, to type in.",

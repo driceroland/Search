@@ -19,6 +19,7 @@ in [ROADMAP.md](ROADMAP.md).
 - More browsers to come from: Thorium, Naver Whale, Island and Sidekick, with their passwords; Yandex and ChatGPT Atlas, their bookmarks, history and open tabs (their passwords are locked away where other apps can't read them); Floorp, LibreWolf, Waterfox and Mullvad Browser, as Firefox; and Orion, its bookmarks and history, each profile. A Firefox-family profile is read once, however its folder is spelled.
 - Safari comes over directly when macOS lets Search read its files (with Full Disk Access, which Search never asks for): its bookmarks, Reading List and history. Otherwise the import sheet says in a sentence why it comes from a file, and How shows the steps for Safari's File › Export Browsing Data to File….
 - The import sheet and the Welcome say, under each browser found on this Mac, what can come over from it: bookmarks, history, passwords, spaces & pins, open tabs. Browsers that aren't here aren't listed.
+- Settings › Tabs › Swipe back closes a tab a link opened, off unless you turn it on: on the page a link (or a page's window.open) opened in a new tab, a swipe back shows a cross, closes the tab and goes back to the tab you were on, as a small window's swipe closes it. Pages clicked through in the tab go back as usual first, and a mouse's back button still does nothing there. `swift test --filter SwipeBackClosesTests`. Thanks [@xibrox](https://github.com/xibrox) ([#1337](https://github.com/driceroland/Search/pull/1337), idea 565)
 
 ### Fixed
 
