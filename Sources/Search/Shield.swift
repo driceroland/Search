@@ -206,12 +206,12 @@ final class Shield: ObservableObject {
         guard let data = try? JSONSerialization.data(withJSONObject: rules, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8)
         else {
-            trouble = "Couldn't build the block list"
+            trouble = Interface.text("Couldn't build the block list")
             return
         }
 
         guard let store else {
-            trouble = "WebKit has nowhere to compile it"
+            trouble = Interface.text("WebKit has nowhere to compile it")
             return
         }
         // Dictionary order isn't stable between launches; the sorted JSON is
@@ -230,7 +230,7 @@ final class Shield: ObservableObject {
                             guard let self else { return }
                             guard let compiled else {
                                 self.preparing = false
-                                self.trouble = error?.localizedDescription ?? "Compiling the block list failed"
+                                self.trouble = error?.localizedDescription ?? Interface.text("Compiling the block list failed")
                                 self.release()
                                 return
                             }

@@ -11,7 +11,7 @@ struct ExtensionsPage: View {
             Installer(browser: browser, extensions: .shared)
         } else {
             Card {
-                Line("Chrome extensions", "Need macOS 15.4 or later — the version whose WebKit can run them.") { EmptyView() }
+                Line(Interface.text("Chrome extensions"), Interface.text("Need macOS 15.4 or later — the version whose WebKit can run them.")) { EmptyView() }
             }
         }
     }
@@ -27,18 +27,18 @@ struct ExtensionsPage: View {
                 Card {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 8) {
-                            Text("Add from the Chrome Web Store")
+                            Text(Interface.text("Add from the Chrome Web Store"))
                                 .font(.system(size: 13))
                                 .foregroundStyle(Palette.ink)
                             Spacer(minLength: 8)
-                            Pill("Open the Store") {
+                            Pill(Interface.text("Open the Store")) {
                                 browser.open(Browser.webStore, foreground: true)
                             }
                         }
                         HStack(spacing: 8) {
                             ZStack(alignment: .leading) {
                                 if link.isEmpty {
-                                    Text("Paste a link to an extension, or its id")
+                                    Text(Interface.text("Paste a link to an extension, or its id"))
                                         .foregroundStyle(Palette.muted.opacity(0.8))
                                 }
                                 TextField("", text: $link)
@@ -53,11 +53,11 @@ struct ExtensionsPage: View {
                             if !extensions.busy.isEmpty {
                                 Ring(size: 12)
                             } else {
-                                Pill("Add", filled: true, action: add)
+                                Pill(Interface.text("Add"), filled: true, action: add)
                                     .disabled(Crx.id(in: link) == nil)
                             }
                         }
-                        Text("Or find it in the store and press Add to Search on its page.")
+                        Text(Interface.text("Or find it in the store and press Add to Search on its page."))
                             .font(.system(size: 11.5))
                             .foregroundStyle(Palette.muted)
                             .fixedSize(horizontal: false, vertical: true)
@@ -66,8 +66,8 @@ struct ExtensionsPage: View {
                 }
 
                 Card {
-                    Line("From another browser", "What Chrome, Arc, Brave and the others added from the Chrome Web Store — installed fresh from the store, you say yes to each one") {
-                        Pill("Bring them over…") {
+                    Line(Interface.text("From another browser"), Interface.text("What Chrome, Arc, Brave and the others added from the Chrome Web Store — installed fresh from the store, you say yes to each one")) {
+                        Pill(Interface.text("Bring them over…")) {
                             browser.bringingExtensions = true
                             browser.lead(to: InternalPage(.importing))
                         }
@@ -75,7 +75,7 @@ struct ExtensionsPage: View {
                 }
 
                 if extensions.installed.isEmpty {
-                    Card { Nothing("No extensions yet.") }
+                    Card { Nothing(Interface.text("No extensions yet.")) }
                 } else {
                     Card {
                         ForEach(Array(extensions.installed.enumerated()), id: \.element.id) { index, item in
@@ -83,7 +83,7 @@ struct ExtensionsPage: View {
                             Row(item: item, extensions: extensions)
                         }
                     }
-                    Text("Each extension stays out of private tabs until you allow it in its … menu. One you allow can tell which tabs are private, but may still keep what you visit in them.")
+                    Text(Interface.text("Each extension stays out of private tabs until you allow it in its … menu. One you allow can tell which tabs are private, but may still keep what you visit in them."))
                         .font(.system(size: 11.5))
                         .foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -92,8 +92,8 @@ struct ExtensionsPage: View {
                 Recorders()
 
                 Card {
-                    Line("Load an unpacked extension", "A folder with a manifest.json — your own, or one exported from another browser. Reload picks up what you've changed in it since.") {
-                        Pill("Choose…") { extensions.installFolder() }
+                    Line(Interface.text("Load an unpacked extension"), Interface.text("A folder with a manifest.json — your own, or one exported from another browser. Reload picks up what you've changed in it since.")) {
+                        Pill(Interface.text("Choose…")) { extensions.installFolder() }
                     }
                 }
             }
@@ -118,8 +118,8 @@ struct ExtensionsPage: View {
                     VStack(spacing: 0) {
                         ForEach(Array(ids.enumerated()), id: \.element) { index, id in
                             if index > 0 { Rule() }
-                            Line(Browser.extensionName(id), "Can record your screen — macOS asks what to share each time") {
-                                Pill("Remove") { ExtensionCapture.forget(id) }
+                            Line(Browser.extensionName(id), Interface.text("Can record your screen — macOS asks what to share each time")) {
+                                Pill(Interface.text("Remove")) { ExtensionCapture.forget(id) }
                             }
                         }
                     }
@@ -160,7 +160,7 @@ struct ExtensionsPage: View {
                         // Switched on and not running: said as such, with
                         // WebKit's reason, not a row like any other (#1208).
                         if item.enabled, context == nil, let reason = extensions.notStarted[item.id] {
-                            Text("Couldn’t start: \(reason)")
+                            Text(Interface.format("Couldn’t start: %@", reason))
                                 .font(.system(size: 11.5))
                                 .foregroundStyle(Palette.unsafe)
                                 .lineLimit(3)
@@ -194,8 +194,8 @@ struct ExtensionsPage: View {
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
-                    .accessibilityLabel("More for \(item.name)")
-                    .help("More for \(item.name)")
+                    .accessibilityLabel(Interface.format("More for %@", item.name))
+                    .help(Interface.format("More for %@", item.name))
                     Switch(on: Binding(get: { item.enabled }, set: { extensions.setEnabled(item.id, $0) }))
                 }
                 if sites, extensions.siteAccess(item.id).restricted {
@@ -213,52 +213,52 @@ struct ExtensionsPage: View {
 
         @ViewBuilder
         private func actions(_ context: WKWebExtensionContext?) -> some View {
-            Button(item.pinned == true ? "Unpin" : "Pin to Toolbar") {
+            Button(item.pinned == true ? Interface.text("Unpin") : Interface.text("Pin to Toolbar")) {
                 extensions.setPinned(item.id, !(item.pinned ?? false))
             }
             if context?.overrideNewTabPageURL != nil {
                 let on = extensions.newTabPageID == item.id
-                Button(on ? "Stop Showing in New Tabs" : "Show in New Tabs") {
+                Button(on ? Interface.text("Stop Showing in New Tabs") : Interface.text("Show in New Tabs")) {
                     extensions.setNewTabPage(on ? nil : item.id)
                 }
             }
             if context?.optionsPageURL != nil {
-                Button("Options") { extensions.openOptions(item.id) }
+                Button(Interface.text("Options")) { extensions.openOptions(item.id) }
             }
             if item.source != nil || !item.fromStore {
-                Button("Reload") { extensions.reload(item.id) }
+                Button(Interface.text("Reload")) { extensions.reload(item.id) }
             }
             if let context {
                 Divider()
                 if (context.webExtension.manifest["incognito"] as? String) == "not_allowed" {
-                    Text("Private Tabs Aren’t Supported")
+                    Text(Interface.text("Private Tabs Aren’t Supported"))
                 } else {
-                    Toggle("Allow in Private Tabs", isOn: Binding(
+                    Toggle(Interface.text("Allow in Private Tabs"), isOn: Binding(
                         get: { context.hasAccessToPrivateData },
                         set: { extensions.setPrivate(item.id, $0) }
                     ))
-                    .accessibilityLabel("Allow \(item.name) in private tabs")
-                    .help("Private tabs opened before any extension was allowed need reopening. Turned off, a script already running in one stops only when the page reloads.")
+                    .accessibilityLabel(Interface.format("Allow %@ in private tabs", item.name))
+                    .help(Interface.text("Private tabs opened before any extension was allowed need reopening. Turned off, a script already running in one stops only when the page reloads."))
                 }
             }
             Divider()
-            Button("Remove", role: .destructive) { extensions.remove(item.id) }
+            Button(Interface.text("Remove"), role: .destructive) { extensions.remove(item.id) }
         }
 
         /// Where it was loaded from, by the folder's name — the whole path
         /// is in the tooltip.
         private var folder: String {
-            item.source.map { "From “\(URL(fileURLWithPath: $0).lastPathComponent)”" } ?? "From a folder"
+            item.source.map { Interface.format("From “%@”", URL(fileURLWithPath: $0).lastPathComponent) } ?? Interface.text("From a folder")
         }
 
         private func detail(_ context: WKWebExtensionContext?) -> String {
-            var parts = ["Version \(item.version)", item.fromStore ? "Chrome Web Store" : folder]
-            if item.enabled, context == nil, extensions.notStarted[item.id] == nil { parts.append("couldn't start") }
+            var parts = [Interface.format("Version %@", item.version), item.fromStore ? Interface.text("Chrome Web Store") : folder]
+            if item.enabled, context == nil, extensions.notStarted[item.id] == nil { parts.append(Interface.text("couldn't start")) }
             if extensions.newTabPageID == item.id {
-                parts.append("shows in new tabs")
+                parts.append(Interface.text("shows in new tabs"))
             }
-            if context?.hasAccessToPrivateData == true { parts.append("allowed in private tabs") }
-            if let errors = context.map(Extensions.errors(of:)), !errors.isEmpty { parts.append("\(errors.count) warning\(errors.count == 1 ? "" : "s")") }
+            if context?.hasAccessToPrivateData == true { parts.append(Interface.text("allowed in private tabs")) }
+            if let errors = context.map(Extensions.errors(of:)), !errors.isEmpty { parts.append(Interface.format(errors.count == 1 ? "%@ warning" : "%@ warnings", String(errors.count))) }
             return parts.joined(separator: " · ")
         }
     }
@@ -274,19 +274,19 @@ private struct RunsOn: View {
     var body: some View {
         let access = extensions.siteAccess(item.id)
         Menu {
-            Picker("Runs on", selection: Binding(
+            Picker(Interface.text("Runs on"), selection: Binding(
                 get: { access.mode },
                 set: { extensions.setSiteAccess(item.id, SiteAccess(mode: $0, hosts: access.hosts)) }
             )) {
-                Text("All Sites It Asks For").tag(SiteAccess.Mode.all)
-                Text("Only Sites I Name").tag(SiteAccess.Mode.some)
-                Text("Only When I Click It").tag(SiteAccess.Mode.click)
+                Text(Interface.text("All Sites It Asks For")).tag(SiteAccess.Mode.all)
+                Text(Interface.text("Only Sites I Name")).tag(SiteAccess.Mode.some)
+                Text(Interface.text("Only When I Click It")).tag(SiteAccess.Mode.click)
             }
             .pickerStyle(.inline)
             .labelsHidden()
         } label: {
             HStack(spacing: 3) {
-                Text(access.mode.title)
+                Text(Interface.text(access.mode.title))
                     .font(.system(size: 11.5))
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 8, weight: .semibold))
@@ -300,9 +300,9 @@ private struct RunsOn: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .accessibilityLabel("\(item.name) runs on")
-        .accessibilityValue(access.mode.title)
-        .help("Where \(item.name) runs. Fewer sites, less memory on the rest")
+        .accessibilityLabel(Interface.format("%@ runs on", item.name))
+        .accessibilityValue(Interface.text(access.mode.title))
+        .help(Interface.format("Where %@ runs. Fewer sites, less memory on the rest", item.name))
     }
 }
 
@@ -335,27 +335,27 @@ private struct SiteList: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Remove \(host)")
-                        .help("Remove \(host)")
+                        .accessibilityLabel(Interface.format("Remove %@", host))
+                        .help(Interface.format("Remove %@", host))
                     }
                 }
                 HStack(spacing: 8) {
                     ZStack(alignment: .leading) {
                         if typed.isEmpty {
-                            Text("Add a site, like example.com")
+                            Text(Interface.text("Add a site, like example.com"))
                                 .foregroundStyle(Palette.muted.opacity(0.8))
                         }
                         TextField("", text: $typed)
                             .textFieldStyle(.plain)
                             .foregroundStyle(Palette.ink)
                             .onSubmit(add)
-                            .accessibilityLabel("Add a site for \(item.name)")
+                            .accessibilityLabel(Interface.format("Add a site for %@", item.name))
                     }
                     .font(.system(size: 12))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                     .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    Pill("Add", action: add)
+                    Pill(Interface.text("Add"), action: add)
                         .disabled(SiteAccess.host(from: typed) == nil)
                 }
             }
@@ -374,10 +374,10 @@ private struct SiteList: View {
 
     private func note(_ access: SiteAccess) -> String {
         var out = access.mode == .some
-            ? "Subdomains included. Elsewhere it runs once you click its button, on that tab until it leaves the site."
-            : "It runs on a page once you click its button there, on that tab until it leaves the site."
+            ? Interface.text("Subdomains included. Elsewhere it runs once you click its button, on that tab until it leaves the site.")
+            : Interface.text("It runs on a page once you click its button there, on that tab until it leaves the site.")
         if SiteAccess.needsEverySite(name: item.name, said: Extensions.settings(for: item.id)) {
-            out += " \(item.name) may need every site to fill in sign-ins."
+            out += " " + Interface.format("%@ may need every site to fill in sign-ins.", item.name)
         }
         return out
     }
@@ -463,12 +463,12 @@ struct HomePageLine: View {
             let current = extensions.newTabPageID
             if !askers.isEmpty {
                 Rule()
-                SettingRow(icon: "house", title: "Home page", detail: detail(askers, current)) {
+                SettingRow(icon: "house", title: Interface.text("Home page"), detail: detail(askers, current)) {
                     Picker("", selection: Binding(
                         get: { current ?? "" },
                         set: { extensions.setNewTabPage($0.isEmpty ? nil : $0) }
                     )) {
-                        Text("Search's own").tag("")
+                        Text(Interface.text("Search's own")).tag("")
                         Divider()
                         ForEach(askers) { Text($0.name).tag($0.id) }
                     }
@@ -481,11 +481,11 @@ struct HomePageLine: View {
 
         private func detail(_ askers: [Installed], _ current: String?) -> String {
             if let current, let name = askers.first(where: { $0.id == current })?.name {
-                return "New tabs show \(name)'s page, since you let it replace them"
+                return Interface.format("New tabs show %@'s page, since you let it replace them", name)
             }
             return askers.count == 1
-                ? "New tabs open blank. \(askers[0].name) asked to show its page instead"
-                : "New tabs open blank. \(askers.count) extensions asked to show their page instead"
+                ? Interface.format("New tabs open blank. %@ asked to show its page instead", askers[0].name)
+                : Interface.format("New tabs open blank. %@ extensions asked to show their page instead", String(askers.count))
         }
     }
 }

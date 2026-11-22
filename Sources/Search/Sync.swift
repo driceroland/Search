@@ -163,8 +163,8 @@ final class Sync: ObservableObject {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.message = "Choose a folder your Macs share, in iCloud Drive or Dropbox for example. Turn on sync with the same folder in Search on each Mac."
-        panel.prompt = "Sync Here"
+        panel.message = Interface.text("Choose a folder your Macs share, in iCloud Drive or Dropbox for example. Turn on sync with the same folder in Search on each Mac.")
+        panel.prompt = Interface.text("Sync Here")
         let drive = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
         if FileManager.default.fileExists(atPath: drive.path) { panel.directoryURL = drive }
@@ -253,7 +253,7 @@ final class Sync: ObservableObject {
         // is no reason to think everything was deleted: nothing happens.
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else {
-            problem = "The folder isn\u{2019}t there"
+            problem = Interface.text("The folder isn’t there")
             return
         }
         running = true
@@ -281,7 +281,7 @@ final class Sync: ObservableObject {
         do {
             try files.createDirectory(at: folder, withIntermediateDirectories: true)
         } catch {
-            problem = "Search can\u{2019}t write in that folder"
+            problem = Interface.text("Search can’t write in that folder")
             return []
         }
         problem = nil
@@ -414,8 +414,10 @@ final class Sync: ObservableObject {
         place = place.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         if let problem { return "\(place): \(problem.lowercased())" }
         guard let lastSynced else { return place }
-        let when = RelativeDateTimeFormatter().localizedString(for: lastSynced, relativeTo: Date())
-        let with = others.isEmpty ? "no other Mac yet" : others.joined(separator: ", ")
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Interface.locale
+        let when = formatter.localizedString(for: lastSynced, relativeTo: Date())
+        let with = others.isEmpty ? Interface.text("no other Mac yet") : others.joined(separator: ", ")
         return "\(place) · \(with) · \(when)"
     }
 }

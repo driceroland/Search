@@ -241,8 +241,8 @@ struct PopupSiteList: View {
     var body: some View {
         ForEach(prefs.popupSites.sorted(), id: \.self) { site in
             Rule()
-            Line(site, "Can open pop-ups without a click") {
-                Pill("Remove") { prefs.popupSites.remove(site) }
+            Line(site, Interface.text("Can open pop-ups without a click")) {
+                Pill(Interface.text("Remove")) { prefs.popupSites.remove(site) }
             }
         }
     }

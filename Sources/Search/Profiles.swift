@@ -318,10 +318,10 @@ enum ProfileMenu {
 
     /// Its name, then a window of its own.
     static func askNew() {
-        Ask.name("New Profile", detail: OneWindow.on
-                    ? "A separate set of spaces with its own sign-ins, history and bookmarks."
-                    : "A separate set of spaces with its own sign-ins, history and bookmarks, in a window of its own.",
-                 placeholder: "Work", confirm: "Create") { name in
+        Ask.name(Interface.text("New Profile"), detail: OneWindow.on
+                    ? Interface.text("A separate set of spaces with its own sign-ins, history and bookmarks.")
+                    : Interface.text("A separate set of spaces with its own sign-ins, history and bookmarks, in a window of its own."),
+                 placeholder: Interface.text("Work"), confirm: Interface.text("Create")) { name in
             let made = Profiles.shared.add(named: name)
             Browsers.open(profile: made.id)
         }
@@ -355,8 +355,8 @@ struct ProfilesSettings: View {
 
     var body: some View {
         Card {
-            Line("Profiles", "Separate sets of spaces, each with its own sign-ins, history and bookmarks, in windows of their own. Extensions, passwords and settings are shared.") {
-                Pill("New Profile…") { ProfileMenu.askNew() }
+            Line(Interface.text("Profiles"), Interface.text("Separate sets of spaces, each with its own sign-ins, history and bookmarks, in windows of their own. Extensions, passwords and settings are shared.")) {
+                Pill(Interface.text("New Profile…")) { ProfileMenu.askNew() }
             }
             if profiles.several {
                 ForEach(profiles.list) { profile in
@@ -373,19 +373,19 @@ struct ProfilesSettings: View {
         let spaces: [String]
 
         var body: some View {
-            Line(profile.name + (current ? " — this window" : ""), spaces.joined(separator: ", ")) {
+            Line(profile.name + (current ? Interface.text(" — this window") : ""), spaces.joined(separator: ", ")) {
                 HStack(spacing: 6) {
-                    if !current { Pill("Open") { Browsers.open(profile: profile.id) } }
-                    Pill("Rename…") {
-                        Ask.name("Rename Profile", placeholder: profile.name, initial: profile.name, confirm: "Rename") {
+                    if !current { Pill(Interface.text("Open")) { Browsers.open(profile: profile.id) } }
+                    Pill(Interface.text("Rename…")) {
+                        Ask.name(Interface.text("Rename Profile"), placeholder: profile.name, initial: profile.name, confirm: Interface.text("Rename")) {
                             Profiles.shared.rename(profile.id, to: $0)
                         }
                     }
                     if !profile.isPersonal {
-                        Pill("Delete…", tint: .red) {
-                            Ask.sure("Delete “\(profile.name)”?",
-                                     detail: "Its windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac.",
-                                     confirm: "Delete", returnCancels: true) {
+                        Pill(Interface.text("Delete…"), tint: .red) {
+                            Ask.sure(Interface.format("Delete “%@”?", profile.name),
+                                     detail: Interface.text("Its windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac."),
+                                     confirm: Interface.text("Delete"), returnCancels: true) {
                                 Profiles.shared.delete(profile.id)
                             }
                         }

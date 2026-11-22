@@ -1835,7 +1835,7 @@ final class Browser: NSObject, ObservableObject {
         for store in Spaces.stores(of: profileID) {
             store.removeData(ofTypes: types, modifiedSince: .distantPast) {}
         }
-        announce("Signed out of everything")
+        announce(Interface.text("Signed out of everything"))
     }
 
     /// Only what was fetched to draw pages, not what identifies you: the
@@ -1858,7 +1858,7 @@ final class Browser: NSObject, ObservableObject {
             store.removeData(ofTypes: types, modifiedSince: .distantPast) { cleared.leave() }
         }
         cleared.notify(queue: .main, execute: done)
-        announce("Cache cleared")
+        announce(Interface.text("Cache cleared"))
     }
 
     /// `space`: nil for everywhere you have been, as the History menu and
@@ -1887,7 +1887,7 @@ final class Browser: NSObject, ObservableObject {
         Favicons.shared.forgetAll()
         SiteSearch.forget()
         Shared.forgetDownloadAddresses()
-        announce("History cleared")
+        announce(Interface.text("History cleared"))
     }
 
     /// The histories this window's spaces keep, for Clear…'s choice: the one
@@ -2087,7 +2087,7 @@ final class Browser: NSObject, ObservableObject {
             Store.settings.removeObject(forKey: key)
         }
         SiteNotifications.shared.objectWillChange.send()
-        announce("Camera, microphone, location and notification choices forgotten")
+        announce(Interface.text("Camera, microphone, location and notification choices forgotten"))
     }
 
     /// What was last answered to a page asking where you are, in a test run

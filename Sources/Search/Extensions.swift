@@ -727,8 +727,8 @@ final class Extensions: NSObject, ObservableObject {
         // One that also has request rules blocks with those.
         guard asked.contains("webRequestBlocking"), !asked.contains(where: { $0.hasPrefix("declarativeNetRequest") }) else { return nil }
         let lite = (manifest["name"] as? String)?.hasPrefix("uBlock Origin") == true
-            ? " uBlock Origin Lite, from the Chrome Web Store, blocks them here." : ""
-        return "Can’t block requests: Safari’s engine doesn’t let extensions block them with webRequestBlocking. What it does inside pages still works." + lite
+            ? " " + Interface.text("uBlock Origin Lite, from the Chrome Web Store, blocks them here.") : ""
+        return Interface.text("Can’t block requests: Safari’s engine doesn’t let extensions block them with webRequestBlocking. What it does inside pages still works.") + lite
     }
 
     /// WebKit's error in a line: the manifest problem it names, where it
@@ -850,21 +850,21 @@ final class Extensions: NSObject, ObservableObject {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.prompt = "Load Extension"
-        panel.message = "Choose the folder that holds the extension's manifest.json."
+        panel.prompt = Interface.text("Load Extension")
+        panel.message = Interface.text("Choose the folder that holds the extension's manifest.json.")
         guard panel.runModal() == .OK, let source = panel.url else { return }
         installFolder(at: source)
     }
 
     func installFolder(at source: URL, confirm: Bool = true) {
         guard FileManager.default.fileExists(atPath: source.appendingPathComponent("manifest.json").path) else {
-            browser?.announce("That folder has no manifest.json")
+            browser?.announce(Interface.text("That folder has no manifest.json"))
             return
         }
         let source = URL(fileURLWithPath: Crx.realPath(of: source), isDirectory: true)
         let id = Crx.unpackedID(for: source)
         if installed.contains(where: { $0.id == id }) {
-            browser?.announce("Already installed. Press Reload to take its changes")
+            browser?.announce(Interface.text("Already installed. Press Reload to take its changes"))
             return
         }
         let staged = Extensions.stagingFolder(for: id)
@@ -1372,7 +1372,7 @@ final class Extensions: NSObject, ObservableObject {
             // allowed when it was added or last asked about.
             let wants = Set(Extensions.grants(found, in: staged))
             if !wants.isSubset(of: Set(current.permissions)) {
-                guard await ask(install: "An update to \(item.name)", wants: Extensions.describe(found, in: staged), icon: found.icon(for: CGSize(width: 64, height: 64)), updating: true) else {
+                guard await ask(install: Interface.format("An update to %@", item.name), wants: Extensions.describe(found, in: staged), icon: found.icon(for: CGSize(width: 64, height: 64)), updating: true) else {
                     return
                 }
             }
@@ -1641,10 +1641,12 @@ final class Extensions: NSObject, ObservableObject {
         let declared = Set(((try? JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("manifest.json")))) as? [String: Any])?["permissions"] as? [String] ?? [])
         let patterns = found.allRequestedMatchPatterns
         if patterns.contains(where: { $0.matchesAllHosts || $0.matchesAllURLs }) {
-            out.append("Read and change everything on every website")
+            out.append(Interface.text("Read and change everything on every website"))
         } else if !patterns.isEmpty {
             let hosts = patterns.compactMap(\.host).filter { !$0.isEmpty }
-            out.append("Read and change what's on " + (hosts.prefix(4).joined(separator: ", ")) + (hosts.count > 4 ? " and \(hosts.count - 4) more" : ""))
+            let listed = hosts.prefix(4).joined(separator: ", ")
+            let sites = hosts.count > 4 ? Interface.format("%@ and %@ more", listed, String(hosts.count - 4)) : listed
+            out.append(Interface.format("Read and change what's on %@", sites))
         }
         let words: [WKWebExtension.Permission: String] = [
             .tabs: "See your open tabs and their addresses",
@@ -1657,18 +1659,18 @@ final class Extensions: NSObject, ObservableObject {
             .scripting: "Run scripts in pages",
         ]
         for (permission, sentence) in words where found.requestedPermissions.contains(permission) && !added.contains(permission.rawValue) {
-            out.append(sentence)
+            out.append(Interface.text(sentence))
         }
         // Chrome's own, which Search answers itself.
-        for (name, sentence) in Extensions.searchAnswered where declared.contains(name) { out.append(sentence) }
+        for (name, sentence) in Extensions.searchAnswered where declared.contains(name) { out.append(Interface.text(sentence)) }
         return out
     }
 
     func ask(install name: String, wants: [String], icon: NSImage?, updating: Bool = false) async -> Bool {
         await ask(
-            "Add “\(name)” to Search?",
-            detail: wants.isEmpty ? "It doesn't ask for anything special." : "It will be able to:\n• " + wants.joined(separator: "\n• "),
-            icon: icon, yes: "Add Extension", no: "Cancel", updating: updating
+            Interface.format("Add “%@” to Search?", name),
+            detail: wants.isEmpty ? Interface.text("It doesn't ask for anything special.") : Interface.text("It will be able to:") + "\n• " + wants.joined(separator: "\n• "),
+            icon: icon, yes: Interface.text("Add Extension"), no: Interface.text("Cancel"), updating: updating
         )
     }
 

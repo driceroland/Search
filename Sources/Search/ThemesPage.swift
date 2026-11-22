@@ -21,24 +21,24 @@ struct ThemesPage: View {
             mock
 
             Picker("", selection: Binding(get: { family }, set: choose)) {
-                ForEach(HomeTheme.Family.allCases) { Text($0.title).tag($0) }
+                ForEach(HomeTheme.Family.allCases) { Text(Interface.text($0.title)).tag($0) }
             }
             .labelsHidden()
             .pickerStyle(.segmented)
 
             switch family {
             case .off:
-                Text("The blank tab stays plain.")
+                Text(Interface.text("The blank tab stays plain."))
                     .font(.system(size: 12)).foregroundStyle(Palette.muted)
             case .wall:
                 grid(HomeTheme.walls.map { theme in
-                    card(theme.title, on: prefs.homeTheme == theme, preview: preview(theme)) { prefs.homeTheme = theme }
+                    card(Interface.text(theme.title), on: prefs.homeTheme == theme, preview: preview(theme)) { prefs.homeTheme = theme }
                 })
             case .stickers:
                 grid(StickerPack.allCases.map { pack in
                     var t = prefs.homeTuning
                     t.pack = pack
-                    return card(pack.title, on: prefs.homeTheme == .stickers && prefs.homeTuning.pack == pack,
+                    return card(pack == .space ? Interface.text("theme.stickers.space") : Interface.text(pack.title), on: prefs.homeTheme == .stickers && prefs.homeTuning.pack == pack,
                                 preview: preview(.stickers, t)) {
                         prefs.homeTuning.pack = pack
                         prefs.homeTheme = .stickers
@@ -53,7 +53,7 @@ struct ThemesPage: View {
             }
 
             if family == .wall || family == .stickers {
-                Toggle("Shuffle: a different one each day", isOn: $prefs.homeShuffle)
+                Toggle(Interface.text("Shuffle: a different one each day"), isOn: $prefs.homeShuffle)
                     .toggleStyle(.checkbox)
                     .font(.system(size: 12))
             }
@@ -82,7 +82,7 @@ struct ThemesPage: View {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.ground)
                 .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
-                .overlay(Text("Search or enter address")
+                .overlay(Text(Interface.text("Search or enter address"))
                     .font(.system(size: 11)).foregroundStyle(Palette.muted))
                 .frame(width: 220, height: 30)
             tabs(side: side, right: right)
@@ -179,9 +179,9 @@ struct ThemesPage: View {
                                                        ? Palette.ink : Palette.hairline, lineWidth: 1.5))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Colour \(hex)")
+                .accessibilityLabel(Interface.format("Colour %@", hex))
             }
-            ColorPicker("Colour", selection: Binding(
+            ColorPicker(Interface.text("Colour"), selection: Binding(
                 get: { Color(hex: prefs.homeTuning.solid) },
                 set: { prefs.homeTuning.solid = $0.hex; prefs.homeTheme = .solid }), supportsOpacity: false)
         }
@@ -192,7 +192,7 @@ struct ThemesPage: View {
             grid(GradientPreset.allCases.map { preset in
                 var t = prefs.homeTuning
                 (t.gradientA, t.gradientB, t.angle) = preset.colours
-                return card(preset.title,
+                return card(Interface.text(preset.title),
                             on: prefs.homeTheme == .gradient && prefs.homeTuning.gradientA == preset.colours.a
                                 && prefs.homeTuning.gradientB == preset.colours.b,
                             preview: preview(.gradient, t)) {
@@ -201,14 +201,14 @@ struct ThemesPage: View {
                 }
             })
             HStack(spacing: 16) {
-                ColorPicker("From", selection: Binding(
+                ColorPicker(Interface.text("From"), selection: Binding(
                     get: { Color(hex: prefs.homeTuning.gradientA) },
                     set: { prefs.homeTuning.gradientA = $0.hex; prefs.homeTheme = .gradient }), supportsOpacity: false)
-                ColorPicker("To", selection: Binding(
+                ColorPicker(Interface.text("To"), selection: Binding(
                     get: { Color(hex: prefs.homeTuning.gradientB) },
                     set: { prefs.homeTuning.gradientB = $0.hex; prefs.homeTheme = .gradient }), supportsOpacity: false)
             }
-            ThemeSlider(title: "Angle", value: prefs.homeTuning.angle, range: 0...360, unit: "°") {
+            ThemeSlider(title: Interface.text("Angle"), value: prefs.homeTuning.angle, range: 0...360, unit: "°") {
                 prefs.homeTuning.angle = $0
                 prefs.homeTheme = .gradient
             }
@@ -228,7 +228,7 @@ struct ThemesPage: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
             VStack(alignment: .leading, spacing: 8) {
-                Pill("Choose Image…") {
+                Pill(Interface.text("Choose Image…")) {
                     // Cancelled, or not copied: what was there stays.
                     guard let kept = HomeTheme.choose() else { return }
                     let old = prefs.homeThemeImage
@@ -237,13 +237,13 @@ struct ThemesPage: View {
                     prefs.homeTheme = .custom
                 }
                 if prefs.homeThemeImage != nil {
-                    Pill("Remove") {
+                    Pill(Interface.text("Remove")) {
                         HomeTheme.forget(prefs.homeThemeImage)
                         prefs.homeThemeImage = nil
                         if prefs.homeTheme == .custom { prefs.homeTheme = .off }
                     }
                 }
-                Text("A copy is kept inside Search.")
+                Text(Interface.text("A copy is kept inside Search."))
                     .font(.system(size: 11)).foregroundStyle(Palette.muted)
             }
         }
@@ -254,16 +254,16 @@ struct ThemesPage: View {
     @ViewBuilder
     private var sliders: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ThemeSlider(title: "Intensity", value: prefs.homeTuning.intensity * 100, range: 0...100, unit: "%") {
+            ThemeSlider(title: Interface.text("Intensity"), value: prefs.homeTuning.intensity * 100, range: 0...100, unit: "%") {
                 prefs.homeTuning.intensity = $0 / 100
             }
             if prefs.homeTheme == .stickers {
-                ThemeSlider(title: "Density", value: prefs.homeTuning.density * 100, range: 0...100, unit: "%") {
+                ThemeSlider(title: Interface.text("Density"), value: prefs.homeTuning.density * 100, range: 0...100, unit: "%") {
                     prefs.homeTuning.density = $0 / 100
                 }
             }
             if prefs.homeTheme == .stickers {
-                ThemeSlider(title: "Scale", value: prefs.homeTuning.scale * 100, range: 0...100, unit: "%") {
+                ThemeSlider(title: Interface.text("Scale"), value: prefs.homeTuning.scale * 100, range: 0...100, unit: "%") {
                     prefs.homeTuning.scale = $0 / 100
                 }
             }

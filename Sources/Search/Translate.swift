@@ -74,11 +74,10 @@ final class PageTranslator {
 
     /// A language as Search's menus name it ("French"): in English, as the
     /// rest of the interface is.
-    nonisolated static func name(_ code: String) -> String {
-        let english = Locale(identifier: "en")
+    nonisolated static func name(_ code: String, locale: Locale = Locale(identifier: "en")) -> String {
         let language = Locale.Language(identifier: code)
-        if language.script != nil, let full = english.localizedString(forIdentifier: code) { return full }
-        return english.localizedString(forLanguageCode: language.languageCode?.identifier ?? code) ?? code
+        if language.script != nil, let full = locale.localizedString(forIdentifier: code) { return full }
+        return locale.localizedString(forLanguageCode: language.languageCode?.identifier ?? code) ?? code
     }
 
     /// How a language is kept and compared: its code, with its script
@@ -1041,7 +1040,7 @@ struct TranslateMenu: View {
     let done: () -> Void
 
     static func heading(_ mark: TranslationMark) -> String {
-        let from = mark.from.map(PageTranslator.name)
+        let from = mark.from.map { PageTranslator.name($0) }
         switch mark.phase {
         case .working: return from.map { "Translating from \($0)…" } ?? "Translating…"
         case .done: return from.map { "Translated from \($0)" } ?? "Translated"
@@ -1117,8 +1116,8 @@ struct TranslateLanguageList: View {
     var body: some View {
         ForEach(prefs.translateAlways.sorted(), id: \.self) { code in
             Rule()
-            Line("Always translate \(PageTranslator.name(code))", "Pages in \(PageTranslator.name(code)) are translated as they open") {
-                Pill("Remove") { prefs.translateAlways.remove(code) }
+            Line(Interface.format("Always translate %@", PageTranslator.name(code, locale: Interface.locale)), Interface.format("Pages in %@ are translated as they open", PageTranslator.name(code, locale: Interface.locale))) {
+                Pill(Interface.text("Remove")) { prefs.translateAlways.remove(code) }
             }
         }
     }
@@ -1130,13 +1129,13 @@ struct TranslateTargetPicker: View {
     @State private var languages: [String] = []
 
     var body: some View {
-        Picker("Translation language", selection: $prefs.translateTarget) {
-            Text("System Default").tag("")
+        Picker(Interface.text("Translation language"), selection: $prefs.translateTarget) {
+            Text(Interface.text("System Default")).tag("")
             if !prefs.translateTarget.isEmpty && !languages.contains(prefs.translateTarget) {
-                Text(PageTranslator.name(prefs.translateTarget)).tag(prefs.translateTarget)
+                Text(PageTranslator.name(prefs.translateTarget, locale: Interface.locale)).tag(prefs.translateTarget)
             }
             ForEach(languages, id: \.self) { code in
-                Text(PageTranslator.name(code)).tag(code)
+                Text(PageTranslator.name(code, locale: Interface.locale)).tag(code)
             }
         }
         .labelsHidden()
@@ -1146,7 +1145,7 @@ struct TranslateTargetPicker: View {
             if #available(macOS 15, *) {
                 let supported = await LanguageAvailability().supportedLanguages
                 languages = Array(Set(supported.map(PageTranslator.code))).sorted {
-                    PageTranslator.name($0).localizedStandardCompare(PageTranslator.name($1)) == .orderedAscending
+                    PageTranslator.name($0, locale: Interface.locale).localizedStandardCompare(PageTranslator.name($1, locale: Interface.locale)) == .orderedAscending
                 }
             }
         }

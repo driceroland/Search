@@ -881,30 +881,32 @@ final class ICloudSync: ObservableObject {
     func summary(folderSyncOn: Bool, otherwise: String) -> String {
         guard available else {
             // A signed build in a test run is a build that could: it says so.
-            return Store.testing && ICloudSync.entitled ? "Off in a test run" : "Needs a build of Search signed for iCloud"
+            return Store.testing && ICloudSync.entitled ? Interface.text("Off in a test run") : Interface.text("Needs a build of Search signed for iCloud")
         }
-        if folderSyncOn && !on { return "Turn off Sync with your other Macs first" }
-        guard on else { return offReason ?? otherwise }
+        if folderSyncOn && !on { return Interface.text("Turn off Sync with your other Macs first") }
+        guard on else { return offReason.map(Interface.text) ?? otherwise }
         switch account {
-        case .signedOut: return "Not signed in to iCloud: System Settings › Apple Account"
-        case .restricted: return "iCloud is restricted on this Mac"
-        case .unknown: return problem ?? "Checking iCloud…"
+        case .signedOut: return Interface.text("Not signed in to iCloud: System Settings › Apple Account")
+        case .restricted: return Interface.text("iCloud is restricted on this Mac")
+        case .unknown: return problem ?? Interface.text("Checking iCloud…")
         case .signedIn:
-            if let problem { return "Signed in to iCloud · \(problem)" }
-            guard let lastSynced else { return "Signed in to iCloud · syncing…" }
-            let when = RelativeDateTimeFormatter().localizedString(for: lastSynced, relativeTo: Date())
+            if let problem { return Interface.format("Signed in to iCloud · %@", problem) }
+            guard let lastSynced else { return Interface.text("Signed in to iCloud · syncing…") }
+            let formatter = RelativeDateTimeFormatter()
+            formatter.locale = Interface.locale
+            let when = formatter.localizedString(for: lastSynced, relativeTo: Date())
             let count = devices.count
-            let with = count == 0 ? "" : count == 1 ? " · 1 other device" : " · \(count) other devices"
-            return "Signed in to iCloud · synced \(when)\(with)"
+            let with = count == 0 ? "" : count == 1 ? Interface.text(" · 1 other device") : Interface.format(" · %@ other devices", String(count))
+            return Interface.format("Signed in to iCloud · synced %@%@", when, with)
         }
     }
 
     static func say(_ error: Error) -> String {
         guard let error = error as? CKError else { return error.localizedDescription }
         switch error.code {
-        case .notAuthenticated: return "Sign in to iCloud in System Settings to sync"
-        case .quotaExceeded: return "Your iCloud is full"
-        case .networkFailure, .networkUnavailable: return "Offline. Sync carries on when you're back"
+        case .notAuthenticated: return Interface.text("Sign in to iCloud in System Settings to sync")
+        case .quotaExceeded: return Interface.text("Your iCloud is full")
+        case .networkFailure, .networkUnavailable: return Interface.text("Offline. Sync carries on when you're back")
         default: return error.localizedDescription
         }
     }

@@ -166,9 +166,9 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     /// after this one was chosen — or this one taken by the button.
     private func say(_ status: OSStatus, for key: LauncherKey) {
         if HotKey.usedByMacOS(code: key.code, modifiers: HotKey.modifiers(of: key.combo)) {
-            refusal = "\(key.combo.display) is used by macOS"
+            refusal = Interface.format("%@ is used by macOS", key.combo.display)
         } else {
-            refusal = status == noErr ? nil : "macOS won’t give Search \(key.combo.display)"
+            refusal = status == noErr ? nil : Interface.format("macOS won’t give Search %@", key.combo.display)
         }
     }
 
@@ -728,7 +728,7 @@ struct LauncherKeyBox: View {
                     .lineLimit(1)
             }
             if prefs.launcherKey == nil, !listening {
-                Pill("Use \(LauncherKey.suggested.combo.display)") { prefs.launcherKey = .suggested }
+                Pill(Interface.format("Use %@", LauncherKey.suggested.combo.display)) { prefs.launcherKey = .suggested }
             }
             Button(action: listen) {
                 Text(label)
@@ -746,7 +746,7 @@ struct LauncherKeyBox: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Click, then press the key. ⌫ takes it away")
+            .help(Interface.text("Click, then press the key. ⌫ takes it away"))
             .onHover { hovering = $0 }
             .onDisappear(perform: stop)
         }
@@ -754,8 +754,8 @@ struct LauncherKeyBox: View {
 
     private var label: String {
         if let note { return note }
-        if listening { return "Type a shortcut" }
-        return prefs.launcherKey?.combo.display ?? "None"
+        if listening { return Interface.text("Type a shortcut") }
+        return prefs.launcherKey?.combo.display ?? Interface.text("None")
     }
 
     private func listen() {
@@ -779,10 +779,10 @@ struct LauncherKeyBox: View {
             return stop()
         }
         guard let combo = KeyCombo(event: event) else { return }
-        guard combo.isUsable else { return say("Add ⌘, ⌥ or ⌃") }
-        guard !KeyCombo.isReserved(combo) else { return say("Can’t be used") }
+        guard combo.isUsable else { return say(Interface.text("Add ⌘, ⌥ or ⌃")) }
+        guard !KeyCombo.isReserved(combo) else { return say(Interface.text("Can’t be used")) }
         guard !HotKey.usedByMacOS(code: event.keyCode, modifiers: HotKey.modifiers(of: combo)) else {
-            return say("Used by macOS")
+            return say(Interface.text("Used by macOS"))
         }
         prefs.launcherKey = LauncherKey(combo: combo, code: event.keyCode)
         stop()

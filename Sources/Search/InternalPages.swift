@@ -50,7 +50,7 @@ struct InternalPage: Equatable {
 
     var title: String {
         switch kind {
-        case .settings: return "Settings"
+        case .settings: return Interface.text("Settings")
         case .history: return "History"
         case .downloads: return "Downloads"
         case .bookmarks: return "Bookmarks"

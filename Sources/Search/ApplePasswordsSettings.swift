@@ -20,8 +20,8 @@ struct ApplePasswordsCard: View {
                 }
             } else {
                 Card {
-                    Line("Passwords from Apple's Passwords app",
-                         "Accounts and verification codes saved in the Passwords app, under their box. Unofficial: Search talks to the helper Apple made for its Chrome extension, as that extension. Never in private tabs.") {
+                    Line(Interface.text("Passwords from Apple's Passwords app"),
+                         Interface.text("Accounts and verification codes saved in the Passwords app, under their box. Unofficial: Search talks to the helper Apple made for its Chrome extension, as that extension. Never in private tabs.")) {
                         Switch(on: $prefs.applePasswords)
                     }
                     if prefs.applePasswords {
@@ -40,13 +40,13 @@ struct ApplePasswordsCard: View {
     @ViewBuilder private var pairing: some View {
         switch apple.state {
         case .idle:
-            Line(apple.trouble ?? "Not connected", "Your Mac shows a code, and you type it here. Once per launch of Search, and only when you first want an account: under a sign-in box, Connect Apple Passwords… asks for it there.") {
-                Pill("Connect…") { Task { await apple.connect() } }
+            Line(Interface.text(apple.trouble ?? "Not connected"), Interface.text("Your Mac shows a code, and you type it here. Once per launch of Search, and only when you first want an account: under a sign-in box, Connect Apple Passwords… asks for it there.")) {
+                Pill(Interface.text("Connect…")) { Task { await apple.connect() } }
             }
         case .starting:
-            Line("Connecting…", "Waiting for your Mac to show a code") { EmptyView() }
+            Line(Interface.text("Connecting…"), Interface.text("Waiting for your Mac to show a code")) { EmptyView() }
         case .code, .checking:
-            Line("Enter the code your Mac shows", apple.state == .checking ? "Checking…" : "Six digits, from the Passwords window") {
+            Line(Interface.text("Enter the code your Mac shows"), apple.state == .checking ? Interface.text("Checking…") : Interface.text("Six digits, from the Passwords window")) {
                 HStack(spacing: 8) {
                     TextField("000000", text: $code)
                         .textFieldStyle(.plain)
@@ -64,13 +64,13 @@ struct ApplePasswordsCard: View {
                         }
                         .onSubmit(send)
                         .disabled(apple.state == .checking)
-                    Pill("OK", filled: true, action: send)
-                    Pill("Cancel") { apple.disconnect() }
+                    Pill(Interface.text(Interface.text("OK")), filled: true, action: send)
+                    Pill(Interface.text(Interface.text("Cancel"))) { apple.disconnect() }
                 }
             }
         case .paired:
-            Line("Connected", "Until Search quits. Accounts show under sign-in boxes, marked Apple Passwords; macOS may ask for Touch ID before one is filled.") {
-                Pill("Disconnect") { apple.disconnect() }
+            Line(Interface.text("Connected"), Interface.text("Until Search quits. Accounts show under sign-in boxes, marked Apple Passwords; macOS may ask for Touch ID before one is filled.")) {
+                Pill(Interface.text("Disconnect")) { apple.disconnect() }
             }
         }
     }

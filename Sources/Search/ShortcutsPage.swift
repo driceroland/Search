@@ -1,6 +1,13 @@
 import AppKit
 import SwiftUI
 
+private func shortcutTitle(_ command: Command) -> String {
+    if command.section == .spaces, let number = Int(command.id.dropFirst("spaces.".count)) {
+        return Interface.format("Space %@", String(number))
+    }
+    return Interface.text(command.title)
+}
+
 /// Settings › Keyboard & Mouse › Shortcuts: every menu command with its key, a card to a menu,
 /// narrowed by name or key. Click a key and press the new one; right-click
 /// to clear it or put the default back.
@@ -23,7 +30,7 @@ struct ShortcutsPage: View {
         let words = hunt.trimmingCharacters(in: .whitespaces)
         guard !words.isEmpty else { return true }
         let key = store.key(for: command.id)?.display ?? ""
-        return command.title.localizedCaseInsensitiveContains(words)
+        return command.title.localizedCaseInsensitiveContains(words) || shortcutTitle(command).localizedCaseInsensitiveContains(words)
             || key.localizedCaseInsensitiveContains(words.replacingOccurrences(of: " ", with: ""))
     }
 
@@ -34,48 +41,48 @@ struct ShortcutsPage: View {
         let words = hunt.trimmingCharacters(in: .whitespaces)
         guard !words.isEmpty else { return true }
         let key = words.replacingOccurrences(of: " ", with: "")
-        return "Tab 1 to 9".localizedCaseInsensitiveContains(words) || "numbers".localizedCaseInsensitiveContains(words)
+        return ["Tab 1 to 9", "numbers"].contains { $0.localizedCaseInsensitiveContains(words) || Interface.text($0).localizedCaseInsensitiveContains(words) }
             || KeyCombo.tabNumbers.localizedCaseInsensitiveContains(key)
             || (1...9).contains { KeyCombo.tabNumber($0).display.localizedCaseInsensitiveContains(key) }
     }
 
     private var numbersNote: String {
         if prefs.usesSpaces && prefs.spacesOnCommand {
-            return "The ninth is the last. ⌘1–⌘9 switch spaces: Settings › Spaces & Pins"
+            return Interface.text("The ninth is the last. ⌘1–⌘9 switch spaces: Settings › Spaces & Pins")
         }
         return prefs.usesSpaces
-            ? "The ninth is the last. To switch spaces with them instead: Settings › Spaces & Pins"
-            : "The ninth is the last. With spaces on, they can switch spaces instead"
+            ? Interface.text("The ninth is the last. To switch spaces with them instead: Settings › Spaces & Pins")
+            : Interface.text("The ninth is the last. With spaces on, they can switch spaces instead")
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Hunt(text: $hunt, prompt: "Search commands or keys", focus: $hunting)
+            Hunt(text: $hunt, prompt: Interface.text("Search commands or keys"), focus: $hunting)
             let found = Command.all.filter(shown)
             let numbers = numbersShown
-            if found.isEmpty, !numbers { Nothing("No command called that, or on that key") }
+            if found.isEmpty, !numbers { Nothing(Interface.text("No command called that, or on that key")) }
             ForEach(Command.Section.allCases, id: \.self) { section in
                 let commands = found.filter { $0.section == section }
                 let numbered = section == .tabs && numbers
                 if !commands.isEmpty || numbered {
                 VStack(alignment: .leading, spacing: 6) {
-                    Caption(section.rawValue)
+                    Caption(section == .app ? section.rawValue : Interface.text(section.rawValue))
                     Card {
                         ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
                             if index > 0 { Rule() }
-                            Line(command.title) {
+                            Line(shortcutTitle(command)) {
                                 KeyBox(browser: browser, store: store, id: command.id)
                             }
                             .contextMenu {
-                                Button("Clear Shortcut") { store.clear(command.id) }
+                                Button(Interface.text("Clear Shortcut")) { store.clear(command.id) }
                                     .disabled(store.key(for: command.id) == nil)
-                                Button("Reset to Default") { store.reset(command.id) }
+                                Button(Interface.text("Reset to Default")) { store.reset(command.id) }
                                     .disabled(!store.isChanged(command.id))
                             }
                         }
                         if numbered {
                             if !commands.isEmpty { Rule() }
-                            Line("Tab 1 to 9", numbersNote) {
+                            Line(Interface.text("Tab 1 to 9"), numbersNote) {
                                 FixedKey(text: KeyCombo.tabNumbers)
                             }
                         }
@@ -85,7 +92,7 @@ struct ShortcutsPage: View {
             }
             if #available(macOS 15.4, *) { extensionCommands }
             if store.anyChanged || prefs.peekClick != .shift, hunt.isEmpty {
-                Pill("Reset All to Defaults") {
+                Pill(Interface.text("Reset All to Defaults")) {
                     store.resetAll()
                     prefs.peekClick = .shift
                 }
@@ -107,7 +114,7 @@ extension ShortcutsPage {
         }
         if !commands.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Caption("Extensions")
+                Caption(Interface.text("Extensions"))
                 Card {
                     ForEach(Array(commands.enumerated()), id: \.element.id) { index, item in
                         if index > 0 { Rule() }
@@ -115,9 +122,9 @@ extension ShortcutsPage {
                             KeyBox(browser: browser, store: store, id: item.id)
                         }
                         .contextMenu {
-                            Button("Clear Shortcut") { store.clear(item.id) }
+                            Button(Interface.text("Clear Shortcut")) { store.clear(item.id) }
                                 .disabled(store.key(for: item.id) == nil)
-                            Button("Reset to Default") { store.reset(item.id) }
+                            Button(Interface.text("Reset to Default")) { store.reset(item.id) }
                                 .disabled(!store.isChanged(item.id))
                         }
                     }
@@ -142,7 +149,7 @@ private struct FixedKey: View {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .strokeBorder(Palette.hairline, lineWidth: 1)
             )
-            .help("Set in Settings › Spaces & Pins")
+            .help(Interface.text("Set in Settings › Spaces & Pins"))
     }
 }
 
@@ -180,18 +187,18 @@ private struct KeyBox: View {
         }
         .buttonStyle(.plain)
         // What the Shortcuts group's line under its title used to say.
-        .help("Click, then press the new shortcut")
+        .help(Interface.text("Click, then press the new shortcut"))
         .onHover { hovering = $0 }
         .onDisappear(perform: stop)
     }
 
     private var label: String {
         if let taking, let other = store.owner(of: taking, except: id) {
-            return "Used by \(other.title) — press again"
+            return Interface.format("Used by %@ — press again", Command.named(other.id).map(shortcutTitle) ?? other.title)
         }
         if let note { return note }
-        if listening { return "Type a shortcut" }
-        return store.key(for: id)?.display ?? "None"
+        if listening { return Interface.text("Type a shortcut") }
+        return store.key(for: id)?.display ?? Interface.text("None")
     }
 
     private func listen() {
@@ -214,20 +221,20 @@ private struct KeyBox: View {
             return stop()
         }
         guard let combo = KeyCombo(event: event) else { return }
-        guard combo.isUsable else { return say("Add ⌘, ⌥ or ⌃") }
+        guard combo.isUsable else { return say(Interface.text("Add ⌘, ⌥ or ⌃")) }
         // ⌘1–⌘9 (or ⌃1–⌃9) pick tabs: the whole set moves, with its switch.
         guard !combo.isTabNumber else {
-            return say(browser.prefs.usesSpaces ? "Picks a tab — see Spaces & Pins" : "Picks a tab")
+            return say(browser.prefs.usesSpaces ? Interface.text("Picks a tab — see Spaces & Pins") : Interface.text("Picks a tab"))
         }
-        guard !KeyCombo.isReserved(combo) else { return say("Can’t be changed") }
+        guard !KeyCombo.isReserved(combo) else { return say(Interface.text("Can’t be changed")) }
         // The switcher stays up while its key's ⌃, ⌥ or ⌘ is held, and
         // takes the tab picked when it is let go of: a key needs one.
         guard id != Command.recentTabs || combo.control || combo.option || combo.command
-        else { return say("Hold ⌃, ⌥ or ⌘ with it") }
+        else { return say(Interface.text("Hold ⌃, ⌥ or ⌘ with it")) }
         // An extension's command takes a key as its manifest would: one
         // that types a character, not an arrow or a function key.
-        guard !id.hasPrefix("ext:") || combo.key.count == 1 else { return say("Not for an extension") }
-        guard !id.hasPrefix("ext:") || !KeyCombo.isBrowserOnly(combo) else { return say("Not for an extension") }
+        guard !id.hasPrefix("ext:") || combo.key.count == 1 else { return say(Interface.text("Not for an extension")) }
+        guard !id.hasPrefix("ext:") || !KeyCombo.isBrowserOnly(combo) else { return say(Interface.text("Not for an extension")) }
         if store.owner(of: combo, except: id) != nil, taking != combo {
             taking = combo
             return
@@ -235,7 +242,7 @@ private struct KeyBox: View {
         let other = store.owner(of: combo, except: id)
         store.assign(combo, to: id)
         stop()
-        if let other { browser.announce("\(combo.display) moved from \(other.title)") }
+        if let other { browser.announce(Interface.format("%@ moved from %@", combo.display, Command.named(other.id).map(shortcutTitle) ?? other.title)) }
     }
 
     /// Why that key won't do, for a moment, still listening.

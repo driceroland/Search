@@ -203,9 +203,9 @@ struct SpaceRouteList: View {
         let choices = SpaceRoutes.choices
         ForEach(prefs.spaceRoutes) { route in
             Rule()
-            Line(route.site, choices.first { $0.id == route.space }.map { "Opens in \($0.name)" }
-                 ?? "Its space is gone, so links open as usual") {
-                Pill("Remove") { SpaceRoutes.remove(route.site) }
+            Line(route.site, choices.first { $0.id == route.space }.map { Interface.format("Opens in %@", $0.name) }
+                 ?? Interface.text("Its space is gone, so links open as usual")) {
+                Pill(Interface.text("Remove")) { SpaceRoutes.remove(route.site) }
             }
         }
         Rule()
@@ -218,13 +218,13 @@ struct SpaceRouteList: View {
                 .padding(.vertical, 6)
                 .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .onSubmit(add)
-            Picker("Space", selection: Binding(get: { chosen ?? choices.first?.id }, set: { chosen = $0 })) {
+            Picker(Interface.text("Space"), selection: Binding(get: { chosen ?? choices.first?.id }, set: { chosen = $0 })) {
                 ForEach(choices, id: \.id) { Text($0.name).tag(Optional($0.id)) }
             }
             .labelsHidden()
             .pickerStyle(.menu)
             .fixedSize()
-            Pill("Add", action: add)
+            Pill(Interface.text("Add"), action: add)
                 .disabled(SpaceRoutes.site(typed) == nil)
                 .opacity(SpaceRoutes.site(typed) == nil ? 0.5 : 1)
         }

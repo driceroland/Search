@@ -150,13 +150,13 @@ def setup(**prefs):
     time.sleep(1); wipe()
     for k in ["bench", "welcomed"]: subprocess.run(["defaults", "write", SUITE, k, "-bool", "true"])
     for k, v in prefs.items(): subprocess.run(["defaults", "write", SUITE, k, "-bool", "true" if v else "false"])
-def launch(link=None):
+def launch(link=None, *, args=()):
     """Started hidden; with `link`, handed it to launch with, where the
     Apple Event would be (SEARCH_LINK, see Links.swift)."""
     if os.path.exists(SOCK): os.remove(SOCK)
     before = running()
     handed = ["--env", f"SEARCH_LINK={link}"] if link else []
-    subprocess.run(["open", "-n", "-g", "-j", "--env", f"SEARCH_PROBE={W}", *handed, APP])
+    subprocess.run(["open", "-n", "-g", "-j", "--env", f"SEARCH_PROBE={W}", *handed, APP, "--args", *args])
     for _ in range(150):
         if os.path.exists(SOCK): break
         time.sleep(0.1)

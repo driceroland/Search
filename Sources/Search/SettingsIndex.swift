@@ -17,6 +17,8 @@ struct SettingsGroup: Identifiable {
     let page: SettingsPanel.Page
     let title: String
     let icon: String
+
+    var localizedTitle: String { Interface.text(title) }
 }
 
 /// One row of Settings.
@@ -51,6 +53,10 @@ struct SettingsItem: Identifiable {
     var parent: String? = nil
     /// Only the find field shows it (moved to a menu, or always on).
     var findOnly = false
+
+    var localizedTitle: String { Interface.text(title) }
+    var localizedDetail: String { detail.isEmpty ? "" : Interface.text(detail) }
+    var localizedMore: String? { more.map(Interface.text) }
 
     var page: SettingsPanel.Page { SettingsIndex.group(group)?.page ?? .general }
 }
@@ -670,20 +676,28 @@ enum SettingsIndex {
 
     // MARK: - finding
 
-    /// The rows whose words match what was typed, in the order of the
-    /// sections. Every word typed has to be found somewhere in the row.
+    // Built on the first nonempty search. The settings and app language stay fixed for this launch.
+    private static let searchEntries: [(item: SettingsItem, text: String)] = {
+        let order = SettingsPanel.Page.allCases
+        let ordered = items.sorted {
+            (order.firstIndex(of: $0.page) ?? 0, groupOrder($0.group)) < (order.firstIndex(of: $1.page) ?? 0, groupOrder($1.group))
+        }
+        return ordered.map { item in
+            let originals = [item.title, item.detail, item.more, group(item.group)?.title, item.page.title]
+                .compactMap { $0 }.filter { !$0.isEmpty }
+            let localized = originals.map(Interface.text)
+            let labels = localized == originals ? originals : originals + localized
+            return (item, (labels + item.words + item.keys).joined(separator: " ").lowercased())
+        }
+    }()
+
+    /// Every word typed has to be found somewhere in the row.
     static func find(_ typed: String) -> [SettingsItem] {
         let words = typed.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return [] }
-        let order = SettingsPanel.Page.allCases
-        return items
-            .filter { item in
-                let group = SettingsIndex.group(item.group)
-                let hay = ([item.title, item.detail, item.more ?? "", group?.title ?? "", item.page.title]
-                    + item.words + item.keys).joined(separator: " ").lowercased()
-                return words.allSatisfy { hay.contains($0) }
-            }
-            .sorted { (order.firstIndex(of: $0.page) ?? 0, groupOrder($0.group)) < (order.firstIndex(of: $1.page) ?? 0, groupOrder($1.group)) }
+        return searchEntries.compactMap { entry in
+            words.allSatisfy { entry.text.contains($0) } ? entry.item : nil
+        }
     }
 
     private static func groupOrder(_ id: String) -> Int { groups.firstIndex { $0.id == id } ?? 0 }
@@ -720,27 +734,28 @@ enum SettingsIndex {
 
     /// What a dimmed dependent row says instead of its own line.
     static func needs(_ item: SettingsItem) -> String {
-        switch item.id {
-        case "pages.dusk": return "Only while Search isn't set to Light"
-        case "inspector.dark": return "Only while Search isn't set to Dark"
-        case "toolbar.left", "tabs.compact", "address.width": return "Only with the tabs across the top"
-        case "sidebar.roomy", "sidebar.doorsUp": return "Only with titles in the column"
-        case "tabs.liquid": return LiquidTab.available ? "Only with titles in the column, or the tabs across the top" : "Liquid Glass needs macOS 26"
-        case "window.glass.style": return GlassStyle.liquidAvailable ? "Only with Glass on" : "Liquid Glass needs macOS 26"
-        case "window.glass.clear", "window.glass.grain": return "With spaces on, in the space's menu › Colour…"
-        case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
-        case "icloud.erase": return "Only while Sync with iCloud is on"
-        case "profiles.oneWindow": return "Only with more than one profile"
-        case "spaces.links", "links.ask", "spaces.buttons": return "Only with Spaces on"
-        case "sidebar.player": return "Only with titles in the sidebar"
-        case "tabs.frontBeside": return "Only with New tab position on After current"
-        case "newtab.recent", "newtab.arc": return "Only with the new tab in a floating field"
-        case "links.little.tabs": return "Only with links from other apps in a small window"
-        case "mail.default": return "Only with a webmail chosen for email links"
-        case "links.peek.stays": return "Only when links or pins open peeks"
-        case "launcher.key": return "Only with the address field from any app on"
-        default: return "Only with the tabs down a side"
+        let reason = switch item.id {
+        case "pages.dusk": "Only while Search isn't set to Light"
+        case "inspector.dark": "Only while Search isn't set to Dark"
+        case "toolbar.left", "tabs.compact", "address.width": "Only with the tabs across the top"
+        case "sidebar.roomy", "sidebar.doorsUp": "Only with titles in the column"
+        case "tabs.liquid": LiquidTab.available ? "Only with titles in the column, or the tabs across the top" : "Liquid Glass needs macOS 26"
+        case "window.glass.style": GlassStyle.liquidAvailable ? "Only with Glass on" : "Liquid Glass needs macOS 26"
+        case "window.glass.clear", "window.glass.grain": "With spaces on, in the space's menu › Colour…"
+        case "sidebar.foldIcons": "Only with the column down a side and not hidden until the edge"
+        case "icloud.erase": "Only while Sync with iCloud is on"
+        case "profiles.oneWindow": "Only with more than one profile"
+        case "spaces.links", "links.ask", "spaces.buttons": "Only with Spaces on"
+        case "sidebar.player": "Only with titles in the sidebar"
+        case "tabs.frontBeside": "Only with New tab position on After current"
+        case "newtab.recent", "newtab.arc": "Only with the new tab in a floating field"
+        case "links.little.tabs": "Only with links from other apps in a small window"
+        case "mail.default": "Only with a webmail chosen for email links"
+        case "links.peek.stays": "Only when links or pins open peeks"
+        case "launcher.key": "Only with the address field from any app on"
+        default: "Only with the tabs down a side"
         }
+        return Interface.text(reason)
     }
 }
 
@@ -770,8 +785,8 @@ enum SleepChoice: String, CaseIterable, Identifiable {
     var title: String { self == .never ? "Never" : pace!.title }
     var pace: SleepPace? { SleepPace(rawValue: rawValue) }
     var detail: String {
-        guard let pace else { return "Every tab keeps its page, however long you leave it." }
-        return pace.detail.replacingOccurrences(of: ".", with: "") + ", a tab rests and wakes when you go back to it."
+        guard let pace else { return Interface.text("Every tab keeps its page, however long you leave it.") }
+        return Interface.text(pace.detail.replacingOccurrences(of: ".", with: "") + ", a tab rests and wakes when you go back to it.")
     }
 }
 

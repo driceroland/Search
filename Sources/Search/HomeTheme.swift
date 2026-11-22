@@ -116,7 +116,7 @@ enum HomeTheme: String, CaseIterable, Identifiable {
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.prompt = "Choose"
+        panel.prompt = Interface.text("Choose")
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return keep(url)
     }

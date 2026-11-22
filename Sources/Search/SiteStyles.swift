@@ -285,10 +285,10 @@ struct SiteStylesControl: View {
     var body: some View {
         HStack(spacing: 10) {
             if !styles.hosts.isEmpty {
-                Menu(styles.hosts.count == 1 ? "1 site" : "\(styles.hosts.count) sites") {
+                Menu(styles.hosts.count == 1 ? Interface.text("1 site") : Interface.format("%@ sites", String(styles.hosts.count))) {
                     ForEach(styles.hosts, id: \.self) { host in
                         Menu(host) {
-                            Button("Remove Style") { styles.remove(on: host) }
+                            Button(Interface.text("Remove Style")) { styles.remove(on: host) }
                         }
                     }
                 }

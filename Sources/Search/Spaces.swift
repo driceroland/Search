@@ -1197,7 +1197,7 @@ enum Ask {
         field.stringValue = initial
         alert.accessoryView = field
         alert.addButton(withTitle: confirm)
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: Interface.text("Cancel"))
         alert.window.initialFirstResponder = field
         show(alert) { ok in
             let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1249,7 +1249,7 @@ enum Ask {
         alert.informativeText = detail
         let yes = alert.addButton(withTitle: confirm)
         yes.hasDestructiveAction = true
-        let no = alert.addButton(withTitle: "Cancel")
+        let no = alert.addButton(withTitle: Interface.text("Cancel"))
         guard returnCancels else {
             show(alert) { ok in if ok { then() } }
             return

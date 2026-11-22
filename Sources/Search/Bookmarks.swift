@@ -1679,7 +1679,8 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
         if tracking, !menu.items.contains(where: { $0.tag == Self.mark }) { fill(menu) }
     }
 
-    private var menu: NSMenu? { NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu }
+    static let title = Interface.text("Bookmarks")
+    var menu: NSMenu? { NSApp.mainMenu?.items.first(where: { $0.title == Self.title })?.submenu }
 
     /// The window in front's: its profile's bookmarks (see Profiles.swift).
     private var shown: Browser? { Browsers.front.flatMap { !$0.isPopup ? $0 : nil } ?? browser }

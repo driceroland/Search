@@ -50,7 +50,7 @@ struct SearchApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 // Another window, with tabs of its own (see Windows.swift).
-                Button("New Window") { Browsers.newWindow() }
+                Button(Interface.text("New Window")) { Browsers.newWindow() }
                     .shortcut("file.newWindow")
                 // The profiles, once there is more than one (see Profiles.swift):
                 // each one's window, brought forward or opened.
@@ -65,57 +65,57 @@ struct SearchApp: App {
                         Button("New Profile…") { ProfileMenu.askNew() }
                     }
                 }
-                Button("New Tab") { browser.launch() }
+                Button(Interface.text("New Tab")) { browser.launch() }
                     .shortcut("file.newTab")
-                Button("New Private Tab") { browser.newShyTab() }
+                Button(Interface.text("New Private Tab")) { browser.newShyTab() }
                     .shortcut("file.newPrivateTab")
                 Button(browser.reopenTitle) { browser.reopen() }
                     .shortcut("file.reopen")
                     .disabled(browser.ghosts.isEmpty && Browsers.lastClosedAt == nil)
                 Divider()
-                Button("Open Address…") { browser.edit() }
+                Button(Interface.text("Open Address…")) { browser.edit() }
                     .shortcut("file.openAddress")
                 Divider()
                 // Another browser's bookmarks, history, passwords and the
                 // rest, as Safari's File › Import From: the one sheet every
                 // other way in opens too.
-                Button("Bring Things Over…") { browser.bringingIn = "" }
+                Button(Interface.text("Bring Things Over…")) { browser.bringingIn = "" }
                     .shortcut("file.import")
                 Divider()
-                Button("Close Tab") { browser.closeFront() }
+                Button(Interface.text("Close Tab")) { browser.closeFront() }
                     .shortcut("file.closeTab")
-                Button("Close Window") { browser.closeWindow() }
+                Button(Interface.text("Close Window")) { browser.closeWindow() }
                     .shortcut("file.closeWindow")
                 // A coding agent connected (AgentControl): Stop, one click away.
                 StopAgentMenuItem()
             }
             CommandGroup(replacing: .printItem) {
-                Button("Share…") { browser.share() }
+                Button(Interface.text("Share…")) { browser.share() }
                     .shortcut("file.share")
                     .disabled(!(browser.active?.isWeb ?? false))
-                Button("Save Page As…") { browser.savePage() }
+                Button(Interface.text("Save Page As…")) { browser.savePage() }
                     .shortcut("file.savePage")
                     .disabled(!(browser.active?.isWeb ?? false))
-                Button("Export as PDF…") { browser.exportPDF() }
+                Button(Interface.text("Export as PDF…")) { browser.exportPDF() }
                     .shortcut("file.exportPDF")
                     .disabled(!(browser.active?.isWeb ?? false))
-                Button("Print…") { browser.printPage() }
+                Button(Interface.text("Print…")) { browser.printPage() }
                     .shortcut("file.print")
                     .disabled(!(browser.active?.isWeb ?? false))
             }
             CommandGroup(after: .pasteboard) {
-                Button("Copy Clean Link") { browser.copyCleanLink() }
+                Button(Interface.text("Copy Clean Link")) { browser.copyCleanLink() }
                     .shortcut("edit.copyCleanLink")
                     .disabled(browser.active?.isBlank ?? true)
                 Divider()
-                Button("Find on Page…") { browser.openFind() }
+                Button(Interface.text("Find on Page…")) { browser.openFind() }
                     .shortcut("edit.find")
                     // On the Settings tab, ⌘F finds a setting.
                     .disabled(!(browser.active?.isWeb ?? false) && browser.active?.page?.kind != .settings)
-                Button("Find Next") { browser.look(forward: true) }
+                Button(Interface.text("Find Next")) { browser.look(forward: true) }
                     .shortcut("edit.findNext")
                     .disabled(!browser.finding)
-                Button("Find Previous") { browser.look(forward: false) }
+                Button(Interface.text("Find Previous")) { browser.look(forward: false) }
                     .shortcut("edit.findPrevious")
                     .disabled(!browser.finding)
                 Divider()
@@ -175,11 +175,11 @@ struct SearchApp: App {
                     .shortcut("view.unfoldGroups")
                     .disabled(!browser.canUnfoldAllGroups)
                 Divider()
-                Button("Reload Page") { browser.reload() }
+                Button(Interface.text("Reload Page")) { browser.reload() }
                     .shortcut("view.reload")
-                Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
+                Button(Interface.text("Reload Page From Origin")) { browser.reload(fromOrigin: true) }
                     .shortcut("view.reloadOrigin")
-                Button("Reading Mode") { browser.toggleReader() }
+                Button(Interface.text("Reading Mode")) { browser.toggleReader() }
                     .shortcut("view.reader")
                 Button("Float Video") { browser.toggleFloat() }
                     .shortcut("view.float")
@@ -241,9 +241,9 @@ struct SearchApp: App {
                         .disabled(!(browser.active?.isWeb ?? false) || browser.active?.shy == true)
                 }
                 Divider()
-                Button("Zoom In") { browser.zoom(by: 1.1) }
+                Button(Interface.text("Zoom In")) { browser.zoom(by: 1.1) }
                     .shortcut("view.zoomIn")
-                Button("Zoom Out") { browser.zoom(by: 1 / 1.1) }
+                Button(Interface.text("Zoom Out")) { browser.zoom(by: 1 / 1.1) }
                     .shortcut("view.zoomOut")
                 Button(browser.prefs.actualSizeTitle) { browser.resetZoom() }
                     .shortcut("view.actualSize")
@@ -259,24 +259,24 @@ struct SearchApp: App {
                 // above took with it: ⌃⌘F did nothing (#1176). The key is
                 // the Mac's, never offered in Settings › Shortcuts.
                 Divider()
-                Button(browser.fullScreen ? "Exit Full Screen" : "Enter Full Screen") {
+                Button(Interface.text(browser.fullScreen ? "Exit Full Screen" : "Enter Full Screen")) {
                     (NSApp.keyWindow ?? browser.window)?.toggleFullScreen(nil)
                 }
                 .keyboardShortcut("f", modifiers: [.control, .command])
             }
-            CommandMenu("Tabs") {
-                Button("Back") { browser.back() }
+            CommandMenu(Interface.text("Tabs")) {
+                Button(Interface.text("Back")) { browser.back() }
                     .shortcut("tabs.back")
                     .disabled(browser.active?.canGoBack != true)
-                Button("Forward") { browser.forward() }
+                Button(Interface.text("Forward")) { browser.forward() }
                     .shortcut("tabs.forward")
                     .disabled(browser.active?.canGoForward != true)
                 Divider()
-                Button("Next Tab") { browser.step(1) }
+                Button(Interface.text("Next Tab")) { browser.step(1) }
                     .shortcut("tabs.next")
-                Button("Previous Tab") { browser.step(-1) }
+                Button(Interface.text("Previous Tab")) { browser.step(-1) }
                     .shortcut("tabs.previous")
-                Button("Search Tabs…") { browser.summon() }
+                Button(Interface.text("Search Tabs…")) { browser.summon() }
                     .shortcut("tabs.search")
                 Divider()
                 if browser.prefs.splitView {
@@ -316,7 +316,7 @@ struct SearchApp: App {
                 if let tab = browser.active {
                     let rows = browser.prefs.showsPinRows
                     if tab.pin == nil {
-                        Button("Pin Tab") { browser.pin(tab) }
+                        Button(Interface.text("Pin Tab")) { browser.pin(tab) }
                             .shortcut("tabs.pin")
                             .disabled(!tab.isWeb || tab.shy)
                         if rows {
@@ -331,14 +331,14 @@ struct SearchApp: App {
                         if !(rows && tab.listed) {
                             Button("Change Letter") { browser.editLetter(tab) }
                         }
-                        Button("Unpin Tab") { browser.unpin(tab) }
+                        Button(Interface.text("Unpin Tab")) { browser.unpin(tab) }
                             .shortcut(rows && tab.listed ? "tabs.pinRow" : "tabs.pin")
                     }
                 }
-                Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
+                Button(Interface.text("Rename Tab")) { if let tab = browser.active { browser.beginTabRename(tab) } }
                     .shortcut("tabs.rename")
                     .disabled(browser.active == nil)
-                Button("Duplicate Tab") { browser.duplicate() }
+                Button(Interface.text("Duplicate Tab")) { browser.duplicate() }
                     .shortcut("tabs.duplicate")
                     .disabled(!(browser.active?.isWeb ?? false))
                 // Only with small windows turned on in Settings › General:
@@ -349,28 +349,28 @@ struct SearchApp: App {
                     }
                         .disabled(!(browser.active.map(browser.liftable) ?? false))
                 }
-                Button("Copy Address") { browser.copyAddress() }
+                Button(Interface.text("Copy Address")) { browser.copyAddress() }
                     .shortcut("tabs.copyAddress")
                     .disabled(!(browser.active?.isWeb ?? false))
                 Button("Copy as Markdown Link") { browser.copyMarkdownLink() }
                     .shortcut("tabs.copyMarkdown")
                     .disabled(!(browser.active?.isWeb ?? false))
-                Button("Paste and Go") { browser.pasteAndGo() }
+                Button(Interface.text("Paste and Go")) { browser.pasteAndGo() }
                     .shortcut("tabs.pasteAndGo")
                 Divider()
-                Button("Close Other Tabs") { if let tab = browser.active { browser.closeOthers(but: tab) } }
+                Button(Interface.text("Close Other Tabs")) { if let tab = browser.active { browser.closeOthers(but: tab) } }
                     .shortcut("tabs.closeOthers")
                     .disabled(browser.tabs.count < 2)
                 Button("Stop Sound in Tab") { browser.pauseMedia() }
                     .shortcut("tabs.mute")
             }
-            CommandMenu("Bookmarks") {
-                Button(browser.pageKept ? "Edit Bookmark\u{2026}" : "Add This Page") { browser.bookmarkCurrent() }
+            CommandMenu(BookmarkMenu.title) {
+                Button(Interface.text(browser.pageKept ? "Edit Bookmark…" : "Add This Page")) { browser.bookmarkCurrent() }
                     .shortcut("bookmarks.add")
                     .disabled(!(browser.active?.isWeb ?? false))
-                Button("Show Bookmarks…") { browser.bookmarking = true }
+                Button(Interface.text("Show Bookmarks…")) { browser.bookmarking = true }
                     .shortcut("bookmarks.show")
-                Toggle("Show Bookmarks Bar", isOn: Binding(
+                Toggle(Interface.text("Show Bookmarks Bar"), isOn: Binding(
                     get: { browser.prefs.bookmarksBar },
                     set: { on in withAnimation(Motion.glide) { browser.prefs.bookmarksBar = on } }
                 ))
@@ -378,8 +378,8 @@ struct SearchApp: App {
                 // The bookmarks themselves follow, put in by AppKit (see
                 // BookmarkMenu in Bookmarks.swift).
             }
-            CommandMenu("History") {
-                Section("Recently Visited") {
+            CommandMenu(Interface.text("History")) {
+                Section(Interface.text("Recently Visited")) {
                     ForEach(browser.recentlyVisited) { trace in
                         Button {
                             browser.open(trace.url, foreground: true)
@@ -389,7 +389,7 @@ struct SearchApp: App {
                     }
                 }
                 if !browser.ghosts.isEmpty {
-                    Section("Recently Closed") {
+                    Section(Interface.text("Recently Closed")) {
                         ForEach(browser.recentlyClosed.prefix(10)) { ghost in
                             Button {
                                 browser.reopen(ghost)
@@ -419,9 +419,9 @@ struct SearchApp: App {
                     }
                 }
                 Divider()
-                Button("Show History…") { browser.recalling = true }
+                Button(Interface.text("Show History…")) { browser.recalling = true }
                     .shortcut("history.show")
-                Button("Downloads…") { browser.showDownloads() }
+                Button(Interface.text("Downloads…")) { browser.showDownloads() }
                     .shortcut("history.downloads")
                 // Only while tabs close by themselves (Closing.swift).
                 if browser.prefs.tabLife != .never {
@@ -429,19 +429,19 @@ struct SearchApp: App {
                         .shortcut("history.archive")
                 }
                 Divider()
-                Button("Clear Browsing Data…") { browser.clearBrowsingData() }
+                Button(Interface.text("Clear Browsing Data…")) { browser.clearBrowsingData() }
                     .shortcut("history.clearData")
-                Button("Clear History") { browser.clearHistory() }
+                Button(Interface.text("Clear History")) { browser.clearHistory() }
                     .shortcut("history.clear")
             }
             // Search › Check for Updates…, under About, as in any Mac app.
             CommandGroup(after: .appInfo) { UpdateMenuItem() }
             CommandGroup(after: .appSettings) {
-                Button("Settings…") { browser.tuning = true }
+                Button(Interface.text("Settings…")) { browser.tuning = true }
                     .shortcut("app.settings")
-                Button("Welcome…") { browser.welcoming = true }
+                Button(Interface.text("Welcome…")) { browser.welcoming = true }
                     .shortcut("app.welcome")
-                Button("Passwords…") { browser.managing = true }
+                Button(Interface.text("Passwords…")) { browser.managing = true }
                     .shortcut("app.passwords")
             }
             QuitAndHelp()
@@ -454,13 +454,13 @@ struct SearchApp: App {
 private struct QuitAndHelp: Commands {
     var body: some Commands {
         CommandGroup(replacing: .appTermination) {
-            Button("Quit Search") {
+            Button(Interface.text("Quit Search")) {
                 if Links.shouldQuit() { NSApp.terminate(nil) }
             }
             .keyboardShortcut("q", modifiers: .command)
         }
         CommandGroup(replacing: .help) {
-            Button("Send Feedback…") { Links.writeFeedback() }
+            Button(Interface.text("Send Feedback…")) { Links.writeFeedback() }
         }
     }
 }

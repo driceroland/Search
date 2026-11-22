@@ -26,7 +26,7 @@ struct ProxySettingsValue: Codable, Equatable {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .system: return "Off, or the Mac's own"
+            case .system: return Interface.text("Off, or the Mac's own")
             case .http: return "HTTP"
             case .socks5: return "SOCKS5"
             }
@@ -63,9 +63,9 @@ struct ProxySettingsValue: Codable, Equatable {
     var validation: String? {
         guard mode != .system else { return nil }
         guard bare != nil else {
-            return "Enter a host name or IP address on its own, without a scheme, a port or a path."
+            return Interface.text("Enter a host name or IP address on its own, without a scheme, a port or a path.")
         }
-        guard let number = UInt16(port), number > 0 else { return "Enter a port from 1 to 65535." }
+        guard let number = UInt16(port), number > 0 else { return Interface.text("Enter a port from 1 to 65535.") }
         return nil
     }
 
@@ -322,7 +322,7 @@ struct ProxySettings: View {
     @State private var message: String?
 
     private var note: String {
-        """
+        Interface.text("""
         What Search fetches goes through it: pages, favicons, search \
         suggestions, copied pictures, extensions and the Web Store, the AI \
         add-on and Search's own updates. A video call is the exception: \
@@ -332,13 +332,13 @@ struct ProxySettings: View {
         or NAS reached by its address goes through the proxy. A proxy that \
         can't be reached fails \
         rather than going direct.
-        """
+        """)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Line("Send everything through a proxy", draft.mode == .system ? "Off: Search follows the Mac's own network settings." : note) {
-                Picker("Proxy", selection: $draft.mode) {
+            Line(Interface.text("Send everything through a proxy"), draft.mode == .system ? Interface.text("Off: Search follows the Mac's own network settings.") : note) {
+                Picker(Interface.text("Proxy"), selection: $draft.mode) {
                     ForEach(ProxySettingsValue.Mode.allCases) { Text($0.title).tag($0) }
                 }
                 .labelsHidden()
@@ -347,23 +347,23 @@ struct ProxySettings: View {
             }
             if draft.mode != .system {
                 Rule()
-                TextField("Host, such as 127.0.0.1", text: $draft.host)
-                TextField("Port, such as 7890", text: $draft.port)
-                TextField("User name, if the proxy asks for one", text: $draft.username)
-                SecureField("Password, if the proxy asks for one", text: $password)
+                TextField(Interface.text("Host, such as 127.0.0.1"), text: $draft.host)
+                TextField(Interface.text("Port, such as 7890"), text: $draft.port)
+                TextField(Interface.text("User name, if the proxy asks for one"), text: $draft.username)
+                SecureField(Interface.text("Password, if the proxy asks for one"), text: $password)
                 small(draft.mode == .http
-                    ? "HTTP proxies are reached with CONNECT, so the proxy has to allow tunnelling."
-                    : "SOCKS5, as an SSH tunnel or a local client offers.")
+                    ? Interface.text("HTTP proxies are reached with CONNECT, so the proxy has to allow tunnelling.")
+                    : Interface.text("SOCKS5, as an SSH tunnel or a local client offers."))
                 if !draft.username.isEmpty {
-                    small("The user name and password are sent to the proxy as they are, which anyone between this Mac and the proxy can read. For a proxy that isn't on this Mac or your own network, prefer one that needs no password. The password itself is kept in the keychain, and removed when the proxy is turned off.")
+                    small(Interface.text("The user name and password are sent to the proxy as they are, which anyone between this Mac and the proxy can read. For a proxy that isn't on this Mac or your own network, prefer one that needs no password. The password itself is kept in the keychain, and removed when the proxy is turned off."))
                 }
             }
             if let validation = draft.validation { small(validation) }
             HStack(spacing: 10) {
-                Pill("Apply", filled: true) {
+                Pill(Interface.text("Apply"), filled: true) {
                     do {
                         try proxy.save(draft, password: password)
-                        message = draft.mode == .system ? "Proxy turned off." : "Proxy applied. Reload a page to fetch it through the proxy."
+                        message = draft.mode == .system ? Interface.text("Proxy turned off.") : Interface.text("Proxy applied. Reload a page to fetch it through the proxy.")
                     } catch {
                         message = error.localizedDescription
                     }
