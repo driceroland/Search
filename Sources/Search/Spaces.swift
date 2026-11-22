@@ -999,7 +999,10 @@ private struct SpaceButton: View {
         } label: {
             Image(systemName: space.symbol)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(space.tint ?? (current || hovering ? Palette.ink : Palette.muted))
+                // Its colour only while it's the one on screen: the others
+                // all grey alike, coloured or not, so a coloured space's
+                // button didn't read as the one you're in.
+                .foregroundStyle(current ? (space.tint ?? Palette.ink) : hovering ? Palette.ink : Palette.muted)
                 .opacity(current || hovering ? 1 : 0.75)
                 .frame(width: 26, height: 26)
                 .background(
