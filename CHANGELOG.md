@@ -63,6 +63,7 @@ in [ROADMAP.md](ROADMAP.md).
 - With a peek open (⇧-click), ⌘L shows the peeked page's address, and Return takes the peek there; it showed the address of the tab behind it. (idea 691)
 - Typing into ⌘T's or ⌘L's field over a page that is still loading stays in the field: as the page arrived it took the keys, and the rest of what was typed went into the page's own search box. A click on the page still takes them. (idea 495)
 - In the window's own full screen (the green button, ⌃⌘F), Escape goes to the page, to close a site's pop-up, and no longer takes the window out of full screen, as in Safari; a video's full screen still leaves at one press. (idea 582)
+- The side panel no longer flashes white in dark mode as it opens: its page comes in once it has drawn something, as a tab's does. (idea 467)
 
 ### Held back
 

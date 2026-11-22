@@ -321,6 +321,7 @@ final class SidePanelPages: NSObject {
         web.uiDelegate = delegate
         web.allowsMagnification = true
         if #available(macOS 13.3, *) { web.isInspectable = true }
+        SidePanelPages.holdForFirstFrame(web)
         web.load(URLRequest(url: url))
         pages[key] = Page(web: web, delegate: delegate)
         return true
@@ -344,8 +345,30 @@ final class SidePanelPages: NSObject {
         web.allowsBackForwardNavigationGestures = true
         // The Web Inspector as for a tab, by the same rule (Web.inspectable).
         Web.inspectable(web)
+        SidePanelPages.holdForFirstFrame(web)
         web.load(URLRequest(url: url))
         pages[ObjectIdentifier(browser)] = Page(web: web, delegate: delegate)
+    }
+
+    /// A web view that has never drawn is opaque white: in dark mode the
+    /// panel flashed it on opening, before its page came (idea 467). Unseen,
+    /// over the panel's own ground, until WebKit says the page has drawn
+    /// something (firstFrame), as a tab's page is (PageView.holdForFirstFrame).
+    static func holdForFirstFrame(_ web: WKWebView) {
+        let observe = NSSelectorFromString("_setObservedRenderingProgressEvents:")
+        guard web.responds(to: observe) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, UInt) -> Void
+        unsafeBitCast(web.method(for: observe), to: Setter.self)(web, observe, PageView.firstFrame)
+        web.alphaValue = 0
+    }
+
+    /// The panel's page has drawn, or is done: in, quickly.
+    static func showFirstFrame(_ web: WKWebView) {
+        guard web.alphaValue < 1 else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Motion.seconds(PageView.fadeIn)
+            web.animator().alphaValue = 1
+        }
     }
 
     func drop(in browser: Browser) {
@@ -426,6 +449,19 @@ private final class SitePanelDelegate: NSObject, ObservableObject, WKNavigationD
         arrived = webView.url
     }
 
+    @objc(_webView:renderingProgressDidChange:)
+    func webView(_ webView: WKWebView, renderingProgressDidChange events: UInt) {
+        if events & PageView.firstFrame != 0 { SidePanelPages.showFirstFrame(webView) }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        SidePanelPages.showFirstFrame(webView)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        SidePanelPages.showFirstFrame(webView)
+    }
+
     /// Crashes in a row: the page is made again twice a minute at most, then
     /// left as it is (the panel's line still closes it or opens it in a tab).
     private var crashes = CrashCount()
@@ -491,7 +527,15 @@ private final class PanelDelegate: NSObject, WKNavigationDelegate, WKUIDelegate 
     private var loaded = false
     init(browser: Browser, base: URL, first: URL) { self.browser = browser; self.base = base; self.first = first }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loaded = true }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loaded = true
+        SidePanelPages.showFirstFrame(webView)
+    }
+
+    @objc(_webView:renderingProgressDidChange:)
+    func webView(_ webView: WKWebView, renderingProgressDidChange events: UInt) {
+        if events & PageView.firstFrame != 0 { SidePanelPages.showFirstFrame(webView) }
+    }
 
     /// A frame of the page's that can't work in the panel here, as its
     /// response arrives: the page is told what the site would tell it, and
