@@ -5351,7 +5351,7 @@ final class Bench {
                     "size": [Double(size.width), Double(size.height)],
                     "least": [Double(StylePanel.least.width), Double(StylePanel.least.height)]])
 
-        case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "ext-sites", "capture", "capture-stop":
+        case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-safari", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "ext-sites", "capture", "capture-stop":
             guard #available(macOS 15.4, *) else {
                 answer(["error": "extensions need macOS 15.4"])
                 return
@@ -5901,6 +5901,13 @@ final class Bench {
             guard Store.testing else { answer(["error": "ext-fetches only works on a --test run"]); return }
             answer(["trace": ExtensionFetch.trace, "on": ExtensionFetch.on])
             if request["clear"] as? Bool == true { ExtensionFetch.trace.removeAll() }
+        case "ext-safari":
+            // Settings › Extensions › From Safari apps: what it would list.
+            // In a test run, "in" names other folders to look through.
+            let places = Store.testing ? (request["in"] as? [String])?.map { URL(fileURLWithPath: $0, isDirectory: true) } : nil
+            answer(["on": SafariApps.on, "found": SafariApps.scan(in: places ?? SafariApps.places).map {
+                ["app": $0.app, "name": $0.name, "folder": $0.folder.path, "id": $0.id]
+            }])
         case "ext-folder":
             guard let path = request["path"] as? String else { answer(["error": "ext-folder needs a path"]); return }
             extensions.installFolder(at: URL(fileURLWithPath: path), confirm: !skip)
