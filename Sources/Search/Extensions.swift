@@ -2432,10 +2432,13 @@ struct ExtensionSlot: View {
     /// How many pinned ones the row has room for; the rest are only in the
     /// list. Nil: all of them.
     var room: Int? = nil
+    /// The puzzle with the list; Settings can hide it, leaving the pinned
+    /// extensions' buttons (idea 426).
+    var puzzle = true
 
     var body: some View {
         if #available(macOS 15.4, *) {
-            ExtensionButtons(browser: browser, extensions: .shared, edge: edge, room: room)
+            ExtensionButtons(browser: browser, extensions: .shared, edge: edge, room: room, puzzle: puzzle)
         }
     }
 }
@@ -2446,6 +2449,7 @@ private struct ExtensionButtons: View {
     @ObservedObject var extensions: Extensions
     let edge: Edge
     var room: Int?
+    var puzzle = true
 
     var body: some View {
         if !extensions.installed.isEmpty {
@@ -2467,6 +2471,11 @@ private struct ExtensionButtons: View {
                          hangingFrom: edge) {
                     ExtensionMenu(browser: browser, extensions: extensions)
                 }
+                // Hidden, it stays as a point to hang the list and popups
+                // from: an extension's own key still opens them.
+                .opacity(puzzle ? 1 : 0)
+                .frame(width: puzzle ? nil : 0)
+                .allowsHitTesting(puzzle)
             }
         }
     }

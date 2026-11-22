@@ -663,6 +663,14 @@ struct SettingsPanel: View {
                 get: { prefs.doorsUp },
                 set: { on in withAnimation(Motion.glide) { prefs.doorsUp = on } }
             ))
+        case "helm.shown":
+            Ticks(items: [("Back", Binding(get: { !prefs.hidesBack }, set: { on in withAnimation(Motion.glide) { prefs.hidesBack = !on } })),
+                          ("Forward", Binding(get: { !prefs.hidesForward }, set: { on in withAnimation(Motion.glide) { prefs.hidesForward = !on } })),
+                          ("Reload", Binding(get: { !prefs.hidesReload }, set: { on in withAnimation(Motion.glide) { prefs.hidesReload = !on } }))])
+        case "foot.shown":
+            Ticks(items: [("Extensions", Binding(get: { !prefs.hidesExtensionsDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesExtensionsDoor = !on } })),
+                          ("Bookmarks", Binding(get: { !prefs.hidesBookmarksDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesBookmarksDoor = !on } })),
+                          ("Profile", Binding(get: { !prefs.hidesProfileDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesProfileDoor = !on } }))])
         case "glyph": Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
         case "tabs.highContrast": Switch(on: $prefs.highContrastText)
         case "tabs.reading": Switch(on: $prefs.showsReading)
@@ -1572,6 +1580,22 @@ struct Segmented<Option: Hashable>: View {
 }
 
 /// On or off, in ink rather than in blue.
+/// A few things each shown or not, side by side: a tick for each
+/// (Back, Forward, Reload…).
+struct Ticks: View {
+    let items: [(String, Binding<Bool>)]
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ForEach(items.indices, id: \.self) { index in
+                Toggle(items[index].0, isOn: items[index].1)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12.5))
+            }
+        }
+    }
+}
+
 struct Switch: View {
     @Binding var on: Bool
 

@@ -410,6 +410,21 @@ final class Preferences: ObservableObject {
     @Published var dimsSleepingTabs: Bool {
         didSet { store.set(dimsSleepingTabs, forKey: "tabs.sleep.dim") }
     }
+    /// Back, forward and reload, each hidden on its own, for whoever uses
+    /// the keys: the tabs get the room (idea 815). Shown unless hidden.
+    @Published var hidesBack: Bool { didSet { store.set(hidesBack, forKey: "helm.back.hidden") } }
+    @Published var hidesForward: Bool { didSet { store.set(hidesForward, forKey: "helm.forward.hidden") } }
+    @Published var hidesReload: Bool { didSet { store.set(hidesReload, forKey: "helm.reload.hidden") } }
+    /// How many of back, forward and reload are shown.
+    var helmDoors: Int { [hidesBack, hidesForward, hidesReload].filter { !$0 }.count }
+    /// The buttons at the column's foot (and the strip's end), each hidden on
+    /// its own: the extensions' puzzle, bookmarks and the profile (idea 426).
+    /// Shown unless hidden. A pinned extension keeps its button.
+    @Published var hidesExtensionsDoor: Bool { didSet { store.set(hidesExtensionsDoor, forKey: "foot.extensions.hidden") } }
+    @Published var hidesBookmarksDoor: Bool { didSet { store.set(hidesBookmarksDoor, forKey: "foot.bookmarks.hidden") } }
+    @Published var hidesProfileDoor: Bool { didSet { store.set(hidesProfileDoor, forKey: "foot.profile.hidden") } }
+    /// The profile's badge is drawn: several profiles, and not hidden.
+    var showsProfileDoor: Bool { Profiles.shared.several && !hidesProfileDoor }
     /// Tabs you haven't pinned, named or grouped close once left alone this
     /// long, as in Arc. Never unless asked for.
     @Published var tabLife: TabLife {
@@ -1229,6 +1244,12 @@ final class Preferences: ObservableObject {
         popupSites = Set(store.stringArray(forKey: "privacy.popupSites") ?? [])
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         dimsSleepingTabs = store.bool(forKey: "tabs.sleep.dim")
+        hidesBack = store.bool(forKey: "helm.back.hidden")
+        hidesForward = store.bool(forKey: "helm.forward.hidden")
+        hidesReload = store.bool(forKey: "helm.reload.hidden")
+        hidesExtensionsDoor = store.bool(forKey: "foot.extensions.hidden")
+        hidesBookmarksDoor = store.bool(forKey: "foot.bookmarks.hidden")
+        hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen
         lazyTabs = store.bool(forKey: "tabs.lazy")
