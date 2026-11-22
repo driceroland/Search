@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Open Link in Private Tab in a link's right-click menu, after Open Link in New Tab (and Open Link in Split View), as the bookmarks bar already has it: the link in a private tab in front, with nothing of the page it came from. Not on a private page, where Open Link in New Tab is private already. `python3 Tests/link_menu.py`. Thanks [@xibrox](https://github.com/xibrox) ([#1384](https://github.com/driceroland/Search/pull/1384), [#902](https://github.com/driceroland/Search/issues/902), idea 568)
+
 ### Changed
 
 - On macOS 15, Settings › Extensions says under a Manifest V3 extension whose pages need WebAssembly, Bitwarden's among them, that it won't run there: WebKit on macOS 15 refuses WebAssembly in these extensions' own pages whatever they ask, and the popup only said WebAssembly isn't supported. On macOS 26 it runs. `swift test --filter ExtensionLimitsTests`. Reported by [@Rokai-Jibe](https://github.com/Rokai-Jibe) ([#1383](https://github.com/driceroland/Search/issues/1383))
