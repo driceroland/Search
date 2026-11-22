@@ -1057,7 +1057,11 @@ struct ContentView: View {
                 browser.tabSwitcher.cancel()
                 if browser.commandHeld { browser.commandHeld = false }
                 measureLights()
-                resting?.isHidden = false
+                // Not in full screen, a split's half included: there macOS
+                // brings its own buttons down with the title bar, and ours,
+                // left where the window's buttons were before, made a second
+                // row of them under it (idea 929).
+                resting?.isHidden = window?.styleMask.contains(.fullScreen) ?? false
                 // Only the window you were in, or every window's video would come.
                 browser.appLeft()
             }
@@ -1074,7 +1078,7 @@ struct ContentView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { browser.fullScreen = true; reveal?.entering() }
+                if let window, (note.object as? NSWindow) === window { browser.fullScreen = true; reveal?.entering(); resting?.isHidden = true }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { browser.fullScreen = false; reveal?.leaving() }
@@ -1279,7 +1283,7 @@ struct ContentView: View {
         view.spots = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
             .compactMap { window.standardWindowButton($0) }
             .map { $0.convert($0.bounds, to: titlebar) }
-        view.isHidden = NSApp.isActive
+        view.isHidden = NSApp.isActive || window.styleMask.contains(.fullScreen)
     }
 
     /// The window, once there is one: held, dressed, and named for the page

@@ -66,6 +66,7 @@ in [ROADMAP.md](ROADMAP.md).
 - The side panel no longer flashes white in dark mode as it opens: its page comes in once it has drawn something, as a tab's does. (idea 467)
 - With the column as icons only, the card for a new space comes over the page beside the column, at its full width; it was cut to a few letters inside the narrow column, its name field unusable. (idea 835)
 - Settings › Liquid Glass tab: in light mode the glass over the tab you're on has a faint tint and a hairline edge, where it all but vanished on a light column. (idea 843)
+- In full screen, a split screen's half included, the window's buttons no longer show twice, one row under the other, while the other app has the focus. (idea 929)
 
 ### Held back
 
