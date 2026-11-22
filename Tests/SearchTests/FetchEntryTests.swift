@@ -54,6 +54,17 @@ final class FetchEntryTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(Fetches().beginResume(entry)?.resumeData), Data([1, 2, 3]))
     }
 
+    func testAFileThatCannotBeCreatedOffersRetryNotResume() async throws {
+        let webView = makeWebView()
+        let request = URLRequest(url: URL(string: "https://example.test/archive.zip")!)
+        let entry = FetchEntry(name: "archive.zip", request: request, webView: webView)
+        entry.failed(NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotCreateFile), resumeData: Data([1, 2, 3]))
+
+        XCTAssertEqual(entry.state, .failed)
+        XCTAssertFalse(entry.canResume)
+        XCTAssertTrue(entry.canRetry)
+    }
+
     func testPauseWithoutResumeDataBecomesRetryableWithVisibleReason() async throws {
         let webView = makeWebView()
         let request = URLRequest(url: URL(string: "https://example.test/archive.zip")!)
