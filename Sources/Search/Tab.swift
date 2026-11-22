@@ -1183,7 +1183,10 @@ final class Tab: ObservableObject, Identifiable {
         add(KeptScroll.script, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         add(Veiling.picker, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         add(PageDrafts.script, .atDocumentStart, mainFrameOnly: false, in: Web.world)
-        add(FormRelay.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
+        // Every frame: one of the page's own origin offers its sign-in's
+        // boxes the page's accounts; any other returns at once (see the
+        // script's first lines).
+        add(FormRelay.script, .atDocumentEnd, mainFrameOnly: false, in: Web.world)
         // The form script looks at boxes for your card only with Fill in
         // your contact details on.
         if FormRelay.contacts {

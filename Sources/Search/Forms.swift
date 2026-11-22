@@ -198,6 +198,20 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
     static let script = """
     (function () {
       if (window.__officeForms) return;
+      // A frame runs this only when it is of the page's own origin, and so
+      // is every frame between it and the page: a sign-in a portal puts in
+      // a frame of its own is offered the page's accounts there, and the
+      // page's fill reaches it (inFrame). A frame of anywhere else is never
+      // looked at, offered anything or filled. A frame only hangs the list
+      // from its boxes: what a sign-in sends is the page's to watch.
+      var framed = window !== window.top;
+      if (framed) {
+        try {
+          for (var w = window; w !== w.top; w = w.parent) {
+            if (!w.frameElement || w.location.origin !== w.parent.location.origin) return;
+          }
+        } catch (err) { return; }
+      }
 
       // Fields that hold a secret, kept in Search's own world where no page
       // reaches: a password box from the moment it is focused or typed in,
@@ -207,14 +221,43 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // button turns one into a text box.
       var secrets = globalThis.__searchSecrets || (globalThis.__searchSecrets = new WeakSet());
       function keepSecret(box) { try { if (box) secrets.add(box); } catch (e) {} }
-      function passwordBox(el) { return !!el && el.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'password'; }
+      // A password box, or a text box that says it takes the password (a
+      // page that draws its own dots, or a "show password" left on).
+      function passwordBox(el) {
+        if (!el || el.tagName !== 'INPUT') return false;
+        var kind = (el.type || '').toLowerCase();
+        return kind === 'password' || (kind === 'text' && /(^|\\s)current-password(\\s|$)/i.test(el.getAttribute('autocomplete') || ''));
+      }
+      var passwordBoxes = 'input[type="password"], input[autocomplete~="current-password" i]';
+      // The box the caret is in, inside open shadow roots too: from out
+      // here, the active element is only their host.
+      function active() {
+        var a = document.activeElement;
+        for (var i = 0; a && a.shadowRoot && a.shadowRoot.activeElement && i < 32; i++) a = a.shadowRoot.activeElement;
+        return a;
+      }
+      // Every box on the page in its order, those in open shadow roots
+      // where their host is: web components (a design system's inputs,
+      // a sign-in widget) keep theirs there. Only looked through for a box
+      // in a shadow root.
+      function deepInputs() {
+        var out = [];
+        (function walk(root, depth) {
+          var all = root.querySelectorAll('*');
+          for (var i = 0; i < all.length; i++) {
+            if (all[i].tagName === 'INPUT') out.push(all[i]);
+            if (all[i].shadowRoot && depth < 8) walk(all[i].shadowRoot, depth + 1);
+          }
+        })(document, 0);
+        return out;
+      }
       // Password boxes something typed or filled into: a keystroke, a
       // paste, a password manager or Search's own fill all say so with an
       // input or a change. Only their passwords are offered a place in the
       // keychain. A box the page filled by itself — a masked key or secret
       // shown on a dashboard — never is, whatever button is pressed near it.
-      var touched = new WeakSet();
-      function touch(box) { try { if (box) touched.add(box); } catch (e) {} }
+      var touched = new WeakSet(), lastTyped = null;
+      function touch(box) { try { if (box) { touched.add(box); lastTyped = box; } } catch (e) {} }
       // The box itself, inside an open shadow root too: the event's target
       // is only its host from out here.
       function boxOf(e) { var path = e.composedPath ? e.composedPath() : []; return path[0] || e.target; }
@@ -255,21 +298,35 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       } catch (err) {}
 
       // The password box, and the last box before it that could hold a name.
-      function pair() {
-        var boxes = document.querySelectorAll('input[type="password"]');
-        var pass = null;
-        for (var p = 0; p < boxes.length; p++) {
-          var b = boxes[p];
-          var r = b.getBoundingClientRect();
-          if (r.width > 0 && r.height > 0) { pass = b; break; }
+      // `near`, the box the caret is in: the password box it is, or the
+      // first after it in its form, or else on the page. Without it, or
+      // with nothing to go by, the first password box to see on the page —
+      // which on a page with a sign-up form above the sign-in, or a box
+      // kept out of sight ahead of the real one, is not the sign-in's.
+      function pair(near) {
+        var root = near && near.getRootNode ? near.getRootNode() : document;
+        var shadowed = root !== document && root.nodeType === 11;
+        function seenBox(b) { var r = b.getBoundingClientRect(); return passwordBox(b) && r.width > 0 && r.height > 0; }
+        var boxes = Array.prototype.filter.call((shadowed ? root : document).querySelectorAll(passwordBoxes), seenBox);
+        if (shadowed && !boxes.length) boxes = deepInputs().filter(seenBox);
+        if (!boxes.length) return null;
+        var pass = boxes[0];
+        if (near && boxes.indexOf(near) >= 0) {
+          pass = near;
+        } else if (near && near.tagName === 'INPUT') {
+          var form = formOf(near);
+          var mine = form ? boxes.filter(function (b) { return formOf(b) === form; }) : boxes;
+          var after = mine.filter(function (b) { return near.compareDocumentPosition(b) === Node.DOCUMENT_POSITION_FOLLOWING; });
+          if (after.length) pass = after[0];
+          else if (form && mine.length) pass = mine[0];
         }
-        if (!pass) return null;
-        var scope = pass.form || (pass.closest && pass.closest('form')) || document;
-        var all = scope.querySelectorAll('input');
+        var scope = formOf(pass);
+        var all = scope ? scope.querySelectorAll('input')
+          : pass.getRootNode() === document ? document.querySelectorAll('input') : deepInputs();
         var user = null;
         for (var i = 0; i < all.length; i++) {
           if (all[i] === pass) break;
-          if (couldBeName(all[i], scope === document)) user = all[i];
+          if (couldBeName(all[i], !scope)) user = all[i];
         }
         return { user: user, pass: pass };
       }
@@ -284,6 +341,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       function couldBeName(el, loose) {
         var kind = (el.type || 'text').toLowerCase();
         if (kind !== 'text' && kind !== 'email' && kind !== 'tel') return false;
+        if (passwordBox(el)) return false;
         if (vouched(el) && !elsewhere(el)) return true;
         if (el.disabled || el.readOnly || el.getAttribute('aria-hidden') === 'true') return false;
         var r = el.getBoundingClientRect();
@@ -401,7 +459,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // What a box the caret is in is offered: null for nothing.
       function judge(el) {
         if (!el || (el.tagName || '').toLowerCase() !== 'input') return null;
-        var both = pair();
+        var both = pair(el);
         if (both) {
           if (el === both.pass) return newPassword(el) ? null : { name: false, wide: true };
           if (el !== both.user || newPassword(both.pass)) return null;
@@ -417,7 +475,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // more than a handful of boxes to type in is not a first step.
       function named() {
         if (pair()) return null;
-        var el = document.activeElement;
+        var el = active();
         if (nameBox(el)) return el;
         var all = document.querySelectorAll('input'), seen = [];
         for (var i = 0; i < all.length; i++) {
@@ -663,13 +721,13 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return boxIds.get(el);
       }
       // Lists you have chosen from yourself, which a pick never changes back.
-      var touched = new WeakSet();
+      var chosen = new WeakSet();
       ['input', 'change'].forEach(function (kind) {
-        document.addEventListener(kind, function (e) { if (e.isTrusted && e.target) touched.add(e.target); }, true);
+        document.addEventListener(kind, function (e) { if (e.isTrusted && e.target) chosen.add(e.target); }, true);
       });
       // A list still showing what it came with, or asking you to choose.
       function unchosen(select) {
-        if (touched.has(select)) return false;
+        if (chosen.has(select)) return false;
         var o = select.options[select.selectedIndex];
         return !o || o.disabled || !o.value || o.defaultSelected || select.selectedIndex === 0;
       }
@@ -724,7 +782,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // one only. `box`: the box the list was offered under, which has to be
       // the one the caret is still in. `tint`: the colour they flash, if.
       function fillContact(card, alone, box, tint) {
-        var el = document.activeElement;
+        var el = active();
         if (box != null && (!el || boxId(el) !== box)) return 0;
         var kind = contactBox(el);
         if (!kind) return 0;
@@ -757,9 +815,20 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return filled;
       }
 
+      // The same-origin frame the caret is in, if this script runs there:
+      // what the page is asked to fill goes to it. Nil for a frame of
+      // another origin, which this world can't reach and which runs none
+      // of this.
+      function inFrame() {
+        var a = active();
+        if (!a || !/^i?frame$/i.test(a.tagName || '')) return null;
+        try { return (a.contentWindow && a.contentWindow.__officeForms) || null; } catch (e) { return null; }
+      }
       window.__officeForms = {
         fill: function (user, password) {
-          var both = pair();
+          var frame = inFrame();
+          if (frame) return frame.fill(user, password);
+          var both = pair(active());
           if (!both) return false;
           if (both.user && !both.user.value) put(both.user, user);
           keepSecret(both.pass);
@@ -770,6 +839,8 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         // The name alone, into a first step's box: there is no password
         // box yet, and none is filled anywhere.
         name: function (user) {
+          var frame = inFrame();
+          if (frame) return frame.name(user);
           var box = named();
           if (!box) return false;
           put(box, user);
@@ -778,7 +849,9 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         // A verification code, into the box it was offered under: digit by
         // digit across a row of boxes, and only if it fits.
         code: function (value) {
-          var box = codeBox(document.activeElement) ? document.activeElement : codeAt;
+          var frame = inFrame();
+          if (frame) return frame.code(value);
+          var box = codeBox(active()) ? active() : codeAt;
           if (!box || !box.isConnected || !codeBox(box)) return false;
           var row = cells(box);
           if (!row) { keepSecret(box); put(box, value); return true; }
@@ -787,7 +860,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           return true;
         },
         // Whether a box is offered codes, for the tests.
-        coded: function (el) { return codeBox(el || document.activeElement); },
+        coded: function (el) { return codeBox(el || active()); },
         // Whether there is still a sign-in on the page. Asked after a
         // password went out, to tell a sign-in that took from one refused.
         hasPassword: function () { return !!pair(); },
@@ -796,11 +869,13 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         contact: function (card, alone, box, tint) { return fillContact(card || {}, !!alone, box, tint); },
         // What a box is offered from your card, for the tests: a kind
         // ("email", "postal-code"…) or null.
-        contactVerdict: function (el) { return contactBox(el || document.activeElement); },
+        contactVerdict: function (el) { return contactBox(el || active()); },
         // What a box would be offered, for the tests: null, or whether a
         // pick puts in the name alone and whether the site's other hosts'
         // accounts come too.
-        verdict: function (el) { return judge(el || document.activeElement); },
+        verdict: function (el) { return judge(el || active()); },
+        // The page scrolled under a frame's box: the list follows it.
+        moved: function () { moved(); },
         // A form the browser has just seen go out. Sent from the page's
         // script — form.submit() fires no submit event, and the link or
         // timer that called it is no button — nothing below heard it.
@@ -819,6 +894,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // under.
       var offered = 0;
       function offer() {
+        if (framed) return;
         var both = pair();
         if (!both) {
           var box = named();
@@ -830,7 +906,9 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           return;
         }
         // Only a password that was typed or filled in: one the page put
-        // there by itself is not a sign-in going out.
+        // there by itself is not a sign-in going out. The one last typed in
+        // goes with its own name, not a sign-up form's above it.
+        if (lastTyped && lastTyped.isConnected && lastTyped !== both.pass) both = pair(lastTyped) || both;
         if (!both.pass.value || !touched.has(both.pass)) return;
         offered = Date.now();
         window.webkit.messageHandlers.officeForms.postMessage({
@@ -843,9 +921,9 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       document.addEventListener('submit', offer, true);
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Enter') return;
-        var both = pair();
-        if (both && (document.activeElement === both.pass || document.activeElement === both.user)) offer();
-        else if (!both && nameBox(document.activeElement)) offer();
+        var el = active(), both = pair(el);
+        if (both && (el === both.pass || el === both.user)) offer();
+        else if (!both && nameBox(el)) offer();
       }, true);
       // Plenty of sign-in buttons aren't in a form and never fire submit.
       document.addEventListener('click', function (e) {
@@ -858,7 +936,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
 
       var told = false;
       function tell() {
-        if (told || !pair()) return;
+        if (framed || told || !pair()) return;
         told = true;
         window.webkit.messageHandlers.officeForms.postMessage({ kind: 'form' });
       }
@@ -888,7 +966,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           window.webkit.messageHandlers.officeForms.postMessage({ kind: 'settled' });
         }, 400);
       }
-      new MutationObserver(function () {
+      if (!framed) new MutationObserver(function () {
         if (!looking) looking = setTimeout(look, 250);
       }).observe(document.documentElement, { childList: true, subtree: true });
 
@@ -932,8 +1010,27 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // What the box the caret is in was judged to be: judged again when the
       // caret moves, not on every frame of a scroll, which only moves it.
       var judged = { el: null, verdict: null, code: false, sure: false, contact: null };
+      // Where a frame's boxes are on the page: its frames' places added up.
+      function offset() {
+        var x = 0, y = 0;
+        try {
+          for (var w = window; w !== w.top; w = w.parent) {
+            var f = w.frameElement, r = f.getBoundingClientRect(), s = w.parent.getComputedStyle(f);
+            x += r.left + f.clientLeft + (parseFloat(s.paddingLeft) || 0);
+            y += r.top + f.clientTop + (parseFloat(s.paddingTop) || 0);
+          }
+        } catch (e) { return null; }
+        return { x: x, y: y };
+      }
       function caret(scrolled) {
-        var el = document.activeElement;
+        var el = active();
+        // The caret in a frame that runs this: the frame says where it is,
+        // and follows a scroll of the page around it.
+        if (el && /^i?frame$/i.test(el.tagName || '')) {
+          var frame = null;
+          try { frame = el.contentWindow && el.contentWindow.__officeForms; } catch (e) {}
+          if (frame) { if (scrolled === true) frame.moved(); return; }
+        }
         // The boxes are only looked for with the caret in one: this runs on
         // every frame of every scroll, and looking goes through the whole page.
         if (scrolled !== true || judged.el !== el) {
@@ -955,10 +1052,13 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         var name = !!(verdict && verdict.name);
         var wide = code ? judged.sure : !verdict || verdict.wide;
         if (passwords || code || contact || forPasskeys(el)) {
-          var r = el.getBoundingClientRect();
-          if (r.width > 0 && r.height > 0) rect = { x: r.left, y: r.top, w: r.width, h: r.height };
+          var r = el.getBoundingClientRect(), at = framed ? offset() : { x: 0, y: 0 };
+          if (at && r.width > 0 && r.height > 0) rect = { x: r.left + at.x, y: r.top + at.y, w: r.width, h: r.height };
         }
         var typing = editable(el);
+        // A frame the caret has left says nothing: where it went speaks,
+        // and would be talked over.
+        if (framed && !rect && !document.hasFocus()) return;
         var now = typing + (rect ? ' ' + passwords + ' ' + name + ' ' + wide + ' ' + code + ' ' + contact + ' ' + rect.x + ' ' + rect.y + ' ' + rect.w + ' ' + rect.h : '');
         if (scrolled === true && now === said) return;
         said = now;
@@ -1005,8 +1105,10 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           kind: 'fullscreen', on: on
         });
       }
-      document.addEventListener('fullscreenchange', immersed, true);
-      document.addEventListener('webkitfullscreenchange', immersed, true);
+      if (!framed) {
+        document.addEventListener('fullscreenchange', immersed, true);
+        document.addEventListener('webkitfullscreenchange', immersed, true);
+      }
 
       document.addEventListener('focusin', caret, true);
       document.addEventListener('focusout', function () { setTimeout(caret, 0); }, true);
