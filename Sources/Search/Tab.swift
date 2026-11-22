@@ -3676,6 +3676,8 @@ extension WKWebView {
             let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
             let tooWide = folder == home || ["/", "/Users", "/Volumes"].contains(folder.path)
                 || folder.deletingLastPathComponent().path == "/Volumes"
+                || WKWebView.sameItem(folder, home) || WKWebView.sameItem(folder, URL(fileURLWithPath: "/Users"))
+                || WKWebView.isVolume(folder)
             loadFileURL(url, allowingReadAccessTo: tooWide ? url : WKWebView.readRoot(folder, home: home))
         } else {
             load(URLRequest(url: url))
@@ -3688,11 +3690,21 @@ extension WKWebView {
     /// page may read up to two folders above its own, never as far as the
     /// home folder, a folder directly in it (Documents, Desktop, Downloads,
     /// Library…), the disk, a volume or a folder at the disk's top.
+    ///
+    /// The folders are told apart by what they are on disk, not by how the
+    /// address spells them: /System/Volumes/Data/Users/you, /users/you or a
+    /// link to the home folder is the home folder too.
     static func readRoot(_ folder: URL, home: URL) -> URL {
-        func broad(_ candidate: URL) -> Bool {
+        func spelledBroad(_ candidate: URL) -> Bool {
             let parent = candidate.deletingLastPathComponent()
             return candidate.path == home.path || parent.path == home.path || candidate.pathComponents.count <= 3
                 || parent.path == "/Volumes"
+        }
+        func broad(_ candidate: URL) -> Bool {
+            let parent = candidate.deletingLastPathComponent()
+            return spelledBroad(candidate) || spelledBroad(candidate.resolvingSymlinksInPath())
+                || sameItem(candidate, home) || sameItem(parent, home)
+                || isVolume(candidate) || isVolume(parent)
         }
         var root = folder
         for _ in 0..<2 {
@@ -3701,6 +3713,22 @@ extension WKWebView {
             root = up
         }
         return root
+    }
+
+    /// The same folder on disk, however each is spelled (links followed,
+    /// case, the data volume's own path). False when either can't be read.
+    static func sameItem(_ a: URL, _ b: URL) -> Bool {
+        func id(_ url: URL) -> NSObject? {
+            (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.fileResourceIdentifierKey]))?
+                .fileResourceIdentifier as? NSObject
+        }
+        guard let first = id(a), let second = id(b) else { return false }
+        return first.isEqual(second)
+    }
+
+    /// A disk or a volume itself, the data volume's /System/Volumes/Data too.
+    static func isVolume(_ url: URL) -> Bool {
+        (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isVolumeKey]))?.isVolume == true
     }
 
     /// JavaScript run in Search's own world (see Web.world), where its page
