@@ -564,10 +564,19 @@ enum Browsers {
         // as they were written, not dropped. They come back once the first
         // window is on screen, and a launch for a small window can end
         // before one ever is.
-        if !restored { records += read().dropFirst() }
+        if !restored { records = carried(records, over: read()) }
         // Frozen before it goes to the Disk queue.
         let snapshot = records
         Disk.write(file, now: now) { try? JSONEncoder().encode(snapshot) }
+    }
+
+    /// The windows open, then last time's that aren't among them: each
+    /// window once, an open one as it is now. Appending the file whole wrote
+    /// a window brought up before the others twice, and the file doubled up
+    /// from save to save until they were brought back.
+    static func carried(_ open: [WindowRecord], over stored: [WindowRecord]) -> [WindowRecord] {
+        var seen = Set(open.map(\.id))
+        return open + stored.dropFirst().filter { seen.insert($0.id).inserted }
     }
 
     /// Soon, not now: a window being dragged moves many times a second.
