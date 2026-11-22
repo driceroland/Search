@@ -79,37 +79,31 @@ extension Browser {
         // had been, the window's buttons over it — and slid out again.
         if folded, peeking {
             foldTicket += 1
-            let change = {
+            moveColumn(out: true) {
                 self.peeking = false
                 self.folded = false
             }
-            if !Motion.reduced, !Motion.fadesColumn { slidePage(out: true, change) } else { moveColumn(out: true, change) }
             return
         }
         // Only if it was out: set at all, every row of the column is built
         // again, 30 of them with 30 tabs, before the slide starts.
         if peeking { peeking = false }
         foldTicket += 1
-        // Pressed again before the column went (see below): it stays.
+        // Going away, however the column or the strip moves, what a page
+        // grows into is in its own colour until WebKit has drawn it there
+        // (see cover). Called off, it shrinks back and the cover goes.
+        if !folded, !foldingAway { Browser.cover(shownPages) }
+        // Pressed again before the column went: it stays.
         if foldingAway {
             foldingAway = false
             return
         }
-        // The column sliding: the page follows its edge (see slidePage).
-        if prefs.sidebar, !Motion.reduced, !Motion.fadesColumn {
-            slidePage(out: folded) { self.folded.toggle() }
-            return
-        }
-        // Going away otherwise — the strip across the top, or with nothing
-        // sliding — what a page grows into is in its own colour until
-        // WebKit has drawn it there (see cover). Called off, it shrinks back
-        // and the cover goes.
-        if !folded { Browser.cover(shownPages) }
-        // Fading under Reduce Motion, the page is given the column's room
-        // first, and the column fades only once WebKit has drawn the page
-        // at that size: given it as the column went, what WebKit hadn't
-        // drawn yet came in from the far edge as a bar of the web view's
-        // own ground, black or white with the theme.
+        // Going away, the page is given the column's room first, and the
+        // column slides only once WebKit has drawn the page at that size.
+        // Given it as the slide started, the page grew while it slid, and
+        // what WebKit hadn't drawn yet came in from the far edge as a bar
+        // of the web view's own ground, black or white with the theme. Out
+        // over the far edge, where the room goes, nothing of it shows.
         let pages = shownPages
         if !folded, prefs.sidebar, !Motion.reduced, !pages.isEmpty {
             let ticket = foldTicket
@@ -124,61 +118,6 @@ extension Browser {
             return
         }
         moveColumn(out: folded) { self.folded.toggle() }
-    }
-
-    /// `change`, which brings the column out (`out`) or puts it away, on
-    /// the column's slide, with the page beside it following the column's
-    /// edge frame by frame: laid out at every width it passes through, as
-    /// Safari and Dia do, so what the page centres or sets against its far
-    /// side moves with it rather than jumping when the page is resized
-    /// once, at the start of the slide going away or at the end coming out
-    /// (idea 659: half the column's width, 112 points, in one frame).
-    ///
-    /// The page's room is the column's own animated width while this lasts
-    /// (`pageFollows`, read by ContentView), so both move on one curve in
-    /// one transaction. Covered for it (FoldCover.coming), the stage leaves
-    /// the page's own ground on through the slide, as 1.0.17 does (idea 847).
-    func slidePage(out: Bool, _ change: @escaping () -> Void) {
-        followTicket += 1
-        let ticket = followTicket
-        let pages = shownPages
-        pages.forEach {
-            FoldCover.coming.add($0)
-            FoldCover.grounded.add($0)
-        }
-        // Growing, a page is drawn at its new width a frame or more after
-        // its view has it, and the room between showed the web view's own
-        // ground at the far edge, white or dark with the theme: on a dark
-        // page a white sliver up to 60 points wide, frame after frame
-        // (190 on a heavy page). That ground is the view's layer's colour,
-        // here, in this process: it wears the page's own colour while the
-        // page follows (PageView.ground), which WebKit is never asked to
-        // paint for.
-        for case let page as PageView in pages {
-            page.effectiveAppearance.performAsCurrentDrawingAppearance {
-                page.ground = page.underPageBackgroundColor.cgColor
-            }
-        }
-        withAnimation(Motion.folding(out: out)) {
-            pageFollows = true
-            change()
-        }
-        // Past the slide's end, springs included, the page's room is its
-        // own again: the same width, so nothing moves.
-        let length = (Motion.slide(out: out) ?? 0.3) + 0.12
-        DispatchQueue.main.asyncAfter(deadline: .now() + length) { [weak self] in
-            // Pressed again meanwhile: the last slide's end does this.
-            guard let self, ticket == self.followTicket else { return }
-            // Each page's own ground back, and the stage's to see to again.
-            for page in FoldCover.grounded.allObjects {
-                (page as? PageView)?.ground = nil
-                FoldCover.coming.remove(page)
-            }
-            FoldCover.grounded.removeAllObjects()
-            var still = Transaction()
-            still.disablesAnimations = true
-            withTransaction(still) { self.pageFollows = false }
-        }
     }
 
     /// `change`, which brings the column out (`out`) or puts it away, on
@@ -962,10 +901,6 @@ final class FoldCover: NSView {
     /// the stage doesn't clear their ground for it as well (see
     /// PaneStage.backPages).
     @MainActor static let coming = NSHashTable<WKWebView>.weakObjects()
-
-    /// Pages following the column, wearing their own colour as their
-    /// ground (Browser.slidePage).
-    @MainActor static let grounded = NSHashTable<WKWebView>.weakObjects()
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override var isOpaque: Bool { true }

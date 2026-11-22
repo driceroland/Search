@@ -2386,36 +2386,6 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 final class PageView: WKWebView {
     var draftFrames: [WKFrameInfo] = []
 
-    /// While ⌘S slides the column and the page follows it, the ground
-    /// WebKit shows where it hasn't drawn the page at its new width yet, in
-    /// the page's own colour (Browser.slidePage). WebKit sets the view's
-    /// layer's colour itself as the view is resized, so it is put back over
-    /// WebKit's each time; nil, WebKit's own is back.
-    var ground: CGColor? {
-        didSet {
-            guard ground != oldValue else { return }
-            if oldValue == nil { webGround = layer?.backgroundColor }
-            layer?.backgroundColor = ground ?? webGround
-        }
-    }
-    private var webGround: CGColor?
-
-    override func updateLayer() {
-        super.updateLayer()
-        if let ground {
-            webGround = layer?.backgroundColor
-            layer?.backgroundColor = ground
-        }
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        if let ground, layer?.backgroundColor != ground {
-            webGround = layer?.backgroundColor
-            layer?.backgroundColor = ground
-        }
-    }
-
     var onMenuClosed: (() -> Void)?
 
     /// Two fingers spread on a peek open it as a tab, as zooming into it
