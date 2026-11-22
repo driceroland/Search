@@ -543,10 +543,10 @@ final class ApplePasswords: ObservableObject {
     /// wider ties (a company's several domains); those are not offered.
     /// `wide` false: the host alone, for a box that only might be a sign-in's.
     nonisolated static func belongs(_ sites: [String], to host: String, wide: Bool = true,
-                                    registrable: (String) -> String = Vault.registrable) -> Bool {
+                                    registrable: (String) -> String = Registrable.of) -> Bool {
         let domain = registrable(bare(host))
         return sites.contains { site in
-            let site = bare(Vault.host(of: site).isEmpty ? site : Vault.host(of: site))
+            let site = bare(Registrable.host(of: site).isEmpty ? site : Registrable.host(of: site))
             return site == bare(host) || (wide && registrable(site) == domain)
         }
     }
@@ -554,7 +554,7 @@ final class ApplePasswords: ObservableObject {
     /// The accounts kept for the host itself first, then the site's others
     /// (admin.example.com's own before admin-qa's).
     nonisolated static func exactFirst(_ logins: [AppleLogin], to host: String, wide: Bool = true,
-                                       registrable: (String) -> String = Vault.registrable) -> [AppleLogin] {
+                                       registrable: (String) -> String = Registrable.of) -> [AppleLogin] {
         let site = logins.filter { belongs($0.sites, to: host, wide: wide, registrable: registrable) }
         let own = site.filter { belongs($0.sites, to: host, wide: false, registrable: registrable) }
         return own + site.filter { !own.contains($0) }

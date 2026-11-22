@@ -587,14 +587,6 @@ final class Preferences: ObservableObject {
     @Published var asksWhereToSave: Bool {
         didSet { store.set(asksWhereToSave, forKey: "downloads.ask") }
     }
-    /// Offer to keep a password the first time a site sees it.
-    @Published var savesPasswords: Bool {
-        didSet { store.set(savesPasswords, forKey: "passwords.save") }
-    }
-    /// Put a kept name and password into a sign-in as soon as one appears.
-    @Published var fillsPasswords: Bool {
-        didSet { store.set(fillsPasswords, forKey: "passwords.fill") }
-    }
     /// Your card in Contacts under the boxes for your name, email, phone and
     /// address (MeCard). Off unless turned on, which is when macOS asks.
     @Published var fillsContacts: Bool {
@@ -1267,8 +1259,6 @@ final class Preferences: ObservableObject {
             : (store.string(forKey: "downloads")).map { URL(fileURLWithPath: $0) }
                 ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         asksWhereToSave = store.bool(forKey: "downloads.ask")
-        savesPasswords = store.object(forKey: "passwords.save") as? Bool ?? true
-        fillsPasswords = store.object(forKey: "passwords.fill") as? Bool ?? true
         applePasswords = store.bool(forKey: "passwords.apple")
         let contacts = store.bool(forKey: "contacts.fill")
         fillsContacts = contacts

@@ -53,7 +53,7 @@ extension Browser {
     /// A modified click on a link, from a tab in the row.
     func peek(_ url: URL, from tab: Tab) {
         if peekTab != nil { closePeek() }
-        if tab.pin != nil, let host = url.host()?.lowercased() { tab.peeked = (Vault.registrable(host), Date()) }
+        if tab.pin != nil, let host = url.host()?.lowercased() { tab.peeked = (Registrable.of(host), Date()) }
         // On the window's space, as the other new tabs are, so a peek has the
         // same sign-ins as the tab it came from rather than the front
         // window's; a private tab's peek is private, with a store of its own.
@@ -79,7 +79,7 @@ extension Browser {
               let there = url.host()?.lowercased(),
               let here = page?.host()?.lowercased()
         else { return false }
-        return there != here && Vault.registrable(there) != Vault.registrable(here)
+        return there != here && Registrable.of(there) != Registrable.of(here)
     }
 
     /// What a pin may open in a peek: a web page, never about:blank, data:,
@@ -98,7 +98,7 @@ extension Browser {
         prepare(page)
         page.opener = tab.id
         page.setAddressOptimistically(url)
-        if let host = url.host()?.lowercased() { tab.peeked = (Vault.registrable(host), Date()) }
+        if let host = url.host()?.lowercased() { tab.peeked = (Registrable.of(host), Date()) }
         if #available(macOS 15.4, *) { Extensions.shared.openedAside(page) }
         withAnimation(Motion.settle) {
             peekTab = page
@@ -115,7 +115,7 @@ extension Browser {
               Date().timeIntervalSince(peeked.at) < 3,
               let host = url.host()?.lowercased()
         else { return false }
-        return Vault.registrable(host) == peeked.site
+        return Registrable.of(host) == peeked.site
     }
 
     /// Put away: the page goes with the panel.

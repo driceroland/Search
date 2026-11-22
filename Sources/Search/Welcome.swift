@@ -17,7 +17,6 @@ struct WelcomePanel: View {
     // value that ran every time the panel was made, the first window's
     // included, for a page that isn't showing yet.
     @State private var source: ImportSource?
-    @State private var wantsPasswords = true
     @State private var wantsHistory = true
     @State private var wantsBookmarks = true
     @State private var bringing = false
@@ -27,7 +26,6 @@ struct WelcomePanel: View {
     @State private var isDefault = Links.isDefault
     @State private var asked = false
 
-    private var importsPasswords: Bool { (source ?? ImportSource.installed().first)?.importsPasswords ?? false }
 
     /// Read once: the email page stays to the end once it is there, for
     /// its thanks.
@@ -124,21 +122,13 @@ struct WelcomePanel: View {
                     Text("\((source ?? sources[0]).name) can bring: \((source ?? sources[0]).canBringLine.lowercased())")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.faint)
-                    if importsPasswords {
-                        Choice("Passwords", "macOS will ask once for that browser's keychain key", on: $wantsPasswords)
-                    } else {
-                        Text((source ?? sources[0]).passwordsInPasswordsApp
-                             ? "\((source ?? sources[0]).name) keeps passwords in the Passwords app: export them there, then bring in the file below."
-                             : "Passwords from \((source ?? sources[0]).name) aren't supported yet.")
-                            .font(.system(size: 13)).foregroundStyle(Palette.muted)
-                    }
                     Choice("Bookmarks", "Folders and all, behind the bookmark button", on: $wantsBookmarks)
                     Choice("History", "The last few thousand places, for finishing addresses", on: $wantsHistory)
                 }
 
                 HStack(spacing: 12) {
                     Big(bringing ? "Bringing…" : "Bring them in", filled: true) { bringAll() }
-                        .disabled(bringing || brought != nil || !((importsPasswords && wantsPasswords) || wantsHistory || wantsBookmarks))
+                        .disabled(bringing || brought != nil || !(wantsHistory || wantsBookmarks))
                     if bringing { Ring(size: 10) }
                     if let brought {
                         Text(brought)
@@ -285,33 +275,12 @@ struct WelcomePanel: View {
 
     private func bringAll() {
         guard let source = source ?? ImportSource.installed().first else { return }
-        // The profile used most recently, without asking: the sheet in
-        // Settings › Passwords is where another is chosen.
+        // The profile used most recently, without asking: the full sheet
+        // (File › Bring Things Over…) is where another is chosen.
         let profile = source.usual
         bringing = true
         var lines: [String] = []
         let group = DispatchGroup()
-        if wantsPasswords && source.importsPasswords {
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                let outcome = Result { try source.read(profile: profile) }
-                DispatchQueue.main.async {
-                    switch outcome {
-                    case .success(let found):
-                        let kept = browser.keep(found)
-                        ImportRecords.note(source.name, passwords: kept)
-                        lines.append("\(kept) passwords" + (found.undecrypted > 0 ? " (\(found.undecrypted) couldn't be decrypted)" : ""))
-                    case .failure(Chromium.Trouble.noPassphrase):
-                        lines.append("passwords: macOS didn't hand over the key — allow it and try again")
-                    case .failure(Mozilla.Trouble.primaryPassword):
-                        lines.append("passwords: \(source.name) has a primary password — export them from it and bring in the CSV")
-                    case .failure:
-                        lines.append("passwords: nothing readable")
-                    }
-                    group.leave()
-                }
-            }
-        }
         if wantsBookmarks {
             lines.append("\(browser.takeBookmarks(from: source, profile: profile).added) bookmarks")
         }
@@ -325,7 +294,6 @@ struct WelcomePanel: View {
         group.notify(queue: .main) {
             bringing = false
             brought = lines.joined(separator: " · ")
-            browser.relist()
         }
     }
 

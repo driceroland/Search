@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Removed
+
+- Search's own password manager: it no longer saves, keeps or fills passwords, and its Passwords list, "Save this password?" bar, ⌥⌘L and the password import from other browsers are gone. Use a password manager's extension; passkeys and Apple Passwords stay. Passwords already kept in the keychain under "Search" are left where they are, for Keychain Access to show or delete. Pages with a sign-in also stop running the script that watched the page for a password to keep.
+
 ### Added
 
 - Settings › Themes › Browser colour, off unless you choose one: colour the whole browser — the tabs, the bars and the ground around the page — with one of the colours or a gradient of your own (two or three colours, angle, grain), at Subtle, Rich or Vivid, as Arc's themes do, with or without spaces. A space with a colour of its own (its menu › Colour…) keeps it.

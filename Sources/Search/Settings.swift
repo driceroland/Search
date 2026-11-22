@@ -467,7 +467,6 @@ struct SettingsPanel: View {
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail
         case "search.keywords": return keywordDetail
-        case "passwords.save": return savingDetail
         case "passkeys":
             return !prefs.passkeysPossible
                 ? "Needs an Apple entitlement this build doesn't have"
@@ -809,9 +808,6 @@ struct SettingsPanel: View {
     @ViewBuilder
     private func keptControl(_ id: String) -> some View {
         switch id {
-        case "passwords.open": Pill("Open…") { browser.lead(to: InternalPage(.passwords)) }
-        case "passwords.save": Switch(on: $prefs.savesPasswords)
-        case "passwords.fill": Switch(on: $prefs.fillsPasswords)
         case "passkeys": Switch(on: $prefs.passkeys)
         case "passwords.apple": Switch(on: $prefs.applePasswords)
         // Turned on, macOS is asked whether Search may read Contacts; a no,
@@ -901,17 +897,6 @@ struct SettingsPanel: View {
                     PopupSiteList(prefs: prefs)
                 }
                 .under()
-            }
-        case "passkeys":
-            if !searched, !Vault.never.isEmpty {
-                Rule()
-                SettingRow(icon: "hand.raised.slash", title: "Sites never asked",
-                           detail: "\(Vault.never.count) sites told to stop offering") {
-                    Pill("Forget") {
-                        Vault.never = []
-                        browser.announce("Every site can ask again")
-                    }
-                }
             }
         case "agents":
             if !searched, prefs.agents { RememberedAgents() }
@@ -1079,14 +1064,6 @@ struct SettingsPanel: View {
             return "An http or https address with %s where the words go. Until then, Google"
         }
         return "Shift-Return sends what you typed to \(engine.name(custom: prefs.shiftCustom))"
-    }
-
-    /// Says so when a password manager extension has taken the saving over.
-    private var savingDetail: String {
-        if #available(macOS 15.4, *), let name = Extensions.shared.passwordSavingTakenBy {
-            return "\(name) does the saving; it asked Search not to offer"
-        }
-        return "Asked once per site, never again for a site you refuse"
     }
 
     private func setUpLikeArc() {

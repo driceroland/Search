@@ -171,10 +171,7 @@ final class FormFieldCorpusTests: XCTestCase {
     /// console.cloud.google.com that isn't clearly a sign-in's.
     func testOnlyARealSignInReachesTheSitesOtherHosts() {
         let console = "console.cloud.google.com"
-        XCTAssertTrue(Vault.belongs("accounts.google.com", to: console, wide: true))
-        XCTAssertFalse(Vault.belongs("accounts.google.com", to: console, wide: false))
-        XCTAssertTrue(Vault.belongs(console, to: console, wide: false))
-        XCTAssertFalse(Vault.belongs("google.co.uk", to: console, wide: true), "another site is never offered")
+        XCTAssertFalse(ApplePasswords.belongs(["https://google.co.uk"], to: console, wide: true), "another site is never offered")
         XCTAssertTrue(ApplePasswords.belongs(["https://accounts.google.com"], to: console, wide: true))
         XCTAssertFalse(ApplePasswords.belongs(["https://accounts.google.com"], to: console, wide: false))
         XCTAssertTrue(ApplePasswords.belongs(["https://www.console.cloud.google.com/"], to: console, wide: false))

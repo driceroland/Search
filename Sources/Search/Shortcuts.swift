@@ -208,7 +208,6 @@ struct Command: Identifiable {
     static let all: [Command] = [
         Command("app.settings", "Settings…", .app, KeyCombo(",")) { $0.tuning = true },
         Command("app.welcome", "Welcome…", .app, nil) { $0.welcoming = true },
-        Command("app.passwords", "Passwords…", .app, KeyCombo("l", option: true)) { $0.managing = true },
 
         Command("file.newWindow", "New Window", .file, KeyCombo("n")) { _ in Browsers.newWindow() },
         Command("file.newTab", "New Tab", .file, KeyCombo("t")) { $0.launch() },

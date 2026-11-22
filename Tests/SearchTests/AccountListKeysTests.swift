@@ -32,27 +32,28 @@ final class AccountListKeysTests: XCTestCase {
         return browser
     }
 
-    private func list(on tab: UUID, offer: Bool = false) -> Browser.Suggesting {
+    /// Two of Apple Passwords' accounts, one of this host's own and one of
+    /// its site's, unless `apple` says none yet.
+    private func list(on tab: UUID, offer: Bool = false, apple: Bool = true) -> Browser.Suggesting {
         var list = Browser.Suggesting(
             tab: tab, spot: CGRect(x: 40, y: 120, width: 280, height: 30),
-            logins: [Kept(host: "mail.example.com", user: "ann"), Kept(host: "example.com", user: "bob")],
             host: "mail.example.com", clear: false, appleOffer: offer ? "example.com" : nil)
+        if apple {
+            list.apple = [AppleLogin(user: "cat", sites: ["mail.example.com"]), AppleLogin(user: "dan", sites: ["example.com"])]
+            list.appleHost = "mail.example.com"
+        }
         list.shown = Date().addingTimeInterval(-1)
         return list
     }
 
     func testTheRowsInTheOrderTheyAreDrawn() {
-        var list = list(on: UUID(), offer: true)
-        list.apple = [AppleLogin(user: "cat", sites: ["mail.example.com"]), AppleLogin(user: "dan", sites: ["example.com"])]
-        list.appleHost = "mail.example.com"
+        let list = list(on: UUID(), offer: true)
         XCTAssertEqual(list.choices, [
-            .login(Kept(host: "mail.example.com", user: "ann")),
             .apple(AppleLogin(user: "cat", sites: ["mail.example.com"])),
-            .login(Kept(host: "example.com", user: "bob")),
             .apple(AppleLogin(user: "dan", sites: ["example.com"])),
             .offer,
         ])
-        XCTAssertEqual(list.othersFrom, 2, "the rest of the site's under a line")
+        XCTAssertEqual(list.othersFrom, 1, "the rest of the site's under a line")
     }
 
     func testArrowsMoveTheLight() {
@@ -109,16 +110,17 @@ final class AccountListKeysTests: XCTestCase {
         defer { browser.closeAll() }
         let tab = UUID()
         browser.activeID = tab
-        browser.testSuggest(list(on: tab))
+        var first = list(on: tab, apple: false)
+        first.apple = [AppleLogin(user: "dan", sites: ["example.com"])]
+        first.appleHost = "mail.example.com"
+        browser.testSuggest(first)
         _ = browser.moveChoice(by: 1)
-        _ = browser.moveChoice(by: 1)
-        XCTAssertEqual(browser.suggesting?.lit, 1)
-        // Apple Passwords answers: one of this host's own, above bob's.
+        XCTAssertEqual(browser.suggesting?.lit, 0)
+        // Apple Passwords answers: one of this host's own, above dan's.
         var joined = try! XCTUnwrap(browser.suggesting)
-        joined.apple = [AppleLogin(user: "cat", sites: ["mail.example.com"])]
-        joined.appleHost = "mail.example.com"
+        joined.apple = [AppleLogin(user: "cat", sites: ["mail.example.com"]), AppleLogin(user: "dan", sites: ["example.com"])]
         browser.testSuggest(joined)
-        XCTAssertEqual(browser.suggesting?.lit, 2)
-        XCTAssertEqual(browser.suggesting?.choices[2], .login(Kept(host: "example.com", user: "bob")))
+        XCTAssertEqual(browser.suggesting?.lit, 1)
+        XCTAssertEqual(browser.suggesting?.choices[1], .apple(AppleLogin(user: "dan", sites: ["example.com"])))
     }
 }

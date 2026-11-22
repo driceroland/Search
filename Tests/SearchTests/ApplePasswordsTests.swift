@@ -746,7 +746,6 @@ final class ApplePairingTests: XCTestCase {
         try await settle { browser.suggesting?.codes.isEmpty == false }
         let list = try XCTUnwrap(browser.suggesting)
         XCTAssertEqual(list.codes.map(\.user), ["ada@example.test"])
-        XCTAssertEqual(list.logins, [])
         XCTAssertTrue(list.wide, "a box that says so: the site's other hosts' codes come too")
         XCTAssertEqual(list.spot, spot)
         XCTAssertEqual(fake.commands, [16])

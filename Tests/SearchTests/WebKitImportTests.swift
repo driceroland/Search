@@ -71,14 +71,11 @@ final class WebKitImportTests: XCTestCase {
         let source = try XCTUnwrap(ImportSource.installed().first { $0.name == "Orion" })
         XCTAssertEqual(source.profiles.map(\.id), ["Defaults", "A1B2-PROFILE"])
         XCTAssertEqual(source.profiles.map(\.name), ["Personal", "Work"])
-        XCTAssertFalse(source.importsPasswords)
-        XCTAssertTrue(source.passwordsInPasswordsApp)
         XCTAssertFalse(source.readsOpenTabs)
         XCTAssertEqual(source.preview(profile: "Defaults").bookmarks, 3)
         let places = source.places(profile: "A1B2-PROFILE")
         XCTAssertEqual(places.map(\.url.absoluteString), ["https://new.example/", "https://old.example/"])
         XCTAssertEqual(places[1].last, Date(timeIntervalSince1970: 700_000_000 + WebKitBrowser.appleEpoch))
-        XCTAssertThrowsError(try source.read())
     }
 
     func testOrionWrittenDates() {

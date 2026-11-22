@@ -396,7 +396,7 @@ final class SessionImportTests: XCTestCase {
                         date: Date(timeIntervalSince1970: 1_700_000_000))
         try sessionFile("Sessions/Session_200", in: profile, one,
                         date: Date(timeIntervalSince1970: 1_700_000_100))
-        let source = Chromium.Source(name: "Fixture", folder: "", service: "", account: "", app: "",
+        let source = Chromium.Source(name: "Fixture", folder: "", app: "",
                                      rootOverride: root)
         let read = Chromium.sessions(in: source, profile: "Default")
         // The newer file wins, whatever the names say.
@@ -411,7 +411,7 @@ final class SessionImportTests: XCTestCase {
         try sessionFile("Current Session", in: profile,
                         session(frame(id: 0, body: raw(7, 101)),
                                 navigation(tab: 101, index: 0, url: "https://a.example/", title: "A")))
-        let source = Chromium.Source(name: "Fixture", folder: "", service: "", account: "", app: "",
+        let source = Chromium.Source(name: "Fixture", folder: "", app: "",
                                      rootOverride: root)
         XCTAssertEqual(Chromium.sessions(in: source, profile: "Default").tabs, 1)
     }
@@ -433,7 +433,7 @@ final class SessionImportTests: XCTestCase {
             .write(to: target)
         try FileManager.default.createSymbolicLink(
             at: root.appendingPathComponent("Default/Sessions/Session_x"), withDestinationURL: target)
-        let source = Chromium.Source(name: "Fixture", folder: "", service: "", account: "", app: "",
+        let source = Chromium.Source(name: "Fixture", folder: "", app: "",
                                      rootOverride: root)
         XCTAssertTrue(Chromium.sessions(in: source, profile: "Default").windows.isEmpty)
     }

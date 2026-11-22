@@ -655,8 +655,7 @@ struct PopupWindowView: View {
                             if ask.screen { ScreenQuestion(browser: browser, ask: ask) }
                             else { CaptureQuestion(browser: browser, ask: ask) }
                         }
-                        if let offer = browser.offering { PasswordOffer(browser: browser, offer: offer) }
-                    }
+                                    }
                     .padding(12)
                 }
         } else {

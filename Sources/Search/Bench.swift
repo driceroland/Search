@@ -1024,7 +1024,6 @@ final class Bench {
             var out: [String: Any] = [
                 "settings": browser.tuning,
                 "welcome": browser.welcoming,
-                "passwords": browser.managing,
                 // A question hanging from the window (Ask), still unanswered.
                 "sheet": browser.window?.attachedSheet != nil,
                 // The button of that question that Return presses.
@@ -1044,7 +1043,6 @@ final class Bench {
                 "import": browser.bringingIn != nil,
                 "field": browser.editing,
                 "suggesting": browser.suggesting != nil,
-                "offering": browser.offering != nil,
                 "modal": NSApp.modalWindow.map { "\(type(of: $0)) “\($0.title)”" } ?? "",
                 "look": browser.prefs.look.rawValue,
                 "sidebar": browser.prefs.sidebar,
@@ -2153,16 +2151,6 @@ final class Bench {
                 out["places"] = places.count
                 ImportRecords.note(source.name, places: places.count)
             }
-            if what.contains("passwords") {
-                let outcome = Result { try source.read(profile: profile) }
-                switch outcome {
-                case .success(let read): out["read"] = read.logins.count; out["skipped"] = read.skipped
-                    out["undecrypted"] = read.undecrypted
-                case .failure(let error): out["error"] = "\(error)"
-                }
-                browser.took(outcome, from: source.name)
-                out["saved"] = browser.saved.count
-            }
             if what.contains("spaces") {
                 if let sidebar = source.arcSidebar(profile: profile) {
                     let (spaces, pins, tabs) = browser.takeArc(sidebar, from: source, profile: profile)
@@ -2186,7 +2174,7 @@ final class Bench {
             }
             // What is now recorded from it, as the sheet shows it.
             if let record = ImportRecords.of(source.name) {
-                out["record"] = ["bookmarks": record.bookmarks, "places": record.places, "passwords": record.passwords,
+                out["record"] = ["bookmarks": record.bookmarks, "places": record.places,
                                  "ids": record.bookmarkIDs.count]
             }
             answer(out)
@@ -2194,13 +2182,11 @@ final class Bench {
         case "import-preview":
             // What the sheet counts as it opens, for every browser found:
             // its profiles, the one used most recently, and what that one
-            // and all of them hold — through the same call the sheet makes,
-            // which never asks for a key. Only on a SEARCH_PROBE run.
+            // and all of them hold — through the same call the sheet makes.
+            // Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "import-preview only works on a --test run"]); return }
-            let asked = Chromium.keyAsks
             func counts(_ preview: ImportSource.Preview) -> [String: Any] {
-                ["bookmarks": preview.bookmarks, "places": preview.places, "passwords": preview.passwords,
-                 "extensions": preview.extensions]
+                ["bookmarks": preview.bookmarks, "places": preview.places, "extensions": preview.extensions]
             }
             let found = ImportSource.installed().map { source -> [String: Any] in
                 let usual = source.usual
@@ -2210,10 +2196,7 @@ final class Bench {
                         "counts": counts(source.preview(profile: usual)),
                         "all": counts(source.preview(profile: nil))]
             }
-            // keyAsked: by this count; keyAskedEver: by anything since launch,
-            // the sheet opening included.
-            answer(["browsers": found, "safari": ImportSource.safari, "keyAsked": Chromium.keyAsks - asked,
-                    "keyAskedEver": Chromium.keyAsks])
+            answer(["browsers": found, "safari": ImportSource.safari])
 
         case "import-file":
             // A file another browser exported, through the same call the
@@ -2223,8 +2206,8 @@ final class Bench {
             Task { @MainActor in
                 let took = await browser.takeFile(URL(fileURLWithPath: path))
                 answer(["said": took.said, "bookmarks": took.bookmarks, "already": took.already, "places": took.places,
-                        "kept": took.kept, "skipped": took.skipped, "cancelled": took.cancelled,
-                        "total": browser.bookmarks.count, "top": browser.bookmarks.roots.map(\.title), "saved": browser.saved.count])
+                        "cancelled": took.cancelled,
+                        "total": browser.bookmarks.count, "top": browser.bookmarks.roots.map(\.title)])
             }
 
         case "remove-folder":
@@ -2237,28 +2220,6 @@ final class Bench {
             else { answer(["error": "no top-level folder by that title"]); return }
             browser.bookmarks.askRemove(folder)
             answer(["asked": title])
-        case "passwords":
-            // The passwords panel's list, narrowed as its search box would
-            // narrow it, and with "remove" its Remove All… / Remove N…, which
-            // `ui confirm` answers. Only on a SEARCH_PROBE run: it takes
-            // passwords out of the keychain (the test world's own, by label).
-            guard Store.testing else { answer(["error": "passwords only works on a --test run"]); return }
-            if let filter = request["filter"] as? String { browser.hunting = filter }
-            // "shown": the list as the page holds it now, not read again,
-            // so a route to the page that never read it shows as empty.
-            if request["shown"] as? Bool != true { browser.relist() }
-            if request["remove"] as? Bool == true { browser.forgetShown() }
-            // Answered once the removals, off the main thread, are done.
-            func settled() {
-                guard !browser.forgetting else {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { settled() }
-                    return
-                }
-                answer(["count": browser.saved.count, "shown": browser.shownSites.reduce(0) { $0 + $1.logins.count },
-                        "announced": browser.announcement ?? ""])
-            }
-            settled()
-
         case "history":
             // History on a --test run: "take" puts an address in as an import
             // would, since a bench tab's visits never enter it; "forget" drops
@@ -2871,28 +2832,13 @@ final class Bench {
                     "displayAnswered": Browser.displayAnswered as Any? ?? NSNull()])
 
         case "accounts":
-            // The list under the sign-in box the caret is in — passkeys, then
-            // passwords — and, with "pick", a click on its row by number,
-            // counted from 0. Only on a SEARCH_PROBE run: it would sign in.
-            // Also the name the save question would keep ("offer"), and,
-            // with "forget", every login this test world kept — its own
-            // label's, never another world's or the real one's. "keep" is
-            // the save question's Save.
+            // The list under the sign-in box the caret is in — passkeys and
+            // Apple Passwords — and, with "pick", a click on its row by
+            // number, counted from 0. Only on a SEARCH_PROBE run: it would
+            // sign in.
             guard Store.testing else { answer(["error": "accounts only works on a --test run"]); return }
-            if request["keep"] as? Bool == true { browser.keepOffer() }
-            if request["forget"] as? Bool == true {
-                Vault.all().forEach { Vault.forget(host: $0.host, user: $0.user) }
-                browser.dropOffer()
-            } else if let user = request["forget"] as? String {
-                // One account's, as Settings › Passwords forgets it: "" is
-                // the login kept under no name.
-                Vault.all().filter { $0.user == user }.forEach { Vault.forget(host: $0.host, user: $0.user) }
-            }
-            let offer: [String: Any] = browser.offering.map { ["user": $0.login.user, "host": $0.login.host, "changed": $0.changed] } ?? [:]
-            // Every account this world keeps, by name, without a secret.
-            let users = Vault.all().map(\.user)
-            guard let list = browser.suggesting else { answer(["shown": false, "offer": offer, "kept": users.count, "users": users]); return }
-            let rows = list.passkeys.map { ["passkey": $0.name] } + list.logins.map { ["login": $0.user] }
+            guard let list = browser.suggesting else { answer(["shown": false]); return }
+            let rows = list.passkeys.map { ["passkey": $0.name] }
             if let press = request["press"] as? [Double], press.count == 2 {
                 // A press and a release at a point of the window, from its
                 // top-left, handed to whatever the window says is there — the
@@ -2917,10 +2863,10 @@ final class Bench {
             }
             if let pick = request["pick"] as? Int {
                 guard rows.indices.contains(pick) else { answer(["error": "no row \(pick)"]); return }
-                if pick < list.passkeys.count { browser.choose(list.passkeys[pick]) } else { browser.choose(list.logins[pick - list.passkeys.count]) }
+                browser.choose(list.passkeys[pick])
             }
-            var out: [String: Any] = ["shown": true, "rows": rows, "nameOnly": list.nameOnly, "wide": list.wide, "offer": offer, "kept": users.count,
-                                      "users": users, "spot": [list.spot.minX, list.spot.minY, list.spot.width, list.spot.height]]
+            var out: [String: Any] = ["shown": true, "rows": rows, "nameOnly": list.nameOnly, "wide": list.wide,
+                                      "spot": [list.spot.minX, list.spot.minY, list.spot.width, list.spot.height]]
             // With Split View's stage, the card as drawn, in the window from
             // its top-left, and the page-sized box it hangs in.
             if let drawn = PaneStage.accountCard() {
@@ -4862,7 +4808,6 @@ final class Bench {
             // Open or close the app's own panels, to reproduce what a person
             // did without a person.
             if let on = request["settings"] as? Bool { browser.tuning = on }
-            if let on = request["passwords"] as? Bool, Store.testing { browser.managing = on }
             if let on = request["welcome"] as? Bool { browser.welcoming = on }
             if let on = request["history"] as? Bool { browser.recalling = on }
             if let on = request["downloads"] as? Bool { browser.hoarding = on }

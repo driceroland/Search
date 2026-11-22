@@ -71,7 +71,7 @@ final class ImportFileTests: XCTestCase {
         XCTAssertEqual(first.bookmarks.map(\.title), expected)
         XCTAssertEqual(second.bookmarks.map(\.title), expected)
         if !canReadUnreadable {
-            XCTAssertTrue(first.passwords.isEmpty, "an unreadable folder member must not discard the valid bookmarks or become a password file")
+            XCTAssertEqual(first.bookmarks.count, expected.count, "an unreadable folder member must not discard the valid bookmarks")
         }
     }
 
@@ -144,37 +144,6 @@ final class ImportFileTests: XCTestCase {
         }
         XCTAssertGreaterThan(progressThrough, 1_000)
         XCTAssertLessThan(progressThrough, (html as NSString).length)
-    }
-
-    func testPasswordCSVPrecancelAndProgressNeverContainsItsContents() throws {
-        let root = try makeTemporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let file = root.appendingPathComponent("passwords.csv")
-        let secret = "private-test-password-91c"
-        let csv = "url,username,password\nhttps://example.com,alice,\(secret)\n"
-        try csv.write(to: file, atomically: true, encoding: .utf8)
-        let cancelled = ImportFile.Control()
-        cancelled.cancel()
-        XCTAssertThrowsError(try ImportFile.read(file, control: cancelled)) { error in
-            XCTAssertTrue(error is CancellationError)
-        }
-
-        var updates: [ImportFile.Progress] = []
-        let control = ImportFile.Control { updates.append($0) }
-        let imported = try ImportFile.read(file, control: control)
-        XCTAssertEqual(imported.passwords, [csv])
-        XCTAssertTrue(updates.contains { $0.message == "passwords.csv: Reading CSV" })
-        XCTAssertTrue(updates.allSatisfy { !$0.message.contains(secret) })
-        XCTAssertTrue(updates.contains { $0.total != nil })
-
-        updates.removeAll()
-        let safeToSkip = "url,username,password\n,alice,\(secret)\n"
-        let vaultControl = ImportFile.Control { updates.append($0) }
-        let result = Vault.take(csv: safeToSkip, control: vaultControl)
-        XCTAssertEqual(result.kept, 0)
-        XCTAssertEqual(result.skipped, 1)
-        XCTAssertTrue(updates.contains { $0.message == "Reading password CSV…" })
-        XCTAssertTrue(updates.allSatisfy { !$0.message.contains(secret) })
     }
 
     @MainActor
@@ -404,7 +373,7 @@ final class ImportFileTests: XCTestCase {
         }
 
         let source = ImportSource.chromium(Chromium.Source(
-            name: "Arc", folder: "Arc/User Data", service: "Arc Safe Storage", account: "Arc", app: "Arc.app"))
+            name: "Arc", folder: "Arc/User Data", app: "Arc.app"))
         let sidebar = try makeArcSidebarFixture(workName: workName, personalName: personalName)
         try sidebar.write(to: Arc.file, options: .atomic)
         browser.prefs.usesSpaces = false
@@ -520,7 +489,7 @@ private func makeChromiumSource(name: String) throws -> (Chromium.Source, URL) {
     let folder = "SearchTests/\(UUID().uuidString)"
     let root = Chromium.base.appendingPathComponent(folder, isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return (Chromium.Source(name: name, folder: folder, service: "Test Safe Storage", account: "Test", app: "Test.app"), root)
+    return (Chromium.Source(name: name, folder: folder, app: "Test.app"), root)
 }
 
 private func makeProfile(_ name: String, under root: URL) throws -> URL {

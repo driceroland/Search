@@ -2,8 +2,7 @@ import Foundation
 import SQLite3
 
 // Browsers built on WebKit, as Search is, whose files can be read: their
-// bookmarks and history. Their passwords are in the Mac's own keychain and
-// Passwords app, not theirs, so there are none to bring from here.
+// bookmarks and history.
 //
 // Orion (Kagi) keeps each profile in a folder of ~/Library/Application
 // Support/Orion — "Defaults" for the first, the profile's identifier for

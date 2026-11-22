@@ -634,8 +634,6 @@ final class Tab: ObservableObject, Identifiable {
 
     /// What the page hands back when you point at something and click it.
     var onPick: ((Tab, String, String, String) -> Void)?
-    /// The page has a sign-in on it; the page has just sent one.
-    var onSignIn: ((Tab) -> Void)?
     /// The caret has entered or left one of the sign-in boxes; where the box
     /// is, in the web view's points, or nil when it has left. Then whether
     /// it goes with a password, and whether it is a first step's name box,
@@ -651,10 +649,6 @@ final class Tab: ObservableObject, Identifiable {
         /// number for the box, which a pick has to find the caret still in.
         case contact(String, box: Int)
     }
-    /// The site the sign-in was sent from — not the one it landed on —
-    /// then the name and the password, and whether that page came over
-    /// plain http.
-    var onCredentials: ((Tab, String, String, String, Bool) -> Void)?
     var onPickEnd: ((Tab) -> Void)?
     var onPickTrouble: ((Tab, String) -> Void)?
     /// Right-click landed on an image. WebKit's own menu offers to copy or
@@ -1289,8 +1283,6 @@ final class Tab: ObservableObject, Identifiable {
     func startPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on()") }
     func stopPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.off()") }
 
-    func foundSignIn() { onSignIn?(self) }
-
     /// From the page, in CSS pixels; passed on in points. Page zoom is the
     /// only scale between the two that matters here.
     /// `passwords`: a box of a sign-in with a password, not one only for
@@ -1318,97 +1310,9 @@ final class Tab: ObservableObject, Identifiable {
         ), passwords, name, wide, code, fill)
     }
 
-    /// The name a sign-in that asks for it first was just sent, for the
-    /// page after it: that one asks for the password alone, with no box
-    /// for the name, and a password saved without its name is half a
-    /// login. In memory only — never written down — for this tab alone,
-    /// a few minutes, and only for the same site: a private tab's name
-    /// never reaches another tab, and another site never sees it.
-    private var named: (site: String, user: String, at: Date)?
-
-    func gaveName(_ user: String) {
-        guard !user.isEmpty, user.count <= 256,
-              let host = pageAddress?.host()?.lowercased()
-        else { return }
-        named = (Vault.registrable(host), user, Date())
-    }
-
-    /// The name sent on the step before, if it was this site's and recent.
-    func givenName() -> String? {
-        guard let named, Date().timeIntervalSince(named.at) < 300,
-              let host = pageAddress?.host()?.lowercased(),
-              Vault.registrable(host) == named.site
-        else { return nil }
-        return named.user
-    }
-
-    /// A name and password the page has just sent — held, not yet offered.
-    /// Whether the sign-in worked is only known afterwards: a page that
-    /// comes back without a password box took it, one that still has the
-    /// box refused it, and only the first is worth remembering.
-    private var sent: (host: String, user: String, password: String, clear: Bool, at: Date)?
-
-    func sentSignIn(user: String, password: String) {
-        // The host now, while the page is still the sign-in page: a moment
-        // later it may be somewhere else entirely, and that is not where
-        // the password belongs.
-        guard let host = pageAddress?.host()?.lowercased() else { return }
-        let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-        // A password page with no name on it: the name is the one the step
-        // before was sent with.
-        let user = user.isEmpty ? givenName() ?? "" : user
-        sent = (bare, user, password, pageAddress?.scheme?.lowercased() == "http", Date())
-    }
-
-    /// A form of this page's on its way out, as the browser is asked
-    /// whether it may go. The page still has its boxes filled in, so what
-    /// is in them is read now (see `sent` in Forms.swift) and held like
-    /// any other sign-in, to be offered only if the next page takes it.
-    func formSent() {
-        built?.evaluateInSearch("window.__officeForms && window.__officeForms.sent && window.__officeForms.sent()")
-    }
-
-    /// The page has moved on — a new document has loaded, or the sign-in
-    /// fields have gone. If a password went out recently and there is no
-    /// longer a box for it, that is a sign-in that took.
-    ///
-    /// A new document is judged at once. Fields that a page removed by
-    /// itself are given a moment first: a sign-in built into the page closes
-    /// its form the instant you press the button and puts it back if the
-    /// server says no — and offering in between is offering a password that
-    /// may be wrong.
-    func settleSignIn(navigated: Bool = true) {
-        guard let sent else { return }
-        guard Date().timeIntervalSince(sent.at) < 45 else {
-            self.sent = nil
-            return
-        }
-        guard navigated else {
-            let stamp = sent.at
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                // Only if nothing newer went out in the meantime.
-                guard let self, self.sent?.at == stamp else { return }
-                self.settleSignIn(navigated: true)
-            }
-            return
-        }
-        guard let built else { return }
-        built.evaluateInSearch("!!(window.__officeForms && window.__officeForms.hasPassword())") { [weak self] still in
-            MainActor.assumeIsolated {
-                guard let self, let sent = self.sent else { return }
-                // The box is still there: a refused sign-in, or the second
-                // step of one. Kept for a moment longer, in case the page is
-                // still on its way.
-                if (still as? Bool) == true { return }
-                self.sent = nil
-                self.named = nil
-                self.onCredentials?(self, sent.host, sent.user, sent.password, sent.clear)
-            }
-        }
-    }
-
-    /// Puts a remembered name and password where a person would have typed
-    /// them. Nothing is echoed back and nothing is written down here.
+    /// Puts a name and password where a person would have typed them
+    /// (Apple Passwords' accounts). Nothing is echoed back and nothing is
+    /// written down here.
     /// `done`, when given, hears back `false` for the one case worth saying
     /// something about: the sign-in fields that were there a moment ago,
     /// when this was offered, are gone by the time it actually runs.
@@ -2042,9 +1946,7 @@ final class Tab: ObservableObject, Identifiable {
         onLink = nil
         onPick = nil
         onPickEnd = nil
-        onSignIn = nil
         onField = nil
-        onCredentials = nil
         // A peek or a small window put away: gone for the extensions too.
         if #available(macOS 15.4, *) { Extensions.shared.closedAside(self) }
         discard()
@@ -2123,7 +2025,6 @@ final class Tab: ObservableObject, Identifiable {
     private func discard() {
         loadGeneration &+= 1
         seekingTwin = false
-        sent = nil
         popupGesture.clear()
         if !blockedPopups.isEmpty { blockedPopups = [] }
         translationGone(sleeping: true)

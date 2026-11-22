@@ -5,8 +5,6 @@ import Foundation
 /// switch (Drice, 25 Oct). Apple Passwords stays off until it is clicked.
 ///
 /// Offered sparingly, and remembered so it stays that way:
-/// - only where Search keeps no account of its own for the site, so it never
-///   pushes in front of an account you already have;
 /// - at most once per site (its registrable domain), whatever happens then;
 /// - never again once it has gone unanswered twice in all, or once its ✕
 ///   said "don't offer again";
@@ -52,15 +50,11 @@ struct ApplePasswordsOffer {
         var frameHost: String? = nil
         /// A box that goes with a password, not one for passkeys alone.
         var passwords = true
-        /// How many accounts Search keeps for the site.
-        var kept = 0
     }
 
     struct Settings: Equatable {
         /// Apple Passwords already on: nothing to offer.
         var appleOn = false
-        /// Filling turned off: the list of accounts doesn't come up at all.
-        var fills = true
         var helper = true
         var testRun = false
         var benchAsks = false
@@ -69,13 +63,13 @@ struct ApplePasswordsOffer {
     /// The site the offer is counted against, if it may be offered under
     /// this box. Nil: not here, not now.
     func site(for field: Field, _ settings: Settings) -> String? {
-        guard !settings.appleOn, settings.fills, settings.helper,
+        guard !settings.appleOn, settings.helper,
               !settings.testRun || settings.benchAsks,
-              field.passwords, field.kept == 0,
+              field.passwords,
               let host = ApplePasswords.offers(on: field.page, privateTab: field.privateTab)
         else { return nil }
-        let site = Vault.registrable(host)
-        if let frame = field.frameHost?.lowercased(), Vault.registrable(frame) != site { return nil }
+        let site = Registrable.of(host)
+        if let frame = field.frameHost?.lowercased(), Registrable.of(frame) != site { return nil }
         guard !store.bool(forKey: Self.neverKey),
               store.integer(forKey: Self.unansweredKey) < Self.patience,
               !offered.contains(site)
