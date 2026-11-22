@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import NoWindows
 @testable import Search
 
 /// The unit tests' world: one for the whole run, in a temporary folder, and
@@ -28,6 +29,9 @@ enum TestWorld {
     nonisolated(unsafe) private static var entered = false
 
     static func enter() {
+        // Never a window on the person's screen (Tests/NoWindows). Already
+        // in place since the bundle loaded; named here so it stays linked.
+        NoWindowsInstall()
         guard !entered else { return }
         entered = true
         // Before anything reads Store: its folder is under this home, never
