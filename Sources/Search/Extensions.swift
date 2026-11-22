@@ -37,6 +37,10 @@ struct Installed: Codable, Identifiable, Equatable {
     /// bring the author's latest edits in. Kept with its links resolved:
     /// the path its id was worked out from.
     var source: String? = nil
+    /// For one added from Settings › Extensions › From Safari apps: the app
+    /// it came in. Reload then copies only while that app's signature still
+    /// holds (SafariApps.still).
+    var fromApp: String? = nil
 
     /// Whether Reload may copy from `source` under this id: a link put on
     /// the way since would bring in another folder, which has another id.
@@ -697,6 +701,10 @@ final class Extensions: NSObject, ObservableObject {
             if contexts[item.id] == nil, loadsThisRun.contains(item.id) { loadedBefore.insert(item.id); installing.remove(item.id) }
             loadsThisRun.insert(item.id)
             notStarted[item.id] = nil
+            sessionRulesGiven.remove(item.id)
+            sessionRulesSpilled.remove(item.id)
+            loadedAt[item.id] = Date()
+            sweepKeptSessionRules(item.id)
             contexts[item.id] = context
             openAside(in: context)
             // Keys you gave its commands in Settings › Shortcuts (#189).
@@ -794,6 +802,9 @@ final class Extensions: NSObject, ObservableObject {
         ExtensionShims.panelTabIDs[id] = nil
         ExtensionShims.panelOff.remove(id)
         if let held = ExtensionShims.awake.removeValue(forKey: id) { IOPMAssertionRelease(held) }
+        sessionRulesGiven.remove(id)
+        sessionRulesSpilled.remove(id)
+        loadedAt[id] = nil
         // Its ports read as gone only once WebKit has had a turn.
         DispatchQueue.main.async { ExtensionNative.stopOrphans() }
         contexts[id] = nil
@@ -879,7 +890,7 @@ final class Extensions: NSObject, ObservableObject {
         installFolder(at: source)
     }
 
-    func installFolder(at source: URL, confirm: Bool = true) {
+    func installFolder(at source: URL, confirm: Bool = true, fromApp: String? = nil) {
         guard FileManager.default.fileExists(atPath: source.appendingPathComponent("manifest.json").path) else {
             browser?.announce("That folder has no manifest.json")
             return
@@ -899,7 +910,7 @@ final class Extensions: NSObject, ObservableObject {
                 try FileManager.default.copyItem(at: source.resolvingSymlinksInPath(), to: staged)
                 try Extensions.unlinkOutside(staged)
                 try ExtensionShims.prepare(staged, fresh: true)
-                try await admit(staged, as: id, fromStore: false, finalFolder: Extensions.folder(for: id), confirm: confirm || !Store.testing, source: source)
+                try await admit(staged, as: id, fromStore: false, finalFolder: Extensions.folder(for: id), confirm: confirm || !Store.testing, source: source, fromApp: fromApp)
             } catch {
                 browser?.announce("Couldn't install the extension: \(error.localizedDescription)")
             }
@@ -929,6 +940,12 @@ final class Extensions: NSObject, ObservableObject {
                 guard original.sourceKeepsID else {
                     browser?.announce("\(original.name) wasn't reloaded — its folder now leads somewhere else")
                     return
+                }
+                if original.fromApp != nil {
+                    guard await Task.detached(priority: .userInitiated, operation: { SafariApps.still(source) }).value else {
+                        browser?.announce("\(original.name) wasn't reloaded — its app's signature doesn't check out")
+                        return
+                    }
                 }
                 do {
                     try FileManager.default.copyItem(at: source.resolvingSymlinksInPath(), to: staged)
@@ -1015,6 +1032,38 @@ final class Extensions: NSObject, ObservableObject {
     func installReason(_ id: String) -> String? {
         if installing.remove(id) != nil { return "install" }
         return loadedBefore.contains(id) ? "update" : nil
+    }
+
+    /// Session rules the shim keeps as dynamic ones (see "Session rules,
+    /// kept" in the shim): the extensions that have given this load's set,
+    /// those whose kept rules went back to being session rules to make room
+    /// for dynamic ones, and when each loaded. None outlives the load, as
+    /// session rules don't.
+    var sessionRulesGiven: Set<String> = []
+    var sessionRulesSpilled: Set<String> = []
+    private(set) var loadedAt: [String: Date] = [:]
+
+    /// Whether any of its session rules are kept, from one launch to the next.
+    func keepsSessionRules(_ id: String, _ any: Bool) {
+        if any { Store.settings.set(true, forKey: "extensions.kept.\(id)") }
+        else { Store.settings.removeObject(forKey: "extensions.kept.\(id)") }
+    }
+
+    /// The shim's background takes away kept session rules not given again
+    /// 30 s after loading, on a timer that never runs if the background
+    /// isn't running then: WebKit hadn't started it, or put it to sleep
+    /// first. A few seconds after that, it is started, and takes them away
+    /// as it starts. Without this, rules from the last launch could hold
+    /// until the extension next sets any.
+    private func sweepKeptSessionRules(_ id: String) {
+        guard Store.settings.bool(forKey: "extensions.kept.\(id)") else { return }
+        let loaded = loadedAt[id]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 35) { [weak self] in
+            guard let self, self.loadedAt[id] == loaded, !self.sessionRulesGiven.contains(id),
+                  Store.settings.bool(forKey: "extensions.kept.\(id)"),
+                  let context = self.contexts[id], context.webExtension.hasBackgroundContent else { return }
+            context.loadBackgroundContent { _ in }
+        }
     }
 
     @discardableResult
@@ -1119,11 +1168,11 @@ final class Extensions: NSObject, ObservableObject {
 
     /// Reads what was unpacked, asks, and — on yes — moves it into place and
     /// loads it. On no, nothing is left behind.
-    private func admit(_ staged: URL, as id: String, fromStore: Bool, finalFolder: URL, confirm: Bool = true, source: URL? = nil) async throws {
+    private func admit(_ staged: URL, as id: String, fromStore: Bool, finalFolder: URL, confirm: Bool = true, source: URL? = nil, fromApp: String? = nil) async throws {
         let found = try await WKWebExtension(resourceBaseURL: staged)
         let name = found.displayName ?? id
         let wants = Extensions.describe(found, in: staged)
-        let accepted = confirm ? await ask(install: name, wants: wants, icon: found.icon(for: CGSize(width: 64, height: 64))) : true
+        let accepted = confirm ? await ask(install: name, wants: wants, icon: found.icon(for: CGSize(width: 64, height: 64)), fromApp: fromApp) : true
         guard accepted, !installed.contains(where: { $0.id == id }) else { return }
         let permissions = Extensions.grants(found, in: staged)
         try ExtensionFiles.replace(staged, at: finalFolder)
@@ -1133,7 +1182,8 @@ final class Extensions: NSObject, ObservableObject {
         let item = Installed(
             id: id, name: name, version: found.version ?? "?", enabled: true, fromStore: fromStore,
             permissions: permissions,
-            source: source?.path
+            source: source?.path,
+            fromApp: fromApp
         )
         installed.removeAll { $0.id == id }
         installed.append(item)
@@ -1165,6 +1215,7 @@ final class Extensions: NSObject, ObservableObject {
         Store.settings.removeObject(forKey: "extensions.private.\(id)")
         SiteAccess.forget(id)
         clickGrants[id] = nil
+        Store.settings.removeObject(forKey: "extensions.kept.\(id)")
         installed.removeAll { $0.id == id }
         save()
         try? FileManager.default.removeItem(at: Extensions.folder(for: id))
@@ -1687,10 +1738,11 @@ final class Extensions: NSObject, ObservableObject {
         return out
     }
 
-    func ask(install name: String, wants: [String], icon: NSImage?, updating: Bool = false) async -> Bool {
+    func ask(install name: String, wants: [String], icon: NSImage?, updating: Bool = false, fromApp: String? = nil) async -> Bool {
         await ask(
             "Add “\(name)” to Search?",
-            detail: wants.isEmpty ? "It doesn't ask for anything special." : "It will be able to:\n• " + wants.joined(separator: "\n• "),
+            detail: (fromApp.map { "From the Safari extension in “\($0)”.\n\n" } ?? "")
+                + (wants.isEmpty ? "It doesn't ask for anything special." : "It will be able to:\n• " + wants.joined(separator: "\n• ")),
             icon: icon, yes: "Add Extension", no: "Cancel", updating: updating
         )
     }
@@ -2392,10 +2444,13 @@ struct ExtensionSlot: View {
     /// How many pinned ones the row has room for; the rest are only in the
     /// list. Nil: all of them.
     var room: Int? = nil
+    /// The puzzle with the list; Settings can hide it, leaving the pinned
+    /// extensions' buttons (idea 426).
+    var puzzle = true
 
     var body: some View {
         if #available(macOS 15.4, *) {
-            ExtensionButtons(browser: browser, extensions: .shared, edge: edge, room: room)
+            ExtensionButtons(browser: browser, extensions: .shared, edge: edge, room: room, puzzle: puzzle)
         }
     }
 }
@@ -2406,6 +2461,7 @@ private struct ExtensionButtons: View {
     @ObservedObject var extensions: Extensions
     let edge: Edge
     var room: Int?
+    var puzzle = true
 
     var body: some View {
         if !extensions.installed.isEmpty {
@@ -2427,6 +2483,11 @@ private struct ExtensionButtons: View {
                          hangingFrom: edge) {
                     ExtensionMenu(browser: browser, extensions: extensions)
                 }
+                // Hidden, it stays as a point to hang the list and popups
+                // from: an extension's own key still opens them.
+                .opacity(puzzle ? 1 : 0)
+                .frame(width: puzzle ? nil : 0)
+                .allowsHitTesting(puzzle)
             }
         }
     }

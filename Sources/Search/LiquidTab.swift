@@ -221,9 +221,21 @@ private struct LiquidPane: View {
     /// The spring the pane under the rows lends its view to, for its clock.
     let motion: LensMotion?
 
+    @Environment(\.colorScheme) private var scheme
+
     var body: some View {
         if #available(macOS 26, *) {
-            LiquidPaneView(cornerRadius: cornerRadius, motion: motion)
+            // Clear glass on a light column all but vanished: in light mode
+            // the pane under the rows gets a faint tint and a hairline edge,
+            // as dark mode's glass already reads by its own (idea 843).
+            let light = scheme == .light && motion != nil
+            LiquidPaneView(cornerRadius: cornerRadius, motion: motion, light: light)
+                .overlay {
+                    if light {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5)
+                    }
+                }
         }
     }
 }
@@ -232,17 +244,24 @@ private struct LiquidPane: View {
 private struct LiquidPaneView: NSViewRepresentable {
     let cornerRadius: CGFloat
     let motion: LensMotion?
+    var light = false
 
     func makeNSView(context: Context) -> NSGlassEffectView {
         let view = NSGlassEffectView()
         view.style = .clear
         view.cornerRadius = cornerRadius
+        view.tintColor = light ? LiquidPaneView.lightTint : nil
         motion?.view = view
         return view
     }
 
     func updateNSView(_ view: NSGlassEffectView, context: Context) {
         view.cornerRadius = cornerRadius
+        view.tintColor = light ? LiquidPaneView.lightTint : nil
         motion?.view = view
     }
+
+    /// A breath of grey, under the glass's own light: the tab stands out of
+    /// a white column without becoming the old grey pill.
+    static let lightTint = NSColor(white: 0, alpha: 0.07)
 }

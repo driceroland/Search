@@ -54,7 +54,7 @@ enum FoldFrames {
 
     /// The window far off every screen, ordered in although the app is
     /// hidden, its pages drawing as if seen.
-    private static func stage(_ window: NSWindow) -> Bool {
+    static func stage(_ window: NSWindow) -> Bool {
         guard staged !== window else { return true }
         func shows() -> Bool { NSScreen.screens.contains { $0.frame.intersects(window.frame) } }
         let far = NSRect(x: -20000, y: -22000, width: window.frame.width, height: window.frame.height)

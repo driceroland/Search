@@ -95,6 +95,32 @@ final class FullScreenEscape {
     /// left at all (fab, 22 Oct 2026). Now a press is decided once.
     private var decided: (event: NSEvent, passes: Bool)?
 
+    /// The window's full screen with the switch off (idea 582): the last
+    /// Escape given to a page, to know the copy WebKit hands back unused.
+    private var handed: NSEvent?
+
+    /// An Escape given straight to the page, in a window in full screen.
+    func handOver(_ event: NSEvent) { handed = event }
+
+    /// The Escape just handed over, come back from WebKit unused: it stops
+    /// here, as Safari's does, and the window stays in full screen.
+    func cameBack(_ event: NSEvent) -> Bool {
+        guard let handed, PageView.same(handed, event) else { return false }
+        self.handed = nil
+        Self.log.notice("Escape the page didn't use, kept from AppKit in the window's full screen")
+        return true
+    }
+
+    /// The page a responder is, or is inside of.
+    static func page(holding view: NSView) -> PageView? {
+        var at: NSView? = view
+        while let here = at {
+            if let page = here as? PageView { return page }
+            at = here.superview
+        }
+        return nil
+    }
+
     /// An Escape on its way to a page that fills the screen, with the switch
     /// on: true lets it go on to WebKit, which leaves full screen; false
     /// keeps it, and the reminder says to press again.

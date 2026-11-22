@@ -31,6 +31,13 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
               let kind = body["kind"] as? String
         else { return }
         MainActor.assumeIsolated {
+            // A frame only ever says where the caret is, and only a frame of
+            // the page's own origin (the script runs in no other). Anything
+            // else from a frame — a sign-in sent, a full screen — is not its
+            // to say, and is dropped.
+            if !message.frameInfo.isMainFrame {
+                guard kind == "focus", Self.sameOrigin(message.frameInfo.securityOrigin, as: tab?.pageAddress) else { return }
+            }
             switch kind {
             case "form":
                 tab?.foundSignIn()
@@ -80,6 +87,25 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
                 break
             }
         }
+    }
+
+    /// Whether a frame's origin is the page's own: scheme, host and port,
+    /// a port left out standing for the scheme's own.
+    nonisolated static func sameOrigin(_ origin: WKSecurityOrigin, as page: URL?) -> Bool {
+        sameOrigin(scheme: origin.protocol, host: origin.host, port: origin.port, as: page)
+    }
+
+    nonisolated static func sameOrigin(scheme: String, host: String, port: Int, as page: URL?) -> Bool {
+        guard let page, let pageScheme = page.scheme?.lowercased(), let pageHost = page.host()?.lowercased(),
+              !pageHost.isEmpty
+        else { return false }
+        let scheme = scheme.lowercased()
+        func plain(_ host: String) -> String { host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]")) }
+        func usual(_ port: Int?) -> Int {
+            guard let port, port != 0 else { return 0 }
+            return (scheme == "http" && port == 80) || (scheme == "https" && port == 443) ? 0 : port
+        }
+        return scheme == pageScheme && plain(host) == plain(pageHost) && usual(port) == usual(page.port)
     }
 
     /// Whether sites are offered passkeys here (Settings › Passwords).
@@ -197,7 +223,10 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
 
     static let script = """
     (function () {
-      if (window.__officeForms) return;
+      // Search's own forms object carries this; a page's frame named
+      // "__officeForms" is reachable by that name too, and doesn't.
+      var mark = Symbol.for('search.forms');
+      try { if (window.__officeForms && window.__officeForms[mark] === true) return; } catch (err) {}
       // A frame runs this only when it is of the page's own origin, and so
       // is every frame between it and the page: a sign-in a portal puts in
       // a frame of its own is offered the page's accounts there, and the
@@ -227,6 +256,50 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         if (!el || el.tagName !== 'INPUT') return false;
         var kind = (el.type || '').toLowerCase();
         return kind === 'password' || (kind === 'text' && /(^|\\s)current-password(\\s|$)/i.test(el.getAttribute('autocomplete') || ''));
+      }
+      // A password box a password can be put in: a text box only while it
+      // draws dots over what is typed (-webkit-text-security), so a fill
+      // never shows the password in clear text.
+      function maskedBox(el) {
+        if (!passwordBox(el)) return false;
+        if ((el.type || '').toLowerCase() === 'password') return true;
+        try {
+          var s = getComputedStyle(el);
+          var mask = s.webkitTextSecurity || s.getPropertyValue('-webkit-text-security') || 'none';
+          return mask !== 'none';
+        } catch (e) { return false; }
+      }
+      // A box there to see and type in, asked of the boxes a sign-in could
+      // be filled into: a few pixels each way at least, not faded to
+      // nothing, hidden or clipped away, and somewhere on the page rather
+      // than far off past its edges. A box kept out of sight ahead of the
+      // real one, to catch robots or a password, is passed over.
+      function shown(el) {
+        var r = el.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4) return false;
+        var doc = document.documentElement, x = window.scrollX, y = window.scrollY;
+        if (r.right + x <= 0 || r.bottom + y <= 0
+            || r.left + x >= Math.max(doc.scrollWidth, doc.clientWidth)
+            || r.top + y >= Math.max(doc.scrollHeight, doc.clientHeight)) return false;
+        try {
+          if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;
+        } catch (e) {}
+        for (var up = el, i = 0; up && up.nodeType === 1 && i < 12; up = up.parentElement || (up.getRootNode && up.getRootNode().host), i++) {
+          var s = getComputedStyle(up);
+          if (!(parseFloat(s.opacity) > 0)) return false;
+          if (up === el && s.visibility !== 'visible') return false;
+          if (/inset\\(\\s*(50|100)%|circle\\(\\s*0|polygon\\(\\s*0(px)?\\s+0(px)?\\s*\\)/.test(s.clipPath || '')) return false;
+          var clip = /^rect\\((.*)\\)$/.exec(s.clip || '');
+          if (clip && (s.position === 'absolute' || s.position === 'fixed')) {
+            var edge = clip[1].split(/[\\s,]+/).map(parseFloat);
+            if (edge.length === 4 && edge.every(isFinite) && (edge[1] - edge[3] < 4 || edge[2] - edge[0] < 4)) return false;
+          }
+          if (up !== el && (s.overflowX !== 'visible' || s.overflowY !== 'visible')) {
+            var b = up.getBoundingClientRect();
+            if (b.width < 4 || b.height < 4) return false;
+          }
+        }
+        return true;
       }
       var passwordBoxes = 'input[type="password"], input[autocomplete~="current-password" i]';
       // The box the caret is in, inside open shadow roots too: from out
@@ -306,7 +379,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       function pair(near) {
         var root = near && near.getRootNode ? near.getRootNode() : document;
         var shadowed = root !== document && root.nodeType === 11;
-        function seenBox(b) { var r = b.getBoundingClientRect(); return passwordBox(b) && r.width > 0 && r.height > 0; }
+        function seenBox(b) { return maskedBox(b) && shown(b); }
         var boxes = Array.prototype.filter.call((shadowed ? root : document).querySelectorAll(passwordBoxes), seenBox);
         if (shadowed && !boxes.length) boxes = deepInputs().filter(seenBox);
         if (!boxes.length) return null;
@@ -344,8 +417,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         if (passwordBox(el)) return false;
         if (vouched(el) && !elsewhere(el)) return true;
         if (el.disabled || el.readOnly || el.getAttribute('aria-hidden') === 'true') return false;
-        var r = el.getBoundingClientRect();
-        if (!(r.width > 0 && r.height > 0)) return false;
+        if (!shown(el)) return false;
         return !aside(el) && !elsewhere(el) && (!loose || claimsName(el));
       }
 
@@ -815,18 +887,32 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return filled;
       }
 
+      // The forms of a frame, if it is of this page's origin and this
+      // script runs there: checked for the mark, since a frame of anywhere
+      // else can put a frame of its own named "__officeForms" where they
+      // would be. Null for any other frame.
+      function formsOf(frame) {
+        try {
+          var w = frame.contentWindow;
+          if (!w || w.location.origin !== location.origin) return null;
+          var forms = w.__officeForms;
+          return forms && forms[mark] === true ? forms : null;
+        } catch (e) { return null; }
+      }
+      function isFrame(el) { return !!el && /^i?frame$/i.test(el.tagName || ''); }
       // The same-origin frame the caret is in, if this script runs there:
-      // what the page is asked to fill goes to it. Nil for a frame of
-      // another origin, which this world can't reach and which runs none
-      // of this.
+      // what the page is asked to fill goes to it. With the caret in any
+      // other frame, `false`: nothing is filled anywhere, least of all the
+      // page's own first password box.
       function inFrame() {
         var a = active();
-        if (!a || !/^i?frame$/i.test(a.tagName || '')) return null;
-        try { return (a.contentWindow && a.contentWindow.__officeForms) || null; } catch (e) { return null; }
+        if (!isFrame(a)) return null;
+        return formsOf(a) || false;
       }
       window.__officeForms = {
         fill: function (user, password) {
           var frame = inFrame();
+          if (frame === false) return false;
           if (frame) return frame.fill(user, password);
           var both = pair(active());
           if (!both) return false;
@@ -840,6 +926,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         // box yet, and none is filled anywhere.
         name: function (user) {
           var frame = inFrame();
+          if (frame === false) return false;
           if (frame) return frame.name(user);
           var box = named();
           if (!box) return false;
@@ -850,6 +937,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         // digit across a row of boxes, and only if it fits.
         code: function (value) {
           var frame = inFrame();
+          if (frame === false) return false;
           if (frame) return frame.code(value);
           var box = codeBox(active()) ? active() : codeAt;
           if (!box || !box.isConnected || !codeBox(box)) return false;
@@ -884,6 +972,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         // saved instead.
         sent: function () { if (Date.now() - offered > 2000) offer(); }
       };
+      try { Object.defineProperty(window.__officeForms, mark, { value: true }); } catch (err) {}
 
       // What is in the boxes when they are sent. Said every time — a click
       // on "show password" says it too — because the browser only listens
@@ -1026,9 +1115,8 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         var el = active();
         // The caret in a frame that runs this: the frame says where it is,
         // and follows a scroll of the page around it.
-        if (el && /^i?frame$/i.test(el.tagName || '')) {
-          var frame = null;
-          try { frame = el.contentWindow && el.contentWindow.__officeForms; } catch (e) {}
+        if (isFrame(el)) {
+          var frame = formsOf(el);
           if (frame) { if (scrolled === true) frame.moved(); return; }
         }
         // The boxes are only looked for with the caret in one: this runs on

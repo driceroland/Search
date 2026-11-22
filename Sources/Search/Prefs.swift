@@ -410,6 +410,21 @@ final class Preferences: ObservableObject {
     @Published var dimsSleepingTabs: Bool {
         didSet { store.set(dimsSleepingTabs, forKey: "tabs.sleep.dim") }
     }
+    /// Back, forward and reload, each hidden on its own, for whoever uses
+    /// the keys: the tabs get the room (idea 815). Shown unless hidden.
+    @Published var hidesBack: Bool { didSet { store.set(hidesBack, forKey: "helm.back.hidden") } }
+    @Published var hidesForward: Bool { didSet { store.set(hidesForward, forKey: "helm.forward.hidden") } }
+    @Published var hidesReload: Bool { didSet { store.set(hidesReload, forKey: "helm.reload.hidden") } }
+    /// How many of back, forward and reload are shown.
+    var helmDoors: Int { [hidesBack, hidesForward, hidesReload].filter { !$0 }.count }
+    /// The buttons at the column's foot (and the strip's end), each hidden on
+    /// its own: the extensions' puzzle, bookmarks and the profile (idea 426).
+    /// Shown unless hidden. A pinned extension keeps its button.
+    @Published var hidesExtensionsDoor: Bool { didSet { store.set(hidesExtensionsDoor, forKey: "foot.extensions.hidden") } }
+    @Published var hidesBookmarksDoor: Bool { didSet { store.set(hidesBookmarksDoor, forKey: "foot.bookmarks.hidden") } }
+    @Published var hidesProfileDoor: Bool { didSet { store.set(hidesProfileDoor, forKey: "foot.profile.hidden") } }
+    /// The profile's badge is drawn: several profiles, and not hidden.
+    var showsProfileDoor: Bool { Profiles.shared.several && !hidesProfileDoor }
     /// Tabs you haven't pinned, named or grouped close once left alone this
     /// long, as in Arc. Never unless asked for.
     @Published var tabLife: TabLife {
@@ -527,6 +542,12 @@ final class Preferences: ObservableObject {
     /// turned off.
     @Published var showsAddress: Bool {
         didSet { store.set(showsAddress, forKey: "tabs.address") }
+    }
+    /// A click on the tab you're on opens its address to edit and nothing
+    /// else: no site card under it. Site Information… in the tab's menu
+    /// still shows the card. Off unless turned on (idea 951).
+    @Published var tabClickAddressOnly: Bool {
+        didSet { store.set(tabClickAddressOnly, forKey: "tabs.clickAddressOnly") }
     }
     /// The ad blocker. On unless turned off; there is nothing else to it.
     @Published var shielded: Bool {
@@ -706,6 +727,14 @@ final class Preferences: ObservableObject {
         didSet {
             store.set(autoScroll, forKey: "autoscroll")
             AutoScroll.on = autoScroll
+        }
+    }
+    /// A mouse wheel's notches glide instead of jumping (see WheelGlide.swift).
+    /// Off unless asked for.
+    @Published var wheelGlides: Bool {
+        didSet {
+            store.set(wheelGlides, forKey: "wheel.smooth")
+            WheelGlide.on = wheelGlides
         }
     }
     /// Pages bounce at their top and bottom, as in Safari, rather than stop
@@ -1070,6 +1099,11 @@ final class Preferences: ObservableObject {
         aiModels[provider.rawValue] = name
     }
 
+    /// With the tabs folded away (⌘S), a line along the page's top while it
+    /// loads, as Arc's (idea 269). Off unless asked for.
+    @Published var showsLoadingLine: Bool {
+        didSet { store.set(showsLoadingLine, forKey: "fold.loadingLine") }
+    }
     /// Two pages share one place in the tab row.
     /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
     /// adds a command, so there is no switch. Still a property, for the
@@ -1102,6 +1136,12 @@ final class Preferences: ObservableObject {
     /// asked for.
     @Published var floatingNewTab: Bool {
         didSet { store.set(floatingNewTab, forKey: "newtab.floating") }
+    }
+    /// The field raised over a page (⌘T floating, ⌘L) centred on the whole
+    /// window and nearer the top, as Arc and Zen have it, rather than on
+    /// the page beside the column (idea 753). Off unless asked for.
+    @Published var fieldOnWindow: Bool {
+        didSet { store.set(fieldOnWindow, forKey: "field.window") }
     }
     /// The address field from any app, as Spotlight's comes: a key of your
     /// own raises it over the app in front, and Return opens what was typed
@@ -1215,8 +1255,15 @@ final class Preferences: ObservableObject {
         popupSites = Set(store.stringArray(forKey: "privacy.popupSites") ?? [])
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         dimsSleepingTabs = store.bool(forKey: "tabs.sleep.dim")
+        hidesBack = store.bool(forKey: "helm.back.hidden")
+        hidesForward = store.bool(forKey: "helm.forward.hidden")
+        hidesReload = store.bool(forKey: "helm.reload.hidden")
+        hidesExtensionsDoor = store.bool(forKey: "foot.extensions.hidden")
+        hidesBookmarksDoor = store.bool(forKey: "foot.bookmarks.hidden")
+        hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen
+        showsLoadingLine = store.bool(forKey: "fold.loadingLine")
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
@@ -1238,6 +1285,7 @@ final class Preferences: ObservableObject {
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
         // Security's advice); a choice made before stands.
         showsAddress = store.object(forKey: "tabs.address") as? Bool ?? true
+        tabClickAddressOnly = store.bool(forKey: "tabs.clickAddressOnly")
         shielded = store.object(forKey: "shield") as? Bool ?? true
         let keeps = store.bool(forKey: "sites.keep")
         keepsSignIns = keeps
@@ -1317,6 +1365,7 @@ final class Preferences: ObservableObject {
         commandBar = store.bool(forKey: "commandbar")
         handoff = store.bool(forKey: "handoff")
         floatingNewTab = store.bool(forKey: "newtab.floating")
+        fieldOnWindow = store.bool(forKey: "field.window")
         launcher = store.bool(forKey: "launcher.on")
         launcherLittle = store.bool(forKey: "launcher.little")
         launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
@@ -1378,6 +1427,9 @@ final class Preferences: ObservableObject {
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls
+        let glides = store.bool(forKey: "wheel.smooth")
+        wheelGlides = glides
+        WheelGlide.on = glides
         let bouncing = store.bool(forKey: "pages.bounce")
         bounces = bouncing
         Swipe.bounces = bouncing
@@ -1486,6 +1538,7 @@ final class Preferences: ObservableObject {
         Swipe.bounces = bounces
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
+        take(\.tabClickAddressOnly, store.bool(forKey: "tabs.clickAddressOnly"))
         take(\.instantMotion, store.bool(forKey: Motion.instantKey))
         take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))
         take(\.spacesOnCommand, store.bool(forKey: Preferences.spacesOnCommandKey))

@@ -414,11 +414,16 @@ final class Links: NSObject, NSApplicationDelegate {
     /// A link as another app hands one over, for the bench.
     static func arrived(_ url: URL, sender: String? = nil) { take(url, sender: sender) }
 
-    /// What another app may hand over: a web address, or an email link once
-    /// Search is the Mac's email app (build.sh declares mailto).
+    /// What another app may hand over: a web address, an email link once
+    /// Search is the Mac's email app (build.sh declares mailto), or a page on
+    /// this Mac as an address. Python's webbrowser, and the apps built on it
+    /// that open their local page through a file that sends you on to
+    /// localhost (Jupyter's way), hands a file:// address to the default
+    /// browser with "open location", not as a file to open: dropped here,
+    /// nothing opened (#775), where Safari and Firefox open it.
     private static func takes(_ url: URL) -> Bool {
         let scheme = url.scheme?.lowercased() ?? ""
-        return scheme.hasPrefix("http") || scheme == "mailto"
+        return scheme.hasPrefix("http") || scheme == "mailto" || url.isFileURL
     }
 
     private static func take(_ url: URL, sender: String? = nil, pid: pid_t? = nil) {

@@ -410,10 +410,15 @@ struct SettingsPanel: View {
 
     @ViewBuilder
     private var results: some View {
-        let found = hits
-        if found.isEmpty {
+        let all = hits
+        if all.isEmpty {
             Card { Nothing("No setting called that. Try other words, like dark, tabs or video") }
         }
+        // What is always there and has nothing to set comes apart, after
+        // the settings: among them its row with no switch read as a setting
+        // gone missing (idea 483).
+        let found = all.filter { $0.kind != .note }
+        let always = all.filter { $0.kind == .note }
         let byGroup = Dictionary(grouping: found, by: \.group)
         ForEach(SettingsIndex.groups.filter { byGroup[$0.id] != nil }) { group in
             VStack(alignment: .leading, spacing: 8) {
@@ -438,6 +443,19 @@ struct SettingsPanel: View {
                 .buttonStyle(.plain)
                 .help("Open \(group.page.title) at \(group.title)")
                 Card { rows(byGroup[group.id] ?? [], searched: true) }
+            }
+        }
+        if !always.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle").font(.system(size: 10.5, weight: .medium))
+                    Text("Always on, nothing to set".uppercased())
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .tracking(0.4)
+                }
+                .foregroundStyle(Palette.muted)
+                .padding(.leading, 2)
+                Card { rows(always, searched: true) }
             }
         }
     }
@@ -645,9 +663,18 @@ struct SettingsPanel: View {
                 get: { prefs.doorsUp },
                 set: { on in withAnimation(Motion.glide) { prefs.doorsUp = on } }
             ))
+        case "helm.shown":
+            Ticks(items: [("Back", Binding(get: { !prefs.hidesBack }, set: { on in withAnimation(Motion.glide) { prefs.hidesBack = !on } })),
+                          ("Forward", Binding(get: { !prefs.hidesForward }, set: { on in withAnimation(Motion.glide) { prefs.hidesForward = !on } })),
+                          ("Reload", Binding(get: { !prefs.hidesReload }, set: { on in withAnimation(Motion.glide) { prefs.hidesReload = !on } }))])
+        case "foot.shown":
+            Ticks(items: [("Extensions", Binding(get: { !prefs.hidesExtensionsDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesExtensionsDoor = !on } })),
+                          ("Bookmarks", Binding(get: { !prefs.hidesBookmarksDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesBookmarksDoor = !on } })),
+                          ("Profile", Binding(get: { !prefs.hidesProfileDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesProfileDoor = !on } }))])
         case "glyph": Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
         case "tabs.highContrast": Switch(on: $prefs.highContrastText)
         case "tabs.reading": Switch(on: $prefs.showsReading)
+        case "fold.loadingLine": Switch(on: $prefs.showsLoadingLine)
         case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
         case "bookmarks.side":
@@ -709,6 +736,7 @@ struct SettingsPanel: View {
                 get: { prefs.showsAddress },
                 set: { on in withAnimation(Motion.glide) { prefs.showsAddress = on } }
             ))
+        case "tabs.clickAddressOnly": Switch(on: $prefs.tabClickAddressOnly)
         case "note.groups", "note.awake": Always()
         default: EmptyView()
         }
@@ -809,6 +837,7 @@ struct SettingsPanel: View {
         case "pins.folders": Switch(on: $prefs.pinFolders)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
+        case "field.window": Switch(on: $prefs.fieldOnWindow)
         case "newtab.recent": Switch(on: $prefs.recentInNewTab)
         case "newtab.arc": Switch(on: $prefs.arcTabPopup)
         case "commandbar": Switch(on: $prefs.commandBar)
@@ -872,6 +901,7 @@ struct SettingsPanel: View {
         case "links.peek.stays": Switch(on: $prefs.peekStays)
         case "links.optionSplit": Switch(on: $prefs.optionClickSplits)
         case "autoscroll": Switch(on: $prefs.autoScroll)
+        case "wheel.smooth": Switch(on: $prefs.wheelGlides)
         case "pages.bounce": Switch(on: $prefs.bounces)
         case "swipe.history": Switch(on: $prefs.holdsHistory)
         case "launcher.on": Switch(on: $prefs.launcher)
@@ -983,17 +1013,19 @@ struct SettingsPanel: View {
     private var keywordEditor: some View {
         if let current = draft {
             HStack(spacing: 8) {
-                TextField("yt", text: Binding(
+                // Plainly examples, not an entry already there (idea 810):
+                // "word" and "address", in italics, with "e.g.".
+                TextField("", text: Binding(
                     get: { current.keyword },
                     set: { draft?.keyword = $0 }
-                ))
+                ), prompt: Text("word").italic())
                 .textFieldStyle(.plain)
                 .frame(width: 50)
                 Text("→").foregroundStyle(Palette.muted)
-                TextField("https://www.youtube.com/results?search_query=%s", text: Binding(
+                TextField("", text: Binding(
                     get: { current.template },
                     set: { draft?.template = $0 }
-                ))
+                ), prompt: Text("address with %s for the words, e.g. youtube.com/results?search_query=%s").italic())
                 .textFieldStyle(.plain)
                 .onSubmit(saveDraft)
             }
@@ -1053,7 +1085,7 @@ struct SettingsPanel: View {
     private var keywordDetail: String {
         guard let draft else { return SettingsIndex.item("search.keywords")?.detail ?? "" }
         if draft.keyword.isEmpty, draft.template.isEmpty {
-            return "A word, then the site's search address with %s where the words go"
+            return "Type a word, like yt, then the site's search address with %s where the words you type go"
         }
         return draftProblem ?? "\(draft.keyword.trimmingCharacters(in: .whitespacesAndNewlines)) will search \(draft.name)"
     }
@@ -1550,6 +1582,22 @@ struct Segmented<Option: Hashable>: View {
 }
 
 /// On or off, in ink rather than in blue.
+/// A few things each shown or not, side by side: a tick for each
+/// (Back, Forward, Reload…).
+struct Ticks: View {
+    let items: [(String, Binding<Bool>)]
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ForEach(items.indices, id: \.self) { index in
+                Toggle(items[index].0, isOn: items[index].1)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12.5))
+            }
+        }
+    }
+}
+
 struct Switch: View {
     @Binding var on: Bool
 

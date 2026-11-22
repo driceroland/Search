@@ -69,6 +69,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
     func show(_ url: URL, for context: WKWebExtensionContext, from anchor: NSView?, in browser: Browser? = nil) {
         close()
         guard let configuration = context.webViewConfiguration else { return }
+        ExtensionSandbox.attach(configuration, for: context)
         // Sized the way Chrome sizes a popup (see preferred), unseen, while
         // the popover already stands at the size this popup had last time;
         // then shown. It has to be in the window meanwhile: WebKit suspends
