@@ -1291,7 +1291,10 @@ final class Bench {
             guard let tab = find(request, in: browser), let text = request["text"] as? String else { answer(missing(request)); return }
             house(tab)
             let view = tab.web
+            // As a click on the page leaves them (PageView.handedAsClick).
+            PageView.handedAsClick = true
             view.window?.makeFirstResponder(view)
+            PageView.handedAsClick = false
             let before = PageView.quieted
             // What WebKit sends back through the app because the page didn't
             // use it: a key press seen here again after it was handed over.

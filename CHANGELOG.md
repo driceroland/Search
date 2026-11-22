@@ -52,6 +52,7 @@ in [ROADMAP.md](ROADMAP.md).
 - A page opened from disk shows the styles and pictures a folder or two above its own, as Safari and Chrome show them: a static site's lessons/one.html reading ../assets/style.css opened unstyled, since the page could read only its own folder. Never as far as the home folder, a folder directly in it (Documents, Desktop, Downloads…), the disk or a volume. `python3 Tests/local_parent_folder.py` ([#1342](https://github.com/driceroland/Search/issues/1342), idea 864)
 - A local page an app hands over as an address (file://…), as Python's webbrowser and the apps built on it do to open their page through a file that sends you on to localhost (Jupyter's way, Claude Science's), opens and goes on to localhost, as in Safari and Firefox. Search dropped any address from another app that wasn't http, https or mailto, so nothing opened. ([#775](https://github.com/driceroland/Search/issues/775), idea 462)
 - With a peek open (⇧-click), ⌘L shows the peeked page's address, and Return takes the peek there; it showed the address of the tab behind it. (idea 691)
+- Typing into ⌘T's or ⌘L's field over a page that is still loading stays in the field: as the page arrived it took the keys, and the rest of what was typed went into the page's own search box. A click on the page still takes them. (idea 495)
 
 ### Held back
 

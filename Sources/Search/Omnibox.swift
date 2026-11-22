@@ -608,6 +608,29 @@ struct AddressField: NSViewRepresentable {
         }
     }
 
+    /// Whether the field on show had the keys a moment ago and is still up,
+    /// with what was typed: if so they go back to it, in the next turn of
+    /// the run loop, with the caret where it was. For a page that asked for
+    /// them by itself (PageView.becomeFirstResponder, idea 495), in the
+    /// field's own window.
+    @MainActor static func keepsKeys(for browser: Browser, in pageWindow: NSWindow) -> Bool {
+        // Only the page beside the field: one gone to WebKit's own full
+        // screen window takes the keys there.
+        guard browser.fieldShowing, let field = shown.object(forKey: browser), let window = field.window, window === pageWindow,
+              let leftAt = field.leftAt, field.currentEditor() == nil else { return false }
+        DispatchQueue.main.async { [weak field] in
+            guard let field, browser.editing, field.window === window, field.currentEditor() == nil else { return }
+            let attributes = (window.fieldEditor(false, for: field) as? NSTextView)?.selectedTextAttributes
+            window.makeFirstResponder(field)
+            guard let editor = field.currentEditor() as? NSTextView else { return }
+            if let attributes { editor.selectedTextAttributes = attributes }
+            let length = (editor.string as NSString).length
+            let start = min(leftAt.location, length)
+            editor.selectedRange = NSRange(location: start, length: min(leftAt.length, length - start))
+        }
+        return true
+    }
+
     /// The field, told when it lands in a window.
     ///
     /// SwiftUI makes the view and updates it before it is in one, and with
@@ -618,6 +641,13 @@ struct AddressField: NSViewRepresentable {
     /// until it was clicked. Now the request waits for the window.
     final class Field: RoomyField {
         var arrived: (() -> Void)?
+        /// Where the caret was as the field last let go of the keys.
+        var leftAt: NSRange?
+
+        override func textDidEndEditing(_ note: Notification) {
+            if let editor = note.object as? NSTextView { leftAt = editor.selectedRange() }
+            super.textDidEndEditing(note)
+        }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()

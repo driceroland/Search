@@ -2765,9 +2765,30 @@ final class PageView: WKWebView {
     var onKeys: (() -> Void)?
 
     override func becomeFirstResponder() -> Bool {
+        // WebKit asks for the keys itself as a page it loads arrives
+        // (WebPageProxy::makeFirstResponder), and AppKit has already taken
+        // them from whoever had them when it asks here. With the address
+        // field up over the page, raised by ⌘T or ⌘L while the page was
+        // still on its way, what was typed next went into the page's search
+        // box instead (idea 495). The page says no and the field has them
+        // back, where they were; a click on the page still takes them.
+        if !Self.clicked, let browser, browser.editing, let window, AddressField.keepsKeys(for: browser, in: window) { return false }
         let took = super.becomeFirstResponder()
         if took { onKeys?() }
         return took
+    }
+
+    /// The keys handed to a page as a click on it would leave them: the
+    /// bench's `key`, in a probe that has no mouse.
+    static var handedAsClick = false
+
+    /// The event in hand is a press of the mouse: the keys go where it was.
+    private static var clicked: Bool {
+        if handedAsClick { return true }
+        switch NSApp.currentEvent?.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown: return true
+        default: return false
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
