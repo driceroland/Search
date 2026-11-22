@@ -632,6 +632,13 @@ struct SettingsPanel: View {
                 set: { on in withAnimation(Motion.glide) { prefs.roomyTabs = on } }
             ))
         case "sidebar.player": Switch(on: $prefs.showsPlayer)
+        case "sidebar.narrowIcons":
+            Switch(on: Binding(
+                get: { prefs.narrowsToIcons },
+                // Off, the column has its titles back, and on again it starts
+                // with them rather than as a strip from long ago.
+                set: { on in withAnimation(Motion.glide) { prefs.narrowsToIcons = on; if !on { prefs.narrowed = false } } }
+            ))
         case "sidebar.doorsUp":
             Switch(on: Binding(
                 get: { prefs.doorsUp },

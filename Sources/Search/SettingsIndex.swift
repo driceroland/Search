@@ -244,6 +244,10 @@ enum SettingsIndex {
         .init(id: "sidebar.doorsUp", group: "tablook", icon: "rectangle.topthird.inset.filled",
               title: "Buttons at the top", detail: "Bookmarks, extensions and downloads beside back, forward and reload, when they fit",
               keys: ["sidebar.doorsUp"], words: ["minimal", "toolbar", "footer", "bottom", "icons", "clean"], parent: "tabs.layout"),
+        .init(id: "sidebar.narrowIcons", group: "tablook", icon: "rectangle.leftthird.inset.filled",
+              title: "Narrow to icons", detail: "Pulled narrower than 200 points, the sidebar becomes a strip of site icons and its buttons",
+              more: "The strip keeps the space's colour and shows letters or icons as the tabs do. Back, forward and reload stay on their keys. Pull its edge back out, or press ⌘S, for titles again.",
+              keys: ["sidebar.narrowIcons"], words: ["collapse", "collapsed", "compact", "narrow", "thin", "strip", "icons only", "auto"], parent: "tabs.layout"),
         .init(id: "sidebar.player", group: "tablook", icon: "play.circle",
               title: "What's playing in other tabs", detail: "At the foot of the sidebar, to pause it, play it again or go to it",
               more: "A tab playing sound while you're on another one shows above the sidebar's foot.",
@@ -694,7 +698,7 @@ enum SettingsIndex {
         switch item.id {
         case "pages.dusk": return prefs.look != .light
         case "inspector.dark": return prefs.look != .dark
-        case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp": return prefs.sidebar && !prefs.sideIcons
+        case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
         case "address.width": return prefs.addressLine && !prefs.sidebar
@@ -724,7 +728,7 @@ enum SettingsIndex {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "inspector.dark": return "Only while Search isn't set to Dark"
         case "toolbar.left", "tabs.compact", "address.width": return "Only with the tabs across the top"
-        case "sidebar.roomy", "sidebar.doorsUp": return "Only with titles in the column"
+        case "sidebar.roomy", "sidebar.doorsUp", "sidebar.narrowIcons": return "Only with titles in the column"
         case "tabs.liquid": return LiquidTab.available ? "Only with titles in the column, or the tabs across the top" : "Liquid Glass needs macOS 26"
         case "window.glass.style": return GlassStyle.liquidAvailable ? "Only with Glass on" : "Liquid Glass needs macOS 26"
         case "window.glass.clear", "window.glass.grain": return "With spaces on, in the space's menu › Colour…"
