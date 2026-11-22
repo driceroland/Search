@@ -49,6 +49,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Show the bookmarks bar in the sidebar is counted among the settings iCloud sync understands, as every other synced setting is: it was synced but left off that list. `swift test --filter SyncTests`
 - Ads on albumoftheyear.org are blocked as uBlock Origin and EasyList block them: Block ads and trackers now also stops Playwire's ad stack (cdn.intergient.com) and the scripts that bring ads back past a blocker or look for one (Blockthrough's btloader.com, ad-delivery.net, mentorsticks.com, dns-finder.com, Confiant), and Cloudflare's analytics beacon on other sites' pages, and hides the site's empty ad boxes. (idea 685)
 - A page opened from disk shows the styles and pictures a folder or two above its own, as Safari and Chrome show them: a static site's lessons/one.html reading ../assets/style.css opened unstyled, since the page could read only its own folder. Never as far as the home folder, a folder directly in it (Documents, Desktop, Downloads…), the disk or a volume. `python3 Tests/local_parent_folder.py` ([#1342](https://github.com/driceroland/Search/issues/1342), idea 864)
+- A local page an app hands over as an address (file://…), as Python's webbrowser and the apps built on it do to open their page through a file that sends you on to localhost (Jupyter's way, Claude Science's), opens and goes on to localhost, as in Safari and Firefox. Search dropped any address from another app that wasn't http, https or mailto, so nothing opened. ([#775](https://github.com/driceroland/Search/issues/775), idea 462)
 
 ### Held back
 
