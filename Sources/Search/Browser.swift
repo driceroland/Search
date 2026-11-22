@@ -2560,9 +2560,32 @@ final class Browser: NSObject, ObservableObject {
     /// Rename. The name the tab is wearing arrives selected, so typing
     /// replaces it; emptying the field gives the page its own title back.
     func beginTabRename(_ tab: Tab) {
+        // A pinned square or the column of icons has no title to type
+        // over: the field never came, and the edit stayed open, unseen,
+        // until Escape (#1354). The name is asked for in a small sheet, as
+        // a bookmark's is.
+        guard renamesInPlace(tab) else {
+            cancelTabEdit()
+            Ask.name("Rename Tab", detail: "Without a name, the tab shows its page's title.",
+                     placeholder: tab.title, initial: tab.label, confirm: "Rename", empty: true) { [weak self, weak tab] typed in
+                guard let self, let tab else { return }
+                tab.name = typed.isEmpty ? nil : typed
+                self.writeSession(now: true)
+            }
+            return
+        }
         renamingTab = true
         tabDraft = tab.label
         editingTab = tab.id
+    }
+
+    /// Whether the tab is drawn with its title, where Rename can be typed:
+    /// a row of the column, or a tab across the top. Not a pinned square,
+    /// nor any tab in the column of icons.
+    func renamesInPlace(_ tab: Tab) -> Bool {
+        guard prefs.sidebar else { return true }
+        if prefs.iconColumn { return false }
+        return tab.pin == nil || (tab.listed && prefs.showsPinRows)
     }
 
     func commitTabEdit() {
