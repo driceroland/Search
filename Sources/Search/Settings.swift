@@ -626,11 +626,6 @@ struct SettingsPanel: View {
                 set: { on in withAnimation(Motion.glide) { prefs.compactStrip = on } }
             ))
         case "tabs.liquid": Switch(on: $prefs.liquidTabs)
-        case "sidebar.roomy":
-            Switch(on: Binding(
-                get: { prefs.roomyTabs },
-                set: { on in withAnimation(Motion.glide) { prefs.roomyTabs = on } }
-            ))
         case "sidebar.player": Switch(on: $prefs.showsPlayer)
         case "sidebar.foldButton": Switch(on: $prefs.foldButton)
         case "sidebar.narrowIcons":

@@ -23,7 +23,7 @@ final class FollowFileTests: XCTestCase {
         let read = Set(source[start.upperBound..<end.lowerBound].components(separatedBy: "take(\\.").dropFirst()
             .map { String($0.prefix { $0.isLetter || $0.isNumber }) })
         XCTAssertEqual(read, [
-            "look", "navigationLeft", "sidebar", "sidePosition", "sideHides", "roomyTabs", "sideIcons", "sideWidth",
+            "look", "navigationLeft", "sidebar", "sidePosition", "sideHides", "sideIcons", "sideWidth",
             "sidePanelWidth", "cards", "glyph", "tabsGive", "showsTabShortcuts", "bookmarksBar", "alwaysShowsDownloads",
             "foldsToIcons", "instantMotion", "compactStrip",
             // Look and layout settings added since, each read again as it was
@@ -42,15 +42,13 @@ final class FollowFileTests: XCTestCase {
 
     func testAProtectionWrittenFromOutsideWaitsForLaunch() {
         let prefs = Preferences()
-        let keys = ["shield", "tabs.address", "sidebar.roomy"]
+        let keys = ["shield", "tabs.address"]
         defer { keys.forEach(Store.settings.removeObject) }
         Store.settings.set(false, forKey: "shield")
         Store.settings.set(false, forKey: "tabs.address")
-        Store.settings.set(true, forKey: "sidebar.roomy")
         prefs.reread()
         XCTAssertTrue(prefs.shielded)
         XCTAssertTrue(prefs.showsAddress)
-        XCTAssertTrue(prefs.roomyTabs)
     }
 
     func testAFileNothingChangedInSetsNothing() {

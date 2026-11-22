@@ -113,17 +113,14 @@ final class PinFolderColumnTests: XCTestCase {
         XCTAssertFalse(window.isVisible, "never ordered in")
     }
 
-    /// A folder's row is a tab row's height, normal and roomier, its
+    /// A folder's row is a tab row's height, its
     /// title the size of a tab's.
     func testAFolderRowIsAsTallAsATabRow() async throws {
         let browser = makeBrowser()
         let (_, two, three, _) = try pinned(browser)
         let work = try XCTUnwrap(browser.newPinFolder(named: "Work", holding: two, rename: false))
         browser.movePin(three, into: work)
-        let roomy = browser.prefs.roomyTabs
-        defer { browser.prefs.roomyTabs = roomy }
-        for on in [false, true] {
-            browser.prefs.roomyTabs = on
+        for on in [false] {
             SideBar.drawnPinFrames = [:]
             let width = Double(browser.prefs.columnWidth)
             let host = NSHostingView(rootView: SideBar(browser: browser, prefs: browser.prefs).frame(width: width, height: 360))

@@ -80,7 +80,7 @@ struct SideBar: View {
         var fitted: (active: Tab.ID?, height: CGFloat)?
     }
 
-    /// A tab's line: taller with roomier tabs turned on.
+    /// A tab's line: the setting's height.
     private var rowHeight: CGFloat { prefs.sideRow }
     /// The column's width: the setting, or where the edge is while it is held.
     private var width: CGFloat { live ?? prefs.columnWidth }
@@ -2049,7 +2049,7 @@ private struct SideRow: View, Equatable {
                     // The site's icon, or with Letters its letter: beside the
                     // title either way, as Settings says (#919).
                     if !tab.isBlank {
-                        Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15,
+                        Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15,
                              dim: putAway || dim, contrast: prefs.highContrastText)
                             // A coding agent at work here: a dot on the
                             // icon's corner, the row as it was.

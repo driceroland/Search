@@ -20,6 +20,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- Roomier tabs is gone from Settings › Appearance; the sidebar keeps the normal row height and title size. A saved choice is ignored.
 - With the tabs across the top, an open tab group now shows where it starts and ends: a soft band runs behind its name and its tabs, in the group's colour or a faint grey without one. Right-click the group's name and choose Colour… to set it there too. A folded group looks as before. `python3 Tests/group_band.py`
 
 ### Fixed

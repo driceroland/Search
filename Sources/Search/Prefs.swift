@@ -235,11 +235,6 @@ final class Preferences: ObservableObject {
     @Published var slidesColumn: Bool {
         didSet { store.set(slidesColumn, forKey: Motion.slidesKey) }
     }
-    /// Taller lines and larger titles in the column, for anyone who finds
-    /// the default hard to read (#570). Off unless asked for.
-    @Published var roomyTabs: Bool {
-        didSet { store.set(roomyTabs, forKey: "sidebar.roomy") }
-    }
     /// The foot's doors — spaces, extensions, bookmarks, downloads — up in
     /// the lights' row, right of back, forward and reload, and no foot.
     /// Only where they fit; a column too narrow keeps them at the bottom.
@@ -300,8 +295,8 @@ final class Preferences: ObservableObject {
         didSet { store.set(showsPlayer, forKey: "sidebar.player") }
     }
     /// One tab's line in the column, and the size its title is set in.
-    var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 32 }
-    var sideTitle: CGFloat { roomyTabs ? 14 : 13.5 }
+    var sideRow: CGFloat { iconColumn ? Metrics.iconTile : 32 }
+    var sideTitle: CGFloat { 13.5 }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
@@ -1167,7 +1162,6 @@ final class Preferences: ObservableObject {
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
         slidesColumn = store.bool(forKey: Motion.slidesKey)
-        roomyTabs = store.bool(forKey: "sidebar.roomy")
         doorsUp = store.bool(forKey: "sidebar.doorsUp")
         foldButton = store.bool(forKey: "sidebar.foldButton")
         sideIcons = store.bool(forKey: "sidebar.icons")
@@ -1445,7 +1439,6 @@ final class Preferences: ObservableObject {
              or: .left)
         take(\.sideHides, store.bool(forKey: "sidebar.hides"))
         take(\.slidesColumn, store.bool(forKey: Motion.slidesKey))
-        take(\.roomyTabs, store.bool(forKey: "sidebar.roomy"))
         take(\.doorsUp, store.bool(forKey: "sidebar.doorsUp"))
         take(\.foldButton, store.bool(forKey: "sidebar.foldButton"))
         take(\.sideIcons, store.bool(forKey: "sidebar.icons"))

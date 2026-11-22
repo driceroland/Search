@@ -303,10 +303,10 @@ final class PinDragTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.roomyTabs,
+        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins,
                         prefs.usesSpaces, prefs.sharesPins)
         restorePreferences = {
-            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.roomyTabs,
+            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins,
              prefs.usesSpaces, prefs.sharesPins) = previous
         }
         let browser = Browser(record: WindowRecord())
@@ -315,7 +315,6 @@ final class PinDragTests: XCTestCase {
         browser.prefs.usesTabGroups = false
         browser.prefs.splitView = false
         browser.prefs.listsPins = rows
-        browser.prefs.roomyTabs = false
         browser.prefs.sharesPins = false
         for word in ["one", "two", "three", "four", "five", "six"].prefix(count) {
             if browser.tabs.last?.isBlank == false { browser.newTab() }

@@ -164,9 +164,9 @@ final class OptionClickTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.roomyTabs)
+        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins)
         restorePreferences = {
-            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.roomyTabs) = previous
+            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
@@ -174,7 +174,6 @@ final class OptionClickTests: XCTestCase {
         browser.prefs.usesTabGroups = false
         browser.prefs.splitView = true
         browser.prefs.listsPins = false
-        browser.prefs.roomyTabs = false
         for word in ["one", "two", "three", "four"] {
             if browser.tabs.last?.isBlank == false { browser.newTab() }
             browser.tabs.last?.restore(url: URL(string: "https://example.invalid/\(word)")!, title: word)
