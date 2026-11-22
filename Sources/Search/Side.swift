@@ -264,6 +264,9 @@ struct SideBar: View {
                             // Its suggestions hang over the rows below.
                             .zIndex(1)
                     }
+                    // The pinned extensions, a row of tiles over the pinned
+                    // tabs, as Arc has them (ExtensionShelf).
+                    ExtensionShelf(browser: browser, width: width - 20)
                 }
 
                 // The spaces side by side, as pages: two fingers sideways move
@@ -897,7 +900,8 @@ struct SideBar: View {
     private var rowsEnd: CGFloat {
         let pins = browser.squarePins.count
         let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + 10
-        return top + pinBlock + rowsHeight
+        let shelf = icons ? 0 : ExtensionShelf.height(width: width - 20)
+        return top + shelf + pinBlock + rowsHeight
     }
 
     /// The pinned rows, the loose tabs and the row that makes another, added
@@ -1681,13 +1685,15 @@ private struct SideFoot: View {
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom, live: live)
                 BookmarkDoor(browser: browser, arrowEdge: .bottom)
                 SpaceButtons(browser: browser)
-                ExtensionSlot(browser: browser, edge: .bottom, room: room)
+                // The pinned ones are over the pinned tabs (ExtensionShelf).
+                ExtensionSlot(browser: browser, edge: .bottom, room: 0)
             }
         } else {
             HStack(spacing: 2) {
                 if Profiles.shared.several { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
-                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room)
+                // The pinned ones are over the pinned tabs (ExtensionShelf).
+                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
                 BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 SpaceButtons(browser: browser)
                 // Only while a download is running, and a moment after.
@@ -1719,19 +1725,6 @@ private struct SideFoot: View {
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
         if Profiles.shared.several { kept += 1 }
         return CGFloat(kept) * (26 + 2) - 2
-    }
-
-    /// How many pinned extensions fit beside the doors that stay. Every door
-    /// is 26 points, with 2 between them.
-    private var room: Int {
-        let door: CGFloat = 26 + 2
-        var kept = 2 + SpaceButtons.count(prefs, browser.spaces)  // the puzzle, bookmarks and the spaces' buttons
-        if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
-        if Profiles.shared.several { kept += 1 }
-        // Up, downloads keep their place whether running or not.
-        if up || FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
-        let free = (up ? width : width - 2 * 10) + 2 - CGFloat(kept) * door
-        return max(0, Int((free / door).rounded(.down)))
     }
 }
 

@@ -2430,7 +2430,7 @@ private struct ExtensionButtons: View {
     }
 
     /// A real view under the button, so the popup has something to hang from.
-    private struct Anchor: NSViewRepresentable {
+    fileprivate struct Anchor: NSViewRepresentable {
         let id: String
         var browser: Browser?
         func makeNSView(context: Context) -> NSView {
@@ -2443,6 +2443,97 @@ private struct ExtensionButtons: View {
         // The outgoing layout can still update during a transition. It must
         // not replace the new layout's anchor with a view about to disappear.
         func updateNSView(_ view: NSView, context: Context) {}
+    }
+}
+
+/// The pinned extensions in the column, as Arc has them: a row of tiles
+/// under the address and over the pinned tabs, wrapping onto another row
+/// when there are more than fit. Only the pinned ones; the rest stay behind
+/// the puzzle button. Nothing at all with none pinned, or below macOS 15.4.
+struct ExtensionShelf: View {
+    var browser: Browser?
+    /// The room across, inside the column's padding.
+    let width: CGFloat
+
+    static let tile: CGFloat = 26
+    static let minTile: CGFloat = 26
+    static let gap: CGFloat = 4
+    static let below: CGFloat = 8
+
+    /// How many tiles a row holds at this width, never fewer than one.
+    static func perRow(_ width: CGFloat) -> Int {
+        max(1, Int(((width + gap) / (minTile + gap)).rounded(.down)))
+    }
+
+    /// How many tiles each row really has: as few rows as fit them all, and
+    /// the tiles shared out evenly between those rows, so two pinned are
+    /// two wide tiles across the column rather than two squares and a gap,
+    /// and seven are two rows of four rather than six and one.
+    static func columns(_ count: Int, width: CGFloat) -> Int {
+        let rows = max(1, (count + perRow(width) - 1) / perRow(width))
+        return max(1, (count + rows - 1) / rows)
+    }
+
+    /// Its height, gap under it included, for the column's sums (rowsEnd).
+    @MainActor static func height(width: CGFloat) -> CGFloat {
+        guard #available(macOS 15.4, *) else { return 0 }
+        let count = Extensions.shared.buttons.filter(\.pinned).count
+        guard count > 0 else { return 0 }
+        let rows = CGFloat((count + perRow(width) - 1) / perRow(width))
+        return rows * tile + (rows - 1) * gap + below
+    }
+
+    var body: some View {
+        if #available(macOS 15.4, *) {
+            ExtensionTiles(browser: browser, extensions: .shared, width: width)
+        }
+    }
+}
+
+@available(macOS 15.4, *)
+private struct ExtensionTiles: View {
+    var browser: Browser?
+    @ObservedObject var extensions: Extensions
+    let width: CGFloat
+
+    var body: some View {
+        let pinned = extensions.buttons.filter(\.pinned)
+        if !pinned.isEmpty {
+            let columns = Array(repeating: GridItem(.flexible(), spacing: ExtensionShelf.gap),
+                                count: ExtensionShelf.columns(pinned.count, width: width))
+            LazyVGrid(columns: columns, spacing: ExtensionShelf.gap) {
+                ForEach(pinned) { button in
+                    Tile(button: button) { extensions.press(button.id, in: browser) }
+                        .background(ExtensionButtons.Anchor(id: button.id, browser: browser))
+                        .contextMenu { ExtensionActions(id: button.id, name: button.name, browser: browser, extensions: extensions) }
+                }
+            }
+            .frame(width: width)
+            .padding(.bottom, ExtensionShelf.below)
+        }
+    }
+
+    private struct Tile: View {
+        @Environment(\.greys) private var greys
+        let button: Extensions.Button
+        let press: () -> Void
+        @State private var hovering = false
+
+        var body: some View {
+            SwiftUI.Button(action: press) {
+                ExtensionIcon(button: button, size: 14)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: ExtensionShelf.tile)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(hovering ? greys.hover : greys.tile)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(button.label)
+        }
     }
 }
 
