@@ -743,6 +743,10 @@ struct DragStrip: NSViewRepresentable {
     /// What a right-click on the strip brings up, if anything: the
     /// column's own menu (ColumnMenu), made when it is asked for.
     var menu: (() -> NSMenu?)? = nil
+    /// The strip lies over a page (Fold's band along the top): what the page
+    /// has to press there, a field, a button, a link, text, takes the press
+    /// itself, and the strip moves the window only over the rest (idea 928).
+    var overPage = false
     /// A right-click asked about by the bench (`columnmenu`), where there
     /// is no event: the strips answer the hit test as they would for one.
     @MainActor static var probingRightClick = false
@@ -775,6 +779,7 @@ struct DragStrip: NSViewRepresentable {
         view.band = band
         view.onDoubleClick = onDoubleClick
         view.rightMenu = menu
+        view.overPage = overPage
     }
 
     final class Strip: NSView {
@@ -792,6 +797,22 @@ struct DragStrip: NSViewRepresentable {
         }
         var onDoubleClick: (() -> Void)?
         var rightMenu: (() -> NSMenu?)?
+        var overPage = false { didSet { if !overPage { passing = [] } } }
+
+        /// Where, in the window's coordinates, the page under the band has
+        /// something of its own to press: the field, button, link or text the
+        /// pointer was last over, as the page said (see PageUnder). The
+        /// strip leaves those to the page. Amazon's search box lies flush
+        /// with the top of its page, and a press-drag to select its text
+        /// moved the window instead (idea 928); Arc selects the text.
+        var passing: [NSRect] = [] { didSet { if passing != oldValue { aimCursor() } } }
+        /// The point a question to the page is out for, and the one asked
+        /// for while it was, to ask next: one at a time, however fast the
+        /// pointer moves.
+        private var asking = false
+        private var askNext: NSPoint?
+        /// The page `passing` belongs to, which the press is handed to.
+        weak var page: WKWebView?
 
         private var pressed: NSEvent?
         private var moved = false
@@ -830,6 +851,13 @@ struct DragStrip: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? {
             let inside = convert(point, from: superview)
             guard !reservedAt(inside) else { return nil }
+            if !passing.isEmpty, let page, let holder = page.superview, page.window === window, !page.isHiddenOrHasHiddenAncestor {
+                let at = convert(inside, to: nil)
+                // Handed to the page itself: let through, SwiftUI's window
+                // answers for itself rather than for the page lying lower
+                // than the band.
+                if passing.contains(where: { $0.contains(at) }) { return page.hitTest(holder.convert(at, from: nil)) }
+            }
             // A right-click over the rows, with a menu to give: the strip
             // lies behind them, so it is asked only where no row, heading
             // or button took it first — the gaps between them.
@@ -862,7 +890,7 @@ struct DragStrip: NSViewRepresentable {
 
         override func mouseEntered(with event: NSEvent) { aim(event.locationInWindow) }
         override func mouseMoved(with event: NSEvent) { aim(event.locationInWindow) }
-        override func mouseExited(with event: NSEvent) { hold(false) }
+        override func mouseExited(with event: NSEvent) { hold(false); passing = [] }
 
         override func viewWillMove(toWindow newWindow: NSWindow?) {
             hold(false)
@@ -871,7 +899,39 @@ struct DragStrip: NSViewRepresentable {
 
         private func aim(_ point: NSPoint) {
             guard let window else { return }
+            if overPage { ask(point) }
             hold(DragStrip.holdsWindow(at: point, in: window))
+        }
+
+        /// Asks the page under `point` (the window's) whether it has
+        /// something to press there, and keeps the answer in `passing`.
+        /// Asked as the pointer moves over the band, so the answer is there
+        /// before the press; a page that has nothing there, or no page, and
+        /// the band is title bar.
+        private func ask(_ point: NSPoint) {
+            guard !asking else { askNext = point; return }
+            guard let window, let web = PageUnder.web(in: window, at: point) else { passing = []; page = nil; return }
+            let scale = max(0.01, web.magnification * web.pageZoom)
+            let at = web.convert(point, from: nil)
+            asking = true
+            web.evaluateJavaScript(PageUnder.script(x: at.x / scale, y: at.y / scale), in: nil, in: Web.world) { [weak self, weak web] result in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.asking = false
+                    if let web, let box = try? result.get() as? [Double], box.count == 4 {
+                        let rect = NSRect(x: box[0] * scale, y: box[1] * scale,
+                                          width: max(0, box[2] - box[0]) * scale, height: max(0, box[3] - box[1]) * scale)
+                        self.page = web
+                        self.passing = [web.convert(rect, to: nil)]
+                    } else {
+                        self.passing = []
+                    }
+                    if let next = self.askNext {
+                        self.askNext = nil
+                        self.ask(next)
+                    }
+                }
+            }
         }
 
         private func hold(_ on: Bool) {
@@ -908,7 +968,16 @@ struct DragStrip: NSViewRepresentable {
             let room = NSRect(x: reserved, y: 0,
                               width: max(0, bounds.width - trailing - reserved),
                               height: max(0, bounds.height - below))
-            if room.width > 0, room.height > 0 { addCursorRect(room, cursor: .arrow) }
+            // Not over what the page takes (see passing): its own pointer there.
+            var runs = [room]
+            for pass in passing.map({ convert($0, from: nil) }) {
+                runs = runs.flatMap { run -> [NSRect] in
+                    guard run.intersects(pass) else { return [run] }
+                    return [NSRect(x: run.minX, y: run.minY, width: max(0, pass.minX - run.minX), height: run.height),
+                            NSRect(x: pass.maxX, y: run.minY, width: max(0, run.maxX - pass.maxX), height: run.height)]
+                }
+            }
+            for run in runs where run.width > 0 && run.height > 0 { addCursorRect(run, cursor: .arrow) }
             // Above and below the reserved runs' band, the whole width.
             guard let band, below == 0 else { return }
             let edge = max(0, (bounds.height - band) / 2)
@@ -970,6 +1039,78 @@ struct DragStrip: NSViewRepresentable {
     }
 }
 
+
+/// What a page has under a point of the band along the top of the window
+/// (see DragStrip.overPage): whether a press there is the page's.
+enum PageUnder {
+    /// The page shown under `point` (the window's), the topmost where
+    /// pages lie over each other. Looked for among the window's views: a
+    /// hit test through the band ends at SwiftUI's own view, which answers
+    /// for everything drawn in it rather than for a page lying lower.
+    @MainActor static func web(in window: NSWindow, at point: NSPoint) -> WKWebView? {
+        guard let root = window.contentView?.superview ?? window.contentView else { return nil }
+        var found: WKWebView?
+        func walk(_ view: NSView) {
+            guard !view.isHidden, view.alphaValue > 0.01 else { return }
+            if let web = view as? WKWebView {
+                if web.convert(web.bounds, to: nil).contains(point) { found = web }
+                return
+            }
+            for sub in view.subviews { walk(sub) }
+        }
+        walk(root)
+        return found
+    }
+
+    /// The page's own answer, in its isolated world: the box, in CSS pixels
+    /// of the viewport, of what at (x, y) a press is for — a field, a button,
+    /// a link, something marked as one or with a hand for a pointer, a frame
+    /// or a player, text that can be selected — or null for empty page,
+    /// where the band may move the window.
+    static func script(x: CGFloat, y: CGFloat) -> String {
+        """
+        (function (x, y) {
+          var el = document.elementFromPoint(x, y);
+          while (el && el.shadowRoot) {
+            var deeper = el.shadowRoot.elementFromPoint(x, y);
+            if (!deeper || deeper === el) break;
+            el = deeper;
+          }
+          if (!el || el === document.documentElement || el === document.body) el = null;
+          function box(e) { var r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }
+          var takes = 'input,textarea,select,button,a[href],label,summary,iframe,embed,object,video,audio,canvas,' +
+            '[contenteditable]:not([contenteditable="false"]),[role="button"],[role="link"],[role="textbox"],' +
+            '[role="searchbox"],[role="combobox"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"],' +
+            '[role="slider"],[draggable="true"],[onclick]';
+          if (el) {
+            var hit = el.closest(takes);
+            if (hit) return box(hit);
+            if (el.isContentEditable) return box(el);
+            for (var e = el; e && e !== document.body; e = e.parentElement) {
+              var c = getComputedStyle(e).cursor;
+              if (c && c !== 'auto' && c !== 'default') return box(e);
+            }
+          }
+          // Text: the character under the point, where it can be selected.
+          var caret = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
+          var node = caret && caret.startContainer;
+          if (node && node.nodeType === 3 && /\\S/.test(node.data)) {
+            var holder = node.parentElement;
+            if (holder && getComputedStyle(holder).userSelect !== 'none' && getComputedStyle(holder).webkitUserSelect !== 'none') {
+              var span = document.createRange();
+              span.selectNodeContents(node);
+              var rects = span.getClientRects();
+              for (var i = 0; i < rects.length; i++) {
+                var r = rects[i];
+                if (x >= r.left - 1 && x <= r.right + 1 && y >= r.top - 1 && y <= r.bottom + 1) return [r.left, r.top, r.right, r.bottom];
+              }
+            }
+          }
+          return null;
+        })(\(x), \(y))
+        """
+    }
+}
 
 /// The three buttons as they look when the app is not the one you are using.
 ///

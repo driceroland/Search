@@ -428,7 +428,8 @@ struct Fold: View {
             // to take hold of until the strip came down. Unfolded, the strip
             // is its own title bar, and no band lies over its tabs.
             if prefs.sidebar || folding, !browser.frontFillsHere {
-                DragStrip()
+                // Over the page, which keeps what it has to press there.
+                DragStrip(overPage: true)
                     .frame(height: Fold.top)
                     .frame(maxWidth: .infinity)
             }

@@ -1706,6 +1706,30 @@ final class Bench {
                 }
                 return
             }
+            if let dx = request["drag"] as? Double {
+                // A press there dragged `dx` points to the right and let go,
+                // handed to the view under it, as `double` is. Never to a
+                // strip: its drag is the system's own window drag, which
+                // follows the real pointer (idea 928's probe asks the page's).
+                guard Store.testing else { answer(["error": "hit … drag only works on a --test run"]); return }
+                guard let hit, !(hit is DragStrip.Strip) else { answer(["error": "a drag there would move the window", "view": "Strip"]); return }
+                let before = window.frame
+                func event(_ type: NSEvent.EventType, _ at: NSPoint) -> NSEvent? {
+                    NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                       windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                       pressure: type == .leftMouseUp ? 0 : 1)
+                }
+                if let down = event(.leftMouseDown, point) { hit.mouseDown(with: down) }
+                for step in 1...8 {
+                    let at = NSPoint(x: point.x + dx * Double(step) / 8, y: point.y)
+                    if let drag = event(.leftMouseDragged, at) { hit.mouseDragged(with: drag) }
+                }
+                if let up = event(.leftMouseUp, NSPoint(x: point.x + dx, y: point.y)) { hit.mouseUp(with: up) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    answer(["view": String("\(type(of: hit))".prefix(60)), "moved": window.frame.origin != before.origin])
+                }
+                return
+            }
             if request["double"] as? Bool == true {
                 // A double-click there, handed to the view under it — through
                 // the window it would never arrive, the probe being in the
