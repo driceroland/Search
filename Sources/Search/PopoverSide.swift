@@ -68,8 +68,37 @@ enum PopoverSide {
         return placement(of: frame, in: screen.visibleFrame, beside: beside)
     }
 
+    /// Whether an arrow moved by `move` has left the `size` it pointed at:
+    /// further along than the button's own edge, it points at whatever
+    /// stands beside the button.
+    static func strays(_ move: CGVector, from size: CGSize) -> Bool {
+        abs(move.dx) > size.width / 2 || abs(move.dy) > size.height / 2
+    }
+
+    /// The popover without its arrow, or with it again. NSPopover has no
+    /// way of its own to say so: this is AppKit's, asked for by name, and
+    /// false where AppKit doesn't have it, the popover left as it was.
+    @discardableResult
+    static func arrow(of popover: NSPopover, hidden: Bool) -> Bool {
+        guard popover.responds(to: NSSelectorFromString("setShouldHideAnchor:")) else { return false }
+        popover.setValue(hidden, forKey: "shouldHideAnchor")
+        return true
+    }
+
     /// NSPopover.show(relativeTo:of:preferredEdge:), hung as above.
-    static func show(_ popover: NSPopover, relativeTo rect: NSRect, of view: NSView, preferredEdge edge: NSRectEdge) {
+    ///
+    /// `pointed`: the rect is something drawn, a button, that the arrow
+    /// points at, not a spot picked where nothing stands. A button in the
+    /// corner of the screen is too narrow for the arrow to be moved clear
+    /// of the popover's corner and still point at it: 26 points wide, 23
+    /// from the screen's edge to its middle, the arrow went 29 along and
+    /// stood on the middle of the button beside it. Bitwarden's popup, the
+    /// first of the pinned extensions at the column's foot, opened with
+    /// its arrow on Similarweb's button. There the popover hangs from the
+    /// button as it is, without an arrow: none that is whole can point at
+    /// the button, and one that points at another says the wrong thing.
+    static func show(_ popover: NSPopover, relativeTo rect: NSRect, of view: NSView, preferredEdge edge: NSRectEdge,
+                     pointed: Bool = false) {
         let place = placement(of: rect, in: view, beside: edge == .minX || edge == .maxX)
         let flipped = view.isFlipped
         let side: NSRectEdge
@@ -77,6 +106,11 @@ enum PopoverSide {
         case .none: side = edge
         case .above: side = flipped ? .minY : .maxY
         case .under: side = flipped ? .maxY : .minY
+        }
+        let bare = pointed && strays(place.move, from: rect.size)
+        if arrow(of: popover, hidden: bare), bare {
+            popover.show(relativeTo: rect, of: view, preferredEdge: side)
+            return
         }
         let moved = rect.offsetBy(dx: place.move.dx, dy: flipped ? -place.move.dy : place.move.dy)
         // Moved off every view that could hold it, the popover hangs from

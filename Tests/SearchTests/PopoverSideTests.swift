@@ -178,4 +178,21 @@ final class PopoverSideTests: XCTestCase {
         XCTAssertTrue(popover.isShown)
         XCTAssertNotNil(host.view.window)
     }
+
+    /// Moved further along than its button's own edge, the arrow points at
+    /// what stands beside the button.
+    func testAnArrowMovedOffItsButtonStrays() {
+        let size = CGSize(width: 26, height: 26)
+        XCTAssertFalse(PopoverSide.strays(.zero, from: size))
+        XCTAssertFalse(PopoverSide.strays(CGVector(dx: 13, dy: 0), from: size), "to the button's edge")
+        XCTAssertTrue(PopoverSide.strays(CGVector(dx: 14, dy: 0), from: size))
+        XCTAssertTrue(PopoverSide.strays(CGVector(dx: -14, dy: 0), from: size), "by the screen's right edge")
+        XCTAssertTrue(PopoverSide.strays(CGVector(dx: clear - 23, dy: 0), from: size), "the first button in the corner")
+        XCTAssertFalse(PopoverSide.strays(CGVector(dx: clear - 23, dy: 0), from: CGSize(width: 200, height: 26)),
+                       "a tab is wide enough")
+        // Beside a button the arrow is never moved past its edge.
+        XCTAssertFalse(PopoverSide.strays(PopoverSide.placement(of: button(400, clear - 13), in: screen, beside: true).move, from: size))
+        // In the corner it hangs above, moved along: off a 26-point button.
+        XCTAssertTrue(PopoverSide.strays(PopoverSide.placement(of: button(23, 20), in: screen, beside: true).move, from: size))
+    }
 }
