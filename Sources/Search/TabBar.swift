@@ -34,8 +34,8 @@ struct TabBar: View {
     /// the address when it is in sight. The badge was left out, and the row
     /// was laid out 28 points wider than the window gave it.
     private var leading: CGFloat {
-        (browser.prefs.navigationLeft ? Metrics.helm - 8 + Metrics.tabGap : 0)
-            + (Profiles.shared.several ? ProfileBadge.width + Metrics.tabGap : 0)
+        (browser.prefs.navigationLeft && browser.prefs.helmDoors > 0 ? Metrics.helm(browser.prefs) - 8 + Metrics.tabGap : 0)
+            + (browser.prefs.showsProfileDoor ? ProfileBadge.width + Metrics.tabGap : 0)
             + (browser.prefs.addressLine ? browser.prefs.addressWidth.width + AddressLine.after + Metrics.tabGap : 0)
     }
     /// How much wider the run's tabs were laid out than they were worked out
@@ -72,12 +72,12 @@ struct TabBar: View {
 
                 HStack(spacing: Metrics.tabGap) {
                     // Back, forward and reload by the lights, when asked.
-                    if browser.prefs.navigationLeft { Helm(browser: browser) }
+                    if browser.prefs.navigationLeft, browser.prefs.helmDoors > 0 { Helm(browser: browser) }
                     // The space on screen, first, when there are spaces.
                     // Above the tabs, for the name it shows over them a moment
                     // after a switch.
                     // The profile, once there is more than one (see Profiles.swift).
-                    if Profiles.shared.several { ProfileBadge(browser: browser) }
+                    if browser.prefs.showsProfileDoor { ProfileBadge(browser: browser) }
                     // The page's address, when it is to be in sight: before the tabs.
                     if browser.prefs.addressLine {
                         AddressLine(browser: browser)
@@ -268,11 +268,13 @@ struct TabBar: View {
                         AgentStatus(browser: browser, style: .door)
                         // Only while a download is running, and a moment after.
                         FetchDoor(browser: browser, fetches: browser.fetches)
-                        ExtensionSlot(browser: browser)
-                        if !browser.prefs.navigationLeft {
+                        ExtensionSlot(browser: browser, puzzle: !browser.prefs.hidesExtensionsDoor)
+                        if !browser.prefs.navigationLeft, browser.prefs.helmDoors > 0 {
                             Helm(browser: browser).padding(.trailing, 8)
                         }
-                        BookmarkDoor(browser: browser, arrowEdge: .bottom)
+                        if !browser.prefs.hidesBookmarksDoor {
+                            BookmarkDoor(browser: browser, arrowEdge: .bottom)
+                        }
                         SpaceButtons(browser: browser)
                     }
                     .background {
@@ -650,7 +652,7 @@ struct TabBar: View {
     /// until they have been, the helm and the bookmarks stand in for them —
     /// unless the helm leads, when nothing at the far end may be a real zero.
     private func room(in strip: CGFloat) -> CGFloat {
-        let far = doors > 0 || browser.prefs.navigationLeft ? doors : Metrics.helm + 26
+        let far = doors > 0 || browser.prefs.navigationLeft ? doors : Metrics.helm(browser.prefs) + 26
         return max(0, strip - lights - dot - leading - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
     }
 
@@ -772,9 +774,9 @@ struct Helm: View {
             // Nowhere to go and nothing to reload: the doors stay in place,
             // greyed, so the row doesn't shift when a tab arrives.
             Helm.stack(vertical) {
-                Door(icon: "chevron.left") {}
-                Door(icon: "chevron.right") {}
-                Door(icon: "arrow.clockwise") {}
+                if !browser.prefs.hidesBack { Door(icon: "chevron.left") {} }
+                if !browser.prefs.hidesForward { Door(icon: "chevron.right") {} }
+                if !browser.prefs.hidesReload { Door(icon: "arrow.clockwise") {} }
             }
             .opacity(0.3)
             .allowsHitTesting(false)
@@ -795,13 +797,19 @@ struct Helm: View {
             let back = !tab.isBlank && tab.canGoBack
             let forward = !tab.isBlank && tab.canGoForward
             Helm.stack(vertical) {
-                Door(icon: "chevron.left", help: "Back", shortcut: "tabs.back", held: { Rewind.menu(tab, back: true) }) { browser.back() }
-                    .disabled(!back)
-                    .opacity(back ? 1 : 0.3)
-                Door(icon: "chevron.right", help: "Forward", shortcut: "tabs.forward", held: { Rewind.menu(tab, back: false) }) { browser.forward() }
-                    .disabled(!forward)
-                    .opacity(forward ? 1 : 0.3)
+                // Each can be hidden in Settings › Appearance (idea 815).
+                if !browser.prefs.hidesBack {
+                    Door(icon: "chevron.left", help: "Back", shortcut: "tabs.back", held: { Rewind.menu(tab, back: true) }) { browser.back() }
+                        .disabled(!back)
+                        .opacity(back ? 1 : 0.3)
+                }
+                if !browser.prefs.hidesForward {
+                    Door(icon: "chevron.right", help: "Forward", shortcut: "tabs.forward", held: { Rewind.menu(tab, back: false) }) { browser.forward() }
+                        .disabled(!forward)
+                        .opacity(forward ? 1 : 0.3)
+                }
                 // Reload, or stop while it is still coming.
+                if !browser.prefs.hidesReload {
                 Door(
                     icon: tab.loading ? "xmark" : "arrow.clockwise",
                     // Stop's ⌘. is the Mac's own, not one of Settings › Shortcuts.
@@ -821,6 +829,7 @@ struct Helm: View {
                         Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
                             .shortcut("view.reloadOrigin")
                     }
+                }
                 }
             }
             .animation(Motion.quick, value: back)

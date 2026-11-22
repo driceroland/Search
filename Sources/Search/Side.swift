@@ -110,22 +110,22 @@ struct SideBar: View {
     /// What sits above the pins: the lights' band, and with icons only the
     /// three doors under it.
     private var top: CGFloat {
-        !icons ? Metrics.strip : !strip ? lightsBand + Metrics.helmDoors + 8 : lightsBand + (stripUp ? stackedDoors : 0)
+        !icons ? Metrics.strip : !strip ? lightsBand + Metrics.helmDoors(prefs) + 8 : lightsBand + (stripUp ? stackedDoors : 0)
     }
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
 
     /// The window's buttons' corner: gone in full screen, where macOS takes
     /// them away, and back, forward and reload move up to the edge (idea 184).
     private var lights: CGFloat {
-        browser.fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors))
+        browser.fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors(prefs)))
     }
 
     /// What is left of the lights' row right of back, forward and reload.
-    private var beyondHelm: CGFloat { SideBar.beyondHelm(width, fullScreen: browser.fullScreen, fold: prefs.foldButton) }
+    private var beyondHelm: CGFloat { SideBar.beyondHelm(width, fullScreen: browser.fullScreen, fold: prefs.foldButton, prefs: prefs) }
     /// The room right of the helm at the width let go at, for the doors up
     /// there: how many pinned extensions show, not changing under the pointer.
     private var upRoom: CGFloat {
-        max(SideBar.beyondHelm(prefs.columnWidth, fullScreen: browser.fullScreen, fold: prefs.foldButton), SideFoot.keptWidth(prefs, spaces: SpaceButtons.count(prefs, browser.spaces)))
+        max(SideBar.beyondHelm(prefs.columnWidth, fullScreen: browser.fullScreen, fold: prefs.foldButton, prefs: prefs), SideFoot.keptWidth(prefs, spaces: SpaceButtons.count(prefs, browser.spaces)))
     }
     private var doorsUp: Bool { SideBar.doorsUp(prefs, width: width, fullScreen: browser.fullScreen, spaces: SpaceButtons.count(prefs, browser.spaces)) }
     /// Where the doors are: up in the lights' row or down at the foot. Not
@@ -169,9 +169,10 @@ struct SideBar: View {
         return (false, min(Metrics.sideMax, wanted))
     }
 
-    static func beyondHelm(_ width: CGFloat, fullScreen: Bool, fold: Bool = false) -> CGFloat {
-        let lights = fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors))
-        return width - 20 - lights - foldDoor(fold) - Metrics.helm
+    /// `prefs`: back, forward and reload as Settings leaves them (idea 815).
+    @MainActor static func beyondHelm(_ width: CGFloat, fullScreen: Bool, fold: Bool = false, prefs: Preferences) -> CGFloat {
+        let lights = fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors(prefs)))
+        return width - 20 - lights - foldDoor(fold) - Metrics.helm(prefs)
     }
     /// The door that folds the column away, between the lights and back
     /// (FoldDoor), when it is asked for: one door and the air after it.
@@ -182,7 +183,7 @@ struct SideBar: View {
     /// doesn't send them all back down.
     @MainActor static func doorsUp(_ prefs: Preferences, width: CGFloat, fullScreen: Bool, spaces: Int = 0) -> Bool {
         prefs.doorsUp && prefs.sidebar && !prefs.iconColumn
-            && beyondHelm(width, fullScreen: fullScreen, fold: prefs.foldButton) >= SideFoot.keptWidth(prefs, spaces: spaces)
+            && beyondHelm(width, fullScreen: fullScreen, fold: prefs.foldButton, prefs: prefs) >= SideFoot.keptWidth(prefs, spaces: spaces)
     }
 
     var body: some View {
@@ -208,8 +209,8 @@ struct SideBar: View {
                         .frame(width: 10 + lights)
                     // Back, forward and reload's, as tall as they are: above
                     // and below them the band is still title bar.
-                    DragStrip(reserved: SideBar.foldDoor(prefs.foldButton) + Metrics.helm, band: 30, menu: columnMenu)
-                        .frame(width: SideBar.foldDoor(prefs.foldButton) + Metrics.helm)
+                    DragStrip(reserved: SideBar.foldDoor(prefs.foldButton) + Metrics.helm(prefs), band: 30, menu: columnMenu)
+                        .frame(width: SideBar.foldDoor(prefs.foldButton) + Metrics.helm(prefs))
                     // The doors, when they are up here, at its far end.
                     DragStrip(trailing: doorsTop ? upRoom + 10 : 0, menu: columnMenu)
                 }
@@ -568,13 +569,20 @@ struct SideBar: View {
     private func page(_ index: Int, pill: Namespace.ID) -> some View {
         Group {
             if index == browser.spaces.count {
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    NewSpaceCard(browser: browser)
-                    Spacer(minLength: 0)
-                    Spacer(minLength: 0)
+                // Icons only, the column is too narrow for the card: it
+                // comes over the page instead (ContentView, idea 835), and
+                // the column holds the new space's place.
+                if icons {
+                    Color.clear.frame(maxHeight: .infinity)
+                } else {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        NewSpaceCard(browser: browser)
+                        Spacer(minLength: 0)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxHeight: .infinity)
                 }
-                .frame(maxHeight: .infinity)
             } else if browser.spaces[index].id == browser.spaceID {
                 VStack(alignment: .leading, spacing: 0) {
                     if !browser.squarePins.isEmpty || ghostSquare != nil {
@@ -1686,11 +1694,11 @@ private struct SideFoot: View {
                 // An agent connected in this window: a click on it is Stop.
                 AgentStatus(browser: browser, style: .icon)
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
-                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
-                BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
+                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0, puzzle: !prefs.hidesExtensionsDoor)
+                if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
                 SpaceButtons(browser: browser, vertical: true)
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
-                if Profiles.shared.several { ProfileBadge(browser: browser) }
+                if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
             }
             .frame(maxWidth: .infinity)
             .padding(.bottom, 8)
@@ -1700,19 +1708,19 @@ private struct SideFoot: View {
             // instead (Browser.switchSpace): beside the dot it would lie
             // over the helm.
             HStack(spacing: 2) {
-                if Profiles.shared.several { ProfileBadge(browser: browser) }
+                if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser, names: false) }
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom, live: live)
-                BookmarkDoor(browser: browser, arrowEdge: .bottom)
+                if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: .bottom) }
                 SpaceButtons(browser: browser)
-                ExtensionSlot(browser: browser, edge: .bottom, room: room)
+                ExtensionSlot(browser: browser, edge: .bottom, room: room, puzzle: !prefs.hidesExtensionsDoor)
             }
         } else {
             HStack(spacing: 2) {
-                if Profiles.shared.several { ProfileBadge(browser: browser) }
+                if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
-                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room)
-                BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
+                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room, puzzle: !prefs.hidesExtensionsDoor)
+                if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
                 SpaceButtons(browser: browser)
                 // Only while a download is running, and a moment after.
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
@@ -1729,9 +1737,11 @@ private struct SideFoot: View {
 
     /// How many doors the foot has, stacked: what the rows stop short of.
     @MainActor static func doors(_ prefs: Preferences, _ fetches: Fetches, hanging: Bool = false, spaces: Int = 0) -> Int {
-        var kept = 2 + spaces  // the puzzle, bookmarks and a button per space (SpaceButtons)
+        var kept = spaces  // a button per space (SpaceButtons)
+        if !prefs.hidesExtensionsDoor { kept += 1 }  // the puzzle
+        if !prefs.hidesBookmarksDoor { kept += 1 }
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
-        if Profiles.shared.several { kept += 1 }
+        if prefs.showsProfileDoor { kept += 1 }
         if FetchDoor.shows(fetches, prefs, hanging: hanging) { kept += 1 }
         return kept
     }
@@ -1739,9 +1749,11 @@ private struct SideFoot: View {
     /// The doors that always show, and downloads, side by side: what the
     /// lights' row must have to take them (SideBar.doorsUp).
     @MainActor static func keptWidth(_ prefs: Preferences, spaces: Int = 0) -> CGFloat {
-        var kept = 3 + spaces  // the puzzle, bookmarks, downloads and a button per space
+        var kept = 1 + spaces  // downloads and a button per space
+        if !prefs.hidesExtensionsDoor { kept += 1 }  // the puzzle
+        if !prefs.hidesBookmarksDoor { kept += 1 }
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
-        if Profiles.shared.several { kept += 1 }
+        if prefs.showsProfileDoor { kept += 1 }
         return CGFloat(kept) * (26 + 2) - 2
     }
 
@@ -1749,9 +1761,11 @@ private struct SideFoot: View {
     /// is 26 points, with 2 between them.
     private var room: Int {
         let door: CGFloat = 26 + 2
-        var kept = 2 + SpaceButtons.count(prefs, browser.spaces)  // the puzzle, bookmarks and the spaces' buttons
+        var kept = SpaceButtons.count(prefs, browser.spaces)  // the spaces' buttons
+        if !prefs.hidesExtensionsDoor { kept += 1 }  // the puzzle
+        if !prefs.hidesBookmarksDoor { kept += 1 }
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
-        if Profiles.shared.several { kept += 1 }
+        if prefs.showsProfileDoor { kept += 1 }
         // Up, downloads keep their place whether running or not.
         if up || FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
         let free = (up ? width : width - 2 * 10) + 2 - CGFloat(kept) * door

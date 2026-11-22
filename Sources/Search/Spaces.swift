@@ -613,6 +613,18 @@ extension Browser {
         goToSpace(list[index].id)
     }
 
+    /// Next Space and Previous Space (Settings › Shortcuts): the space
+    /// after or before the one on screen, in the menu's order, every
+    /// profile's with profiles in one window. Stops at the ends, as the
+    /// swipe does (idea 761).
+    func stepSpace(_ step: Int) {
+        guard prefs.usesSpaces else { return }
+        let list = everySpace
+        let shown = spaceComing ?? spaceID
+        guard let here = list.firstIndex(where: { $0.id == shown }) else { return }
+        switchSpace(index: here + step)
+    }
+
     /// ⌃1–⌃9 and the space's menu: the space's page in front at once, its
     /// rows sliding in, and the column taking it once they stand still
     /// (SpaceSwipe.bring). Taken at once, the column's whole row was made

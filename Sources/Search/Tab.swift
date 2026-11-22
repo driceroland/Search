@@ -2797,9 +2797,30 @@ final class PageView: WKWebView {
     var onKeys: (() -> Void)?
 
     override func becomeFirstResponder() -> Bool {
+        // WebKit asks for the keys itself as a page it loads arrives
+        // (WebPageProxy::makeFirstResponder), and AppKit has already taken
+        // them from whoever had them when it asks here. With the address
+        // field up over the page, raised by ⌘T or ⌘L while the page was
+        // still on its way, what was typed next went into the page's search
+        // box instead (idea 495). The page says no and the field has them
+        // back, where they were; a click on the page still takes them.
+        if !Self.clicked, let browser, browser.editing, let window, AddressField.keepsKeys(for: browser, in: window) { return false }
         let took = super.becomeFirstResponder()
         if took { onKeys?() }
         return took
+    }
+
+    /// The keys handed to a page as a click on it would leave them: the
+    /// bench's `key`, in a probe that has no mouse.
+    static var handedAsClick = false
+
+    /// The event in hand is a press of the mouse: the keys go where it was.
+    private static var clicked: Bool {
+        if handedAsClick { return true }
+        switch NSApp.currentEvent?.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown: return true
+        default: return false
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -3687,10 +3708,59 @@ extension WKWebView {
             let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
             let tooWide = folder == home || ["/", "/Users", "/Volumes"].contains(folder.path)
                 || folder.deletingLastPathComponent().path == "/Volumes"
-            loadFileURL(url, allowingReadAccessTo: tooWide ? url : folder)
+                || WKWebView.sameItem(folder, home) || WKWebView.sameItem(folder, URL(fileURLWithPath: "/Users"))
+                || WKWebView.isVolume(folder)
+            loadFileURL(url, allowingReadAccessTo: tooWide ? url : WKWebView.readRoot(folder, home: home))
         } else {
             load(URLRequest(url: url))
         }
+    }
+
+    /// A static site's pages in a folder of their own reach for their
+    /// styles and pictures one or two folders up (lessons/one.html and
+    /// ../assets/style.css), as Safari and Chrome show them (#1342): the
+    /// page may read up to two folders above its own, never as far as the
+    /// home folder, a folder directly in it (Documents, Desktop, Downloads,
+    /// Library…), the disk, a volume or a folder at the disk's top.
+    ///
+    /// The folders are told apart by what they are on disk, not by how the
+    /// address spells them: /System/Volumes/Data/Users/you, /users/you or a
+    /// link to the home folder is the home folder too.
+    static func readRoot(_ folder: URL, home: URL) -> URL {
+        func spelledBroad(_ candidate: URL) -> Bool {
+            let parent = candidate.deletingLastPathComponent()
+            return candidate.path == home.path || parent.path == home.path || candidate.pathComponents.count <= 3
+                || parent.path == "/Volumes"
+        }
+        func broad(_ candidate: URL) -> Bool {
+            let parent = candidate.deletingLastPathComponent()
+            return spelledBroad(candidate) || spelledBroad(candidate.resolvingSymlinksInPath())
+                || sameItem(candidate, home) || sameItem(parent, home)
+                || isVolume(candidate) || isVolume(parent)
+        }
+        var root = folder
+        for _ in 0..<2 {
+            let up = root.deletingLastPathComponent().standardizedFileURL
+            guard up.path != root.path, !broad(up) else { break }
+            root = up
+        }
+        return root
+    }
+
+    /// The same folder on disk, however each is spelled (links followed,
+    /// case, the data volume's own path). False when either can't be read.
+    static func sameItem(_ a: URL, _ b: URL) -> Bool {
+        func id(_ url: URL) -> NSObject? {
+            (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.fileResourceIdentifierKey]))?
+                .fileResourceIdentifier as? NSObject
+        }
+        guard let first = id(a), let second = id(b) else { return false }
+        return first.isEqual(second)
+    }
+
+    /// A disk or a volume itself, the data volume's /System/Volumes/Data too.
+    static func isVolume(_ url: URL) -> Bool {
+        (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isVolumeKey]))?.isVolume == true
     }
 
     /// JavaScript run in Search's own world (see Web.world), where its page

@@ -41,7 +41,12 @@ struct Omnibox: View {
     /// (AddressLine.swift), which stands where the line is.
     var listOnly: CGFloat?
 
-    init(browser: Browser, over: Bool, fitted: Bool = false, tab: Tab.ID? = nil, listOnly: CGFloat? = nil) {
+    /// Centred on the window and nearer its top, as Spotlight's, for
+    /// Settings › The field in the middle of the window (idea 753).
+    var high = false
+
+    init(browser: Browser, over: Bool, fitted: Bool = false, tab: Tab.ID? = nil, listOnly: CGFloat? = nil, high: Bool = false) {
+        self.high = high
         self.browser = browser
         self.typing = browser.typing
         self.over = over
@@ -60,6 +65,10 @@ struct Omnibox: View {
                 GeometryReader { geometry in
                     content(width: min(Metrics.fieldWidth, max(0, geometry.size.width - 28)))
                 }
+            } else if high {
+                GeometryReader { geometry in
+                    content(width: min(Metrics.fieldWidth, max(0, geometry.size.width - 28)), top: geometry.size.height * 0.24)
+                }
             } else {
                 content(width: Metrics.fieldWidth)
             }
@@ -67,8 +76,10 @@ struct Omnibox: View {
         .allowsHitTesting(browser.fieldShowing)
     }
 
-    private func content(width: CGFloat) -> some View {
-        ZStack {
+    /// `top`: the field that far down from the top, rather than a little
+    /// above the middle.
+    private func content(width: CGFloat, top: CGFloat? = nil) -> some View {
+        ZStack(alignment: top == nil ? .center : .top) {
             // Keep the container mounted: only the field scales, while the
             // page's cover fades without pulling its edges into view. Not
             // while the address line has the field (AddressLine.swift).
@@ -100,7 +111,8 @@ struct Omnibox: View {
                 // Lifted a little above centre: dead centre reads as low,
                 // because the strip at the top isn't part of what the eye is
                 // measuring.
-                .padding(.bottom, 60)
+                .padding(.bottom, top == nil ? 60 : 0)
+                .padding(.top, top ?? 0)
                 .transition(.scale(scale: 0.97).combined(with: .opacity))
                 // The list's arrival and its leaving are animated from here,
                 // briefly: nothing that changes the suggestions does it inside
@@ -608,6 +620,29 @@ struct AddressField: NSViewRepresentable {
         }
     }
 
+    /// Whether the field on show had the keys a moment ago and is still up,
+    /// with what was typed: if so they go back to it, in the next turn of
+    /// the run loop, with the caret where it was. For a page that asked for
+    /// them by itself (PageView.becomeFirstResponder, idea 495), in the
+    /// field's own window.
+    @MainActor static func keepsKeys(for browser: Browser, in pageWindow: NSWindow) -> Bool {
+        // Only the page beside the field: one gone to WebKit's own full
+        // screen window takes the keys there.
+        guard browser.fieldShowing, let field = shown.object(forKey: browser), let window = field.window, window === pageWindow,
+              let leftAt = field.leftAt, field.currentEditor() == nil else { return false }
+        DispatchQueue.main.async { [weak field] in
+            guard let field, browser.editing, field.window === window, field.currentEditor() == nil else { return }
+            let attributes = (window.fieldEditor(false, for: field) as? NSTextView)?.selectedTextAttributes
+            window.makeFirstResponder(field)
+            guard let editor = field.currentEditor() as? NSTextView else { return }
+            if let attributes { editor.selectedTextAttributes = attributes }
+            let length = (editor.string as NSString).length
+            let start = min(leftAt.location, length)
+            editor.selectedRange = NSRange(location: start, length: min(leftAt.length, length - start))
+        }
+        return true
+    }
+
     /// The field, told when it lands in a window.
     ///
     /// SwiftUI makes the view and updates it before it is in one, and with
@@ -618,6 +653,13 @@ struct AddressField: NSViewRepresentable {
     /// until it was clicked. Now the request waits for the window.
     final class Field: RoomyField {
         var arrived: (() -> Void)?
+        /// Where the caret was as the field last let go of the keys.
+        var leftAt: NSRange?
+
+        override func textDidEndEditing(_ note: Notification) {
+            if let editor = note.object as? NSTextView { leftAt = editor.selectedRange() }
+            super.textDidEndEditing(note)
+        }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()

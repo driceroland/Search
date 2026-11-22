@@ -284,11 +284,31 @@ def main():
             time.sleep(1.5)
             st = panel()
             t.ok("per tab: open for this tab", st["shown"] and st["content"]["url"].endswith("panel.html?for=a") and st["content"]["tab"] != "", st)
+            # What the page holds, to tell it kept from loaded again (idea 643).
+            panel("eval", js="window.__kept = 643; 1")
             sv.sp("select", id=c); time.sleep(0.6)
             t.ok("per tab: another tab, it goes", not up(), panel())
             sv.sp("select", id=a); time.sleep(1.0)
             t.ok("per tab: back on its tab, it's back", up() and panel()["content"]["url"].endswith("panel.html?for=a"), panel())
+            t.ok("per tab: the same page, kept, not loaded again", panel("eval", js="window.__kept").get("value") == 643, panel())
             panel("close"); time.sleep(0.4)
+            sv.sp("select", id=c); time.sleep(0.4)
+            sv.sp("select", id=a); time.sleep(0.8)
+            t.ok("per tab: closed, it doesn't come back on its tab", not up(), panel())
+
+            # sidePanel.open for a tab that isn't in front: that tab's panel,
+            # up when that tab is, not over the one in front.
+            sv.cmd({"do": "eval", "id": page, "js": """chrome.tabs.query({}).then((tabs) => {
+                const other = tabs.find((t) => !t.active && /\\/c$/.test(t.url || ''));
+                return chrome.sidePanel.setOptions({tabId: other.id, path: 'panel.html?for=c'}).then(() =>
+                  chrome.sidePanel.open({tabId: other.id}));
+              }).then(() => window.__b = 'ok', e => window.__b = String(e)); 1"""})
+            time.sleep(1.2)
+            t.ok("per tab: open for a tab behind: not over the one in front", not up(), (panel(), sv.cmd({"do": "eval", "id": page, "js": "window.__b"})))
+            sv.sp("select", id=c); time.sleep(1.0)
+            t.ok("per tab: … and up on that tab", up() and panel()["content"]["url"].endswith("panel.html?for=c"), panel())
+            panel("close"); time.sleep(0.4)
+            sv.sp("select", id=a); time.sleep(0.4)
 
             # setOptions enabled: false while it's up: it goes.
             press(ext)

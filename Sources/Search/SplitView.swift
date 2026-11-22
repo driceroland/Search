@@ -163,7 +163,10 @@ private struct PaneLayers: View {
 
             if focused {
                 if tab.isBlank { HomeGrid(browser: browser) }
-                Omnibox(browser: browser, over: !tab.isBlank, fitted: true, tab: tab.id)
+                // Over a page with the field on the window, the window's.
+                if !(browser.fieldOnWindow && !tab.isBlank) {
+                    Omnibox(browser: browser, over: !tab.isBlank, fitted: true, tab: tab.id)
+                }
             }
 
             // An empty page of a pair: the field, and the tabs already open,
