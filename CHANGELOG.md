@@ -11,6 +11,14 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+## 1.0.18 — 22 November 2026
+
 ### Added
 
 - News by email and the Search for iPhone beta, offered at the foot of the What's New card after an update, as the welcome's last page and in Settings › About › News by email: an email field and a button, with a box for the iPhone beta. Nothing is sent until you press; then one POST to searchbrowser.app carries only the address, where you pressed and which Mac download you have. Search remembers only that you joined, never the address, and stops offering it on later cards once you have. `swift test --filter OptInTests`.
@@ -42,12 +50,6 @@ in [ROADMAP.md](ROADMAP.md).
 - Sites at `.local` names and on other devices in your home or office load on macOS 15 and later: Search now carries the sentence macOS shows when it asks for local network access, and without it macOS could block those connections without asking. Reported by [@soldier99](https://github.com/soldier99) ([#1348](https://github.com/driceroland/Search/issues/1348))
 - A window opened while the app is still bringing back last time's windows is written down once: it no longer comes back twice at the next launch, and the file that keeps your windows no longer grows with every save until they are back.
 - With the tabs across the top, a tab too narrow for three letters of its title shows its icon alone, centred: between about 80 and 104 points wide it showed its icon and a lone "…". The tab you're on says its address only where the site's name fits beside its port, and its title otherwise; a pair in Split View does the same with each half. `python3 Tests/tab_titles.py`
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
 
 ## 1.0.17 — 22 November 2026
 

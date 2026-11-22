@@ -55,6 +55,11 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Sidebar button", detail: "Beside the window's buttons, it hides the sidebar as ⌘S does.",
+               since: "1.0.18", get: { $0.foldButton }, set: { $0.foldButton = $1 }),
+        Toggle(title: "Narrow to icons", detail: "Pull the sidebar narrower and it becomes a strip of site icons.",
+               since: "1.0.18", get: { $0.narrowsToIcons }, set: { $0.narrowsToIcons = $1 }),
+
         Toggle(title: "Swipe back closes a link's tab", detail: "On the page a link opened, a swipe back closes the tab and takes you to the one you were on.",
                since: "1.0.17", get: { $0.swipeBackCloses }, set: { $0.swipeBackCloses = $1 }),
 
@@ -177,6 +182,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.18"),
         Release(version: "1.0.17"),
         Release(version: "1.0.16"),
         Release(version: "1.0.15"),
@@ -248,6 +254,26 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.18", date: "22 November 2026",
+            headline: "Sync on from the start, news by email, and your fixes.",
+            new: [
+                "Sync with iCloud and Handoff are on for a new install, with both switches on the welcome's first page.",
+                "News by email and the Search for iPhone beta: leave your email on this card, in the welcome or in Settings › About.",
+                "A sidebar button beside the window's buttons, and a sidebar that narrows to icons. Settings › Appearance › Tabs.",
+            ],
+            better: [
+                "⌘S is smooth again with several spaces and the column made icons only.",
+                "With the tabs across the top, an open group shows where it starts and ends.",
+                "Buttons say the key you set for them in Settings › Shortcuts.",
+            ],
+            fixed: [
+                "In full screen, the menu bar no longer comes down over the tabs.",
+                "Selecting text in a field at the very top of a page, and Rename on a pinned square.",
+                "Asking to save a password nobody typed, and YouTube previews floating as a video.",
+                "Windows coming back twice, sites at .local names, and tabs showing a lone \u{2026}.",
+            ]
+        ),
         Notes(
             version: "1.0.17", date: "22 November 2026",
             headline: "Spaces from Zen, more browsers to come from, and your fixes.",
