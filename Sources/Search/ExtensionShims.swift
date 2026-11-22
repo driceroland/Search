@@ -798,6 +798,67 @@ enum ExtensionShims {
       // refused. Those are handed over with each such fetch; the browser
       // applies what matches, only to an address the extension has.
       const headerRules = new Map();
+      // Chrome tells an extension of its own requests too: a webRequest
+      // listener in its worker hears the worker's fetch, tab -1. WebKit
+      // tells of the requests tabs make, and one the browser sends for the
+      // extension (ExtensionFetch) no engine sees at all. Similarweb's
+      // worker learns who you are from a fetch of its own and reads the
+      // Cookie header of that very request in onSendHeaders, to keep
+      // "mixpanelCookie", an empty object when there is no such cookie; its
+      // panel reads `.distinct_id` of what was kept, and with nothing kept
+      // threw, its spinner turning for good. So the listeners for what is
+      // sent are kept here as they are added, and told of each fetch the
+      // browser sends from this same page or worker, with the headers that
+      // went out (the Cookie header only to one that asked for
+      // "extraHeaders", as in Chrome).
+      const ownRequests = { onBeforeSendHeaders: [], onSendHeaders: [] };
+      // A match pattern against an address, as webRequest's filter reads one.
+      const patternMatches = (pattern, url) => {
+        if (pattern === "<all_urls>") return /^https?:$/.test(url.protocol);
+        const parts = /^(\*|https?):\/\/(\*|(?:\*\.)?[^/*]+)(\/.*)$/.exec(String(pattern));
+        if (!parts || !/^https?:$/.test(url.protocol)) return false;
+        if (parts[1] !== "*" && parts[1] + ":" !== url.protocol) return false;
+        // A pattern names no port and matches them all.
+        const host = parts[2].toLowerCase(), name = url.hostname.toLowerCase();
+        if (host !== "*" && (host.startsWith("*.") ? name !== host.slice(2) && !name.endsWith(host.slice(1)) : name !== host)) return false;
+        const path = new RegExp("^" + parts[3].split("*").map((p) => p.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");
+        return path.test(url.pathname + url.search);
+      };
+      const hearsOwn = (entry, address) => {
+        const filter = entry.filter || {};
+        if (filter.tabId !== undefined && filter.tabId !== -1) return false;
+        if (filter.windowId !== undefined && filter.windowId !== -1) return false;
+        if (Array.isArray(filter.types) && !filter.types.includes("xmlhttprequest")) return false;
+        let url;
+        try { url = new URL(address); } catch (e) { return false; }
+        return Array.isArray(filter.urls) && filter.urls.some((p) => patternMatches(p, url));
+      };
+      // What the browser is asked to say of a fetch it sends: nothing with
+      // no listener here, else that it went ("sent"), with its headers
+      // ("headers"), the Cookie header among them ("extra").
+      const ownTell = () => {
+        let tell;
+        for (const key of Object.keys(ownRequests)) for (const entry of ownRequests[key]) {
+          if (!entry.spec.includes("requestHeaders")) { tell = tell || "sent"; continue; }
+          if (entry.spec.includes("extraHeaders")) return "extra";
+          tell = "headers";
+        }
+        return tell;
+      };
+      // Each listener in a turn of its own, in the order Chrome keeps: one
+      // that throws stops neither the others nor the fetch.
+      const tellOwn = (number, sent) => {
+        for (const key of Object.keys(ownRequests)) for (const entry of ownRequests[key].slice()) {
+          if (!hearsOwn(entry, sent.url)) continue;
+          const details = { requestId: String(number), url: sent.url, method: sent.method, frameId: -1, parentFrameId: -1,
+                            tabId: -1, type: "xmlhttprequest", timeStamp: Date.now(), initiator: root.location.origin };
+          if (entry.spec.includes("requestHeaders")) {
+            details.requestHeaders = (sent.headers || []).filter((h) => entry.spec.includes("extraHeaders") || String(h[0]).toLowerCase() !== "cookie")
+              .map((h) => ({ name: h[0], value: h[1] }));
+          }
+          setTimeout(() => { if (ownRequests[key].includes(entry)) entry.listener(details); }, 0);
+        }
+      };
       // Chrome's worker has no background page to get: neither
       // extension.getBackgroundPage nor runtime.getBackgroundPage is there.
       // WebKit has both, and code that tells its background from its pages
@@ -1137,10 +1198,10 @@ enum ExtensionShims {
             if (request.method !== "GET" && request.method !== "HEAD") {
               try { body = encode(new Uint8Array(await request.arrayBuffer())); } catch (e) { return original.apply(self, args); }
             }
-            const id = ++sequence + "-" + Math.random().toString(36).slice(2);
+            const number = ++sequence, id = number + "-" + Math.random().toString(36).slice(2);
             const hello = { fetch: id, url: request.url, method: request.method, headers: [...request.headers], body,
                             redirect: request.redirect, userAgent: navigator.userAgent, credentials,
-                            headerRules: headerRules.size ? [...headerRules.values()] : undefined };
+                            headerRules: headerRules.size ? [...headerRules.values()] : undefined, tell: ownTell() };
             return await new Promise((resolve, reject) => {
               let port;
               try { port = connect("search.fetch"); } catch (e) { resolve(original.apply(self, args)); return; }
@@ -1176,6 +1237,9 @@ enum ExtensionShims {
                 // worker's plain fetches are many.
                 if (m.fetch === id) { if (!accepted && bounced++ < 5) { try { port.postMessage(hello); } catch (e) {} } return; }
                 if (m.accepted === id) { accepted = true; return; }
+                // Gone out, and again at each redirect followed: for this
+                // page's or worker's own webRequest listeners (ownRequests).
+                if (m.sent) { accepted = true; tellOwn(number, m.sent); return; }
                 if (m.pass) { done = true; close(); resolve(original.apply(self, args)); return; }
                 if (m.head && m.head.opaqueRedirect) {
                   // redirect: "manual", as Chrome answers it: a response of
@@ -3998,6 +4062,14 @@ enum ExtensionShims {
         const target = chrome.webRequest[key];
         if (!/^on[A-Z]/.test(key) || !target || typeof target.addListener !== "function") continue;
         const add = target.addListener.bind(target);
+        const own = ownRequests[key];
+        if (own && typeof target.removeListener === "function") {
+          const remove = target.removeListener.bind(target);
+          put(target, "removeListener", (listener) => {
+            for (let i = own.length - 1; i >= 0; i--) if (own[i].listener === listener) own.splice(i, 1);
+            return remove(listener);
+          });
+        }
         put(target, "addListener", (listener, filter, spec) => {
           // WebKit can't read ws:// and wss:// patterns, and refuses the
           // whole listener over one; Chrome watches sockets too. The
@@ -4021,6 +4093,11 @@ enum ExtensionShims {
           // it — a listener for every request can't join the late list
           // (it would wake the worker for all of them).
           const late = (e) => { if (!/startup/i.test(String(e && e.message))) throw e; };
+          // Kept for the extension's own fetches too (ownRequests), added
+          // late or not: the worker is awake when it fetches.
+          if (own && typeof listener === "function" && !own.some((e) => e.listener === listener)) {
+            own.push({ listener, filter, spec: Array.isArray(spec) ? spec.slice() : [] });
+          }
           try {
             if (!Array.isArray(spec)) return add(listener, filter);
             const kept = spec.filter((s) => s === "requestHeaders" || s === "responseHeaders" || s === "requestBody");
