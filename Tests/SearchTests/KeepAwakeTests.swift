@@ -35,6 +35,20 @@ final class KeepAwakeTests: XCTestCase {
         return tab
     }
 
+    func testSleepWatchersStopOnlyWhenTheWindowIsRetired() throws {
+        let timer = try XCTUnwrap(browser.dozing)
+        let pressure = try XCTUnwrap(browser.pressure)
+
+        browser.shut = true
+        browser.sleepShut()
+        XCTAssertTrue(timer.isValid)
+        XCTAssertFalse(pressure.isCancelled)
+
+        browser.closeAll()
+        XCTAssertFalse(timer.isValid)
+        XCTAssertTrue(pressure.isCancelled)
+    }
+
     func testOptInExactHostsAndPersistence() {
         let page = tab("https://EXAMPLE.com:8443/path")
         browser.keepAwake(true, for: page)
