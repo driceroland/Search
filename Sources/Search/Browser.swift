@@ -6669,6 +6669,15 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// A folder's bookmarks, not those of the folders in it, each in a new
+    /// tab behind this one, at the end: Open All in New Tabs, and a
+    /// middle-click on a folder of the bookmarks bar (idea 959).
+    func openAll(_ folder: Bookmark) {
+        for url in (folder.children ?? []).compactMap({ $0.url.flatMap(URL.init(string:)) }) {
+            open(url, foreground: false, atEnd: true, from: active, mayWait: true)
+        }
+    }
+
     /// A bookmark picked from the button's list or the full one. Either
     /// goes as the page starts: the list off the button used to stay open
     /// over the page it had just sent you to. A middle-click opens it in a

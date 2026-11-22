@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""The bookmarks bar's » for what it has no room for, in a hidden probe
-(idea 958).
+"""The bookmarks bar's » for what it has no room for, and a middle-click on
+its folders, in a hidden probe (ideas 958, 959).
 
 Build first (`./build.sh`), then `python3 Tests/bookmarks_bar_overflow.py`.
 It uses the split suite's harness: started hidden in a world of its own, no
@@ -90,6 +90,23 @@ def main():
         wide = sv.cmd({"do": "bar", "width": 1500})
         t.ok("wider, fewer go to the »", len(wide["hidden"]) < len(hidden) and wide["hidden"] == roots[len(roots) - len(wide["hidden"]):], wide["hidden"])
 
+        # A middle-click on a folder of the bar: its three bookmarks, not
+        # its folder's, each in a new tab behind.
+        f = wide["frames"][0]
+        before = sv.sp("state")
+        m = sv.cmd({"do": "hit", "x": f[0] + f[2] / 2, "y": f[1] + f[3] / 2, "middle": True})
+        time.sleep(0.5)
+        after = sv.sp("state")
+        urls = [x["url"] for x in after["tabs"]]
+        t.ok("a middle-click on a folder opens its three bookmarks in new tabs",
+             m.get("tabsAfter", 0) - m.get("tabsBefore", 0) == 3
+             and [u.rsplit("/", 1)[-1] for u in urls[-3:]] == ["f1", "f2", "f3"], (m, urls))
+        t.ok("…behind the tab in front", after.get("active") == before.get("active"), (before.get("active"), after.get("active")))
+
+        # And still one bookmark's: one tab.
+        g = wide["frames"][1]
+        m2 = sv.cmd({"do": "hit", "x": g[0] + g[2] / 2, "y": g[1] + g[3] / 2, "middle": True})
+        t.ok("a middle-click on a bookmark still opens it in one new tab", m2.get("tabsAfter", 0) - m2.get("tabsBefore", 0) == 1, m2)
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)
