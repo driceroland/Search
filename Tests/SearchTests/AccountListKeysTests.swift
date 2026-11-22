@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class AccountListKeysTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "bld-account-keys-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

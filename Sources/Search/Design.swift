@@ -208,6 +208,9 @@ enum Metrics {
     /// The column of titles down the left, in the way that has one.
     static let side: CGFloat = 232
     static let sideMin: CGFloat = 176
+    /// Narrower than this, with Narrow to icons on, the column is the strip
+    /// of icons (Preferences.narrowStrip).
+    static let narrowLine: CGFloat = 200
     static let sideMax: CGFloat = 440
 }
 

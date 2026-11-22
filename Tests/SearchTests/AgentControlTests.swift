@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class AgentControlTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "agent-control-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

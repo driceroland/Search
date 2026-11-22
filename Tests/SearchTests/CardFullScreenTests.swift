@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class CardFullScreenTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "card-full-screen-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -53,7 +53,11 @@ extension Browser {
         // not folded away. One folded before the switch was turned on comes
         // out first, as it always did.
         if prefs.shrinks, !folded {
-            withAnimation(Motion.glide) { prefs.sideIcons.toggle() }
+            // Narrowed to the strip by its edge: the titles come back, as
+            // pulling the edge out would bring them.
+            withAnimation(Motion.glide) {
+                if prefs.narrowStrip { prefs.narrowed = false } else { prefs.sideIcons.toggle() }
+            }
             return
         }
         // Out over the page already (the pointer at the edge brought it):

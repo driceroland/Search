@@ -33,7 +33,7 @@ final class FuzzyTests: XCTestCase {
 @MainActor
 final class AddressCommandTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "address-commands-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

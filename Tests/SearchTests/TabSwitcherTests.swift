@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class TabSwitcherTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "tab-switcher-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

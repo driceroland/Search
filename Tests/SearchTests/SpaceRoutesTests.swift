@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class SpaceRoutesTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "space-routes-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

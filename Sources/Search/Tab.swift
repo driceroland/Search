@@ -30,7 +30,7 @@ enum Web {
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name, MediaKeys.name,
                      StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name, DuskRelay.name,
-                     TranslateRelay.name] {
+                     TranslateRelay.name, PageDrafts.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
@@ -360,7 +360,11 @@ final class Tab: ObservableObject, Identifiable {
     /// A tab with no view (asleep, restored) has only its address to say.
     var restAddress: URL? { built == nil ? address : committed }
 
+    private(set) var documentGeneration: UInt64 = 0
+
     func didCommit() {
+        documentGeneration &+= 1
+        built?.draftFrames.removeAll()
         popupGesture.clear()
         // A woken page has its sessionStorage back; later ones don't get it.
         if KeptSession.committed(self) { arm(hiding: veils) }
@@ -1015,6 +1019,7 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(shop, contentWorld: Web.world, name: StoreRelay.name)
         controller.add(iconChanges, contentWorld: Web.world, name: IconRelay.name)
         controller.add(forms, contentWorld: Web.world, name: FormRelay.name)
+        controller.add(PageDrafts.shared, contentWorld: Web.world, name: PageDrafts.name)
         controller.addScriptMessageHandler(passkeyRelay, contentWorld: Web.world, name: PasskeyRelay.name)
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
@@ -1168,6 +1173,7 @@ final class Tab: ObservableObject, Identifiable {
         // (see KeptScroll.swift).
         add(KeptScroll.script, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         add(Veiling.picker, .atDocumentStart, mainFrameOnly: true, in: Web.world)
+        add(PageDrafts.script, .atDocumentStart, mainFrameOnly: false, in: Web.world)
         add(FormRelay.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
         // The form script looks at boxes for your card only with Fill in
         // your contact details on.
@@ -1268,6 +1274,21 @@ final class Tab: ObservableObject, Identifiable {
     /// The same stylesheet, for the page that is already up.
     func applyVeils(_ css: String) {
         built?.evaluateInSearch(Veiling.style(css))
+    }
+
+    /// Whether what `selector` names is still on screen once the stylesheet
+    /// is worn: the page can keep a thing there with its own
+    /// `style="… !important"`, and "Hidden" was said of it all the same
+    /// (#1270). Asked after `applyVeils`, which the page runs first. Nothing
+    /// matching is not "still there".
+    func stillShows(_ selector: String, then: @escaping (Bool) -> Void) {
+        guard let built else { return then(false) }
+        built.callInSearch("""
+            try {
+              var el = document.querySelector(selector);
+              return !!el && getComputedStyle(el).display !== 'none';
+            } catch (e) { return false; }
+            """, arguments: ["selector": selector]) { shows in then(shows as? Bool ?? false) }
     }
 
     func startPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on()") }
@@ -1645,17 +1666,8 @@ final class Tab: ObservableObject, Identifiable {
         configuration.mediaTypesRequiringUserActionForPlayback = Web.playback
     }
 
-    /// Whether the page holds something typed and not yet sent — a draft, a
-    /// half-filled form. A page that can't answer is treated as holding
-    /// nothing: a PDF, an image, a page whose process has already gone.
-    func unsaved(_ done: @escaping (Bool) -> Void) {
-        guard let built else { return done(false) }
-        built.evaluateInSearch(
-            "!!(window.__officeForms && window.__officeForms.unsaved && window.__officeForms.unsaved())"
-        ) { value in
-            MainActor.assumeIsolated { done((value as? Bool) == true) }
-        }
-    }
+    /// A document without hand-edited fields (including a PDF or image) has nothing to ask.
+    func unsaved(_ done: @escaping (Bool) -> Void) { PageDrafts.unsaved(in: built, done) }
 
     /// The page as it looks right now, compressed. Drawn by the page's own
     /// process, so a view that is off screen — every tab but the one you are
@@ -2152,11 +2164,14 @@ final class Tab: ObservableObject, Identifiable {
         let controller = web.configuration.userContentController
         Web.release(controller)
         controller.removeAllUserScripts()
+        web.draftFrames.removeAll()
         // Other extension tabs still use this controller. Their existing
         // listeners need the relay, and their next documents need its script.
         if #available(macOS 15.4, *), controller === Extensions.pages {
             PopupGestureRelay.install(on: controller)
             controller.addUserScript(PopupGestureRelay.userScript)
+            controller.add(PageDrafts.shared, contentWorld: Web.world, name: PageDrafts.name)
+            controller.addUserScript(Armed.script(PageDrafts.script, .atDocumentStart, mainFrameOnly: false, in: Web.world))
         }
         web.onMenuClosed = nil
         web.onPull = nil
@@ -2369,6 +2384,8 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 
 /// A web view that reads the two-finger swipe for itself.
 final class PageView: WKWebView {
+    var draftFrames: [WKFrameInfo] = []
+
     var onMenuClosed: (() -> Void)?
 
     /// Two fingers spread on a peek open it as a tab, as zooming into it

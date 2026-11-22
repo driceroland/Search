@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class SidePanelRetirementTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "panel-retirement-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

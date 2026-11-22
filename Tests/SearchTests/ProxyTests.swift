@@ -18,7 +18,7 @@ final class ProxyTests: XCTestCase {
         super.setUp()
         // The keychain here must be the in-memory one: a test binary has no
         // entitlement for the real item and would be refused (-34018).
-        setenv("SEARCH_PROBE", "proxy-\(getpid())", 1)
+        TestWorld.enter()
     }
 
     private func settings(_ name: String = #function) throws -> (UserDefaults, String) {

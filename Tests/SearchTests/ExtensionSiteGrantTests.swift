@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class ExtensionSiteGrantTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "site-grants-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

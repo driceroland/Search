@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class LittleWindowFrameTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "little-window-frame-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

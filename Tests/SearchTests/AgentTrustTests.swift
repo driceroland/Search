@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class AgentTrustTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "agent-trust-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

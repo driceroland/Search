@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class FloatUnseenTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "float-unseen-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

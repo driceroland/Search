@@ -9,7 +9,7 @@ import XCTest
 @MainActor
 final class ExtensionPopupWindowTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "popup-windows-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

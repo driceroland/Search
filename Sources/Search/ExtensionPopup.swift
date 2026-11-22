@@ -110,8 +110,9 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         placement = anchor.map(ExtensionPopup.describe) ?? ["from": "window"]
         if let anchor, anchor.window != nil {
             // Above or under the button, its arrow kept clear of the
-            // popover's corners near the screen's sides (PopoverSide).
-            PopoverSide.show(popover, relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+            // popover's corners near the screen's sides, and left out when
+            // that would take it off the button (PopoverSide).
+            PopoverSide.show(popover, relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY, pointed: true)
         } else if let content = (targetBrowser?.window ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain && $0.frame.minX > -10_000 }))?.contentView {
             // No button to hang from — the column or the strip folded away:
             // where the buttons would be, the column's foot or the strip's

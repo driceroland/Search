@@ -19,7 +19,7 @@ final class DownloadLifecycleTests: XCTestCase {
     override class func setUp() {
         // Browser settings, history, WebKit data, and files live in this
         // process-specific test world, never in the user's Search profile.
-        setenv("SEARCH_PROBE", "download-ui-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

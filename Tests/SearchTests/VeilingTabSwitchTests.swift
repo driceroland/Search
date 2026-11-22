@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class VeilingTabSwitchTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "veiling-tab-switch-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

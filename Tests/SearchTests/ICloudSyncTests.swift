@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class ICloudSyncTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "icloud-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

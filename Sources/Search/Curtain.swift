@@ -76,8 +76,20 @@ final class Curtain: ObservableObject {
     func css(on host: String?, without spared: String? = nil) -> String {
         veils(on: host)
             .filter { $0.selector != spared }
-            .map { "\($0.selector) { display: none !important; }" }
+            .map { Curtain.rule($0.selector) }
             .joined(separator: "\n")
+    }
+
+    /// One thing taken off. A page that wants its banner seen says so with
+    /// `!important` too, and the more particular of two such rules wins:
+    /// `#consent #banner { display: block !important }` kept `#banner` on
+    /// screen while the list said it was hidden (#1270). Three ids no
+    /// element has lift this rule above any a page is likely to write; only
+    /// a page's own `style="… !important"` still outranks it. `:is()` keeps
+    /// what you picked whole, and one it can't read matches nothing rather
+    /// than taking the rule down.
+    nonisolated static func rule(_ selector: String) -> String {
+        ":is(\(selector)):not(#office-veiled):not(#office-veiled):not(#office-veiled) { display: none !important; }"
     }
 
     // MARK: - the file
@@ -184,6 +196,9 @@ enum Veiling {
     (function () {
       if (window.__officeVeil) return;
       var frame = null, tag = null, target = null, live = false;
+      // What the pointer is over, and the things ↓ steps back into once ↑
+      // has made the outline wider than that.
+      var under = null, trail = [];
 
       \(sheets)
 
@@ -306,8 +321,36 @@ enum Veiling {
         if (!live) return;
         var el = document.elementFromPoint(e.clientX, e.clientY);
         if (!el || el === frame || el === document.documentElement || el === document.body) return;
+        // Still over the same thing: a wider choice made with ↑ stays,
+        // drawn again where it is now.
+        if (el === under && target) return place(target);
+        under = el;
+        trail = [];
         target = el;
         place(el);
+      }
+
+      // ↑ the thing around the one outlined, ↓ back in again. The pointer
+      // lands on what is innermost — the words of a cookie banner, not the
+      // banner — and hiding those left the banner where it was (#1270).
+      function onKey(e) {
+        if (!live || !target || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (e.key === 'ArrowUp') {
+          var up = target.parentElement;
+          if (up && up !== document.body && up !== document.documentElement) {
+            trail.push(target);
+            target = up;
+            place(target);
+          }
+        } else if (e.key === 'ArrowDown') {
+          if (trail.length) {
+            target = trail.pop();
+            place(target);
+          }
+        } else {
+          return;
+        }
+        swallow(e);
       }
 
       // Everything a press can be, swallowed. Real pages act on pointerdown or
@@ -337,11 +380,31 @@ enum Veiling {
           window.webkit.messageHandlers.officeVeil.postMessage({ trouble: String(err) });
         }
         target = null;
+        under = null;
+        trail = [];
         if (frame) frame.style.display = 'none';
       }
 
       var presses = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click',
                      'dblclick', 'contextmenu', 'touchstart'];
+
+      function off() {
+        if (!live) return;
+        live = false;
+        target = null;
+        under = null;
+        trail = [];
+        if (frame) frame.style.display = 'none';
+        document.documentElement.style.cursor = '';
+        document.removeEventListener('mousemove', onMove, true);
+        document.removeEventListener('pointermove', onMove, true);
+        document.removeEventListener('keydown', onKey, true);
+        window.removeEventListener('pagehide', off);
+        presses.forEach(function (kind) {
+          document.removeEventListener(kind, kind === 'pointerdown' ? onPress : swallow, true);
+        });
+        window.webkit.messageHandlers.officeVeil.postMessage({ off: true });
+      }
 
       window.__officeVeil = {
         on: function () {
@@ -351,23 +414,16 @@ enum Veiling {
           document.documentElement.style.cursor = 'crosshair';
           document.addEventListener('mousemove', onMove, true);
           document.addEventListener('pointermove', onMove, true);
+          document.addEventListener('keydown', onKey, true);
+          // The page going away ends the pointing with it. Kept for Back,
+          // it would have come back still swallowing every click, with
+          // Search no longer pointing at anything.
+          window.addEventListener('pagehide', off);
           presses.forEach(function (kind) {
             document.addEventListener(kind, kind === 'pointerdown' ? onPress : swallow, true);
           });
         },
-        off: function () {
-          if (!live) return;
-          live = false;
-          target = null;
-          if (frame) frame.style.display = 'none';
-          document.documentElement.style.cursor = '';
-          document.removeEventListener('mousemove', onMove, true);
-          document.removeEventListener('pointermove', onMove, true);
-          presses.forEach(function (kind) {
-            document.removeEventListener(kind, kind === 'pointerdown' ? onPress : swallow, true);
-          });
-          window.webkit.messageHandlers.officeVeil.postMessage({ off: true });
-        },
+        off: off,
         // Show one hidden thing for as long as the pointer rests on its row.
         // The stylesheet is rebuilt without that one selector rather than
         // fighting it with another rule, so the element comes back with the

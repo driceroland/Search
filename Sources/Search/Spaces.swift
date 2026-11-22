@@ -1015,9 +1015,12 @@ private struct SpaceButton: View {
         .onHover { hovering = $0 }
         .animation(Motion.quick, value: hovering)
         .animation(Motion.quick, value: current)
-        .help(current
-              ? "\(space.name) — click for the space’s menu"
-              : (index < 9 ? "\(space.name) — \(KeyCombo.spacesOnCommand ? "⌘" : "⌃")\(index + 1)" : space.name))
+        // Its name and its key as it stands: ⌃N, ⌘N with ⌘1–⌘9 on spaces,
+        // or one of yours. The one you're in says its click opens the menu.
+        .shortcutHelp { keys in
+            let named = keys.tip(space.name, index < 9 ? "spaces.\(index + 1)" : nil)
+            return current ? named + " — click for the space’s menu" : named
+        }
         .accessibilityLabel(space.name)
         .accessibilityAddTraits(current ? .isSelected : [])
     }

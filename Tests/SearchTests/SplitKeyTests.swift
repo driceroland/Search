@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class SplitKeyTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "split-key-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

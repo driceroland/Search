@@ -8,7 +8,7 @@ final class KeepAwakeTests: XCTestCase {
     private var browser: Browser!
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "keep-awake-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 
@@ -33,6 +33,20 @@ final class KeepAwakeTests: XCTestCase {
         let tab = Tab(shy: privateMode, configuration: configuration)
         tab.setAddressOptimistically(URL(string: url)!)
         return tab
+    }
+
+    func testSleepWatchersStopOnlyWhenTheWindowIsRetired() throws {
+        let timer = try XCTUnwrap(browser.dozing)
+        let pressure = try XCTUnwrap(browser.pressure)
+
+        browser.shut = true
+        browser.sleepShut()
+        XCTAssertTrue(timer.isValid)
+        XCTAssertFalse(pressure.isCancelled)
+
+        browser.closeAll()
+        XCTAssertFalse(timer.isValid)
+        XCTAssertTrue(pressure.isCancelled)
     }
 
     func testOptInExactHostsAndPersistence() {
@@ -72,9 +86,7 @@ final class KeepAwakeTests: XCTestCase {
         browser.prefs.keepsSitesAwake = true
         let page = tab("https://example.com")
         browser.insert(page, at: browser.tabs.count)
-        await withCheckedContinuation { continuation in
-            page.web.evaluateInSearch("window.__officeForms = {unsaved: () => false}") { _ in continuation.resume() }
-        }
+        _ = page.web
         let reason = await withCheckedContinuation { continuation in
             browser.sleep(page) { continuation.resume(returning: $0) }
             browser.keepAwake(true, for: page)

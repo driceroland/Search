@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class FollowFileTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "follow-file-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

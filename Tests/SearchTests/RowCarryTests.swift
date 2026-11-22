@@ -14,7 +14,7 @@ final class RowCarryTests: XCTestCase {
     private var activationPolicy: NSApplication.ActivationPolicy?
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "row-carry-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

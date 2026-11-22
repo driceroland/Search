@@ -5,6 +5,11 @@ import XCTest
 /// Power Mode on, off, and overridden by the bench.
 @MainActor
 final class SleepPowerTests: XCTestCase {
+    override class func setUp() {
+        TestWorld.enter()
+        super.setUp()
+    }
+
     private let keys = [Motion.lightKey, SleepPace.key, "sleep.after"]
     private var saved: [String: Any?] = [:]
 

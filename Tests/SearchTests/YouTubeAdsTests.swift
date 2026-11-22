@@ -8,18 +8,9 @@ import XCTest
 /// page, no network, nothing started.
 @MainActor
 final class YouTubeAdsTests: XCTestCase {
-    private static let world = "bld-yt-unit"
-
     override class func setUp() {
-        setenv("SEARCH_PROBE", world, 1)
+        TestWorld.enter()
         super.setUp()
-    }
-
-    override class func tearDown() {
-        UserDefaults.standard.removePersistentDomain(forName: "com.officecommun.search.test.\(world)")
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.removeItem(at: support.appendingPathComponent("Search (\(world))"))
-        super.tearDown()
     }
 
     /// A context where `location.hostname` is `host`, `window` is the global

@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class PinNumberBackTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "pin-number-back-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -239,6 +239,7 @@ struct TabBar: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .shortcutHelp("New Tab", "file.newTab")
                     .onHover { plussed = $0 }
                     .opacity(nearby ? 1 : 0)
                     .scaleEffect(nearby ? 1 : 0.7, anchor: .leading)
@@ -720,16 +721,18 @@ struct Helm: View {
             let back = !tab.isBlank && tab.canGoBack
             let forward = !tab.isBlank && tab.canGoForward
             Helm.stack(vertical) {
-                Door(icon: "chevron.left", help: "Back   ⌘[", held: { Rewind.menu(tab, back: true) }) { browser.back() }
+                Door(icon: "chevron.left", help: "Back", shortcut: "tabs.back", held: { Rewind.menu(tab, back: true) }) { browser.back() }
                     .disabled(!back)
                     .opacity(back ? 1 : 0.3)
-                Door(icon: "chevron.right", help: "Forward   ⌘]", held: { Rewind.menu(tab, back: false) }) { browser.forward() }
+                Door(icon: "chevron.right", help: "Forward", shortcut: "tabs.forward", held: { Rewind.menu(tab, back: false) }) { browser.forward() }
                     .disabled(!forward)
                     .opacity(forward ? 1 : 0.3)
                 // Reload, or stop while it is still coming.
                 Door(
                     icon: tab.loading ? "xmark" : "arrow.clockwise",
-                    help: tab.loading ? "Stop   ⌘." : "Reload   ⌘R"
+                    // Stop's ⌘. is the Mac's own, not one of Settings › Shortcuts.
+                    help: tab.loading ? "Stop   ⌘." : "Reload",
+                    shortcut: tab.loading ? nil : "view.reload"
                 ) {
                     if tab.loading { tab.stop() } else { browser.reload() }
                 }

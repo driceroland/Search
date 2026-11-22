@@ -9,7 +9,7 @@ import XCTest
 @MainActor
 final class SpaceGradientTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "space-gradient-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

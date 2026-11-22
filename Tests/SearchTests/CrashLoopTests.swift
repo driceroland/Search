@@ -9,9 +9,7 @@ import XCTest
 @MainActor
 final class CrashLoopTests: XCTestCase {
     override class func setUp() {
-        if ProcessInfo.processInfo.environment["SEARCH_PROBE"] == nil {
-            setenv("SEARCH_PROBE", "crash-loop-\(getpid())", 1)
-        }
+        TestWorld.enter()
         super.setUp()
     }
 

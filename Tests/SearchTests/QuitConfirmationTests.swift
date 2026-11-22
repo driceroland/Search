@@ -7,7 +7,7 @@ final class QuitConfirmationTests: XCTestCase {
     private var previous: Any?
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "quit-confirmation-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class SiteStylesTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "site-styles-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

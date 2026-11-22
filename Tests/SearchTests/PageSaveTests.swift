@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class PageSaveTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "page-save-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

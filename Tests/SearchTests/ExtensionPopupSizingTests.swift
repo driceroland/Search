@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class ExtensionPopupSizingTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "popup-sizing-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

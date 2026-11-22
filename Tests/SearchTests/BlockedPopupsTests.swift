@@ -8,7 +8,7 @@ final class BlockedPopupsTests: XCTestCase {
     private var browser: Browser!
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "blocked-popups-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

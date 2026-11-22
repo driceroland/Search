@@ -7,23 +7,9 @@ import XCTest
 /// runs a hidden probe: made here they would land in xctest's own container.
 @MainActor
 final class ProfilesTests: XCTestCase {
-    private static var world: String?
-
     override class func setUp() {
         super.setUp()
-        let name = "profiles-tests-\(UUID().uuidString.lowercased().prefix(8))"
-        world = name
-        setenv("SEARCH_PROBE", name, 1)
-    }
-
-    override class func tearDown() {
-        Disk.drain()
-        if let world, Store.world == world {
-            try? FileManager.default.removeItem(at: Store.folder)
-            UserDefaults(suiteName: "com.officecommun.search.test.\(world)")?.removePersistentDomain(forName: "com.officecommun.search.test.\(world)")
-        }
-        unsetenv("SEARCH_PROBE")
-        super.tearDown()
+        TestWorld.enter()
     }
 
     private func def(_ letter: String) -> PinDef {

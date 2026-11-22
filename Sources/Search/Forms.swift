@@ -730,38 +730,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return filled;
       }
 
-      // What was typed by hand and not yet sent, box by box. A page whose
-      // boxes still hold it is not put to sleep: waking it couldn't bring
-      // that back. A box emptied by sending — a chat's composer — no longer
-      // counts, and neither does a search box.
-      var typed = [];
-      document.addEventListener('input', function (e) {
-        if (!e.isTrusted) return;
-        var el = e.target;
-        if (!el || typed.indexOf(el) >= 0) return;
-        typed.push(el);
-        if (typed.length > 40) typed.shift();
-      }, true);
-      function unsaved() {
-        for (var i = 0; i < typed.length; i++) {
-          var el = typed[i];
-          if (!el.isConnected) continue;
-          var tag = (el.tagName || '').toLowerCase();
-          if (tag === 'textarea') {
-            if (el.value.trim() && el.value !== el.defaultValue) return true;
-          } else if (tag === 'input') {
-            var kind = (el.type || 'text').toLowerCase();
-            if (['text', 'email', 'url', 'tel', 'number'].indexOf(kind) < 0) continue;
-            if (el.value.trim() && el.value !== el.defaultValue) return true;
-          } else if (el.isContentEditable) {
-            if ((el.textContent || '').trim()) return true;
-          }
-        }
-        return false;
-      }
-
       window.__officeForms = {
-        unsaved: unsaved,
         fill: function (user, password) {
           var both = pair();
           if (!both) return false;

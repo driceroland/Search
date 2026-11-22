@@ -65,7 +65,7 @@ final class AddressTests: XCTestCase {
 @MainActor
 final class FileDestinationTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "file-destination-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -15,7 +15,7 @@ final class SpeedBenchTests: XCTestCase {
     private static var results: [String: [String: Double]] = [:]
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "speed-bench-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

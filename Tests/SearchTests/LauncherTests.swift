@@ -8,7 +8,7 @@ final class LauncherTests: XCTestCase {
     private static let keys = ["launcher.on", "launcher.key"]
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "launcher-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

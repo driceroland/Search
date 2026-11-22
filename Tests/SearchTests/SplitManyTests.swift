@@ -9,7 +9,7 @@ import XCTest
 @MainActor
 final class SplitManyTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "split-many-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

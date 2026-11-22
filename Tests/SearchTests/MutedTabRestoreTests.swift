@@ -7,9 +7,7 @@ final class MutedTabRestoreTests: XCTestCase {
     override class func setUp() {
         // Store.world is read once. Start the suite in a world of its own;
         // every method below keeps its state in WindowRecord.rows.
-        if ProcessInfo.processInfo.environment["SEARCH_PROBE"] == nil {
-            setenv("SEARCH_PROBE", "muted-tab-restore-\(getpid())", 1)
-        }
+        TestWorld.enter()
         super.setUp()
     }
 

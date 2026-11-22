@@ -14,7 +14,7 @@ final class ContactFillTests: XCTestCase {
     private var holding: [NSObject] = []
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "contact-fill-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

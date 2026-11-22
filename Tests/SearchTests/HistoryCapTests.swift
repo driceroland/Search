@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class HistoryCapTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "history-cap-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

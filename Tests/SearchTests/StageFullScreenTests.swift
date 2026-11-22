@@ -28,7 +28,7 @@ final class StageFullScreenTests: XCTestCase {
     private var chromeBack = 0
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "stage-full-screen-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

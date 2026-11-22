@@ -33,8 +33,10 @@ import SystemConfiguration
 // What syncs: spaces (name, colour or gradient, icon, order, and whether a
 // space has sign-ins of its own — never the sign-ins themselves, its cookies,
 // tabs or downloads folder), pins (each space's and the ones every space shows,
-// their letter, name, page and order), bookmarks, and the settings listed in
-// SyncSettings. What never does: history, passwords, cookies and site data,
+// their letter, name, page and order, and the folder among the pinned rows
+// each is in), each space's pin folders (name, which one holds which, a live
+// folder's feed; whether one is folded and a live folder's posts stay on
+// each Mac), bookmarks, and the settings listed in SyncSettings. What never does: history, passwords, cookies and site data,
 // open tabs that aren't pinned, tab groups (they hold open tabs), private
 // windows, extensions, the downloads folder, window sizes.
 //
@@ -357,17 +359,22 @@ final class Sync: ObservableObject {
     static func items(of profile: UUID, base: [String: String]) -> [String: String] {
         let spaces = Spaces.read(profile: profile)
         var bySpace: [UUID: [PinDef]] = [:]
+        var folders: [UUID: [PinFolder]] = [:]
         for space in spaces {
             let defs = Pins.defs(space.id)
             if !defs.isEmpty { bySpace[space.id] = defs }
+            let kept = PinFolders.folders(space.id)
+            if !kept.isEmpty { folders[space.id] = kept }
         }
         var out = SyncItems.spaces(spaces, base: base)
         out.merge(SyncItems.pins(bySpace: bySpace, shared: Pins.shared(profile), base: base)) { a, _ in a }
+        out.merge(SyncItems.pinFolders(folders)) { a, _ in a }
         out.merge(SyncItems.bookmarks(Profiles.bookmarks(profile).roots)) { a, _ in a }
         return out
     }
 
-    /// The merged items made so: spaces first, so pins have their space.
+    /// The merged items made so: spaces first, so pins have their space;
+    /// then each space's folders, so pins land in theirs at once.
     static func apply(_ live: [String: String], to profile: Profile) {
         let id = profile.id
         let home = profile.home
@@ -380,6 +387,12 @@ final class Sync: ObservableObject {
             // The order is the one merged, wherever the home is in it.
             Store.settings.set(true, forKey: "spaces.orderKept")
             Spaces.write(spaces, profile: id)
+        }
+
+        for space in spaces {
+            let local = PinFolders.folders(space.id)
+            let folders = PinTree.sanitized(SyncItems.applyPinFolders(live, space: space.id, local: local))
+            if folders != local { PinFolders.set(space.id, folders, from: nil) }
         }
 
         var localPins: [UUID: [PinDef]] = [:]

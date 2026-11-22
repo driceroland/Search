@@ -63,7 +63,7 @@ final class TranslateTests: XCTestCase {
 @MainActor
 final class TranslateRunTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "translate-run-\(getpid())", 1)
+        TestWorld.enter()
         setenv("SEARCH_TRANSLATE_FAKE", "1", 1)
         super.setUp()
     }

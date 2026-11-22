@@ -34,6 +34,7 @@ struct HiddenPanel: View {
         } foot: {
             HStack(spacing: 8) {
                 Pill("Hide something…", filled: true) { browser.toggleHiding() }
+                    .shortcutHelp("Hide Something", "view.hide")
                 if !browser.hereVeils.isEmpty {
                     Pill("Restore all") { browser.restoreAll() }
                 }

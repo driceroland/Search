@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class ExtensionLoadRaceTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "extension-load-race-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

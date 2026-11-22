@@ -13,7 +13,7 @@ final class PinSleepTests: XCTestCase {
     private var notifying: String { SiteNotifications.key(site) }
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "gh18b-pinsleep-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 
@@ -94,9 +94,7 @@ final class PinSleepTests: XCTestCase {
 
     func testAParkedPinGoesToSleep() async throws {
         let away = pin(site)
-        await withCheckedContinuation { continuation in
-            away.web.evaluateInSearch("window.__officeForms = {unsaved: () => false}") { _ in continuation.resume() }
-        }
+        _ = away.web
         park([away])
         let said = await withCheckedContinuation { continuation in
             browser.sleep(away) { continuation.resume(returning: $0) }

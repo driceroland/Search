@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class NoisyRehomeTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "noisy-rehome-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

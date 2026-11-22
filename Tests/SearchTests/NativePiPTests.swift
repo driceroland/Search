@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class NativePiPTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "native-pip-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -16,7 +16,7 @@ final class SplitZonesTests: XCTestCase {
     private var activationPolicy: NSApplication.ActivationPolicy?
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "split-zones-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

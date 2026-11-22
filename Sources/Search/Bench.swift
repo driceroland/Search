@@ -556,8 +556,8 @@ final class Bench {
 
         case "page":
             // bench-mcp's page scripts (PageScripts, shared with coding
-            // agents), run in Search's own world: read the page, touch one
-            // element of the last read, or check a condition.
+            // agents), run in Search's own world: read the page or outline
+            // it, touch one element of the last read, or check a condition.
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             house(tab)
             func int(_ key: String, _ otherwise: Int) -> Int { (request[key] as? NSNumber)?.intValue ?? otherwise }
@@ -573,8 +573,11 @@ final class Bench {
                                            replace: request["replace"] as? Bool ?? true)
             case "check":
                 script = PageScripts.check(request["condition"] as? [String: Any] ?? [:])
+            case "outline":
+                script = PageScripts.outline(key: key, snap: int("snap", 1),
+                                             options: request["options"] as? [String: Any] ?? [:])
             default:
-                answer(["error": "page needs a script: read, touch or check"])
+                answer(["error": "page needs a script: read, touch, check or outline"])
                 return
             }
             tab.web.evaluateJavaScript(script, in: nil, in: Web.world) { result in
@@ -4889,6 +4892,8 @@ final class Bench {
             if let text = request["lead"] as? String, let kind = InternalPage.Kind(rawValue: text) { browser.lead(to: InternalPage(kind)) }
             if let text = request["go"] as? String, let url = URL(string: text) { browser.active?.go(to: url) }
             if let on = request["hidden"] as? Bool { browser.reviewing = on }
+            // Hide Elements, on or off, as ⇧⌘H turns it (Browser.toggleHiding).
+            if let on = request["hiding"] as? Bool, on != browser.veiling { browser.toggleHiding() }
             if let look = (request["look"] as? String).flatMap(Look.init) { browser.prefs.look = look }
             if let side = request["side"] as? String {
                 guard let position = SidebarPosition(rawValue: side) else {
@@ -5559,6 +5564,9 @@ final class Bench {
             "groupIDs": browser.tabs.map { $0.groupID?.uuidString ?? "" },
             "enabled": browser.prefs.splitView,
             "finding": browser.finding,
+            // Hide Elements pointing, and the last thing Search said.
+            "veiling": browser.veiling,
+            "announced": browser.announcement ?? "",
             "needle": browser.needle,
             "findStatus": browser.findStatus ?? "",
             "pins": browser.tabs.filter { $0.pin != nil }.map { Bench.short($0) },

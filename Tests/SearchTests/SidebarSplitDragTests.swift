@@ -17,7 +17,7 @@ final class SidebarSplitDragTests: XCTestCase {
     private var activationPolicy: NSApplication.ActivationPolicy?
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "sidebar-split-drag-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

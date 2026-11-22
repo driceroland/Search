@@ -9,7 +9,7 @@ import XCTest
 @MainActor
 final class ApplePasswordsOfferTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "bld-ai-offer-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

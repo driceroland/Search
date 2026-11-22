@@ -41,6 +41,19 @@ enum WhatsNew {
         Toggle(title: "Swipe back closes a link's tab", detail: "On the page a link opened, a swipe back closes the tab and takes you to the one you were on.",
                since: "1.0.17", get: { $0.swipeBackCloses }, set: { $0.swipeBackCloses = $1 }),
 
+        Toggle(title: "⌘T finds your open tabs", detail: "As you type in ⌘T's field, a matching open tab or pin comes first.",
+               since: "1.0.17", get: { $0.arcTabPopup }, set: { $0.arcTabPopup = $1 },
+               shown: { $0.floatingNewTab }),
+        Toggle(title: "Swipe back closes a tab a link opened", detail: "Back to the tab you were on, as Safari and Arc do.",
+               since: "1.0.17", get: { $0.swipeBackCloses }, set: { $0.swipeBackCloses = $1 }),
+        Toggle(title: "Home bookmarks on a new tab", detail: "The sites of your bookmark folder called Home, as tiles.",
+               since: "1.0.17", get: { $0.homeGrid }, set: { $0.homeGrid = $1 }),
+        Toggle(title: "One button per space", detail: "Every space beside the bookmarks, one click away.",
+               since: "1.0.17", get: { $0.spaceButtons }, set: { $0.spaceButtons = $1 },
+               shown: { $0.usesSpaces }),
+        Toggle(title: "Try HTTPS first", detail: "An http:// page loads over HTTPS where the site has it.",
+               since: "1.0.17", get: { $0.triesHTTPSFirst }, set: { $0.triesHTTPSFirst = $1 }),
+
         Toggle(title: "Handoff to your iPhone", detail: "The page in front comes up in your iPhone's and iPad's app switcher.",
                since: "1.0.16", get: { $0.handoff }, set: { $0.handoff = $1 }),
         Toggle(title: "Always show the address bar", detail: "The page's full address stays in sight, to type in.",
@@ -151,6 +164,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.17"),
         Release(version: "1.0.16"),
         Release(version: "1.0.15"),
         Release(version: "1.0.14"),
@@ -212,6 +226,27 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.17", date: "22 November 2026",
+            headline: "Spaces from Zen, more browsers to come from, and your fixes.",
+            new: [
+                "Coming from Zen brings its spaces, pins and folders, and open tabs come over from Firefox and Zen.",
+                "Eleven more browsers to come from, and Safari directly when macOS allows it.",
+                "Themes for the blank tab, your Home bookmarks as tiles, and ⌘T finding your open tabs. Settings › Themes and Settings › Tabs.",
+                "A split pinned as a split, one button per space, and Try HTTPS first. Settings › Spaces & Pins and Settings › Privacy.",
+            ],
+            better: [
+                "⌘S slides the column smoothly again, as in 1.0.15.",
+                "Any space can be deleted, the first one included, and profiles can be put in any order.",
+                "A bookmarks folder of thousands opens at once.",
+            ],
+            fixed: [
+                "Pinned-row folders syncing between Macs, and the history of signed-out spaces.",
+                "YouTube videos held at 0:00, YouTube Music's floating player, and Reddit's promoted posts.",
+                "Client certificates for company sign-ins, security keys with passkeys off, and games locking the pointer.",
+                "Stylus, Monarch Money, Floccus, Similarweb and Brandsearch.",
+            ]
+        ),
         Notes(
             version: "1.0.16", date: "20 November 2026",
             headline: "Sync with your iPhone, Handoff, and two days of your fixes.",

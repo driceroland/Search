@@ -9,7 +9,7 @@ import XCTest
 @MainActor
 final class ClearBrowsingDataTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "clear-browsing-data-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 
