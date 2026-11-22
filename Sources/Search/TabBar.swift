@@ -929,7 +929,18 @@ private struct TabPill: View, Equatable {
         return said.warns || titleRoom - AtRestLine.besideName(said, size: 12.5) >= Metrics.tabTitleRoom ? said : nil
     }
     private var atRest: Bool { rest != nil }
-    private var dim: Bool { prefs.dimsSleepingTabs && tab.asleep && !live && !hovering }
+    /// A grouped tab's page let go (Browser.putAway), or asleep: dimmed
+    /// whatever Dim sleeping tabs says, as its row in the column is, so a
+    /// press on its minus is seen to have done something (idea 950).
+    private var dim: Bool {
+        (prefs.dimsSleepingTabs || browser.group(of: tab) != nil) && tab.asleep && !live && !hovering
+    }
+    /// Its cross is a minus in a group, as in the column: closing it puts
+    /// its page away and leaves the tab (Browser.closeTab). Read here, not
+    /// when the row made the pill: the pill isn't made again when the tab
+    /// lets its page go, and the cross only shows under the pointer.
+    private var crossSymbol: String { browser.putsAway(tab) ? "minus" : "xmark" }
+    private var crossHelp: String { browser.putsAway(tab) ? "Put Away" : "Close Tab" }
 
     /// A pinned tab is a square, an edited one is a field, everything else is
     /// its share of what is left.
@@ -1028,11 +1039,12 @@ private struct TabPill: View, Equatable {
         if compact {
             ZStack {
                 if live && hovering {
-                    Image(systemName: "xmark")
+                    Image(systemName: crossSymbol)
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(Palette.muted)
                         .frame(width: 15, height: 15)
                         .background(Palette.ink.opacity(0.07), in: Circle())
+                        .help(crossHelp)
                         .transition(.opacity)
                 } else if let number = shortcutNumbers[tab.id] {
                     TabShortcutNumber(number: number)
@@ -1119,11 +1131,12 @@ private struct TabPill: View, Equatable {
                 // ring while the page is still coming, never both.
                 ZStack {
                     if hovering {
-                        Image(systemName: "xmark")
+                        Image(systemName: crossSymbol)
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(Palette.muted)
                             .frame(width: 15, height: 15)
                             .background(Palette.ink.opacity(0.07), in: Circle())
+                            .help(crossHelp)
                             .transition(.opacity)
                     } else if tab.loading {
                         Ring().transition(.opacity)
