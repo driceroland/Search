@@ -362,6 +362,8 @@ enum SyncItems {
                     ?? known.first { $0.id == id }?.title ?? pin.home
                 var def = PinDef(id: id, letter: pin.letter, home: pin.home, title: title, name: pin.name, listed: pin.listed)
                 if space != sharedSpace { def.folder = folder(of: id, live, local: known.first { $0.id == id }) }
+                // Its title the pin's own here, it stays so (see PinDef.titled).
+                def.titled = known.first { $0.id == id }?.titled
                 return def
             }
         }

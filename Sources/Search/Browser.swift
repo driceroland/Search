@@ -2282,6 +2282,7 @@ final class Browser: NSObject, ObservableObject {
             newPin.everywhere = everywhere
             newPin.pinFolder = tab.pinFolder
             newPin.name = tab.name
+            newPin.pinTitle = tab.pinTitle
             newPin.go(to: home)
 
             // The wandered page becomes a loose tab.
@@ -2292,6 +2293,7 @@ final class Browser: NSObject, ObservableObject {
             tab.pinID = nil
             tab.everywhere = false
             tab.name = nil
+            tab.pinTitle = nil
 
             tabs.remove(at: pinIndex)
             tabs.insert(newPin, at: pinIndex)
@@ -2319,6 +2321,8 @@ final class Browser: NSObject, ObservableObject {
               !(tab.home.map { Browser.samePage($0, here) } ?? false) else { return }
         objectWillChange.send()
         tab.home = here
+        // Its own title now the new page's, as when it was pinned.
+        if !tab.title.isEmpty { tab.pinTitle = tab.title }
         writeSession(now: true)
     }
 
@@ -2408,6 +2412,7 @@ final class Browser: NSObject, ObservableObject {
         tab.pinFolder = nil
         tab.home = nil
         tab.pinID = nil
+        tab.pinTitle = nil
     }
 
     // MARK: - carried onto the pins, and off them
@@ -3574,12 +3579,26 @@ final class Browser: NSObject, ObservableObject {
         row.compactMap { tab -> PinDef? in
             guard let letter = tab.pin, !tab.shy else { return nil }
             if tab.pinID == nil { tab.pinID = UUID() }
+            Browser.settlePinTitle(tab)
             return PinDef(id: tab.pinID ?? UUID(), letter: letter,
                           home: (tab.home ?? tab.pending ?? tab.address)?.absoluteString ?? "",
-                          title: tab.title, name: tab.name, listed: tab.listed ? true : nil,
+                          title: tab.pinTitle ?? tab.title, name: tab.name, listed: tab.listed ? true : nil,
                           folder: tab.listed && !tab.everywhere ? tab.pinFolder : nil,
-                          pair: pinnedPair(of: tab)?.id)
+                          pair: pinnedPair(of: tab)?.id, titled: tab.pinTitle == nil ? nil : true)
         }
+    }
+
+    /// A pin's own title (Tab.pinTitle), taken from its page only while it
+    /// has none worth keeping: none yet, or the host that stood in for the
+    /// page's title, and the pin is showing the page it was pinned at.
+    /// Anything else it has — a name brought in from Arc or Zen, the
+    /// page's title when pinned — stays, wherever the pin goes.
+    static func settlePinTitle(_ tab: Tab) {
+        let had = tab.pinTitle ?? ""
+        guard had.isEmpty || had == tab.home?.host || had == tab.home?.absoluteString else { return }
+        guard !tab.asleep, !tab.title.isEmpty, let home = tab.home, let here = tab.address,
+              Browser.samePage(home, here) else { return }
+        tab.pinTitle = tab.title
     }
 
     /// The pairs pinned together (see pin) as pins.json has them, for
@@ -3634,6 +3653,7 @@ final class Browser: NSObject, ObservableObject {
             tab.everywhere = sharedIDs.contains(def.id)
             if tab.pin != def.letter { tab.pin = def.letter }
             if tab.name != def.name { tab.name = def.name }
+            if def.titled == true { tab.pinTitle = def.title }
             if tab.listed != (def.listed == true) { tab.listed = def.listed == true }
             tab.pinFolder = def.folder
             tab.home = URL(string: def.home)
@@ -3815,7 +3835,7 @@ final class Browser: NSObject, ObservableObject {
                 && !defs.contains(where: { $0.home == favourite.url.absoluteString }) {
                 let host = favourite.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
                 defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
-                                   home: favourite.url.absoluteString, title: favourite.title, name: nil))
+                                   home: favourite.url.absoluteString, title: favourite.title, name: nil, titled: true))
                 pins += 1
                 brought.append(favourite.url)
             }
@@ -3839,7 +3859,7 @@ final class Browser: NSObject, ObservableObject {
                 let host = page.item.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
                 defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
                                    home: page.item.url.absoluteString, title: page.item.title,
-                                   name: nil, listed: true, folder: page.folder))
+                                   name: nil, listed: true, folder: page.folder, titled: true))
                 pins += 1
             }
             if let filed {
@@ -3899,7 +3919,7 @@ final class Browser: NSObject, ObservableObject {
             && !defs.contains(where: { $0.home == page.url.absoluteString }) {
             let host = page.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
             defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
-                               home: page.url.absoluteString, title: page.title, name: nil))
+                               home: page.url.absoluteString, title: page.title, name: nil, titled: true))
             brought.append(page.url)
         }
         let pins = defs.count - had.count
@@ -6467,6 +6487,7 @@ final class Browser: NSObject, ObservableObject {
         fresh.home = tab.home
         fresh.everywhere = tab.everywhere
         fresh.name = tab.name
+        fresh.pinTitle = tab.pinTitle
         prepare(fresh)
         fresh.groupID = tab.groupID
         let wasActive = activeID == tab.id
