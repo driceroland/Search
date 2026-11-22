@@ -985,17 +985,19 @@ struct SettingsPanel: View {
     private var keywordEditor: some View {
         if let current = draft {
             HStack(spacing: 8) {
-                TextField("yt", text: Binding(
+                // Plainly examples, not an entry already there (idea 810):
+                // "word" and "address", in italics, with "e.g.".
+                TextField("", text: Binding(
                     get: { current.keyword },
                     set: { draft?.keyword = $0 }
-                ))
+                ), prompt: Text("word").italic())
                 .textFieldStyle(.plain)
                 .frame(width: 50)
                 Text("→").foregroundStyle(Palette.muted)
-                TextField("https://www.youtube.com/results?search_query=%s", text: Binding(
+                TextField("", text: Binding(
                     get: { current.template },
                     set: { draft?.template = $0 }
-                ))
+                ), prompt: Text("address with %s for the words, e.g. youtube.com/results?search_query=%s").italic())
                 .textFieldStyle(.plain)
                 .onSubmit(saveDraft)
             }
@@ -1055,7 +1057,7 @@ struct SettingsPanel: View {
     private var keywordDetail: String {
         guard let draft else { return SettingsIndex.item("search.keywords")?.detail ?? "" }
         if draft.keyword.isEmpty, draft.template.isEmpty {
-            return "A word, then the site's search address with %s where the words go"
+            return "Type a word, like yt, then the site's search address with %s where the words you type go"
         }
         return draftProblem ?? "\(draft.keyword.trimmingCharacters(in: .whitespacesAndNewlines)) will search \(draft.name)"
     }

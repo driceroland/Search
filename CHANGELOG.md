@@ -28,6 +28,7 @@ in [ROADMAP.md](ROADMAP.md).
 - The email field for news and the iPhone beta (the What's New card, the welcome and Settings › About) asks "Did you mean name@gmail.com?" under it when the domain looks like a typo (gmail.con, gnail.com, studio.cmo); the address in the line fills the field, and pressing Join again sends it as typed. Worked out on the Mac, nothing is sent to check it. `swift test --filter EmailTypoTests`
 - With the tabs across the top, what follows an open group (another group, or a tab in none such as ⌘T's) stands 10 points after its band instead of a tab's 2, so a tab after the group plainly isn't in it. Folded groups and the column are as before. `python3 Tests/group_band.py` (idea 953)
 - On macOS 15, Settings › Extensions says under a Manifest V3 extension whose pages need WebAssembly, Bitwarden's among them, that it won't run there: WebKit on macOS 15 refuses WebAssembly in these extensions' own pages whatever they ask, and the popup only said WebAssembly isn't supported. On macOS 26 it runs. `swift test --filter ExtensionLimitsTests`. Reported by [@Rokai-Jibe](https://github.com/Rokai-Jibe) ([#1383](https://github.com/driceroland/Search/issues/1383))
+- Settings › Browsing › Site shortcuts › Add: the empty boxes say "word" and "address with %s for the words, e.g. …" in italics, instead of a yt and a YouTube address that looked filled in. (idea 810)
 
 ### Fixed
 
