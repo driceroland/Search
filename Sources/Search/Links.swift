@@ -544,33 +544,21 @@ final class Links: NSObject, NSApplicationDelegate {
         _ = NSApp.delegate?.applicationOpenUntitledFile?(NSApp)
     }
 
-    /// ⌘⇧F, the Help menu, and the About page all come here: a draft, in
-    /// Mail, that already knows what build this is. The person still reads
-    /// it and presses send themselves — nothing here sends anything.
+    /// ⌘⇧F, the Help menu, and the About page all come here: a new issue
+    /// on GitHub that already knows what build this is. The person still
+    /// reads it and presses submit themselves — nothing here sends anything.
     static func writeFeedback() {
-        var text = URLComponents()
-        text.scheme = "mailto"
-        text.path = "hello@officecommun.com"
+        var text = URLComponents(string: "https://github.com/Paul0k/Search/issues/new")!
         text.queryItems = [
-            URLQueryItem(name: "subject", value: "Search feedback — \(Updater.version) (\(Updater.build))"),
+            URLQueryItem(name: "title", value: "Feedback — \(Updater.version) (\(Updater.build))"),
             URLQueryItem(name: "body", value: "\n\n—\nSearch \(Updater.version), build \(Updater.build), macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"),
         ]
         guard let url = text.url else { return }
-        // With a webmail chosen, its compose page, in a tab of the window in
-        // front: no round trip through macOS, which may not send email
-        // links here at all.
-        let compose = MainActor.assumeIsolated { Mail.compose(for: url) }
-        if let compose {
-            MainActor.assumeIsolated {
-                if Store.testing { Mail.seen.append("feedback: " + compose.absoluteString) }
-                land(compose)
-                comeForward()
-            }
-            return
+        MainActor.assumeIsolated {
+            if Store.testing { Mail.seen.append("feedback: " + url.absoluteString) }
+            land(url)
+            comeForward()
         }
-        // A test run opens no other app (Tests/webmail.py).
-        if Store.testing { MainActor.assumeIsolated { Mail.seen.append("feedback: system") }; return }
-        NSWorkspace.shared.open(url)
     }
 
     // MARK: - being the browser

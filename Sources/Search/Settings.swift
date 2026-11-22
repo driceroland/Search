@@ -867,8 +867,6 @@ struct SettingsPanel: View {
         case "about.notes": Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
         case "bench": Switch(on: $prefs.bench)
         case "agents": Switch(on: $prefs.agents)
-        case "news.updates": OptInSettingsField(betaOnly: false) { _ = browser.open($0, foreground: true) }
-        case "news.iphone": OptInSettingsField(betaOnly: true) { _ = browser.open($0, foreground: true) }
         default: EmptyView()
         }
     }
@@ -1086,7 +1084,7 @@ struct SettingsPanel: View {
                 Text("Search")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Palette.ink)
-                Text("by Office Commun · version \(Updater.version)")
+                Text("by Paul0k · version \(Updater.version)")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
             }
