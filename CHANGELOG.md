@@ -26,6 +26,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- The "is sharing your screen · Stop" pill can be dragged off a page's own controls (Google Meet's toolbar, say) by anywhere on it but its buttons, and comes back to where you left it.
 - Swiping to another space with the tabs in the column, the column takes that space's colour as its tabs come in, as a click or ⌃1–⌃9 already brought it. It kept the last space's colour until the space was taken, a moment after the hand was still, and with fingers resting on the trackpad not until a click in the column. `python3 Tests/space_switch_paint.py` (idea 954)
 - Switching spaces with the tabs in the column, the tabs in a group come in set in under its name and, holding no page, dimmed, as they stay: drawn on their way in from the map of every space's tabs, a group without a colour had its tabs flush left and none of them dimmed, and as the space was taken they jumped in and faded. `python3 Tests/space_switch_paint.py` (idea 955)
 - Saved passwords are harder to steal through a page's tricks: a frame from another site, or one it names to pass for Search's own, is never filled, and a pick with the caret in such a frame fills nothing rather than the page's first password box; a box kept out of sight (tiny, faded out, hidden, clipped away or far off the page) is passed over for the visible one; and a password is put only in a box that hides what is typed, never in a plain text box. Only the page's own frames can talk to the browser's password filling. `python3 Tests/forms_frames_attack.py`.

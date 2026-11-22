@@ -139,7 +139,7 @@ private final class PillPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
-        isMovableByWindowBackground = true
+        isMovableByWindowBackground = false
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
@@ -160,15 +160,40 @@ private final class PillPanel: NSPanel {
 
     func holds(_ web: WKWebView) -> Bool { web.superview === lending }
 
-    /// Its size for what it says, at the foot of the screen, centred.
+    /// Where a drag left it, to come back to: its top centre.
+    private static let savedKey = "recordingPillTopCentre"
+    private var placed = false
+
+    /// Its size for what it says. First up it sits at the foot of the
+    /// screen, centred, or where it was last dragged to; after that it
+    /// keeps its top centre wherever it is, growing or shrinking.
     func fit() {
         content.layoutSubtreeIfNeeded()
         let size = content.fittingSize
+        content.frame = NSRect(origin: .zero, size: size)
+        if isVisible || placed {
+            let origin = NSPoint(x: frame.midX - size.width / 2, y: frame.maxY - size.height)
+            setFrame(NSRect(origin: origin, size: size), display: isVisible)
+            return
+        }
         let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen ?? NSScreen.main
         let area = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let frame = NSRect(x: area.midX - size.width / 2, y: area.minY + 24, width: size.width, height: size.height)
-        content.frame = NSRect(origin: .zero, size: size)
-        if isVisible { setFrame(NSRect(origin: self.frame.origin, size: size), display: true) } else { setFrame(frame, display: false) }
+        var origin = NSPoint(x: area.midX - size.width / 2, y: area.minY + 24)
+        // Only a remembered spot still on a screen is used.
+        if let saved = Store.settings.array(forKey: Self.savedKey) as? [Double], saved.count == 2 {
+            let spot = NSPoint(x: saved[0] - size.width / 2, y: saved[1] - size.height)
+            if NSScreen.screens.contains(where: { $0.visibleFrame.intersects(NSRect(origin: spot, size: size)) }) {
+                origin = spot
+            }
+        }
+        setFrame(NSRect(origin: origin, size: size), display: false)
+        placed = true
+    }
+
+    /// Drag it by anywhere off the buttons, and remember where it ended.
+    func drag(with event: NSEvent) {
+        performDrag(with: event)
+        Store.settings.set([frame.midX, frame.maxY], forKey: Self.savedKey)
     }
 }
 
@@ -207,6 +232,8 @@ struct PillView: View {
         .padding(.leading, 14)
         .padding(.trailing, 7)
         .padding(.vertical, 7)
+        // Anywhere off the buttons drags it, off a page's controls.
+        .background(PillDragArea())
         // A capsule for one line; the same corners round a taller card.
         .background(Palette.ground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
@@ -214,4 +241,15 @@ struct PillView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Recording")
     }
+}
+
+/// Behind the pill's words: a press there drags the pill, wherever it goes.
+private struct PillDragArea: NSViewRepresentable {
+    final class Grip: NSView {
+        override func mouseDown(with event: NSEvent) {
+            (window as? PillPanel)?.drag(with: event) ?? window?.performDrag(with: event)
+        }
+    }
+    func makeNSView(context: Context) -> NSView { Grip() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
