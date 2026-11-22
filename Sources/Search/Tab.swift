@@ -2510,6 +2510,21 @@ final class PageView: WKWebView {
                 while at < menu.items.count, menu.items[at].isAlternate { at += 1 }
                 menu.insertItem(beside, at: at)
             }
+            // Open Link in Private Tab (#902), as the bookmarks bar has it:
+            // after the items above, in a tab that keeps nothing. Not on a
+            // private page, where Open Link in New Tab is private already.
+            if configuration.websiteDataStore.isPersistent, let shy = item.copy() as? NSMenuItem {
+                shy.title = "Open Link in Private Tab"
+                shy.identifier = NSUserInterfaceItemIdentifier("SearchOpenLinkInPrivateTab")
+                shy.keyEquivalentModifierMask = []
+                shy.isAlternate = false
+                shy.target = self
+                shy.action = #selector(openLinkPrivate(_:))
+                var at = index + 1
+                while at < menu.items.count,
+                      menu.items[at].isAlternate || menu.items[at].identifier?.rawValue == "SearchOpenLinkInSplitView" { at += 1 }
+                menu.insertItem(shy, at: at)
+            }
             openLink = (item.target, item.action)
             item.title = "Open Link in New Tab"
             item.keyEquivalentModifierMask = []
@@ -2707,6 +2722,23 @@ final class PageView: WKWebView {
     func takeBeside() -> Bool {
         defer { besideSince = nil }
         return besideSince.map { Date().timeIntervalSince($0) < 1 } ?? false
+    }
+
+    /// Open Link in Private Tab: the same action, the tab it would make
+    /// marked, for a second, to be a private one instead (Browser's
+    /// createWebViewWith opens it with nothing of this page's).
+    private var privateSince: Date?
+
+    @objc private func openLinkPrivate(_ item: NSMenuItem) {
+        guard let action = openLink.action else { return }
+        privateSince = Date()
+        NSApp.sendAction(action, to: openLink.target, from: item)
+    }
+
+    /// Whether the tab being made now is the menu's, to be private.
+    func takePrivate() -> Bool {
+        defer { privateSince = nil }
+        return privateSince.map { Date().timeIntervalSince($0) < 1 } ?? false
     }
 
     @objc private func searchSelection(_ item: NSMenuItem) {

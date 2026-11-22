@@ -8633,6 +8633,16 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             || (clicked && opener.popupGesture.middle && !action.modifierFlags.contains(.shift))
         // Its Open Link in Split View, the same way.
         let beside = (webView as? PageView)?.takeBeside() == true
+        // Its Open Link in Private Tab: not this configuration, which holds
+        // the opener's store, but a private tab of its own, as the bookmarks
+        // bar's Open in Private Tab makes one. No opener: nothing of this
+        // page's reaches it.
+        if (webView as? PageView)?.takePrivate() == true {
+            if let url = action.request.url {
+                DispatchQueue.main.async { [weak self] in self?.openShy(url) }
+            }
+            return nil
+        }
         let popup = windowFeatures.width != nil || windowFeatures.height != nil
             || windowFeatures.toolbarsVisibility?.boolValue == false
         // A link clicked open in a new tab, to a site Settings sends to

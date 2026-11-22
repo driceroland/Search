@@ -93,6 +93,19 @@ def main():
         t.ok("with ⌥, Open Link in New Tab and Go to It: the new tab is in front",
              len(new) == 1 and r["active"] == new[0], r)
         t.ok("b is untouched", b in r["tabs"], r["tabs"])
+        # Open Link in Private Tab (#902): a private tab for the link, in front.
+        sv.sp("select", id=a); time.sleep(0.4)
+        menu(a, ("Open Link in Private Tab", "shy")); time.sleep(0.5)
+        st = sv.sp("state")
+        shy = [x for x in st["tabs"] if x["url"].endswith("/shy")]
+        t.ok("Open Link in Private Tab: one private tab for the link",
+             len(shy) == 1 and shy[0]["shy"], shy)
+        t.ok("…and it is in front", bool(shy) and st["activeID"] == shy[0]["id"], st["activeID"])
+        # On a private page Open Link in New Tab is private already: no item.
+        sv.sp("select", id=shy[0]["id"] if shy else a); time.sleep(0.4)
+        r = menu(shy[0]["id"] if shy else a, ("Open Link in Private Tab", "again"))
+        t.ok("on a private page: no Open Link in Private Tab",
+             not any(u.endswith("/again") for u in r["urls"]), r["urls"])
         # No Open Link: a click does that. Picking it chooses nothing, so the
         # page stays where it is.
         sv.sp("select", id=a); time.sleep(0.4)
