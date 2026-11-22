@@ -144,8 +144,24 @@ final class ApplePasswords: ObservableObject {
     @Published private(set) var state: State = .idle {
         didSet { if state != oldValue { changed(from: oldValue) } }
     }
-    /// Why the last attempt didn't work, in plain words; cleared by the next.
+    /// Why the last attempt didn't work, in plain words; kept while the next
+    /// one starts (so the row stays still) and cleared once it gets a code.
     @Published private(set) var trouble: String?
+    /// Starting is taking a moment: only then does the row say Connecting…,
+    /// so a start that fails at once doesn't make it jump (idea 781).
+    @Published private(set) var connecting = false
+    /// macOS stopped the helper the instant this copy of Search started it,
+    /// although Search holds the browser entitlement Apple's helper admits:
+    /// its launch constraint doesn't let Search run it on this Mac (idea 781,
+    /// seen on macOS 15). Not tried again until Search starts again.
+    @Published private(set) var refused = false
+    /// Whether this copy holds com.apple.developer.web-browser.public-key-credential,
+    /// which the helper's parent launch constraint admits on macOS 26. A copy
+    /// built without it is refused by any macOS.
+    private let entitled: Bool
+    /// Whether the helper has said anything since it was started.
+    private var heard = false
+    private var startingSince = 0
 
     private let makeLink: () throws -> AppleLink
     private var link: AppleLink?
@@ -182,8 +198,10 @@ final class ApplePasswords: ObservableObject {
     }
 
     init(makeLink: (() throws -> AppleLink)? = nil, prefs: Preferences? = nil,
-         keepAliveEvery: TimeInterval = ApplePasswords.keepAliveEvery) {
+         keepAliveEvery: TimeInterval = ApplePasswords.keepAliveEvery,
+         entitled: Bool = ApplePasswords.holdsBrowserEntitlement) {
         self.keepAliveEvery = keepAliveEvery
+        self.entitled = entitled
         self.makeLink = makeLink ?? {
             // A test run never runs Apple's helper: it would put its window
             // on the screen of whoever is working beside it, and ask their
@@ -217,8 +235,9 @@ final class ApplePasswords: ObservableObject {
     /// Runs the helper and starts a pairing: the helper puts its code on
     /// screen. Only ever from a click of yours.
     func connect() async {
-        guard state == .idle else { return }
-        trouble = nil
+        guard state == .idle, !refused else { return }
+        heard = false
+        let began = Date()
         state = .starting
         do {
             try await exclusive {
@@ -241,11 +260,32 @@ final class ApplePasswords: ObservableObject {
                 numbers = try AppleMessages.readStart(reply, client)
                 self.client = client
             }
+            trouble = nil
             state = .code
         } catch {
+            // Gone at once, before a word: macOS stopped it as it started
+            // (a launch constraint violation, signal 9 after 0s).
+            if case ApplePasswordsError.gone? = error as? ApplePasswordsError, !heard,
+               Date().timeIntervalSince(began) < 1, entitled {
+                Self.log.notice("The helper was stopped as it started: its launch constraint doesn't admit Search on this macOS")
+                refused = true
+                fail(Unavailable(errorDescription: "Apple's Passwords helper isn't available to Search on this version of macOS"), stop: true)
+                return
+            }
             fail(error, stop: true)
         }
     }
+
+    /// The Settings row's title while not connected or starting.
+    nonisolated static func title(state: State, trouble: String?, connecting: Bool) -> String {
+        state == .starting && connecting ? "Connecting…" : trouble ?? "Not connected"
+    }
+
+    nonisolated static let holdsBrowserEntitlement: Bool = {
+        guard let task = SecTaskCreateFromSelf(nil) else { return false }
+        let value = SecTaskCopyValueForEntitlement(task, "com.apple.developer.web-browser.public-key-credential" as CFString, nil)
+        return (value as? Bool) == true
+    }()
 
     /// The code the helper shows, typed by you.
     func enter(_ code: String) async {
@@ -408,6 +448,7 @@ final class ApplePasswords: ObservableObject {
     }
 
     private func received(_ message: [String: Any]) {
+        heard = true
         guard let command = message["cmd"] as? Int else { return }
         switch command {
         case AppleCommand.passwordsDisabled.rawValue, AppleCommand.reloginNeeded.rawValue:
@@ -448,6 +489,16 @@ final class ApplePasswords: ObservableObject {
     /// Paired: the helper is told now and then that a tab came to the
     /// front, so it is never left idle. Not paired: nothing is sent.
     private func changed(from old: State) {
+        startingSince += 1
+        connecting = false
+        if state == .starting {
+            let mine = startingSince
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                guard let self, self.startingSince == mine, self.state == .starting else { return }
+                self.connecting = true
+            }
+        }
         if state == .paired {
             pairedAt = Date()
             keepAlive?.cancel()
