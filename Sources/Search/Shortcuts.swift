@@ -586,6 +586,44 @@ extension View {
     func shortcut(_ id: String) -> some View {
         keyboardShortcut(ShortcutStore.shared.key(for: id)?.swiftUI)
     }
+
+    /// A button's tooltip with its command's key as it stands, "Downloads
+    /// ⇧⌘J": read from Settings › Shortcuts and drawn again when a key there
+    /// changes. Typed into the text, the keys stayed what they were when
+    /// written, whatever the key had become since. No command, or one with
+    /// no key, and the title alone.
+    @MainActor
+    func shortcutHelp(_ title: String, _ id: String?) -> some View {
+        modifier(ShortcutHelp { $0.tip(title, id) })
+    }
+
+    /// The same, for a tooltip that says the key inside a sentence.
+    @MainActor
+    func shortcutHelp(_ text: @escaping (ShortcutStore) -> String) -> some View {
+        modifier(ShortcutHelp(text: text))
+    }
+}
+
+/// Watches the keys, so the tooltip follows a change at once (see
+/// View.shortcutHelp).
+private struct ShortcutHelp: ViewModifier {
+    @ObservedObject private var keys = ShortcutStore.shared
+    let text: (ShortcutStore) -> String
+
+    func body(content: Content) -> some View {
+        content.help(text(keys))
+    }
+}
+
+extension ShortcutStore {
+    /// "Title   ⇧⌘J", or the title alone while the command has no key.
+    func tip(_ title: String, _ id: String?) -> String {
+        guard let id, let key = key(for: id) else { return title }
+        return "\(title)   \(key.display)"
+    }
+
+    /// The command's key as a menu shows it, or nil with none.
+    func display(_ id: String) -> String? { key(for: id)?.display }
 }
 
 extension Command {
