@@ -1276,6 +1276,21 @@ final class Tab: ObservableObject, Identifiable {
         built?.evaluateInSearch(Veiling.style(css))
     }
 
+    /// Whether what `selector` names is still on screen once the stylesheet
+    /// is worn: the page can keep a thing there with its own
+    /// `style="… !important"`, and "Hidden" was said of it all the same
+    /// (#1270). Asked after `applyVeils`, which the page runs first. Nothing
+    /// matching is not "still there".
+    func stillShows(_ selector: String, then: @escaping (Bool) -> Void) {
+        guard let built else { return then(false) }
+        built.callInSearch("""
+            try {
+              var el = document.querySelector(selector);
+              return !!el && getComputedStyle(el).display !== 'none';
+            } catch (e) { return false; }
+            """, arguments: ["selector": selector]) { shows in then(shows as? Bool ?? false) }
+    }
+
     func startPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on()") }
     func stopPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.off()") }
 
