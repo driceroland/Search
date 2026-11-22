@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Fixed
 
 - Closing a window while another stays open stops that window’s background checks for tabs to put to sleep. `swift test --filter KeepAwakeTests`. Thanks [@shawn-t516](https://github.com/shawn-t516) ([#1356](https://github.com/driceroland/Search/pull/1356))
+- A draft typed into an embedded form keeps its tab awake, including a form hosted by another site. Clearing it lets the tab sleep again. `swift test --filter PageDraftTests`. Thanks [@shawn-t516](https://github.com/shawn-t516) ([#1357](https://github.com/driceroland/Search/pull/1357))
 
 ### Held back
 

@@ -86,9 +86,7 @@ final class KeepAwakeTests: XCTestCase {
         browser.prefs.keepsSitesAwake = true
         let page = tab("https://example.com")
         browser.insert(page, at: browser.tabs.count)
-        await withCheckedContinuation { continuation in
-            page.web.evaluateInSearch("window.__officeForms = {unsaved: () => false}") { _ in continuation.resume() }
-        }
+        _ = page.web
         let reason = await withCheckedContinuation { continuation in
             browser.sleep(page) { continuation.resume(returning: $0) }
             browser.keepAwake(true, for: page)
