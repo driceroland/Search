@@ -1,5 +1,5 @@
-// The app's icon, drawn rather than exported: the mark is Drice's
-// Subtract.svg, read from its own path data rather than loaded as an image,
+// The app's icon, drawn rather than exported: the mark is the column, read
+// from its own path data rather than loaded as an image,
 // so it stays a crisp vector at every size instead of a raster scaled up.
 // The icon puts it on a plate — a Dock icon has to be an opaque square
 // whether the logo itself wants a background or not.
@@ -15,11 +15,16 @@ let dev = ProcessInfo.processInfo.environment["SEARCH_DEV"] == "1"
 let plateColor = dev ? NSColor(srgbRed: 1.0, green: 0.8, blue: 0.2, alpha: 1) : NSColor.white
 try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
-/// Drice's Subtract.svg (22 September 2026): a pill with an S cut out of it,
-/// on its own 608 × 276 canvas. The same path is in Design.swift's
-/// `Logomark` and in the website's mark — one shape, three places.
-let canvas = (width: 608.0, height: 276.0)
-let markData = "M469.443 0C545.471 0.00013198 607.103 61.6325 607.104 137.66C607.104 213.688 545.471 275.321 469.443 275.321H137.66C61.6323 275.321 0 213.688 0 137.66C0.00016085 61.6325 61.6325 0.000140192 137.66 0H469.443ZM138.104 51.5977C127.234 51.5977 117.512 53.5115 108.938 57.3389C100.518 61.0132 93.8581 66.2188 88.959 72.9551C84.2132 79.5381 81.8398 87.3464 81.8398 96.3789C81.8399 105.258 83.6773 112.607 87.3516 118.425C91.0258 124.089 95.9251 128.682 102.049 132.203C108.173 135.571 114.833 138.327 122.028 140.471L151.652 149.197C158.389 151.188 163.9 154.249 168.187 158.383C172.473 162.516 174.617 168.028 174.617 174.917C174.617 182.572 171.402 188.849 164.972 193.748C158.695 198.494 150.122 200.867 139.252 200.867C132.21 200.867 125.702 199.413 119.731 196.504C113.914 193.442 109.091 189.308 105.264 184.103C101.436 178.744 99.2169 172.697 98.6045 165.961H97.6855L75.4102 171.013C76.3287 180.658 79.697 189.308 85.5146 196.963C91.3322 204.618 98.9103 210.665 108.249 215.104C117.741 219.544 128.076 221.765 139.252 221.765C151.193 221.765 161.68 219.774 170.713 215.794C179.746 211.813 186.711 206.225 191.61 199.029C196.662 191.834 199.188 183.414 199.188 173.769C199.188 164.124 197.352 156.239 193.678 150.115C190.003 143.838 185.104 138.863 178.98 135.188C172.857 131.514 166.044 128.605 158.542 126.462L128.229 117.735C121.799 115.898 116.516 113.219 112.383 109.698C108.402 106.177 106.412 101.354 106.412 95.2305C106.412 88.188 109.168 82.6758 114.68 78.6953C120.344 74.5619 128.152 72.4951 138.104 72.4951C147.901 72.4952 155.939 74.9448 162.216 79.8438C168.493 84.7428 172.397 91.1729 173.928 99.1338H174.847L196.663 93.8525C195.745 85.5853 192.605 78.3131 187.247 72.0361C181.889 65.6061 174.923 60.6306 166.35 57.1094C157.929 53.4351 148.514 51.5977 138.104 51.5977Z"
+/// The column (22 November 2026): a narrow bar and a block beside it — the
+/// window itself, tabs down the left and the page next to them — on its own
+/// 320 × 276 canvas. The same path is in Design.swift's `Logomark`.
+let canvas = (width: 320.0, height: 276.0)
+
+/// How much of the plate's width the mark takes. The column is nearly
+/// square, so it sits at a little over half the plate, where the old wide
+/// pill took three quarters.
+let markFraction: CGFloat = 0.56
+let markData = "M36 0C55.882 0 72 16.118 72 36L72 240C72 259.882 55.882 276 36 276C16.118 276 0 259.882 0 240L0 36C0 16.118 16.118 0 36 0ZM260 0C293.137 0 320 26.863 320 60L320 216C320 249.137 293.137 276 260 276L164 276C130.863 276 104 249.137 104 216L104 60C104 26.863 130.863 0 164 0Z"
 
 /// A tiny reader for the one path the mark is: absolute M, L, H, V, C, Z —
 /// what Figma writes for a flattened shape, and nothing else.
@@ -54,7 +59,7 @@ func svgCommands(_ d: String) -> [(Character, [CGFloat])] {
 
 /// The mark, fit to `fraction` of `plate`'s width and centred on it. SVG's y
 /// grows downward and AppKit's upward, so every y is flipped on the way in;
-/// the S is a hole, so the path is filled even-odd.
+/// the path is filled even-odd, as a mark with a hole would need.
 func markPath(in plate: NSRect, fraction: CGFloat) -> NSBezierPath {
     let scale = plate.width * fraction / canvas.width
     let ox = plate.midX - canvas.width * scale / 2
@@ -108,11 +113,9 @@ func draw(_ size: CGFloat) -> NSImage {
     shape.fill()
     NSGraphicsContext.restoreGraphicsState()
 
-    // The mark, black on the plate, at the proportion of Drice's search.jpg
-    // (22 September 2026): 607 of a 1000-wide canvas, which on a plate that
-    // is 824 of 1024 comes to three quarters of the plate.
+    // The mark, black on the plate, centred.
     NSColor(red: 0.09, green: 0.09, blue: 0.09, alpha: 1).setFill()
-    markPath(in: plate, fraction: 0.754).fill()
+    markPath(in: plate, fraction: markFraction).fill()
     return image
 }
 
@@ -151,9 +154,8 @@ print("drew: \(out.path)")
 // do that well with an icon that says what each style should be: from the
 // flat image above it made a darkened plate with the black mark still on
 // it, black on black (#337). Here the plate and the mark are separate, so
-// Dark turns them round — a white mark on the ink colour, the S showing the
-// plate through it — and Tinted gets a white mark whose brightness the
-// system tints. The light look is left as it is: the same white, the same
+// Dark turns them round — a white mark on the ink colour — and Tinted
+// gets a white mark whose brightness the system tints. The light look is left as it is: the same white, the same
 // ink, the mark at the same size, and no glass, gloss or shadow of its own.
 // build.sh compiles it with actool; the images above stay the .icns.
 if CommandLine.arguments.count > 2 {
@@ -164,7 +166,7 @@ if CommandLine.arguments.count > 2 {
 
     // An Icon Composer canvas is the plate, 1024 points across; the mark
     // takes the same share of it as it does of the plate drawn above.
-    let width = 1024 * 0.754
+    let width = 1024 * markFraction
     let height = width * canvas.height / canvas.width
     let svg = """
     <svg xmlns="http://www.w3.org/2000/svg" width="\(width)" height="\(height)" viewBox="0 0 \(Int(canvas.width)) \(Int(canvas.height))">\
