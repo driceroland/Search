@@ -423,7 +423,7 @@ enum ExtensionShims {
     /// read through it and written back over it as a regular file, so a
     /// link to a file elsewhere would put that file's bytes in the package.
     /// A folder on the way that is a link is caught by where it resolves.
-    nonisolated private static func inside(_ name: String, of folder: URL) -> URL? {
+    nonisolated static func inside(_ name: String, of folder: URL) -> URL? {
         let path = folder.appendingPathComponent(name.trimmingCharacters(in: CharacterSet(charactersIn: "/"))).standardizedFileURL
         guard path.path.hasPrefix(folder.standardizedFileURL.path + "/"),
               (try? path.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
@@ -1030,6 +1030,43 @@ enum ExtensionShims {
             try { Object.defineProperty(container, "ready", { configurable: true, get: () => Promise.resolve(registration) }); } catch (x) {}
           }, true);
         }
+      }
+      // A frame on one of the extension's sandbox pages is pointed at
+      // ExtensionSandbox, which serves it as Chrome does, before its first
+      // load commits. Only in the views Search gives that handler: not
+      // WebKit's background page, nor a page framed in a website. Not a
+      // frame with a sandbox attribute of its own, whose scripts couldn't
+      // load from there; and one the page's own policy refuses there gets
+      // its address back, and loads as it did before.
+      const listed = (manifest.sandbox || {}).pages;
+      const sandboxPages = new Set((Array.isArray(listed) ? listed : []).map((p) => "/" + String(p).replace(/^\/+/, "")));
+      if (sandboxPages.size && !background && !embedded && !inContent && typeof MutationObserver === "function"
+          && location.protocol === "chrome-extension:") {
+        const sandboxOrigin = "chrome-extension-sandbox://" + location.host;
+        const pointed = new Map(), refused = new WeakSet();
+        const point = (frame) => {
+          const src = frame.getAttribute("src");
+          let url, path;
+          if (!src || refused.has(frame) || frame.hasAttribute("sandbox")) return;
+          try { url = new URL(src, document.baseURI); path = decodeURIComponent(url.pathname); } catch (e) { return; }
+          if (url.origin === location.origin && sandboxPages.has(path)) {
+            const to = sandboxOrigin + url.pathname + url.search + url.hash;
+            pointed.set(frame, src);
+            frame.setAttribute("src", to);
+          }
+        };
+        const look = (node) => node instanceof HTMLIFrameElement ? point(node) : node.querySelectorAll && node.querySelectorAll("iframe[src]").forEach(point);
+        new MutationObserver((records) => { for (const r of records) r.type === "attributes" ? look(r.target) : r.addedNodes.forEach(look); })
+          .observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["src"] });
+        document.addEventListener("securitypolicyviolation", (e) => {
+          if (!/^(frame|child|default)-src/.test(e.effectiveDirective || e.violatedDirective || "") || !String(e.blockedURI).startsWith(sandboxOrigin)) return;
+          for (const [frame, src] of pointed) {
+            if (!String(frame.getAttribute("src")).startsWith(sandboxOrigin)) continue;
+            refused.add(frame);
+            pointed.delete(frame);
+            frame.setAttribute("src", src);
+          }
+        }, true);
       }
       // WebKit runs an extension's worker on its web process's main thread,
       // and a worker's WebSocket waits there for the main thread to set up

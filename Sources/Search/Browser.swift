@@ -6608,7 +6608,10 @@ final class Browser: NSObject, ObservableObject {
         guard #available(macOS 15.4, *) else { return nil }
         let url = Extensions.current(url)
         guard url.scheme == Extensions.scheme else { return nil }
-        return Extensions.shared.controller.extensionContext(for: url)?.webViewConfiguration
+        guard let context = Extensions.shared.controller.extensionContext(for: url),
+              let configuration = context.webViewConfiguration else { return nil }
+        ExtensionSandbox.attach(configuration, for: context)
+        return configuration
     }
 
     /// A page for the bench: at the end of the row, behind whatever you are
@@ -8630,6 +8633,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // chrome-extension: an extension's own pages — options, a side
         // panel, a tab it opened. WebKit serves them; nothing else here does.
         if ["http", "https", "file", "about", "data", "blob", "chrome-extension", "webkit-extension"].contains(scheme) {
+            decisionHandler(.allow)
+        } else if #available(macOS 15.4, *), scheme == ExtensionSandbox.scheme, action.targetFrame?.isMainFrame == false {
+            // An extension page's frame on one of its sandbox pages: served
+            // by ExtensionSandbox, which only extension pages' views carry.
             decisionHandler(.allow)
         } else {
             decisionHandler(.cancel)

@@ -335,6 +335,7 @@ final class SidePanelPages: NSObject {
         }
         drop(in: browser)
         guard let configuration = context.webViewConfiguration else { return false }
+        ExtensionSandbox.attach(configuration, for: context)
         // No window opens from the panel without a click.
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 380, height: 600), configuration: configuration)
