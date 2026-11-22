@@ -178,4 +178,60 @@ final class PopoverSideTests: XCTestCase {
         XCTAssertTrue(popover.isShown)
         XCTAssertNotNil(host.view.window)
     }
+
+    /// Moved further along than its button's own edge, the arrow points at
+    /// what stands beside the button.
+    func testAnArrowMovedOffItsButtonStrays() {
+        let size = CGSize(width: 26, height: 26)
+        XCTAssertFalse(PopoverSide.strays(.zero, from: size))
+        XCTAssertFalse(PopoverSide.strays(CGVector(dx: 13, dy: 0), from: size), "to the button's edge")
+        XCTAssertTrue(PopoverSide.strays(CGVector(dx: 14, dy: 0), from: size))
+        XCTAssertTrue(PopoverSide.strays(CGVector(dx: -14, dy: 0), from: size), "by the screen's right edge")
+        XCTAssertTrue(PopoverSide.strays(CGVector(dx: clear - 23, dy: 0), from: size), "the first button in the corner")
+        XCTAssertFalse(PopoverSide.strays(CGVector(dx: clear - 23, dy: 0), from: CGSize(width: 200, height: 26)),
+                       "a tab is wide enough")
+        // Beside a button the arrow is never moved past its edge.
+        XCTAssertFalse(PopoverSide.strays(PopoverSide.placement(of: button(400, clear - 13), in: screen, beside: true).move, from: size))
+        // In the corner it hangs above, moved along: off a 26-point button.
+        XCTAssertTrue(PopoverSide.strays(PopoverSide.placement(of: button(23, 20), in: screen, beside: true).move, from: size))
+    }
+
+    /// In a real window at the screen's corner: the popover of the first
+    /// button, the one the arrow can't stay on, comes up without an arrow;
+    /// the next but two, clear of the corner, keeps its own, and so does a
+    /// spot nothing stands at.
+    func testAPopoverFromTheFirstButtonInTheCornerHasNoArrow() throws {
+        try XCTSkipUnless(NSPopover().responds(to: NSSelectorFromString("setShouldHideAnchor:")), "no way to leave the arrow out here")
+        let screen = try XCTUnwrap(NSScreen.main)
+        let room = screen.visibleFrame
+        try XCTSkipIf(room.width < 4 * clear || room.height < 4 * clear, "screen too small")
+        let window = NSWindow(contentRect: NSRect(origin: room.origin, size: NSSize(width: 400, height: 300)),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.setFrameOrigin(room.origin)
+        defer { window.close() }
+        let (first, column, content) = foot()
+        let further = NSView(frame: NSRect(x: 10 + 3 * 29, y: 10, width: 26, height: 26))
+        column.addSubview(further)
+        window.contentView = content
+        window.orderFrontRegardless()
+        let frame = window.convertToScreen(first.convert(first.bounds, to: nil))
+        try XCTSkipIf(abs(frame.minX - (room.minX + 10)) > 1 || !window.isVisible, "window not placed where asked")
+
+        func bare(from view: NSView, pointed: Bool) -> Bool? {
+            let popover = NSPopover()
+            let host = NSViewController()
+            host.view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 240))
+            popover.contentViewController = host
+            popover.contentSize = host.view.frame.size
+            popover.animates = false
+            defer { popover.close() }
+            PopoverSide.show(popover, relativeTo: view.bounds, of: view, preferredEdge: .maxY, pointed: pointed)
+            XCTAssertTrue(popover.isShown)
+            return popover.value(forKey: "shouldHideAnchor") as? Bool
+        }
+        XCTAssertEqual(bare(from: first, pointed: true), true, "the arrow would stand on the button beside it")
+        XCTAssertEqual(bare(from: further, pointed: true), false, "clear of the corner: on its button")
+        XCTAssertEqual(bare(from: first, pointed: false), false, "a spot, not a button: moved along as before")
+    }
 }
