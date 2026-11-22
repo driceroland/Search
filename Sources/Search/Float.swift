@@ -34,6 +34,9 @@ final class Float {
     /// Asked every half second while the window is up, for the line along the
     /// bottom edge.
     var onProgress: ((@escaping (Double, Bool) -> Void) -> Void)?
+    /// Asked every half second while the window is up: whether the video
+    /// has gone from its page (Isolate.gone), and the window with it.
+    var onGone: ((@escaping (Bool) -> Void) -> Void)?
 
     private var ticker: Timer?
 
@@ -244,6 +247,13 @@ final class Float {
                 // pointer is over the window: asked then, not every half
                 // second for a page nobody is looking at.
                 if self.controls?.isNear == true { self.refreshControls() }
+
+                // A video that ended or went closes its window, rather than
+                // leave the page's black in it (idea 923).
+                self.onGone? { [weak self] gone in
+                    guard gone, let self, self.panel != nil, self.page?.superview === ground else { return }
+                    self.onClose?()
+                }
             }
         }
     }
@@ -1165,6 +1175,79 @@ enum Isolate {
         if (document.visibilityState === 'visible') stopped = new WeakSet();
       }, true);
       window.__officeFloatUnseen = function (v) { return v.paused && stopped.has(v); };
+      // The videos heard playing, for `real`: one muted since still counts.
+      var heard = new WeakSet();
+      function listen(e) {
+        var v = e.target;
+        if (v && v.tagName === 'VIDEO' && !v.paused && !v.muted && v.volume > 0) heard.add(v);
+      }
+      ['play', 'playing', 'volumechange'].forEach(function (name) {
+        document.addEventListener(name, listen, true);
+      });
+      window.__officeFloatHeard = function (v) { return heard.has(v) || (!v.muted && v.volume > 0); };
+    })();
+    """
+
+    /// Which videos float out on their own, set just before `on` looks
+    /// (Browser.lift, NativePiP.script): one somebody is watching, and not
+    /// whatever else plays on the page. YouTube's home page plays a muted
+    /// preview of the thumbnail under the pointer, and leaving the tab
+    /// floated that, then a black window once the preview ended (idea 923).
+    /// As Safari (main content: audio, about 400×300 or more) and Chrome or
+    /// Arc (audible in the last two seconds, unmuted) ask: heard, now or
+    /// earlier and muted since by hand; big enough to be watched; longer
+    /// than a loop; and not a preview in a link or a thumbnail. ⇧⌘P sets
+    /// nothing and still lifts any video playing.
+    static let real = """
+    window.__officeFloatOnly = function (v) {
+      var heard = window.__officeFloatHeard ? window.__officeFloatHeard(v) : (!v.muted && v.volume > 0);
+      if (!heard) return false;
+      if (isFinite(v.duration) && v.duration > 0 && v.duration < 10) return false;
+      var b = v.getBoundingClientRect();
+      if (v.videoWidth > 0 && b.width > 0 && b.height > 0 && b.width * b.height < 320 * 180) return false;
+      for (var up = v; up && up !== document.body && up !== document.documentElement; up = up.parentElement) {
+        if (up !== v && up.tagName === 'A' && up.hasAttribute('href')) return false;
+        var name = up.tagName + ' ' + (up.id || '') + ' ' + (typeof up.className === 'string' ? up.className : '');
+        if (/(^|[\\s_-])(preview|thumbnail)(?=$|[\\s_-])/i.test(name) || /(^|[\\s_-])(preview|thumbnail)[A-Z]/.test(name)) return false;
+      }
+      return true;
+    };
+    """
+
+    /// `on`, for a video floating out on its own: only one of the `real`.
+    static let quietly = real + on
+
+    /// Whether the floated video has gone: taken out of the page, emptied
+    /// of its source, hidden with its player, or ended a while ago with
+    /// nothing after it. YouTube's preview ended and went, and the window
+    /// held the page's black (idea 923). A second's grace for a player
+    /// swapping one video for the next (Isolate.on puts the mark back), and
+    /// ten after an end, for a player's "up next" to begin.
+    static let gone = """
+    (function () {
+      if (!document.documentElement.classList.contains('office-floating')) {
+        window.__officeFloatGone = null;
+        return false;
+      }
+      var art = !!window.__officeFloatArt;
+      function shows(v) {
+        return v.isConnected && !v.error && (v.currentSrc || v.srcObject) && v.readyState > 0
+          && (art || v.getClientRects().length > 0);
+      }
+      var v = document.querySelector('video[data-office-float]'), why = null;
+      if (!v || !shows(v)) why = 'gone';
+      else if (v.ended) why = 'ended';
+      if (why) {
+        var all = document.querySelectorAll('video');
+        for (var i = 0; i < all.length; i++) {
+          var one = all[i];
+          if (one !== v && !one.paused && !one.ended && one.readyState >= 2 && shows(one)) { why = null; break; }
+        }
+      }
+      var was = window.__officeFloatGone;
+      if (!why) { window.__officeFloatGone = null; return false; }
+      if (!was || was.why !== why) { window.__officeFloatGone = { why: why, since: Date.now() }; return false; }
+      return Date.now() - was.since >= (why === 'ended' ? 10000 : 1000);
     })();
     """
 
@@ -1176,6 +1259,9 @@ enum Isolate {
     (function () {
       var videos = document.querySelectorAll('video');
       var unseen = window.__officeFloatUnseen || function () { return false; };
+      // Floating out on its own, only a video somebody watches (see real).
+      var only = window.__officeFloatOnly;
+      window.__officeFloatOnly = null;
       // A video with a picture to show, before one without: YouTube Music
       // plays a song through a video that is hidden, or has no picture at
       // all, and shows the album's cover beside it. Floated as a video, the
@@ -1188,6 +1274,7 @@ enum Isolate {
       for (var i = 0; i < videos.length; i++) {
         var v = videos[i];
         if ((v.paused && !unseen(v)) || v.ended || v.readyState < 2) continue;
+        if (only && !only(v)) continue;
         var box = v.getBoundingClientRect();
         if (!pictured(v)) {
           if (box.width * box.height >= most) { most = box.width * box.height; blind = v; }

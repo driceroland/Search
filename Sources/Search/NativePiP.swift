@@ -49,7 +49,9 @@ enum NativePiP {
     /// already there comes back instead. Answers "in", "out", "none" (no
     /// video playing) or "refused".
     static func script(toggle: Bool) -> String {
-        """
+        // Leaving a tab or the app, only a video somebody watches (see
+        // Isolate.real). ⇧⌘P takes any.
+        (toggle ? "" : Isolate.real) + """
         (function () {
           var toggle = \(toggle ? "true" : "false");
           var videos = document.querySelectorAll('video');
@@ -63,10 +65,13 @@ enum NativePiP {
           // Paused by WebKit as the page went out of sight counts as
           // playing (see Isolate.watch).
           var unseen = window.__officeFloatUnseen || function () { return false; };
+          var only = toggle ? null : window.__officeFloatOnly;
+          window.__officeFloatOnly = null;
           var best = null, area = 0;
           for (var j = 0; j < videos.length; j++) {
             var w = videos[j];
             if ((w.paused && !unseen(w)) || w.ended || w.readyState < 2) continue;
+            if (only && !only(w)) continue;
             var box = w.getBoundingClientRect();
             if (box.width * box.height >= area) { area = box.width * box.height; best = w; }
           }

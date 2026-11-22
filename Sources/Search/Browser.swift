@@ -3208,6 +3208,14 @@ final class Browser: NSObject, ObservableObject {
                 MainActor.assumeIsolated { answer((playing as? Bool) ?? true) }
             }
         }
+        floater.onGone = { [weak self] answer in
+            guard let self, let id = self.floating,
+                  let tab = (self.tabs + self.parkedTabs).first(where: { $0.id == id })
+            else { return }
+            tab.web.evaluateInSearch(Isolate.gone) { gone in
+                MainActor.assumeIsolated { answer((gone as? Bool) == true) }
+            }
+        }
         floater.onClose = { [weak self] in self?.land() }
     }
 
@@ -7179,7 +7187,7 @@ final class Browser: NSObject, ObservableObject {
                 all()
             }
         }
-        tab.web.evaluateInSearch(Isolate.on) { answer in
+        tab.web.evaluateInSearch(quietly ? Isolate.quietly : Isolate.on) { answer in
             MainActor.assumeIsolated {
                 found = .some(answer)
                 all()

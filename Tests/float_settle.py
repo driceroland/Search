@@ -39,7 +39,10 @@ video{width:100%;height:100%;display:block}</style>
 <script>
 var c=document.querySelector('canvas'),g=c.getContext('2d'),n=0;
 setInterval(function(){g.fillStyle='hsl('+(n++*7%360)+',70%,50%)';g.fillRect(0,0,320,180);},40);
-var v=document.querySelector('video'); v.srcObject=c.captureStream(25); v.play();
+var v=document.querySelector('video'); v.srcObject=c.captureStream(25);
+// Heard, then muted: only a video somebody watches floats on its own
+// (Isolate.real), and a muted one is what WebKit stops out of sight.
+v.muted=false; v.play().then(function(){setTimeout(function(){v.muted=true},400);});
 var p=document.getElementById('player'), later=null;
 function fit(){var w=Math.round(innerWidth*0.6);p.style.width=w+'px';p.style.height=Math.round(w*9/16)+'px';}
 fit();
@@ -149,9 +152,9 @@ def main():
         sv.sp("open", url=f"{base}/other.html")
         tab = sv.sp("open", url=f"{base}/late.html")["resultID"]
         sv.cmd({"do": "select", "id": tab}); time.sleep(2)
-        # The video is muted, as autoplay asks: one WebKit stops as soon as
-        # nobody can see its page, which is what going to another tab did to
-        # it before it had floated.
+        # The video is muted, after it was heard: one WebKit stops as soon
+        # as nobody can see its page, which is what going to another tab did
+        # to it before it had floated.
         for via in ("key", "switch", "app"):
             round_trip(t, out, via)
             time.sleep(2)

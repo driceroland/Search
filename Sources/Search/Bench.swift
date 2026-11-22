@@ -3537,6 +3537,11 @@ final class Bench {
             // screen (after `film float`, or `float` with action `up`), and
             // nothing shown.
             guard Store.testing else { answer(["error": "float only works on a --test run"]); return }
+            // Whether the little window is up, and whose video it holds.
+            if request["action"] as? String == "showing" {
+                answer(["showing": browser.floater.showing, "floating": browser.floating?.uuidString ?? ""])
+                return
+            }
             if request["action"] as? String == "up" {
                 // The window itself, off every screen, with no video to find:
                 // the button and the size are what is under test.
