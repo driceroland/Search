@@ -67,7 +67,7 @@ enum SettingsIndex {
         .init(id: "tablook", page: .appearance, title: "Tabs", icon: "textformat.size"),
         .init(id: "motion", page: .appearance, title: "Motion", icon: "wind"),
 
-        .init(id: "themes", page: .themes, title: "Home background", icon: "photo.artframe"),
+        .init(id: "themes", page: .themes, title: "Browser colour and home background", icon: "photo.artframe"),
 
         .init(id: "newtabs", page: .tabs, title: "New tabs", icon: "plus.square"),
         .init(id: "memory", page: .tabs, title: "Memory", icon: "moon.zzz"),
@@ -160,10 +160,10 @@ enum SettingsIndex {
 
         // Themes
         .init(id: "home.theme", group: "themes", icon: "photo.artframe",
-              title: "Home background", detail: "Paint the blank tab: a wall, stickers, a colour, a gradient or your own picture",
+              title: "Browser colour and home background", detail: "Colour the whole browser with a colour or a gradient, and paint the blank tab: a wall, stickers or your own picture",
               more: "Off by default. Drawn once and kept, so it costs nothing while you browse, and only the blank tab shows it. A picture you choose is copied inside Search; nothing leaves your Mac.",
-              keys: ["home.theme", "home.theme.image", "home.tuning", "home.shuffle"],
-              words: ["themes", "wallpaper", "background", "mural", "painting", "scenery", "shuffle", "stickers", "gradient", "colour", "color", "new tab", "image"],
+              keys: ["browser.theme", "home.theme", "home.theme.image", "home.tuning", "home.shuffle"],
+              words: ["themes", "wallpaper", "background", "mural", "painting", "scenery", "shuffle", "stickers", "gradient", "colour", "color", "new tab", "image", "arc", "browser colour", "window colour", "tint", "strength"],
               kind: .wide),
 
         // Appearance
