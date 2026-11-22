@@ -18,10 +18,11 @@ struct ThemesPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            browserColours
-
-            Text("Home background")
+            Text("Theme")
                 .font(.system(size: 13, weight: .semibold))
+            Text("Paints the blank tab and colours the whole window with it: the tabs, the bars and the ground around the page. A space with a colour of its own keeps it.")
+                .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
             mock
 
             Picker("", selection: Binding(get: { family }, set: choose)) {
@@ -65,78 +66,85 @@ struct ThemesPage: View {
             if family != .off && (family != .image || HomeBackground.load(prefs.homeThemeImage) != nil) {
                 sliders
             }
+
+            if prefs.browserTheme.look != nil {
+                HStack(spacing: 10) {
+                    Text("Window")
+                        .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                        .frame(width: 64, alignment: .leading)
+                    Picker("", selection: Binding(get: { prefs.browserTheme.strength },
+                                                  set: { value in prefs.browserTheme.strength = value })) {
+                        ForEach(SpaceStrength.allCases, id: \.self) { Text($0.name).tag($0) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 260)
+                }
+            }
+        }
+        .onAppear(perform: follow)
+        .onChange(of: prefs.homeTheme) { _, _ in follow() }
+        .onChange(of: prefs.homeTuning) { _, _ in follow() }
+        .onChange(of: prefs.homeThemeImage) { _, _ in follow() }
+    }
+
+    // MARK: - the window follows
+
+    /// The theme colours the whole window too: the tabs, the bars and the
+    /// ground around the page take the background's colours. A solid or a
+    /// gradient gives its own; a wall, stickers or a picture the colours at
+    /// its top and its bottom. A space with a colour of its own keeps it.
+    private func follow() {
+        var next = prefs.browserTheme
+        next.colour = 0
+        next.gradient = Self.windowColours(prefs.homeTheme, prefs.homeTuning, image: prefs.homeThemeImage,
+                                           grain: prefs.browserTheme.gradient?.grain ?? false)
+        if next != prefs.browserTheme { prefs.browserTheme = next }
+    }
+
+    static func windowColours(_ theme: HomeTheme, _ tuning: HomeTuning, image: String?, grain: Bool) -> SpaceGradient? {
+        switch theme {
+        case .off: return nil
+        case .solid: return SpaceGradient(colours: [tuning.solid, tuning.solid], grain: grain)
+        case .gradient: return SpaceGradient(colours: [tuning.gradientA, tuning.gradientB], angle: tuning.angle, grain: grain)
+        case .custom:
+            return HomeBackground.load(image).flatMap { ends(of: $0) }
+                .map { SpaceGradient(colours: $0, angle: 180, grain: grain) }
+        default:
+            var full = tuning
+            full.intensity = 1
+            return HomeRender.image(theme, full, size: CGSize(width: 64, height: 40), dark: false, scale: 1, calm: false)
+                .flatMap { ends(of: $0) }
+                .map { SpaceGradient(colours: $0, angle: 180, grain: grain) }
         }
     }
 
-    // MARK: - the browser's colour
-
-    private func setBrowser(_ change: (inout BrowserTheme) -> Void) {
-        var theme = prefs.browserTheme
-        change(&theme)
-        prefs.browserTheme = theme
+    /// A picture's colour at the top and at the bottom: it squeezed to one
+    /// pixel across and two down, which averages each half.
+    private static func ends(of picture: NSImage) -> [String]? {
+        guard let cg = picture.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let context = CGContext(data: nil, width: 1, height: 2, bitsPerComponent: 8, bytesPerRow: 4,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
+              let tiny = squeeze(cg)
+        else { return nil }
+        context.interpolationQuality = .high
+        context.draw(tiny, in: CGRect(x: 0, y: 0, width: 1, height: 2))
+        guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        func hex(_ at: Int) -> String { String(format: "#%02X%02X%02X", data[at], data[at + 1], data[at + 2]) }
+        // Row 0 of the buffer is the top.
+        return [hex(0), hex(4)]
     }
 
-    /// The colour of the whole window, as in Arc: one of the colours, a
-    /// ready-made gradient or one of your own, and how strongly it shows. A
-    /// space with a colour of its own (its menu › Colour…) keeps it.
-    private var browserColours: some View {
-        let theme = prefs.browserTheme
-        let gradient = theme.gradient.flatMap { $0.usable ? $0 : nil }
-        return VStack(alignment: .leading, spacing: 12) {
-            Text("Browser colour")
-                .font(.system(size: 13, weight: .semibold))
-            Text("Colours the tabs, the bars and the ground around the page. A space with a colour of its own keeps it.")
-                .font(.system(size: 12)).foregroundStyle(Palette.muted)
-
-            ColourSwatches(selected: gradient == nil ? theme.colour : nil) { index in
-                setBrowser { $0.colour = index; $0.gradient = nil }
-            }
-
-            HStack(spacing: 10) {
-                ForEach(SpaceGradient.presets.indices, id: \.self) { at in
-                    let preset = SpaceGradient.presets[at]
-                    ColourSwatches.swatch(selected: gradient?.colours == preset.gradient.colours, name: preset.name,
-                                          action: {
-                        setBrowser {
-                            $0.gradient = SpaceGradient(colours: preset.gradient.colours,
-                                                        angle: gradient?.angle ?? SpaceGradient.defaultAngle,
-                                                        grain: gradient?.grain ?? false)
-                        }
-                    }) {
-                        Circle().fill(LinearGradient(stops: preset.gradient.stops(count: 8),
-                                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                    }
-                }
-            }
-
-            if let gradient {
-                HStack(spacing: 16) {
-                    ForEach(gradient.colours.indices, id: \.self) { index in
-                        ColorPicker("Colour \(index + 1)", selection: Binding(
-                            get: { Color(hex: gradient.colours[index]) },
-                            set: { colour in
-                                setBrowser { if var g = $0.gradient, g.colours.indices.contains(index) { g.colours[index] = colour.hex; $0.gradient = g } }
-                            }), supportsOpacity: false)
-                    }
-                }
-                ThemeSlider(title: "Angle", value: gradient.angle, range: 0...360, unit: "°") { angle in
-                    setBrowser { if var g = $0.gradient { g.angle = angle; $0.gradient = g } }
-                }
-                Toggle("Grain", isOn: Binding(get: { gradient.grain }, set: { on in
-                    setBrowser { if var g = $0.gradient { g.grain = on; $0.gradient = g } }
-                }))
-                .toggleStyle(.checkbox)
-                .font(.system(size: 12))
-            }
-
-            if theme.look != nil {
-                Picker("Strength", selection: Binding(get: { theme.strength }, set: { value in setBrowser { $0.strength = value } })) {
-                    ForEach(SpaceStrength.allCases, id: \.self) { Text($0.name).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 260)
-            }
-        }
+    /// Down to 8×8 first, so the last step averages rather than picks.
+    private static func squeeze(_ image: CGImage) -> CGImage? {
+        guard let context = CGContext(data: nil, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 32,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: 8, height: 8))
+        return context.makeImage()
     }
 
     // MARK: - the live preview

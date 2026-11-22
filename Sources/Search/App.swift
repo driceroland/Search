@@ -67,6 +67,8 @@ struct SearchApp: App {
                 }
                 Button("New Tab") { browser.launch() }
                     .shortcut("file.newTab")
+                Button("New Blank Tab") { browser.newTab() }
+                    .shortcut("file.newBlankTab")
                 Button("New Private Tab") { browser.newShyTab() }
                     .shortcut("file.newPrivateTab")
                 Button(browser.reopenTitle) { browser.reopen() }
@@ -1621,6 +1623,7 @@ struct ContentView: View {
         if let popup = Browsers.browser(for: event.window), popup.isPopup {
             if popup.websitePopup, let combo = KeyCombo(event: event) {
                 if combo == ShortcutStore.shared.key(for: "file.newTab") { popup.newTab(); return true }
+                if combo == ShortcutStore.shared.key(for: "file.newBlankTab") { popup.newTab(); return true }
                 if combo == ShortcutStore.shared.key(for: "file.newPrivateTab") { popup.newShyTab(); return true }
             }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
