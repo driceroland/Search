@@ -213,7 +213,7 @@ struct SideBar: View {
                     // moved, they were laid out again at every frame of it.
                     .overlay(alignment: .trailing) {
                         if prefs.doorsUp {
-                            SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, up: true, width: upRoom)
+                            SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, up: true, live: doorsTop, width: upRoom)
                                 .fixedSize()
                                 .opacity(doorsTop ? 1 : 0)
                                 .animation(doorsTop ? SideBar.doorsIn : SideBar.doorsOut, value: doorsTop)
@@ -1578,7 +1578,7 @@ struct SideBar: View {
 
     /// One small door at the bottom: the settings.
     private var foot: some View {
-        SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, vertical: icons, width: width)
+        SideFoot(browser: browser, prefs: prefs, fetches: browser.fetches, vertical: icons, live: doorsFoot, width: width)
     }
 
 }
@@ -1598,6 +1598,9 @@ private struct SideFoot: View {
     /// Up in the lights' row, right of back, forward and reload, laid out
     /// to its far end: `width` is then what that row has left.
     var up = false
+    /// Whether this row is the one drawn; the other is kept, hidden, and must
+    /// not take the downloads list's card for itself (see FetchDoor.live).
+    var live = true
     /// The column's width, as it is drawn; up, the room right of the helm.
     let width: CGFloat
 
@@ -1606,7 +1609,7 @@ private struct SideFoot: View {
             VStack(spacing: 2) {
                 // An agent connected in this window: a click on it is Stop.
                 AgentStatus(browser: browser, style: .icon)
-                FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
+                FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
                 ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
                 BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 SpaceButtons(browser: browser, vertical: true)
@@ -1623,7 +1626,7 @@ private struct SideFoot: View {
             HStack(spacing: 2) {
                 if Profiles.shared.several { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser, names: false) }
-                FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom)
+                FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom, live: live)
                 BookmarkDoor(browser: browser, arrowEdge: .bottom)
                 SpaceButtons(browser: browser)
                 ExtensionSlot(browser: browser, edge: .bottom, room: room)
@@ -1636,7 +1639,7 @@ private struct SideFoot: View {
                 BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 SpaceButtons(browser: browser)
                 // Only while a download is running, and a moment after.
-                FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
+                FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
                 // With a button per space the row is centred under the
                 // column: at one side, a row of spaces read as a toolbar
                 // that had slid off. Otherwise at the side, as it always was.

@@ -40,6 +40,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- The Downloads card stands by the button you clicked when Settings › Appearance › Tabs › Buttons at the top is on and the column is too narrow for them there: it hung from the top of the column instead of beside the downloads button at its foot. `swift test --filter DownloadsAnchorTests` ([#1350](https://github.com/driceroland/Search/issues/1350))
 - Floating a song on YouTube Music shows its album cover: the little window showed the player's buttons and its Up next and Lyrics tabs, since the song's video there is hidden or has no picture. With no cover to show, such a page doesn't float. `python3 Tests/float_song.py`
 - ⇧⌘T on a page closed out of a Split View puts it back in the split with its Back and Forward again: it came back on the right page but with no history behind it. `python3 Tests/reopen_history.py`
 - Escape answers no again to a camera or microphone question in a site's small pop-up window: since 1.0.13 a pop-up opened in front kept its keys from every window, so its question stayed up. `python3 Tests/website_popups.py`
