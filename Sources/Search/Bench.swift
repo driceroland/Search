@@ -5905,6 +5905,16 @@ final class Bench {
             // Settings › Extensions › From Safari apps: what it would list.
             // In a test run, "in" names other folders to look through.
             let places = Store.testing ? (request["in"] as? [String])?.map { URL(fileURLWithPath: $0, isDirectory: true) } : nil
+            // "add": a folder, added the way its Add button does — the
+            // button's own check decides, even for one no longer listed.
+            if let add = request["add"] as? String {
+                let folder = URL(fileURLWithPath: add, isDirectory: true)
+                let item = SafariApps.scan(in: places ?? SafariApps.places).first { $0.folder.path == add }
+                    ?? SafariApps.Found(app: "?", appPath: "", name: "?", folder: folder, id: Crx.unpackedID(for: folder))
+                SafariApps.add(item, to: extensions, confirm: !skip)
+                answer(["adding": item.id])
+                return
+            }
             answer(["on": SafariApps.on, "found": SafariApps.scan(in: places ?? SafariApps.places).map {
                 ["app": $0.app, "name": $0.name, "folder": $0.folder.path, "id": $0.id]
             }])

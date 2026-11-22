@@ -134,7 +134,7 @@ struct ExtensionsPage: View {
                                 if extensions.installed.contains(where: { $0.id == item.id }) {
                                     Text("Added").font(.system(size: 12)).foregroundStyle(Palette.muted)
                                 } else {
-                                    Pill("Add") { extensions.installFolder(at: item.folder) }
+                                    Pill("Add") { SafariApps.add(item, to: extensions) }
                                 }
                             }
                         }

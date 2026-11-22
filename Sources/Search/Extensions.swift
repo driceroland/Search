@@ -37,6 +37,10 @@ struct Installed: Codable, Identifiable, Equatable {
     /// bring the author's latest edits in. Kept with its links resolved:
     /// the path its id was worked out from.
     var source: String? = nil
+    /// For one added from Settings › Extensions › From Safari apps: the app
+    /// it came in. Reload then copies only while that app's signature still
+    /// holds (SafariApps.still).
+    var fromApp: String? = nil
 
     /// Whether Reload may copy from `source` under this id: a link put on
     /// the way since would bring in another folder, which has another id.
@@ -886,7 +890,7 @@ final class Extensions: NSObject, ObservableObject {
         installFolder(at: source)
     }
 
-    func installFolder(at source: URL, confirm: Bool = true) {
+    func installFolder(at source: URL, confirm: Bool = true, fromApp: String? = nil) {
         guard FileManager.default.fileExists(atPath: source.appendingPathComponent("manifest.json").path) else {
             browser?.announce("That folder has no manifest.json")
             return
@@ -906,7 +910,7 @@ final class Extensions: NSObject, ObservableObject {
                 try FileManager.default.copyItem(at: source.resolvingSymlinksInPath(), to: staged)
                 try Extensions.unlinkOutside(staged)
                 try ExtensionShims.prepare(staged, fresh: true)
-                try await admit(staged, as: id, fromStore: false, finalFolder: Extensions.folder(for: id), confirm: confirm || !Store.testing, source: source)
+                try await admit(staged, as: id, fromStore: false, finalFolder: Extensions.folder(for: id), confirm: confirm || !Store.testing, source: source, fromApp: fromApp)
             } catch {
                 browser?.announce("Couldn't install the extension: \(error.localizedDescription)")
             }
@@ -936,6 +940,12 @@ final class Extensions: NSObject, ObservableObject {
                 guard original.sourceKeepsID else {
                     browser?.announce("\(original.name) wasn't reloaded — its folder now leads somewhere else")
                     return
+                }
+                if original.fromApp != nil {
+                    guard await Task.detached(priority: .userInitiated, operation: { SafariApps.still(source) }).value else {
+                        browser?.announce("\(original.name) wasn't reloaded — its app's signature doesn't check out")
+                        return
+                    }
                 }
                 do {
                     try FileManager.default.copyItem(at: source.resolvingSymlinksInPath(), to: staged)
@@ -1158,11 +1168,11 @@ final class Extensions: NSObject, ObservableObject {
 
     /// Reads what was unpacked, asks, and — on yes — moves it into place and
     /// loads it. On no, nothing is left behind.
-    private func admit(_ staged: URL, as id: String, fromStore: Bool, finalFolder: URL, confirm: Bool = true, source: URL? = nil) async throws {
+    private func admit(_ staged: URL, as id: String, fromStore: Bool, finalFolder: URL, confirm: Bool = true, source: URL? = nil, fromApp: String? = nil) async throws {
         let found = try await WKWebExtension(resourceBaseURL: staged)
         let name = found.displayName ?? id
         let wants = Extensions.describe(found, in: staged)
-        let accepted = confirm ? await ask(install: name, wants: wants, icon: found.icon(for: CGSize(width: 64, height: 64))) : true
+        let accepted = confirm ? await ask(install: name, wants: wants, icon: found.icon(for: CGSize(width: 64, height: 64)), fromApp: fromApp) : true
         guard accepted, !installed.contains(where: { $0.id == id }) else { return }
         let permissions = Extensions.grants(found, in: staged)
         try ExtensionFiles.replace(staged, at: finalFolder)
@@ -1172,7 +1182,8 @@ final class Extensions: NSObject, ObservableObject {
         let item = Installed(
             id: id, name: name, version: found.version ?? "?", enabled: true, fromStore: fromStore,
             permissions: permissions,
-            source: source?.path
+            source: source?.path,
+            fromApp: fromApp
         )
         installed.removeAll { $0.id == id }
         installed.append(item)
@@ -1727,10 +1738,11 @@ final class Extensions: NSObject, ObservableObject {
         return out
     }
 
-    func ask(install name: String, wants: [String], icon: NSImage?, updating: Bool = false) async -> Bool {
+    func ask(install name: String, wants: [String], icon: NSImage?, updating: Bool = false, fromApp: String? = nil) async -> Bool {
         await ask(
             "Add “\(name)” to Search?",
-            detail: wants.isEmpty ? "It doesn't ask for anything special." : "It will be able to:\n• " + wants.joined(separator: "\n• "),
+            detail: (fromApp.map { "From the Safari extension in “\($0)”.\n\n" } ?? "")
+                + (wants.isEmpty ? "It doesn't ask for anything special." : "It will be able to:\n• " + wants.joined(separator: "\n• ")),
             icon: icon, yes: "Add Extension", no: "Cancel", updating: updating
         )
     }

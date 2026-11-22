@@ -13,6 +13,11 @@ Apps made here, in a folder of this run's:
   worker), a Safari content blocker (another point, no manifest) and a
   "web extension" whose Resources is a link out of the app;
 - Tools/Nested.app, one folder down, carries another.
+- Odd.app carries web extensions that must not be listed: unsigned, signed
+  then changed, a manifest that is a link to /dev/zero, a pipe, or far too
+  big, and Resources linked to another folder of the same app.
+The extensions are signed ad hoc (a test run takes any signature that holds;
+a real one only Apple, the Mac App Store or a Developer ID).
 What is checked:
 - the switch is off unless turned on;
 - only the two web extensions are listed, named from their manifests, each
@@ -20,6 +25,8 @@ What is checked:
 - Add (the unpacked-extension path) loads one; its worker runs, and its
   `sendNativeMessage` to its own app is refused: nothing of the app runs;
 - the app's files are exactly as they were, bytes and dates;
+- Add and Reload check again: once the extension is changed after it was
+  listed, Add refuses it and Reload keeps the copy it has;
 - with SEARCH_REAL_SAFARI=1, the same for the first one found in
   /Applications (read only, as above).
 """
@@ -28,6 +35,7 @@ import json
 import os
 import plistlib
 import shutil
+import stat as st_
 import subprocess
 import sys
 import tempfile
@@ -61,25 +69,34 @@ chrome.runtime.sendNativeMessage('com.example.kit', { hello: 1 })
 """
 
 
-def appex(app, name, point, manifest=None, link_to=None):
+def sign(appex_dir):
+    subprocess.run(["codesign", "-f", "-s", "-", str(appex_dir)], check=True, capture_output=True)
+
+
+def appex(app, name, point, manifest=None, link_to=None, signed=True):
     ex = app / "Contents/PlugIns" / f"{name}.appex" / "Contents"
     ex.mkdir(parents=True)
     with open(ex / "Info.plist", "wb") as f:
-        plistlib.dump({"CFBundleIdentifier": f"com.example.{name}", "NSExtension": {"NSExtensionPointIdentifier": point}}, f)
+        plistlib.dump({"CFBundleIdentifier": f"com.example.{name}", "CFBundleExecutable": name,
+                       "CFBundlePackageType": "XPC!", "NSExtension": {"NSExtensionPointIdentifier": point}}, f)
     (ex / "MacOS").mkdir()
-    (ex / "MacOS" / name).write_text("#!/bin/sh\ntouch " + str(work / f"{name}-ran") + "\n")
-    os.chmod(ex / "MacOS" / name, 0o755)
+    # A real program (a copy of /usr/bin/true) so the extension can be
+    # signed; that it never runs is checked by the apps' dates and bytes.
+    shutil.copy("/usr/bin/true", ex / "MacOS" / name)
     if link_to:
         os.symlink(link_to, ex / "Resources")
-        return
-    res = ex / "Resources"
-    res.mkdir()
-    if manifest:
-        (res / "manifest.json").write_text(json.dumps(manifest))
-        (res / "sw.js").write_text(WORKER)
-        (res / "page.html").write_text("<!doctype html><title>kit page</title>")
     else:
-        (res / "blockerList.json").write_text('[{"trigger":{"url-filter":"ads"},"action":{"type":"block"}}]')
+        res = ex / "Resources"
+        res.mkdir()
+        if manifest:
+            (res / "manifest.json").write_text(json.dumps(manifest))
+            (res / "sw.js").write_text(WORKER)
+            (res / "page.html").write_text("<!doctype html><title>kit page</title>")
+        else:
+            (res / "blockerList.json").write_text('[{"trigger":{"url-filter":"ads"},"action":{"type":"block"}}]')
+    if signed:
+        sign(ex.parent)
+    return ex.parent
 
 
 def make_apps(root):
@@ -98,6 +115,27 @@ def make_apps(root):
     nested = root / "Tools" / "Nested.app"
     (nested / "Contents/MacOS").mkdir(parents=True)
     appex(nested, "NestedWeb", "com.apple.Safari.web-extension", {**mv3, "name": "__MSG_name__"})
+    odd = root / "Odd.app"
+    (odd / "Contents/MacOS").mkdir(parents=True)
+    appex(odd, "Unsigned", "com.apple.Safari.web-extension", {**mv3, "name": "Unsigned"}, signed=False)
+    changed = appex(odd, "Changed", "com.apple.Safari.web-extension", {**mv3, "name": "Changed"})
+    with open(changed / "Contents/Resources/sw.js", "a") as f:
+        f.write("\n// changed after signing\n")
+    zero = appex(odd, "Zero", "com.apple.Safari.web-extension", {**mv3, "name": "Zero"}, signed=False)
+    (zero / "Contents/Resources/manifest.json").unlink()
+    os.symlink("/dev/zero", zero / "Contents/Resources/manifest.json")
+    sign(zero)
+    pipe = appex(odd, "Pipe", "com.apple.Safari.web-extension", {**mv3, "name": "Pipe"}, signed=False)
+    (pipe / "Contents/Resources/manifest.json").unlink()
+    os.mkfifo(pipe / "Contents/Resources/manifest.json")
+    big = appex(odd, "Big", "com.apple.Safari.web-extension", {**mv3, "name": "Big"}, signed=False)
+    with open(big / "Contents/Resources/manifest.json", "r+b") as f:
+        f.seek(3 << 30)
+        f.write(b" ")
+    elsewhere = odd / "Contents/Shared"
+    elsewhere.mkdir()
+    (elsewhere / "manifest.json").write_text(json.dumps({**mv3, "name": "Side Door"}))
+    appex(odd, "Side", "com.apple.Safari.web-extension", link_to="../../../Shared")
     return kit
 
 
@@ -108,7 +146,9 @@ def tree(app):
         for n in filenames + [d for d in dirnames if os.path.islink(os.path.join(dirpath, d))]:
             p = os.path.join(dirpath, n)
             st = os.lstat(p)
-            data = b"" if os.path.islink(p) else open(p, "rb").read()
+
+            plain = st_.S_ISREG(st.st_mode) and st.st_size < (64 << 20)
+            data = open(p, "rb").read() if plain else str(st.st_size).encode()
             out[os.path.relpath(p, app)] = (hashlib.sha256(data).hexdigest(), st.st_mtime_ns)
     return out
 
@@ -151,8 +191,9 @@ def main():
     try:
         sv.setup()
         sv.launch()
+        began = time.time()
         got = sv.cmd({"do": "ext-safari", "in": [str(apps)]})
-        print(f"       {got}")
+        print(f"       {got}  ({time.time() - began:.1f}s)")
         t.ok("off unless turned on", got["on"] is False, got)
         found = got["found"]
         names = sorted(f["name"] for f in found)
@@ -163,7 +204,12 @@ def main():
         t.ok("not the content blocker, nor the one linked out of its app",
              not any(f["folder"].endswith(("KitBlocker.appex/Contents/Resources", "outside")) for f in found), found)
 
-        sv.cmd({"do": "ext-folder", "path": kitweb["folder"], "yes": True})
+        t.ok("nothing of Odd.app (unsigned, changed, /dev/zero, pipe, 3 GB, side door)",
+             not any(f["app"] == "Odd" for f in found), found)
+        t.ok("the look through takes under 10 s", time.time() - began < 10)
+
+        added = sv.cmd({"do": "ext-safari", "in": [str(apps)], "add": kitweb["folder"], "yes": True})
+        t.ok("Add takes it", added.get("adding") == kitweb["id"], added)
         ext = loaded(kitweb["id"])
         t.ok("Add loads it, under the id the card names", ext is not None, ext)
         if ext:
@@ -172,6 +218,44 @@ def main():
             t.ok("its sendNativeMessage to its app is refused", isinstance(native, str) and native.startswith("refused"), native)
             listed = sv.cmd({"do": "ext-safari", "in": [str(apps)]})["found"]
             t.ok("listed again once added, same id", any(f["id"] == ext["id"] for f in listed), listed)
+            # Changed since it was listed: Add and Reload refuse.
+            nested = next(f for f in found if f["name"] == "Nested")
+            res = Path(nested["folder"])
+            with open(res / "sw.js", "a") as f:
+                f.write("\n// changed after listing\n")
+            sv.cmd({"do": "ext-safari", "in": [str(apps)], "add": nested["folder"], "yes": True})
+            time.sleep(4)
+            t.ok("Add refuses one changed since it was listed", not loaded(nested["id"], within=2))
+            sw = Path(kitweb["folder"]) / "sw.js"
+            sw.write_text(WORKER + "\nchrome.storage.local.set({ reloaded: 'tampered' });\n")
+            sv.cmd({"do": "ext-reload", "id": ext["id"]})
+            time.sleep(4)
+            page = sv.cmd({"do": "ext-page", "id": ext["id"], "path": "page.html"})["id"]
+            try:
+                time.sleep(1)
+                sv.ev(page, "fetch('/sw.js').then((r) => r.text()).then((x) => window.__sw = x); 1")
+                time.sleep(0.6)
+                now = sv.ev(page, "window.__sw")
+            finally:
+                sv.cmd({"do": "close", "id": page})
+            t.ok("Reload keeps its copy once the app's extension was changed", isinstance(now, str) and "tampered" not in now, (now or "")[-80:])
+            # And once signed again, Reload takes the change.
+            sw.write_text(WORKER + "\n// fresh\n")
+            sign(sw.parent.parent.parent)
+            sv.cmd({"do": "ext-reload", "id": ext["id"]})
+            time.sleep(4)
+            page = sv.cmd({"do": "ext-page", "id": ext["id"], "path": "page.html"})["id"]
+            try:
+                time.sleep(1)
+                sv.ev(page, "fetch('/sw.js').then((r) => r.text()).then((x) => window.__sw = x); 1")
+                time.sleep(0.6)
+                now = sv.ev(page, "window.__sw")
+            finally:
+                sv.cmd({"do": "close", "id": page})
+            t.ok("… and takes it once it is signed again", isinstance(now, str) and "// fresh" in now, (now or "")[-80:])
+            sw.write_text(WORKER)
+            (res / "sw.js").write_text(WORKER)
+            before = tree(apps)
         t.ok("nothing of the apps ran", not list(work.glob("*-ran")), list(work.glob("*-ran")))
         t.ok("the apps' files are as they were, bytes and dates", tree(apps) == before)
 

@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// Safari web extensions that come inside Mac apps (idea 888, #1272). Such an
 /// app carries its extension's manifest and scripts unpacked, in
@@ -8,6 +9,8 @@ import Foundation
 /// ~/Applications; Add copies that folder in as any unpacked extension
 /// (Extensions.installFolder), asking first with what it wants.
 ///
+/// Only an extension whose .appex carries a signature that holds (Apple,
+/// Mac App Store or Developer ID) is listed, checked again on Add and Reload.
 /// Read only: nothing in another app's bundle is ever written, and nothing in
 /// it runs but the extension's own JavaScript, in Search's extension
 /// sandbox. The app's native code (the .appex's executable, the app itself)
@@ -68,29 +71,93 @@ enum SafariApps {
         return found.sorted { "\($0.app) \($0.name)".localizedStandardCompare("\($1.app) \($1.name)") == .orderedAscending }
     }
 
-    /// The Safari web extensions inside one app.
+    /// The Safari web extensions inside one app. Each must be sealed by a
+    /// signature that holds (`vouched`), its Resources a real folder of the
+    /// .appex itself (no link anywhere on the way), its Info.plist and
+    /// manifest.json plain files of a sane size.
     static func extensions(in app: URL) -> [Found] {
         let plugins = app.appendingPathComponent("Contents/PlugIns", isDirectory: true)
         guard let appexes = try? FileManager.default.contentsOfDirectory(at: plugins, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }
         let appName = FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "")
         let appReal = Crx.realPath(of: app)
         return appexes.filter { $0.pathExtension == "appex" }.compactMap { appex in
-            guard let info = NSDictionary(contentsOf: appex.appendingPathComponent("Contents/Info.plist")) as? [String: Any],
+            let appexReal = Crx.realPath(of: appex)
+            guard appexReal.hasPrefix(appReal + "/"),
+                  let plist = small(appex.appendingPathComponent("Contents/Info.plist"), limit: 256 << 10),
+                  let info = (try? PropertyListSerialization.propertyList(from: plist, format: nil)) as? [String: Any],
                   (info["NSExtension"] as? [String: Any])?["NSExtensionPointIdentifier"] as? String == point
             else { return nil }
             let resources = appex.appendingPathComponent("Contents/Resources", isDirectory: true)
-            // Its manifest, really inside the app: a link out of the bundle
-            // would make "from this app" a lie about where the code comes from.
+            // Its manifest, really inside the extension: a link out of it
+            // would make "from this app" a lie about where the code comes
+            // from, and put files the signature doesn't seal in its place.
             let real = Crx.realPath(of: resources)
-            guard real.hasPrefix(appReal + "/"),
-                  let data = try? Data(contentsOf: resources.appendingPathComponent("manifest.json")),
-                  data.count < 1 << 20,
-                  let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            guard real == appexReal + "/Contents/Resources",
+                  let data = small(resources.appendingPathComponent("manifest.json"), limit: 1 << 20),
+                  let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  vouched(URL(fileURLWithPath: appexReal, isDirectory: true))
             else { return nil }
             let given = (manifest["name"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
-            let name = given.isEmpty || given.hasPrefix("__MSG_") ? appName : given
+            let name = given.isEmpty || given.hasPrefix("__MSG_") ? appName : String(given.prefix(80))
             let folder = URL(fileURLWithPath: real, isDirectory: true)
             return Found(app: appName, appPath: app.path, name: name, folder: folder, id: Crx.unpackedID(for: folder))
         }
+    }
+
+    /// Whether `folder` (a Found's) is still a Safari web extension that
+    /// `extensions(in:)` would list, signature and all: checked again on Add
+    /// and on Reload, as the app may have changed since it was listed.
+    static func still(_ folder: URL) -> Bool {
+        let real = URL(fileURLWithPath: Crx.realPath(of: folder), isDirectory: true)
+        guard real.path == folder.path, real.lastPathComponent == "Resources" else { return false }
+        // Resources → Contents → X.appex → PlugIns → Contents → X.app
+        let appex = real.deletingLastPathComponent().deletingLastPathComponent()
+        let app = appex.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        guard appex.pathExtension == "appex", app.pathExtension == "app" else { return false }
+        return extensions(in: app).contains { $0.folder.path == real.path }
+    }
+
+    /// Adds `item` through the unpacked-extension path, once `still` says it
+    /// is what was listed.
+    @available(macOS 15.4, *)
+    @MainActor static func add(_ item: Found, to extensions: Extensions, confirm: Bool = true) {
+        Task {
+            let holds = await Task.detached(priority: .userInitiated) { still(item.folder) }.value
+            guard holds else {
+                extensions.browser?.announce("\(item.name) wasn't added — \(item.app) has changed or isn't signed")
+                return
+            }
+            extensions.installFolder(at: item.folder, confirm: confirm, fromApp: item.app)
+        }
+    }
+
+    /// What Safari itself would take: a signature that holds over the
+    /// .appex and every file it seals, from Apple, the Mac App Store or a
+    /// Developer ID. A test run takes any signature that holds (its made-up
+    /// apps are signed ad hoc), never none.
+    static func vouched(_ appex: URL) -> Bool {
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(appex as CFURL, [], &code) == errSecSuccess, let code else { return false }
+        var requirement: SecRequirement?
+        if !Store.testing {
+            let text = "anchor apple or (anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9] exists)"
+                + " or (anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists)"
+            guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess else { return false }
+        }
+        let flags = SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckNestedCode)
+        return SecStaticCodeCheckValidity(code, flags, requirement) == errSecSuccess
+    }
+
+    /// A plain file's bytes, if it is one (not a link, a pipe or a device)
+    /// and no bigger than `limit`; read without following links or waiting.
+    static func small(_ file: URL, limit: Int) -> Data? {
+        let fd = open(file.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { return nil }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var st = stat()
+        guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG, st.st_size <= limit,
+              let data = try? handle.read(upToCount: limit + 1), data.count <= limit
+        else { return nil }
+        return data
     }
 }
