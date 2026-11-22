@@ -88,11 +88,14 @@ def main():
         sv.cmd({"do": "press", "code": 53, "chars": "\x1b", "mods": ["ctrl"]}); time.sleep(0.4)
         # Tabs and small windows managed from the switcher, ⌃ held.
         def press(code, ch): sv.cmd({"do": "press", "code": code, "chars": ch, "mods": ["ctrl"]}); time.sleep(0.6)
+        # The keys are always on since the Settings rework; a test turns
+        # them off to see the switcher without them.
+        sv.cmd({"do": "switcher", "keys": False})
         sv.cmd(CTRL_TAB); time.sleep(0.8)
         pick = switcher()["selected"]
         press(46, "m")
         s = switcher()
-        t.ok("off, as it is unless turned on: ⌃M puts the switcher away and mutes nothing",
+        t.ok("keys off: ⌃M puts the switcher away and mutes nothing",
              not s["visible"] and pick not in s["muted"], s)
         sv.cmd({"do": "switcher", "keys": True})
         sv.cmd(CTRL_TAB); time.sleep(0.8)
