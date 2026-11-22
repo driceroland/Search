@@ -760,10 +760,11 @@ struct ContentView: View {
             .transition(.opacity)
     }
 
-    /// The bookmarks bar is up: asked for, there are bookmarks, and the tabs
-    /// aren't folded away or under a video filling the screen.
+    /// The bookmarks bar is up: asked for, there are bookmarks, the tabs
+    /// aren't folded away or under a video filling the screen, and it isn't
+    /// in the column instead (SideBookmarks).
     private var barShown: Bool {
-        browser.prefs.bookmarksBar && !browser.bookmarks.isEmpty && !browser.folded
+        browser.prefs.bookmarksBar && !browser.prefs.sideBookmarks && !browser.bookmarks.isEmpty && !browser.folded
             && fullscreenTab == nil
     }
 

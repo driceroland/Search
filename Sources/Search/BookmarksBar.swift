@@ -35,13 +35,7 @@ struct BookmarksBar: View {
                             MiddleClick { browser.pickBookmark(url, inNewTab: true) }
                         }
                     }
-                    .contextMenu {
-                        if node.isFolder {
-                            folderMenu(node)
-                        } else if let url = node.url.flatMap(URL.init(string:)) {
-                            bookmarkMenu(node, url)
-                        }
-                    }
+                    .contextMenu { BookmarkActions(browser: browser, bookmarks: bookmarks, node: node) }
                 }
             }
             .padding(.horizontal, 10)
@@ -69,61 +63,6 @@ struct BookmarksBar: View {
         }
         .overlay(alignment: .bottom) {
             if !onFrame { Rectangle().fill(Palette.hairline).frame(height: 1) }
-        }
-    }
-
-    @ViewBuilder
-    private func bookmarkMenu(_ node: Bookmark, _ url: URL) -> some View {
-        Button("Open in New Tab") { browser.pickBookmark(url, inNewTab: true) }
-        Button("Open in New Window") { browser.openInNewWindow([url]) }
-        if browser.prefs.splitView {
-            Button("Open in Split View") { browser.openInSplit(url) }
-        }
-        Button("Open in Private Tab") { browser.openShy(url) }
-        Divider()
-        Button("Rename…") { bookmarks.askRename(node) }
-        Button("Edit Address…") { bookmarks.askAddress(node) }
-        Button("Copy Link") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(url.absoluteString, forType: .string)
-        }
-        Divider()
-        moveMenu(node)
-        Button("Remove", role: .destructive) { bookmarks.askRemove(node) }
-    }
-
-    @ViewBuilder
-    private func folderMenu(_ node: Bookmark) -> some View {
-        let urls = (node.children ?? []).compactMap { $0.url.flatMap(URL.init(string:)) }
-        Button("Open All in New Tabs") {
-            for url in urls { browser.open(url, foreground: false, atEnd: true, from: browser.active, mayWait: true) }
-        }
-        .disabled(urls.isEmpty)
-        Button("Open All in New Window") { browser.openInNewWindow(urls) }
-            .disabled(urls.isEmpty)
-        if browser.prefs.usesTabGroups {
-            Button("Open All in Tab Group") { browser.openInTabGroup(urls, named: node.title) }
-                .disabled(urls.isEmpty)
-        }
-        Divider()
-        Button("Rename…") { bookmarks.askRename(node) }
-        Button("New Folder Inside…") { bookmarks.askNewFolder(in: node.id) }
-        Divider()
-        moveMenu(node)
-        Button("Remove", role: .destructive) { bookmarks.askRemove(node) }
-    }
-
-    @ViewBuilder
-    private func moveMenu(_ node: Bookmark) -> some View {
-        let targets = Bookmarks.folders(bookmarks.roots).filter { !Bookmarks.holds($0.node.id, node) }
-        if !targets.isEmpty {
-            Menu("Move to") {
-                ForEach(targets, id: \.node.id) { target in
-                    Button(String(repeating: "   ", count: target.depth) + target.node.title) {
-                        bookmarks.move(node.id, into: target.node.id)
-                    }
-                }
-            }
         }
     }
 
@@ -165,6 +104,188 @@ struct BookmarksBar: View {
             .onTapGesture(perform: act)
             .onHover { hovering = $0 }
             .help(node.url ?? node.title)
+        }
+    }
+}
+
+/// What a right-click on a bookmark or a folder offers, on the bar above the
+/// page and in the column alike (SideBookmarks).
+struct BookmarkActions: View {
+    let browser: Browser
+    let bookmarks: Bookmarks
+    let node: Bookmark
+
+    var body: some View {
+        if node.isFolder {
+            folderMenu(node)
+        } else if let url = node.url.flatMap(URL.init(string:)) {
+            bookmarkMenu(node, url)
+        }
+    }
+
+    @ViewBuilder
+    func bookmarkMenu(_ node: Bookmark, _ url: URL) -> some View {
+        Button("Open in New Tab") { browser.pickBookmark(url, inNewTab: true) }
+        Button("Open in New Window") { browser.openInNewWindow([url]) }
+        if browser.prefs.splitView {
+            Button("Open in Split View") { browser.openInSplit(url) }
+        }
+        Button("Open in Private Tab") { browser.openShy(url) }
+        Divider()
+        Button("Rename…") { bookmarks.askRename(node) }
+        Button("Edit Address…") { bookmarks.askAddress(node) }
+        Button("Copy Link") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        }
+        Divider()
+        moveMenu(node)
+        Button("Remove", role: .destructive) { bookmarks.askRemove(node) }
+    }
+
+    @ViewBuilder
+    func folderMenu(_ node: Bookmark) -> some View {
+        let urls = (node.children ?? []).compactMap { $0.url.flatMap(URL.init(string:)) }
+        Button("Open All in New Tabs") {
+            for url in urls { browser.open(url, foreground: false, atEnd: true, from: browser.active, mayWait: true) }
+        }
+        .disabled(urls.isEmpty)
+        Button("Open All in New Window") { browser.openInNewWindow(urls) }
+            .disabled(urls.isEmpty)
+        if browser.prefs.usesTabGroups {
+            Button("Open All in Tab Group") { browser.openInTabGroup(urls, named: node.title) }
+                .disabled(urls.isEmpty)
+        }
+        Divider()
+        Button("Rename…") { bookmarks.askRename(node) }
+        Button("New Folder Inside…") { bookmarks.askNewFolder(in: node.id) }
+        Divider()
+        moveMenu(node)
+        Button("Remove", role: .destructive) { bookmarks.askRemove(node) }
+    }
+
+    @ViewBuilder
+    func moveMenu(_ node: Bookmark) -> some View {
+        let targets = Bookmarks.folders(bookmarks.roots).filter { !Bookmarks.holds($0.node.id, node) }
+        if !targets.isEmpty {
+            Menu("Move to") {
+                ForEach(targets, id: \.node.id) { target in
+                    Button(String(repeating: "   ", count: target.depth) + target.node.title) {
+                        bookmarks.move(node.id, into: target.node.id)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The bookmarks bar at the top of the column (Settings › Appearance › Tabs
+/// › Show the bookmarks bar in the sidebar), in every space, before the pinned rows:
+/// a row for each bookmark and folder on the bar, and a line under them.
+/// A bookmark opens as it does from the bar; a folder opens as the bar's
+/// menu. With icons only, each is a tile, its name the tooltip.
+struct SideBookmarks: View {
+    let browser: Browser
+    @ObservedObject var prefs: Preferences
+    let bookmarks: Bookmarks
+    var compact = false
+
+    private static let gap: CGFloat = 2
+    /// The line under them, and the air either side of it.
+    private static let line: CGFloat = 1 + 2 * 6
+
+    /// How tall it is drawn, for the column's sums (SideBar.rowsEnd), which
+    /// can't wait for a measurement.
+    static func height(_ count: Int, row: CGFloat) -> CGFloat {
+        count == 0 ? 0 : CGFloat(count) * row + CGFloat(count - 1) * gap + line
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: compact ? .center : .leading, spacing: SideBookmarks.gap) {
+                ForEach(bookmarks.roots) { node in
+                    Row(browser: browser, prefs: prefs, bookmarks: bookmarks, node: node, compact: compact)
+                }
+            }
+            Rectangle()
+                .fill(Palette.hairline)
+                .frame(height: 1)
+                // As wide as the column's own lines (KeepLine).
+                .padding(.horizontal, compact ? 8 : 10)
+                .padding(.vertical, 6)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private struct Row: View {
+        @Environment(\.greys) private var greys
+        let browser: Browser
+        @ObservedObject var prefs: Preferences
+        let bookmarks: Bookmarks
+        let node: Bookmark
+        let compact: Bool
+        @State private var hovering = false
+
+        private var url: URL? { node.url.flatMap(URL.init(string:)) }
+        private var title: String { node.unnamed ? (node.host ?? node.title) : node.title }
+
+        var body: some View {
+            Group {
+                if compact {
+                    mark.frame(width: Metrics.iconTile, height: Metrics.iconTile)
+                } else {
+                    HStack(spacing: 8) {
+                        mark.frame(width: 15)
+                        Text(title)
+                            .font(.system(size: prefs.sideTitle))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 0)
+                        if node.isFolder {
+                            // Opens as a menu, as on the bar: not a folder
+                            // that folds open in place, as the pinned ones do.
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(Palette.muted)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: prefs.sideRow)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .foregroundStyle(prefs.highContrastText || hovering ? Palette.ink : Palette.ink.opacity(0.75))
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(hovering ? greys.hover : .clear))
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .onTapGesture {
+                if node.isFolder {
+                    BookmarkMenu.shared.popUp(node)
+                } else if let url {
+                    browser.openBookmark(url)
+                }
+            }
+            .overlay {
+                if let url { MiddleClick { browser.pickBookmark(url, inNewTab: true) } }
+            }
+            .onHover { hovering = $0 }
+            .contextMenu { BookmarkActions(browser: browser, bookmarks: bookmarks, node: node) }
+            .help(compact ? title : (node.url ?? node.title))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(node.isFolder ? .isButton : .isLink)
+        }
+
+        @ViewBuilder
+        private var mark: some View {
+            if node.isFolder {
+                Image(systemName: "folder")
+                    .font(.system(size: compact ? 12 : 11))
+                    .foregroundStyle(Palette.muted)
+            } else {
+                // Letters or icons, as the tabs show them.
+                Mark(icon: prefs.glyph == .icons ? Favicons.shared.cached(for: node.address) : nil,
+                     letter: String((node.host ?? "•").prefix(1)).uppercased(), size: compact ? 16 : 15)
+            }
         }
     }
 }

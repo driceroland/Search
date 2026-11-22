@@ -582,6 +582,12 @@ struct SideBar: View {
                             // over them, not under.
                             .zIndex(carriedPin ? 1 : 0)
                     }
+                    // The bookmarks bar, with it in the column: the same in
+                    // every space, so it stays put while the rows under it
+                    // scroll, and while a swipe brings another space in.
+                    if showsMarks {
+                        SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons)
+                    }
                     // A row too long for the window scrolls between the pins
                     // and the foot, rather than running under the lights at one
                     // end and the foot at the other. While it fits it stays a
@@ -754,6 +760,10 @@ struct SideBar: View {
                 }
                 .padding(.bottom, 10)
             }
+            if showsMarks {
+                SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons)
+                    .allowsHitTesting(false)
+            }
             // Scrolled as the column will be once the space lands, its tab
             // in the middle (see the rows' onChange), and only the lines in
             // sight made: drawn from the top, the column came in at its first
@@ -897,7 +907,13 @@ struct SideBar: View {
     private var rowsEnd: CGFloat {
         let pins = browser.squarePins.count
         let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + 10
-        return top + pinBlock + rowsHeight
+        return top + pinBlock + marksHeight + rowsHeight
+    }
+
+    /// The bookmarks bar in the column (SideBookmarks), when it is there.
+    private var showsMarks: Bool { prefs.sideBookmarks && !browser.bookmarks.isEmpty }
+    private var marksHeight: CGFloat {
+        showsMarks ? SideBookmarks.height(browser.bookmarks.roots.count, row: rowHeight) : 0
     }
 
     /// The pinned rows, the loose tabs and the row that makes another, added

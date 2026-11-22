@@ -75,6 +75,7 @@ enum SyncSettings {
         coded("privacy.clickIDs", \.removesClickIDs),
         coded("privacy.gpc", \.sendsPrivacySignal),
         coded("bookmarks.bar", \.bookmarksBar),
+        coded("bookmarks.side", \.bookmarksInSidebar),
         coded("quit.confirm", \.confirmsQuit),
     ]
 
