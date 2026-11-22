@@ -123,8 +123,8 @@ struct AtRest: Equatable {
         }
     }
 
-    /// The Mac's own list of public suffixes (see Passkeys.publicSuffix).
-    static let systemSuffix: ((String) -> Bool)? = Passkeys.publicSuffix.map { test in { test($0 as CFString) } }
+    /// The Mac's own list of public suffixes (see Registrable.publicSuffix).
+    static let systemSuffix: ((String) -> Bool)? = Registrable.publicSuffix.map { test in { test($0 as CFString) } }
 }
 
 /// Host names as they are, and as they are safe to show.

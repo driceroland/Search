@@ -93,8 +93,8 @@
     ./bench answer once|always|no|screen|window|noscreen
                                        test run: the card of a page asking for the camera, microphone or location;
                                        screen/window/noscreen answer a page asking to share your screen
-    ./bench accounts [ROW]             test run: the list under the sign-in box the caret is in (passkeys,
-                                       Apple Passwords); ROW: a click on that row, from 0
+    ./bench accounts [ROW]             test run: the list hanging from the box the caret is in (your card
+                                       in Contacts); ROW: a click on that row, from 0
     ./bench pull DX [STEPS] [MS]       test run: two fingers DX points sideways over the page (back is +) — where it went
     ./bench keyeq CHARS CODE [shift]   test run: ⌘CHARS pressed while the page has the keyboard — who took it
     ./bench import BROWSER [WHAT…] [--profile NAME|all] [--replace]

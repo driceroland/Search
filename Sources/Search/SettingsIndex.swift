@@ -85,8 +85,6 @@ enum SettingsIndex {
         .init(id: "pins", page: .spaces, title: "Pins", icon: "pin"),
         .init(id: "opening", page: .spaces, title: "Opening and starting", icon: "command"),
 
-        .init(id: "passwords", page: .passwords, title: "Passkeys", icon: "person.badge.key"),
-        .init(id: "apple", page: .passwords, title: "Apple Passwords", icon: "lock.rectangle.stack"),
         .init(id: "forms", page: .passwords, title: "Filling in forms", icon: "character.cursor.ibeam"),
 
         .init(id: "blocking", page: .privacy, title: "Blocking", icon: "shield"),
@@ -500,13 +498,6 @@ enum SettingsIndex {
               keys: [Preferences.freshKey], words: ["restore", "session", "startup"]),
 
         // Passwords
-        .init(id: "passkeys", group: "passwords", icon: "person.badge.key",
-              title: "Offer passkeys", detail: "Touch ID or an iCloud passkey, on sites that offer one",
-              keys: ["passkeys"], words: ["webauthn", "touch id"]),
-        .init(id: "passwords.apple", group: "apple", icon: "applelogo",
-              title: "Passwords from Apple's Passwords app", detail: "Your Passwords app's accounts and verification codes under their box. Unofficial",
-              more: "Search talks to the helper Apple made for its Chrome extension, as that extension. Never in private tabs.",
-              keys: ["passwords.apple"], words: ["icloud keychain", "apple"]),
         .init(id: "contacts.fill", group: "forms", icon: "person.crop.rectangle",
               title: "Fill in your contact details", detail: "Your card in Contacts under name, email, phone and address boxes",
               more: "A click fills the rest of the form's empty boxes too. Only your own card is read, and macOS asks first.",

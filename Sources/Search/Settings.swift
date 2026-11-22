@@ -53,7 +53,7 @@ struct SettingsPanel: View {
             case .tabs: return "Tabs"
             case .browsing: return "Browsing"
             case .spaces: return "Spaces & Pins"
-            case .passwords: return "Passwords"
+            case .passwords: return "Forms"
             case .privacy: return "Privacy"
             case .ai: return "AI"
             case .extensions: return "Extensions"
@@ -69,7 +69,7 @@ struct SettingsPanel: View {
             case .tabs: return "square.on.square"
             case .browsing: return "globe"
             case .spaces: return "square.stack"
-            case .passwords: return "key"
+            case .passwords: return "character.cursor.ibeam"
             case .privacy: return "hand.raised"
             case .ai: return "sparkles"
             case .extensions: return "puzzlepiece.extension"
@@ -467,12 +467,6 @@ struct SettingsPanel: View {
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail
         case "search.keywords": return keywordDetail
-        case "passkeys":
-            return !prefs.passkeysPossible
-                ? "Needs an Apple entitlement this build doesn't have"
-                : Passkeys.access == .denied
-                ? "macOS was told no: System Settings › Privacy & Security › Passkeys"
-                : item.detail
         case "updates.version": return versionDetail
         case "arc.import": return arcHere ? item.detail : "Arc isn't on this Mac. Bring Things Over can read an export"
         default: return item.detail
@@ -808,8 +802,6 @@ struct SettingsPanel: View {
     @ViewBuilder
     private func keptControl(_ id: String) -> some View {
         switch id {
-        case "passkeys": Switch(on: $prefs.passkeys)
-        case "passwords.apple": Switch(on: $prefs.applePasswords)
         // Turned on, macOS is asked whether Search may read Contacts; a no,
         // or no card of yours, leaves it off and says why.
         case "contacts.fill":
@@ -898,9 +890,6 @@ struct SettingsPanel: View {
             }
         case "agents":
             if !searched, prefs.agents { RememberedAgents() }
-        case "passwords.apple":
-            ApplePasswordsCard(prefs: prefs, bare: true)
-                .under()
         case "profiles":
             if !searched {
                 ProfileList(browser: browser)

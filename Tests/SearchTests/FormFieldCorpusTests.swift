@@ -165,18 +165,6 @@ final class FormFieldCorpusTests: XCTestCase {
         }
     }
 
-    /// The scope: a real sign-in box gets the site's accounts, its other
-    /// hosts' too; a box that only might be one, this host's alone. Gmail's
-    /// account, kept for accounts.google.com, never reaches a box on
-    /// console.cloud.google.com that isn't clearly a sign-in's.
-    func testOnlyARealSignInReachesTheSitesOtherHosts() {
-        let console = "console.cloud.google.com"
-        XCTAssertFalse(ApplePasswords.belongs(["https://google.co.uk"], to: console, wide: true), "another site is never offered")
-        XCTAssertTrue(ApplePasswords.belongs(["https://accounts.google.com"], to: console, wide: true))
-        XCTAssertFalse(ApplePasswords.belongs(["https://accounts.google.com"], to: console, wide: false))
-        XCTAssertTrue(ApplePasswords.belongs(["https://www.console.cloud.google.com/"], to: console, wide: false))
-    }
-
     // MARK: -
 
     private static func corpus() throws -> [Fixture] {

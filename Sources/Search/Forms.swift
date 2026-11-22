@@ -38,23 +38,11 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
                 // value redraws whatever watches the tab, same value or not.
                 let typing = body["typing"] as? Bool ?? false
                 if tab?.typing != typing { tab?.typing = typing }
-                // Which sign-in box the caret is in, and where it sits on the
-                // page — so a list of accounts can hang from it.
-                // A box of a name and password, or one the page marks for
-                // passkeys alone ("webauthn"), which takes no password.
-                tab?.fieldFrameHost = message.frameInfo.isMainFrame ? nil : message.frameInfo.securityOrigin.host
+                // A box for a detail of your own, and where it sits on the page,
+                // so your card in Contacts can hang from it.
                 if let rect = body["rect"] as? [String: Double],
                    let x = rect["x"], let y = rect["y"], let w = rect["w"], let h = rect["h"] {
-                    // `wide`: a box that is clearly a sign-in's, offered the
-                    // accounts of the site's other hosts too; otherwise only
-                    // those kept for this very host.
-                    // `code`: a box for a verification code, not a sign-in's;
-                    // `wide` then means it says so, rather than a guess.
-                    // A box for a detail of your own: what hangs from it is
-                    // your card in Contacts, not an account.
-                    tab?.fieldFocused(CGRect(x: x, y: y, width: w, height: h), passwords: body["passwords"] as? Bool ?? true,
-                                      name: body["name"] as? Bool ?? false, wide: body["wide"] as? Bool ?? true,
-                                      code: body["code"] as? Bool ?? false,
+                    tab?.fieldFocused(CGRect(x: x, y: y, width: w, height: h),
                                       fill: (body["contact"] as? String).map { .contact($0, box: body["box"] as? Int ?? 0) })
                 } else {
                     tab?.fieldFocused(nil)
@@ -71,23 +59,6 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
             }
         }
     }
-
-    /// Whether sites are offered passkeys here (Settings › Passwords).
-    ///
-    /// A build without Apple's browser entitlement can't do them: WebKit then
-    /// answers isUserVerifyingPlatformAuthenticatorAvailable() with false,
-    /// yet the API object exists, so sites offer the passkey path and strand
-    /// you there. Told there are none, they go straight to the password
-    /// (see withoutPasskeys). Signed with the entitlement, as releases are,
-    /// this is on, and Search carries out the sites' requests itself (see
-    /// Passkeys.swift).
-    ///
-    /// Held here, not read from the store: a build of your own running beside
-    /// a release shares the store, and its first run writes passkeys off into
-    /// it, which would take them from the release's new pages while its
-    /// switch still says on. Preferences sets it from the switch before the
-    /// first page, and so does every flip of the switch.
-    static var passkeysOffered = false
 
     /// The passkey object stays, and says there are none here, as Safari's
     /// does on a Mac with nothing to sign in with: isConditionalMediation
@@ -112,12 +83,11 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
     /// browser is refused at once, as if you had said no, where WebKit would
     /// try and fail.
     ///
-    /// Save for a security key. Where Search's own handling stands ahead of
-    /// this (PasskeyRelay.keysOnly, in a build that can reach a key), a
-    /// request only a key answers goes to it: a sign-in naming a key over
-    /// USB, NFC or Bluetooth, or a key to be made on one. Search's side asks
-    /// the same of it again (Passkeys.forSecurityKey) and offers the key
-    /// alone, never the Mac's passkeys.
+    /// Search carries out no passkey requests of its own: a build without
+    /// Apple's browser entitlement can't, WebKit answers
+    /// isUserVerifyingPlatformAuthenticatorAvailable() with false yet leaves
+    /// the API object there, so sites would offer the passkey path and
+    /// strand you on it. Told there are none, they go to the password.
     static let withoutPasskeys = """
     (function () {
       var real = window.PublicKeyCredential;
@@ -157,16 +127,8 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         try { Object.defineProperty(real, name, { configurable: true, writable: true, enumerable: true, value: wrapped }); } catch (e) {}
       });
       var proto = CredentialsContainer.prototype;
-      // Search's own handling, if it stands ahead of this: then `native` is it.
-      var relayed = !!proto[Symbol.for('search.passkeys')];
-      function forKey(name, options) {
-        var pk = options.publicKey;
-        if (name === 'create') return !!(pk.authenticatorSelection && pk.authenticatorSelection.authenticatorAttachment === 'cross-platform');
-        if (options.mediation === 'conditional') return false;
-        return Array.prototype.some.call(pk.allowCredentials || [], function (c) {
-          return Array.prototype.some.call((c && c.transports) || [], function (t) { return t === 'usb' || t === 'nfc' || t === 'ble'; });
-        });
-      }
+      // Said, for the tests: the patch is on the prototype.
+      try { Object.defineProperty(proto, Symbol.for('search.passkeys'), { value: true }); } catch (e) {}
       ['get', 'create'].forEach(function (name) {
         var native = proto[name];
         try {
@@ -176,7 +138,6 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
               if (!options || !options.publicKey) return native.apply(this, arguments);
               var signal = options.signal;
               if (signal && signal.aborted) return Promise.reject(signal.reason || new DOMException('The operation was aborted.', 'AbortError'));
-              try { if (relayed && forKey(name, options)) return native.apply(this, arguments); } catch (e) {}
               return Promise.reject(refused());
             } }[name]
           });

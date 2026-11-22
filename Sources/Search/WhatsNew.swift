@@ -107,8 +107,6 @@ enum WhatsNew {
         Toggle(title: "Close goes back", detail: "Closing the tab you're on takes you to the one you were on before it, as ⌃Tab would.",
                since: "1.0.8", get: { $0.closeGoesBack }, set: { $0.closeGoesBack = $1 }),
 
-        Toggle(title: "Your Apple passwords", detail: "Accounts from Apple's Passwords app under the sign-in field, with a code from your Mac.",
-               since: "1.0.7", get: { $0.applePasswords }, set: { $0.applePasswords = $1 }),
         Toggle(title: "Ask before quitting", detail: "⌘Q asks first, so a slip doesn't close every window.",
                since: "1.0.7", get: { $0.confirmsQuit }, set: { $0.confirmsQuit = $1 }),
         Toggle(title: "Tab numbers while ⌘ is held", detail: "See which tab ⌘1–⌘9 goes to.",
