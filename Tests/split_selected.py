@@ -105,12 +105,13 @@ def case_one_and_three(t):
     empty = blanks(state())
     st = pick(a, b, c)
     t.ok("three picked: all three", sorted(st["selected"]) == sorted([a, b, c]), st["selected"])
-    t.ok("three picked: no pair on offer (the item is off)", st["pickedPair"] == [], st["pickedPair"])
+    # A split holds up to four pages since 1.0.13: three picked go side
+    # by side (Open 3 Tabs in Split View), not two.
+    t.ok("three picked: no pair, a split of the three on offer",
+         st["pickedPair"] == [] and st.get("pickedSplit") == [a, b, c], (st["pickedPair"], st.get("pickedSplit")))
     st = sv.sp("pairPicked", id=a)
-    t.ok("three picked: the menu's action does nothing", pairs(st) == [] and sorted(st["selected"]) == sorted([a, b, c]), (pairs(st), st["selected"]))
-    st = sv.sp("start")
-    new = [x for x in blanks(st) if x not in empty]
-    t.ok("three picked: ⌥⌘N splits the page in front, as before", len(new) == 1 and pairs(st) == [[d, new[0]]], (pairs(st), new))
+    t.ok("three picked: Open 3 Tabs in Split View puts them side by side", pairs(st) == [[a, b, c]], (pairs(st), st["selected"]))
+    t.ok("three picked: no new empty page", [x for x in blanks(st) if x not in empty] == [], blanks(st))
 
 
 def case_pins_private_off(t):
