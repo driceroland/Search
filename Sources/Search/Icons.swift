@@ -71,6 +71,9 @@ final class Favicons {
     private static let backoff: TimeInterval = 60
     /// Icons with no file on disk, as far as `known` has looked.
     private var absent: Set<String> = []
+    /// Each extension's own icon, drawn once per version of it: lists ask
+    /// for an address's icon row by row (see `extensionIcon`).
+    private var extensionIcons: [String: NSImage] = [:]
 
     /// More pages than this and the ones seen longest ago are forgotten.
     private static let most = 4000
@@ -262,8 +265,29 @@ final class Favicons {
     /// private tab (`shy`) also sees what its own pages wore; nothing else
     /// does.
     func cached(for url: URL?, shy: Bool = false) -> NSImage? {
-        guard let url, let site = Favicons.site(url) else { return nil }
+        guard let url else { return nil }
+        if let icon = extensionIcon(for: url) { return icon }
+        guard let site = Favicons.site(url) else { return nil }
         return lookup(site, page: Favicons.page(url), shy: shy)
+    }
+
+    /// An extension's own page wears the extension's icon, as it does in
+    /// Chrome. It can't be fetched the way a site's is (`fetch` only goes to
+    /// http and https), so without this the tab showed the first letter of
+    /// the extension's id, which says nothing about it.
+    func extensionIcon(for url: URL) -> NSImage? {
+        guard #available(macOS 15.4, *),
+              let scheme = url.scheme?.lowercased(),
+              [Extensions.scheme, Extensions.formerScheme].contains(scheme),
+              let id = url.host()?.lowercased(),
+              let package = Extensions.shared.contexts[id]?.webExtension
+        else { return nil }
+        // Per version: an update can bring a new icon.
+        let key = id + " " + (package.version ?? "")
+        if let known = extensionIcons[key] { return known }
+        guard let icon = package.icon(for: CGSize(width: 32, height: 32)) else { return nil }
+        extensionIcons[key] = icon
+        return icon
     }
 
     /// A site's icon, when there is no page to go by: the one its most
@@ -391,6 +415,13 @@ final class Favicons {
     /// with it from script (GitHub), rather than declaring both, would
     /// otherwise have one look's icon overwrite the other's (#423).
     func fetch(for tab: Tab, changed: Bool = false) {
+        // An extension's page has nothing to fetch, and its extension may
+        // only have finished loading after the tab took its icon from the
+        // cache (a tab brought back at launch).
+        if let url = tab.address, let icon = extensionIcon(for: url) {
+            if tab.icon !== icon { tab.icon = icon }
+            return
+        }
         guard let url = tab.address, let site = Favicons.site(url),
               url.scheme?.hasPrefix("http") == true
         else { return }
