@@ -12,6 +12,15 @@ without moving the window; on the empty band beside it, a press is still
 the band's, which moves the window, and a double-click there still fills
 the screen. Nothing is shown and the window never moves: the band's own
 drag, the system's, is never started here.
+
+The real amazon.com (idea 935) has its box 11 points down the page, in a
+form in its header, mostly under the band: there AppKit's own title bar,
+the top 32 points of the window, took a single press as the window's drag
+whatever view lay under it. A second page mimics it (a sticky header, a
+form, a wrapper, the field 11 points down): with the pointer over the field
+in those 32 points, the window is held still and AppKit itself (bench
+`hit`'s titleDragHovered) would not move it, and a drag there selects the
+field's text; over empty page there the window stays movable.
 """
 import sys
 import time
@@ -21,6 +30,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
 
 sv.use("top-band")
+
+# Amazon's header, as found on amazon.com (22 Nov 2026): the box is the
+# element under the point, in a form in a wrapper in a sticky header, its
+# top 11 CSS pixels down the page.
+AMAZON = ("document.body.style.margin = '0';"
+          "document.body.innerHTML = \"<header id=nav style='position:sticky;top:0;height:60px;background:#131921'>"
+          "<form id=f style='margin:0'><div class=wrap style='position:absolute;left:220px;top:0;padding-top:11px'>"
+          "<input id=q value='Search Amazon for shoes and socks' "
+          "style='width:340px;height:38px;margin:0;border:0;padding:0 8px;font:16px -apple-system'>"
+          "</div></form></header><div style='height:4000px'></div>\";"
+          "1")
 
 PAGE = ("document.body.style.margin = '0';"
         "document.body.innerHTML = \"<input id=q value='Search Amazon for shoes and socks' "
@@ -85,6 +105,31 @@ def run(t, cards):
     t.ok(f"{name}: below the band, the page", hit(left + 600, 40)["view"].startswith("PageView"))
     col = hit(20, 5)
     t.ok(f"{name}: the column's top is still the window's to drag", col["view"].startswith("Strip"), col)
+
+    # Amazon's box, mostly under the band, in AppKit's title bar (idea 935).
+    sv.cmd({"do": "eval", "id": tab, "js": AMAZON}); time.sleep(0.6)
+    box, bare = (left + 220 + 120, 30), (left + 700, 30)
+    hit(*box); time.sleep(0.5)
+    over = hit(*box)
+    t.ok(f"{name}: over the box 30 points down, the press is the page's", over["view"].startswith("PageView"), over)
+    t.ok(f"{name}: over the box 30 points down, the window is held still", over.get("movableHovered") is False, over)
+    t.ok(f"{name}: over the box 30 points down, AppKit's title bar takes no press",
+         over.get("titleDragHovered") in (False, None), over)
+    # Empty page there is still the title bar's, for window managers (idea 744).
+    # The page is asked one question at a time: the pointer comes there,
+    # and stays, until it has answered for there.
+    for _ in range(2):
+        hit(*bare); time.sleep(0.5)
+    t.ok(f"{name}: over empty page 30 points down, the window stays movable", hit(*bare).get("movableHovered") is True)
+    hit(box[0], 50, drag=60.0)
+    sv.cmd({"do": "eval", "id": tab, "js": "document.getElementById('q').setSelectionRange(0, 0); 1"})
+    hit(*box); time.sleep(0.5)
+    drag = hit(*box, drag=120.0)
+    t.ok(f"{name}: a drag in Amazon's box doesn't move the window", drag.get("moved") is False and drag.get("view", "").startswith("PageView"), drag)
+    picked = sv.cmd({"do": "eval", "id": tab, "js": sel}).get("value")
+    t.ok(f"{name}: a drag in Amazon's box selects its text", picked and picked[0] is True and picked[1] > 0, picked)
+    # Below AppKit's title bar the page was never held, nor is it now.
+    t.ok(f"{name}: below the title bar, the window movable as ever", hit(left + 700, 60).get("movableHovered") is True)
     sv.quit()
 
 

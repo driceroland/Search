@@ -169,6 +169,112 @@ final class StageFullScreenTests: XCTestCase {
         XCTAssertEqual(placeholder.frame, stage.bounds)
     }
 
+    /// WebKit coming out of full screen: the page goes back where its
+    /// placeholder is, if it is anywhere, and the placeholder goes.
+    private func comeOut(_ video: LentPage, placeholder: NSView) {
+        video.lent = .exitingFullscreen
+        video.removeFromSuperview()
+        if let home = placeholder.superview {
+            video.frame = placeholder.frame
+            home.addSubview(video, positioned: .above, relativeTo: placeholder)
+        }
+        placeholder.removeFromSuperview()
+        video.lent = .notInFullscreen
+    }
+
+    /// A video full screen, its placeholder on the stage, as WebKit leaves it.
+    private func fullScreen(on stage: StageView) -> (LentPage, NSView, NSView) {
+        let video = page()
+        stage.show(video)
+        let elsewhere = NSView(frame: stage.bounds)
+        let placeholder = FakeFullScreenPlaceholderView(frame: stage.bounds)
+        stage.addSubview(placeholder, positioned: .above, relativeTo: video)
+        elsewhere.addSubview(video)
+        video.lent = .inFullscreen
+        return (video, placeholder, elsewhere)
+    }
+
+    /// Another tab shown while the video is full screen, and the video's
+    /// full screen ended as ⌃Tab and ⌘1–⌘9 end it (idea 936): its
+    /// placeholder stays under the tab in front, so WebKit has somewhere to
+    /// bring the page back to; once back, it is put away as any tab
+    /// behind, and chosen again it is the page, at the stage's size.
+    func testAVideoLeftForAnotherTabComesBackToItsPlaceholder() {
+        let (stage, host) = stage()
+        defer { host.close() }
+        let (video, placeholder, _) = fullScreen(on: stage)
+        let other = page()
+        stage.show(other)
+        stage.layoutSubtreeIfNeeded()
+        XCTAssertTrue(placeholder.superview === stage, "the placeholder went with the tab left")
+        XCTAssertTrue(stage.subviews.last === other, "the tab shown isn't in front")
+
+        comeOut(video, placeholder: placeholder)
+        XCTAssertTrue(video.superview === stage, "WebKit had nowhere to bring the page back to")
+        XCTAssertTrue(stage.subviews.last === other)
+        stage.needsLayout = true
+        stage.layoutSubtreeIfNeeded()
+        XCTAssertNil(video.superview, "home behind the other tab, and never put away")
+
+        stage.show(video)
+        XCTAssertTrue(video.superview === stage)
+        XCTAssertNil(other.superview)
+        XCTAssertEqual(video.frame, stage.bounds)
+        XCTAssertFalse(stage.subviews.contains { $0 is FakeFullScreenPlaceholderView })
+        XCTAssertEqual(ended, 0)
+    }
+
+    /// The tab whose video is still full screen, left for another and
+    /// chosen again in this window: not its placeholder alone, white where
+    /// the video was (idea 936), but full screen asked to end, the column
+    /// back, and the page home at the stage's size with the keys.
+    func testAVideoStillFullScreenChosenAgainComesHome() {
+        let (stage, host) = stage()
+        defer { host.close() }
+        let (video, placeholder, _) = fullScreen(on: stage)
+        let other = page()
+        stage.show(other)
+        stage.layoutSubtreeIfNeeded()
+
+        stage.show(video)
+        turn()
+        XCTAssertEqual(ended, 1, "full screen was never asked to end")
+        XCTAssertEqual(chromeBack, 1)
+        XCTAssertNil(other.superview, "the last tab's page stayed on the stage")
+
+        host.makeFirstResponder(nil)
+        comeOut(video, placeholder: placeholder)
+        XCTAssertTrue(video.superview === stage)
+        XCTAssertEqual(video.frame, stage.bounds)
+        XCTAssertEqual(stage.subviews.filter { !($0 is FakeFullScreenPlaceholderView) }.count, 1)
+        XCTAssertTrue(host.firstResponder === video, "came home without the keys")
+    }
+
+    /// The same with Settings › Keep the window in use during full screen.
+    func testAVideoStillFullScreenChosenAgainComesHomeKeepingTheWindow() {
+        let was = Shared.prefs.keepsWindow
+        Shared.prefs.keepsWindow = true
+        defer { Shared.prefs.keepsWindow = was }
+        testAVideoStillFullScreenChosenAgainComesHome()
+    }
+
+    /// Chosen again from the video's own Space, by a link it opened: the
+    /// video goes on, and comes home to its placeholder when it ends.
+    func testAVideoLeftAndChosenFromItsOwnSpaceGoesOn() {
+        let (stage, host) = stage()
+        defer { host.close() }
+        let (video, placeholder, _) = fullScreen(on: stage)
+        stage.show(page())
+        stage.layoutSubtreeIfNeeded()
+        host.key = false
+        stage.show(video)
+        turn()
+        XCTAssertEqual(ended, 0)
+        comeOut(video, placeholder: placeholder)
+        XCTAssertTrue(video.superview === stage)
+        XCTAssertEqual(video.frame, stage.bounds)
+    }
+
     /// On its way in, still on the stage: nothing is stranded yet.
     func testAPageStillOnTheStageIsLeftAlone() {
         let (stage, host) = stage()

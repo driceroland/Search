@@ -613,6 +613,18 @@ extension Browser {
         goToSpace(list[index].id)
     }
 
+    /// Next Space and Previous Space (Settings › Shortcuts): the space
+    /// after or before the one on screen, in the menu's order, every
+    /// profile's with profiles in one window. Stops at the ends, as the
+    /// swipe does (idea 761).
+    func stepSpace(_ step: Int) {
+        guard prefs.usesSpaces else { return }
+        let list = everySpace
+        let shown = spaceComing ?? spaceID
+        guard let here = list.firstIndex(where: { $0.id == shown }) else { return }
+        switchSpace(index: here + step)
+    }
+
     /// ⌃1–⌃9 and the space's menu: the space's page in front at once, its
     /// rows sliding in, and the column taking it once they stand still
     /// (SpaceSwipe.bring). Taken at once, the column's whole row was made
@@ -877,10 +889,16 @@ struct SpaceDot: View {
 
     static let width: CGFloat = 26
 
-    private var symbol: String { browser.makingSpace ? "plus" : browser.space.symbol }
-    private var key: String { browser.makingSpace ? "new" : "\(browser.spaceID.uuidString)-\(browser.space.symbol)" }
+    /// The space on its way in, from the moment its rows and colour come
+    /// (Browser.spaceHeading), or the one on screen. By spaceID, the icon
+    /// turned over only once the space was taken, when the hand had been
+    /// still a moment, under rows and a colour that were already the new
+    /// space's (idea 954).
+    private var space: Space { browser.washSpace }
+    private var symbol: String { browser.makingSpace ? "plus" : space.symbol }
+    private var key: String { browser.makingSpace ? "new" : "\(space.id.uuidString)-\(space.symbol)" }
     /// The space's colour, if it has one; none while a new one is being made.
-    private var tint: Color? { browser.makingSpace ? nil : browser.space.tint }
+    private var tint: Color? { browser.makingSpace ? nil : space.tint }
 
     var body: some View {
         Button { SpaceMenu.show(for: browser) } label: {
@@ -907,7 +925,7 @@ struct SpaceDot: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(Motion.quick, value: browser.space.look)
+        .animation(Motion.quick, value: space.look)
         .help("\(browser.space.name) — \(KeyCombo.spacesOnCommand ? "⌘1–⌘9" : "⌃1–⌃9"), or two fingers \(browser.prefs.sidebar ? "sideways" : "up or down") over the tabs, to switch")
         .onChange(of: key) { _, now in
             let symbol = symbol
@@ -999,7 +1017,10 @@ private struct SpaceButton: View {
         } label: {
             Image(systemName: space.symbol)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(space.tint ?? (current || hovering ? Palette.ink : Palette.muted))
+                // Its colour only while it's the one on screen: the others
+                // all grey alike, coloured or not, so a coloured space's
+                // button didn't read as the one you're in.
+                .foregroundStyle(current ? (space.tint ?? Palette.ink) : hovering ? Palette.ink : Palette.muted)
                 .opacity(current || hovering ? 1 : 0.75)
                 .frame(width: 26, height: 26)
                 .background(

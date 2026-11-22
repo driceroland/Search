@@ -704,6 +704,10 @@ enum ExtensionFetch {
         private var id: String?
         private var mode = "follow"
         private var headerRules: [[String: Any]] = []
+        /// What the shim asked to be told of the request as it goes out,
+        /// for the extension's own webRequest listeners: "sent", "headers",
+        /// or "extra", the Cookie header with them. Nil: nothing.
+        private var tell: String?
         private var redirected = false
         private var stopped = false
         private var ended = false
@@ -768,12 +772,16 @@ enum ExtensionFetch {
             if ExtensionFetch.mayUseHeaderRules(context), let rules = message["headerRules"] as? [[String: Any]] {
                 headerRules = Array(rules.prefix(500))
             }
+            if context.hasPermission(.webRequest), let tell = message["tell"] as? String, ["sent", "headers", "extra"].contains(tell) {
+                self.tell = tell
+            }
             let unsigned = request
             Task { @MainActor in
                 var request = unsigned
                 await self.applyHeaderRules(to: &request)
                 await self.sign(&request)
                 guard !self.ended else { return }
+                self.tellSent(request)
                 let configuration = URLSessionConfiguration.ephemeral
                 configuration.httpShouldSetCookies = false
                 configuration.httpCookieAcceptPolicy = .never
@@ -810,6 +818,23 @@ enum ExtensionFetch {
             }
             ExtensionFetch.apply(changes, to: &request)
             if !changes.isEmpty { ExtensionFetch.note(["ruleHeaders": changes.map { "\($0.operation) \($0.name)" }, "for": url.absoluteString]) }
+        }
+
+        /// The request as it goes out, said to the shim that asked: Chrome
+        /// tells an extension's webRequest listeners of the extension's own
+        /// requests, and this one nothing else sees (see ownRequests in the
+        /// shim). Only to an extension that holds webRequest, only for an
+        /// address it is granted (nothing else is sent from here), and the
+        /// Cookie header only when asked for with "extraHeaders".
+        private func tellSent(_ request: URLRequest) {
+            guard let tell, let url = request.url else { return }
+            var headers: [[String]] = []
+            if tell != "sent" {
+                for (name, value) in request.allHTTPHeaderFields ?? [:] where tell == "extra" || name.lowercased() != "cookie" {
+                    headers.append([name, value])
+                }
+            }
+            post(["sent": ["url": url.absoluteString, "method": request.httpMethod ?? "GET", "headers": headers]])
         }
 
         /// The cookies for the request's address (granted: sign is only
@@ -852,6 +877,7 @@ enum ExtensionFetch {
                 var hop = ExtensionFetch.hop(request, from: response.url)
                 await self.applyHeaderRules(to: &hop)
                 await self.sign(&hop)
+                self.tellSent(hop)
                 self.redirected = true
                 handler(hop)
             }

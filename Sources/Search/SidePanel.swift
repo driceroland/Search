@@ -87,7 +87,7 @@ extension Browser {
                                   letIn: Extensions.mayGoPrivate(context))
         else { return .notHere }
         let content = SidePanelContent.page(extensionID: context.uniqueIdentifier, url: url, tab: tab)
-        guard SidePanelPages.shared.load(url, from: context, in: self) else { return .noPanel }
+        guard SidePanelPages.shared.load(url, from: context, in: self, for: tab) else { return .noPanel }
         if let tab { SidePanelPages.shared.bind(content, to: tab, in: self) }
         sidePanel = content
         sidePanelShown = true
@@ -202,7 +202,7 @@ extension Browser {
     /// (`sidePanelHeld`).
     func sidePanelFollows(_ tab: Tab) {
         if case .page(_, _, let bound?) = sidePanel, bound != tab.id {
-            SidePanelPages.shared.drop(in: self)
+            SidePanelPages.shared.park(bound, in: self)
             sidePanelShown = false
             sidePanel = nil
         }
@@ -272,10 +272,22 @@ final class SidePanelPages: NSObject {
     private final class Page {
         let web: WKWebView
         let delegate: NSObject
-        init(web: WKWebView, delegate: NSObject) { self.web = web; self.delegate = delegate }
+        /// The extension it is a page of, and the address it was opened on;
+        /// nil for a website's.
+        let owner: String?
+        let first: URL?
+        init(web: WKWebView, delegate: NSObject, owner: String? = nil, first: URL? = nil) {
+            self.web = web; self.delegate = delegate; self.owner = owner; self.first = first
+        }
     }
     private var pages: [ObjectIdentifier: Page] = [:]
     private var bound: [ObjectIdentifier: [Tab.ID: SidePanelContent]] = [:]
+    /// A tab's own panel while another tab is in front: kept alive, as
+    /// Chrome keeps it, and put back as it was when its tab is (idea 643).
+    /// Claude's came back cold on every return, and now and then blank.
+    /// At most `keeps` per window, the one left longest ago let go first.
+    private var parked: [ObjectIdentifier: [(tab: Tab.ID, page: Page)]] = [:]
+    static let keeps = 4
 
     /// The page up in this window's panel, for SidePanelView and the bench.
     func web(in browser: Browser) -> WKWebView? { pages[ObjectIdentifier(browser)]?.web }
@@ -307,12 +319,23 @@ final class SidePanelPages: NSObject {
     }
 
     @available(macOS 15.4, *)
-    func load(_ url: URL, from context: WKWebExtensionContext, in browser: Browser) -> Bool {
+    func load(_ url: URL, from context: WKWebExtensionContext, in browser: Browser, for tab: Tab.ID? = nil) -> Bool {
         let key = ObjectIdentifier(browser)
         // The same page already up: left as it is.
         if let page = pages[key], page.web.url == url { return true }
+        // This tab's own panel, kept while another tab was in front.
+        if let tab, let index = parked[key]?.firstIndex(where: { $0.tab == tab }) {
+            let kept = parked[key]!.remove(at: index).page
+            if kept.owner == context.uniqueIdentifier, kept.first == url {
+                drop(in: browser)
+                pages[key] = kept
+                return true
+            }
+            close(kept)
+        }
         drop(in: browser)
         guard let configuration = context.webViewConfiguration else { return false }
+        ExtensionSandbox.attach(configuration, for: context)
         // No window opens from the panel without a click.
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 380, height: 600), configuration: configuration)
@@ -321,9 +344,37 @@ final class SidePanelPages: NSObject {
         web.uiDelegate = delegate
         web.allowsMagnification = true
         if #available(macOS 13.3, *) { web.isInspectable = true }
+        SidePanelPages.holdForFirstFrame(web)
         web.load(URLRequest(url: url))
-        pages[key] = Page(web: web, delegate: delegate)
+        pages[key] = Page(web: web, delegate: delegate, owner: context.uniqueIdentifier, first: url)
         return true
+    }
+
+    /// The tab's own panel, its tab no longer in front: out of the window
+    /// and kept, page and all, for when the tab comes back.
+    func park(_ tab: Tab.ID, in browser: Browser) {
+        let key = ObjectIdentifier(browser)
+        guard let page = pages.removeValue(forKey: key) else { return }
+        guard page.owner != nil else { return close(page) }
+        page.web.removeFromSuperview()
+        var kept = (parked[key] ?? []).filter { old in
+            guard old.tab == tab else { return true }
+            close(old.page)
+            return false
+        }
+        kept.append((tab, page))
+        while kept.count > Self.keeps { close(kept.removeFirst().page) }
+        parked[key] = kept
+    }
+
+    /// How many tabs' panels this window keeps behind, for the bench.
+    func parkedCount(in browser: Browser) -> Int { parked[ObjectIdentifier(browser)]?.count ?? 0 }
+
+    private func close(_ page: Page) {
+        page.web.stopLoading()
+        page.web.navigationDelegate = nil
+        page.web.uiDelegate = nil
+        page.web.removeFromSuperview()
     }
 
     /// A website, in a page made as a tab's is in `space` (Web.configuration):
@@ -344,24 +395,50 @@ final class SidePanelPages: NSObject {
         web.allowsBackForwardNavigationGestures = true
         // The Web Inspector as for a tab, by the same rule (Web.inspectable).
         Web.inspectable(web)
+        SidePanelPages.holdForFirstFrame(web)
         web.load(URLRequest(url: url))
         pages[ObjectIdentifier(browser)] = Page(web: web, delegate: delegate)
     }
 
+    /// A web view that has never drawn is opaque white: in dark mode the
+    /// panel flashed it on opening, before its page came (idea 467). Unseen,
+    /// over the panel's own ground, until WebKit says the page has drawn
+    /// something (firstFrame), as a tab's page is (PageView.holdForFirstFrame).
+    static func holdForFirstFrame(_ web: WKWebView) {
+        let observe = NSSelectorFromString("_setObservedRenderingProgressEvents:")
+        guard web.responds(to: observe) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, UInt) -> Void
+        unsafeBitCast(web.method(for: observe), to: Setter.self)(web, observe, PageView.firstFrame)
+        web.alphaValue = 0
+    }
+
+    /// The panel's page has drawn, or is done: in, quickly.
+    static func showFirstFrame(_ web: WKWebView) {
+        guard web.alphaValue < 1 else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Motion.seconds(PageView.fadeIn)
+            web.animator().alphaValue = 1
+        }
+    }
+
     func drop(in browser: Browser) {
         guard let page = pages.removeValue(forKey: ObjectIdentifier(browser)) else { return }
-        page.web.stopLoading()
-        page.web.navigationDelegate = nil
-        page.web.uiDelegate = nil
-        page.web.removeFromSuperview()
+        close(page)
     }
 
     func bind(_ content: SidePanelContent, to tab: Tab.ID, in browser: Browser) {
         bound[ObjectIdentifier(browser), default: [:]][tab] = content
     }
 
+    /// The tab's panel is done with (closed, the tab gone): its kept page too.
     func unbind(_ tab: Tab.ID, in browser: Browser) {
-        bound[ObjectIdentifier(browser)]?[tab] = nil
+        let key = ObjectIdentifier(browser)
+        bound[key]?[tab] = nil
+        parked[key] = parked[key]?.filter { kept in
+            guard kept.tab == tab else { return true }
+            close(kept.page)
+            return false
+        }
     }
 
     func bound(to tab: Tab.ID, in browser: Browser) -> SidePanelContent? {
@@ -371,6 +448,7 @@ final class SidePanelPages: NSObject {
     /// A window gone for good: none of its tabs will bring a panel back.
     func forget(in browser: Browser) {
         bound[ObjectIdentifier(browser)] = nil
+        parked.removeValue(forKey: ObjectIdentifier(browser))?.forEach { close($0.page) }
     }
 
     /// An extension gone: its panels with it.
@@ -380,6 +458,11 @@ final class SidePanelPages: NSObject {
             bound[ObjectIdentifier(browser)] = bound[ObjectIdentifier(browser)]?.filter {
                 if case .page(let owner, _, _) = $0.value { return owner != id }
                 return true
+            }
+            parked[ObjectIdentifier(browser)] = parked[ObjectIdentifier(browser)]?.filter { kept in
+                guard kept.page.owner == id else { return true }
+                close(kept.page)
+                return false
             }
         }
     }
@@ -424,6 +507,19 @@ private final class SitePanelDelegate: NSObject, ObservableObject, WKNavigationD
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         arrived = webView.url
+    }
+
+    @objc(_webView:renderingProgressDidChange:)
+    func webView(_ webView: WKWebView, renderingProgressDidChange events: UInt) {
+        if events & PageView.firstFrame != 0 { SidePanelPages.showFirstFrame(webView) }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        SidePanelPages.showFirstFrame(webView)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        SidePanelPages.showFirstFrame(webView)
     }
 
     /// Crashes in a row: the page is made again twice a minute at most, then
@@ -491,7 +587,15 @@ private final class PanelDelegate: NSObject, WKNavigationDelegate, WKUIDelegate 
     private var loaded = false
     init(browser: Browser, base: URL, first: URL) { self.browser = browser; self.base = base; self.first = first }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loaded = true }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loaded = true
+        SidePanelPages.showFirstFrame(webView)
+    }
+
+    @objc(_webView:renderingProgressDidChange:)
+    func webView(_ webView: WKWebView, renderingProgressDidChange events: UInt) {
+        if events & PageView.firstFrame != 0 { SidePanelPages.showFirstFrame(webView) }
+    }
 
     /// A frame of the page's that can't work in the panel here, as its
     /// response arrives: the page is told what the site would tell it, and

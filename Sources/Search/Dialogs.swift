@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import os
 import WebKit
 
@@ -279,7 +280,10 @@ extension Browser {
             return
         }
         let host = challenge.protectionSpace.host.lowercased()
-        if Dialogs.isLoopback(host) || Dialogs.excused.contains(host) {
+        // The exact certificate that was shown, not the site: another bad one
+        // on the same name asks again.
+        let excuse = Dialogs.excuse(host, trust)
+        if Dialogs.isLoopback(host) || Dialogs.excused.contains(excuse) {
             completionHandler(.useCredential, URLCredential(trust: trust))
             return
         }
@@ -304,7 +308,7 @@ extension Browser {
                     completionHandler(.cancelAuthenticationChallenge, nil)
                     return
                 }
-                Dialogs.excused.insert(host)
+                Dialogs.excused.insert(excuse)
                 completionHandler(.useCredential, URLCredential(trust: trust))
             }
         }, drop: { completionHandler(.cancelAuthenticationChallenge, nil) })
@@ -412,8 +416,16 @@ extension Browser {
 }
 
 enum Dialogs {
-    /// Sites with bad certificates that were accepted, for this launch only.
+    /// Bad certificates that were accepted, each with its site, for this
+    /// launch only. See `excuse`.
     static var excused = Set<String>()
+
+    /// A site and the SHA-256 of the leaf certificate it showed.
+    static func excuse(_ host: String, _ trust: SecTrust) -> String {
+        let leaf = (SecTrustCopyCertificateChain(trust) as? [SecCertificate])?.first
+        let der = leaf.map { SecCertificateCopyData($0) as Data } ?? Data()
+        return host + "|" + SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined()
+    }
 
     static func alert(from frame: WKFrameInfo, saying message: String) -> NSAlert {
         let alert = NSAlert()

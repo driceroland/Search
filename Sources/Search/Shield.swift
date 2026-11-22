@@ -121,6 +121,11 @@ final class Shield: ObservableObject {
         "mixpanel.com", "amplitude.com", "segment.com", "segment.io",
         "branch.io", "appsflyer.com", "adjust.com", "analytics.tiktok.com",
         "connect.facebook.net", "ads-twitter.com", "analytics.twitter.com",
+        // Playwire's ad stack and the scripts that come with it to bring ads
+        // back past a blocker, or to see one (albumoftheyear.org): each a
+        // whole-domain block in EasyList, as the beacon is in EasyPrivacy.
+        "intergient.com", "btloader.com", "ad-delivery.net", "mentorsticks.com",
+        "dns-finder.com", "confiant-integrations.net", "cloudflareinsights.com",
     ]
 
     /// The few slots that are reliably an advertisement and nothing else. Kept
@@ -150,6 +155,7 @@ final class Shield: ObservableObject {
         (["*theguardian.com"], ".top-fronts-banner-ad-container"),
         (["*independent.co.uk", "*the-independent.com"], "#billboard-wrapper"),
         (["*cnn.com"], ".ad-slot-header__wrapper"),
+        (["*albumoftheyear.org"], ".headerAd, .homePageAdSquare"),
     ]
 
     /// Reddit's own promoted posts: custom elements the page puts straight

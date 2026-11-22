@@ -75,6 +75,10 @@ struct SearchApp: App {
                 Divider()
                 Button("Open Address…") { browser.edit() }
                     .shortcut("file.openAddress")
+                // A page, PDF or picture on this Mac, as Safari's File ›
+                // Open File… (idea 755).
+                Button("Open File…") { browser.openFile() }
+                    .shortcut("file.openFile")
                 Divider()
                 // Another browser's bookmarks, history, passwords and the
                 // rest, as Safari's File › Import From: the one sheet every
@@ -104,6 +108,10 @@ struct SearchApp: App {
                     .disabled(!(browser.active?.isWeb ?? false))
             }
             CommandGroup(after: .pasteboard) {
+                // As Safari's: what ⇧⌘V already does while you type, said
+                // in the menu (idea 814).
+                Button("Paste and Match Style") { Browser.pasteMatchingStyle() }
+                    .shortcut("edit.pasteMatchStyle")
                 Button("Copy Clean Link") { browser.copyCleanLink() }
                     .shortcut("edit.copyCleanLink")
                     .disabled(browser.active?.isBlank ?? true)
@@ -573,15 +581,10 @@ struct ContentView: View {
             // strip, not behind them — a page sliding beneath floating chrome
             // is a browser showing off, and it costs a compositing pass.
             //
-            // When the strip comes or goes, or the column as the tabs move
-            // between it and the strip or to its other side, the page slides
-            // with it and is resized
-            // once, not on every frame of the slide: laid out again thirty
-            // times a second, the page juddered along its right edge and
-            // overshot the window with the spring (see `room`). ⌘S's slide of
-            // the column is the exception: the page follows the column's
-            // edge, resized on every frame, or what it centres jumped half
-            // the column's width at one end of the slide (Browser.slidePage).
+            // When the column or the strip comes or goes, the page slides with
+            // it and is resized once, not on every frame of the slide: laid out
+            // again thirty times a second, the page juddered along its right
+            // edge and overshot the window with the spring (see `room`).
             //
             // With the tabs down the side the page is a card on the window's
             // ground: a gap on the far side and along the bottom here, at the
@@ -589,6 +592,14 @@ struct ContentView: View {
             // side by side are a card each (see PaneStage).
             stage
                 .modifier(CardEdge(on: cards && !browser.prefs.splitView))
+                // The tabs folded away: a line says the page is coming
+                // (Settings, idea 269), clear of the card's round corners.
+                .overlay(alignment: .top) {
+                    if browser.folded, browser.prefs.showsLoadingLine, fullscreenTab == nil, let tab = browser.active {
+                        TabLoadingLine(tab: tab)
+                            .padding(.horizontal, cards ? Metrics.cardRadius : 0)
+                    }
+                }
                 .padding(.leading, sideOnRight ? farGap + panelRoom : 0)
                 .padding(.trailing, sideOnRight ? 0 : farGap + panelRoom)
                 .padding(.bottom, farGap)
@@ -760,22 +771,16 @@ struct ContentView: View {
             .transition(.opacity)
     }
 
-    /// The bookmarks bar is up: asked for, there are bookmarks, and the tabs
-    /// aren't folded away or under a video filling the screen.
+    /// The bookmarks bar is up: asked for, there are bookmarks, the tabs
+    /// aren't folded away or under a video filling the screen, and it isn't
+    /// in the column instead (SideBookmarks).
     private var barShown: Bool {
-        browser.prefs.bookmarksBar && !browser.bookmarks.isEmpty && !browser.folded
+        browser.prefs.bookmarksBar && !browser.prefs.sideBookmarks && !browser.bookmarks.isEmpty && !browser.folded
             && fullscreenTab == nil
     }
 
-    /// The room the page is laid out to leave them, which is not animated;
-    /// while ⌘S slides the column, the column's own, which is (see
-    /// Browser.slidePage).
-    private var roomed: CGSize {
-        if browser.pageFollows, browser.prefs.sidebar, edges.side == nil {
-            return CGSize(width: chrome.width, height: (room ?? chrome).height)
-        }
-        return room ?? chrome
-    }
+    /// The room the page is laid out to leave them, which is not animated.
+    private var roomed: CGSize { room ?? chrome }
 
     private var sideOnRight: Bool {
         browser.prefs.sidebar && browser.prefs.sidePosition == .right
@@ -798,15 +803,6 @@ struct ContentView: View {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) { room = CGSize(width: max(Metrics.sideMin, new.width - 40), height: new.height) }
-            return
-        }
-        // ⌘S sliding the column: the page follows it (see `roomed`), and
-        // has this room once it rests.
-        if browser.pageFollows, browser.prefs.sidebar, new.height == now.height {
-            roomTicket += 1
-            var still = Transaction()
-            still.disablesAnimations = true
-            withTransaction(still) { room = new }
             return
         }
         // Given already, with the chrome itself (see `immersing`).
@@ -872,7 +868,11 @@ struct ContentView: View {
         // SplitStage owns the field whenever Split View is enabled, including
         // an ordinary tab that is not currently paired. Drawing it here too
         // leaves two offset address fields on a blank tab.
-        if !browser.prefs.splitView {
+        if browser.fieldOnWindow {
+            // Settings › The field in the middle of the window: over the
+            // whole window, as Arc's, in place of the page's (idea 753).
+            Omnibox(browser: browser, over: true, high: true)
+        } else if !browser.prefs.splitView {
             ZStack {
                 HomeGrid(browser: browser)
                 Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
@@ -990,6 +990,21 @@ struct ContentView: View {
                     .ignoresSafeArea()
             }
             .overlay { field }
+            // The card for a new space with the column as icons: too narrow
+            // for its name and field, it comes over the page, beside the
+            // column, as wide as it is anywhere else (idea 835).
+            .overlay(alignment: sideOnRight ? .topTrailing : .topLeading) {
+                if browser.makingSpace, sidebar, browser.prefs.iconColumn {
+                    NewSpaceCard(browser: browser)
+                        .frame(width: 260)
+                        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                        .shadow(color: .black.opacity(0.12), radius: 18, y: 6)
+                        .padding(sideOnRight ? .trailing : .leading, sideWidth + 12)
+                        .padding(.top, 60)
+                        .transition(.opacity)
+                }
+            }
             .overlay { panels }
             .overlay { switcherOverlay }
             .overlay(alignment: .topTrailing) {
@@ -1042,7 +1057,11 @@ struct ContentView: View {
                 browser.tabSwitcher.cancel()
                 if browser.commandHeld { browser.commandHeld = false }
                 measureLights()
-                resting?.isHidden = false
+                // Not in full screen, a split's half included: there macOS
+                // brings its own buttons down with the title bar, and ours,
+                // left where the window's buttons were before, made a second
+                // row of them under it (idea 929).
+                resting?.isHidden = window?.styleMask.contains(.fullScreen) ?? false
                 // Only the window you were in, or every window's video would come.
                 browser.appLeft()
             }
@@ -1059,7 +1078,7 @@ struct ContentView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { browser.fullScreen = true; reveal?.entering() }
+                if let window, (note.object as? NSWindow) === window { browser.fullScreen = true; reveal?.entering(); resting?.isHidden = true }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { browser.fullScreen = false; reveal?.leaving() }
@@ -1264,7 +1283,7 @@ struct ContentView: View {
         view.spots = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
             .compactMap { window.standardWindowButton($0) }
             .map { $0.convert($0.bounds, to: titlebar) }
-        view.isHidden = NSApp.isActive
+        view.isHidden = NSApp.isActive || window.styleMask.contains(.fullScreen)
     }
 
     /// The window, once there is one: held, dressed, and named for the page
@@ -1440,6 +1459,22 @@ struct ContentView: View {
             // AppKit and counted instead (see FullScreenEscape): the first
             // puts the reminder up, a second within two seconds leaves. Held
             // down, its repeats are kept and count for nothing.
+            // Without it, as in Safari: the press is the page's, to close
+            // its own pop-up, and the window stays in full screen even when
+            // the page has no use for it (idea 582). WebKit hands a key it
+            // didn't use back through the app; that copy goes no further,
+            // where AppKit would have taken the window out on it.
+            if event.keyCode == 53, !browser.prefs.escapeTwice, let window, event.window === window,
+               window.styleMask.contains(.fullScreen) {
+                if FullScreenEscape.shared.cameBack(event) { return nil }
+                if take(event) { return nil }
+                if let page = (window.firstResponder as? NSView).flatMap(FullScreenEscape.page(holding:)) {
+                    FullScreenEscape.shared.handOver(event)
+                    page.keyDown(with: event)
+                    return nil
+                }
+                return event
+            }
             if event.keyCode == 53, browser.prefs.escapeTwice, let window, event.window === window,
                window.styleMask.contains(.fullScreen) {
                 if event.isARepeat { return nil }
@@ -1989,6 +2024,9 @@ struct ContentView: View {
             browser.recalling = true
         case "j" where shifted:
             browser.showDownloads()
+        case "v" where shifted && flags.contains(.option):
+            // ⌥⇧⌘V, Paste and Match Style as in Safari: never Paste and Go.
+            Browser.pasteMatchingStyle()
         case "v" where shifted:
             // In a text field this key is paste without formatting — a Google
             // Doc, a form, the address field. It only means Paste and Go when

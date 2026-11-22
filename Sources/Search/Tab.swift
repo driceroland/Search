@@ -770,6 +770,14 @@ final class Tab: ObservableObject, Identifiable {
     var home: URL?
     /// For a pin, which of the pins it is, in every window (see Pins.swift).
     var pinID: UUID?
+    /// For a pin, the title it is kept with in pins.json (PinDef.title), and
+    /// what its row says at rest on its pinned page: the page's title when
+    /// it was pinned, or the name a pin renamed in Arc or Zen was brought in
+    /// with. Never the title of wherever the pin wandered since: written
+    /// from that, a name brought in was lost the first time the pin was
+    /// browsed in, and ⌘W with Pins go back home left the host in its
+    /// place, the row saying 127.0.0.1 or mail.google.com (idea 937).
+    var pinTitle: String?
     /// For a pin, one every space shows (see Pins.shared). Set when the row
     /// is built; pins.json, not the session, says which pins these are.
     var everywhere = false
@@ -926,6 +934,7 @@ final class Tab: ObservableObject, Identifiable {
     var label: String {
         if let name, !name.isEmpty { return name }
         if let page { return page.title }
+        if atPinnedPage, let pinTitle, !pinTitle.isEmpty { return pinTitle }
         if popup, let host = address?.host(), !host.isEmpty {
             return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         }
@@ -1091,7 +1100,7 @@ final class Tab: ObservableObject, Identifiable {
                     let on = state == .enteringFullscreen || state == .inFullscreen
                     if self.immersed != on { self.immersed = on }
                     // Home behind another tab: its stage puts it away.
-                    if state == .notInFullscreen, Shared.prefs.keepsWindow { self.built?.superview?.needsLayout = true }
+                    if state == .notInFullscreen { self.built?.superview?.needsLayout = true }
                 }
             },
         ]
@@ -1174,7 +1183,10 @@ final class Tab: ObservableObject, Identifiable {
         add(KeptScroll.script, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         add(Veiling.picker, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         add(PageDrafts.script, .atDocumentStart, mainFrameOnly: false, in: Web.world)
-        add(FormRelay.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
+        // Every frame: one of the page's own origin offers its sign-in's
+        // boxes the page's accounts; any other returns at once (see the
+        // script's first lines).
+        add(FormRelay.script, .atDocumentEnd, mainFrameOnly: false, in: Web.world)
         // The form script looks at boxes for your card only with Fill in
         // your contact details on.
         if FormRelay.contacts {
@@ -1593,6 +1605,14 @@ final class Tab: ObservableObject, Identifiable {
         pending = url
         memory = state
         adoptIcon()
+    }
+
+    /// A pin at rest on the page it was pinned at: closed with ⌘W, not yet
+    /// opened since launch, or put to sleep there. Its row says the pin's
+    /// own title (pinTitle), and the page's while it shows the page.
+    var atPinnedPage: Bool {
+        guard pin != nil, asleep, let home, let address else { return false }
+        return Browser.samePage(home, address)
     }
 
     /// True for a tab that has a place and an address but is holding no page —
@@ -2386,36 +2406,6 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 final class PageView: WKWebView {
     var draftFrames: [WKFrameInfo] = []
 
-    /// While ⌘S slides the column and the page follows it, the ground
-    /// WebKit shows where it hasn't drawn the page at its new width yet, in
-    /// the page's own colour (Browser.slidePage). WebKit sets the view's
-    /// layer's colour itself as the view is resized, so it is put back over
-    /// WebKit's each time; nil, WebKit's own is back.
-    var ground: CGColor? {
-        didSet {
-            guard ground != oldValue else { return }
-            if oldValue == nil { webGround = layer?.backgroundColor }
-            layer?.backgroundColor = ground ?? webGround
-        }
-    }
-    private var webGround: CGColor?
-
-    override func updateLayer() {
-        super.updateLayer()
-        if let ground {
-            webGround = layer?.backgroundColor
-            layer?.backgroundColor = ground
-        }
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        if let ground, layer?.backgroundColor != ground {
-            webGround = layer?.backgroundColor
-            layer?.backgroundColor = ground
-        }
-    }
-
     var onMenuClosed: (() -> Void)?
 
     /// Two fingers spread on a peek open it as a tab, as zooming into it
@@ -2509,6 +2499,21 @@ final class PageView: WKWebView {
                 var at = index + 1
                 while at < menu.items.count, menu.items[at].isAlternate { at += 1 }
                 menu.insertItem(beside, at: at)
+            }
+            // Open Link in Private Tab (#902), as the bookmarks bar has it:
+            // after the items above, in a tab that keeps nothing. Not on a
+            // private page, where Open Link in New Tab is private already.
+            if configuration.websiteDataStore.isPersistent, let shy = item.copy() as? NSMenuItem {
+                shy.title = "Open Link in Private Tab"
+                shy.identifier = NSUserInterfaceItemIdentifier("SearchOpenLinkInPrivateTab")
+                shy.keyEquivalentModifierMask = []
+                shy.isAlternate = false
+                shy.target = self
+                shy.action = #selector(openLinkPrivate(_:))
+                var at = index + 1
+                while at < menu.items.count,
+                      menu.items[at].isAlternate || menu.items[at].identifier?.rawValue == "SearchOpenLinkInSplitView" { at += 1 }
+                menu.insertItem(shy, at: at)
             }
             openLink = (item.target, item.action)
             item.title = "Open Link in New Tab"
@@ -2709,6 +2714,23 @@ final class PageView: WKWebView {
         return besideSince.map { Date().timeIntervalSince($0) < 1 } ?? false
     }
 
+    /// Open Link in Private Tab: the same action, the tab it would make
+    /// marked, for a second, to be a private one instead (Browser's
+    /// createWebViewWith opens it with nothing of this page's).
+    private var privateSince: Date?
+
+    @objc private func openLinkPrivate(_ item: NSMenuItem) {
+        guard let action = openLink.action else { return }
+        privateSince = Date()
+        NSApp.sendAction(action, to: openLink.target, from: item)
+    }
+
+    /// Whether the tab being made now is the menu's, to be private.
+    func takePrivate() -> Bool {
+        defer { privateSince = nil }
+        return privateSince.map { Date().timeIntervalSince($0) < 1 } ?? false
+    }
+
     @objc private func searchSelection(_ item: NSMenuItem) {
         defer { selection = nil }
         guard let selection, !selection.isEmpty else {
@@ -2743,9 +2765,30 @@ final class PageView: WKWebView {
     var onKeys: (() -> Void)?
 
     override func becomeFirstResponder() -> Bool {
+        // WebKit asks for the keys itself as a page it loads arrives
+        // (WebPageProxy::makeFirstResponder), and AppKit has already taken
+        // them from whoever had them when it asks here. With the address
+        // field up over the page, raised by ⌘T or ⌘L while the page was
+        // still on its way, what was typed next went into the page's search
+        // box instead (idea 495). The page says no and the field has them
+        // back, where they were; a click on the page still takes them.
+        if !Self.clicked, let browser, browser.editing, let window, AddressField.keepsKeys(for: browser, in: window) { return false }
         let took = super.becomeFirstResponder()
         if took { onKeys?() }
         return took
+    }
+
+    /// The keys handed to a page as a click on it would leave them: the
+    /// bench's `key`, in a probe that has no mouse.
+    static var handedAsClick = false
+
+    /// The event in hand is a press of the mouse: the keys go where it was.
+    private static var clicked: Bool {
+        if handedAsClick { return true }
+        switch NSApp.currentEvent?.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown: return true
+        default: return false
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -3063,6 +3106,18 @@ final class PageView: WKWebView {
     /// begun within a moment of that is the same scrolling going on (the
     /// page repeats itself at most ten times a second, see Swipe.watch).
     private var lastTaken: Date?
+    /// When the page last scrolled up or down under the fingers or in the
+    /// glide after them. A gesture begun within a moment of that is the same
+    /// scrolling going on: a fast flick down that drifts sideways at its
+    /// start went back a page (#1389). Safari reads it as scrolling too.
+    private var scrolledDown: Date?
+    /// This gesture began while the page was still scrolling (scrolledDown):
+    /// only a plainly sideways one is a swipe, and never a mere flick.
+    private var afterScroll = false
+    /// The furthest the fingers have been this gesture. Letting go counts
+    /// only near it: drawn back `giveBack` from there, the swipe is off, so
+    /// taking it back is a shorter move than making it (#1389).
+    private var peak: CGFloat = 0
     private var armedNow = false
     private var showing = false
     private var going = false
@@ -3098,6 +3153,13 @@ final class PageView: WKWebView {
     /// this far, within `flickTime` of setting off.
     private static let flick: CGFloat = 30
     private static let flickTime: TimeInterval = 0.25
+    /// Drawn back this far from the furthest point, letting go goes nowhere.
+    private static let giveBack: CGFloat = 20
+    /// How long after the page last scrolled up or down a new gesture still
+    /// counts as that scrolling, and how much more sideways than up or down
+    /// it then has to set off to be a swipe.
+    private static let scrollingOn: TimeInterval = 0.4
+    private static let plainlySideways: CGFloat = 3
     /// Less than this and there is nothing to show yet — or nothing left to.
     private static let show: CGFloat = 6
 
@@ -3181,13 +3243,26 @@ final class PageView: WKWebView {
         """
     }
 
+    /// A mouse wheel's notches eased over a few frames (WheelGlide.swift).
+    private(set) lazy var glider = WheelGlide(self)
+
+    /// A step of a glided notch, straight to WebKit: it is no swipe.
+    func glide(_ event: NSEvent) {
+        super.scrollWheel(with: event)
+    }
+
     override func scrollWheel(with event: NSEvent) {
         onTouch?()
+        if WheelGlide.on, stops == nil, glider.take(event) { return }
         if event.phase == .mayBegin || event.phase == .began {
             went = false
             Swipe.calm(self)
         }
         if went, event.momentumPhase != [] { return }
+        // Up or down, by hand or in the glide after it (see scrolledDown).
+        if axis == .down, event.phase == .changed || event.phase == .ended || event.momentumPhase != [] {
+            scrolledDown = Date()
+        }
         // The page gets every event first and scrolls as it always did. The
         // swipe is only read, never taken — except while its list is open,
         // when up and down are picking a page, not scrolling this one. The
@@ -3211,6 +3286,8 @@ final class PageView: WKWebView {
             asked = nil
             spent = false
             refused = lastTaken.map { Date().timeIntervalSince($0) < 0.15 } ?? false
+            afterScroll = scrolledDown.map { Date().timeIntervalSince($0) < PageView.scrollingOn } ?? false
+            peak = 0
             armedNow = false
             showing = false
             holding?.cancel()
@@ -3234,7 +3311,8 @@ final class PageView: WKWebView {
                 gatheredY += abs(event.scrollingDeltaY)
                 sideways += event.scrollingDeltaX
                 guard gatheredX + gatheredY > 6 else { return }
-                axis = gatheredX > gatheredY * 1.3 ? .across : .down
+                axis = gatheredX > gatheredY * (afterScroll ? PageView.plainlySideways : 1.3) ? .across : .down
+                if axis == .down { scrolledDown = Date() }
                 if axis == .down {
                     spent = true
                     return
@@ -3304,6 +3382,7 @@ final class PageView: WKWebView {
         guard free == true else { return }
 
         let travel = travel
+        peak = max(peak, travel)
         // Drawn all the way back, the disc goes; drawn out again, it returns.
         // Nothing is decided until the fingers lift.
         guard travel >= PageView.show else {
@@ -3311,7 +3390,9 @@ final class PageView: WKWebView {
             return
         }
 
-        let armed = travel >= PageView.arm
+        // Armed only near the furthest the fingers went: drawn back a little
+        // from there, it lets go of the page (the lighter tap says so).
+        let armed = travel >= PageView.arm && travel > peak - PageView.giveBack
         if PageView.holdsHistory, stops == nil, armed != armedNow {
             holding?.cancel()
             holding = nil
@@ -3378,7 +3459,7 @@ final class PageView: WKWebView {
         // Let go before the list came: it doesn't come now.
         holding?.cancel()
         holding = nil
-        let flicked = !spent && free == true && travel >= PageView.flick
+        let flicked = !spent && free == true && !afterScroll && travel >= PageView.flick && travel > peak - PageView.giveBack
             && (asked.map { Date().timeIntervalSince($0) <= PageView.flickTime } ?? false)
         guard !spent, free == true, armedNow || flicked || stops != nil else {
             settle(nil)
@@ -3515,10 +3596,20 @@ final class PointerGate: NSResponder {
         _ = target.perform(selector, with: event)
     }
 
-    override func mouseMoved(with event: NSEvent) { pass(#selector(NSResponder.mouseMoved(with:)), event) }
-    override func mouseEntered(with event: NSEvent) { pass(#selector(NSResponder.mouseEntered(with:)), event) }
+    /// The page in the window's title bar keeps the window still while the
+    /// pointer is over it there (DragStrip.Strip.holdForPage, idea 935).
+    private func aim(_ event: NSEvent) {
+        guard let page, event.window == nil || event.window === page.window else { return }
+        DragStrip.Strip.holdForPage(page, at: event.locationInWindow)
+    }
+
+    override func mouseMoved(with event: NSEvent) { aim(event); pass(#selector(NSResponder.mouseMoved(with:)), event) }
+    override func mouseEntered(with event: NSEvent) { aim(event); pass(#selector(NSResponder.mouseEntered(with:)), event) }
     override func cursorUpdate(with event: NSEvent) { pass(#selector(NSResponder.cursorUpdate(with:)), event) }
-    override func mouseExited(with event: NSEvent) { pass(#selector(NSResponder.mouseExited(with:)), event, always: true) }
+    override func mouseExited(with event: NSEvent) {
+        DragStrip.Strip.releaseForPage(page?.window)
+        pass(#selector(NSResponder.mouseExited(with:)), event, always: true)
+    }
 }
 
 /// Carries the page's scroll position back to its tab.
@@ -3585,10 +3676,59 @@ extension WKWebView {
             let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
             let tooWide = folder == home || ["/", "/Users", "/Volumes"].contains(folder.path)
                 || folder.deletingLastPathComponent().path == "/Volumes"
-            loadFileURL(url, allowingReadAccessTo: tooWide ? url : folder)
+                || WKWebView.sameItem(folder, home) || WKWebView.sameItem(folder, URL(fileURLWithPath: "/Users"))
+                || WKWebView.isVolume(folder)
+            loadFileURL(url, allowingReadAccessTo: tooWide ? url : WKWebView.readRoot(folder, home: home))
         } else {
             load(URLRequest(url: url))
         }
+    }
+
+    /// A static site's pages in a folder of their own reach for their
+    /// styles and pictures one or two folders up (lessons/one.html and
+    /// ../assets/style.css), as Safari and Chrome show them (#1342): the
+    /// page may read up to two folders above its own, never as far as the
+    /// home folder, a folder directly in it (Documents, Desktop, Downloads,
+    /// Library…), the disk, a volume or a folder at the disk's top.
+    ///
+    /// The folders are told apart by what they are on disk, not by how the
+    /// address spells them: /System/Volumes/Data/Users/you, /users/you or a
+    /// link to the home folder is the home folder too.
+    static func readRoot(_ folder: URL, home: URL) -> URL {
+        func spelledBroad(_ candidate: URL) -> Bool {
+            let parent = candidate.deletingLastPathComponent()
+            return candidate.path == home.path || parent.path == home.path || candidate.pathComponents.count <= 3
+                || parent.path == "/Volumes"
+        }
+        func broad(_ candidate: URL) -> Bool {
+            let parent = candidate.deletingLastPathComponent()
+            return spelledBroad(candidate) || spelledBroad(candidate.resolvingSymlinksInPath())
+                || sameItem(candidate, home) || sameItem(parent, home)
+                || isVolume(candidate) || isVolume(parent)
+        }
+        var root = folder
+        for _ in 0..<2 {
+            let up = root.deletingLastPathComponent().standardizedFileURL
+            guard up.path != root.path, !broad(up) else { break }
+            root = up
+        }
+        return root
+    }
+
+    /// The same folder on disk, however each is spelled (links followed,
+    /// case, the data volume's own path). False when either can't be read.
+    static func sameItem(_ a: URL, _ b: URL) -> Bool {
+        func id(_ url: URL) -> NSObject? {
+            (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.fileResourceIdentifierKey]))?
+                .fileResourceIdentifier as? NSObject
+        }
+        guard let first = id(a), let second = id(b) else { return false }
+        return first.isEqual(second)
+    }
+
+    /// A disk or a volume itself, the data volume's /System/Volumes/Data too.
+    static func isVolume(_ url: URL) -> Bool {
+        (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isVolumeKey]))?.isVolume == true
     }
 
     /// JavaScript run in Search's own world (see Web.world), where its page

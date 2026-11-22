@@ -8,6 +8,11 @@ import XCTest
 /// what the page has to press there to the page (idea 928).
 @MainActor
 final class TopEdgeTests: XCTestCase {
+    override class func setUp() {
+        TestWorld.enter()
+        super.setUp()
+    }
+
     // MARK: FullScreenReveal.inset
 
     func testNothingOutsideFullScreen() {
@@ -38,6 +43,83 @@ final class TopEdgeTests: XCTestCase {
     func testNeverTwice() {
         XCTAssertEqual(FullScreenReveal.inset(fullScreen: true, shown: true, revealAmount: 1, contentTop: 937, barBottom: 937), 0)
         XCTAssertEqual(FullScreenReveal.inset(fullScreen: true, shown: true, revealAmount: 1, contentTop: 950, barBottom: 937), 13)
+    }
+
+    // MARK: The title bar in full screen (idea 934)
+
+    /// AppKit's own number for the most the full-screen title bar shows,
+    /// where it answers: the height of what comes down with the menu bar.
+    private func fullScreenMost(_ window: NSWindow) -> CGFloat? {
+        guard let frame = window.contentView?.superview else { return nil }
+        let sel = NSSelectorFromString("fullScreenTitlebarMaxHeight")
+        guard frame.responds(to: sel) else { return nil }
+        typealias Get = @convention(c) (AnyObject, Selector) -> CGFloat
+        return unsafeBitCast(frame.method(for: sel), to: Get.self)(frame, sel)
+    }
+
+    /// A window dressed as Search's (Windows.swift, ContentView.dress), with
+    /// the title bar's container grown to the strip as Lights does. Never
+    /// ordered in.
+    private func searchWindow() -> NSWindow {
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 900, height: 600),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        if let container = window.standardWindowButton(.closeButton)?.superview?.superview {
+            var frame = container.frame
+            frame.size.height = 52
+            frame.origin.y = window.frame.height - 52
+            container.frame = frame
+        }
+        return window
+    }
+
+    /// Going full screen adds nothing to the title bar: no toolbar, the
+    /// same style, and the one accessory, the reveal's, takes no height,
+    /// so what comes down is the menu bar and macOS's own title bar, as in
+    /// Safari. A bottom accessory, as in 1.0.18, took 36 points more.
+    func testFullScreenAddsNoHeightToTheTitleBar() {
+        let window = searchWindow()
+        let room = window.frame.height - window.contentLayoutRect.height
+        let most = fullScreenMost(window)
+        let browser = Browser(record: WindowRecord())
+        defer { browser.closeAll() }
+        let reveal = FullScreenReveal(window: window, browser: browser)
+        reveal.entering()
+        window.contentView?.superview?.layoutSubtreeIfNeeded()
+
+        XCTAssertNil(window.toolbar, "no toolbar, not even an empty one")
+        XCTAssertTrue(window.styleMask.contains(.fullSizeContentView))
+        XCTAssertTrue(window.titlebarAppearsTransparent)
+        XCTAssertEqual(window.titleVisibility, .hidden)
+        XCTAssertEqual(window.titlebarAccessoryViewControllers.count, 1)
+        let bar = window.titlebarAccessoryViewControllers.first
+        XCTAssertEqual(bar?.layoutAttribute, .trailing, "beside the buttons, not a row of its own under them")
+        XCTAssertEqual(bar?.fullScreenMinHeight, 0, "away with the menu bar")
+        XCTAssertEqual(window.frame.height - window.contentLayoutRect.height, room, "the title bar no taller")
+        if let most { XCTAssertEqual(fullScreenMost(window), most, "what comes down in full screen no taller") }
+
+        reveal.leaving()
+        XCTAssertTrue(window.titlebarAccessoryViewControllers.isEmpty)
+        XCTAssertEqual(window.frame.height - window.contentLayoutRect.height, room)
+        window.close()
+    }
+
+    /// What 1.0.18 did, kept as the measure of the fix: a bottom accessory,
+    /// however small its view, made the title bar taller.
+    func testABottomAccessoryWouldAddARow() {
+        let window = searchWindow()
+        let room = window.frame.height - window.contentLayoutRect.height
+        let bar = NSTitlebarAccessoryViewController()
+        bar.view = NSView(frame: NSRect(x: 0, y: 0, width: 10, height: 1))
+        bar.layoutAttribute = .bottom
+        bar.fullScreenMinHeight = 0
+        window.addTitlebarAccessoryViewController(bar)
+        XCTAssertGreaterThan(window.frame.height - window.contentLayoutRect.height, room)
+        window.close()
     }
 
     // MARK: DragStrip over a page

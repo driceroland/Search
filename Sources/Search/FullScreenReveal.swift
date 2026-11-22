@@ -15,7 +15,9 @@ import AppKit
 /// down, and the accessory kept in full screen gave the title bar a ground
 /// and room of its own, the grey strip seen taller than in 1.0.16 (idea 926).
 /// The accessory now hides with the menu bar and only says, as it slides,
-/// how far it is out (its revealAmount, which Chrome follows the same way).
+/// how far it is out (its revealAmount, which Chrome follows the same way),
+/// and sits beside the window's buttons, where it adds no height to what
+/// comes down (idea 934, see makeAccessory).
 @MainActor
 final class FullScreenReveal: NSObject {
     private weak var window: NSWindow?
@@ -44,12 +46,7 @@ final class FullScreenReveal: NSObject {
     /// the title bar to say how far the reveal is out.
     func entering() {
         guard let window, accessory == nil else { return }
-        let bar = NSTitlebarAccessoryViewController()
-        bar.view = NSView(frame: NSRect(x: 0, y: 0, width: 10, height: 1))
-        bar.layoutAttribute = .bottom
-        // Away with the menu bar: nothing of the title bar stays on screen,
-        // and it takes no room of its own (see above).
-        bar.fullScreenMinHeight = 0
+        let bar = Self.makeAccessory()
         window.addTitlebarAccessoryViewController(bar)
         accessory = bar
         if bar.responds(to: NSSelectorFromString(Self.revealKey)) {
@@ -57,6 +54,24 @@ final class FullScreenReveal: NSObject {
             sliding = true
         }
         measure()
+    }
+
+    /// The accessory: nothing to see, and no room taken. At the bottom of
+    /// the title bar, as it was until 1.0.18, AppKit gives an accessory a
+    /// row of its own at least 36 points tall whatever its view says (macOS
+    /// 26, measured: the title bar went from 32 points to 68, and so did
+    /// the full-screen title bar's most), so the strip with the window's
+    /// buttons came down that much taller than the menu bar and Safari's
+    /// (idea 934). Beside the buttons, at the trailing end of their own
+    /// row, a view of no width adds nothing, and the accessory still says how
+    /// far the reveal is out. Away with the menu bar: nothing of the title
+    /// bar stays on screen.
+    static func makeAccessory() -> NSTitlebarAccessoryViewController {
+        let bar = NSTitlebarAccessoryViewController()
+        bar.view = NSView(frame: .zero)
+        bar.layoutAttribute = .trailing
+        bar.fullScreenMinHeight = 0
+        return bar
     }
 
     /// Leaving it: out again, and nothing is kept for the reveal.

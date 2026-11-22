@@ -33,6 +33,11 @@ struct PinDef: Codable, Equatable {
     /// (see Browser.pin). Written only for those, so the file is
     /// unchanged for anyone who never pins one.
     var pair: UUID? = nil
+    /// The title is the pin's own (Tab.pinTitle): kept wherever the pin
+    /// goes, never the title of the last page it showed, as every pin's
+    /// was until idea 937. Nil for a pin written before, whose title is
+    /// taken once more from its pinned page, then kept.
+    var titled: Bool? = nil
 }
 
 @MainActor

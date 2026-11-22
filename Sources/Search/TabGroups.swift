@@ -278,6 +278,9 @@ private struct GroupHeadingShared: ViewModifier {
             }
             .onDrag { NSItemProvider(object: "search-group:\(group.id.uuidString)" as NSString) }
             .contextMenu {
+                // First, as Chrome has it: a tab at the group's end, in front.
+                Button("New Tab in Group") { browser.newTab(inGroup: group.id) }
+                Divider()
                 Button("Rename Group") { browser.editingGroupID = group.id }
                 Button(group.collapsed ? "Expand Group" : "Collapse Group") { browser.toggleTabGroup(group.id) }
                 Button("Colour…") { choosingColour = true }
@@ -362,6 +365,28 @@ struct GroupBand: View {
             shape.fill(fill)
                 .frame(height: Self.height)
                 .padding(.trailing, last ? 0 : -Metrics.tabGap)
+                .allowsHitTesting(false)
+        }
+    }
+
+    /// The open groups in `groups` that something follows in the row:
+    /// another group, or with `looseAfter` the tabs in none. Their bands end
+    /// with more air than a tab's gap (Air), so a tab after one, ⌘T's
+    /// (#1151), plainly isn't in it. A folded group, or one last in the row,
+    /// is spaced as before.
+    static func spaced(_ groups: [TabGroup], looseAfter: Bool) -> Set<UUID> {
+        Set(groups.enumerated().filter { index, group in
+            !group.collapsed && (looseAfter || index < groups.count - 1)
+        }.map(\.element.id))
+    }
+
+    /// The air after a band: with the row's gap on either side, `space`
+    /// more than between two tabs, 10 points in all.
+    struct Air: View {
+        static let space: CGFloat = 8
+        var body: some View {
+            Color.clear
+                .frame(width: Self.space - Metrics.tabGap, height: 1)
                 .allowsHitTesting(false)
         }
     }

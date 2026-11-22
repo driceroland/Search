@@ -34,8 +34,8 @@ struct TabBar: View {
     /// the address when it is in sight. The badge was left out, and the row
     /// was laid out 28 points wider than the window gave it.
     private var leading: CGFloat {
-        (browser.prefs.navigationLeft ? Metrics.helm - 8 + Metrics.tabGap : 0)
-            + (Profiles.shared.several ? ProfileBadge.width + Metrics.tabGap : 0)
+        (browser.prefs.navigationLeft && browser.prefs.helmDoors > 0 ? Metrics.helm(browser.prefs) - 8 + Metrics.tabGap : 0)
+            + (browser.prefs.showsProfileDoor ? ProfileBadge.width + Metrics.tabGap : 0)
             + (browser.prefs.addressLine ? browser.prefs.addressWidth.width + AddressLine.after + Metrics.tabGap : 0)
     }
     /// How much wider the run's tabs were laid out than they were worked out
@@ -72,12 +72,12 @@ struct TabBar: View {
 
                 HStack(spacing: Metrics.tabGap) {
                     // Back, forward and reload by the lights, when asked.
-                    if browser.prefs.navigationLeft { Helm(browser: browser) }
+                    if browser.prefs.navigationLeft, browser.prefs.helmDoors > 0 { Helm(browser: browser) }
                     // The space on screen, first, when there are spaces.
                     // Above the tabs, for the name it shows over them a moment
                     // after a switch.
                     // The profile, once there is more than one (see Profiles.swift).
-                    if Profiles.shared.several { ProfileBadge(browser: browser) }
+                    if browser.prefs.showsProfileDoor { ProfileBadge(browser: browser) }
                     // The page's address, when it is to be in sight: before the tabs.
                     if browser.prefs.addressLine {
                         AddressLine(browser: browser)
@@ -119,6 +119,8 @@ struct TabBar: View {
                                                        group: nil, strip: geo.size.width, each: each)
                                             }
                                             if pinLine { PinLine() }
+                                            let ungrouped = browser.displayedTabs.filter { $0.pin == nil && browser.group(of: $0) == nil }
+                                            let spaced = GroupBand.spaced(browser.tabGroups, looseAfter: !ungrouped.isEmpty)
                                             ForEach(browser.tabGroups) { group in
                                                 let members = browser.visibleTabs(in: group)
                                                 // An open group's band, its name
@@ -138,8 +140,8 @@ struct TabBar: View {
                                                            group: group.id, strip: geo.size.width, each: each,
                                                            band: banded ? group : nil, last: index == members.count - 1)
                                                 }
+                                                if spaced.contains(group.id) { GroupBand.Air() }
                                             }
-                                            let ungrouped = browser.displayedTabs.filter { $0.pin == nil && browser.group(of: $0) == nil }
                                             let ungroupedSteps = steps(ungrouped, each: each)
                                             ForEach(Array(ungrouped.enumerated()), id: \.element.id) { index, tab in
                                                 topTab(tab, index: index, steps: ungroupedSteps,
@@ -266,11 +268,13 @@ struct TabBar: View {
                         AgentStatus(browser: browser, style: .door)
                         // Only while a download is running, and a moment after.
                         FetchDoor(browser: browser, fetches: browser.fetches)
-                        ExtensionSlot(browser: browser)
-                        if !browser.prefs.navigationLeft {
+                        ExtensionSlot(browser: browser, puzzle: !browser.prefs.hidesExtensionsDoor)
+                        if !browser.prefs.navigationLeft, browser.prefs.helmDoors > 0 {
                             Helm(browser: browser).padding(.trailing, 8)
                         }
-                        BookmarkDoor(browser: browser, arrowEdge: .bottom)
+                        if !browser.prefs.hidesBookmarksDoor {
+                            BookmarkDoor(browser: browser, arrowEdge: .bottom)
+                        }
                         SpaceButtons(browser: browser)
                     }
                     .background {
@@ -391,6 +395,7 @@ struct TabBar: View {
                                 height: Metrics.strip, interactive: false, pill: pill)
                     }
                     if line { PinLine() }
+                    let spaced = GroupBand.spaced(groupsShown.map(\.group), looseAfter: !looseShown.isEmpty)
                     ForEach(groupsShown) { drawn in
                         // The same band as the row on screen (GroupBand).
                         let members = drawn.tabs.filter { fit.contains($0.id) }
@@ -407,6 +412,7 @@ struct TabBar: View {
                                     if banded { GroupBand(group: drawn.group, piece: tab.id, last: tab.id == members.last?.id) }
                                 }
                         }
+                        if spaced.contains(drawn.group.id) { GroupBand.Air() }
                     }
                     ForEach(looseShown) { tab in
                         rowItem(tab, in: row.tabs, splits: row.splits, activeID: row.active,
@@ -482,6 +488,7 @@ struct TabBar: View {
             .background {
                 if let band { GroupBand(group: band, piece: tab.id, last: last) }
             }
+            .modifier(RecordsItem(id: tab.id))
             .id(tab.id)
     }
 
@@ -571,6 +578,8 @@ struct TabBar: View {
     static var laidOut: CGFloat = 0
     /// Each group band piece of a row drawn for the bench (GroupBand).
     static var drawnBands: [UUID: GroupBand.Drawn] = [:]
+    /// Where each tab of a row drawn for the bench was laid out (RecordsItem).
+    static var drawnItems: [UUID: CGRect] = [:]
     /// Each title of a row drawn for the bench (RecordsTitle), by its tab's
     /// id and which line: "title" or "rest", the address said at rest.
     static var drawnTitles: [String: DrawnTitle] = [:]
@@ -593,6 +602,14 @@ struct TabBar: View {
     /// since it shows even when its group holds no visible tab.
     static func showsPinLine(_ tabs: [Tab], groups: Int = 0) -> Bool {
         tabs.contains { $0.pin != nil } && (groups > 0 || tabs.contains { $0.pin == nil })
+    }
+
+    /// The air after the open groups' bands something follows in this
+    /// window's run (GroupBand.Air), for the widths.
+    private var bandAir: CGFloat {
+        guard browser.prefs.usesTabGroups else { return 0 }
+        let loose = browser.displayedTabs.contains { $0.pin == nil && browser.group(of: $0) == nil }
+        return CGFloat(GroupBand.spaced(browser.tabGroups, looseAfter: loose).count) * GroupBand.Air.space
     }
 
     /// Whether this window's own run carries the line.
@@ -621,7 +638,7 @@ struct TabBar: View {
         let shown = Int(pinned + loose + headers)
         var total = pinned * Metrics.pinWidth + loose * each + extra
             + headingWidth + CGFloat(max(0, shown - 1)) * Metrics.tabGap
-            + (pinLine ? PinLine.space : 0)
+            + (pinLine ? PinLine.space : 0) + bandAir
         if let id = browser.editingTab, let tab = browser.tabs.first(where: { $0.id == id }) {
             let splitWidth = browser.prefs.splitView ? browser.split(for: tab).map { splitItemWidth(base: each, pages: $0.tabs.count) } : nil
             let oldWidth = splitWidth ?? (tab.pin != nil ? Metrics.pinWidth : each)
@@ -635,7 +652,7 @@ struct TabBar: View {
     /// until they have been, the helm and the bookmarks stand in for them —
     /// unless the helm leads, when nothing at the far end may be a real zero.
     private func room(in strip: CGFloat) -> CGFloat {
-        let far = doors > 0 || browser.prefs.navigationLeft ? doors : Metrics.helm + 26
+        let far = doors > 0 || browser.prefs.navigationLeft ? doors : Metrics.helm(browser.prefs) + 26
         return max(0, strip - lights - dot - leading - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
     }
 
@@ -664,7 +681,7 @@ struct TabBar: View {
             let spent = CGFloat(pins) * Metrics.pinWidth + extra
                 + browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name, numbered: browser.prefs.showsTabShortcuts && $1.collapsed) }
                 + CGFloat(max(0, pins + count + browser.tabGroups.count - 1)) * Metrics.tabGap
-                + (pinLine ? PinLine.space : 0)
+                + (pinLine ? PinLine.space : 0) + bandAir
             return max(Metrics.tabMinWidth, min(Metrics.tabWidth, (room(in: strip) - spent) / CGFloat(count)))
         }
         return width(in: strip, tabs: displayed, splits: browser.splits)
@@ -706,6 +723,23 @@ struct TabBar: View {
     }
 }
 
+/// On a row drawn off screen for the bench, where a tab of the run was laid
+/// out (TabBar.drawnItems); nothing on the window's own row.
+private struct RecordsItem: ViewModifier {
+    @Environment(\.recordsBands) private var records
+    let id: UUID
+
+    func body(content: Content) -> some View {
+        if records {
+            content.onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("strip")) }) { rect in
+                TabBar.drawnItems[id] = rect
+            }
+        } else {
+            content
+        }
+    }
+}
+
 /// The line between what is kept and what comes and goes, standing up in the
 /// strip as the column's own lies across it (see KeepLine in Side.swift). The
 /// same hairline grey, as tall as a tab's mark, with the run's gap on either
@@ -740,9 +774,9 @@ struct Helm: View {
             // Nowhere to go and nothing to reload: the doors stay in place,
             // greyed, so the row doesn't shift when a tab arrives.
             Helm.stack(vertical) {
-                Door(icon: "chevron.left") {}
-                Door(icon: "chevron.right") {}
-                Door(icon: "arrow.clockwise") {}
+                if !browser.prefs.hidesBack { Door(icon: "chevron.left") {} }
+                if !browser.prefs.hidesForward { Door(icon: "chevron.right") {} }
+                if !browser.prefs.hidesReload { Door(icon: "arrow.clockwise") {} }
             }
             .opacity(0.3)
             .allowsHitTesting(false)
@@ -763,13 +797,19 @@ struct Helm: View {
             let back = !tab.isBlank && tab.canGoBack
             let forward = !tab.isBlank && tab.canGoForward
             Helm.stack(vertical) {
-                Door(icon: "chevron.left", help: "Back", shortcut: "tabs.back", held: { Rewind.menu(tab, back: true) }) { browser.back() }
-                    .disabled(!back)
-                    .opacity(back ? 1 : 0.3)
-                Door(icon: "chevron.right", help: "Forward", shortcut: "tabs.forward", held: { Rewind.menu(tab, back: false) }) { browser.forward() }
-                    .disabled(!forward)
-                    .opacity(forward ? 1 : 0.3)
+                // Each can be hidden in Settings › Appearance (idea 815).
+                if !browser.prefs.hidesBack {
+                    Door(icon: "chevron.left", help: "Back", shortcut: "tabs.back", held: { Rewind.menu(tab, back: true) }) { browser.back() }
+                        .disabled(!back)
+                        .opacity(back ? 1 : 0.3)
+                }
+                if !browser.prefs.hidesForward {
+                    Door(icon: "chevron.right", help: "Forward", shortcut: "tabs.forward", held: { Rewind.menu(tab, back: false) }) { browser.forward() }
+                        .disabled(!forward)
+                        .opacity(forward ? 1 : 0.3)
+                }
                 // Reload, or stop while it is still coming.
+                if !browser.prefs.hidesReload {
                 Door(
                     icon: tab.loading ? "xmark" : "arrow.clockwise",
                     // Stop's ⌘. is the Mac's own, not one of Settings › Shortcuts.
@@ -789,6 +829,7 @@ struct Helm: View {
                         Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
                             .shortcut("view.reloadOrigin")
                     }
+                }
                 }
             }
             .animation(Motion.quick, value: back)
@@ -929,7 +970,18 @@ private struct TabPill: View, Equatable {
         return said.warns || titleRoom - AtRestLine.besideName(said, size: 12.5) >= Metrics.tabTitleRoom ? said : nil
     }
     private var atRest: Bool { rest != nil }
-    private var dim: Bool { prefs.dimsSleepingTabs && tab.asleep && !live && !hovering }
+    /// A grouped tab's page let go (Browser.putAway), or asleep: dimmed
+    /// whatever Dim sleeping tabs says, as its row in the column is, so a
+    /// press on its minus is seen to have done something (idea 950).
+    private var dim: Bool {
+        (prefs.dimsSleepingTabs || browser.group(of: tab) != nil) && tab.asleep && !live && !hovering
+    }
+    /// Its cross is a minus in a group, as in the column: closing it puts
+    /// its page away and leaves the tab (Browser.closeTab). Read here, not
+    /// when the row made the pill: the pill isn't made again when the tab
+    /// lets its page go, and the cross only shows under the pointer.
+    private var crossSymbol: String { browser.putsAway(tab) ? "minus" : "xmark" }
+    private var crossHelp: String { browser.putsAway(tab) ? "Put Away" : "Close Tab" }
 
     /// A pinned tab is a square, an edited one is a field, everything else is
     /// its share of what is left.
@@ -1028,11 +1080,12 @@ private struct TabPill: View, Equatable {
         if compact {
             ZStack {
                 if live && hovering {
-                    Image(systemName: "xmark")
+                    Image(systemName: crossSymbol)
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(Palette.muted)
                         .frame(width: 15, height: 15)
                         .background(Palette.ink.opacity(0.07), in: Circle())
+                        .help(crossHelp)
                         .transition(.opacity)
                 } else if let number = shortcutNumbers[tab.id] {
                     TabShortcutNumber(number: number)
@@ -1119,11 +1172,12 @@ private struct TabPill: View, Equatable {
                 // ring while the page is still coming, never both.
                 ZStack {
                     if hovering {
-                        Image(systemName: "xmark")
+                        Image(systemName: crossSymbol)
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(Palette.muted)
                             .frame(width: 15, height: 15)
                             .background(Palette.ink.opacity(0.07), in: Circle())
+                            .help(crossHelp)
                             .transition(.opacity)
                     } else if tab.loading {
                         Ring().transition(.opacity)
@@ -1997,7 +2051,7 @@ struct TabMenu: View {
         // The card a click on the tab you are on shows under its address.
         Button("Site Information…") {
             if browser.activeID != tab.id { browser.select(tab) }
-            browser.beginTabEdit(tab)
+            browser.beginTabEdit(tab, card: true)
         }
         .disabled(tab.isBlank || tab.address == nil || tab.pin != nil)
         Button("Copy Address") {

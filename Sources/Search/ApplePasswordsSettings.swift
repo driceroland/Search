@@ -39,12 +39,18 @@ struct ApplePasswordsCard: View {
 
     @ViewBuilder private var pairing: some View {
         switch apple.state {
-        case .idle:
-            Line(apple.trouble ?? "Not connected", "Your Mac shows a code, and you type it here. Once per launch of Search, and only when you first want an account: under a sign-in box, Connect Apple Passwords… asks for it there.") {
-                Pill("Connect…") { Task { await apple.connect() } }
+        case .idle, .starting:
+            // One row for both, its button kept and only greyed while
+            // starting: a start that fails at once leaves it as it was (idea 781).
+            if apple.refused {
+                Line(apple.trouble ?? "Not connected", "macOS stops Apple's helper the moment Search starts it. The iCloud Passwords extension needs that helper too.") { EmptyView() }
+            } else {
+                Line(ApplePasswords.title(state: apple.state, trouble: apple.trouble, connecting: apple.connecting),
+                     "Your Mac shows a code, and you type it here. Once per launch of Search, and only when you first want an account: under a sign-in box, Connect Apple Passwords… asks for it there.") {
+                    Pill("Connect…") { Task { await apple.connect() } }
+                        .disabled(apple.state == .starting)
+                }
             }
-        case .starting:
-            Line("Connecting…", "Waiting for your Mac to show a code") { EmptyView() }
         case .code, .checking:
             Line("Enter the code your Mac shows", apple.state == .checking ? "Checking…" : "Six digits, from the Passwords window") {
                 HStack(spacing: 8) {
@@ -131,8 +137,9 @@ struct ApplePairingCard: View {
                             if digits.count == 6 { send() }
                         }
                         .onSubmit(send)
-                } else if apple.state == .idle {
+                } else if !apple.refused, apple.state == .idle || apple.state == .starting {
                     Pill("Try again", filled: true) { Task { await apple.connect() } }
+                        .disabled(apple.state == .starting)
                 }
                 Spacer(minLength: 0)
                 Pill("Cancel") { browser.endApplePairing(paired: false) }
@@ -158,7 +165,7 @@ struct ApplePairingCard: View {
     private var title: String {
         switch apple.state {
         case .idle: return apple.trouble ?? "Not connected"
-        case .starting: return "Connecting to Apple Passwords…"
+        case .starting: return apple.connecting ? "Connecting to Apple Passwords…" : apple.trouble ?? "Connecting to Apple Passwords…"
         case .code: return "Enter the code your Mac shows"
         case .checking: return "Checking…"
         case .paired: return "Connected"

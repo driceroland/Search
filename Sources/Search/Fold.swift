@@ -55,8 +55,21 @@ extension Browser {
         if prefs.shrinks, !folded {
             // Narrowed to the strip by its edge: the titles come back, as
             // pulling the edge out would bring them.
+            // The other spaces' rows, kept out of sight for a swipe, out of
+            // the column while its width glides: laid out again with it,
+            // with three spaces of 25 tabs the column moved on every other
+            // frame at best (idea 927, since 1.0.16: frames 20 ms apart at
+            // 120 Hz, 8 with one space). Made again once it rests, as after
+            // the edge is let go (SideBar.pages).
+            turnTicket += 1
+            let ticket = turnTicket
+            if !columnTurning { columnTurning = true }
             withAnimation(Motion.glide) {
                 if prefs.narrowStrip { prefs.narrowed = false } else { prefs.sideIcons.toggle() }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self, ticket == self.turnTicket else { return }
+                self.columnTurning = false
             }
             return
         }
@@ -66,37 +79,31 @@ extension Browser {
         // had been, the window's buttons over it — and slid out again.
         if folded, peeking {
             foldTicket += 1
-            let change = {
+            moveColumn(out: true) {
                 self.peeking = false
                 self.folded = false
             }
-            if !Motion.reduced, !Motion.fadesColumn { slidePage(out: true, change) } else { moveColumn(out: true, change) }
             return
         }
         // Only if it was out: set at all, every row of the column is built
         // again, 30 of them with 30 tabs, before the slide starts.
         if peeking { peeking = false }
         foldTicket += 1
-        // Pressed again before the column went (see below): it stays.
+        // Going away, however the column or the strip moves, what a page
+        // grows into is in its own colour until WebKit has drawn it there
+        // (see cover). Called off, it shrinks back and the cover goes.
+        if !folded, !foldingAway { Browser.cover(shownPages) }
+        // Pressed again before the column went: it stays.
         if foldingAway {
             foldingAway = false
             return
         }
-        // The column sliding: the page follows its edge (see slidePage).
-        if prefs.sidebar, !Motion.reduced, !Motion.fadesColumn {
-            slidePage(out: folded) { self.folded.toggle() }
-            return
-        }
-        // Going away otherwise — the strip across the top, or with nothing
-        // sliding — what a page grows into is in its own colour until
-        // WebKit has drawn it there (see cover). Called off, it shrinks back
-        // and the cover goes.
-        if !folded { Browser.cover(shownPages) }
-        // Fading under Reduce Motion, the page is given the column's room
-        // first, and the column fades only once WebKit has drawn the page
-        // at that size: given it as the column went, what WebKit hadn't
-        // drawn yet came in from the far edge as a bar of the web view's
-        // own ground, black or white with the theme.
+        // Going away, the page is given the column's room first, and the
+        // column slides only once WebKit has drawn the page at that size.
+        // Given it as the slide started, the page grew while it slid, and
+        // what WebKit hadn't drawn yet came in from the far edge as a bar
+        // of the web view's own ground, black or white with the theme. Out
+        // over the far edge, where the room goes, nothing of it shows.
         let pages = shownPages
         if !folded, prefs.sidebar, !Motion.reduced, !pages.isEmpty {
             let ticket = foldTicket
@@ -111,61 +118,6 @@ extension Browser {
             return
         }
         moveColumn(out: folded) { self.folded.toggle() }
-    }
-
-    /// `change`, which brings the column out (`out`) or puts it away, on
-    /// the column's slide, with the page beside it following the column's
-    /// edge frame by frame: laid out at every width it passes through, as
-    /// Safari and Dia do, so what the page centres or sets against its far
-    /// side moves with it rather than jumping when the page is resized
-    /// once, at the start of the slide going away or at the end coming out
-    /// (idea 659: half the column's width, 112 points, in one frame).
-    ///
-    /// The page's room is the column's own animated width while this lasts
-    /// (`pageFollows`, read by ContentView), so both move on one curve in
-    /// one transaction. Covered for it (FoldCover.coming), the stage leaves
-    /// the page's own ground on through the slide, as 1.0.17 does (idea 847).
-    func slidePage(out: Bool, _ change: @escaping () -> Void) {
-        followTicket += 1
-        let ticket = followTicket
-        let pages = shownPages
-        pages.forEach {
-            FoldCover.coming.add($0)
-            FoldCover.grounded.add($0)
-        }
-        // Growing, a page is drawn at its new width a frame or more after
-        // its view has it, and the room between showed the web view's own
-        // ground at the far edge, white or dark with the theme: on a dark
-        // page a white sliver up to 60 points wide, frame after frame
-        // (190 on a heavy page). That ground is the view's layer's colour,
-        // here, in this process: it wears the page's own colour while the
-        // page follows (PageView.ground), which WebKit is never asked to
-        // paint for.
-        for case let page as PageView in pages {
-            page.effectiveAppearance.performAsCurrentDrawingAppearance {
-                page.ground = page.underPageBackgroundColor.cgColor
-            }
-        }
-        withAnimation(Motion.folding(out: out)) {
-            pageFollows = true
-            change()
-        }
-        // Past the slide's end, springs included, the page's room is its
-        // own again: the same width, so nothing moves.
-        let length = (Motion.slide(out: out) ?? 0.3) + 0.12
-        DispatchQueue.main.asyncAfter(deadline: .now() + length) { [weak self] in
-            // Pressed again meanwhile: the last slide's end does this.
-            guard let self, ticket == self.followTicket else { return }
-            // Each page's own ground back, and the stage's to see to again.
-            for page in FoldCover.grounded.allObjects {
-                (page as? PageView)?.ground = nil
-                FoldCover.coming.remove(page)
-            }
-            FoldCover.grounded.removeAllObjects()
-            var still = Transaction()
-            still.disablesAnimations = true
-            withTransaction(still) { self.pageFollows = false }
-        }
     }
 
     /// `change`, which brings the column out (`out`) or puts it away, on
@@ -394,6 +346,9 @@ struct Fold: View {
 
     /// How near the edge the pointer has to be.
     private static let edge: CGFloat = 6
+    /// For a column hidden for good, which waits for the pointer to settle
+    /// (see dwell): a wider edge to find, as a hand reaches for it (#1279).
+    private static let hiddenEdge: CGFloat = 10
     /// How far past the window's edge, on the column's side, the pointer
     /// still counts as on it.
     private static let overshoot: CGFloat = 48
@@ -410,10 +365,14 @@ struct Fold: View {
     /// it was hard to find with the pointer; 12 is still under a page's
     /// own first line of anything to click.
     private static let top: CGFloat = 12
-    /// How long the pointer rests on the edge before a column folded for
-    /// good comes out. Long enough to cross the edge, short enough not to be
-    /// waited for.
+    /// How long the pointer rests on the edge before the strip comes out,
+    /// whose edge is the way to the menu bar. Long enough to cross the edge,
+    /// short enough not to be waited for.
     private static let dwell: TimeInterval = 0.15
+    /// The same for a column hidden for good: a hand on its way along the
+    /// side crosses its edge in a frame or two, and anything longer was felt
+    /// as a wait (#1279).
+    private static let columnDwell: TimeInterval = 0.05
 
     var body: some View {
         ZStack(alignment: onRight ? .topTrailing : .topLeading) {
@@ -651,7 +610,7 @@ struct Fold: View {
             let over = onOwnPanel || popup || holding || overshot || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
-        } else if inWindow, distance < Fold.edge,
+        } else if inWindow, distance < (prefs.sidebar && prefs.sideHides ? Fold.hiddenEdge : Fold.edge),
                   // In full screen, not from the corner where macOS brings
                   // the window's buttons down with the menu bar: the column
                   // came out over them there, on the way to the red one (#241).
@@ -702,7 +661,7 @@ struct Fold: View {
             peek(true)
         }
         arriving = coming
-        DispatchQueue.main.asyncAfter(deadline: .now() + Fold.dwell, execute: coming)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (prefs.sidebar ? Fold.columnDwell : Fold.dwell), execute: coming)
     }
 
     /// The pointer crossed the edge without stopping.
@@ -950,10 +909,106 @@ final class FoldCover: NSView {
     /// PaneStage.backPages).
     @MainActor static let coming = NSHashTable<WKWebView>.weakObjects()
 
-    /// Pages following the column, wearing their own colour as their
-    /// ground (Browser.slidePage).
-    @MainActor static let grounded = NSHashTable<WKWebView>.weakObjects()
-
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override var isOpaque: Bool { true }
+}
+
+/// Settings › The column folded away › A loading line (idea 269): with the
+/// tabs out of sight nothing said a page was coming, since the ring is on
+/// its tab. A hairline along the page's top, as far as WebKit says the page
+/// has come, only while it is loading. Drawn by a layer watching the view,
+/// so the page's progress never makes SwiftUI lay anything out again.
+struct LoadingLine: NSViewRepresentable {
+    let web: WKWebView?
+
+    func makeNSView(context: Context) -> LineView { LineView() }
+    func updateNSView(_ view: LineView, context: Context) { view.watch(web) }
+    static func dismantleNSView(_ view: LineView, coordinator: ()) { view.watch(nil) }
+
+    final class LineView: NSView {
+        private let line = CALayer()
+        private var watched: [NSKeyValueObservation] = []
+        private weak var web: WKWebView?
+        /// What the bench reads: shown, and how far along.
+        private(set) var shown = false
+        private(set) var fraction: Double = 0
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            line.backgroundColor = NSColor.controlAccentColor.cgColor
+            line.opacity = 0
+            line.anchorPoint = .zero
+            layer?.addSublayer(line)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        /// Seen, never pressed.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override var isFlipped: Bool { true }
+
+        func watch(_ next: WKWebView?) {
+            guard next !== web || (next == nil && !watched.isEmpty) else { return }
+            watched = []
+            web = next
+            guard let next else { show(false, 0, animated: false); return }
+            let changed: (WKWebView) -> Void = { [weak self] web in
+                MainActor.assumeIsolated { self?.show(web.isLoading, web.estimatedProgress, animated: true) }
+            }
+            watched = [
+                next.observe(\.estimatedProgress, options: [.new]) { web, _ in changed(web) },
+                next.observe(\.isLoading, options: [.new]) { web, _ in changed(web) },
+            ]
+            show(next.isLoading, next.estimatedProgress, animated: false)
+        }
+
+        override func layout() {
+            super.layout()
+            place(animated: false)
+        }
+
+        private func show(_ loading: Bool, _ progress: Double, animated: Bool) {
+            let was = shown
+            fraction = loading ? max(0.08, progress) : (was ? 1 : 0)
+            shown = loading
+            CATransaction.begin()
+            // A new load starts from the left at once, not run back to it.
+            CATransaction.setDisableActions(!animated || (loading && !was))
+            CATransaction.setAnimationDuration(0.2)
+            place(animated: animated)
+            if loading {
+                line.opacity = 0.9
+            } else if was {
+                // Run to the end, then fade, as a line that just stopped
+                // halfway reads as a page that didn't come.
+                CATransaction.setCompletionBlock { [weak self] in
+                    guard let self, !self.shown else { return }
+                    CATransaction.begin()
+                    CATransaction.setAnimationDuration(0.3)
+                    self.line.opacity = 0
+                    CATransaction.commit()
+                }
+            } else {
+                line.opacity = 0
+            }
+            CATransaction.commit()
+        }
+
+        private func place(animated: Bool) {
+            line.frame = CGRect(x: 0, y: 0, width: bounds.width * fraction, height: 2)
+        }
+    }
+}
+
+/// The loading line for the tab in front, following its view as it is
+/// built, woken or let go.
+struct TabLoadingLine: View {
+    @ObservedObject var tab: Tab
+
+    var body: some View {
+        LoadingLine(web: tab.isWeb ? tab.built : nil)
+            .frame(height: 2)
+            .allowsHitTesting(false)
+    }
 }

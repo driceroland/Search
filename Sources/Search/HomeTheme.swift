@@ -252,20 +252,20 @@ struct Seeded: RandomNumberGenerator {
 enum HomeRender {
     private struct Key: Hashable {
         let theme: HomeTheme, tuning: HomeTuning, width: Int, height: Int
-        let dark: Bool, scale: CGFloat, calm: Bool
+        let dark: Bool, scale: CGFloat
     }
     private static var made: [Key: NSImage] = [:]
     private static var order: [Key] = []
 
     static func image(_ theme: HomeTheme, _ tuning: HomeTuning, size: CGSize,
-                      dark: Bool, scale: CGFloat, calm: Bool) -> NSImage? {
+                      dark: Bool, scale: CGFloat) -> NSImage? {
         guard size.width >= 1, size.height >= 1 else { return nil }
         let key = Key(theme: theme, tuning: tuning, width: Int(size.width), height: Int(size.height),
-                      dark: dark, scale: scale, calm: calm)
+                      dark: dark, scale: scale)
         if let image = made[key] { return image }
         let ground = groundColour(dark: dark)
         let canvas = Canvas { context, size in
-            HomeBackground.paint(theme, tuning, in: &context, size: size, dark: dark, ground: ground, calm: calm)
+            HomeBackground.paint(theme, tuning, in: &context, size: size, dark: dark, ground: ground)
         }
         .frame(width: size.width, height: size.height)
         let renderer = ImageRenderer(content: canvas)
@@ -297,8 +297,7 @@ struct HomeBackground: View {
     let theme: HomeTheme
     var tuning = HomeTuning()
     var image: String?
-    /// A thumbnail is drawn at exactly its size and without the calm patch
-    /// the address field sits on.
+    /// A thumbnail is drawn at exactly its size.
     var thumbnail = false
     /// A different wall or pack each day; decided here, when the tab is drawn.
     var shuffle = false
@@ -336,11 +335,10 @@ struct HomeBackground: View {
                             .frame(width: box.size.width, height: box.size.height)
                             .clipped()
                         Palette.ground.opacity(1 - shown.intensity)
-                        if !thumbnail { calm }
                     }
                 default:
                     if let made = HomeRender.image(theme, shown, size: drawn(box.size),
-                                                   dark: scheme == .dark, scale: pixels(box.size), calm: !thumbnail) {
+                                                   dark: scheme == .dark, scale: pixels(box.size)) {
                         Image(nsImage: made)
                             .resizable()
                             .interpolation(.high)
@@ -376,11 +374,6 @@ struct HomeBackground: View {
 
     private func pixels(_ box: CGSize) -> CGFloat {
         thumbnail && box.width > 0 ? scale * box.width / HomeBackground.reference : scale
-    }
-
-    private var calm: some View {
-        RadialGradient(colors: [Palette.ground.opacity(0.5), Palette.ground.opacity(0)],
-                       center: .center, startRadius: 0, endRadius: 320)
     }
 
     /// Up to the next 64 points, so a window being dragged wider makes one
@@ -421,7 +414,7 @@ struct HomeBackground: View {
     }
 
     fileprivate static func paint(_ theme: HomeTheme, _ t: HomeTuning, in context: inout GraphicsContext,
-                                  size: CGSize, dark: Bool, ground: Color, calm: Bool) {
+                                  size: CGSize, dark: Bool, ground: Color) {
         guard size.width > 1, size.height > 1 else { return }
         let m = min(size.width, size.height)
         let whole = CGRect(origin: .zero, size: size)
@@ -448,13 +441,6 @@ struct HomeBackground: View {
         // Intensity: the theme blended toward the plain ground.
         if t.intensity < 0.999 {
             context.fill(Path(whole), with: .color(ground.opacity(1 - max(0, t.intensity))))
-        }
-        if calm {
-            // Lower contrast where the address field sits.
-            let centre = CGPoint(x: size.width / 2, y: size.height / 2)
-            context.fill(Path(whole), with: .radialGradient(
-                Gradient(colors: [ground.opacity(0.5), ground.opacity(0)]),
-                center: centre, startRadius: 0, endRadius: max(120, m * 0.42)))
         }
     }
 }

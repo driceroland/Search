@@ -371,13 +371,12 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘S on its way to folding the column: the page already has the room,
     /// the column has not moved yet (see Browser.toggleFold).
     @Published var foldingAway = false
+    /// ⌘S taking the column to icons only or back (Preferences.shrinks):
+    /// its width glides, and the other spaces' rows kept out of sight for a
+    /// swipe (SideBar.others) are left out meanwhile (idea 927).
+    @Published var columnTurning = false
+    var turnTicket = 0
     var foldTicket = 0
-    /// ⌘S sliding the column in or out: the page beside it is laid out to
-    /// the column's edge on every frame of the slide, as it moves, rather
-    /// than given or giving up its room at one end of it (see
-    /// Browser.slidePage).
-    @Published var pageFollows = false
-    var followTicket = 0
     /// The column kept in its place while it fades out or in (see
     /// Browser.moveColumn and Motion.fadesColumn).
     @Published var fadeHeld = false
@@ -394,13 +393,23 @@ final class Browser: NSObject, ObservableObject {
             // the next ⌘T or ⌘K came up in the line instead of over the
             // page, and with the line turned off, nowhere at all (#1374).
             if !editing, inlineEdit { inlineEdit = false }
+            if !editing { editingPeek = false }
         }
     }
+    /// The field was raised by ⌘L over a peek: it shows the peek's address,
+    /// and Return takes the peek there, not the tab underneath (idea 691).
+    private(set) var editingPeek = false
     /// True while the field is up over a page for a tab that doesn't exist
     /// yet (Settings › General › New tab in a floating field): Return opens
     /// what was typed in a new tab, and putting the field away leaves the
     /// page you were on as it was.
-    @Published private(set) var launching = false
+    @Published private(set) var launching = false {
+        didSet { if !launching { launchGroup = nil } }
+    }
+    /// The group the floating field was raised for, by New Tab in Group
+    /// (newTab(inGroup:)): the tab Return makes goes to its end. Gone with
+    /// the field.
+    private var launchGroup: UUID?
     /// The page links were last opened behind from, and the last of them:
     /// the next one from that page goes after it (see placeForLink).
     private struct LinkRun {
@@ -493,6 +502,12 @@ final class Browser: NSObject, ObservableObject {
 
     var active: Tab? { tabs.first { $0.id == activeID } }
     var fieldShowing: Bool { editing || active?.isBlank ?? true }
+    /// The field is up over a page, centred on the whole window (Settings ›
+    /// The field in the middle of the window, idea 753): drawn by the
+    /// window rather than by the page's pane.
+    var fieldOnWindow: Bool {
+        prefs.fieldOnWindow && editing && !editingInline && active.map { !$0.isBlank } ?? false
+    }
     /// The editing was started in the address line (AddressLine.swift), not
     /// by ⌘L: the field is that line's, and its suggestions hang under it.
     @Published var inlineEdit = false
@@ -2283,6 +2298,7 @@ final class Browser: NSObject, ObservableObject {
             newPin.everywhere = everywhere
             newPin.pinFolder = tab.pinFolder
             newPin.name = tab.name
+            newPin.pinTitle = tab.pinTitle
             newPin.go(to: home)
 
             // The wandered page becomes a loose tab.
@@ -2293,6 +2309,7 @@ final class Browser: NSObject, ObservableObject {
             tab.pinID = nil
             tab.everywhere = false
             tab.name = nil
+            tab.pinTitle = nil
 
             tabs.remove(at: pinIndex)
             tabs.insert(newPin, at: pinIndex)
@@ -2320,6 +2337,8 @@ final class Browser: NSObject, ObservableObject {
               !(tab.home.map { Browser.samePage($0, here) } ?? false) else { return }
         objectWillChange.send()
         tab.home = here
+        // Its own title now the new page's, as when it was pinned.
+        if !tab.title.isEmpty { tab.pinTitle = tab.title }
         writeSession(now: true)
     }
 
@@ -2409,6 +2428,7 @@ final class Browser: NSObject, ObservableObject {
         tab.pinFolder = nil
         tab.home = nil
         tab.pinID = nil
+        tab.pinTitle = nil
     }
 
     // MARK: - carried onto the pins, and off them
@@ -2509,8 +2529,13 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var tabPicked: Int?
     /// The address the edit began with: nothing is offered for that.
     private var tabOriginal = ""
+    /// Whether this edit brings the site card under the field: not for a
+    /// click with Settings › "Clicking the tab you're on edits its address
+    /// only" on; always for Site Information… (SiteCardPanel.follow).
+    private(set) var tabEditCard = true
 
-    func beginTabEdit(_ tab: Tab) {
+    /// `card`: nil for a click on the tab, which follows the setting.
+    func beginTabEdit(_ tab: Tab, card: Bool? = nil) {
         // The column of icons has no row to type in: the field over the
         // page, with the address in it, as ⌘L brings it.
         guard let url = tab.shownURL, !prefs.iconColumn else {
@@ -2522,6 +2547,7 @@ final class Browser: NSObject, ObservableObject {
         tabOriginal = tabDraft
         tabOffers = []
         tabPicked = nil
+        tabEditCard = card ?? !prefs.tabClickAddressOnly
         editingTab = tab.id
     }
 
@@ -2670,6 +2696,12 @@ final class Browser: NSObject, ObservableObject {
         announce("Address copied")
     }
 
+    /// Edit › Paste and Match Style: the clipboard as plain text, in the
+    /// field or page being typed in (idea 814), as ⇧⌘V there already does.
+    static func pasteMatchingStyle() {
+        NSApp.sendAction(#selector(NSTextView.pasteAsPlainText(_:)), to: nil, from: nil)
+    }
+
     /// ⌥⇧⌘C. The address without its tracking parameters (CleanLink).
     func copyCleanLink() {
         guard let url = active?.address else { return }
@@ -2711,6 +2743,9 @@ final class Browser: NSObject, ObservableObject {
 
     /// The names extensions asked their downloads to be saved under.
     var namedDownloads: [URL: String] = [:]
+    /// The page each view last loaded again after WebKit handed it an empty
+    /// answer (see decidePolicyFor response), so it is asked for only once.
+    private var emptyAnswerRetried: [ObjectIdentifier: URL] = [:]
 
     /// Tabs you closed, newest last, so ⌘⇧T can put them back where they were
     /// and the History menu can offer them by name.
@@ -3572,12 +3607,26 @@ final class Browser: NSObject, ObservableObject {
         row.compactMap { tab -> PinDef? in
             guard let letter = tab.pin, !tab.shy else { return nil }
             if tab.pinID == nil { tab.pinID = UUID() }
+            Browser.settlePinTitle(tab)
             return PinDef(id: tab.pinID ?? UUID(), letter: letter,
                           home: (tab.home ?? tab.pending ?? tab.address)?.absoluteString ?? "",
-                          title: tab.title, name: tab.name, listed: tab.listed ? true : nil,
+                          title: tab.pinTitle ?? tab.title, name: tab.name, listed: tab.listed ? true : nil,
                           folder: tab.listed && !tab.everywhere ? tab.pinFolder : nil,
-                          pair: pinnedPair(of: tab)?.id)
+                          pair: pinnedPair(of: tab)?.id, titled: tab.pinTitle == nil ? nil : true)
         }
+    }
+
+    /// A pin's own title (Tab.pinTitle), taken from its page only while it
+    /// has none worth keeping: none yet, or the host that stood in for the
+    /// page's title, and the pin is showing the page it was pinned at.
+    /// Anything else it has — a name brought in from Arc or Zen, the
+    /// page's title when pinned — stays, wherever the pin goes.
+    static func settlePinTitle(_ tab: Tab) {
+        let had = tab.pinTitle ?? ""
+        guard had.isEmpty || had == tab.home?.host || had == tab.home?.absoluteString else { return }
+        guard !tab.asleep, !tab.title.isEmpty, let home = tab.home, let here = tab.address,
+              Browser.samePage(home, here) else { return }
+        tab.pinTitle = tab.title
     }
 
     /// The pairs pinned together (see pin) as pins.json has them, for
@@ -3632,6 +3681,7 @@ final class Browser: NSObject, ObservableObject {
             tab.everywhere = sharedIDs.contains(def.id)
             if tab.pin != def.letter { tab.pin = def.letter }
             if tab.name != def.name { tab.name = def.name }
+            if def.titled == true { tab.pinTitle = def.title }
             if tab.listed != (def.listed == true) { tab.listed = def.listed == true }
             tab.pinFolder = def.folder
             tab.home = URL(string: def.home)
@@ -3813,7 +3863,7 @@ final class Browser: NSObject, ObservableObject {
                 && !defs.contains(where: { $0.home == favourite.url.absoluteString }) {
                 let host = favourite.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
                 defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
-                                   home: favourite.url.absoluteString, title: favourite.title, name: nil))
+                                   home: favourite.url.absoluteString, title: favourite.title, name: nil, titled: true))
                 pins += 1
                 brought.append(favourite.url)
             }
@@ -3837,7 +3887,7 @@ final class Browser: NSObject, ObservableObject {
                 let host = page.item.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
                 defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
                                    home: page.item.url.absoluteString, title: page.item.title,
-                                   name: nil, listed: true, folder: page.folder))
+                                   name: nil, listed: true, folder: page.folder, titled: true))
                 pins += 1
             }
             if let filed {
@@ -3897,7 +3947,7 @@ final class Browser: NSObject, ObservableObject {
             && !defs.contains(where: { $0.home == page.url.absoluteString }) {
             let host = page.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
             defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
-                               home: page.url.absoluteString, title: page.title, name: nil))
+                               home: page.url.absoluteString, title: page.title, name: nil, titled: true))
             brought.append(page.url)
         }
         let pins = defs.count - had.count
@@ -4876,6 +4926,56 @@ final class Browser: NSObject, ObservableObject {
         if #available(macOS 15.4, *) { Extensions.shared.offerNewTabPage(into: tab) }
     }
 
+    /// New Tab in Group, from a group's heading, as Chrome's: a new tab at
+    /// the group's end, in front. With the floating field on, over a page,
+    /// the field comes up instead and the tab Return makes goes there (see
+    /// open's `loose`). Never private: a private tab is in no group.
+    func newTab(inGroup id: UUID) {
+        guard prefs.usesTabGroups, !websitePopup, let index = tabGroups.firstIndex(where: { $0.id == id }) else { return }
+        if let here = active, !here.shy, prefs.floatingNewTab, !here.isBlank, !peekInFront {
+            var extensionPage = false
+            if #available(macOS 15.4, *) {
+                extensionPage = Extensions.shared.newTabPage != nil || Extensions.shared.newTabUnaskedAsker != nil
+            }
+            if !extensionPage {
+                if !launching { launch() }
+                if launching {
+                    launchGroup = id
+                    return
+                }
+            }
+        }
+        tabGroups[index].collapsed = false
+        let tab: Tab
+        if #available(macOS 15.4, *), let page = Extensions.shared.newTabPage {
+            tab = open(page, foreground: true)
+            tab.groupID = id
+            let row = tabs.filter { $0.id != tab.id }
+            var placed = row
+            placed.insert(tab, at: endOfGroup(id, in: row))
+            tabs = placed
+        } else {
+            tab = Tab(configuration: Web.configuration(space: spaceID))
+            prepare(tab)
+            tab.groupID = id
+            tabs.insert(tab, at: endOfGroup(id, in: tabs))
+            leaving()
+            activeID = tab.id
+            editing = false
+        }
+        summoning = false
+        typed = ""
+        focusRequest += 1
+        writeSession(now: true)
+        if #available(macOS 15.4, *) { Extensions.shared.offerNewTabPage(into: tab) }
+    }
+
+    /// Just after a group's last tab in `row`, a pair's later page included.
+    private func endOfGroup(_ id: UUID, in row: [Tab]) -> Int {
+        row.lastIndex { $0.pin == nil && $0.groupID == id }.map { $0 + 1 }
+            ?? row.firstIndex { $0.pin == nil } ?? row.count
+    }
+
     /// A new tab given an extension's new tab page, whether blank or showing
     /// another extension's: the page needs a view built from that
     /// extension's configuration, so it is a new tab in the old one's place.
@@ -5108,6 +5208,10 @@ final class Browser: NSObject, ObservableObject {
             writeSession(now: true)
             return
         }
+
+        // A panel of its own goes with it, kept behind or up (idea 643).
+        if case .page(_, _, let bound?) = sidePanel, bound == tab.id { closeSidePanel() }
+        else { SidePanelPages.shared.unbind(tab.id, in: self) }
 
         if tabs.count == 1 {
             if tab.isBlank {
@@ -6412,8 +6516,16 @@ final class Browser: NSObject, ObservableObject {
         // where a blank ⌘T's tab never did; it goes where that one goes.
         let joins = prefs.usesTabGroups && !loose && !tab.shy && !tab.bench
         if joins, let source { tab.groupID = source.groupID }
+        // Raised by New Tab in Group: the end of that group (newTab(inGroup:)).
+        let into = loose && launching && prefs.usesTabGroups && !tab.shy && !tab.bench
+            ? launchGroup.flatMap { id in tabGroups.firstIndex { $0.id == id } } : nil
+        if let into {
+            tab.groupID = tabGroups[into].id
+            tabGroups[into].collapsed = false
+        }
         let apart = loose && prefs.usesTabGroups && source.map { group(of: $0) != nil } == true
-        tabs.insert(tab, at: atEnd ? tabs.count : link ? placeForLink(from: source) : apart ? placeForFront() : placeForNew())
+        tabs.insert(tab, at: into.map { endOfGroup(tabGroups[$0].id, in: tabs) }
+                    ?? (atEnd ? tabs.count : link ? placeForLink(from: source) : apart ? placeForFront() : placeForNew()))
         if link, !atEnd, !foreground || frontLinksBeside { noteLink(tab, from: source) }
         if mayWait, !foreground, prefs.lazyTabs, page == nil {
             tab.restore(url: url, title: "")
@@ -6465,6 +6577,7 @@ final class Browser: NSObject, ObservableObject {
         fresh.home = tab.home
         fresh.everywhere = tab.everywhere
         fresh.name = tab.name
+        fresh.pinTitle = tab.pinTitle
         prepare(fresh)
         fresh.groupID = tab.groupID
         let wasActive = activeID == tab.id
@@ -6495,7 +6608,10 @@ final class Browser: NSObject, ObservableObject {
         guard #available(macOS 15.4, *) else { return nil }
         let url = Extensions.current(url)
         guard url.scheme == Extensions.scheme else { return nil }
-        return Extensions.shared.controller.extensionContext(for: url)?.webViewConfiguration
+        guard let context = Extensions.shared.controller.extensionContext(for: url),
+              let configuration = context.webViewConfiguration else { return nil }
+        ExtensionSandbox.attach(configuration, for: context)
+        return configuration
     }
 
     /// A page for the bench: at the end of the row, behind whatever you are
@@ -6550,6 +6666,15 @@ final class Browser: NSObject, ObservableObject {
             typed = ""
         } else {
             open(url, foreground: !behind, from: active, mayWait: behind)
+        }
+    }
+
+    /// A folder's bookmarks, not those of the folders in it, each in a new
+    /// tab behind this one, at the end: Open All in New Tabs, and a
+    /// middle-click on a folder of the bookmarks bar (idea 959).
+    func openAll(_ folder: Bookmark) {
+        for url in (folder.children ?? []).compactMap({ $0.url.flatMap(URL.init(string:)) }) {
+            open(url, foreground: false, atEnd: true, from: active, mayWait: true)
         }
     }
 
@@ -6698,6 +6823,27 @@ final class Browser: NSObject, ObservableObject {
             self?.savePage(tab, to: file)
         }
     }
+
+    /// File › Open File…, as Safari's: a page, a PDF, a picture or a text
+    /// file on this Mac, each in a tab of its own, as if its file:// address
+    /// had been typed (idea 755). No SVG: a file: page is not given one
+    /// (see Open With).
+    func openFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = Browser.openableFiles
+        let take: (NSApplication.ModalResponse) -> Void = { [weak self] answer in
+            guard answer == .OK, let self else { return }
+            for url in panel.urls { open(url, foreground: true) }
+        }
+        if let window { panel.beginSheetModal(for: window, completionHandler: take) } else { take(panel.runModal()) }
+    }
+
+    /// What Open File… offers.
+    static let openableFiles: [UTType] =
+        [.html, .webArchive, .pdf, .png, .jpeg, .gif, .webP, .heic, .tiff, .bmp, .plainText]
+        + [UTType("public.xhtml")].compactMap { $0 }
 
     /// The save panel for a page, named after its title (or its site), in
     /// Downloads.
@@ -7012,6 +7158,9 @@ final class Browser: NSObject, ObservableObject {
     /// General). Only one lifted this way goes home on its own when Search
     /// comes back.
     private var liftedAway = false
+    /// Watching the window's occlusion while the app is left with the
+    /// window still in view (appLeft).
+    private var awayWatch: NSObjectProtocol?
 
     func appLeft() {
         guard prefs.floatsAway, spaceFloat.pending == nil, Browsers.front == nil || Browsers.front === self else { return }
@@ -7019,12 +7168,41 @@ final class Browser: NSObject, ObservableObject {
         // you work on the one under the pointer: nothing to get out of the
         // way of, and the video stays where you put it.
         if let shown = window?.screen, let here = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }), shown != here { return }
+        // Still in view on this screen too, beside the app you went to: the
+        // video stays in its page until the window is out of sight, covered,
+        // minimised or on another Space, as macOS says by its occlusion
+        // (idea 470). Before, it floated at the first click in another app.
+        if let window, window.occlusionState.contains(.visible) {
+            awayWatch = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.outOfSight() }
+            }
+            return
+        }
+        liftAway()
+    }
+
+    /// The window, left in view when the app was left, has gone out of sight.
+    private func outOfSight() {
+        guard !NSApp.isActive, let window, !window.occlusionState.contains(.visible) else { return }
+        stopAwayWatch()
+        liftAway()
+    }
+
+    private func liftAway() {
         liftedAway = !floater.showing && pictured == nil
         lift(active, quietly: true, otherwise: otherPane)
     }
 
+    private func stopAwayWatch() {
+        if let awayWatch { NotificationCenter.default.removeObserver(awayWatch) }
+        awayWatch = nil
+    }
+
     /// Back, and still on the tab it came from: into the tab again.
     func appBack() {
+        stopAwayWatch()
         defer { liftedAway = false }
         if liftedAway, let id = floating, id == activeID { land() }
         if liftedAway, let id = pictured, id == activeID { unpicture() }
@@ -8020,8 +8198,12 @@ final class Browser: NSObject, ObservableObject {
         let words = wordsToCarry
         summoning = false
         launching = false
-        typed = words ?? shownAddress
+        // A peek in front is the page being read: its address, not the
+        // one of the tab underneath (idea 691).
+        let peek = words == nil && peekInFront ? peekTab?.shownURL : nil
+        typed = words ?? peek?.absoluteString ?? shownAddress
         editing = true
+        editingPeek = peek != nil
         focusRequest += 1
     }
 
@@ -8162,6 +8344,8 @@ final class Browser: NSObject, ObservableObject {
             // Opened behind the page by hand, as a ⌘-clicked link is: it may
             // wait to load (Settings › Tabs › Load background tabs…).
             open(url, foreground: front, from: active, mayWait: true)
+        } else if editingPeek, peekInFront, let peek = peekTab {
+            peek.go(to: url)
         } else {
             (active ?? tabs.first)?.go(to: url)
         }
@@ -8459,6 +8643,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // panel, a tab it opened. WebKit serves them; nothing else here does.
         if ["http", "https", "file", "about", "data", "blob", "chrome-extension", "webkit-extension"].contains(scheme) {
             decisionHandler(.allow)
+        } else if #available(macOS 15.4, *), scheme == ExtensionSandbox.scheme, action.targetFrame?.isMainFrame == false {
+            // An extension page's frame on one of its sandbox pages: served
+            // by ExtensionSandbox, which only extension pages' views carry.
+            decisionHandler(.allow)
         } else {
             decisionHandler(.cancel)
             handOff(url, scheme: scheme, action: action, from: webView)
@@ -8641,6 +8829,16 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             || (clicked && opener.popupGesture.middle && !action.modifierFlags.contains(.shift))
         // Its Open Link in Split View, the same way.
         let beside = (webView as? PageView)?.takeBeside() == true
+        // Its Open Link in Private Tab: not this configuration, which holds
+        // the opener's store, but a private tab of its own, as the bookmarks
+        // bar's Open in Private Tab makes one. No opener: nothing of this
+        // page's reaches it.
+        if (webView as? PageView)?.takePrivate() == true {
+            if let url = action.request.url {
+                DispatchQueue.main.async { [weak self] in self?.openShy(url) }
+            }
+            return nil
+        }
         let popup = windowFeatures.width != nil || windowFeatures.height != nil
             || windowFeatures.toolbarsVisibility?.boolValue == false
         // A link clicked open in a new tab, to a site Settings sends to
@@ -8823,6 +9021,23 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         decidePolicyFor response: WKNavigationResponse,
         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
     ) {
+        // An answer with nothing in it, no address and no type: WebKit hands
+        // one over when a page that came past the site's service worker is
+        // moved to a new process as it arrives. youtube.com does it on
+        // macOS 27.0.1 when its worker has gone to sleep. Nothing WebKit can
+        // show, so it was kept as a file, and the page landed in Downloads
+        // as www.youtube.com.html instead of in the tab. Asked for again, the
+        // page comes through; only once, so one that keeps answering like
+        // this is stopped rather than loaded for ever.
+        if response.isForMainFrame, response.response.url == nil {
+            decisionHandler(.cancel)
+            let id = ObjectIdentifier(webView)
+            if let url = webView.url, emptyAnswerRetried[id] != url {
+                emptyAnswerRetried[id] = url
+                webView.load(URLRequest(url: url))
+            }
+            return
+        }
         // A redirect (3xx) has nowhere to be shown and carries no content of
         // its own, but must be followed rather than downloaded — even if its
         // headers say `application/binary` or `application/octet-stream`, as

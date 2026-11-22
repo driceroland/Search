@@ -14,6 +14,17 @@ struct HomeGrid: View {
         prefs = browser.prefs
     }
 
+    /// How tall the grid stands under the field, nought when it isn't
+    /// drawn: the open tabs an empty side of a Split View offers go under
+    /// it, where they lay over its tiles (#1381).
+    static func height(_ browser: Browser) -> CGFloat {
+        guard browser.prefs.homeGrid, browser.active?.isBlank == true, browser.typing.typed.isEmpty else { return 0 }
+        let count = browser.bookmarks.homeSites.count
+        guard count > 0 else { return 0 }
+        let rows = CGFloat((count + 3) / 4)
+        return rows * 50 + (rows - 1) * 8
+    }
+
     var body: some View {
         // The switch first: off, the bookmarks aren't walked at each key.
         if prefs.homeGrid, browser.active?.isBlank == true, typing.typed.isEmpty,
