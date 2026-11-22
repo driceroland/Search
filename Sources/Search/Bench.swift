@@ -5057,6 +5057,7 @@ final class Bench {
                     case .colour(let colour): (kind, ringed) = ("colour", Spaces.colourNames[colour])
                     case .preset(let at): (kind, ringed) = ("gradient", SpaceGradient.presets[at].name)
                     case .custom: (kind, ringed) = ("custom", "")
+                    case .customColour: (kind, ringed) = ("customColour", "")
                     }
                     return ["kind": kind, "ringed": ringed, "preview": browser.space.lookName,
                             "strength": browser.space.washStrength.name, "strengths": SpaceStrength.allCases.map(\.name),

@@ -402,6 +402,7 @@ struct Fold: View {
                 // tabs, and the shadow fell from every title and icon rather
                 // than from the row's edge.
                 TabBar(browser: browser)
+                    .modifier(WashScheme(scheme: browser.washScheme))
                     .modifier(FoldShadow(y: 4, behind: true, strength: browser.peeking ? 1 : 0))
                     .offset(y: browser.peeking ? 0 : -Metrics.strip)
                     .allowsHitTesting(browser.peeking)
@@ -439,6 +440,7 @@ struct Fold: View {
                     // own white where the page is no card.
                     // Away exactly when the lights are, which ride with it.
                     SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: onDrag)
+                        .modifier(WashScheme(scheme: browser.washScheme))
                         .frame(maxHeight: .infinity, alignment: .top)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
                                              strength: browser.folded && browser.peeking ? 1 : 0,

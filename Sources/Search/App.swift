@@ -618,6 +618,7 @@ struct ContentView: View {
 
             if !browser.prefs.sidebar, !browser.folded, fullscreenTab == nil {
                 TabBar(browser: browser)
+                    .modifier(WashScheme(scheme: browser.washScheme))
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -625,6 +626,7 @@ struct ContentView: View {
             // there on the window's ground above the page's card, and no wider.
             if barShown {
                 BookmarksBar(browser: browser, bookmarks: browser.bookmarks, onFrame: cards)
+                    .modifier(WashScheme(scheme: browser.washScheme))
                     .padding(.leading, sideOnRight ? farGap : chrome.width)
                     .padding(.trailing, sideOnRight ? chrome.width : farGap)
                     .padding(.top, band)

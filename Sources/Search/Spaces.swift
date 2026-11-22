@@ -417,6 +417,15 @@ extension Browser {
         prefs.usesSpaces && !makingSpace ? washSpace.look : nil
     }
 
+    /// The appearance the chrome takes on the wash: dark or light ink on a
+    /// colour of one's own, picked for contrast (SpaceGradient.scheme); nil,
+    /// the window's own, for every other look. On glass the colour is the
+    /// glass's tint, not solid, and the ink stays the window's.
+    var washScheme: ColorScheme? {
+        guard !glassy, case .gradient(let gradient)? = wash else { return nil }
+        return gradient.scheme
+    }
+
     /// How strongly the wash is drawn: the space on screen's strength.
     var washStrength: SpaceStrength { wash == nil ? .subtle : washSpace.washStrength }
 
@@ -846,6 +855,19 @@ extension Browser {
 /// ground. Handed the look rather than the browser, so it is drawn again
 /// only when the look changes, not on everything the browser announces. A
 /// change crossfades once and is done: nothing runs while it stays.
+/// The chrome's ink on a colour of one's own (Browser.washScheme): the
+/// column, the strip and the bookmarks bar take the appearance that reads
+/// on it, so their greys, titles and icons all turn over together. The
+/// same view either way, so nothing in it is made again when it turns.
+struct WashScheme: ViewModifier {
+    let scheme: ColorScheme?
+    @Environment(\.colorScheme) private var window
+
+    func body(content: Content) -> some View {
+        content.environment(\.colorScheme, scheme ?? window)
+    }
+}
+
 struct SpaceWash: View {
     let look: SpaceLook?
     @Environment(\.colorScheme) private var scheme

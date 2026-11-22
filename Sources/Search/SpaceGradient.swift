@@ -75,6 +75,33 @@ struct SpaceGradient: Codable, Equatable, Hashable {
         }
     }
 
+    /// The one colour it is, "#RRGGBB", when every colour is the same: a
+    /// colour of one's own (SpaceLookChoice.customColour).
+    var single: String? {
+        let picked = colours.prefix(Self.most).map { $0.uppercased() }
+        guard picked.count >= 2, let first = picked.first, picked.allSatisfy({ $0 == first }),
+              OKLab(hex: first) != nil else { return nil }
+        return first.hasPrefix("#") ? first : "#" + first
+    }
+
+    /// A colour of one's own exactly as picked, in sRGB: unlike a
+    /// gradient's colours it is not held to the wash's band, and it is laid
+    /// on solid, not as a tint. Picking #000000 makes the chrome black.
+    var exact: Color? {
+        guard let hex = single, let lab = OKLab(hex: hex) else { return nil }
+        let (r, g, b) = lab.srgb
+        return Color(.sRGB, red: r, green: g, blue: b)
+    }
+
+    /// The appearance the chrome takes on a colour of one's own: dark (light
+    /// ink) on a dark colour, light (dark ink) on a light one, whichever ink
+    /// stands further from it, as WCAG measures contrast. Nil for any other
+    /// look, which is a tint over the window's own ground and keeps its ink.
+    var scheme: ColorScheme? {
+        guard let hex = single, let lab = OKLab(hex: hex) else { return nil }
+        return OKLab.prefersLightInk(lab) ? .dark : .light
+    }
+
     /// Its first colour as drawn: for the space's dot and its menu.
     var lead: Color? {
         drawn.first.map { lab in let (r, g, b) = lab.srgb; return Color(.sRGB, red: r, green: g, blue: b) }
@@ -262,6 +289,22 @@ struct OKLab: Equatable {
 
     var chroma: Double { (a * a + b * b).squareRoot() }
 
+    /// WCAG's relative luminance, 0 (black) to 1 (white).
+    var luminance: Double {
+        let (r, g, b) = linear
+        func clamp(_ c: Double) -> Double { min(max(c, 0), 1) }
+        return 0.2126 * clamp(r) + 0.7152 * clamp(g) + 0.0722 * clamp(b)
+    }
+
+    /// Whether the dark window's ink (Palette.ink's 0.93 grey) reads better
+    /// on `ground` than the light window's (its 0.09 grey).
+    static func prefersLightInk(_ ground: OKLab) -> Bool {
+        func grey(_ white: Double) -> Double { OKLab(r: white, g: white, b: white).luminance }
+        func contrast(_ x: Double, _ y: Double) -> Double { (max(x, y) + 0.05) / (min(x, y) + 0.05) }
+        let y = ground.luminance
+        return contrast(y, grey(0.93)) > contrast(y, grey(0.09))
+    }
+
     /// Linear sRGB, unclamped: outside 0…1 is outside what sRGB can show.
     var linear: (Double, Double, Double) {
         let l = pow(L + 0.3963377774 * a + 0.2158037573 * b, 3)
@@ -373,8 +416,13 @@ struct GradientWash: View {
             let ends = gradient.points(frame: geo.frame(in: .global), room: room)
             let dark = scheme == .dark
             ZStack {
-                LinearGradient(stops: gradient.stops(strength: strength, dark: dark), startPoint: ends.start, endPoint: ends.end)
-                    .opacity(strength.opacity(dark: dark))
+                if let exact = gradient.exact {
+                    // A colour of one's own: as picked, solid.
+                    exact
+                } else {
+                    LinearGradient(stops: gradient.stops(strength: strength, dark: dark), startPoint: ends.start, endPoint: ends.end)
+                        .opacity(strength.opacity(dark: dark))
+                }
                 if gradient.grain {
                     Image(nsImage: Grain.tile)
                         .resizable(resizingMode: .tile)
@@ -423,17 +471,22 @@ enum Grain {
 // MARK: - choosing
 
 /// What a space wears, as the picker names it: nothing, one of the colours,
-/// one of the ready-made gradients, or a gradient of one's own.
+/// one of the ready-made gradients, a gradient of one's own, or a colour of
+/// one's own (any colour at all, picked in the field; kept as a gradient
+/// whose colours are all that one, so it is drawn, held and saved as every
+/// gradient is).
 enum SpaceLookChoice: Equatable {
     case none
     case colour(Int)
     case preset(Int)
     case custom
+    case customColour
 }
 
 extension Space {
     var lookChoice: SpaceLookChoice {
         if let gradient, gradient.usable {
+            if gradient.single != nil { return .customColour }
             let at = SpaceGradient.presets.firstIndex { $0.gradient.colours == gradient.colours }
             return at.map(SpaceLookChoice.preset) ?? .custom
         }
@@ -447,6 +500,7 @@ extension Space {
         case .colour(let colour): return Spaces.colourNames[colour]
         case .preset(let at): return SpaceGradient.presets[at].name
         case .custom: return "Custom gradient"
+        case .customColour: return gradient?.single ?? "Custom colour"
         }
     }
 }
@@ -468,7 +522,17 @@ extension Browser {
                                                    grain: current?.grain ?? false))
         case .custom:
             setSpaceGradient(id, to: current ?? SpaceGradient.starting(from: space.colour))
+        case .customColour:
+            chooseCustomColour(id, current?.single ?? current?.colours.first ?? SpaceGradient.swatches[7].hex)
         }
+    }
+
+    /// A colour of one's own, any "#RRGGBB": the field's pick.
+    func chooseCustomColour(_ id: UUID, _ hex: String) {
+        guard OKLab(hex: hex) != nil, let space = spaces.first(where: { $0.id == id }) else { return }
+        let current = space.gradient.flatMap { $0.usable ? $0 : nil }
+        setSpaceGradient(id, to: SpaceGradient(colours: [hex, hex], angle: current?.angle ?? SpaceGradient.defaultAngle,
+                                               grain: current?.grain ?? false))
     }
 
     /// The space's own gradient changed by `change`: its current one, or a
@@ -542,6 +606,7 @@ struct SpaceLookPicker: View {
     @ObservedObject var browser: Browser
     let id: UUID
     @State private var customOpen: Bool
+    @State private var fieldOpen: Bool
     /// The colour the swatches below the wells set.
     @State private var well = 0
 
@@ -552,6 +617,7 @@ struct SpaceLookPicker: View {
         self.id = id
         let space = browser.spaces.first { $0.id == id } ?? browser.space
         _customOpen = State(initialValue: customOpen ?? (space.lookChoice == .custom))
+        _fieldOpen = State(initialValue: space.lookChoice == .customColour)
     }
 
     private var space: Space { browser.spaces.first { $0.id == id } ?? browser.space }
@@ -613,24 +679,15 @@ struct SpaceLookPicker: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                Button {
-                    withAnimation(Motion.quick) { customOpen.toggle() }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .rotationEffect(.degrees(customOpen ? 90 : 0))
-                        Text("Custom gradient")
-                            .font(.system(size: 11, weight: .medium))
-                        if choice == .custom {
-                            Circle().fill(Palette.ink.opacity(0.7)).frame(width: 5, height: 5)
-                                .accessibilityLabel("Chosen")
-                        }
-                    }
-                    .foregroundStyle(Palette.muted)
-                    .contentShape(Rectangle())
+                fold("Custom colour", open: $fieldOpen, chosen: choice == .customColour)
+                if fieldOpen {
+                    ColourField(hex: fieldHex) { hex in browser.chooseCustomColour(id, hex) }
+                        .transition(.opacity)
                 }
-                .buttonStyle(.plain)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                fold("Custom gradient", open: $customOpen, chosen: choice == .custom)
                 if customOpen { custom.transition(.opacity) }
             }
         }
@@ -640,6 +697,50 @@ struct SpaceLookPicker: View {
 
     // MARK: pieces
 
+    /// White on the colours and gradients, which are held light enough for
+    /// it; on a colour of one's own, whichever ink reads on it.
+    private var previewInk: Color {
+        choice == .customColour && shownGradient.scheme == .light ? Color.black.opacity(0.85) : .white
+    }
+
+    private var previewShadow: Double {
+        choice == .none || (choice == .customColour && shownGradient.scheme == .light) ? 0 : 0.18
+    }
+
+    /// What the colour field starts on: the space's own colour if it has
+    /// one, else the colour or gradient it wears, else blue.
+    private var fieldHex: String {
+        if let gradient = space.gradient, gradient.usable { return gradient.single ?? gradient.colours[0] }
+        if case .colour(let index) = choice {
+            let names = ["", "Blue", "Green", "Orange", "Red", "Violet"]
+            if names.indices.contains(index), let hex = SpaceGradient.swatches.first(where: { $0.name == names[index] })?.hex { return hex }
+        }
+        return SpaceGradient.swatches[7].hex
+    }
+
+    /// A folded part's heading: a chevron, its name, and a dot when what
+    /// it makes is what the space has.
+    private func fold(_ title: String, open: Binding<Bool>, chosen: Bool) -> some View {
+        Button {
+            withAnimation(Motion.quick) { open.wrappedValue.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .rotationEffect(.degrees(open.wrappedValue ? 90 : 0))
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                if chosen {
+                    Circle().fill(Palette.ink.opacity(0.7)).frame(width: 5, height: 5)
+                        .accessibilityLabel("Chosen")
+                }
+            }
+            .foregroundStyle(Palette.muted)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     /// The space's icon on its look, as large as the eye needs to see which
     /// it is, and the look's name.
     private var preview: some View {
@@ -648,6 +749,8 @@ struct SpaceLookPicker: View {
             switch choice {
             case .none: shape.fill(Palette.hover)
             case .colour(let colour): shape.fill(Spaces.colours[colour])
+            case .customColour:
+                shape.fill(shownGradient.exact ?? Palette.hover)
             case .preset, .custom:
                 let ends = shownGradient.points(frame: CGRect(x: 0, y: 0, width: 1, height: 1), room: .zero)
                 shape.fill(LinearGradient(stops: shownGradient.stops(), startPoint: ends.start, endPoint: ends.end))
@@ -659,13 +762,13 @@ struct SpaceLookPicker: View {
             }
             Image(systemName: space.symbol)
                 .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(choice == .none ? Palette.muted : Color.white)
-                .shadow(color: .black.opacity(choice == .none ? 0 : 0.18), radius: 2, y: 1)
+                .foregroundStyle(choice == .none ? Palette.muted : previewInk)
+                .shadow(color: .black.opacity(previewShadow), radius: 2, y: 1)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Text(space.lookName)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(choice == .none ? Palette.muted : Color.white.opacity(0.92))
-                .shadow(color: .black.opacity(choice == .none ? 0 : 0.18), radius: 2, y: 1)
+                .foregroundStyle(choice == .none ? Palette.muted : previewInk.opacity(0.92))
+                .shadow(color: .black.opacity(previewShadow), radius: 2, y: 1)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 8)
         }
@@ -679,7 +782,7 @@ struct SpaceLookPicker: View {
     /// colour there is nothing to strengthen: shown, but not to be had.
     private var strengthControl: some View {
         let current = space.washStrength
-        let off = choice == .none
+        let off = choice == .none || choice == .customColour
         return HStack(spacing: 0) {
             ForEach(SpaceStrength.allCases, id: \.self) { strength in
                 let on = current == strength
@@ -707,7 +810,8 @@ struct SpaceLookPicker: View {
         .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Palette.hover))
         .opacity(off ? 0.45 : 1)
         .disabled(off)
-        .help(off ? "Choose a colour or a gradient first" : "How strongly the space's colour shows")
+        .help(choice == .customColour ? "A colour of your own is shown exactly as picked"
+              : off ? "Choose a colour or a gradient first" : "How strongly the space's colour shows")
     }
 
     private var custom: some View {
@@ -814,6 +918,156 @@ struct SpaceLookPicker: View {
         guard let lab = OKLab(hex: hex) else { return .gray }
         let (r, g, b) = lab.srgb
         return Color(.sRGB, red: r, green: g, blue: b)
+    }
+}
+
+/// Any colour at all, picked as a web page's <input type=color> picks one:
+/// a field of saturation across and brightness down for the hue chosen in
+/// the bar under it, and the colour's hex to read or type. Dragging moves
+/// the space's colour with it, a few times a second so spaces.json isn't
+/// written at every pixel, and once more where the drag ends.
+struct ColourField: View {
+    /// The colour the space has, "#RRGGBB": the field follows it when it
+    /// changes from elsewhere.
+    let hex: String
+    let choose: (String) -> Void
+
+    @State private var hue: Double = 0.6
+    @State private var saturation: Double = 0.6
+    @State private var brightness: Double = 0.8
+    @State private var text = ""
+    @State private var dragging = false
+    @State private var lastSent = Date.distantPast
+
+    static let fieldHeight: CGFloat = 132
+    static let barHeight: CGFloat = 12
+
+    private var picked: Color { Color(hue: hue, saturation: saturation, brightness: brightness) }
+
+    private var pickedHex: String {
+        let colour = NSColor(hue: hue, saturation: saturation, brightness: brightness, alpha: 1)
+            .usingColorSpace(.sRGB) ?? .gray
+        return String(format: "#%02X%02X%02X", Int((colour.redComponent * 255).rounded()),
+                      Int((colour.greenComponent * 255).rounded()), Int((colour.blueComponent * 255).rounded()))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            field
+            bar
+            HStack(spacing: 8) {
+                Circle().fill(picked)
+                    .frame(width: ColourSwatches.dot, height: ColourSwatches.dot)
+                    .overlay(Circle().strokeBorder(Palette.faint, lineWidth: 1))
+                TextField("#RRGGBB", text: $text)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12, design: .monospaced))
+                    .frame(width: 96)
+                    .onSubmit { typed() }
+                    .accessibilityLabel("Hex colour")
+                Spacer(minLength: 0)
+            }
+        }
+        .onAppear { take(hex) }
+        .onChange(of: hex) { _, now in if !dragging, now.uppercased() != pickedHex { take(now) } }
+    }
+
+    /// Saturation from left to right, brightness from top to bottom.
+    private var field: some View {
+        GeometryReader { geo in
+            let size = geo.size
+            ZStack(alignment: .topLeading) {
+                Rectangle().fill(Color(hue: hue, saturation: 1, brightness: 1))
+                LinearGradient(colors: [.white, .white.opacity(0)], startPoint: .leading, endPoint: .trailing)
+                LinearGradient(colors: [.black.opacity(0), .black], startPoint: .top, endPoint: .bottom)
+                Circle()
+                    .strokeBorder(.white, lineWidth: 2)
+                    .background(Circle().fill(picked))
+                    .shadow(color: .black.opacity(0.35), radius: 1.5)
+                    .frame(width: 14, height: 14)
+                    .offset(x: saturation * size.width - 7, y: (1 - brightness) * size.height - 7)
+                    .allowsHitTesting(false)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.faint, lineWidth: 1))
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { drag in
+                    saturation = min(max(drag.location.x / max(size.width, 1), 0), 1)
+                    brightness = 1 - min(max(drag.location.y / max(size.height, 1), 0), 1)
+                    moved(final: false)
+                }
+                .onEnded { _ in moved(final: true) })
+        }
+        .frame(height: Self.fieldHeight)
+        .accessibilityElement()
+        .accessibilityLabel("Saturation and brightness")
+        .accessibilityValue(pickedHex)
+    }
+
+    /// The hues, red round to red.
+    private var bar: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            ZStack(alignment: .leading) {
+                Capsule().fill(LinearGradient(colors: stride(from: 0.0, through: 1.0, by: 1.0 / 6).map { Color(hue: $0, saturation: 1, brightness: 1) },
+                                              startPoint: .leading, endPoint: .trailing))
+                    .overlay(Capsule().strokeBorder(Palette.faint, lineWidth: 1))
+                Circle()
+                    .strokeBorder(.white, lineWidth: 2)
+                    .background(Circle().fill(Color(hue: hue, saturation: 1, brightness: 1)))
+                    .shadow(color: .black.opacity(0.35), radius: 1.5)
+                    .frame(width: Self.barHeight + 4, height: Self.barHeight + 4)
+                    .offset(x: hue * (width - Self.barHeight - 4))
+                    .allowsHitTesting(false)
+            }
+            .frame(height: Self.barHeight + 4)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { drag in
+                    hue = min(max(drag.location.x / max(width, 1), 0), 0.9999)
+                    moved(final: false)
+                }
+                .onEnded { _ in moved(final: true) })
+        }
+        .frame(height: Self.barHeight + 4)
+        .accessibilityElement()
+        .accessibilityLabel("Hue")
+        .accessibilityValue("\(Int((hue * 360).rounded())) degrees")
+        .accessibilityAdjustableAction { direction in
+            hue = (hue + (direction == .increment ? 1.0 : -1.0) / 36 + 1).truncatingRemainder(dividingBy: 1)
+            moved(final: true)
+        }
+    }
+
+    private func moved(final: Bool) {
+        dragging = !final
+        text = pickedHex
+        let now = Date()
+        guard final || now.timeIntervalSince(lastSent) > 0.12 else { return }
+        lastSent = now
+        choose(pickedHex)
+    }
+
+    private func typed() {
+        var entry = text.trimmingCharacters(in: .whitespaces).uppercased()
+        if !entry.hasPrefix("#") { entry = "#" + entry }
+        // #RGB is #RRGGBB, as on the web.
+        if entry.count == 4 { entry = "#" + entry.dropFirst().map { "\($0)\($0)" }.joined() }
+        guard OKLab(hex: entry) != nil else { text = pickedHex; return }
+        take(entry)
+        choose(entry)
+    }
+
+    private func take(_ hex: String) {
+        guard let lab = OKLab(hex: hex) else { return }
+        let (r, g, b) = lab.srgb
+        let colour = NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
+        // A grey has no hue of its own: keep the one the bar is on.
+        if colour.saturationComponent > 0.001 { hue = colour.hueComponent }
+        saturation = colour.saturationComponent
+        brightness = colour.brightnessComponent
+        text = hex.uppercased()
     }
 }
 

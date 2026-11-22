@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+import SwiftUI
 @testable import Search
 
 /// A space's gradient (SpaceGradient.swift): kept beside its colour, read
@@ -482,6 +483,63 @@ final class SpaceGradientTests: XCTestCase {
         XCTAssertTrue(titles.contains("Colour…"))
         XCTAssertFalse(titles.contains("Colour"), "no submenu")
         XCTAssertNil(SpaceMenu.menu(for: browser).items.first { $0.title == "Colour…" }?.submenu)
+    }
+
+    /// A colour of one's own, from the field: any colour, kept as a
+    /// gradient of that one colour, named by its hex, and a gradient again
+    /// once a second colour differs.
+    func testACustomColourIsAnyColour() {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        let browser = Browser(record: WindowRecord())
+        let oldUsesSpaces = browser.prefs.usesSpaces
+        let oldSpaces = browser.spaces
+        defer {
+            browser.closeAll()
+            browser.prefs.usesSpaces = oldUsesSpaces
+            browser.spaces = oldSpaces
+        }
+        browser.prefs.usesSpaces = true
+        let id = browser.spaceID
+        browser.spaces = [Space(id: id, name: "Home", colour: 0)]
+
+        browser.chooseCustomColour(id, "#3A7BD5")
+        XCTAssertEqual(browser.space.lookChoice, .customColour)
+        XCTAssertEqual(browser.space.lookName, "#3A7BD5")
+        XCTAssertEqual(browser.space.gradient?.colours, ["#3A7BD5", "#3A7BD5"])
+        XCTAssertEqual(browser.space.look, .gradient(browser.space.gradient!), "washed with it")
+        XCTAssertEqual(browser.washScheme, .light, "a mid blue: dark ink reads better, by WCAG")
+
+        browser.chooseCustomColour(id, "#000000")
+        XCTAssertEqual(browser.space.gradient?.exact, Color(.sRGB, red: 0, green: 0, blue: 0), "black as picked, not held lighter")
+        XCTAssertEqual(browser.washScheme, .dark)
+        browser.chooseCustomColour(id, "#FFE066")
+        XCTAssertEqual(browser.washScheme, .light, "a pale yellow: dark ink")
+        browser.chooseCustomColour(id, "#3A7BD5")
+
+        browser.chooseCustomColour(id, "not a colour")
+        XCTAssertEqual(browser.space.gradient?.single, "#3A7BD5", "a hex that doesn't read changes nothing")
+
+        browser.editGradient(id) { $0.colours[1] = SpaceGradient.swatches[0].hex }
+        XCTAssertEqual(browser.space.lookChoice, .custom, "two colours: a gradient")
+
+        browser.chooseLook(id, .customColour)
+        XCTAssertEqual(browser.space.lookChoice, .customColour, "back to one: its first")
+        XCTAssertEqual(browser.space.gradient?.single, "#3A7BD5")
+
+        browser.chooseLook(id, .colour(3))
+        XCTAssertNil(browser.space.gradient)
+        XCTAssertEqual(browser.space.lookChoice, .colour(3))
+        XCTAssertNil(browser.washScheme, "a tint keeps the window's ink")
+    }
+
+    /// The ink a colour of one's own gets is whichever reads better on it.
+    func testACustomColourGetsTheInkThatReads() {
+        func scheme(_ hex: String) -> ColorScheme? { SpaceGradient(colours: [hex, hex]).scheme }
+        for hex in ["#000000", "#1B1B3A", "#5A1E8C", "#B00020", "#2D6A4F"] { XCTAssertEqual(scheme(hex), .dark, hex) }
+        for hex in ["#FFFFFF", "#FFE066", "#A8E6CF", "#F4D35E", "#B3D9FF"] { XCTAssertEqual(scheme(hex), .light, hex) }
+        XCTAssertNil(SpaceGradient(colours: ["#000000", "#FFFFFF"]).scheme, "a gradient is a tint: no turn")
+        XCTAssertNil(SpaceGradient(colours: ["#000000", "#FFFFFF"]).exact)
     }
 
     func testFoundInSettings() {
