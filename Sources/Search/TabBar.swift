@@ -465,20 +465,7 @@ struct TabBar: View {
                     SplitDropZone(browser: browser, tab: tab, kind: .strip)
                 }
             }
-            .modifier(Carried(index: index, steps: steps, vertical: false,
-                              space: "strip", onDropTab: { source, point in drop(source, at: point) },
-                              groupDestination: { source, point in destination(source, at: point) },
-                              loose: group == nil && browser.prefs.usesTabGroups && tab.pin == nil ? looseFrames : nil,
-                              outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
-                              holding: { carrying = $0 }) {
-                if browser.prefs.usesTabGroups && tab.pin == nil {
-                    browser.move(tab, within: group, to: $0)
-                } else {
-                    browser.moveDisplayedTab(tab, to: $0)
-                }
-            })
-            // After Carried: its piece stays where the tab's place is while
-            // the tab itself goes with the hand.
+            // Tabs across the top can't be dragged to reorder them.
             .background {
                 if let band { GroupBand(group: band, piece: tab.id, last: last) }
             }
