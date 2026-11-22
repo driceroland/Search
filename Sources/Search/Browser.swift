@@ -384,6 +384,10 @@ final class Browser: NSObject, ObservableObject {
         didSet {
             if !editing, siteChip != nil { siteChip = nil }
             if !editing, launching { launching = false }
+            // The field put away is no longer the address line's: left set,
+            // the next ⌘T or ⌘K came up in the line instead of over the
+            // page, and with the line turned off, nowhere at all (#1374).
+            if !editing, inlineEdit { inlineEdit = false }
         }
     }
     /// True while the field is up over a page for a tab that doesn't exist
@@ -4729,6 +4733,8 @@ final class Browser: NSObject, ObservableObject {
         // whole when the field takes the keys, so typing over them costs nothing.
         let words = wordsToCarry ?? launchDraft
         launchDraft = ""
+        // Over the page, even from the address line's field (#1374).
+        inlineEdit = false
         reviewing = false
         cancelTabEdit()
         summoning = false
@@ -7468,6 +7474,7 @@ final class Browser: NSObject, ObservableObject {
         reviewing = false
         cancelTabEdit()
         launching = false
+        inlineEdit = false
         summoning = true
         // Search Tabs… clicked in the menu raises it with ⌘ up, and no
         // release would come to say so: the next ⌘K walked the list.
