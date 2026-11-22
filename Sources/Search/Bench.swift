@@ -40,6 +40,31 @@ final class Bench {
     /// as separate from the real one as everything else it keeps.
     static var socket: URL { Store.file("bench.sock") }
 
+    /// The one folder the bench's verbs write in: pictures, PDFs, reports.
+    static var outputFolder: URL {
+        let folder = Store.file("bench-output")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    /// Where a path a script gave lands: a relative one under the output
+    /// folder, an absolute one only if it is already inside it. No ".." at
+    /// all, and links are followed before the check, so a link left in the
+    /// folder can't lead out of it. Nil for anything else.
+    static func output(_ path: String) -> URL? {
+        guard !path.isEmpty, !path.contains("\0"), !path.split(separator: "/").contains("..") else { return nil }
+        let fm = FileManager.default
+        try? fm.createDirectory(at: outputFolder, withIntermediateDirectories: true)
+        let root = outputFolder.resolvingSymlinksInPath().standardizedFileURL
+        let wanted = path.hasPrefix("/") ? URL(fileURLWithPath: path) : root.appendingPathComponent(path)
+        // The file itself may not exist yet; its folder's links still count,
+        // and so does its own if it is one.
+        let resolved = wanted.deletingLastPathComponent().resolvingSymlinksInPath()
+            .appendingPathComponent(wanted.lastPathComponent).resolvingSymlinksInPath().standardizedFileURL
+        guard resolved.path.hasPrefix(root.path + "/") else { return nil }
+        return resolved
+    }
+
     /// True while something is listening.
     private(set) var running = false
 
@@ -316,6 +341,20 @@ final class Bench {
             return
         }
         let verb = request["do"] as? String ?? ""
+        // Whatever a verb writes goes in the bench's output folder and
+        // nowhere else; a script can't aim it at a file of yours.
+        // Reading verbs (import-file, ai's engine) are left as they are.
+        let reads = ["import-file", "import-file-start"].contains(verb)
+            || (verb == "ai" && request["action"] as? String != "picture")
+        var confined = request
+        if !reads, let asked = request["path"] as? String {
+            guard let inside = Bench.output(asked) else {
+                answer(["error": "path must stay inside \(Bench.outputFolder.path)"])
+                return
+            }
+            confined["path"] = inside.path
+        }
+        let request = confined
 
         // With pages shown (`pages on`) the app is no longer hidden: whatever
         // opens or brings back a window would put it on the screen. Refused
@@ -967,7 +1006,7 @@ final class Bench {
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             house(tab)
             let path = (request["path"] as? String)
-                ?? NSTemporaryDirectory() + "search-bench-\(Bench.short(tab)).png"
+                ?? Bench.outputFolder.path + "/search-bench-\(Bench.short(tab)).png"
             let width = request["width"] as? Double
             shoot(tab, to: URL(fileURLWithPath: path), width: width, answer)
 
@@ -1001,7 +1040,7 @@ final class Bench {
             case "area", "element", "page":
                 house(tab)
                 let path = (request["path"] as? String)
-                    ?? NSTemporaryDirectory() + "search-bench-snap-\(Bench.short(tab)).png"
+                    ?? Bench.outputFolder.path + "/search-bench-snap-\(Bench.short(tab)).png"
                 let choose = mode == "area" ? "window.__officeCapture.area(x, y, w, h);"
                     : mode == "element" ? "window.__officeCapture.element(x, y);" : "window.__officeCapture.page();"
                 tab.web.callInSearch(SnapGeometry.script + "\nreturn await new Promise(function (answer) { window.__officeCapture.on(answer); \(choose) });",

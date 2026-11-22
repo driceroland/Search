@@ -9500,6 +9500,9 @@ extension Browser: WKDownloadDelegate {
             announce("Download finished")
             return
         }
+        // WebKit doesn't mark what lands on disk: macOS would never check it
+        // when first opened. Private downloads are marked too, without an address.
+        Browser.markDownloaded(file, data: listed ? source : nil, origin: listed ? download.originalRequest?.mainDocumentURL : nil)
         guard listed else {
             announce("Saved \(file.lastPathComponent)")
             return
@@ -9623,12 +9626,17 @@ extension Browser: WKDownloadDelegate {
     /// As… — marked as downloaded, as WebKit marks a download's: macOS checks
     /// it when it is first opened, as any other. No address goes with it, so
     /// a private page's says no more than an ordinary one's.
-    nonisolated static func markDownloaded(_ file: URL) {
+    /// A download's own address and its page's go with it where they're known.
+    nonisolated static func markDownloaded(_ file: URL, data: URL? = nil, origin: URL? = nil) {
         var values = URLResourceValues()
-        values.quarantineProperties = [
+        var properties: [String: Any] = [
             kLSQuarantineAgentNameKey as String: "Search",
             kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload as String,
         ]
+        // Only web addresses: a blob: or file: one means nothing to Gatekeeper.
+        if let data, ["http", "https"].contains(data.scheme?.lowercased()) { properties[kLSQuarantineDataURLKey as String] = data }
+        if let origin, ["http", "https"].contains(origin.scheme?.lowercased()) { properties[kLSQuarantineOriginURLKey as String] = origin }
+        values.quarantineProperties = properties
         var file = file
         try? file.setResourceValues(values)
     }

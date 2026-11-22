@@ -1107,8 +1107,13 @@ final class Preferences: ObservableObject {
         // and this was one of them.
         // The Mac's own unless asked otherwise — a Mac in dark mode expects
         // a dark browser, pages included.
+        // Off at every launch, whatever was saved: the setting lives in the
+        // defaults, which any program you run can write. Only a launch
+        // argument (--bench) or SEARCH_BENCH=1 in the environment, which
+        // only whatever starts the app can give, turns it on from the start.
         let scripted = store.bool(forKey: "bench")
-        let allowed = scripted && (Store.testing || Bench.Consent.given)
+        let allowed = ProcessInfo.processInfo.arguments.contains("--bench")
+            || ProcessInfo.processInfo.environment["SEARCH_BENCH"] == "1"
         bench = allowed
         if scripted, !allowed {
             benchRefused = true
