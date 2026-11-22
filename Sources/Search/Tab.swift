@@ -3655,10 +3655,31 @@ extension WKWebView {
             let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
             let tooWide = folder == home || ["/", "/Users", "/Volumes"].contains(folder.path)
                 || folder.deletingLastPathComponent().path == "/Volumes"
-            loadFileURL(url, allowingReadAccessTo: tooWide ? url : folder)
+            loadFileURL(url, allowingReadAccessTo: tooWide ? url : WKWebView.readRoot(folder, home: home))
         } else {
             load(URLRequest(url: url))
         }
+    }
+
+    /// A static site's pages in a folder of their own reach for their
+    /// styles and pictures one or two folders up (lessons/one.html and
+    /// ../assets/style.css), as Safari and Chrome show them (#1342): the
+    /// page may read up to two folders above its own, never as far as the
+    /// home folder, a folder directly in it (Documents, Desktop, Downloads,
+    /// Library…), the disk, a volume or a folder at the disk's top.
+    static func readRoot(_ folder: URL, home: URL) -> URL {
+        func broad(_ candidate: URL) -> Bool {
+            let parent = candidate.deletingLastPathComponent()
+            return candidate.path == home.path || parent.path == home.path || candidate.pathComponents.count <= 3
+                || parent.path == "/Volumes"
+        }
+        var root = folder
+        for _ in 0..<2 {
+            let up = root.deletingLastPathComponent().standardizedFileURL
+            guard up.path != root.path, !broad(up) else { break }
+            root = up
+        }
+        return root
     }
 
     /// JavaScript run in Search's own world (see Web.world), where its page
