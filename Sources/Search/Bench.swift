@@ -517,8 +517,8 @@ final class Bench {
 
         case "page":
             // bench-mcp's page scripts (PageScripts, shared with coding
-            // agents), run in Search's own world: read the page, touch one
-            // element of the last read, or check a condition.
+            // agents), run in Search's own world: read the page or outline
+            // it, touch one element of the last read, or check a condition.
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             house(tab)
             func int(_ key: String, _ otherwise: Int) -> Int { (request[key] as? NSNumber)?.intValue ?? otherwise }
@@ -534,8 +534,11 @@ final class Bench {
                                            replace: request["replace"] as? Bool ?? true)
             case "check":
                 script = PageScripts.check(request["condition"] as? [String: Any] ?? [:])
+            case "outline":
+                script = PageScripts.outline(key: key, snap: int("snap", 1),
+                                             options: request["options"] as? [String: Any] ?? [:])
             default:
-                answer(["error": "page needs a script: read, touch or check"])
+                answer(["error": "page needs a script: read, touch, check or outline"])
                 return
             }
             tab.web.evaluateJavaScript(script, in: nil, in: Web.world) { result in

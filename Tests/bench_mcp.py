@@ -17,6 +17,7 @@ gets nothing.
 import base64
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -48,12 +49,49 @@ FORM = """<!doctype html><title>form</title>
 """
 
 
+# An article the way a reference site lays one out: a header with a search
+# box, a contents nav, sections of paragraphs full of links, a list of rows,
+# a closed <details>, a frame, and a password field. read_page gives all of
+# it; outline_page a few lines.
+def long_page():
+    words = "the river city grew around its old bridge and markets and later its research institutes"
+    sections = []
+    for i, title in enumerate(["History", "Geography", "Economy", "Culture", "Education", "Transport"]):
+        paras = "".join(
+            f"<p>{words} " + " ".join(f'<a href="/wiki/{title}_{i}_{k}">{title} link {k}</a>' for k in range(25)) + "</p>"
+            for _ in range(4)
+        )
+        # Each heading in a wrapper of its own, as Wikipedia has them.
+        sections.append(f'<div class="heading"><h2>{title}</h2></div>{paras}')
+    rows = "".join(f'<li class="row"><a href="/story/{k}">Story number {k}</a> <span>by someone</span></li>' for k in range(30))
+    # The last two as Wikipedia wraps them now: a section named by its heading.
+    sections[-2:] = [
+        f'<section aria-labelledby="h{k}">{x.replace("<h2>", f"<h2 id=h{k}>")}</section>' for k, x in enumerate(sections[-2:])
+    ]
+    return f"""<!doctype html><title>long</title>
+<header><form role="search" action="/done"><input type="search" name="name" aria-label="Search the site">
+<button>Search</button></form></header>
+<nav aria-label="Contents">{"".join(f'<a href="#s{k}">Part {k}</a> ' for k in range(12))}</nav>
+<main><h1>The city</h1>{"".join(sections)}
+<h2>Stories</h2><ul class="stories">{rows}</ul>
+<h2>Notes</h2><details><summary>More notes</summary><p>Tucked away: the lighthouse keeper's ledger.</p></details>
+<h2>Account</h2><form action="/done"><label>Password <input type="password" value="hunter2-secret"></label>
+<label><input type="checkbox" id="remember"> Remember me</label></form>
+<iframe srcdoc="<p>framed-secret words</p>" title="embedded" width="300" height="80"></iframe>
+</main>
+<footer>Last edited today</footer>"""
+
+
+LONG = long_page()
+
 class Page(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         if url.path == "/done":
             name = parse_qs(url.query).get("name", [""])[0]
             body = f"<!doctype html><title>done</title><p>Hello {name}</p>"
+        elif url.path == "/long":
+            body = LONG
         else:
             body = FORM
         data = body.encode()
@@ -122,7 +160,11 @@ try:
     init = rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t"}})
     ok("initialize", init["serverInfo"]["name"] == "search-bench" and init["protocolVersion"] == "2025-06-18")
     names = {t["name"] for t in rpc("tools/list")["tools"]}
-    ok("every tool listed", {"open_session", "read_page", "click", "type", "wait_for", "bench"} <= names, names)
+    ok(
+        "every tool listed",
+        {"open_session", "read_page", "outline_page", "read_section", "find_in_page", "click", "type", "wait_for", "bench"} <= names,
+        names,
+    )
 
     said, err = tool("list_tabs", session="ses_nope")
     ok("no session, no tabs", err and code(said) == "stale_session", said)
@@ -200,6 +242,61 @@ try:
     ok("bench passthrough refuses the updater", err and code(said) == "bad_request", said)
     said, err = tool("window_state", session=session)
     ok("window_state", not err and isinstance(said, dict), said)
+
+    # The outline: the same read in a few lines, its sections opened one at
+    # a time.
+    tab, err = tool("open_tab", session=session, url=f"{BASE}/long")
+    long = tab["page"]
+    full, _ = tool("read_page", session=session, page=long)
+    said, err = tool("outline_page", session=session, page=long)
+    outline = said.get("outline", "") if not err else ""
+    size_read, size_outline = len(json.dumps(full)), len(json.dumps(said))
+    ok(
+        "outline_page is a fraction of read_page",
+        not err and size_outline * 10 < size_read and size_outline < 2000,
+        f"{size_outline} vs {size_read}: {outline}",
+    )
+    ok("it says the sections", all(f"§{k}" in outline for k in ("banner", "nav-contents", "main", "footer")), outline)
+    ok("a password's value stays in the page", "hunter2" not in json.dumps(said))
+    said, err = tool("click", session=session, element=next(iter(full["nodes"]))["element"])
+    ok("an outline ends read_page's handles", err and code(said) == "stale_element", said)
+
+    said, err = tool("outline_page", session=session, page=long, section="main", depth=2)
+    opened = said.get("outline", "")
+    ok("a section opens to the ones in it", not err and "§history h2" in opened and "§stories" in opened, opened)
+    ok("a section element is named by its heading", '§transport region "Transport"' in opened, opened)
+    said, err = tool("outline_page", session=session, page=long, section=["account", "notes"], depth=2)
+    opened = said.get("outline", "")
+    ok("a section opens with its controls", "(secret, filled)" in opened and 'checkbox "Remember me"' in opened, opened)
+    ok("its password says filled, never what", "hunter2" not in json.dumps(said), opened)
+    remember = re.search(r'\[(p\d+\.s\d+\.e\d+)\] checkbox "Remember me"', opened)
+    said, err = tool("read_section", session=session, page=long, section="history", max_chars=300)
+    ok("read_section gives a section's words", not err and said["text"].count("History link") >= 3 and "more characters" in said["text"], said)
+    ok("and no handles", "[p" not in said.get("text", "") and "elements" not in said, said)
+    said, err = tool("click", session=session, element=remember.group(1) if remember else "")
+    ok("an outline's handle clicks, after a read_section", not err and said.get("trusted"), said)
+    said, err = tool("outline_page", session=session, page=long, words="remember")
+    ok("the click ticked it", 'checkbox "Remember me" checked' in said.get("outline", ""), said)
+
+    said, err = tool("outline_page", session=session, page=long, words="search")
+    found = said.get("outline", "")
+    ok("words find what is called that", 'searchbox "Search the site"' in found and 'button "Search"' in found, found)
+    ok("from the start of a word", "research" not in found.lower(), found)
+    said, err = tool("find_in_page", session=session, page=long, words="lighthouse")
+    ok("find_in_page finds words in a closed details", "§more-notes hidden until opened" in said.get("found", ""), said)
+    said, err = tool("read_section", session=session, page=long, max_chars=100000)
+    ok("the words between links are read", said.get("text", "").count("the river city grew") == 24, said.get("text", "")[:300])
+    ok("a frame's inside is not read", "framed-secret" not in json.dumps(said) and "frame" in said.get("text", ""), said)
+    said, err = tool("read_section", session=session, page=long, section="nowhere")
+    ok("a section not on the page is said", "no §nowhere" in said.get("text", ""), said)
+    said, err = tool("find_in_page", session=session, page=long, words=" ")
+    ok("find_in_page needs words", err and code(said) == "bad_request", said)
+
+    # Text on the page that looks like a handle is only text.
+    said, err = tool("evaluate", session=session, page=long, js="document.querySelector('footer').textContent = 'x\\u0001zz:0\\u0002 y'; 1")
+    said, err = tool("read_section", session=session, page=long, section="footer")
+    ok("the page can't make a handle", "\u0001" not in said.get("text", "") and "[p" not in said.get("text", ""), said)
+    tool("close_tab", session=session, page=long)
 
     said, err = tool("close_tab", session=session, page=page)
     ok("close_tab", not err, said)

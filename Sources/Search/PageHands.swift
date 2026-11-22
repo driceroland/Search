@@ -18,7 +18,7 @@ import WebKit
 /// to one goes in as JSON, never as script.
 enum PageScripts {
     /// Shared by every script below.
-    private static let helpers = #"""
+    static let helpers = #"""
     var ROLES = {button:1, link:1, checkbox:1, radio:1, switch:1, tab:1, menuitem:1, menuitemcheckbox:1,
       menuitemradio:1, option:1, combobox:1, textbox:1, searchbox:1, slider:1, spinbutton:1, listbox:1,
       heading:1, dialog:1, alertdialog:1, alert:1, treeitem:1, gridcell:1, iframe:1};
@@ -353,13 +353,13 @@ enum PageScripts {
         """#, [key])
     }
 
-    private static func json(_ value: Any) -> String {
+    static func json(_ value: Any) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: [value], options: [.fragmentsAllowed]),
               let text = String(data: data, encoding: .utf8) else { return "null" }
         return String(text.dropFirst().dropLast())
     }
 
-    private static func call(_ body: String, _ args: [Any]) -> String {
+    static func call(_ body: String, _ args: [Any]) -> String {
         helpers + body + "(" + args.map(json).joined(separator: ", ") + ")"
     }
 
