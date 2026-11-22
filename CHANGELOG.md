@@ -39,6 +39,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Sites at `.local` names and on other devices in your home or office load on macOS 15 and later: Search now carries the sentence macOS shows when it asks for local network access, and without it macOS could block those connections without asking. Reported by [@soldier99](https://github.com/soldier99) ([#1348](https://github.com/driceroland/Search/issues/1348))
 - A window opened while the app is still bringing back last time's windows is written down once: it no longer comes back twice at the next launch, and the file that keeps your windows no longer grows with every save until they are back.
 - Hiding or showing the sidebar with ⌘S, the page now moves with it: it is laid out at each width the sidebar leaves it as it slides, as in Safari and Dia, where it was resized once, at the start going away and at the end coming back, so whatever a site centres jumped half the sidebar's width while the sidebar stood still. Where a page hasn't caught up yet, the room it grows into is in its own colour. `python3 Tests/fold_follow.py` (idea 659)
+- With the tabs across the top, a tab too narrow for three letters of its title shows its icon alone, centred: between about 80 and 104 points wide it showed its icon and a lone "…". The tab you're on says its address only where the site's name fits beside its port, and its title otherwise; a pair in Split View does the same with each half. `python3 Tests/tab_titles.py`
 
 ### Held back
 

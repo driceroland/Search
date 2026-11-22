@@ -120,7 +120,7 @@ struct SplitTabItem: View {
             joinedBefore: index > 0 && lit(pages[index - 1]),
             joinedAfter: index < pages.count - 1 && lit(pages[index + 1]),
             height: height,
-            narrow: width.map { ($0 - (count - 1)) / count < 64 } ?? false,
+            titleRoom: width.map { ($0 - (count - 1)) / count - SplitTabHalf.fixed },
             interactive: interactive,
             pill: pill,
             hovered: $hovered
@@ -163,6 +163,10 @@ private struct SplitTabHalf: View {
     /// A half's grey across the top: a tab's pill, 15 points of mark and 6
     /// above and below.
     static let pillHeight: CGFloat = 28
+    /// A half's own parts across the top, end to end: its air at the left,
+    /// the mark, the gap after it, its air at the right. Everything but the
+    /// title.
+    static let fixed: CGFloat = 9 + 13 + 5 + 4
 
     @Environment(\.greys) private var greys
     @Environment(\.tabShortcutNumbers) private var shortcutNumbers
@@ -182,8 +186,11 @@ private struct SplitTabHalf: View {
     let joinedAfter: Bool
     private var joined: Bool { joinedBefore || joinedAfter }
     let height: CGFloat
-    /// Too narrow for a title: the mark alone, as a narrow tab has.
-    let narrow: Bool
+    /// Across the top, what the title gets; nil in the column.
+    let titleRoom: CGFloat?
+    /// Too narrow for three letters or so of a title (Metrics.tabTitleRoom):
+    /// the mark alone, as a narrow tab has, never the mark and a lone "…".
+    private var narrow: Bool { titleRoom.map { $0 < Metrics.tabTitleRoom } ?? false }
     let interactive: Bool
     let pill: Namespace.ID
     @Binding var hovered: Tab.ID?
@@ -197,7 +204,13 @@ private struct SplitTabHalf: View {
     private var editing: Bool { interactive && browser.editingTab == tab.id }
     /// Where the page is, said on the half you're on (Settings › Tabs › Show
     /// the address on the tab you're on).
-    private var rest: AtRest? { focused && !editing && !narrow ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
+    /// With room for the site's name beside its lock and port; else the
+    /// title stands in for it. A warning is said however little room.
+    private var rest: AtRest? {
+        guard focused && !editing && !narrow, let said = AtRest.said(tab.restAddress, always: prefs.showsAddress) else { return nil }
+        guard let titleRoom, !said.warns else { return said }
+        return titleRoom - AtRestLine.besideName(said, size: 12) >= Metrics.tabTitleRoom ? said : nil
+    }
     private var atRest: Bool { rest != nil }
     private var dim: Bool { prefs.dimsSleepingTabs && tab.asleep && !focused && !hovering }
 
@@ -349,7 +362,7 @@ private struct SplitTabHalf: View {
                     TitleAtRest(label: title, rest: rest, shown: atRest, hovering: hovering,
                                 size: stacked ? prefs.sideTitle : 12,
                                 colour: focused ? Palette.ink : hovering ? Palette.ink.opacity(0.7) : Palette.muted,
-                                roomy: stacked, dim: dim)
+                                roomy: stacked, dim: dim, record: stacked ? nil : tab.id)
                 }
             }
         }

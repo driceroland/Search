@@ -4138,7 +4138,9 @@ final class Bench {
             // "appearance": "light" or "dark" rather than the Mac's. With it
             // come where each group's band was drawn, piece by piece
             // (GroupBand): the heading or tab under it and the piece itself,
-            // [minX, maxX] in the row, by group.
+            // [minX, maxX] in the row, by group. And every title drawn: what
+            // it says, how wide it was laid out, and what of it is left once
+            // cut as SwiftUI cuts it ("visible"), by tab and line.
             guard let path = request["path"] as? String else { answer(["error": "strip needs a path"]); return }
             let width = request["width"] as? Double ?? 1100
             let host = NSHostingView(rootView: TabBar(browser: browser).frame(width: width, height: Metrics.strip).background(Palette.ground)
@@ -4151,6 +4153,7 @@ final class Bench {
             default: window.appearance = NSApp.effectiveAppearance
             }
             TabBar.drawnBands = [:]
+            TabBar.drawnTitles = [:]
             window.contentView = host
             host.layoutSubtreeIfNeeded()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -4166,9 +4169,17 @@ final class Bench {
                                                    "height": Double(drawn.band.height)])
                 }
                 TabBar.drawnBands = [:]
+                let titles: [[String: Any]] = TabBar.drawnTitles.sorted { $0.key < $1.key }.map { key, drawn in
+                    let parts = key.split(separator: "/")
+                    return ["tab": String(parts[0]), "line": String(parts.last ?? ""), "text": drawn.text,
+                            "width": Double(drawn.width), "shown": drawn.shown,
+                            "visible": Self.cut(drawn.text, to: drawn.width, size: drawn.size,
+                                                medium: drawn.medium, middle: drawn.middle)]
+                }
+                TabBar.drawnTitles = [:]
                 do {
                     try picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
-                    answer(["saved": path, "bands": bands])
+                    answer(["saved": path, "bands": bands, "titles": titles])
                 } catch { answer(["error": error.localizedDescription]) }
                 window.contentView = nil
             }
@@ -5869,6 +5880,23 @@ final class Bench {
         NSGraphicsContext.restoreGraphicsState()
         guard let c = rep.colorAt(x: 0, y: 0) else { return "" }
         return String(format: "%02x%02x%02x", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
+    }
+
+    /// What is left of TEXT laid out WIDTH wide, cut at the end or in the
+    /// middle with a "…" as a one-line Text is: all of it if it fits, else
+    /// as many letters as fit beside the "…", else the "…" alone, else
+    /// nothing. Close to SwiftUI's own, which says nothing of what it cut.
+    static func cut(_ text: String, to width: CGFloat, size: CGFloat, medium: Bool, middle: Bool) -> String {
+        let font = NSFont.systemFont(ofSize: size, weight: medium ? .medium : .regular)
+        let fits = { (line: String) in (line as NSString).size(withAttributes: [.font: font]).width <= width + 0.5 }
+        if fits(text) { return text }
+        let letters = Array(text)
+        for kept in stride(from: letters.count - 1, through: 1, by: -1) {
+            let head = middle ? (kept + 1) / 2 : kept
+            let line = String(letters[..<head]) + "…" + String(letters[(letters.count - (kept - head))...])
+            if fits(line) { return line }
+        }
+        return fits("…") ? "…" : ""
     }
 
     static func short(_ tab: Tab) -> String {

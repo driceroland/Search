@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The site, as the tab you're on says it at rest (AtRest.swift): the
@@ -12,6 +13,23 @@ struct AtRestLine: View {
     /// "Not secure" in the room of one letter (the words are its tooltip),
     /// and the registrable domain alone stands for the host.
     var compact = false
+    /// The tab it is on, for a row drawn for the bench (RecordsTitle).
+    var record: UUID? = nil
+
+    /// What the line takes beside the name across the top: the open lock
+    /// and its space, the port. Measured once a port.
+    static func besideName(_ rest: AtRest, size: CGFloat) -> CGFloat {
+        var beside: CGFloat = rest.kind == .notSecure ? size + 2 : 0
+        guard !rest.tail.isEmpty else { return beside }
+        let key = "\(size) \(rest.tail)"
+        if let known = measured[key] { return beside + known }
+        let width = ceil((rest.tail as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size)]).width)
+        if measured.count > 200 { measured.removeAll() }
+        measured[key] = width
+        beside += width
+        return beside
+    }
+    private static var measured: [String: CGFloat] = [:]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -40,6 +58,9 @@ struct AtRestLine: View {
                 .fontWeight(rest.kind == .file || rest.kind == .other ? .regular : .medium)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .modifier(RecordsTitle(key: record.map { "\($0.uuidString.prefix(8).lowercased())/rest" },
+                                       title: .init(text: rest.name, size: size,
+                                                    medium: !(rest.kind == .file || rest.kind == .other), middle: true)))
                 .layoutPriority(1)
             if !rest.tail.isEmpty {
                 Text(rest.tail)
@@ -70,6 +91,8 @@ struct TitleAtRest: View {
     /// the top a lock says the first and the site alone stands for the host.
     let roomy: Bool
     var dim = false
+    /// The tab it is on, for a row drawn for the bench (RecordsTitle).
+    var record: UUID? = nil
 
     private var on: Bool { shown && rest != nil }
 
@@ -80,9 +103,11 @@ struct TitleAtRest: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .foregroundStyle(colour)
+                .modifier(RecordsTitle(key: record.map { "\($0.uuidString.prefix(8).lowercased())/title" },
+                                       title: .init(text: label, size: size, shown: !(on && !hovering))))
                 .opacity(on && !hovering ? 0 : 1)
             if let rest, on {
-                AtRestLine(rest: rest, size: size, compact: !roomy)
+                AtRestLine(rest: rest, size: size, compact: !roomy, record: record)
                     .opacity(hovering ? 0 : 1)
                     .transition(.opacity)
             }
@@ -91,5 +116,26 @@ struct TitleAtRest: View {
         .animation(Motion.reduced ? nil : .easeInOut(duration: 0.22), value: on)
         .animation(Motion.quick, value: dim)
         .animation(nil, value: hovering)
+    }
+}
+
+/// On a row drawn off screen for the bench (Environment.recordsBands), a
+/// title says what it holds and how wide it was laid out (TabBar.drawnTitles),
+/// so a probe can tell what is left of it once cut. Nothing anywhere else.
+struct RecordsTitle: ViewModifier {
+    @Environment(\.recordsBands) private var records
+    let key: String?
+    let title: TabBar.DrawnTitle
+
+    func body(content: Content) -> some View {
+        if records, let key {
+            content.onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width in
+                var drawn = title
+                drawn.width = width
+                TabBar.drawnTitles[key] = drawn
+            }
+        } else {
+            content
+        }
     }
 }

@@ -571,6 +571,19 @@ struct TabBar: View {
     static var laidOut: CGFloat = 0
     /// Each group band piece of a row drawn for the bench (GroupBand).
     static var drawnBands: [UUID: GroupBand.Drawn] = [:]
+    /// Each title of a row drawn for the bench (RecordsTitle), by its tab's
+    /// id and which line: "title" or "rest", the address said at rest.
+    static var drawnTitles: [String: DrawnTitle] = [:]
+    struct DrawnTitle {
+        var text: String
+        var size: CGFloat
+        var medium = false
+        /// Cut in the middle, as a site's name is, rather than at the end.
+        var middle = false
+        /// Not faded out under the other line.
+        var shown = true
+        var width: CGFloat = 0
+    }
     static var runShown: CGFloat = 0
     static var scrolls = false
 
@@ -884,13 +897,37 @@ private struct TabPill: View, Equatable {
     /// pick the tab lands on, so only the tab you're on, already picked,
     /// wears one, in place of its mark while the pointer is on it, as in
     /// Chrome.
-    private var compact: Bool { !editing && !pinned && width < Metrics.tabTitled }
+    ///
+    /// Too narrow is less room for the title than Metrics.tabTitleRoom,
+    /// three letters or so: past that the title was a lone "…" beside the
+    /// mark, which said nothing the mark alone doesn't.
+    private var compact: Bool { !editing && !pinned && titleRoom < Metrics.tabTitleRoom }
+    /// What the title gets: the tab, less its own parts (Metrics.tabFixed),
+    /// less the signs before the title that stay while the page does. The
+    /// shortcut numbers and the cross under the pointer come and go, and
+    /// the tab doesn't change shape for them.
+    private var titleRoom: CGFloat {
+        var room = width - Metrics.tabFixed
+        if tab.isBlank { room += Metrics.tabMark + Metrics.tabSpacing }
+        if tab.bench && !tab.agent { room -= Metrics.tabGlyph + Metrics.tabSpacing }
+        if tab.shy { room -= Metrics.tabGlyph + Metrics.tabSpacing }
+        if tab.recording { room -= Metrics.tabGlyph + Metrics.tabSpacing }
+        if !tab.blockedPopups.isEmpty { room -= Metrics.tabSign + Metrics.tabSpacing }
+        if tab.translation != nil { room -= Metrics.tabSign + Metrics.tabSpacing }
+        return room
+    }
     /// A speaker to press at the end of the pill: the page plays sound, or
     /// was muted. The ring, while the page is still coming, goes first.
     private var speaker: Bool { !editing && !tab.loading && (tab.noisy || tab.muted) }
     /// Where the page is, said on the tab you're on (Settings › Tabs › Show
     /// the address on the tab you're on).
-    private var rest: AtRest? { live && !editing ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
+    /// Where there is room for the site's name beside its lock and port:
+    /// a name cut down to "…" says nothing, so the title stands in for it.
+    /// A warning is said however little room there is, the lock first.
+    private var rest: AtRest? {
+        guard live && !editing, let said = AtRest.said(tab.restAddress, always: prefs.showsAddress) else { return nil }
+        return said.warns || titleRoom - AtRestLine.besideName(said, size: 12.5) >= Metrics.tabTitleRoom ? said : nil
+    }
     private var atRest: Bool { rest != nil }
     private var dim: Bool { prefs.dimsSleepingTabs && tab.asleep && !live && !hovering }
 
@@ -1023,13 +1060,13 @@ private struct TabPill: View, Equatable {
     }
 
     private var titled: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Metrics.tabSpacing) {
             if editing {
                 TabAddressField(browser: browser)
                     .frame(height: 16)
             } else {
                 if !tab.isBlank {
-                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15, dim: dim,
+                    Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: Metrics.tabMark, dim: dim,
                          contrast: prefs.highContrastText)
                         .overlay(alignment: .bottomTrailing) { AgentMark(tab: tab) }
                 }
@@ -1058,10 +1095,10 @@ private struct TabPill: View, Equatable {
                 // The page is translated (Translate.swift).
                 TranslateSign(tab: tab, colour: colour)
                 TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
-                            size: 12.5, colour: colour, roomy: false, dim: dim)
+                            size: 12.5, colour: colour, roomy: false, dim: dim, record: tab.id)
             }
 
-            Spacer(minLength: 2)
+            Spacer(minLength: Metrics.tabSpring)
 
             if !editing, let number = shortcutNumbers[tab.id] {
                 TabShortcutNumber(number: number)
@@ -1092,7 +1129,7 @@ private struct TabPill: View, Equatable {
                         Ring().transition(.opacity)
                     }
                 }
-                .frame(width: editing || (speaker && !hovering) ? 0 : 15, height: 15)
+                .frame(width: editing || (speaker && !hovering) ? 0 : Metrics.tabCloseSlot, height: 15)
                 .opacity(editing ? 0 : 1)
                 // The cross is 15 points across because that is how big it should
                 // look. What you have to hit is the whole right-hand end of the
@@ -1111,8 +1148,8 @@ private struct TabPill: View, Equatable {
                 .animation(Motion.quick, value: tab.loading)
             }
         }
-        .padding(.leading, 11)
-        .padding(.trailing, editing ? 11 : 7)
+        .padding(.leading, Metrics.tabLead)
+        .padding(.trailing, editing ? Metrics.tabLead : Metrics.tabTrail)
         .padding(.vertical, 6)
         .frame(width: span, alignment: .leading)
         .animation(Motion.quick, value: speaker)
