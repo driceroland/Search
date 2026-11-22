@@ -1680,6 +1680,7 @@ private struct SideFoot: View {
                 // An agent connected in this window: a click on it is Stop.
                 AgentStatus(browser: browser, style: .icon)
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
+                ArchiveDoor(browser: browser)
                 ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
                 BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 SpaceButtons(browser: browser, vertical: true)
@@ -1696,9 +1697,10 @@ private struct SideFoot: View {
             HStack(spacing: 2) {
                 if Profiles.shared.several { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser, names: false) }
-                FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom, live: live)
                 BookmarkDoor(browser: browser, arrowEdge: .bottom)
                 SpaceButtons(browser: browser)
+                FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom, live: live)
+                ArchiveDoor(browser: browser)
                 ExtensionSlot(browser: browser, edge: .bottom, room: room)
             }
         } else {
@@ -1710,6 +1712,8 @@ private struct SideFoot: View {
                 SpaceButtons(browser: browser)
                 // Only while a download is running, and a moment after.
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
+                // The Archive, after Downloads, while tabs are archived.
+                ArchiveDoor(browser: browser)
                 // With a button per space the row is centred under the
                 // column: at one side, a row of spaces read as a toolbar
                 // that had slid off. Otherwise at the side, as it always was.
@@ -1727,6 +1731,7 @@ private struct SideFoot: View {
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
         if Profiles.shared.several { kept += 1 }
         if FetchDoor.shows(fetches, prefs, hanging: hanging) { kept += 1 }
+        if prefs.tabLife != .never { kept += 1 }  // the Archive
         return kept
     }
 
@@ -1734,6 +1739,7 @@ private struct SideFoot: View {
     /// lights' row must have to take them (SideBar.doorsUp).
     @MainActor static func keptWidth(_ prefs: Preferences, spaces: Int = 0) -> CGFloat {
         var kept = 3 + spaces  // the puzzle, bookmarks, downloads and a button per space
+        if prefs.tabLife != .never { kept += 1 }  // the Archive
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
         if Profiles.shared.several { kept += 1 }
         return CGFloat(kept) * (26 + 2) - 2
@@ -1748,6 +1754,7 @@ private struct SideFoot: View {
         if Profiles.shared.several { kept += 1 }
         // Up, downloads keep their place whether running or not.
         if up || FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
+        if prefs.tabLife != .never { kept += 1 }  // the Archive
         let free = (up ? width : width - 2 * 10) + 2 - CGFloat(kept) * door
         return max(0, Int((free / door).rounded(.down)))
     }

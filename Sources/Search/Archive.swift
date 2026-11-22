@@ -7,9 +7,11 @@ import SwiftUI
 // at for its time closes (Closing.swift). ⇧⌘T and Recently Closed hold a
 // dozen closes, and every close counts, ⌘W's too: a week's worth of tabs
 // closed overnight went past them, and History has each page among
-// everything else. Here they stay together, newest first, for thirty days
-// or the last five hundred: History › Archived Tabs… lists them, with a
-// search, and a click opens one again in the space on screen.
+// everything else. Here they stay together, newest first, from the start
+// of last month on, five hundred at most: the Archive (search://archive,
+// the button after Downloads, or History › Archived Tabs…) lists them in
+// Recent, Yesterday, This Week, This Month and Last Month, with a search,
+// and a click opens one again in the space on screen.
 //
 // Only what Search closed: a tab you closed yourself is one you meant to.
 // Never a private tab, which nothing keeps. Each profile has its own, as it
@@ -36,8 +38,47 @@ final class Archive: ObservableObject {
 
     /// Kept at most: far more than anybody scrolls back through, and a small file.
     nonisolated static let cap = 500
-    /// Kept for a month: past that, History has it.
+    /// Kept for a month at least: past that, History has it.
     nonisolated static let lasts: TimeInterval = 30 * 86_400
+
+    /// The oldest close still kept: thirty days back, or the start of last
+    /// month when that is further, so Last Month is whole.
+    nonisolated static func since(_ now: Date, calendar: Calendar = .current) -> Date {
+        let month = calendar.dateInterval(of: .month, for: now)?.start ?? now
+        let last = calendar.date(byAdding: .month, value: -1, to: month) ?? month
+        return min(now.addingTimeInterval(-lasts), last)
+    }
+
+    /// The Archive's groups, newest first.
+    enum Shelf: Int, CaseIterable {
+        case recent, yesterday, week, month, lastMonth
+
+        var title: String {
+            switch self {
+            case .recent: return "Recent"
+            case .yesterday: return "Yesterday"
+            case .week: return "This Week"
+            case .month: return "This Month"
+            case .lastMonth: return "Last Month"
+            }
+        }
+    }
+
+    /// Which group a close falls in: the last 24 hours, then the day
+    /// before today, this week, this month and last month, each without
+    /// what an earlier one took. Nil before last month.
+    nonisolated static func shelf(of closed: Date, now: Date, calendar: Calendar = .current) -> Shelf? {
+        if closed >= now.addingTimeInterval(-86_400) { return .recent }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(closed, inSameDayAs: yesterday) { return .yesterday }
+        if calendar.isDate(closed, equalTo: now, toGranularity: .weekOfYear) { return .week }
+        if calendar.isDate(closed, equalTo: now, toGranularity: .month) { return .month }
+        if let start = calendar.dateInterval(of: .month, for: now)?.start,
+           let last = calendar.date(byAdding: .month, value: -1, to: start),
+           calendar.isDate(closed, equalTo: last, toGranularity: .month) { return .lastMonth }
+        // Thirty days back can reach two months back early in a month.
+        return closed >= now.addingTimeInterval(-lasts) ? .lastMonth : nil
+    }
 
     let file: URL
     /// Its profile deleted: nothing more is written.
@@ -107,9 +148,9 @@ final class Archive: ObservableObject {
         }
     }
 
-    /// Newest first, a month at most, and no more than the cap.
+    /// Newest first, from `since` on, and no more than the cap.
     nonisolated static func trimmed(_ list: [Archived], now: Date) -> [Archived] {
-        let since = now.addingTimeInterval(-lasts)
+        let since = since(now)
         return Array(list.filter { $0.closed >= since }.sorted { $0.closed > $1.closed }.prefix(cap))
     }
 
@@ -152,7 +193,7 @@ extension Browser {
         _ = open(archived.url, foreground: true)
     }
 
-    /// History › Archived Tabs…, in a tab.
+    /// The Archive, search://archive, in a tab.
     var archiving: Bool {
         get { pageTab(.archive) != nil }
         set { if newValue { show(InternalPage(.archive)) } else { putAway(.archive) } }
@@ -172,9 +213,9 @@ struct ArchivePanel: View {
 
     var body: some View {
         let listed = self.listed
-        Plate("Archived Tabs", width: 600, close: { browser.archiving = false }) {
+        Plate("Archive", width: 600, close: { browser.archiving = false }) {
             VStack(alignment: .leading, spacing: 14) {
-                Hunt(text: $hunt, prompt: "Search the tabs Search closed", focus: $hunting)
+                Hunt(text: $hunt, prompt: "Search the Archive", focus: $hunting)
                 if listed.isEmpty {
                     Card { Nothing(hunt.isEmpty ? empty : "Nothing matches.") }
                 } else {
@@ -215,7 +256,7 @@ struct ArchivePanel: View {
                 Text(listed.count == 1 ? "1 tab" : "\(listed.count) tabs")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
-                Text("· kept for 30 days")
+                Text("· kept until the end of next month")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.faint)
                 Spacer()
@@ -229,8 +270,8 @@ struct ArchivePanel: View {
 
     private var empty: String {
         browser.prefs.tabLife.interval == nil
-            ? "Tabs never close by themselves (Settings › Tabs)."
-            : "Nothing yet. Tabs Search closes for you land here."
+            ? "Archiving is off (Settings › Tabs › Archive tabs you leave alone)."
+            : "Nothing yet. Tabs you leave alone land here."
     }
 
     private struct Line: Identifiable {
@@ -243,16 +284,17 @@ struct ArchivePanel: View {
         var first = false
     }
 
-    /// Each day's name, then its tabs, newest first.
+    /// Each group's name, then its tabs, newest first.
     private func lines(_ listed: [Archived]) -> [Line] {
-        let calendar = Calendar.current
+        let now = Date()
+        let listed = listed.filter { Archive.shelf(of: $0.closed, now: now) != nil }
         var made: [Line] = []
         var at = 0
         while at < listed.count {
-            let day = calendar.startOfDay(for: listed[at].closed)
+            let shelf = Archive.shelf(of: listed[at].closed, now: now)
             var end = at
-            while end < listed.count, calendar.startOfDay(for: listed[end].closed) == day { end += 1 }
-            made.append(Line(id: "day \(day.timeIntervalSince1970)", kind: .day(When.day(day)), first: made.isEmpty))
+            while end < listed.count, Archive.shelf(of: listed[end].closed, now: now) == shelf { end += 1 }
+            made.append(Line(id: "shelf \(shelf?.rawValue ?? -1)", kind: .day(shelf?.title ?? ""), first: made.isEmpty))
             for index in at..<end {
                 made.append(Line(id: listed[index].id.uuidString,
                                  kind: .tab(listed[index], first: index == at, last: index == end - 1)))
@@ -289,7 +331,9 @@ struct ArchivePanel: View {
                 if hovering {
                     Quick("Remove", tint: .red.opacity(0.75), act: remove)
                 } else {
-                    Text(When.clock(tab.closed))
+                    Text(Calendar.current.isDateInToday(tab.closed)
+                         ? When.clock(tab.closed)
+                         : When.day(Calendar.current.startOfDay(for: tab.closed)) + ", " + When.clock(tab.closed))
                         .font(.system(size: 11.5))
                         .foregroundStyle(Palette.muted)
                         .monospacedDigit()
@@ -303,6 +347,41 @@ struct ArchivePanel: View {
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
             .help("Open again in this space")
+        }
+    }
+}
+
+/// The Archive's button in the column's foot, after Downloads: there only
+/// while tabs are archived (Settings › Tabs), lit while the Archive is the
+/// tab in front.
+struct ArchiveDoor: View {
+    @ObservedObject var browser: Browser
+
+    var body: some View {
+        if browser.prefs.tabLife != .never {
+            if let tab = browser.active {
+                Front(browser: browser, tab: tab)
+            } else {
+                ArchiveDoor.door(browser, on: false)
+            }
+        }
+    }
+
+    fileprivate static func door(_ browser: Browser, on: Bool) -> some View {
+        Door(icon: "cabinet", on: on, help: "Archive") {
+            browser.archiving = !on
+        }
+    }
+
+    /// Watches the tab in front, so the button lights as it becomes the
+    /// Archive, by the button, a link or an address typed, and goes out
+    /// as it leaves.
+    private struct Front: View {
+        let browser: Browser
+        @ObservedObject var tab: Tab
+
+        var body: some View {
+            ArchiveDoor.door(browser, on: tab.page?.kind == .archive)
         }
     }
 }

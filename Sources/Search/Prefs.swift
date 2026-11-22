@@ -51,6 +51,8 @@ enum TabLife: Int, CaseIterable, Identifiable {
     case never = 0, halfDay = 12, day = 24, week = 168, month = 720
 
     var id: Int { rawValue }
+    /// The four times, without Never: what the picker beside the switch offers.
+    static let times: [TabLife] = [.halfDay, .day, .week, .month]
     /// Nil when tabs never close.
     var interval: TimeInterval? { self == .never ? nil : TimeInterval(rawValue) * 60 * 60 }
 
@@ -58,9 +60,9 @@ enum TabLife: Int, CaseIterable, Identifiable {
         switch self {
         case .never: return "Never"
         case .halfDay: return "After 12 hours"
-        case .day: return "After a day"
-        case .week: return "After a week"
-        case .month: return "After a month"
+        case .day: return "After 24 hours"
+        case .week: return "After 7 days"
+        case .month: return "After 30 days"
         }
     }
 }
@@ -414,6 +416,29 @@ final class Preferences: ObservableObject {
     /// long, as in Arc. Never unless asked for.
     @Published var tabLife: TabLife {
         didSet { store.set(tabLife.rawValue, forKey: "tabs.close.after") }
+    }
+    /// The time chosen last, kept while the switch is off, so turned back
+    /// on it is the same again. Twelve hours unless chosen.
+    var archiveLife: TabLife {
+        get {
+            let kept = TabLife(rawValue: store.integer(forKey: "tabs.close.after.chosen")) ?? .never
+            return kept == .never ? .halfDay : kept
+        }
+        set { if newValue != .never { store.set(newValue.rawValue, forKey: "tabs.close.after.chosen") } }
+    }
+    /// Settings › Tabs › Archive tabs you leave alone: on, the time chosen
+    /// last (twelve hours unless chosen); off, never, the time remembered.
+    var archivesTabs: Bool {
+        get { tabLife != .never }
+        set {
+            guard newValue != archivesTabs else { return }
+            if newValue {
+                tabLife = archiveLife
+            } else {
+                archiveLife = tabLife
+                tabLife = .never
+            }
+        }
     }
     /// How soon they do (see SleepPace). Normal unless chosen.
     @Published var sleepPace: SleepPace {

@@ -266,6 +266,8 @@ struct TabBar: View {
                         AgentStatus(browser: browser, style: .door)
                         // Only while a download is running, and a moment after.
                         FetchDoor(browser: browser, fetches: browser.fetches)
+                        // The Archive, after Downloads, while tabs are archived.
+                        ArchiveDoor(browser: browser)
                         ExtensionSlot(browser: browser)
                         if !browser.prefs.navigationLeft {
                             Helm(browser: browser).padding(.trailing, 8)

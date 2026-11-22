@@ -695,14 +695,24 @@ struct SettingsPanel: View {
             }
         case "tabs.sleep.dim": Switch(on: $prefs.dimsSleepingTabs)
         case "tabs.close.after":
-            Picker("", selection: $prefs.tabLife) {
-                ForEach(TabLife.allCases) { life in
-                    Text(life.title).tag(life)
+            // Off unless turned on; on, twelve hours unless another time is
+            // chosen, and the time chosen last comes back with the switch.
+            HStack(spacing: 10) {
+                if prefs.tabLife != .never {
+                    Picker("", selection: Binding(
+                        get: { prefs.tabLife },
+                        set: { life in prefs.archiveLife = life; prefs.tabLife = life }
+                    )) {
+                        ForEach(TabLife.times) { life in
+                            Text(life.title).tag(life)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
                 }
+                Switch(on: Binding(get: { prefs.archivesTabs }, set: { prefs.archivesTabs = $0 }))
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
         case "tabs.shortcuts": Switch(on: $prefs.showsTabShortcuts)
         case "tabs.address":
             Switch(on: Binding(

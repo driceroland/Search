@@ -70,6 +70,7 @@ enum SettingsIndex {
         .init(id: "themes", page: .themes, title: "Home background", icon: "photo.artframe"),
 
         .init(id: "newtabs", page: .tabs, title: "New tabs", icon: "plus.square"),
+        .init(id: "oldtabs", page: .tabs, title: "Old tabs", icon: "cabinet"),
         .init(id: "memory", page: .tabs, title: "Memory", icon: "moon.zzz"),
         .init(id: "tabbar", page: .tabs, title: "In the tab bar", icon: "number"),
         .init(id: "tabwindows", page: .tabs, title: "Windows", icon: "macwindow.on.rectangle"),
@@ -338,10 +339,10 @@ enum SettingsIndex {
         .init(id: "tabs.sleep.dim", group: "memory", icon: "moon",
               title: "Dim sleeping tabs", detail: "A resting tab's title and icon fade until you go to it",
               keys: ["tabs.sleep.dim"], words: ["sleep", "dim", "fade", "inactive", "suspend"]),
-        .init(id: "tabs.close.after", group: "memory", icon: "timer",
-              title: "Close tabs you leave alone", detail: "Pinned, named and grouped tabs stay. ⇧⌘T brings one back",
-              more: "Counted from when you last left the tab, while Search is quit too. Private tabs, sound, calls and anything typed stay.",
-              keys: ["tabs.close.after"], words: ["auto close", "archive", "clean up"]),
+        .init(id: "tabs.close.after", group: "oldtabs", icon: "cabinet",
+              title: "Archive tabs you leave alone", detail: "Pinned, named and grouped tabs stay. The Archive, by Downloads, brings one back",
+              more: "An idle tab moves to the Archive (search://archive) after 12 hours, or the time you choose. Counted from when you last used the tab, while Search is quit too. Private tabs, sound, calls and anything typed stay.",
+              keys: ["tabs.close.after", "tabs.close.after.chosen"], words: ["auto close", "archive", "clean up", "idle", "vault"]),
         .init(id: "tabs.shortcuts", group: "tabbar", icon: "command",
               title: "Show tab numbers while ⌘ is held", detail: "Which tab each ⌘1–9 selects",
               keys: ["tabs.shortcuts"], words: ["numbers", "shortcut"]),
@@ -961,6 +962,16 @@ extension SettingsIndex {
         case "pins.keep":
             guard let on = value as? Bool else { return false }
             prefs.pinsKeepSite = on
+        case "tabs.close.after":
+            // true or false, the switch; or hours, one of the four times.
+            if let on = value as? Bool {
+                prefs.archivesTabs = on
+            } else if let hours = value as? Int, let life = TabLife(rawValue: hours), life != .never {
+                prefs.archiveLife = life
+                prefs.tabLife = life
+            } else {
+                return false
+            }
         case "tabs.mirror":
             guard let on = value as? Bool else { return false }
             prefs.mirrorsTabs = on

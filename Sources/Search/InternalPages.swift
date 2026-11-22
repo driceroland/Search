@@ -55,7 +55,7 @@ struct InternalPage: Equatable {
         case .downloads: return "Downloads"
         case .bookmarks: return "Bookmarks"
         case .passwords: return "Passwords"
-        case .archive: return "Archived Tabs"
+        case .archive: return "Archive"
         case .importing: return "Bring Things Over"
         case .notes: return "What's New"
         }
@@ -68,7 +68,7 @@ struct InternalPage: Equatable {
         case .downloads: return "arrow.down.circle"
         case .bookmarks: return "book"
         case .passwords: return "key"
-        case .archive: return "archivebox"
+        case .archive: return "cabinet"
         case .importing: return "square.and.arrow.down"
         case .notes: return "sparkles"
         }

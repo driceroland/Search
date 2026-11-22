@@ -54,11 +54,37 @@ final class ArchiveTests: XCTestCase {
     func testAMonthOldTabGoes() {
         let archive = fresh()
         let now = Date()
-        archive.add(site(1), title: "Old", at: now.addingTimeInterval(-Archive.lasts - 60))
+        archive.add(site(1), title: "Old", at: Archive.since(now).addingTimeInterval(-60))
         archive.add(site(2), title: "Recent", at: now.addingTimeInterval(-86_400))
-        XCTAssertEqual(archive.tabs.map(\.title), ["Recent"], "past its month, it is not kept")
-        // Not listed past its month even before anything else is added.
-        XCTAssertEqual(archive.listed(now: now.addingTimeInterval(Archive.lasts)).count, 0)
+        XCTAssertEqual(archive.tabs.map(\.title), ["Recent"], "before last month, it is not kept")
+        // Not listed past its time even before anything else is added.
+        XCTAssertEqual(archive.listed(now: now.addingTimeInterval(70 * 86_400)).count, 0)
+    }
+
+    func testKeepsLastMonthWhole() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 11, day: 22, hour: 15))!
+        let october1 = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1, hour: 1))!
+        XCTAssertLessThanOrEqual(Archive.since(now, calendar: calendar), october1)
+    }
+
+    func testShelves() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.firstWeekday = 1  // Sunday
+        func at(_ month: Int, _ day: Int, _ hour: Int) -> Date {
+            calendar.date(from: DateComponents(year: 2026, month: month, day: day, hour: hour))!
+        }
+        let now = at(11, 25, 15)  // Wednesday
+        func shelf(_ date: Date) -> Archive.Shelf? { Archive.shelf(of: date, now: now, calendar: calendar) }
+        XCTAssertEqual(shelf(at(11, 25, 9)), .recent)
+        XCTAssertEqual(shelf(at(11, 24, 18)), .recent, "within 24 hours, though yesterday")
+        XCTAssertEqual(shelf(at(11, 24, 9)), .yesterday)
+        XCTAssertEqual(shelf(at(11, 23, 9)), .week)
+        XCTAssertEqual(shelf(at(11, 3, 9)), .month)
+        XCTAssertEqual(shelf(at(10, 2, 9)), .lastMonth)
+        XCTAssertNil(shelf(at(9, 2, 9)))
     }
 
     func testSearchMatchesTitleAndAddress() {
