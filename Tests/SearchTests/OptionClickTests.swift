@@ -211,7 +211,7 @@ final class OptionClickTests: XCTestCase {
     }
 
     private func rowPoint(_ index: Int, in window: NSWindow) -> NSPoint {
-        NSPoint(x: 70, y: window.frame.height - Metrics.strip - 14 - CGFloat(index) * 30)
+        NSPoint(x: 70, y: window.frame.height - Metrics.strip - 17 - CGFloat(index) * 36)
     }
 
     private func settle() async throws {

@@ -70,17 +70,39 @@ struct TitleAtRest: View {
     /// the top a lock says the first and the site alone stands for the host.
     let roomy: Bool
     var dim = false
+    /// In the column a long title runs out under a fade at the row's end
+    /// rather than ending in "…", as Zen's does.
+    var fades = false
 
     private var on: Bool { shown && rest != nil }
 
     var body: some View {
         ZStack(alignment: .leading) {
-            Text(label)
-                .font(.system(size: size))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundStyle(colour)
-                .opacity(on && !hovering ? 0 : 1)
+            Group {
+                if fades {
+                    Text(label)
+                        .font(.system(size: size))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .foregroundStyle(colour)
+                        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                        .clipped()
+                        .mask {
+                            HStack(spacing: 0) {
+                                Rectangle()
+                                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                                    .frame(width: 22)
+                            }
+                        }
+                } else {
+                    Text(label)
+                        .font(.system(size: size))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundStyle(colour)
+                }
+            }
+            .opacity(on && !hovering ? 0 : 1)
             if let rest, on {
                 AtRestLine(rest: rest, size: size, compact: !roomy)
                     .opacity(hovering ? 0 : 1)

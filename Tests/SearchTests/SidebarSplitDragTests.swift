@@ -174,7 +174,7 @@ final class SidebarSplitDragTests: XCTestCase {
     }
 
     private func rowPoint(_ index: Int, in window: NSWindow) -> NSPoint {
-        NSPoint(x: 70, y: window.frame.height - Metrics.strip - 14 - CGFloat(index) * 28)
+        NSPoint(x: 70, y: window.frame.height - Metrics.strip - 17 - CGFloat(index) * 36)
     }
 
     private func pagePoint(_ share: CGFloat, in window: NSWindow) -> NSPoint {

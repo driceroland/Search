@@ -300,8 +300,8 @@ final class Preferences: ObservableObject {
         didSet { store.set(showsPlayer, forKey: "sidebar.player") }
     }
     /// One tab's line in the column, and the size its title is set in.
-    var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 28 }
-    var sideTitle: CGFloat { roomyTabs ? 14 : 12.5 }
+    var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 32 }
+    var sideTitle: CGFloat { roomyTabs ? 14 : 13.5 }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
         didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
