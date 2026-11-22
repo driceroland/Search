@@ -241,9 +241,12 @@ enum PinTree {
     /// The place for a pin let go at `y`, given each line drawn and where
     /// (in the same space), and the folder each pin is in. Over a folder's
     /// heading: into it. Over another pin: beside it, in its folder, before
-    /// it in its upper half, after it in its lower. Over the pin carried, a
-    /// live folder or one of its posts, or between lines: nil, nothing moves. Above every line: first at the
-    /// top; below them all: last at the top.
+    /// it in its upper half, after it in its lower. Over a live folder or
+    /// one of its posts, between lines, or where the carried pin stood: nil,
+    /// nothing moves. Above every line: first at the top; below them all:
+    /// last at the top. The line under the hand is never the carried pin's
+    /// own: drawn where the hand takes it, it is always there, and found
+    /// first it hid the line it was over from every pin carried down (#1406).
     static func place(y: CGFloat, lines: [(line: Line, frame: CGRect)], folders pinFolder: [UUID: UUID?],
                       carrying: UUID) -> Place? {
         guard let first = lines.first, let last = lines.last else { return nil }
@@ -253,12 +256,14 @@ enum PinTree {
             return Place(folder: nil)
         }
         if y > last.frame.maxY { return Place(folder: nil) }
-        guard let hit = lines.first(where: { y >= $0.frame.minY && y <= $0.frame.maxY }) else { return nil }
+        guard let hit = lines.first(where: { line in
+            if case .pin(carrying, _) = line.line { return false }
+            return y >= line.frame.minY && y <= line.frame.maxY
+        }) else { return nil }
         switch hit.line {
         case .folder(let folder, _):
             return folder.isLive ? nil : Place(folder: folder.id)
         case .pin(let id, _):
-            guard id != carrying else { return nil }
             return Place(folder: pinFolder[id] ?? nil, anchor: id, after: y > hit.frame.midY)
         case .item:
             return nil
