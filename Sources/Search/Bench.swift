@@ -754,6 +754,12 @@ final class Bench {
                 answer(["showing": on])
                 return
             }
+            // "rows": the card's switches, in its order, as it would open now.
+            if request["rows"] as? Bool == true {
+                let rows = WhatsNew.rows(for: release, prefs: browser.prefs)
+                answer(["version": release.version, "first": (rows.leading + rows.own).map(\.title), "earlier": rows.earlier.map(\.title)])
+                return
+            }
             guard let path = request["path"] as? String else { answer(["error": "news needs a path"]); return }
             let root: AnyView = request["notes"] as? Bool == true
                 ? AnyView(ReleaseNotesPanel {}.padding(40).background(Palette.ground))
@@ -2376,9 +2382,22 @@ final class Bench {
             // running, waiting or listening. "on": asks the switch to turn
             // on, which a test run always refuses: CloudKit is never
             // reached from one. Test runs only.
+            //
+            // The default for a new install (SyncDefault.swift): "new", where
+            // the welcome's switches start, Handoff, and "leave": true
+            // leaves the welcome as Skip or Start browsing does, with its
+            // switches as they start unless "sync" or "handoff" say otherwise.
             guard Store.testing else { answer(["error": "icloud only works on a --test run"]); return }
             let icloud = ICloudSync.shared
             if request["turn"] as? String == "on" { icloud.turnOn() }
+            let starts = SyncDefault.startsNow()
+            if request["leave"] as? Bool == true, browser.welcoming {
+                SyncDefault.welcomeLeft(sync: request["sync"] as? Bool ?? starts.sync,
+                                        handoff: request["handoff"] as? Bool ?? starts.handoff,
+                                        prefs: browser.prefs, icloud: icloud)
+                browser.prefs.welcomed = true
+                browser.welcoming = false
+            }
             // "entitled": the signature carries the container and CloudKit,
             // read from the process alone; nothing asks CloudKit.
             answer(["on": icloud.on, "available": icloud.available, "entitled": ICloudSync.entitled,
@@ -2386,7 +2405,12 @@ final class Bench {
                     "engine": icloud.engine != nil, "joined": icloud.joined, "folderSync": Sync.shared.on,
                     "stored": Store.settings.object(forKey: ICloudSync.onKey) != nil,
                     "file": FileManager.default.fileExists(atPath: Store.file("icloud.json").path),
-                    "summary": icloud.summary(folderSyncOn: Sync.shared.on, otherwise: "off")])
+                    "summary": icloud.summary(folderSyncOn: Sync.shared.on, otherwise: "off"),
+                    "new": SyncDefault.isNew(Store.settings), "welcoming": browser.welcoming,
+                    "starts": { let now = SyncDefault.startsNow(); return ["sync": now.sync, "handoff": now.handoff] }(),
+                    "handoff": browser.prefs.handoff,
+                    "handoffStored": Store.settings.object(forKey: "handoff") != nil,
+                    "offered": browser.window?.userActivity != nil])
 
         case "icloudpair":
             // Sync with iCloud between two hidden probes (Tests/icloud_two_macs.py),

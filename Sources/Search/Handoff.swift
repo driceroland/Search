@@ -5,7 +5,9 @@ import SwiftUI
 // as Safari's is, so it comes up in their app switcher (or at the end of the
 // Dock) and opens there in the browser. macOS carries it between devices
 // signed in to the same Apple Account; Search itself sends nothing anywhere.
-// Off unless asked for, since the address does leave this Mac, and never for
+// On for a new install once the welcome is left, with its switch on the
+// welcome's first page; off for an install from before until asked for
+// (SyncDefault.swift), since the address does leave this Mac. Never for
 // a private tab, a space signed out of the others, or a page that isn't on
 // the web.
 //

@@ -12,6 +12,11 @@ import SwiftUI
 //
 // A release edits `toggles` (its new switches, marked with its version),
 // `releases` (that it has a card) and `notes` (what it brought).
+//
+// A few switches lead: first on every card, above that version's own, for
+// as long as they are off. Sync with iCloud and Handoff do, since 22 Nov
+// 2026: on for a new install (SyncDefault.swift), offered here to everyone
+// who had Search before and never turned them on.
 
 enum WhatsNew {
     /// A switch the card offers: the same setting as in Settings.
@@ -25,6 +30,8 @@ enum WhatsNew {
         /// Whether it can do anything now: a switch that needs another one
         /// on stays off the card until it is.
         var shown: @MainActor (Preferences) -> Bool = { _ in true }
+        /// First on every card while it is off, whatever its version.
+        var lead = false
     }
 
     /// A version that has a card.
@@ -32,9 +39,19 @@ enum WhatsNew {
         let version: String
     }
 
-    /// Every switch worth meeting, oldest last. The card shows this
-    /// version's, and the older ones still off.
-    static let toggles: [Toggle] = (AI.shipped ? [
+    /// Every switch worth meeting, the leading ones first, then oldest
+    /// last. The card shows the leading ones still off, this version's, and
+    /// the older ones still off.
+    static let toggles: [Toggle] = [
+        // Leading, in this order (see the top of this file).
+        Toggle(title: "Sync with iCloud", detail: "Your tabs, pins and spaces on your iPhone and your other Macs, end-to-end encrypted.",
+               since: "1.0.16", get: { _ in ICloudSync.shared.on },
+               set: { _, on in on ? ICloudSync.shared.turnOnOrWait() : ICloudSync.shared.turnOff() },
+               // Never beside the folder sync: the two would undo each other.
+               shown: { _ in ICloudSync.shared.on || !Sync.shared.on }, lead: true),
+        Toggle(title: "Handoff to your iPhone", detail: "The page in front comes up in your iPhone's and iPad's app switcher.",
+               since: "1.0.16", get: { $0.handoff }, set: { $0.handoff = $1 }, lead: true),
+    ] + (AI.shipped ? [
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
@@ -54,8 +71,6 @@ enum WhatsNew {
         Toggle(title: "Try HTTPS first", detail: "An http:// page loads over HTTPS where the site has it.",
                since: "1.0.17", get: { $0.triesHTTPSFirst }, set: { $0.triesHTTPSFirst = $1 }),
 
-        Toggle(title: "Handoff to your iPhone", detail: "The page in front comes up in your iPhone's and iPad's app switcher.",
-               since: "1.0.16", get: { $0.handoff }, set: { $0.handoff = $1 }),
         Toggle(title: "Always show the address bar", detail: "The page's full address stays in sight, to type in.",
                since: "1.0.16", get: { $0.addressLine }, set: { $0.addressLine = $1 }),
         Toggle(title: "Glass window", detail: "The column and the window's edge as frosted glass over your desktop.",
@@ -179,6 +194,15 @@ enum WhatsNew {
         Release(version: "1.0.5"),
         Release(version: "1.0.4"),
     ]
+
+    /// What a card opened now lists: first the leading switches still off,
+    /// then the version's own; under their caption, the earlier ones still
+    /// off.
+    @MainActor static func rows(for release: Release, prefs: Preferences) -> (leading: [Toggle], own: [Toggle], earlier: [Toggle]) {
+        (toggles.filter { $0.lead && !$0.get(prefs) && $0.shown(prefs) },
+         toggles.filter { !$0.lead && $0.since == release.version && $0.shown(prefs) },
+         toggles.filter { !$0.lead && older($0.since, than: release.version) && !$0.get(prefs) && $0.shown(prefs) })
+    }
 
     /// This version's card, when it has one.
     static var current: Release? { releases.first { $0.version == Updater.version } }
@@ -672,9 +696,12 @@ struct WhatsNewCard: View {
     var optInEmail = ""
     var optInForced: Bool? = nil
 
-    /// Read once, as the card opens: a switch turned on here stays in the
-    /// list rather than vanishing under the hand.
-    @State private var earlier: [WhatsNew.Toggle]?
+    /// The leading and earlier switches, read once as the card opens
+    /// (WhatsNew.rows): one turned on here stays in the list rather than
+    /// vanishing under the hand. The version's own are read as they stand.
+    @State private var listed: (leading: [WhatsNew.Toggle], own: [WhatsNew.Toggle], earlier: [WhatsNew.Toggle])?
+    /// Sync with iCloud's switch is its own, not a preference's.
+    @ObservedObject private var icloud = ICloudSync.shared
     /// The email block (OptIn.swift), read once as the card opens: offered
     /// until an email has been given, and kept after one is, for its thanks.
     @State private var offering: Bool?
@@ -684,15 +711,13 @@ struct WhatsNewCard: View {
     /// left off while the Mac is offline, where a press could only fail.
     private var showsOptIn: Bool { (optInForced ?? offering ?? OptIn.offered()) && (optInForced != nil || reach.online) }
 
-    private var fresh: [WhatsNew.Toggle] { WhatsNew.toggles.filter { $0.since == release.version && $0.shown(prefs) } }
-
     var body: some View {
         Plate("New in Search \(release.version)", width: 460, close: close) {
             VStack(alignment: .leading, spacing: 14) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        rows(fresh)
-                        if let earlier, !earlier.isEmpty {
+                        rows((listed?.leading ?? []) + WhatsNew.rows(for: release, prefs: prefs).own)
+                        if let earlier = listed?.earlier, !earlier.isEmpty {
                             Caption("From earlier versions, in case you missed them")
                                 .padding(.top, 6)
                             rows(earlier)
@@ -719,9 +744,7 @@ struct WhatsNewCard: View {
         }
         .onAppear {
             if offering == nil { offering = OptIn.offered() }
-            if earlier == nil {
-                earlier = WhatsNew.toggles.filter { WhatsNew.older($0.since, than: release.version) && !$0.get(prefs) && $0.shown(prefs) }
-            }
+            if listed == nil { listed = WhatsNew.rows(for: release, prefs: prefs) }
         }
     }
 

@@ -137,7 +137,7 @@ enum SettingsIndex {
               keys: ["handoff"], words: ["handoff", "continuity", "iphone", "ipad", "devices", "app switcher", "multitasking"]),
         .init(id: "icloud", group: "browser", icon: "icloud",
               title: "Sync with iCloud", detail: "Open tabs, pins, spaces, bookmarks and a few settings, with your iPhone",
-              more: "Through your own iCloud, end to end encrypted: Search on your iPhone and your other Macs see this Mac's open tabs (under History and in the address field, as Tabs on Your Other Devices) and share its pins, spaces, bookmarks, search engine and look. Private tabs never go, nor your history, passwords, cookies or sign-ins. Nothing leaves this Mac until you turn it on. Not together with Sync with your other Macs.",
+              more: "Through your own iCloud, end to end encrypted: Search on your iPhone and your other Macs see this Mac's open tabs (under History and in the address field, as Tabs on Your Other Devices) and share its pins, spaces, bookmarks, search engine and look. Private tabs never go, nor your history, passwords, cookies or sign-ins. On for a new Search once you leave the welcome, where its switch is, so it can be turned off first; off for a Search you had before until you turn it on. Nothing leaves this Mac while it's off. Not together with Sync with your other Macs.",
               keys: ["icloud.sync"], words: ["sync", "icloud", "iphone", "ios", "cloudkit", "other devices", "devices", "icloud tabs", "tabs on other devices", "handoff"]),
         .init(id: "icloud.erase", group: "browser", icon: "trash",
               title: "Delete Search's data from iCloud", detail: "For every device. What is on each one stays, and sync turns off here",

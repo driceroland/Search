@@ -22,6 +22,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Send Feedback (⇧⌘F, the Help menu, About) and the help links write to hello@searchbrowser.app, Search's own address.
 - With the tabs across the top, an open tab group now shows where it starts and ends: a soft band runs behind its name and its tabs, in the group's colour or a faint grey without one. Right-click the group's name and choose Colour… to set it there too. A folded group looks as before. `python3 Tests/group_band.py`
+- Sync with iCloud and Handoff are on for a new install, as on the iPhone: the welcome's first page shows both switches, on, with a line on what each sends, and nothing syncs or is handed off until you leave the welcome, so either can be turned off first; quit during the welcome and nothing has gone anywhere. Where iCloud isn't there (not signed in, or a build not signed for it) sync waits quietly and Settings says why. Anyone who had Search before keeps both as they were, and the What's New card now offers Sync with iCloud first, then Handoff, while they're off. Told apart once, at the first launch of this version: a Search folder, or any line an earlier Search wrote, means an install from before. `swift test --filter SyncDefaultTests`, `python3 Tests/sync_default.py`
 
 ### Fixed
 

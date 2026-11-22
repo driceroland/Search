@@ -4,9 +4,11 @@ import Combine
 
 // Sync with iCloud: the same open tabs, pins, spaces, bookmarks and a few
 // settings on this Mac, Search on the iPhone, and other Macs, through the
-// person's own iCloud. Off until turned on (Settings › General › Sync with
-// iCloud). The rules are SYNC.md in the Search-iOS repository, followed to
-// the letter: change it there and here, or not at all.
+// person's own iCloud. On for a new install once the welcome is left, off
+// for anyone who had Search before until they turn it on (SyncDefault.swift;
+// Settings › General › Sync with iCloud, or the What's New card). The rules
+// are SYNC.md, here and in the Search-iOS repository, followed to the
+// letter: change it there and here, or not at all.
 //
 //   - CloudKit container iCloud.com.officecommun.search, the private
 //     database, one zone "Search", one record type "Item". CKSyncEngine.
@@ -517,6 +519,19 @@ final class ICloudSync: ObservableObject {
         ledger = ledger.fresh()
         save()
         begin()
+    }
+
+    /// On from the welcome or the What's New card. As `turnOn` where this
+    /// build can reach iCloud; where it can't (a build not signed for it,
+    /// a test run), the choice is kept and waits, with no engine and no
+    /// error: Settings says why, as it does for the switch. A later build
+    /// that can starts it at launch (`start`). Never with the folder sync.
+    func turnOnOrWait() {
+        guard !on, !Sync.shared.on else { return }
+        if available { turnOn(); return }
+        on = true
+        defaults.set(true, forKey: ICloudSync.onKey)
+        defaults.removeObject(forKey: ICloudSync.offKey)
     }
 
     /// Off: this device's tabs leave the others; everything else stays, in

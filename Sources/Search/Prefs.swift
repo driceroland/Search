@@ -1071,8 +1071,10 @@ final class Preferences: ObservableObject {
     /// code that asks and the tests that turn it off; never written.
     @Published var switcherKeys = true
     /// The page in front offered to your iPhone, iPad and other Macs
-    /// through Handoff (see Handoff.swift). Off unless asked for: its
-    /// address leaves this Mac, if only for your own devices.
+    /// through Handoff (see Handoff.swift). On for a new install once the
+    /// welcome is left, where its switch is in sight; off for an install
+    /// from before until asked for (SyncDefault.swift): its address leaves
+    /// this Mac, if only for your own devices.
     @Published var handoff: Bool {
         didSet { store.set(handoff, forKey: "handoff") }
     }
@@ -1126,6 +1128,9 @@ final class Preferences: ObservableObject {
     }
 
     init() {
+        // First of all: whether this is a new install, before anything here
+        // writes a line that would make it look like one from before.
+        SyncDefault.settle(store, ranBefore: SidebarDefault.ranBefore(in: Store.folder))
         Preferences.settleLittleLinks(in: store)
         navigationLeft = store.bool(forKey: "toolbar.left")
         compactStrip = store.bool(forKey: "tabs.compact")

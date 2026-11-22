@@ -5,11 +5,20 @@ import SwiftUI
 /// links from other apps should come here — and a fifth, until an email has
 /// been given once, offering the iPhone beta and news by email (OptIn.swift).
 /// Nothing is asked twice, and every page can be skipped.
+///
+/// The first page also holds Sync with iCloud and Handoff, on for a new
+/// install (SyncDefault.swift): there, before Skip or Continue, so nobody
+/// leaves without having seen them. They take effect when the welcome is
+/// left, however it is; nothing goes anywhere while it is up.
 struct WelcomePanel: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
 
     @State private var page = 0
+    // Sync with iCloud and Handoff, as they will be once the welcome is
+    // left (SyncDefault.starts).
+    @State private var syncs = SyncDefault.startsNow().sync
+    @State private var handsOff = SyncDefault.startsNow().handoff
     @State private var forward = true
 
     // Bringing things over. Nil until one is picked, which means the first:
@@ -91,7 +100,28 @@ struct WelcomePanel: View {
                     .lineSpacing(3)
                     .frame(maxWidth: 400)
             }
+            devices
+                .padding(.top, 10)
         }
+    }
+
+    /// Sync with iCloud and Handoff, in sight before anything starts.
+    private var devices: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 14) {
+                Choice("Sync with iCloud", "Open tabs, pins, spaces, bookmarks and a few settings, on your iPhone and other Macs. End-to-end encrypted, in your own iCloud.", on: $syncs, plain: true)
+                Rule(inset: 0)
+                Choice("Handoff", "The page in front shows up on your iPhone and iPad.", on: $handsOff, plain: true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(Palette.wash, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Text("Nothing starts until you leave this welcome. Both are in Settings › General.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Palette.muted)
+                .padding(.horizontal, 4)
+        }
+        .frame(maxWidth: 440)
     }
 
     private var bring: some View {
@@ -330,6 +360,7 @@ struct WelcomePanel: View {
     }
 
     private func finish() {
+        SyncDefault.welcomeLeft(sync: syncs, handoff: handsOff, prefs: prefs, icloud: ICloudSync.shared)
         prefs.welcomed = true
         withAnimation(Motion.settle) { browser.welcoming = false }
     }
@@ -392,18 +423,22 @@ struct WelcomePanel: View {
         let title: String
         let detail: String
         @Binding var on: Bool
+        /// The line under in the darker grey, for one that must be read.
+        var plain = false
 
-        init(_ title: String, _ detail: String, on: Binding<Bool>) {
+        init(_ title: String, _ detail: String, on: Binding<Bool>, plain: Bool = false) {
             self.title = title
             self.detail = detail
             _on = on
+            self.plain = plain
         }
 
         var body: some View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.system(size: 13.5)).foregroundStyle(Palette.ink)
-                    Text(detail).font(.system(size: 11.5)).foregroundStyle(Palette.faint)
+                    Text(detail).font(.system(size: 11.5)).foregroundStyle(plain ? Palette.muted : Palette.faint)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Switch(on: $on)
