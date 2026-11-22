@@ -523,10 +523,6 @@ final class Preferences: ObservableObject {
     @Published var showsAddress: Bool {
         didSet { store.set(showsAddress, forKey: "tabs.address") }
     }
-    /// The ad blocker. On unless turned off; there is nothing else to it.
-    @Published var shielded: Bool {
-        didSet { store.set(shielded, forKey: "shield") }
-    }
     /// Settings › Privacy › Prevent cross-site tracking, turned off: WebKit's
     /// tracking prevention off, as Safari's same switch does (see
     /// Store.keepsSignIns). On unless turned off.
@@ -1216,7 +1212,6 @@ final class Preferences: ObservableObject {
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
         // Security's advice); a choice made before stands.
         showsAddress = store.object(forKey: "tabs.address") as? Bool ?? true
-        shielded = store.object(forKey: "shield") as? Bool ?? true
         let keeps = store.bool(forKey: "sites.keep")
         keepsSignIns = keeps
         // Before the first page is loaded into the store.
