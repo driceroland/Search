@@ -41,7 +41,12 @@ struct Omnibox: View {
     /// (AddressLine.swift), which stands where the line is.
     var listOnly: CGFloat?
 
-    init(browser: Browser, over: Bool, fitted: Bool = false, tab: Tab.ID? = nil, listOnly: CGFloat? = nil) {
+    /// Centred on the window and nearer its top, as Spotlight's, for
+    /// Settings › The field in the middle of the window (idea 753).
+    var high = false
+
+    init(browser: Browser, over: Bool, fitted: Bool = false, tab: Tab.ID? = nil, listOnly: CGFloat? = nil, high: Bool = false) {
+        self.high = high
         self.browser = browser
         self.typing = browser.typing
         self.over = over
@@ -60,6 +65,10 @@ struct Omnibox: View {
                 GeometryReader { geometry in
                     content(width: min(Metrics.fieldWidth, max(0, geometry.size.width - 28)))
                 }
+            } else if high {
+                GeometryReader { geometry in
+                    content(width: min(Metrics.fieldWidth, max(0, geometry.size.width - 28)), top: geometry.size.height * 0.24)
+                }
             } else {
                 content(width: Metrics.fieldWidth)
             }
@@ -67,8 +76,10 @@ struct Omnibox: View {
         .allowsHitTesting(browser.fieldShowing)
     }
 
-    private func content(width: CGFloat) -> some View {
-        ZStack {
+    /// `top`: the field that far down from the top, rather than a little
+    /// above the middle.
+    private func content(width: CGFloat, top: CGFloat? = nil) -> some View {
+        ZStack(alignment: top == nil ? .center : .top) {
             // Keep the container mounted: only the field scales, while the
             // page's cover fades without pulling its edges into view. Not
             // while the address line has the field (AddressLine.swift).
@@ -100,7 +111,8 @@ struct Omnibox: View {
                 // Lifted a little above centre: dead centre reads as low,
                 // because the strip at the top isn't part of what the eye is
                 // measuring.
-                .padding(.bottom, 60)
+                .padding(.bottom, top == nil ? 60 : 0)
+                .padding(.top, top ?? 0)
                 .transition(.scale(scale: 0.97).combined(with: .opacity))
                 // The list's arrival and its leaving are animated from here,
                 // briefly: nothing that changes the suggestions does it inside

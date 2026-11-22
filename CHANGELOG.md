@@ -22,6 +22,7 @@ in [ROADMAP.md](ROADMAP.md).
 - File › Open File… (⌘O), as in Safari: an HTML page, a PDF, a picture or a text file from your Mac, each in a tab of its own, without typing its file:// address. (idea 755)
 - Edit › Paste and Match Style (⌥⇧⌘V), as in Safari: the clipboard as plain text in the field or page you're typing in, what ⇧⌘V already does there. (idea 814)
 - Settings › Appearance › Tabs: untick back, forward or reload, each on its own, and the extensions, bookmarks or profile button under the column (or at the end of the tabs across the top); all shown unless unticked, and hidden ones give the tabs their room. A pinned extension keeps its button. (ideas 815, 426)
+- Settings › The field in the middle of the window, off unless you turn it on: ⌘T's and ⌘L's field over a page is centred on the whole window and higher up, near where Spotlight comes, as in Arc and Zen, instead of on the page beside the column. (idea 753)
 
 ### Changed
 

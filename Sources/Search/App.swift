@@ -860,7 +860,11 @@ struct ContentView: View {
         // SplitStage owns the field whenever Split View is enabled, including
         // an ordinary tab that is not currently paired. Drawing it here too
         // leaves two offset address fields on a blank tab.
-        if !browser.prefs.splitView {
+        if browser.fieldOnWindow {
+            // Settings › The field in the middle of the window: over the
+            // whole window, as Arc's, in place of the page's (idea 753).
+            Omnibox(browser: browser, over: true, high: true)
+        } else if !browser.prefs.splitView {
             ZStack {
                 HomeGrid(browser: browser)
                 Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))

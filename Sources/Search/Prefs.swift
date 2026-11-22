@@ -1132,6 +1132,12 @@ final class Preferences: ObservableObject {
     @Published var floatingNewTab: Bool {
         didSet { store.set(floatingNewTab, forKey: "newtab.floating") }
     }
+    /// The field raised over a page (⌘T floating, ⌘L) centred on the whole
+    /// window and nearer the top, as Arc and Zen have it, rather than on
+    /// the page beside the column (idea 753). Off unless asked for.
+    @Published var fieldOnWindow: Bool {
+        didSet { store.set(fieldOnWindow, forKey: "field.window") }
+    }
     /// The address field from any app, as Spotlight's comes: a key of your
     /// own raises it over the app in front, and Return opens what was typed
     /// in Search (see Launcher.swift). Off unless asked for, and no key
@@ -1353,6 +1359,7 @@ final class Preferences: ObservableObject {
         commandBar = store.bool(forKey: "commandbar")
         handoff = store.bool(forKey: "handoff")
         floatingNewTab = store.bool(forKey: "newtab.floating")
+        fieldOnWindow = store.bool(forKey: "field.window")
         launcher = store.bool(forKey: "launcher.on")
         launcherLittle = store.bool(forKey: "launcher.little")
         launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
