@@ -95,10 +95,11 @@ enum SyncMerge {
         // A whole kind gone at once — every bookmark, every pin — is a file
         // that didn't read or a browser reset, far likelier than a choice:
         // those are not deleted everywhere, they come back from the folder.
-        let lost = Set(wholeKinds.filter { kind in
+        var lost = Set(wholeKinds.filter { kind in
             !current.keys.contains { $0.hasPrefix(kind) }
                 && base.filter { $0.key.hasPrefix(kind) && $0.value.v != nil }.count >= wholeKindFloor
         })
+        for (kind, with) in lostWith where lost.contains(with) { lost.insert(kind) }
         for (key, entry) in base {
             guard let value = entry.v, current[key] == nil, understood(key, value),
                   !lost.contains(where: { key.hasPrefix($0) }) else { continue }
@@ -121,8 +122,12 @@ enum SyncMerge {
 
     /// The kinds of item whose vanishing all at once is not taken as their
     /// deletion (see `stamp`), and how many there must have been.
-    static let wholeKinds = ["bm:", "kids:", "pin:", "order:pins:", "title:pin:", "space:"]
+    static let wholeKinds = ["bm:", "kids:", "pin:", "order:pins:", "title:pin:", "space:", "pinfolder:"]
     static let wholeKindFloor = 5
+    /// Kinds that go with another: when every pin vanishes at once, which
+    /// folder each was in is not deleted either, nor the folders' order
+    /// with the folders.
+    static let lostWith = ["infolder:": "pin:", "pinfolders:": "pinfolder:"]
 
     /// The items that are there, without the tombstones.
     static func live(_ map: [String: SyncEntry]) -> [String: String] {
@@ -197,6 +202,15 @@ struct SyncedPin: Codable, Equatable {
     var home: String
     var name: String?
     var listed: Bool?
+}
+
+/// A folder among a space's pinned rows (PinFolders.swift): what it is
+/// and where, never how this Mac shows it. Whether it is folded stays on
+/// each Mac, and a live folder's posts are fetched by each Mac itself.
+struct SyncedPinFolder: Codable, Equatable {
+    var name: String
+    var parent: UUID?
+    var feed: URL?
 }
 
 /// A bookmark or a folder (no url), without its place: the folder that
@@ -290,20 +304,40 @@ enum SyncItems {
     static func pinOrder(_ space: String) -> String { "order:pins:\(space)" }
     static func pinTitle(_ id: UUID) -> String { "title:pin:\(id.uuidString)" }
 
+    /// Which folder among the pinned rows a pin is in: an item of its own
+    /// beside the pin's, as a space's gradient is, and only for a pin in
+    /// one. A Search from before (1.0.16) doesn't read it, so it carries it
+    /// along untouched and never deletes it; and its pin items, which have
+    /// no folder in them, never take a pin out of its folder. Taken out of
+    /// its folder, the pin's item is deleted.
+    static func inFolderKey(_ pin: UUID) -> String { "infolder:" + pin.uuidString }
+
     /// A profile's pins as items: each space's own, and the ones every space
     /// shows. A pin's title is the one already agreed, if there is one.
     static func pins(bySpace: [UUID: [PinDef]], shared: [PinDef], base: [String: String]) -> [String: String] {
         var out: [String: String] = [:]
-        func add(_ defs: [PinDef], _ space: String) {
+        func add(_ defs: [PinDef], _ space: String, folders: Bool) {
             for def in defs {
                 out[pinKey(space, def.id)] = SyncMerge.text(SyncedPin(letter: def.letter, home: def.home, name: def.name, listed: def.listed))
                 out[pinTitle(def.id)] = base[pinTitle(def.id)] ?? SyncMerge.text(def.title)
+                if folders, let folder = def.folder { out[inFolderKey(def.id)] = SyncMerge.text(folder.uuidString) }
             }
             if !defs.isEmpty { out[pinOrder(space)] = SyncMerge.text(defs.map(\.id.uuidString)) }
         }
-        for (space, defs) in bySpace { add(defs, space.uuidString) }
-        add(shared, sharedSpace)
+        for (space, defs) in bySpace { add(defs, space.uuidString, folders: true) }
+        // A pin every space shows is in no folder.
+        add(shared, sharedSpace, folders: false)
         return out
+    }
+
+    /// The folder the items say a pin is in. This Mac's own pins are in the
+    /// items it merged, so no item is a pin taken out of its folder, here
+    /// or on another Mac. One this build can't read (a newer Search's)
+    /// leaves the pin where it was here.
+    static func folder(of id: UUID, _ live: [String: String], local: PinDef?) -> UUID? {
+        guard let text = live[inFolderKey(id)] else { return nil }
+        guard let folder = SyncMerge.value(String.self, text).flatMap(UUID.init(uuidString:)) else { return local?.folder }
+        return folder
     }
 
     /// The pins the merged items say each of `spaces` has, and the shared
@@ -326,7 +360,9 @@ enum SyncItems {
                 guard let id = UUID(uuidString: text), let pin = found[text] else { return nil }
                 let title = live[pinTitle(id)].flatMap { SyncMerge.value(String.self, $0) }
                     ?? known.first { $0.id == id }?.title ?? pin.home
-                return PinDef(id: id, letter: pin.letter, home: pin.home, title: title, name: pin.name, listed: pin.listed)
+                var def = PinDef(id: id, letter: pin.letter, home: pin.home, title: title, name: pin.name, listed: pin.listed)
+                if space != sharedSpace { def.folder = folder(of: id, live, local: known.first { $0.id == id }) }
+                return def
             }
         }
         let shared = defs(sharedSpace, fallback: localShared)
@@ -337,6 +373,50 @@ enum SyncItems {
             if !own.isEmpty { bySpace[space] = own }
         }
         return (bySpace, shared)
+    }
+
+    // MARK: pin folders
+
+    /// A space's pin folder, and the folders' order in that space. New
+    /// kinds, so a Search from before them (1.0.16) carries them along
+    /// untouched and never deletes them (see `understood`).
+    static func pinFolderKey(_ space: UUID, _ id: UUID) -> String { "pinfolder:\(space.uuidString):\(id.uuidString)" }
+    static func pinFoldersOrder(_ space: UUID) -> String { "pinfolders:" + space.uuidString }
+
+    /// Each space's pin folders as items, whether or not this Mac draws
+    /// them: with Folders in pinned rows off they wait for the switch.
+    static func pinFolders(_ bySpace: [UUID: [PinFolder]]) -> [String: String] {
+        var out: [String: String] = [:]
+        for (space, folders) in bySpace where !folders.isEmpty {
+            for folder in folders {
+                out[pinFolderKey(space, folder.id)] = SyncMerge.text(SyncedPinFolder(name: folder.name, parent: folder.parent, feed: folder.feed))
+            }
+            out[pinFoldersOrder(space)] = SyncMerge.text(folders.map(\.id.uuidString))
+        }
+        return out
+    }
+
+    /// A space's pin folders as the merged items say, in the merged order:
+    /// each folded or open as it is on this Mac, and a live folder's posts
+    /// kept while its feed is the same. A folder deleted elsewhere goes;
+    /// what it held is then at the top of the rows until its own items say
+    /// where it went.
+    static func applyPinFolders(_ live: [String: String], space: UUID, local: [PinFolder]) -> [PinFolder] {
+        let prefix = "pinfolder:\(space.uuidString):"
+        var found: [String: SyncedPinFolder] = [:]
+        for (key, text) in live where key.hasPrefix(prefix) {
+            let id = String(key.dropFirst(prefix.count))
+            guard UUID(uuidString: id) != nil, let folder = SyncMerge.value(SyncedPinFolder.self, text) else { continue }
+            found[id] = folder
+        }
+        let order = live[pinFoldersOrder(space)].flatMap { SyncMerge.value([String].self, $0) } ?? []
+        return SyncMerge.ordered(Set(found.keys), order: order, fallback: local.map(\.id.uuidString)).compactMap { text in
+            guard let id = UUID(uuidString: text), let synced = found[text] else { return nil }
+            let mine = local.first { $0.id == id }
+            var folder = PinFolder(id: id, name: synced.name, parent: synced.parent, collapsed: mine?.collapsed ?? false, feed: synced.feed)
+            folder.items = synced.feed != nil && mine?.feed == synced.feed ? mine?.items : nil
+            return folder
+        }
     }
 
     // MARK: bookmarks
@@ -404,6 +484,11 @@ enum SyncItems {
         if key.hasPrefix("bm:") { return SyncMerge.value(SyncedBookmark.self, text) != nil }
         if key.hasPrefix("order:") || key.hasPrefix("kids:") { return SyncMerge.value([String].self, text) != nil }
         if key.hasPrefix("title:pin:") { return SyncMerge.value(String.self, text) != nil }
+        if key.hasPrefix("pinfolder:") { return SyncMerge.value(SyncedPinFolder.self, text) != nil }
+        if key.hasPrefix("pinfolders:") { return SyncMerge.value([String].self, text) != nil }
+        if key.hasPrefix("infolder:") {
+            return SyncMerge.value(String.self, text).flatMap(UUID.init(uuidString:)) != nil
+        }
         if key.hasPrefix("set:") { return SyncSettings.known.contains(String(key.dropFirst(4))) }
         return false
     }
