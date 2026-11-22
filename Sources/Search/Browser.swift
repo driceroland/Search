@@ -3191,6 +3191,8 @@ final class Browser: NSObject, ObservableObject {
             .removeDuplicates()
             .sink { [weak self] on in
                 guard let self else { return }
+                // Published before didSet runs; tab.arm reads ScrollRelay.reading now.
+                ScrollRelay.reading = on
                 for tab in tabs + parkedTabs + LittleWindow.all.map(\.tab) {
                     tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
                     tab.built?.evaluateInSearch(on ? ScrollRelay.script : ScrollRelay.off)
