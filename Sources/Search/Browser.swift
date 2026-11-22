@@ -5209,6 +5209,10 @@ final class Browser: NSObject, ObservableObject {
             return
         }
 
+        // A panel of its own goes with it, kept behind or up (idea 643).
+        if case .page(_, _, let bound?) = sidePanel, bound == tab.id { closeSidePanel() }
+        else { SidePanelPages.shared.unbind(tab.id, in: self) }
+
         if tabs.count == 1 {
             if tab.isBlank {
                 NSApp.keyWindow?.performClose(nil)

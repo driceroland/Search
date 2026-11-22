@@ -2717,16 +2717,25 @@ enum ExtensionShims {
       // Told after the options themselves, so a sidePanel.open right after
       // setOptions still finds them.
       if (ownPanel && chrome.sidePanel && chrome.tabs && typeof chrome.tabs.get === "function") {
-        const setOptions = chrome.sidePanel.setOptions;
+        const setOptions = chrome.sidePanel.setOptions, open = chrome.sidePanel.open;
+        // Which tab a number is, still being told: open waits for it, so a
+        // panel opened for a tab behind goes with that tab (idea 643).
+        const placing = new Map();
         put(chrome.sidePanel, "setOptions", (options, ...rest) => {
           const answer = setOptions(options, ...rest);
           const tabId = options && options.tabId;
           if (typeof tabId === "number") {
-            Promise.all([chrome.tabs.get(tabId), frames()])
+            const told = Promise.all([chrome.tabs.get(tabId), frames()])
               .then(([tab, known]) => tab && native("sidePanel.placed", [tabId, placeOf(tab, known)]))
               .catch(() => {});
+            placing.set(tabId, told);
+            told.then(() => { if (placing.get(tabId) === told) placing.delete(tabId); });
           }
           return answer;
+        });
+        put(chrome.sidePanel, "open", (options, ...rest) => {
+          const told = options && placing.get(options.tabId);
+          return told ? told.then(() => open(options, ...rest)) : open(options, ...rest);
         });
       }
       define("offscreen", ["createDocument", "closeDocument", "hasDocument"], [],
@@ -5934,11 +5943,21 @@ enum ExtensionShims {
                   let path = own?.path ?? panelPath[id] ?? defaultPanel(context),
                   let url = ExtensionShims.page(path, in: context), let browser = owner.browser
             else { throw Unsupported(what: "No active side panel for this extension") }
+            // The tab asked for, when it is one the panel was set for: up
+            // now if that tab is in front, else waiting on it, to come up
+            // when it is, as Chrome does; never over the tab in front (idea
+            // 643).
+            let target = own?.path == nil ? nil : tab.flatMap { panelTabIDs[id]?[$0] }
+            let home = target.flatMap { target in Browsers.all.first { $0.tabs.contains { $0.id == target } } } ?? browser
+            if let target, home.activeID != target {
+                SidePanelPages.shared.bind(.page(extensionID: id, url: url, tab: target), to: target, in: home)
+                return nil
+            }
             // The panel, or, if it can't be made, the page as a tab of its
             // own, as before there was a panel to put it in. Beside a
             // private tab it may not see, nothing opens at all.
-            if browser.showSidePanel(context, url: url, for: own?.path != nil ? browser.activeID : nil) == .noPanel {
-                browser.open(url, foreground: true)
+            if home.showSidePanel(context, url: url, for: own?.path != nil ? home.activeID : nil) == .noPanel {
+                home.open(url, foreground: true)
             }
             return nil
         case "sidePanel.close":
