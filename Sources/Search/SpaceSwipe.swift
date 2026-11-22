@@ -251,6 +251,12 @@ final class SpaceSwipe {
         let slot = to == here ? 0 : abs(to - from) <= 1 ? to - here : from - here + step
         // Carried back to its own space: the wash with it, not the one clicked.
         if to == here, browser.spaceHeading != nil { browser.spaceHeading = nil }
+        // Carried on to another: its colour with its rows, as a click or
+        // ⌃1–⌃9 brings it (goToSpace). The space itself is taken only once
+        // the hand is still (landSoon), and until then, up to a click while
+        // fingers rested on the trackpad, the column wore the last space's
+        // colour under the new space's rows (idea 954).
+        if to != here, browser.spaceHeading != id { withAnimation(Motion.quick) { browser.spaceHeading = id } }
         let moved = browser.spaceComing != (to == here ? nil : id) || browser.comingSlot != slot
         browser.spaceComing = to == here ? nil : id
         browser.comingSlot = slot

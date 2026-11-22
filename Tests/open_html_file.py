@@ -37,18 +37,21 @@ def main():
     try:
         sv.setup()
         root = Path(sv.SUPPORT) / "files"
-        (root / "a").mkdir(parents=True, exist_ok=True)
+        # a/ three folders down, so b/ is out of the page's reach, which
+        # goes two folders up (#1342): what is tested is Search opening it.
+        here = root / "x" / "y" / "a"
+        here.mkdir(parents=True, exist_ok=True)
         (root / "b").mkdir(exist_ok=True)
         target = root / "b" / "target.html"
         target.write_text("<title>target</title>TARGET PAGE")
-        (root / "a" / "same.html").write_text("<title>same</title>SAME FOLDER")
-        index = root / "a" / "index.html"
+        (here / "same.html").write_text("<title>same</title>SAME FOLDER")
+        index = here / "index.html"
         index.write_text(f"""<title>index</title>
 <a id=same href="same.html">same</a><br>
-<a id=other href="../b/target.html">other</a><br>
+<a id=other href="../../../b/target.html">other</a><br>
 <a id=blank target=_blank href="{target.as_uri()}">blank</a><br>
 <a id=jump href="#down">jump</a><br>
-<a id=keep download href="../b/target.html">keep</a>
+<a id=keep download href="../../../b/target.html">keep</a>
 <div style="height:3000px"></div><p id=down>down</p>""")
 
         class H(BaseHTTPRequestHandler):

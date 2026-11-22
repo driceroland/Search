@@ -234,6 +234,41 @@ final class PinDragTests: XCTestCase {
         XCTAssertEqual(browser.pinnedCount, 2)
     }
 
+    /// #1406: among pin folders, a row carried down onto the lower half of
+    /// the row under it went nowhere (carried up, it moved). The carried
+    /// row, drawn under the hand, was found there first.
+    func testPinnedRowCarriedDownAmongFolders() async throws {
+        let prefs = Shared.prefs
+        let hadFolders = prefs.pinFolders
+        defer { prefs.pinFolders = hadFolders }
+        for (over, expected) in [(CGFloat(-6), [0, 1, 2]), (4, [0, 2, 1]), (12, [0, 2, 1])] {
+            let browser = makeBrowser(count: 4, rows: true)
+            prefs.pinFolders = true
+            let t = browser.tabs
+            for tab in t.prefix(3) { browser.pin(tab, listed: true) }
+            browser.newPinFolder(named: "Kept", holding: t[0], rename: false)
+            browser.select(t[3])
+            let window = makeWindow(browser)
+            try await settle()
+            XCTAssertTrue(browser.showsPinFolderRows)
+            // The folder, its pin, then the two rows at the top: the second
+            // carried onto the last, `over` from its middle.
+            let from = try XCTUnwrap(SideBar.drawnPinFrames[t[1].id])
+            let onto = try XCTUnwrap(SideBar.drawnPinFrames[t[2].id])
+            let end = onto.midY + over
+            var through: [NSPoint] = []
+            var y = from.midY
+            while y < end { y = min(end, y + 6); through.append(point(x: 70, y: Metrics.strip + y, in: window)) }
+            try await drag(from: point(x: 70, y: Metrics.strip + from.midY, in: window), through: through, in: window)
+            let order = browser.listedPins.map { pin in t.firstIndex { $0 === pin } ?? -1 }
+            XCTAssertEqual(order, expected, "let go \(over) from the last row's middle")
+            for tab in browser.tabs where tab.pin != nil { browser.unpin(tab) }
+            for folder in browser.pinFolders { browser.deletePinFolder(folder.id) }
+            window.contentView = nil
+            window.close()
+        }
+    }
+
     func testRowDraggedOntoThePinnedRows() async throws {
         let browser = makeBrowser(count: 5, rows: true)
         let t = browser.tabs
@@ -305,9 +340,12 @@ final class PinDragTests: XCTestCase {
         let prefs = Shared.prefs
         let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.roomyTabs,
                         prefs.usesSpaces, prefs.sharesPins)
-        restorePreferences = {
-            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.roomyTabs,
-             prefs.usesSpaces, prefs.sharesPins) = previous
+        // Once a test: a second window in it would keep the first's.
+        if restorePreferences == nil {
+            restorePreferences = {
+                (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.roomyTabs,
+                 prefs.usesSpaces, prefs.sharesPins) = previous
+            }
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)

@@ -215,6 +215,7 @@ struct Command: Identifiable {
         Command("file.newPrivateTab", "New Private Tab", .file, KeyCombo("n", shift: true)) { $0.newShyTab() },
         Command("file.reopen", "Reopen Closed Tab", .file, KeyCombo("t", shift: true)) { $0.reopen() },
         Command("file.openAddress", "Open Address…", .file, KeyCombo("l")) { $0.edit() },
+        Command("file.openFile", "Open File…", .file, KeyCombo("o")) { $0.openFile() },
         Command("file.closeTab", "Close Tab", .file, KeyCombo("w")) { $0.closeFront() },
         Command("file.closeWindow", "Close Window", .file, KeyCombo("w", shift: true)) { $0.closeWindow() },
         Command("file.import", "Bring Things Over…", .file, nil) { $0.bringingIn = "" },
@@ -227,6 +228,9 @@ struct Command: Identifiable {
             AgentControl.shared.stopSession()
         },
 
+        Command("edit.pasteMatchStyle", "Paste and Match Style", .edit, KeyCombo("v", shift: true, option: true)) { _ in
+            Browser.pasteMatchingStyle()
+        },
         Command("edit.find", "Find on Page…", .edit, KeyCombo("f")) { $0.openFind() },
         Command("edit.findNext", "Find Next", .edit, KeyCombo("g")) { $0.look(forward: true) },
         Command("edit.findPrevious", "Find Previous", .edit, KeyCombo("g", shift: true)) { $0.look(forward: false) },
@@ -339,7 +343,12 @@ struct Command: Identifiable {
                 KeyCombo(String(number), command: false, control: true)) { browser in
             browser.switchSpace(index: number - 1)
         }
-    }
+    } + [
+        // As the swipe goes, and stopping at the ends as it does. No key
+        // until you give one in Settings › Shortcuts (idea 761).
+        Command("spaces.next", "Next Space", .spaces, nil) { $0.stepSpace(1) },
+        Command("spaces.previous", "Previous Space", .spaces, nil) { $0.stepSpace(-1) },
+    ]
 }
 
 /// What you've changed, on top of the defaults: a new key, or none. One for

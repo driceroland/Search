@@ -26,6 +26,7 @@ final class ExtensionOffscreen: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         // and the pill says it is listening.
         if reasons.contains("USER_MEDIA") { ExtensionCapture.set("_setGetUserMediaRequiresFocus:", false, in: preferences) }
         configuration.preferences = preferences
+        ExtensionSandbox.attach(configuration, for: context)
         let document = ExtensionOffscreen(context: context, url: url, reasons: Set(reasons), configuration: configuration)
         // Reserve the slot before yielding, so simultaneous creates cannot
         // leave two pages alive for one extension.

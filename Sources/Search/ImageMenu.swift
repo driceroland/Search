@@ -152,6 +152,15 @@ extension Browser {
         menu.addItem(ImageMenuItem("Open Image in New Tab") { [weak self] in
             self?.open(url, foreground: true, from: tab)
         })
+        // As a link's menu has it: the picture beside its page (idea 474).
+        // Only from a tab in the row, which a pair can be made with, and
+        // only an address a tab can show again.
+        if prefs.splitView, !tab.bench, tabs.contains(where: { $0.id == tab.id }),
+           ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            menu.addItem(ImageMenuItem("Open Image in Split View") { [weak self] in
+                self?.openLinkBeside(url, from: tab)
+            })
+        }
         menu.addItem(.separator())
         menu.addItem(ImageMenuItem("Copy Image") { [weak self] in
             self?.copyImage(at: url, in: tab)

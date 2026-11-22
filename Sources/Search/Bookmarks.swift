@@ -1730,6 +1730,20 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
+    /// The bookmarks bar's », at the pointer: those the bar has no room
+    /// for, as their folders' menus show them, folders opening as they are
+    /// reached (idea 958).
+    func popUp(_ nodes: [Bookmark], title: String) {
+        overflow(nodes, title: title).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    /// That menu, unshown. The bench reads and picks from it.
+    func overflow(_ nodes: [Bookmark], title: String) -> NSMenu {
+        let menu = NSMenu(title: title)
+        for item in items(for: nodes) { menu.addItem(item) }
+        return menu
+    }
+
     private func items(for nodes: [Bookmark]) -> [NSMenuItem] {
         nodes.compactMap { node in
             let item: NSMenuItem

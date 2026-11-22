@@ -184,6 +184,20 @@ final class PinFoldersTests: XCTestCase {
         XCTAssertNil(PinTree.place(y: 27, lines: lines, folders: folders, carrying: a.id))
     }
 
+    /// The carried pin is drawn under the hand, its line measured there:
+    /// carried down over A, it is found over A too, and A still takes it
+    /// (#1406: it came first, and nothing moved).
+    func testThePinCarriedNeverHidesTheLineUnderIt() {
+        let work = folder("Work"), b = def("B", folder: work.id), a = def("A")
+        var lines = measured(work, b, a)
+        lines[1].frame.origin.y = 66
+        let folders: [UUID: UUID?] = [b.id: work.id, a.id: nil]
+        XCTAssertEqual(PinTree.place(y: 90, lines: lines, folders: folders, carrying: b.id),
+                       PinTree.Place(folder: nil, anchor: a.id, after: true))
+        XCTAssertEqual(PinTree.place(y: 75, lines: lines, folders: folders, carrying: b.id),
+                       PinTree.Place(folder: nil, anchor: a.id, after: false))
+    }
+
     func testLetGoPastEitherEndGoesToTheTop() {
         let work = folder("Work"), b = def("B", folder: work.id), a = def("A")
         let lines = measured(work, b, a)

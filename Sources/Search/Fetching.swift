@@ -177,7 +177,9 @@ final class FetchEntry: ObservableObject, Identifiable {
     func failed(_ error: Error, resumeData: Data?) {
         download = nil
         pendingStop = nil
-        self.resumeData = resumeData
+        // Resuming picks up the same partial file, so a failure writing that
+        // file would only fail again: Retry starts it fresh instead.
+        self.resumeData = Self.failedWritingFile(error) ? nil : resumeData
         errorDescription = Self.reason(for: error)
         state = .failed
     }
@@ -224,6 +226,13 @@ final class FetchEntry: ObservableObject, Identifiable {
         fraction = nil
         completedBytes = 0
         totalBytes = 0
+    }
+
+    static func failedWritingFile(_ error: Error) -> Bool {
+        let error = error as NSError
+        guard error.domain == NSURLErrorDomain else { return false }
+        return [NSURLErrorCannotCreateFile, NSURLErrorCannotOpenFile, NSURLErrorCannotWriteToFile,
+                NSURLErrorCannotMoveFile, NSURLErrorCannotRemoveFile].contains(error.code)
     }
 
     private static func reason(for error: Error) -> String {
