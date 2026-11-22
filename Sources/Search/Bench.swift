@@ -50,6 +50,8 @@ final class Bench {
     /// How many covers the last ⌘S laid over what a page had yet to draw
     /// (see Browser.cover).
     static var foldCovers = 0
+    /// "icloudpair": Sync with iCloud over a stand-in, test runs only.
+    static var pair: (sync: ICloudSync, engine: ICloudFolderEngine)?
 
     /// See the bench's `caret`.
     static func caret(_ editor: NSTextView, in field: NSTextField) -> [String: Any] {
@@ -2379,6 +2381,58 @@ final class Bench {
                     "stored": Store.settings.object(forKey: ICloudSync.onKey) != nil,
                     "file": FileManager.default.fileExists(atPath: Store.file("icloud.json").path),
                     "summary": icloud.summary(folderSyncOn: Sync.shared.on, otherwise: "off")])
+
+        case "icloudpair":
+            // Sync with iCloud between two hidden probes (Tests/icloud_two_macs.py),
+            // over a shared folder rather than CloudKit (ICloudStandIn.swift):
+            // this Mac's real pins, folders and rows, a stand-in iCloud.
+            // "start" FOLDER joins, "sync" puts up what changed here, "fetch"
+            // takes what the other wrote (ONLY: records whose names start
+            // so), "stop". Test runs only.
+            guard Store.testing else { answer(["error": "icloudpair only works on a --test run"]); return }
+            let suite = "com.officecommun.search.icloudpair.\(getpid())"
+            func state(_ extra: [String: Any] = [:]) -> [String: Any] {
+                var out: [String: Any] = ["joined": Bench.pair?.sync.joined ?? false,
+                                          "records": (Bench.pair?.sync.ledger.values.keys.sorted() ?? [])]
+                for (key, value) in extra { out[key] = value }
+                return out
+            }
+            switch request["action"] as? String ?? "state" {
+            case "start":
+                guard Bench.pair == nil, let path = request["folder"] as? String, !path.isEmpty else { answer(["error": "start needs FOLDER, once"]); return }
+                guard let defaults = UserDefaults(suiteName: suite) else { answer(["error": "no defaults"]); return }
+                defaults.removePersistentDomain(forName: suite)
+                let engine = ICloudFolderEngine(folder: URL(fileURLWithPath: path, isDirectory: true))
+                let sync = ICloudSync(local: MacSide(), defaults: defaults, file: nil, available: true) { owner, _ in
+                    engine.owner = owner
+                    return engine
+                }
+                engine.owner = sync
+                Bench.pair = (sync, engine)
+                sync.turnOn()
+                Task { @MainActor in
+                    await sync.join()
+                    answer(state(["sent": engine.flush()]))
+                }
+            case "sync":
+                guard let pair = Bench.pair else { answer(["error": "not started"]); return }
+                pair.sync.publish()
+                answer(state(["sent": pair.engine.flush()]))
+            case "fetch":
+                guard let pair = Bench.pair else { answer(["error": "not started"]); return }
+                pair.engine.only = request["only"] as? String
+                Task { @MainActor in
+                    try? await pair.engine.fetch()
+                    answer(state())
+                }
+            case "stop":
+                Bench.pair?.sync.turnOff()
+                Bench.pair = nil
+                UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+                answer(state())
+            default:
+                answer(state())
+            }
 
         case "menus":
             // Every menu of the menu bar, by title, after SwiftUI has filled
