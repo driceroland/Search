@@ -26,6 +26,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With a button per space, a space with its own colour no longer shows its button in that colour while you're in another space, where it read as the one you were in. Only the space on screen wears its colour; the others are grey alike.
 - Search no longer asks to save a password nobody typed. A logged-in dashboard's list asked "Save the password for 40" after a click: its page size was taken for the name and a key the page showed masked for the password. A password is offered only once something was typed or filled into its box, and the name only comes from a box that could hold one: not a list's picker, a page size or a search, and with no form around the password, only a box that says it takes a name. `python3 Tests/password_false_offer.py`
 - Closing a window while another stays open stops that window’s background checks for tabs to put to sleep. `swift test --filter KeepAwakeTests`. Thanks [@shawn-t516](https://github.com/shawn-t516) ([#1356](https://github.com/driceroland/Search/pull/1356))
 - A draft typed into an embedded form keeps its tab awake, including a form hosted by another site. Clearing it lets the tab sleep again. `swift test --filter PageDraftTests`. Thanks [@shawn-t516](https://github.com/shawn-t516) ([#1357](https://github.com/driceroland/Search/pull/1357))
