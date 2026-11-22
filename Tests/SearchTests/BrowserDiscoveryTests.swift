@@ -30,7 +30,7 @@ final class BrowserDiscoveryTests: XCTestCase {
     }
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "browser-import-\(ProcessInfo.processInfo.processIdentifier)", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

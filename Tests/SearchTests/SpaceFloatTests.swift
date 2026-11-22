@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class SpaceFloatTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "space-float-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

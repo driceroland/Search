@@ -14,7 +14,7 @@ final class IconColumnTests: XCTestCase {
     private var activationPolicy: NSApplication.ActivationPolicy?
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "bld-ai-iconcol-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

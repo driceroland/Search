@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class SpaceWashTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "space-wash-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

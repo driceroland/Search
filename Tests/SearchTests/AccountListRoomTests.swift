@@ -9,7 +9,7 @@ import XCTest
 @MainActor
 final class AccountListRoomTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "bld-account-room-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

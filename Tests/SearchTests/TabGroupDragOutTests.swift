@@ -19,7 +19,7 @@ final class TabGroupDragOutTests: XCTestCase {
     private var activationPolicy: NSApplication.ActivationPolicy?
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "group-drag-out-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

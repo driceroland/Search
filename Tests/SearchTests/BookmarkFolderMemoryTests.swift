@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class BookmarkFolderMemoryTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "bookmark-folder-memory-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 
@@ -82,6 +82,9 @@ final class BookmarkFolderMemoryTests: XCTestCase {
         XCTAssertEqual(a.lastFolder, work.id)
         XCTAssertNil(b.lastFolder)
         b.lastFolder = home.id
+        // Read back from its file, once the write of it on the Disk queue
+        // has landed: behind a slow write of another file, it hadn't yet.
+        Disk.drain()
         XCTAssertEqual(Bookmarks(file: "bookmarks-a-\(tag).json").lastFolder, work.id, "kept across launches")
         XCTAssertEqual(b.lastFolder, home.id)
         // A folder of another profile's is no folder here.

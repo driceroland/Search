@@ -8,7 +8,7 @@ import SQLite3
 /// folder: never a real browser's.
 final class WebKitImportTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "webkit-import-\(ProcessInfo.processInfo.processIdentifier)", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

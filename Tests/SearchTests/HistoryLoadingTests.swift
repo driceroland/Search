@@ -4,6 +4,11 @@ import XCTest
 
 @MainActor
 final class HistoryLoadingTests: XCTestCase {
+    override class func setUp() {
+        TestWorld.enter()
+        super.setUp()
+    }
+
     private func fixture() throws -> (String, URL) {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()

@@ -8,22 +8,12 @@ import XCTest
 /// run here, no window is made, and no page is loaded.
 @MainActor
 final class NotificationTabTests: XCTestCase {
-    private static let world = "notification-tab-\(getpid())"
     private let site = "https://chat.example"
     private var browsers: [Browser] = []
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", world, 1)
+        TestWorld.enter()
         super.setUp()
-    }
-
-    override class func tearDown() {
-        Disk.drain()
-        if Store.world == world {
-            try? FileManager.default.removeItem(at: Store.folder)
-            UserDefaults(suiteName: "com.officecommun.search.test.\(world)")?.removePersistentDomain(forName: "com.officecommun.search.test.\(world)")
-        }
-        super.tearDown()
     }
 
     override func setUp() async throws {

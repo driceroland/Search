@@ -5,6 +5,11 @@ import XCTest
 /// readable both ways, what is drawn, what may go where, and Arc's nested
 /// folders coming in nested. In memory only.
 final class PinFoldersTests: XCTestCase {
+    override class func setUp() {
+        TestWorld.enter()
+        super.setUp()
+    }
+
     private func def(_ letter: String, folder: UUID? = nil) -> PinDef {
         PinDef(id: UUID(), letter: letter, home: "https://\(letter.lowercased()).example/",
                title: letter, name: nil, listed: true, folder: folder)

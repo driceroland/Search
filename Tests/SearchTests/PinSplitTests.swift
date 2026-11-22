@@ -14,7 +14,7 @@ final class PinSplitTests: XCTestCase {
     private var restorePreferences: (() -> Void)?
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "pin-split-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

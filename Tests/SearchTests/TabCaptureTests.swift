@@ -12,7 +12,7 @@ final class TabCaptureTests: XCTestCase {
     private let permission = CapturePermission()
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "tab-capture-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

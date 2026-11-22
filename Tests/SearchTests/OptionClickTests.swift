@@ -16,7 +16,7 @@ final class OptionClickTests: XCTestCase {
     private var activationPolicy: NSApplication.ActivationPolicy?
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "option-click-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

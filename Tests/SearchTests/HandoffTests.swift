@@ -16,7 +16,7 @@ final class HandoffTests: XCTestCase {
     private var opened: [BrowserTab] = []
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "handoff-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

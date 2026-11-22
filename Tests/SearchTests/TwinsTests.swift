@@ -9,7 +9,7 @@ import XCTest
 @MainActor
 final class TwinsTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "twins-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

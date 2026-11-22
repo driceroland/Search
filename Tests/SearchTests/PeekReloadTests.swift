@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class PeekReloadTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "peek-reload-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

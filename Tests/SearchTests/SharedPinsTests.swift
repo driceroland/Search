@@ -4,6 +4,11 @@ import XCTest
 /// Pins every space shows (Pins.shared): moving a pin in and out of them,
 /// a row's order, and pins.json with and without them. In memory only.
 final class SharedPinsTests: XCTestCase {
+    override class func setUp() {
+        TestWorld.enter()
+        super.setUp()
+    }
+
     private func def(_ letter: String, listed: Bool? = nil) -> PinDef {
         PinDef(id: UUID(), letter: letter, home: "https://\(letter.lowercased()).example/",
                title: letter, name: nil, listed: listed)

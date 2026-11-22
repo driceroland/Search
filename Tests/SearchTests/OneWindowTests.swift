@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class OneWindowTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "one-window-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -5,23 +5,9 @@ import AppKit
 @testable import Search
 
 final class ImportFileTests: XCTestCase {
-    private static var probeWorld: String?
-
     override class func setUp() {
         super.setUp()
-        let world = "import-tests-\(UUID().uuidString.lowercased())"
-        probeWorld = world
-        setenv("SEARCH_PROBE", world, 1)
-    }
-
-    override class func tearDown() {
-        Disk.drain()
-        if let probeWorld, Store.world == probeWorld {
-            try? FileManager.default.removeItem(at: Store.folder)
-            UserDefaults(suiteName: "com.officecommun.search.test.\(probeWorld)")?.removePersistentDomain(forName: "com.officecommun.search.test.\(probeWorld)")
-        }
-        unsetenv("SEARCH_PROBE")
-        super.tearDown()
+        TestWorld.enter()
     }
 
     func testBookmarksParserKeepsNetscapeFoldersAndDecodedTitles() {

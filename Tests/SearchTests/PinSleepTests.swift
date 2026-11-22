@@ -13,7 +13,7 @@ final class PinSleepTests: XCTestCase {
     private var notifying: String { SiteNotifications.key(site) }
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "gh18b-pinsleep-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

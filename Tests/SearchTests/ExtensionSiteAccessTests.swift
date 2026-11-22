@@ -113,7 +113,7 @@ final class SiteAccessStorageTests: XCTestCase {
 @MainActor
 final class ExtensionSiteAccessTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "site-access-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 
@@ -313,7 +313,7 @@ final class ExtensionSiteAccessTests: XCTestCase {
 @MainActor
 final class ExtensionRerunTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "extension-rerun-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

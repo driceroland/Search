@@ -11,7 +11,7 @@ final class PlayerTests: XCTestCase {
     private var sidebar = false
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "player-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

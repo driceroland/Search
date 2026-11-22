@@ -6,7 +6,7 @@ import WebKit
 @MainActor
 final class WebsitePopupTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "website-popup-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

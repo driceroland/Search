@@ -8,7 +8,7 @@ final class KeepAwakeTests: XCTestCase {
     private var browser: Browser!
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "keep-awake-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

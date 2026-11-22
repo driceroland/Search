@@ -15,7 +15,7 @@ final class PinDragTests: XCTestCase {
     private var activationPolicy: NSApplication.ActivationPolicy?
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "pin-drag-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

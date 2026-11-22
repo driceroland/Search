@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class ShortcutTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "shortcuts-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -9,7 +9,7 @@ import XCTest
 @MainActor
 final class SyncTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "sync-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

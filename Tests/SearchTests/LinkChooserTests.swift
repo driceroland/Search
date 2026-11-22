@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class LinkChooserTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "link-chooser-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

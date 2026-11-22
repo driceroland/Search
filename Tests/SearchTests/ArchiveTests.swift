@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class ArchiveTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "archive-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

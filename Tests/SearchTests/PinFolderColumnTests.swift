@@ -18,7 +18,7 @@ final class PinFolderColumnTests: XCTestCase {
     private var made: [Search.Tab] = []
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "pin-folders-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

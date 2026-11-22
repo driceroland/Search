@@ -14,7 +14,7 @@ final class PinLoadingCloseTests: XCTestCase {
     private var held: [NWConnection] = []
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "pin-loading-close-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

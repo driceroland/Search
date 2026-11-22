@@ -13,7 +13,7 @@ final class SwipeBackClosesTests: XCTestCase {
     private var oldSwipeBackCloses = false
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "swipe-back-closes-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class TabShortcutHintTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "tab-shortcut-hints-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

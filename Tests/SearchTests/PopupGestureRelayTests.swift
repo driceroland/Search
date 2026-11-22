@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class PopupGestureRelayTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "popup-relay-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

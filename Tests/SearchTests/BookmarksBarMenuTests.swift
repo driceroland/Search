@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class BookmarksBarMenuTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "bookmarks-bar-menu-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

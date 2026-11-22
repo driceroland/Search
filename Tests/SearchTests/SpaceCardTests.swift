@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class SpaceCardTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "space-card-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

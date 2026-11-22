@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class HomeGridTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "bld-home-grid-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -9,7 +9,7 @@ import XCTest
 @MainActor
 final class LaunchFocusTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "launch-focus-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

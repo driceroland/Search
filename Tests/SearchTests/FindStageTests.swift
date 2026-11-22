@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class FindStageTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "find-stage-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

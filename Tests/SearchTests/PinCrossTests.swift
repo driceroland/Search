@@ -12,7 +12,7 @@ final class PinCrossTests: XCTestCase {
     private let site = URL(string: "https://signin.example/")!
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "pincross-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

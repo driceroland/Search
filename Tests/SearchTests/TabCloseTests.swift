@@ -12,7 +12,7 @@ final class TabCloseTests: XCTestCase {
     private var oldCloseGoesBack = false
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "tab-close-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

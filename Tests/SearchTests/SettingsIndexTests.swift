@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class SettingsIndexTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "settings-index-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

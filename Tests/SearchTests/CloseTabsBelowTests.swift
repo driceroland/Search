@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class CloseTabsBelowTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "close-tabs-below-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

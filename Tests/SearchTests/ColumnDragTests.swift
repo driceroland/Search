@@ -20,7 +20,7 @@ final class ColumnDragTests: XCTestCase {
     private var written = 0
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "column-drag-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

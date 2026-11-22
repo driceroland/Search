@@ -9,7 +9,7 @@ import XCTest
 @MainActor
 final class EmptyHalfOpenTabsTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "empty-half-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class PasskeysOfferedTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "passkeys-offered-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

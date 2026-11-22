@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class SummonHeldTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "summon-held-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

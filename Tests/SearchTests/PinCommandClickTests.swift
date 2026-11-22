@@ -9,7 +9,7 @@ final class PinCommandClickTests: XCTestCase {
     private let article = URL(string: "https://example.com/article")!
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "pin-cmd-click-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

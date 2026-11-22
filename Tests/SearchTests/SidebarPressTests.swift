@@ -29,7 +29,7 @@ final class SidebarPressTests: XCTestCase {
     }
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "sidebar-press-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

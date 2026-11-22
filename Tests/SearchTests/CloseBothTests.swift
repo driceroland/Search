@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class CloseBothTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "close-both-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

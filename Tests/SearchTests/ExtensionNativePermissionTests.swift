@@ -12,7 +12,7 @@ import XCTest
 @MainActor
 final class ExtensionNativePermissionTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "native-permission-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

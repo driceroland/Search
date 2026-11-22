@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class FaviconMemoryTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "favicon-memory-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class HistoryQuitTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "history-quit-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

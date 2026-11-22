@@ -10,7 +10,7 @@ final class ReduceAnimationsTests: XCTestCase {
     private var saved: Any?
 
     override class func setUp() {
-        setenv("SEARCH_PROBE", "reduce-animations-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

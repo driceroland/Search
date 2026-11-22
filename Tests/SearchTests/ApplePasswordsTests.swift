@@ -645,7 +645,7 @@ final class ApplePasswordsTests: XCTestCase {
 @MainActor
 final class ApplePairingTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "sec-apw2-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

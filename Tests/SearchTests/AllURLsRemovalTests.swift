@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class AllURLsRemovalTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "all-urls-removal-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

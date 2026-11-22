@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class PinKeyTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "pin-key-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

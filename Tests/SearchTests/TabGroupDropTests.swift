@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class TabGroupDropTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "tab-group-drop-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class PDFExportTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "pdf-export-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 

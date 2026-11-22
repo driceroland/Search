@@ -328,15 +328,7 @@ final class SessionImportTests: XCTestCase {
 
     @MainActor
     func testTakeSessionBringsTabsAsleepGroupsAndPinsOnce() throws {
-        let world = "session-import-tests-\(UUID().uuidString.lowercased())"
-        setenv("SEARCH_PROBE", world, 1)
-        defer {
-            Disk.drain()
-            if Store.world == world { try? FileManager.default.removeItem(at: Store.folder) }
-            UserDefaults(suiteName: "com.officecommun.search.test.\(world)")?
-                .removePersistentDomain(forName: "com.officecommun.search.test.\(world)")
-            unsetenv("SEARCH_PROBE")
-        }
+        TestWorld.enter()
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         let browser = Browser(record: WindowRecord())

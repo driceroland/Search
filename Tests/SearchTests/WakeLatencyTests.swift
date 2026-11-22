@@ -12,7 +12,7 @@ import XCTest
 @MainActor
 final class WakeLatencyTests: XCTestCase {
     override class func setUp() {
-        setenv("SEARCH_PROBE", "wake-latency-\(getpid())", 1)
+        TestWorld.enter()
         super.setUp()
     }
 
