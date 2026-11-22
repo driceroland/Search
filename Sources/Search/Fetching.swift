@@ -662,6 +662,11 @@ struct FetchDoor: View {
     /// Which side of it the floating card stands on: under it in the row,
     /// beside it at the column's foot.
     let arrowEdge: Edge
+    /// Whether this is the copy the person can see. With the doors up or at
+    /// the foot, the column draws both rows and hides the one not in use, and
+    /// both copies hear the list being asked for: the hidden one standing the
+    /// card beside a button nobody sees put it at the column's top (#1350).
+    let live: Bool
 
     @State private var hovering = false
     /// Its view, for the card to stand beside. Held, not drawn from.
@@ -671,11 +676,12 @@ struct FetchDoor: View {
         weak var view: NSView?
     }
 
-    init(browser: Browser, fetches: Fetches, arrowEdge: Edge = .bottom) {
+    init(browser: Browser, fetches: Fetches, arrowEdge: Edge = .bottom, live: Bool = true) {
         self.browser = browser
         self.fetches = fetches
         self.prefs = browser.prefs
         self.arrowEdge = arrowEdge
+        self.live = live
     }
 
     /// Whether it is in the row, for those that make room for it. Its list
@@ -687,7 +693,7 @@ struct FetchDoor: View {
 
     private func float(_ on: Bool) {
         guard on else { return DownloadsFloat.hide(for: browser, animated: true) }
-        guard let view = spot.view, view.window != nil else { return }
+        guard live, let view = spot.view, view.window != nil else { return }
         DownloadsFloat.show(browser, from: view, edge: arrowEdge)
     }
 
@@ -746,6 +752,8 @@ struct FetchDoor: View {
             .help("Downloads (⇧⌘J)")
             .background(ButtonSpot { spot.view = $0; if browser.downloadsHanging { float(true) } })
             .onChange(of: browser.downloadsHanging) { _, on in float(on) }
+            // The doors moving while the list hangs: it follows them.
+            .onChange(of: live) { _, _ in float(browser.downloadsHanging) }
             .onDisappear { DownloadsFloat.hide(for: browser) }
             .transition(.scale(scale: 0.6).combined(with: .opacity))
             .animation(Motion.quick, value: fetches.done)
