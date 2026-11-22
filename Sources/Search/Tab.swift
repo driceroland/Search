@@ -19,8 +19,8 @@ enum Web {
     /// `window.webkit`, which Safari never shows a page and which sites read
     /// as an app's embedded web view rather than a browser. Google answered
     /// that with a CAPTCHA every few searches, and refused sign-ins as "not
-    /// secure" (24 Sep 2026). Only Search's passkey patch has to stand in
-    /// the page's own world, and nothing there leads back to it.
+    /// secure" (24 Sep 2026). Only Search's passkey patch stands in the
+    /// page's own world, and nothing there leads back to it.
     @MainActor static let world = WKContentWorld.world(name: "Search")
 
     /// Every handler of Search's taken off a controller: in its own world,
@@ -29,7 +29,7 @@ enum Web {
     /// included, and registering a name twice is a hard crash.
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name, MediaKeys.name,
-                     StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name, DuskRelay.name,
+                     StoreRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name, DuskRelay.name,
                      TranslateRelay.name, PageDrafts.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
@@ -372,9 +372,6 @@ final class Tab: ObservableObject, Identifiable {
         if !blockedPopups.isEmpty { blockedPopups = [] }
         // A translated page is gone; its frames with it.
         if translator != nil || translation != nil || !translateFrames.isEmpty { translationGone(sleeping: false) }
-        // A new document: whatever the old one waited for under its field
-        // went with it.
-        if let built { Passkeys.shared.forget(built) }
         // Its videos too: the new one says when one of its own plays.
         playingVideo = false
         // about:blank too: a document another page wrote into (an opener
@@ -634,14 +631,10 @@ final class Tab: ObservableObject, Identifiable {
 
     /// What the page hands back when you point at something and click it.
     var onPick: ((Tab, String, String, String) -> Void)?
-    /// The caret has entered or left one of the sign-in boxes; where the box
-    /// is, in the web view's points, or nil when it has left. Then whether
-    /// it goes with a password, and whether it is a first step's name box,
-    /// which takes the name alone.
-    /// Then whether it is a box for a verification code.
-    /// Last, what else the box takes that Search can fill (Fill), if not a
-    /// sign-in.
-    var onField: ((Tab, CGRect?, Bool, Bool, Bool, Bool, Fill?) -> Void)?
+    /// The caret has entered or left a box that takes a detail of yours;
+    /// where the box is, in the web view's points, or nil when it has left.
+    /// Then what the box takes that Search can fill (Fill).
+    var onField: ((Tab, CGRect?, Fill?) -> Void)?
     /// A box that takes something other than a sign-in.
     enum Fill: Equatable {
         /// A detail on your own card in Contacts (MeCard): its kind, as
@@ -713,7 +706,6 @@ final class Tab: ObservableObject, Identifiable {
     var translateLanguages: Set<String> = []
     var translateOnWake: (url: URL, to: String)?
     private let translateRelay = TranslateRelay()
-    private let passkeyRelay = PasskeyRelay()
     private let hovered = HoveredLink()
     private let ears = AudioWatch()
 
@@ -728,11 +720,6 @@ final class Tab: ObservableObject, Identifiable {
     /// A tab that keeps nothing: its own cookies, no history, no place in the
     /// session. Signed in as nobody, and forgotten when it goes.
     let shy: Bool
-
-    /// The account last filled here from Apple's Passwords app, so sending
-    /// it isn't offered a second place in Search's keychain. A keyed hash of
-    /// the password, never the password.
-    var appleFill: AppleFill?
 
     /// A tab a script opened through the bench, beside yours. Signed in as
     /// you, so it sees what you see — but never selected for you, never in
@@ -1014,7 +1001,6 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(iconChanges, contentWorld: Web.world, name: IconRelay.name)
         controller.add(forms, contentWorld: Web.world, name: FormRelay.name)
         controller.add(PageDrafts.shared, contentWorld: Web.world, name: PageDrafts.name)
-        controller.addScriptMessageHandler(passkeyRelay, contentWorld: Web.world, name: PasskeyRelay.name)
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
@@ -1213,21 +1199,10 @@ final class Tab: ObservableObject, Identifiable {
         if let external = ExtensionExternal.script {
             add(external, .atDocumentStart, mainFrameOnly: false, in: .page)
         }
-        // Passkeys stand in the page's own world — they replace the page's
-        // functions — and reach Search through a bridge in Search's, off or on:
-        // an extension's page script can carry the patch either way (see
-        // Passkeys.swift and ExtensionShims.passkeys).
-        if !FormRelay.passkeysOffered {
-            // A security key still works with passkeys off: Search's handling
-            // goes first, and the off patch hands it only what a key answers.
-            if Passkeys.securityKeysPossible {
-                add(PasskeyRelay.keysOnly, .atDocumentStart, mainFrameOnly: false, in: .page)
-            }
-            add(FormRelay.withoutPasskeys, .atDocumentStart, mainFrameOnly: false, in: .page)
-        } else {
-            add(PasskeyRelay.page, .atDocumentStart, mainFrameOnly: false, in: .page)
-        }
-        add(PasskeyRelay.bridge, .atDocumentStart, mainFrameOnly: false, in: Web.world)
+        // Sites are told there are no passkeys here, in the page's own world
+        // and ahead of its scripts (see FormRelay.withoutPasskeys, and the
+        // copy an extension's page script carries, ExtensionShims.passkeys).
+        add(FormRelay.withoutPasskeys, .atDocumentStart, mainFrameOnly: false, in: .page)
         // Every frame but the top, only while Translate Page is switched on:
         // a frame of another site says it's there, to be translated too.
         if PageTranslator.enabled {
@@ -1290,29 +1265,16 @@ final class Tab: ObservableObject, Identifiable {
 
     /// From the page, in CSS pixels; passed on in points. Page zoom is the
     /// only scale between the two that matters here.
-    /// `passwords`: a box of a sign-in with a password, not one only for
-    /// passkeys. `name`: the name box of a sign-in that asks for the
-    /// password on the next page.
-    /// The host of the frame the sign-in box with the caret is in, when it
-    /// isn't the page itself: an offer is only made from the page's own site
-    /// (ApplePasswordsOffer). Set before `fieldFocused` by FormRelay.
-    var fieldFrameHost: String?
-
-    /// `wide`: clearly a sign-in's box, so accounts kept for the site's
-    /// other hosts (its registrable domain) may come; otherwise only this
-    /// host's own.
-    /// `code`: a box for a verification code, which takes nothing of a
-    /// sign-in's.
-    func fieldFocused(_ rect: CGRect?, passwords: Bool = true, name: Bool = false, wide: Bool = true, code: Bool = false, fill: Fill? = nil) {
+    func fieldFocused(_ rect: CGRect?, fill: Fill? = nil) {
         guard let rect else {
-            onField?(self, nil, false, false, false, false, nil)
+            onField?(self, nil, nil)
             return
         }
         let zoom = built?.pageZoom ?? 1
         onField?(self, CGRect(
             x: rect.minX * zoom, y: rect.minY * zoom,
             width: rect.width * zoom, height: rect.height * zoom
-        ), passwords, name, wide, code, fill)
+        ), fill)
     }
 
     /// Puts a name and password where a person would have typed them
@@ -2061,7 +2023,6 @@ final class Tab: ObservableObject, Identifiable {
         // a change: left as it was, a pin put down showed Back lit, and Back
         // did nothing. A tab that slept says it again as its history returns.
         steps()
-        Passkeys.shared.forget(web)
         let controller = web.configuration.userContentController
         Web.release(controller)
         controller.removeAllUserScripts()

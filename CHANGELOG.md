@@ -13,7 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Removed
 
-- Search's own password manager: it no longer saves, keeps or fills passwords, and its Passwords list, "Save this password?" bar, ⌥⌘L and the password import from other browsers are gone. Use a password manager's extension; passkeys and Apple Passwords stay. Passwords already kept in the keychain under "Search" are left where they are, for Keychain Access to show or delete. Pages with a sign-in also stop running the script that watched the page for a password to keep.
+- Search's own password manager, passkeys and the Apple Passwords connection: it no longer saves, keeps or fills passwords, offers the Mac's passkeys, or reads the Passwords app, and its Passwords list, "Save this password?" bar, ⌥⌘L, Settings › Passwords' switches and the password import from other browsers are gone. Use a password manager's extension; sites are told there are no passkeys here, so they ask for the password. Settings › Passwords is now Settings › Forms (your card in Contacts under name, email and address boxes). Passwords already kept in the keychain under "Search" are left where they are, for Keychain Access to show or delete. Pages with a sign-in also stop running the script that watched the page for a password to keep.
 
 ### Added
 

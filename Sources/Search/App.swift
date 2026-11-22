@@ -681,13 +681,6 @@ struct ContentView: View {
                     }
                 }
                 .animation(Motion.quick, value: browser.suggesting)
-                .overlay(alignment: .topLeading) {
-                    if let pairing = browser.applePairing, pairing.tab == tab.id {
-                        ApplePairingCard(browser: browser, apple: browser.applePasswords, pairing: pairing)
-                            .transition(.opacity)
-                    }
-                }
-                .animation(Motion.quick, value: browser.applePairing)
         } else if browser.prefs.homeTheme != .off {
             HomeBackground(theme: browser.prefs.homeTheme, tuning: browser.prefs.homeTuning,
                            image: browser.prefs.homeThemeImage, shuffle: browser.prefs.homeShuffle)

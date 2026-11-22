@@ -560,26 +560,6 @@ final class Preferences: ObservableObject {
             ClickIDs.on = removesClickIDs
         }
     }
-    /// Whether sites may ask for a passkey here. Off sends them to the
-    /// password instead — the only thing that works in a build without
-    /// Apple's browser entitlement.
-    @Published var passkeys: Bool {
-        didSet { store.set(passkeys, forKey: "passkeys") }
-    }
-    /// Whether this build can actually do them: signed with the entitlement,
-    /// its profile embedded. Fixed for the life of the process.
-    let passkeysPossible: Bool
-
-    /// Asked of the running process's own signature, which is the only thing
-    /// that decides it — a profile file in the bundle proves nothing on its
-    /// own, and an ad-hoc build has neither.
-    static var entitledToPasskeys: Bool {
-        guard let task = SecTaskCreateFromSelf(nil) else { return false }
-        let value = SecTaskCopyValueForEntitlement(
-            task, "com.apple.developer.web-browser.public-key-credential" as CFString, nil
-        )
-        return (value as? Bool) == true
-    }
     @Published var downloads: URL {
         didSet { store.set(downloads.path, forKey: "downloads") }
     }
@@ -593,12 +573,6 @@ final class Preferences: ObservableObject {
             store.set(fillsContacts, forKey: "contacts.fill")
             FormRelay.contacts = fillsContacts
         }
-    }
-    /// Accounts from the Mac's Passwords app under the sign-in box too, by
-    /// Apple's helper for its Chrome extension (ApplePasswords.swift). Off
-    /// unless turned on: unofficial, and it pairs with a code.
-    @Published var applePasswords: Bool {
-        didSet { store.set(applePasswords, forKey: "passwords.apple") }
     }
     /// The first launch has been walked through. Until then the welcome
     /// stands over the window.
@@ -1223,31 +1197,6 @@ final class Preferences: ObservableObject {
         let removes = store.object(forKey: "privacy.clickIDs") as? Bool ?? true
         removesClickIDs = removes
         ClickIDs.on = removes
-        // Offered by default only in a build that can actually do them —
-        // one with Apple's browser entitlement and its profile embedded. A
-        // choice made under the other kind of build is not a choice about
-        // this one: the first run of a build that can offers them, and the
-        // first run of one that can't — a release swapped for a build of your
-        // own — stops offering them, which would strand every sign-in on a
-        // passkey path that can only fail. From then on the switch is the
-        // person's. "passkeys.for" is the kind of build the switch was last
-        // set under; before it there was only "passkeys.entitled", which a
-        // build that couldn't wrote on its first run as well.
-        let entitled = Preferences.entitledToPasskeys
-        passkeysPossible = entitled
-        let settledFor = store.object(forKey: "passkeys.for") as? Bool
-            ?? (entitled && store.bool(forKey: "passkeys.entitled") ? true : nil)
-        let offers: Bool
-        if settledFor != entitled {
-            offers = entitled
-            store.set(entitled, forKey: "passkeys")
-        } else {
-            offers = store.object(forKey: "passkeys") as? Bool ?? entitled
-        }
-        passkeys = offers
-        FormRelay.passkeysOffered = offers
-        store.set(entitled, forKey: "passkeys.for")
-        store.set(entitled, forKey: "passkeys.entitled")
         // A test run downloads into its own folder: ~/Downloads would have
         // macOS stop it to ask for access, with a dialog on the screen of
         // whoever is working beside it.
@@ -1258,7 +1207,6 @@ final class Preferences: ObservableObject {
             : (store.string(forKey: "downloads")).map { URL(fileURLWithPath: $0) }
                 ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         asksWhereToSave = store.bool(forKey: "downloads.ask")
-        applePasswords = store.bool(forKey: "passwords.apple")
         let contacts = store.bool(forKey: "contacts.fill")
         fillsContacts = contacts
         FormRelay.contacts = contacts

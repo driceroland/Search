@@ -49,7 +49,6 @@ struct SplitStage: View {
             hover: { hovered = $0 },
             find: browser.finding ? browser : nil,
             accounts: browser.suggesting.map { (browser, $0) },
-            pairing: browser.applePairing.map { (browser, $0) },
             corner: corner,
             immersed: immersed
         )

@@ -20,8 +20,9 @@ final class AccountListRoomTests: XCTestCase {
     private func list(_ count: Int, at y: CGFloat) -> Browser.Suggesting {
         var list = Browser.Suggesting(tab: UUID(), spot: CGRect(x: 40, y: y, width: 280, height: 30),
                                       host: "example.com", clear: false)
-        list.apple = (0..<count).map { AppleLogin(user: "user\($0)@example.com", sites: ["example.com"]) }
-        list.appleHost = "example.com"
+        list.contacts = (0..<count).map {
+            MeCard.Offer(id: "\($0)", title: "user\($0)@example.com", detail: "Home", fields: ["email": "user\($0)@example.com"])
+        }
         list.shown = Date().addingTimeInterval(-1)
         return list
     }

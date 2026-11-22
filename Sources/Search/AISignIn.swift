@@ -41,11 +41,19 @@ enum AISignIn {
     /// Whether one is under way, for Settings.
     static var waiting: Bool { flow.map { Date().timeIntervalSince($0.started) < 600 } ?? false }
 
+    /// Base64 for an address: + and / swapped, no padding (PKCE's own).
+    private static func text(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
     static func start(in browser: Browser) {
         var bytes = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { return }
-        let verifier = Passkeys.text(Data(bytes))
-        let challenge = Passkeys.text(Data(SHA256.hash(data: Data(verifier.utf8))))
+        let verifier = text(Data(bytes))
+        let challenge = text(Data(SHA256.hash(data: Data(verifier.utf8))))
         var parts = URLComponents(url: site.appendingPathComponent("auth"), resolvingAgainstBaseURL: false)
         parts?.queryItems = [
             URLQueryItem(name: "callback_url", value: callback.absoluteString),

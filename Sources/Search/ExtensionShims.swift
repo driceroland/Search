@@ -37,7 +37,7 @@ enum ExtensionShims {
     nonisolated static let contentFile = "search-shim-content.js"
     nonisolated static let contentEnd = "/* Search: a content script's shim ends here */"
     /// Search's passkey patch, put first in every script an extension runs in
-    /// a page's own world (see Passkeys.swift, and `first` in the script).
+    /// a page's own world (see FormRelay.withoutPasskeys, and `first` in the script).
     nonisolated static let passkeys = "search-passkeys.js"
     /// The first line of a worker that already carries the shim.
     nonisolated static let marker = "/* Search: Chrome APIs WebKit lacks, filled in (ExtensionShims.swift) */"
@@ -53,7 +53,7 @@ enum ExtensionShims {
     /// extensions prepared before are prepared again.
     nonisolated private static let preparation = "6"
     nonisolated static let version: String = {
-        SHA256.hash(data: Data((script + PasskeyRelay.page + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
+        SHA256.hash(data: Data((script + FormRelay.withoutPasskeys + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
 
     /// `fresh`: a package just unpacked or copied in. What only Search writes
@@ -76,7 +76,7 @@ enum ExtensionShims {
         let script = shim(for: folder).replacingOccurrences(of: "__SEARCH_WORKER_GENERATION__", with: String(workerGeneration))
         try script.write(to: folder.appendingPathComponent(file), atomically: true, encoding: .utf8)
         try contentShim(script).write(to: folder.appendingPathComponent(contentFile), atomically: true, encoding: .utf8)
-        try PasskeyRelay.page.write(to: folder.appendingPathComponent(passkeys), atomically: true, encoding: .utf8)
+        try FormRelay.withoutPasskeys.write(to: folder.appendingPathComponent(passkeys), atomically: true, encoding: .utf8)
 
         // Native messaging is how the shim reaches the browser; user scripts
         // are carried out through WebKit's registered content scripts, which
@@ -136,7 +136,7 @@ enum ExtensionShims {
         // (contentShim). One that runs in the page's own world has Search's
         // passkey patch before it instead: a password manager's there keeps
         // a reference to navigator.credentials as it finds it, and that has
-        // to be Search's, not WebKit's (see Passkeys.swift). It used to carry
+        // to be Search's, not WebKit's (see FormRelay.withoutPasskeys). It used to carry
         // the shim as well, which a page's world has no extension APIs for:
         // the shim returned at its first check, after every frame of every
         // page had parsed all of it.
@@ -6665,7 +6665,7 @@ enum ExtensionAuth {
             config.preferences.javaScriptCanOpenWindowsAutomatically = false
             // No sound or video from nowhere: nobody can click here.
             config.mediaTypesRequiringUserActionForPlayback = .all
-            // WebKit's own passkey operation is never opened (see Passkeys.swift):
+            // WebKit's own passkey operation is never opened (see FormRelay.withoutPasskeys):
             // the page is told there are none, as with passkeys off.
             config.userContentController.addUserScript(
                 WKUserScript(source: FormRelay.withoutPasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)

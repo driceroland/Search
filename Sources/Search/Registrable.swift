@@ -23,10 +23,18 @@ enum Registrable {
         return left.contains(".") && left == domain(of: b, isSuffix: isSuffix)
     }
 
+    /// Whether a name is a public suffix (com, co.uk) by the Mac's own list.
+    /// Private to CFNetwork: without it, a host is its own site.
+    nonisolated static let publicSuffix: (@convention(c) (CFString) -> Bool)? = {
+        guard let symbol = dlsym(dlopen("/System/Library/Frameworks/CFNetwork.framework/CFNetwork", RTLD_NOW), "_CFHostIsDomainTopLevel")
+        else { return nil }
+        return unsafeBitCast(symbol, to: (@convention(c) (CFString) -> Bool).self)
+    }()
+
     /// example.com for www.example.com and accounts.example.com; bbc.co.uk
     /// stays bbc.co.uk.
     static func of(_ host: String) -> String {
-        domain(of: host, isSuffix: Passkeys.publicSuffix.map { test in { test($0 as CFString) } })
+        domain(of: host, isSuffix: publicSuffix.map { test in { test($0 as CFString) } })
     }
 
     /// The host of an address typed or exported as text, without "www.":

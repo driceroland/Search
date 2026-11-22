@@ -277,7 +277,7 @@ enum ExtensionFetch {
         guard !sets.isEmpty else { return }
         let jar = store.httpCookieStore
         let all = await jar.allCookies()
-        let isSuffix = Passkeys.publicSuffix.map { test in { (name: String) in test(name as CFString) } }
+        let isSuffix = Registrable.publicSuffix.map { test in { (name: String) in test(name as CFString) } }
         let now = Date()
         for set in sets {
             let cookie = set.cookie

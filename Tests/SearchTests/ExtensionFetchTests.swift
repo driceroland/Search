@@ -139,7 +139,7 @@ final class ExtensionFetchTests: XCTestCase {
     }
 
     func testTheMacsOwnListKnowsTheSuffixes() throws {
-        let test = try XCTUnwrap(Passkeys.publicSuffix, "CFNetwork's public suffix test")
+        let test = try XCTUnwrap(Registrable.publicSuffix, "CFNetwork's public suffix test")
         for suffix in ["com", "co.uk", "github.io"] { XCTAssertTrue(test(suffix as CFString), suffix) }
         XCTAssertFalse(test("claude.ai" as CFString))
     }

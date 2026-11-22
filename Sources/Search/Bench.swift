@@ -1139,21 +1139,12 @@ final class Bench {
             // pointer" is up.
             out["pointerLock"] = ["answered": PointerLock.shared.answered, "asked": PointerLock.shared.asked,
                                   "held": PointerLock.shared.page != nil, "hint": PointerLock.shared.showing]
-            // Whether this Mac lets the browser use its passkeys at all — the
-            // one-time permission macOS asks a browser other than Safari for.
-            switch ASAuthorizationWebBrowserPublicKeyCredentialManager().authorizationStateForPlatformCredentials {
-            case .authorized: out["passkeyAccess"] = "authorized"
-            case .denied: out["passkeyAccess"] = "denied"
-            default: out["passkeyAccess"] = "notDetermined"
-            }
             out["dialogs"] = Dialogs.askedInTest
             out["asking"] = browser.asking.map { "\($0.host) \($0.wants)" + ($0.once ? " once" : "") + ($0.keeps ? "" : " unkept") } ?? ""
             out["locationAnswered"] = Browser.locationAnswered ?? ""
-            out["passkeyAsks"] = Passkeys.asked
             out["handedOff"] = Browser.handedOff
             // Email links: compose pages opened, links handed on (Webmail.swift).
             out["mail"] = Mail.seen
-            out["passkeyLast"] = Passkeys.last
             answer(out)
 
         case "press":
@@ -2832,13 +2823,12 @@ final class Bench {
                     "displayAnswered": Browser.displayAnswered as Any? ?? NSNull()])
 
         case "accounts":
-            // The list under the sign-in box the caret is in — passkeys and
-            // Apple Passwords — and, with "pick", a click on its row by
-            // number, counted from 0. Only on a SEARCH_PROBE run: it would
-            // sign in.
+            // The list hanging from the box the caret is in — your card in
+            // Contacts — and, with "pick", a click on its row by number,
+            // counted from 0. Only on a SEARCH_PROBE run: it would fill a form.
             guard Store.testing else { answer(["error": "accounts only works on a --test run"]); return }
             guard let list = browser.suggesting else { answer(["shown": false]); return }
-            let rows = list.passkeys.map { ["passkey": $0.name] }
+            let rows = list.contacts.map { ["contact": $0.title] }
             if let press = request["press"] as? [Double], press.count == 2 {
                 // A press and a release at a point of the window, from its
                 // top-left, handed to whatever the window says is there — the
@@ -2863,9 +2853,9 @@ final class Bench {
             }
             if let pick = request["pick"] as? Int {
                 guard rows.indices.contains(pick) else { answer(["error": "no row \(pick)"]); return }
-                browser.choose(list.passkeys[pick])
+                browser.choose(list.contacts[pick])
             }
-            var out: [String: Any] = ["shown": true, "rows": rows, "nameOnly": list.nameOnly, "wide": list.wide,
+            var out: [String: Any] = ["shown": true, "rows": rows,
                                       "spot": [list.spot.minX, list.spot.minY, list.spot.width, list.spot.height]]
             // With Split View's stage, the card as drawn, in the window from
             // its top-left, and the page-sized box it hangs in.
@@ -2897,46 +2887,6 @@ final class Bench {
                     "lights": (browser.window ?? Links.window).map(Bench.lights(of:)) ?? [],
                 ])
             }
-
-        case "appleoffer":
-            // "Use your Apple passwords?" under a sign-in box (ApplePasswordsOffer),
-            // which a test run never shows unless asked here. "asks": offer as a
-            // person would see it, with a stand-in for Apple's helper that
-            // only counts its starts (Apple's own is never run from a test).
-            // "helper": false, as on a Mac without it. "show"/"drop": the row
-            // up under the tab in front, or the list taken down. "use",
-            // "never": its row or its ✕ clicked. "forget": never offered.
-            guard Store.testing else { answer(["error": "appleoffer only works on a --test run"]); return }
-            if let on = request["asks"] as? Bool {
-                ApplePasswordsOffer.benchAsks = on
-                if on, browser.applePasswords.standIn == nil {
-                    let link = StandInLink()
-                    browser.applePasswords = ApplePasswords(makeLink: { link })
-                    browser.applePasswords.standIn = link
-                }
-            }
-            if let on = request["helper"] as? Bool { ApplePasswordsOffer.benchHelper = on }
-            if request["forget"] as? Bool == true { browser.applePasswordsOffer.forget(); browser.prefs.applePasswords = false }
-            if let site = request["show"] as? String, let tab = browser.activeID {
-                browser.testOffer(on: tab, site: site, age: request["age"] as? Double ?? 1)
-            }
-            if request["drop"] as? Bool == true { browser.testOffer(on: nil) }
-            if request["use"] as? Bool == true { browser.useApplePasswords() }
-            if request["never"] as? Bool == true { browser.neverOfferApplePasswords() }
-            let offer = browser.applePasswordsOffer
-            answer([
-                "asks": ApplePasswordsOffer.benchAsks,
-                "offered": offer.offered.sorted(),
-                "unanswered": offer.store.integer(forKey: ApplePasswordsOffer.unansweredKey),
-                "never": offer.store.bool(forKey: ApplePasswordsOffer.neverKey),
-                "retired": offer.retired,
-                "row": browser.suggesting?.appleOffer ?? "",
-                "shown": browser.suggesting != nil,
-                "on": browser.prefs.applePasswords,
-                "pairing": browser.applePairing != nil,
-                "state": "\(browser.applePasswords.state)",
-                "standInStarts": (browser.applePasswords.standIn as? StandInLink)?.starts ?? 0,
-            ])
 
         case "fill":
             // What the window spends on the page scrolling: the page's report
@@ -6149,17 +6099,4 @@ final class LoopClock: @unchecked Sendable {
         return ["count": Double(sorted.count), "p50": at(0.5), "p95": at(0.95), "max": sorted.last!,
                 "total": sorted.reduce(0, +)]
     }
-}
-
-
-/// Apple's helper, stood in for in a test run (bench `appleoffer`): it starts,
-/// counts that it did, and never answers, so a pairing begun from the offer
-/// waits for a code that never comes. Apple's own is never run from a test.
-final class StandInLink: AppleLink {
-    var onMessage: (([String: Any]) -> Void)?
-    var onEnd: (() -> Void)?
-    private(set) var starts = 0
-    func start() throws { starts += 1 }
-    func send(_ message: [String: Any]) throws {}
-    func stop() {}
 }
