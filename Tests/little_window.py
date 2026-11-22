@@ -455,6 +455,8 @@ try:
     t.ok("launched by a link: a small window, no browser window",
          until(lambda: little("look")["littles"] == [f"{sv.BASE}/first"]) and windows()["keptAway"], windows())
     sv.cmd({"do": "little", "what": "go", "url": EDITOR})
+    # Its own: the one above is made only where ⌘[ and ⌘] can be pressed.
+    def editor_ready(): return sv.cmd({"do": "little", "what": "js", "js": "!!document.getElementById('e')"}).get("value") is True
     t.ok("on to the editor", until(editor_ready), little("look"))
     sv.cmd({"do": "little", "what": "js", "js": "var e = document.getElementById('e'); e.value = 'typed'; e.focus(); "
                                               "e.setSelectionRange(5, 5); 0"})
