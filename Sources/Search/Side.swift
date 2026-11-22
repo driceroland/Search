@@ -569,13 +569,20 @@ struct SideBar: View {
     private func page(_ index: Int, pill: Namespace.ID) -> some View {
         Group {
             if index == browser.spaces.count {
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    NewSpaceCard(browser: browser)
-                    Spacer(minLength: 0)
-                    Spacer(minLength: 0)
+                // Icons only, the column is too narrow for the card: it
+                // comes over the page instead (ContentView, idea 835), and
+                // the column holds the new space's place.
+                if icons {
+                    Color.clear.frame(maxHeight: .infinity)
+                } else {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        NewSpaceCard(browser: browser)
+                        Spacer(minLength: 0)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxHeight: .infinity)
                 }
-                .frame(maxHeight: .infinity)
             } else if browser.spaces[index].id == browser.spaceID {
                 VStack(alignment: .leading, spacing: 0) {
                     if !browser.squarePins.isEmpty || ghostSquare != nil {

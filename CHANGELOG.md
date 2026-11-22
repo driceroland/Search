@@ -64,6 +64,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Typing into ⌘T's or ⌘L's field over a page that is still loading stays in the field: as the page arrived it took the keys, and the rest of what was typed went into the page's own search box. A click on the page still takes them. (idea 495)
 - In the window's own full screen (the green button, ⌃⌘F), Escape goes to the page, to close a site's pop-up, and no longer takes the window out of full screen, as in Safari; a video's full screen still leaves at one press. (idea 582)
 - The side panel no longer flashes white in dark mode as it opens: its page comes in once it has drawn something, as a tab's does. (idea 467)
+- With the column as icons only, the card for a new space comes over the page beside the column, at its full width; it was cut to a few letters inside the narrow column, its name field unusable. (idea 835)
 
 ### Held back
 

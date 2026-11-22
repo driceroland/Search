@@ -990,6 +990,21 @@ struct ContentView: View {
                     .ignoresSafeArea()
             }
             .overlay { field }
+            // The card for a new space with the column as icons: too narrow
+            // for its name and field, it comes over the page, beside the
+            // column, as wide as it is anywhere else (idea 835).
+            .overlay(alignment: sideOnRight ? .topTrailing : .topLeading) {
+                if browser.makingSpace, sidebar, browser.prefs.iconColumn {
+                    NewSpaceCard(browser: browser)
+                        .frame(width: 260)
+                        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                        .shadow(color: .black.opacity(0.12), radius: 18, y: 6)
+                        .padding(sideOnRight ? .trailing : .leading, sideWidth + 12)
+                        .padding(.top, 60)
+                        .transition(.opacity)
+                }
+            }
             .overlay { panels }
             .overlay { switcherOverlay }
             .overlay(alignment: .topTrailing) {
