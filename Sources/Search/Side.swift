@@ -860,7 +860,6 @@ struct SideBar: View {
             out[out.count - 1] = PreviewLine(id: last.id, kind: last.kind, y: last.y, height: last.height, after: 0, front: last.front)
             y -= last.after
         }
-        add("new-tab", .newTab, rowHeight + SideBar.gap, after: 0)
         return (out, tints)
     }
 
@@ -1579,7 +1578,6 @@ struct SideBar: View {
         VStack(alignment: .leading, spacing: 0) {
             listed
             loose
-            newTab
         }
     }
 
