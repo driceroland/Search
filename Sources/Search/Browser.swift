@@ -5393,16 +5393,18 @@ final class Browser: NSObject, ObservableObject {
         // still arriving when it closed), from its address.
         if let keepsake = ghost.keepsake {
             tab.restore(url: ghost.url, title: ghost.title, state: keepsake.state)
-            _ = tab.wake()
         } else {
             tab.go(to: ghost.url)
         }
         // Back into its split beside the page it was beside, while that page
-        // is alone or its split has room.
+        // is alone or its split has room. Paired while it still sleeps: the
+        // pair wakes it with its history, where a tab already woken was
+        // revived from its bare address, Back gone.
         if let id = ghost.partner, let partner = tabs.first(where: { $0.id == id }),
            canJoin(tab, beside: partner) {
             pair(tab, with: partner, onLeft: ghost.onLeft)
         }
+        _ = tab.wake()
     }
 
     /// The group a tab coming back goes into: its own, while groups are on

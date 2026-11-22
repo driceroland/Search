@@ -40,6 +40,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- ⇧⌘T on a page closed out of a Split View puts it back in the split with its Back and Forward again: it came back on the right page but with no history behind it. `python3 Tests/reopen_history.py`
 - Escape answers no again to a camera or microphone question in a site's small pop-up window: since 1.0.13 a pop-up opened in front kept its keys from every window, so its question stayed up. `python3 Tests/website_popups.py`
 - The floating Downloads card keeps its whole shadow beside the column (its window now leaves 18 points on the button's side, which cut the shadow off flat at 8), and its height changes as one smooth animation of the window when the list grows, shrinks or is cleared, in place of a jump. `swift test --filter DownloadsOpeningTests` (idea 897)
 
