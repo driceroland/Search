@@ -34,6 +34,9 @@ final class FollowFileTests: XCTestCase {
             "glassClear", "glassStyle", "liquidTabs", "bounces", "spacesOnCommand",
             // Themes: the empty tab's background is part of the look.
             "homeTheme", "homeThemeImage", "homeTuning", "homeShuffle",
+            // The column narrowed to icons, and the sidebar button beside the
+            // window's buttons (#1360, #1351).
+            "narrowed", "narrowsToIcons", "foldButton",
         ])
     }
 
