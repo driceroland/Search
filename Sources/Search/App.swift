@@ -1440,6 +1440,22 @@ struct ContentView: View {
             // AppKit and counted instead (see FullScreenEscape): the first
             // puts the reminder up, a second within two seconds leaves. Held
             // down, its repeats are kept and count for nothing.
+            // Without it, as in Safari: the press is the page's, to close
+            // its own pop-up, and the window stays in full screen even when
+            // the page has no use for it (idea 582). WebKit hands a key it
+            // didn't use back through the app; that copy goes no further,
+            // where AppKit would have taken the window out on it.
+            if event.keyCode == 53, !browser.prefs.escapeTwice, let window, event.window === window,
+               window.styleMask.contains(.fullScreen) {
+                if FullScreenEscape.shared.cameBack(event) { return nil }
+                if take(event) { return nil }
+                if let page = (window.firstResponder as? NSView).flatMap(FullScreenEscape.page(holding:)) {
+                    FullScreenEscape.shared.handOver(event)
+                    page.keyDown(with: event)
+                    return nil
+                }
+                return event
+            }
             if event.keyCode == 53, browser.prefs.escapeTwice, let window, event.window === window,
                window.styleMask.contains(.fullScreen) {
                 if event.isARepeat { return nil }
