@@ -49,7 +49,7 @@ enum BlockedPopups {
     static func site(scheme: String, host: String) -> String? {
         let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]."))
         guard ["http", "https"].contains(scheme.lowercased()), !host.isEmpty else { return nil }
-        return Vault.registrable(host)
+        return Registrable.of(host)
     }
 
     /// Whether a window asked for with no click just before opens anyway:

@@ -6419,7 +6419,7 @@ enum ExtensionShims {
 
     private static func defaultSetting(_ name: String, owner: Extensions) -> Any? {
         switch name {
-        case "privacy.services.passwordSavingEnabled": return owner.browser?.prefs.savesPasswords ?? true
+        case "privacy.services.passwordSavingEnabled": return false
         case "privacy.network.webRTCIPHandlingPolicy": return "default"
         case "privacy.websites.doNotTrackEnabled", "privacy.websites.adMeasurementEnabled",
              "privacy.websites.fledgeEnabled", "privacy.websites.topicsEnabled",

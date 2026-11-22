@@ -85,7 +85,7 @@ enum SettingsIndex {
         .init(id: "pins", page: .spaces, title: "Pins", icon: "pin"),
         .init(id: "opening", page: .spaces, title: "Opening and starting", icon: "command"),
 
-        .init(id: "passwords", page: .passwords, title: "Your passwords", icon: "key"),
+        .init(id: "passwords", page: .passwords, title: "Passkeys", icon: "person.badge.key"),
         .init(id: "apple", page: .passwords, title: "Apple Passwords", icon: "lock.rectangle.stack"),
         .init(id: "forms", page: .passwords, title: "Filling in forms", icon: "character.cursor.ibeam"),
 
@@ -501,14 +501,6 @@ enum SettingsIndex {
               keys: [Preferences.freshKey], words: ["restore", "session", "startup"]),
 
         // Passwords
-        .init(id: "passwords.open", group: "passwords", icon: "key.viewfinder",
-              title: "Your passwords", detail: "In the macOS keychain, shown with Touch ID", words: ["keychain"]),
-        .init(id: "passwords.save", group: "passwords", icon: "square.and.arrow.down",
-              title: "Offer to save passwords", detail: "Asked once per site, never again for a site you refuse",
-              keys: ["passwords.save"], words: ["save password"]),
-        .init(id: "passwords.fill", group: "passwords", icon: "rectangle.and.pencil.and.ellipsis",
-              title: "Fill in sign-ins", detail: "Click a sign-in box and your accounts for the site hang from it",
-              keys: ["passwords.fill"], words: ["autofill", "login"]),
         .init(id: "passkeys", group: "passwords", icon: "person.badge.key",
               title: "Offer passkeys", detail: "Touch ID or an iCloud passkey, on sites that offer one",
               keys: ["passkeys"], words: ["webauthn", "touch id"]),

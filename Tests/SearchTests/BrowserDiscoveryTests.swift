@@ -9,24 +9,10 @@ final class BrowserDiscoveryTests: XCTestCase {
         let extensions = root.appendingPathComponent("Default/Extensions", isDirectory: true)
         let id = "dfpnncgnidnmgipnpgfgfdmanngkhblg"
         try FileManager.default.createDirectory(at: extensions.appendingPathComponent(id), withIntermediateDirectories: true)
-        let source = Chromium.Source(name: "Fixture", folder: "", service: "", account: "", app: "", rootOverride: root)
+        let source = Chromium.Source(name: "Fixture", folder: "", app: "", rootOverride: root)
 
         XCTAssertEqual(source.profiles.map(\.lastPathComponent), ["Default"])
         XCTAssertEqual(Chromium.preview(of: source, profile: "Default").extensions, [id])
-    }
-
-    func testBrowserWithoutSupportedPasswordKeyKeepsOtherData() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("search-import-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let profile = root.appendingPathComponent("Default", isDirectory: true)
-        try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
-        try Data().write(to: profile.appendingPathComponent("Login Data"))
-        try Data("{}".utf8).write(to: profile.appendingPathComponent("Bookmarks"))
-        let source = Chromium.Source(name: "Fixture", folder: "", service: "", account: "", app: "", importsPasswords: false, rootOverride: root)
-
-        XCTAssertEqual(source.profiles.map(\.lastPathComponent), ["Default"])
-        XCTAssertTrue(source.files().isEmpty)
-        XCTAssertEqual(Chromium.preview(of: source, profile: nil).passwords, 0)
     }
 
     override class func setUp() {
@@ -59,13 +45,12 @@ final class BrowserDiscoveryTests: XCTestCase {
         for name in ["Naver Whale", "Thorium", "Yandex", "ChatGPT Atlas", "Island", "Zen", "LibreWolf", "Floorp", "Waterfox", "Mullvad Browser"] {
             XCTAssertTrue(names.contains(name), name)
         }
-        XCTAssertFalse(ImportSource.installed().first { $0.name == "Yandex" }?.importsPasswords ?? true)
         XCTAssertEqual(ImportSource.installed().first { $0.name == "ChatGPT Atlas" }?.profiles.map(\.id), ["user-abc123"])
         let found = Dictionary(uniqueKeysWithValues: ImportSource.installed().map { ($0.name, $0.canBring) })
-        XCTAssertEqual(found["Zen"], ["bookmarks", "history", "passwords", "spaces & pins", "open tabs"])
-        XCTAssertEqual(found["LibreWolf"], ["bookmarks", "history", "passwords", "open tabs"])
+        XCTAssertEqual(found["Zen"], ["bookmarks", "history", "spaces & pins", "open tabs"])
+        XCTAssertEqual(found["LibreWolf"], ["bookmarks", "history", "open tabs"])
         XCTAssertEqual(found["Yandex"], ["bookmarks", "history", "open tabs"])
-        XCTAssertEqual(found["Thorium"], ["bookmarks", "history", "passwords", "open tabs"])
+        XCTAssertEqual(found["Thorium"], ["bookmarks", "history", "open tabs"])
         XCTAssertEqual(ImportSource.installed().first { $0.name == "Zen" }?.canBringLine.hasPrefix("Bookmarks, history"), true)
         XCTAssertNil(found["Vivaldi"], "a browser that isn't here isn't listed")
         let zen = try XCTUnwrap(Mozilla.known.first { $0.name == "Zen" })
@@ -73,7 +58,7 @@ final class BrowserDiscoveryTests: XCTestCase {
     }
 
     func testChosenFolderIsIgnoredByTestRunsAndNeverPersisted() {
-        let source = Chromium.Source(name: "Fixture-\(UUID().uuidString)", folder: "Fixture", service: "", account: "", app: "")
+        let source = Chromium.Source(name: "Fixture-\(UUID().uuidString)", folder: "Fixture", app: "")
         let selected = FileManager.default.temporaryDirectory.appendingPathComponent("other-browser")
 
         Chromium.useForSession(selected, for: source)
@@ -88,7 +73,7 @@ final class BrowserDiscoveryTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        var source = Chromium.Source(name: "Fixture", folder: "", service: "", account: "", app: "")
+        var source = Chromium.Source(name: "Fixture", folder: "", app: "")
         source.rootOverride = root
         let empty = source.discovery
         XCTAssertTrue(empty.profiles.isEmpty)
@@ -112,7 +97,7 @@ final class BrowserDiscoveryTests: XCTestCase {
             try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
             try? FileManager.default.removeItem(at: root)
         }
-        var source = Chromium.Source(name: "Fixture", folder: "", service: "", account: "", app: "")
+        var source = Chromium.Source(name: "Fixture", folder: "", app: "")
         source.rootOverride = root
         try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: root.path)
         let denied = source.discovery
@@ -141,7 +126,7 @@ final class BrowserDiscoveryTests: XCTestCase {
             try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: denied.path)
             try? FileManager.default.removeItem(at: root)
         }
-        var source = Chromium.Source(name: "Fixture", folder: "", service: "", account: "", app: "")
+        var source = Chromium.Source(name: "Fixture", folder: "", app: "")
         source.rootOverride = root
         try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: denied.path)
 
@@ -163,7 +148,7 @@ final class BrowserDiscoveryTests: XCTestCase {
         try FileManager.default.createDirectory(at: root.appendingPathComponent("Default"), withIntermediateDirectories: true)
         try Data("{}".utf8).write(to: root.appendingPathComponent("Local State"))
         defer { try? FileManager.default.removeItem(at: root) }
-        var source = Chromium.Source(name: "Fixture", folder: "", service: "", account: "", app: "")
+        var source = Chromium.Source(name: "Fixture", folder: "", app: "")
         source.rootOverride = root
         XCTAssertTrue(source.discovery.profiles.isEmpty)
         XCTAssertNil(source.discovery.error)
@@ -178,7 +163,7 @@ final class BrowserDiscoveryTests: XCTestCase {
             try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: profile.path)
             try? FileManager.default.removeItem(at: root)
         }
-        var source = Chromium.Source(name: "Fixture", folder: "", service: "", account: "", app: "")
+        var source = Chromium.Source(name: "Fixture", folder: "", app: "")
         source.rootOverride = root
         // Traversal and a known file remain readable even without listing the directory.
         try FileManager.default.setAttributes([.posixPermissions: 0o100], ofItemAtPath: profile.path)

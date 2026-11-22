@@ -1,9 +1,8 @@
 import SwiftUI
 
 /// Bringing things over from another browser, all in one place: which
-/// browser, which of its profiles, and what of it. Opened from Settings ›
-/// Passwords and from Bring in… in Bookmarks and Passwords; the Welcome has
-/// the short version of it. From Settings › Extensions it opens on the
+/// browser, which of its profiles, and what of it. Opened from Bring in… in
+/// Bookmarks; the Welcome has the short version of it. From Settings › Extensions it opens on the
 /// extensions alone.
 ///
 /// What each browser holds is counted as the sheet opens, off the main
@@ -26,7 +25,6 @@ struct ImportPanel: View {
     @State private var chosen: [String: String] = [:]
     @State private var previews: [String: ImportSource.Preview] = [:]
 
-    @State private var wantsPasswords = true
     @State private var wantsBookmarks = true
     @State private var wantsHistory = true
     @State private var wantsExtensions = false
@@ -34,7 +32,7 @@ struct ImportPanel: View {
     /// Off unless asked for.
     @State private var wantsTabs = false
     /// What came from this browser before goes, and its bookmarks come
-    /// fresh. Off unless asked for; passwords are never taken out.
+    /// fresh. Off unless asked for.
     @State private var replaceBookmarks = false
     /// Arc's or Zen's spaces, their pinned tabs, and Arc's favourites or
     /// Zen's Essentials (see takeArc).
@@ -59,7 +57,7 @@ struct ImportPanel: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Nothing in the other browser changes. Passwords go into your keychain.")
+            Text("Nothing in the other browser changes.")
                 .font(.system(size: 12.5))
                 .foregroundStyle(Palette.muted)
 
@@ -134,10 +132,9 @@ struct ImportPanel: View {
                                 withAnimation(Motion.glide) { browser.prefs.bookmarksBar = true }
                             }
                         }
-                        Pill("Show passwords") { browser.lead(to: InternalPage(.passwords)) }
                     } else if let source = pick {
                         Pill(bringing ? "Bringing…" : "Bring them in", filled: true) { bring(from: source) }
-                            .disabled(bringing || !(wantsPasswords || wantsBookmarks || wantsHistory || (wantsExtensions && !fresh(source).isEmpty)
+                            .disabled(bringing || !(wantsBookmarks || wantsHistory || (wantsExtensions && !fresh(source).isEmpty)
                                                      || (wantsArc && arcCounts[key(source, profile(of: source))] != nil)
                                                      || (wantsTabs && bringsTabs(source))))
                         if bringing { Ring(size: 10) }
@@ -155,7 +152,6 @@ struct ImportPanel: View {
                 browser.bringingExtensions = false
                 forExtensions = true
                 wantsExtensions = true
-                wantsPasswords = false
                 wantsBookmarks = false
                 wantsHistory = false
             }
@@ -229,7 +225,7 @@ struct ImportPanel: View {
                         Pill(safariSteps ? "Hide" : "How") { withAnimation(Motion.settle) { safariSteps.toggle() } }
                     }
                     if safariSteps {
-                        Text("In Safari, choose File › Export Browsing Data to File…, keep Bookmarks, History and Passwords, and save. Then press File… below and choose the ZIP it made.")
+                        Text("In Safari, choose File › Export Browsing Data to File…, keep Bookmarks and History, and save. Then press File… below and choose the ZIP it made.")
                             .foregroundStyle(Palette.muted)
                             .transition(.opacity)
                     }
@@ -328,13 +324,6 @@ struct ImportPanel: View {
                 Rule()
             }
             // A kind the browser has none of is said so, and can't be picked.
-            Line("Passwords", !source.importsPasswords ? (!source.passwordsInPasswordsApp ? "Not supported for \(source.name)"
-                                                          : "\(source.name) keeps them in the Passwords app: export them from there and bring in the CSV file") : preview?.passwords == 0 ? "None in \(source.name)" : source.asksForKey
-                 ? "macOS asks once for \(source.name)'s keychain key"
-                 : "Read from \(source.name)'s own files, unless it has a primary password") {
-                option($wantsPasswords, none: !source.importsPasswords || preview?.passwords == 0)
-            }
-            Rule()
             Line("Bookmarks", preview?.bookmarks == 0 ? "None in \(source.name)" : "In a “\(source.name)” folder, or at the top if you have none yet") {
                 option($wantsBookmarks, none: preview?.bookmarks == 0)
             }
@@ -345,7 +334,7 @@ struct ImportPanel: View {
                 Rule()
                 let recorded = !record.bookmarkIDs.isEmpty
                 Line("Replace what came from \(source.name) before",
-                     recorded ? "Its bookmarks from \(record.date.formatted(.dateTime.day().month())) go, and these come fresh; passwords only ever add"
+                     recorded ? "Its bookmarks from \(record.date.formatted(.dateTime.day().month())) go, and these come fresh"
                               : "Nothing recorded from \(source.name) yet — only what is new comes") {
                     option($replaceBookmarks, none: !recorded)
                 }
@@ -423,7 +412,7 @@ struct ImportPanel: View {
         var parts: [String] = []
         if let choices = profiles[source.id], choices.count > 1 { parts.append("\(choices.count) profiles") }
         // What it has; a kind it has none of isn't worth a word.
-        for (n, one) in [(preview.bookmarks, "bookmark"), (preview.places, "place"), (preview.passwords, "password")] where n > 0 {
+        for (n, one) in [(preview.bookmarks, "bookmark"), (preview.places, "place")] where n > 0 {
             parts.append(count(n, one))
         }
         if preview.session.found > 0 { parts.append(count(preview.session.found, "open tab")) }
@@ -437,10 +426,10 @@ struct ImportPanel: View {
     }
 
     /// What was brought from it before, in a line: "312 bookmarks, 1,204
-    /// places and 58 passwords, 27 Sep".
+    /// places and 3 spaces, 27 Sep".
     private func broughtBefore(_ record: ImportRecord) -> String {
         func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
-        let parts = [(record.bookmarks, "bookmark"), (record.places, "place"), (record.passwords, "password"),
+        let parts = [(record.bookmarks, "bookmark"), (record.places, "place"),
                      (record.spaces ?? 0, "space"), (record.pinned ?? 0, "pinned tab")]
             .filter { $0.0 > 0 }.map { count($0.0, $0.1) }
         let what = parts.isEmpty ? "Nothing new" : ListFormatter.localizedString(byJoining: parts)
@@ -509,43 +498,12 @@ struct ImportPanel: View {
         marksLanded = false
         let profile = profile(of: source)
         let extensions = wantsExtensions ? fresh(source) : []
-        // A kind it has none of isn't read at all: no keychain question for
-        // a browser with no passwords.
         let preview = previews[key(source, profile)]
-        let passwords = wantsPasswords && source.importsPasswords && preview?.passwords != 0
         let marks = wantsBookmarks && preview?.bookmarks != 0
         let places = wantsHistory && preview?.places != 0
         bringing = true
         var said: [Int: Said] = [:]
         let group = DispatchGroup()
-        if passwords {
-            group.enter()
-            // The one moment macOS asks for the key, if the browser keeps one.
-            DispatchQueue.global(qos: .userInitiated).async {
-                let outcome = Result { try source.read(profile: profile) }
-                DispatchQueue.main.async {
-                    switch outcome {
-                    case .success(let found):
-                        let kept = browser.keep(found)
-                        ImportRecords.note(source.name, passwords: kept)
-                        let skipped = found.skipped > 0 ? " (\(found.skipped.formatted()) skipped: no address)" : ""
-                        // Ones that didn't decrypt: said, so an import that
-                        // brought nothing says why rather than "0 passwords".
-                        let locked = found.undecrypted > 0
-                            ? " — \(found.undecrypted.formatted()) couldn't be decrypted with \(source.name)'s key" : ""
-                        said[0] = Said(ok: kept > 0 || found.undecrypted == 0,
-                                       text: (kept == 1 ? "1 password" : "\(kept.formatted()) passwords") + skipped + locked)
-                    case .failure(Chromium.Trouble.noPassphrase):
-                        said[0] = Said(ok: false, text: "macOS didn't hand over \(source.name)'s key — allow it and try again")
-                    case .failure(Mozilla.Trouble.primaryPassword):
-                        said[0] = Said(ok: false, text: "\(source.name) has a primary password: export your passwords from it and bring in the CSV file")
-                    case .failure:
-                        said[0] = Said(ok: false, text: "No passwords readable in \(source.name)")
-                    }
-                    group.leave()
-                }
-            }
-        }
         if marks {
             let (added, already, kept) = browser.takeBookmarks(from: source, profile: profile, replacing: replaceBookmarks)
             marksLanded = added + already > 0

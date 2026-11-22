@@ -903,18 +903,9 @@ final class Browser: NSObject, ObservableObject {
 
     // MARK: - passwords
 
-    /// A name and password a page has just sent, waiting to be offered a place
-    /// in the keychain. Held only until you answer.
-    @Published private(set) var offering: Offer?
-
-    struct Offer: Equatable {
-        let login: Login
-        /// The same account is already kept, with a different password.
-        let changed: Bool
-    }
-
-    /// The accounts kept for the site whose sign-in box has the caret, and
-    /// where that box is — a list hangs from it, and a click fills the form.
+    /// What is offered for the sign-in box that has the caret (passkeys,
+    /// Apple Passwords, your card), and where that box is — a list hangs
+    /// from it, and a click fills the form.
     /// Nothing is put into a page until you have pointed at it.
     @Published private(set) var suggesting: Suggesting? {
         didSet {
@@ -941,8 +932,6 @@ final class Browser: NSObject, ObservableObject {
     struct Suggesting: Equatable {
         let tab: Tab.ID
         var spot: CGRect
-        /// Without secrets: one is read only for the account picked.
-        let logins: [Kept]
         /// The Mac's passkeys for a page waiting for one under its field.
         var passkeys: [Passkeys.Offered] = []
         /// The page the list was made for: its site, and whether it came in
@@ -1003,31 +992,8 @@ final class Browser: NSObject, ObservableObject {
     /// the caret has left since is dropped.
     private var appleAsk = 0
 
-    func keepOffer() {
-        guard let offer = offering else { return }
-        offering = nil
-        let login = offer.login
-        guard Vault.save(host: login.host, user: login.user, password: login.password, used: Date(), clear: login.clear) else {
-            announce("The keychain refused it")
-            return
-        }
-        relist()
-        announce(offer.changed ? "Password updated for \(login.host)" : "Password saved for \(login.host)")
-    }
-
-    func dropOffer() { offering = nil }
-
-    /// Never for this site. Some sites you sign into on purpose with nothing
-    /// you want remembered.
-    func neverOffer() {
-        guard let offer = offering else { return }
-        Vault.never(offer.login.host)
-        offering = nil
-        announce("Never for \(offer.login.host)")
-    }
-
-    /// The caret in a sign-in box: the accounts kept for this site, and the
-    /// Mac's passkeys for a page waiting for one, hang from the box, and go
+    /// The caret in a sign-in box: the Mac's passkeys for a page waiting for
+    /// one, and Apple Passwords' accounts when it is on, hang from the box, and go
     /// when the caret does. Nothing is filled on its own — the way Safari
     /// does it, and what a person expects.
     private func hang(from tab: Tab, _ spot: CGRect?, passwords: Bool, name: Bool = false, wide: Bool = true, code: Bool = false,
@@ -1074,19 +1040,6 @@ final class Browser: NSObject, ObservableObject {
             hangCodes(from: tab, spot, host: host, wide: wide)
             return
         }
-        // Passwords only for a box that goes with one: a box for passkeys
-        // alone has no password to put anywhere. A box that only might be a
-        // sign-in's gets this host's own accounts, never the rest of the
-        // site's: console.cloud.google.com's project name is not Gmail's.
-        var kept = prefs.fillsPasswords && passwords
-            ? Vault.kept(matching: host, wide: wide).filter { !inTheClear || $0.clear } : []
-        // The account whose name the step before was sent with comes first:
-        // the password page of a sign-in that asks for the name first.
-        if let given = tab.givenName(),
-           let at = kept.firstIndex(where: { $0.user.caseInsensitiveCompare(given) == .orderedSame }) {
-            kept.insert(kept.remove(at: at), at: 0)
-        }
-        let known = Array(kept.prefix(5))
         // A page waiting for a passkey has it under its sign-in's boxes, not
         // under a box for your address.
         let passkeys = fill == nil ? Passkeys.shared.offered(in: tab.built) : []
@@ -1094,18 +1047,18 @@ final class Browser: NSObject, ObservableObject {
         // ordinary tab only, asked about by its own host. Paired, its names
         // join the list when the helper answers; not yet, a row offers to
         // connect.
-        let appleHost = prefs.applePasswords && prefs.fillsPasswords && passwords
+        let appleHost = prefs.applePasswords && passwords
             ? ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) : nil
         let apple = applePasswords
         let connect = appleHost != nil && apple.state == .idle && applePairing?.tab != tab.id
         // Off, and nothing of Search's own for this site: the offer, once.
         // The row already up under this box stays up while it is there.
         let offer: String? = {
-            if let up = suggesting, up.tab == tab.id, let site = up.appleOffer, site == Vault.registrable(host) { return site }
+            if let up = suggesting, up.tab == tab.id, let site = up.appleOffer, site == Registrable.of(host) { return site }
             return applePasswordsOffer.site(
                 for: .init(page: tab.pageAddress, privateTab: tab.shy, frameHost: tab.fieldFrameHost,
-                           passwords: passwords, kept: known.count),
-                .init(appleOn: prefs.applePasswords, fills: prefs.fillsPasswords,
+                           passwords: passwords),
+                .init(appleOn: prefs.applePasswords,
                       helper: ApplePasswordsOffer.benchHelper ?? ApplePasswordsOffer.helperHere,
                       testRun: Store.testing, benchAsks: ApplePasswordsOffer.benchAsks))
         }()
@@ -1121,19 +1074,19 @@ final class Browser: NSObject, ObservableObject {
             guard case .contact(let kind, _) = fill, prefs.fillsContacts, MeCard.allowed else { return [] }
             return MeCard.shared.offers(for: kind)
         }()
-        guard !known.isEmpty || !passkeys.isEmpty || connect || offer != nil || !contacts.isEmpty else {
+        guard !passkeys.isEmpty || connect || offer != nil || !contacts.isEmpty else {
             suggesting = nil
             return
         }
         // What is under the pointer changed: the half second starts again.
-        if let up = suggesting, up.tab == tab.id, up.logins == known, up.passkeys == passkeys, up.nameOnly == name,
+        if let up = suggesting, up.tab == tab.id, up.passkeys == passkeys, up.nameOnly == name,
            up.appleConnect == connect, up.apple.isEmpty, up.wide == wide, up.appleOffer == offer,
            up.contacts == contacts, up.box == box,
            up.page == (contacts.isEmpty ? nil : tab.pageAddress) {
             suggesting?.spot = spot
             return
         }
-        suggesting = Suggesting(tab: tab.id, spot: spot, logins: known, passkeys: passkeys, host: host, clear: inTheClear,
+        suggesting = Suggesting(tab: tab.id, spot: spot, passkeys: passkeys, host: host, clear: inTheClear,
                                 nameOnly: name, appleHost: appleHost, appleConnect: connect, appleOffer: offer, wide: wide,
                                 contacts: contacts, box: box, page: contacts.isEmpty ? nil : tab.pageAddress)
         if let offer { applePasswordsOffer.shown(on: offer) }
@@ -1148,7 +1101,7 @@ final class Browser: NSObject, ObservableObject {
     /// row of its own for a box that may be something else.
     private func hangCodes(from tab: Tab, _ spot: CGRect, host: String, wide: Bool) {
         appleAsk += 1
-        guard prefs.applePasswords, prefs.fillsPasswords,
+        guard prefs.applePasswords,
               let appleHost = ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy)
         else {
             suggesting = nil
@@ -1164,7 +1117,7 @@ final class Browser: NSObject, ObservableObject {
             suggesting = nil
             return
         }
-        suggesting = Suggesting(tab: tab.id, spot: spot, logins: [], host: host, clear: false,
+        suggesting = Suggesting(tab: tab.id, spot: spot, host: host, clear: false,
                                 appleHost: appleHost, appleConnect: true)
     }
 
@@ -1182,7 +1135,7 @@ final class Browser: NSObject, ObservableObject {
             else { return }
             let codes = Array(found.filter { ApplePasswords.belongs([$0.domain], to: appleHost, wide: wide) }.prefix(5))
             guard !codes.isEmpty else { return }
-            suggesting = Suggesting(tab: tab.id, spot: field.spot, logins: [], host: host, clear: false,
+            suggesting = Suggesting(tab: tab.id, spot: field.spot, host: host, clear: false,
                                     codes: codes, appleHost: appleHost, wide: wide)
         }
     }
@@ -1201,10 +1154,7 @@ final class Browser: NSObject, ObservableObject {
             guard let self, ask == appleAsk, let field, field.tab == tab.id, tab.id == activeID,
                   ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) == appleHost
             else { return }
-            let mine = suggesting?.tab == tab.id ? suggesting?.logins ?? [] : []
-            let apple = Array(ApplePasswords.exactFirst(found, to: appleHost, wide: wide)
-                .filter { theirs in !mine.contains { $0.user.caseInsensitiveCompare(theirs.user) == .orderedSame } }
-                .prefix(5))
+            let apple = Array(ApplePasswords.exactFirst(found, to: appleHost, wide: wide).prefix(5))
             guard !apple.isEmpty else { return }
             if var up = suggesting, up.tab == tab.id {
                 up.apple = apple
@@ -1214,7 +1164,7 @@ final class Browser: NSObject, ObservableObject {
                 up.shown = Date()
                 suggesting = up
             } else {
-                suggesting = Suggesting(tab: tab.id, spot: field.spot, logins: [], host: host, clear: false,
+                suggesting = Suggesting(tab: tab.id, spot: field.spot, host: host, clear: false,
                                         nameOnly: name, apple: apple, appleHost: appleHost)
             }
         }
@@ -1341,7 +1291,7 @@ final class Browser: NSObject, ObservableObject {
         applePasswordsOffer.dismissed()
         offerAnswered = true
         list.appleOffer = nil
-        let empty = list.logins.isEmpty && list.passkeys.isEmpty && list.apple.isEmpty && !list.appleConnect
+        let empty = list.passkeys.isEmpty && list.apple.isEmpty && !list.appleConnect
             && list.contacts.isEmpty
         suggesting = empty ? nil : list
     }
@@ -1352,7 +1302,7 @@ final class Browser: NSObject, ObservableObject {
     func testOffer(on tab: Tab.ID?, site: String = "example.com", age: TimeInterval = 1) {
         guard Store.testing else { return }
         guard let tab else { suggesting = nil; return }
-        var list = Suggesting(tab: tab, spot: CGRect(x: 40, y: 120, width: 280, height: 30), logins: [], host: site,
+        var list = Suggesting(tab: tab, spot: CGRect(x: 40, y: 120, width: 280, height: 30), host: site,
                               clear: false, appleOffer: site)
         list.shown = Date().addingTimeInterval(-age)
         suggesting = list
@@ -1411,37 +1361,6 @@ final class Browser: NSObject, ObservableObject {
         window.makeFirstResponder(web)
     }
 
-    /// One of the accounts in the list, picked by name.
-    func choose(_ login: Kept) {
-        lowering?.cancel()
-        guard let list = suggesting, let tab = tabs.first(where: { $0.id == list.tab }) else { return }
-        guard Date().timeIntervalSince(list.shown) > 0.5 else { return }
-        suggesting = nil
-        // The tab may have gone somewhere else while the list was up: a
-        // redirect, a script. What was offered for one site is never put
-        // into another's page.
-        guard curtain.host(of: tab.pageAddress) == list.host,
-              (tab.pageAddress?.scheme?.lowercased() == "http") == list.clear
-        else { return }
-        pickedInto = tab.id
-        // A first step: the name alone, the password waits for its page.
-        if list.nameOnly {
-            tab.fillName(login.user) { [weak self] worked in
-                if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
-            }
-            return
-        }
-        // Its secret is read now, once it is picked: see `Vault.kept(for:)`.
-        guard let login = Vault.login(login) else {
-            announce("The keychain refused it")
-            return
-        }
-        tab.fill(user: login.user, password: login.password, onlyOn: tab.pageAddress) { [weak self] worked in
-            if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
-        }
-        Vault.touch(login)
-    }
-
     /// One of the passkeys in the list: the Mac's sheet for it, and the
     /// page's request answered with it.
     func choose(_ passkey: Passkeys.Offered) {
@@ -1488,7 +1407,6 @@ final class Browser: NSObject, ObservableObject {
         suggesting = list
         switch list.choices[at] {
         case .passkey(let passkey): choose(passkey)
-        case .login(let login): choose(login)
         case .apple(let login): choose(login)
         case .code(let code): choose(code)
         case .connect: connectApplePasswords()
@@ -1496,152 +1414,6 @@ final class Browser: NSObject, ObservableObject {
         case .contact(let contact): choose(contact, alone: alone)
         }
         return true
-    }
-
-    // The list of what is kept.
-
-    /// Passwords, in a tab. The list is read again each time it is asked for.
-    var managing: Bool {
-        get { pageTab(.passwords) != nil }
-        set { if newValue { show(InternalPage(.passwords)) } else { putAway(.passwords) } }
-    }
-    /// The list, without secrets: see `Kept` and `Vault.all()`.
-    @Published private(set) var saved: [Kept] = []
-    @Published var hunting = ""
-    /// A Remove All… under way, off the main thread (see `forgetShown`).
-    @Published private(set) var forgetting = false
-
-    struct SiteRow {
-        let host: String
-        let logins: [Kept]
-    }
-
-    /// Grouped by site, filtered by what has been typed.
-    var shownSites: [SiteRow] {
-        let needle = hunting.trimmingCharacters(in: .whitespaces).lowercased()
-        let rows = needle.isEmpty ? saved : saved.filter {
-            $0.host.contains(needle) || $0.user.lowercased().contains(needle)
-        }
-        let groups = Dictionary(grouping: rows, by: \.host)
-        return groups.keys.sorted().map { host in
-            SiteRow(host: host, logins: groups[host]!.sorted { $0.user < $1.user })
-        }
-    }
-
-    func relist() { saved = Vault.all() }
-
-    func keep(host: String, user: String, password: String) {
-        guard Vault.save(host: host, user: user, password: password) else {
-            announce("The keychain refused it")
-            return
-        }
-        relist()
-        announce("Kept for \(host)")
-    }
-
-    func forget(_ login: Kept) {
-        Vault.forget(host: login.host, user: login.user)
-        relist()
-    }
-
-    /// The panel's Remove All…, or Remove N… while its search narrows the
-    /// list: every account the list shows, out of the keychain, once asked.
-    /// Only what is shown, so a search for one site never takes the rest
-    /// with it. For moving what is kept to a manager of one's own: all at
-    /// once, rather than one Remove at a time (#469). Asked, then proved the
-    /// way showing one is, since it can't be undone; Return is Cancel's.
-    func forgetShown() {
-        let shown = shownSites.flatMap(\.logins)
-        guard !shown.isEmpty, !forgetting else { return }
-        let count = shown.count
-        let many = count == 1 ? "1 password" : "\(count) passwords"
-        Ask.sure(
-            count == 1 ? "Remove 1 Password?" : "Remove \(count) Passwords?",
-            detail: "They're taken out of your keychain. Only the passwords Search keeps are removed: password managers, other apps and other browsers keep theirs. This can't be undone.",
-            confirm: "Remove",
-            returnCancels: true
-        ) { [weak self] in
-            Vault.prove("remove \(many)") { ok in
-                guard ok, let self, !self.forgetting else { return }
-                // A keychain delete is a few milliseconds, a few hundred of
-                // them a second: off the main thread, as imports are (#380).
-                self.forgetting = true
-                DispatchQueue.global(qos: .userInitiated).async {
-                    // Counted as the keychain answers, not as asked: one
-                    // it kept is not reported gone.
-                    let gone = shown.filter { Vault.forget(host: $0.host, user: $0.user) }.count
-                    DispatchQueue.main.async {
-                        self.forgetting = false
-                        self.relist()
-                        let removed = gone == 1 ? "1 password" : "\(gone) passwords"
-                        self.announce(gone == count ? "Removed \(removed)"
-                            : gone == 0 ? "The keychain refused them"
-                            : "Removed \(gone) of \(many)")
-                    }
-                }
-            }
-        }
-    }
-
-    /// A password copied is asked for the way one shown is. It goes on this
-    /// Mac's clipboard only, not to your other devices', marked concealed
-    /// and transient, which is what clipboard managers go by to keep it out
-    /// of their history, and it is taken off again after a minute and a
-    /// half unless something else has been copied since.
-    func copy(_ login: Kept) {
-        Vault.prove("copy the password for \(login.host)") { [weak self] ok in
-            guard ok, let self else { return }
-            // Read here, once the Mac has said who this is: what the panel
-            // drew its list from holds no secrets.
-            guard let password = Vault.secret(of: login) else {
-                self.announce("The keychain refused it")
-                return
-            }
-            let board = NSPasteboard.general
-            board.prepareForNewContents(with: .currentHostOnly)
-            board.setString(password, forType: .string)
-            board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
-            board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-            let copied = board.changeCount
-            DispatchQueue.main.asyncAfter(deadline: .now() + 90) {
-                if board.changeCount == copied { board.clearContents() }
-            }
-            announce("Password copied")
-        }
-    }
-
-    /// What came back from another browser's store, put in the keychain,
-    /// with the sites it was told never to ask about. Saving one already
-    /// kept updates it, so bringing the same in again adds nothing twice.
-    /// Returns how many were kept.
-    func keep(_ found: Chromium.Found) -> Int {
-        var kept = 0
-        for login in found.logins
-        where Vault.save(host: login.host, user: login.user, password: login.password, used: login.used, clear: login.clear) {
-            kept += 1
-        }
-        var never = Vault.never
-        found.never.forEach { never.insert($0) }
-        Vault.never = never
-        relist()
-        return kept
-    }
-
-    /// The same, said as it lands.
-    func took(_ outcome: Result<Chromium.Found, Error>, from name: String) {
-        switch outcome {
-        case .success(let found):
-            let kept = keep(found)
-            ImportRecords.note(name, passwords: kept)
-            let locked = found.undecrypted > 0 ? " (\(found.undecrypted) couldn't be decrypted)" : ""
-            announce((kept == 0 ? "Nothing new in \(name)" : "\(kept) passwords from \(name)") + locked)
-        case .failure(Chromium.Trouble.noPassphrase):
-            announce("\(name) didn't give up its keychain key")
-        case .failure(Mozilla.Trouble.primaryPassword):
-            announce("\(name) has a primary password — export your passwords from it (Settings › Passwords › ⋯ › Export) and bring in the CSV file")
-        case .failure:
-            announce("Nothing readable in \(name)")
-        }
     }
 
     /// The other browser's history, into this one's. Off the main thread for
@@ -1663,37 +1435,34 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
-    /// Something another browser exported: a bookmarks page, a passwords
-    /// file, or Safari's own export (see ImportFile). Read once, never copied.
+    /// Something another browser exported: a bookmarks page, or Safari's
+    /// own export (see ImportFile). Read once, never copied.
     func importFile() {
         guard fileImport == nil else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.html, .commaSeparatedText, .plainText, .zip, .json]
+        panel.allowedContentTypes = [.html, .plainText, .zip, .json]
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Bring In"
-        panel.message = "A file another browser exported: bookmarks (.html), passwords (.csv), or Safari's File › Export Browsing Data (.zip)."
+        panel.message = "A file another browser exported: bookmarks (.html), or Safari's File › Export Browsing Data (.zip)."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { announce((await takeFile(url)).said) }
     }
 
-    /// The file's bookmarks, history and passwords, taken in as a browser's
-    /// are: bookmarks merged without doubles, history counted once. Says
-    /// what came in, and after Safari's export, that the file holds your
-    /// passwords in the clear.
+    /// The file's bookmarks and history, taken in as a browser's are:
+    /// bookmarks merged without doubles, history counted once. Says what
+    /// came in.
     struct FileTake {
         let said: String
         let bookmarks: Int
         let already: Int
         let places: Int
-        let kept: Int
-        let skipped: Int
         let cancelled: Bool
     }
 
     @discardableResult
     func takeFile(_ url: URL) async -> FileTake {
-        guard !Browser.fileImportTerminating, fileImport == nil else { return FileTake(said: "An import is already running", bookmarks: 0, already: 0, places: 0, kept: 0, skipped: 0, cancelled: false) }
+        guard !Browser.fileImportTerminating, fileImport == nil else { return FileTake(said: "An import is already running", bookmarks: 0, already: 0, places: 0, cancelled: false) }
         let id = UUID()
         fileImport = FileImportJob(id: id, filename: url.lastPathComponent, message: "Reading…")
         let control = ImportFile.Control { [weak self] progress in
@@ -1710,8 +1479,7 @@ final class Browser: NSObject, ObservableObject {
             Browser.activeFileImports[id] = nil
             if fileImport?.id == id { fileImport = nil; fileImportControl = nil }
         }
-        var added = 0, already = 0, places = 0, kept = 0, skipped = 0
-        var safari = false
+        var added = 0, already = 0, places = 0
         var failed = false
         var mergedBookmarks = false
         do {
@@ -1721,7 +1489,6 @@ final class Browser: NSObject, ObservableObject {
                     catch { continuation.resume(throwing: error) }
                 }
             }
-            safari = found.fromSafari
             try control.checkCancellation()
             let name = found.fromSafari ? "Safari" : url.deletingPathExtension().lastPathComponent
             if !found.bookmarks.isEmpty {
@@ -1752,30 +1519,8 @@ final class Browser: NSObject, ObservableObject {
                 }
                 if places > 0 { history.settle() }
             }
-            if !found.passwords.isEmpty && !control.isCancelled {
-                fileImport?.message = "Saving passwords…"
-                fileImport?.completed = 0
-                fileImport?.total = nil
-                for text in found.passwords {
-                    guard !control.isCancelled else { break }
-                    let result = await withCheckedContinuation { continuation in
-                        DispatchQueue.global(qos: .userInitiated).async {
-                            continuation.resume(returning: Vault.take(csv: text, control: control))
-                        }
-                    }
-                    kept += result.kept
-                    skipped += result.skipped
-                }
-            }
         } catch {
             failed = !control.isCancelled
-        }
-        if kept > 0 || skipped > 0 {
-            saved = await withCheckedContinuation { continuation in
-                DispatchQueue.global(qos: .utility).async {
-                    continuation.resume(returning: Vault.all())
-                }
-            }
         }
         func count(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? "1 \(one)" : "\(n) \(many)" }
         var parts: [String] = []
@@ -1783,19 +1528,13 @@ final class Browser: NSObject, ObservableObject {
             parts.append(already == 0 ? count(added, "bookmark", "bookmarks") : "\(count(added, "new bookmark", "new bookmarks")), \(already) already here")
         }
         if places > 0 { parts.append(count(places, "place", "places")) }
-        if kept > 0 || skipped > 0 {
-            parts.append(skipped == 0 ? count(kept, "password", "passwords") : "\(count(kept, "password", "passwords")), \(skipped) skipped")
-        }
         var said = parts.joined(separator: " · ")
         if control.isCancelled {
             said = said.isEmpty ? (mergedBookmarks ? "Import cancelled after merging bookmarks" : "Import cancelled; nothing was changed") : "Import cancelled after " + said
         }
         else if failed { said = said.isEmpty ? "That file couldn't be read" : "Import stopped after " + said }
         else if said.isEmpty { said = mergedBookmarks ? "Bookmark folders imported" : "Nothing to bring in from that file" }
-        if safari, kept > 0 {
-            said += " — the exported file holds your passwords in the clear: delete it now"
-        }
-        return FileTake(said: said, bookmarks: added, already: already, places: places, kept: kept, skipped: skipped, cancelled: control.isCancelled)
+        return FileTake(said: said, bookmarks: added, already: already, places: places, cancelled: control.isCancelled)
     }
 
     // MARK: - what is kept, and getting rid of it
@@ -7357,33 +7096,6 @@ final class Browser: NSObject, ObservableObject {
             self?.hang(from: tab, spot, passwords: passwords, name: name, wide: wide, code: code, fill: fill)
         }
 
-        tab.onCredentials = { [weak self] tab, host, user, password, clear in
-            // an extension's own page isn't a site: Bitwarden's unlock pin was offered as its password.
-            // Nor a sign-in a coding agent sent: it is not yours to keep.
-            guard let self, prefs.savesPasswords, !password.isEmpty, !tab.shy, !tab.agent,
-                  !Vault.isNever(host), tab.address.flatMap(Browser.extensionHost(of:)) == nil
-            else { return }
-            // A password manager extension that asked Chrome's way to do the
-            // saving itself.
-            if #available(macOS 15.4, *), Extensions.shared.passwordSavingTakenBy != nil { return }
-            // Just filled from the Passwords app: it is kept there already.
-            if tab.appleFill?.matches(host: host, user: user, password: password) == true { return }
-            let known = Vault.kept(for: host)
-            // Nothing to ask about one that is already known. Only that
-            // account's secret is read, not every one kept for the site.
-            if var same = known.first(where: { $0.user == user }).flatMap(Vault.login), same.password == password {
-                // Where it was last used is where it is offered from now on.
-                same.clear = clear
-                Vault.touch(same)
-                return
-            }
-            let offer = Offer(
-                login: Login(host: host, user: user, password: password, used: nil, clear: clear),
-                changed: known.contains { $0.user == user }
-            )
-            guard offering != offer else { return }
-            offering = offer
-        }
         tab.onPickTrouble = { [weak self] _, reason in
             self?.announce("Couldn't hide that — \(reason)")
         }
@@ -8314,14 +8026,6 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             return
         }
 
-        // A sign-in sent by the page's own script, which the page's side of
-        // Forms.swift never hears about: no submit event, no button. The
-        // policy question still comes, while the boxes are still filled.
-        if action.navigationType == .formSubmitted, action.sourceFrame.isMainFrame,
-           action.targetFrame?.isMainFrame == true {
-            tab(for: webView)?.formSent()
-        }
-
         // An extension's OAuth sign-in coming back: the address is the
         // answer, handed to the extension, and never loaded.
         if ExtensionAuth.intercept(url, browser: self, from: webView)
@@ -8538,7 +8242,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         let top = webView.url?.host()?.lowercased() ?? ""
         let asker = source?.securityOrigin.host.lowercased() ?? ""
         let ownSite = source?.isMainFrame == true
-            || (!top.isEmpty && !asker.isEmpty && Vault.registrable(asker) == Vault.registrable(top))
+            || (!top.isEmpty && !asker.isEmpty && Registrable.of(asker) == Registrable.of(top))
         // No target frame is a new window asked for: the frame asking is
         // judged, as for any other frame.
         guard action.targetFrame?.isMainFrame ?? false || clicked || ownSite else {
@@ -9433,8 +9137,6 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             look(forward: true)
         }
         tellStore(tab)
-        // A page that arrived after a password went out: did the sign-in take?
-        tab.settleSignIn()
         // A page in a language you always translate, or one that slept
         // translated (Translate.swift). Nothing at all while it's off.
         tab.translateIfWanted()
@@ -9824,7 +9526,6 @@ extension Browser {
         if page.kind == .settings, let detail = page.detail, let section = SettingsPanel.Page.named( detail) {
             settingsPage = section
         }
-        if page.kind == .passwords { relist() }
         if page.kind == .history, pageTab(.history) == nil { recallMode = .history }
         let tab: Tab
         if let open = pageTab(page.kind) {
@@ -9867,8 +9568,6 @@ extension Browser {
         if page.kind == .settings, let detail = page.detail, let section = SettingsPanel.Page.named( detail) {
             settingsPage = section
         }
-        // As show(_:) does: the list read before the page is drawn.
-        if page.kind == .passwords { relist() }
         here.show(page)
         writeSessionSoon()
     }

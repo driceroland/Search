@@ -1285,12 +1285,6 @@ final class Extensions: NSObject, ObservableObject {
         else { Store.settings.set(values, forKey: "extensions.settings.\(id)") }
     }
 
-    /// The extension, on and running, that asked the browser not to offer to
-    /// save passwords — a password manager doing the saving itself.
-    var passwordSavingTakenBy: String? {
-        installed.first { $0.enabled && Extensions.settings(for: $0.id)["privacy.services.passwordSavingEnabled"] as? Bool == false }?.name
-    }
-
     func setEnabled(_ id: String, _ on: Bool) {
         guard let index = installed.firstIndex(where: { $0.id == id }) else { return }
         installed[index].enabled = on

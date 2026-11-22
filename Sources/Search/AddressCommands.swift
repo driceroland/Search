@@ -22,7 +22,6 @@ enum AddressCommand: Equatable {
     case bookmarks
     case history
     case downloads
-    case passwords
     case toggleSidebar
     /// A menu command, by its id in Command.all.
     case menu(String)
@@ -31,7 +30,7 @@ enum AddressCommand: Equatable {
 
     /// The words, which run on Return when typed whole.
     static let allCases: [AddressCommand] = [
-        .settings, .newTab, .newPrivateTab, .newSpace, .bookmarks, .history, .downloads, .passwords, .toggleSidebar,
+        .settings, .newTab, .newPrivateTab, .newSpace, .bookmarks, .history, .downloads, .toggleSidebar,
     ]
 
     /// What you'd type to reach it. The first is what the list shows.
@@ -44,7 +43,6 @@ enum AddressCommand: Equatable {
         case .bookmarks: return ["bookmarks"]
         case .history: return ["history"]
         case .downloads: return ["downloads"]
-        case .passwords: return ["passwords"]
         case .toggleSidebar: return ["toggle sidebar", "sidebar"]
         case .menu(let id): return [Command.named(id)?.title ?? id]
         case .page(let page): return ["\(page.title) Settings"]
@@ -67,7 +65,6 @@ enum AddressCommand: Equatable {
         case .bookmarks: return "bookmarks.show"
         case .history: return "history.show"
         case .downloads: return "history.downloads"
-        case .passwords: return "app.passwords"
         case .toggleSidebar: return "view.sidebar"
         case .menu(let id): return id
         case .newSpace, .page: return nil
@@ -96,7 +93,6 @@ enum AddressCommand: Equatable {
         case .bookmarks: browser.bookmarking = true
         case .history: browser.recalling = true
         case .downloads: browser.showDownloads()
-        case .passwords: browser.managing = true
         case .toggleSidebar: browser.toggleSidebar()
         case .menu(let id): Command.named(id)?.run(browser)
         case .page(let page):

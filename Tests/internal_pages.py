@@ -58,7 +58,7 @@ def case_open_focus(t):
     press(J, "j", "cmd", "shift")
     d = of("downloads")
     t.ok("⇧⌘J opens Downloads in a tab", len(d) == 1 and active() == d[0]["id"])
-    for k in ["bookmarks", "passwords"]:
+    for k in ["bookmarks"]:
         sv.cmd({"do": "ui", k: True}); time.sleep(0.5)
         t.ok(f"{k} opens in a tab of its own", len(of(k)) == 1 and active() == of(k)[0]["id"], [x["internal"] for x in tabs()])
     sv.cmd({"do": "ui", "import": "on"}); time.sleep(0.5)
@@ -103,17 +103,17 @@ def case_back_forward(t):
     sv.cmd({"do": "ui", "show": "search://downloads"}); time.sleep(0.5)
     d = of("downloads")[0]["id"]
     t.ok("a third kind: a tab of its own", d != h)
-    # In-page links: Settings › Passwords… goes in the same tab (lead).
+    # In-page links: a link out of Settings goes in the same tab (lead).
     sv.cmd({"do": "ui", "settings": True}); time.sleep(0.5)
     s = of("settings")[0]["id"]
-    sv.cmd({"do": "ui", "lead": "passwords"}); time.sleep(0.5)
-    t.ok("Settings › Passwords…: the same tab goes to Passwords", one(s)["internal"] == "search://passwords" and not of("settings"), one(s))
+    sv.cmd({"do": "ui", "lead": "archive"}); time.sleep(0.5)
+    t.ok("a link from Settings: the same tab goes to Archived Tabs", one(s)["internal"] == "search://archive" and not of("settings"), one(s))
     t.ok("…and can go back", one(s)["canBack"])
     press(LBRACKET, "[", "cmd")
     t.ok("⌘[ comes back to Settings", one(s)["internal"].startswith("search://settings"), one(s))
     t.ok("…and can go forward", one(s)["canForward"])
     press(RBRACKET, "]", "cmd")
-    t.ok("⌘] goes to Passwords again", one(s)["internal"] == "search://passwords")
+    t.ok("⌘] goes to Archived Tabs again", one(s)["internal"] == "search://archive")
     press(LBRACKET, "[", "cmd")
     # Onto the web from Settings, as a typed address does, then Back.
     sv.cmd({"do": "ui", "go": f"{sv.BASE}/web"}); time.sleep(1.2)

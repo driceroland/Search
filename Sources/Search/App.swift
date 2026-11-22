@@ -441,8 +441,6 @@ struct SearchApp: App {
                     .shortcut("app.settings")
                 Button("Welcome…") { browser.welcoming = true }
                     .shortcut("app.welcome")
-                Button("Passwords…") { browser.managing = true }
-                    .shortcut("app.passwords")
             }
             QuitAndHelp()
         }
@@ -849,10 +847,6 @@ struct ContentView: View {
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if let offer = browser.offering {
-                PasswordOffer(browser: browser, offer: offer)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
             StoreOffer(browser: browser)
             if browser.veiling {
                 hint("Click anything to hide it   ↑↓ wider, narrower   ⌘Z undo   esc done")
@@ -862,7 +856,6 @@ struct ContentView: View {
         .padding(.bottom, 30)
         .animation(Motion.settle, value: browser.veiling)
         .animation(Motion.settle, value: browser.asking)
-        .animation(Motion.settle, value: browser.offering)
     }
 
     /// The address field: raised over a page by ⌘L or ⌘K, and standing on its
@@ -1611,7 +1604,7 @@ struct ContentView: View {
             !browser.reviewing && browser.styling == nil && !browser.bookmarksOpen &&
             !browser.veiling && !browser.summoning && !browser.makingSpace &&
             !browser.peekInFront && browser.editingTab == nil &&
-            browser.asking == nil && browser.offering == nil && browser.suggesting == nil
+            browser.asking == nil && browser.suggesting == nil
     }
 
     /// The keys of the top row, by where they sit rather than what they type.

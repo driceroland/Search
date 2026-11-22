@@ -33,13 +33,13 @@ final class ApplePasswordsOfferTests: XCTestCase {
     private let person = ApplePasswordsOffer.Settings()
 
     private func field(_ url: URL? = nil, privateTab: Bool = false, frame: String? = nil,
-                       passwords: Bool = true, kept: Int = 0) -> ApplePasswordsOffer.Field {
-        .init(page: url ?? page, privateTab: privateTab, frameHost: frame, passwords: passwords, kept: kept)
+                       passwords: Bool = true) -> ApplePasswordsOffer.Field {
+        .init(page: url ?? page, privateTab: privateTab, frameHost: frame, passwords: passwords)
     }
 
     // MARK: - where
 
-    func testOfferedOnAnHttpsPageWithNothingKept() {
+    func testOfferedOnAnHttpsPage() {
         let offer = ApplePasswordsOffer(store: store)
         XCTAssertEqual(offer.site(for: field(), person), "example.com")
         // A frame of the page's own site is the page's.
@@ -48,7 +48,6 @@ final class ApplePasswordsOfferTests: XCTestCase {
 
     func testNeverWhereItMustNotBe() {
         let offer = ApplePasswordsOffer(store: store)
-        XCTAssertNil(offer.site(for: field(kept: 1), person), "an account of Search's own for the site")
         XCTAssertNil(offer.site(for: field(privateTab: true), person), "a private tab")
         XCTAssertNil(offer.site(for: field(URL(string: "http://accounts.example.com/login")), person), "http")
         XCTAssertNil(offer.site(for: field(frame: "auth.other.test"), person), "a frame of another site")
@@ -58,9 +57,6 @@ final class ApplePasswordsOfferTests: XCTestCase {
         var settings = person
         settings.appleOn = true
         XCTAssertNil(offer.site(for: field(), settings), "already on")
-        settings = person
-        settings.fills = false
-        XCTAssertNil(offer.site(for: field(), settings), "filling turned off")
         settings = person
         settings.helper = false
         XCTAssertNil(offer.site(for: field(), settings), "no helper on this Mac (or macOS before 15.4)")

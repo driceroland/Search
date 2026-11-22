@@ -1,9 +1,10 @@
 import WebKit
 
 // What the page says about itself that a browser has to know: where the
-// keyboard is, whether it is about to take the screen, and whether there is a
-// sign-in on it — and when one has just been sent, so the password can be
-// offered a place in the keychain.
+// keyboard is, whether it is about to take the screen, and which sign-in or
+// detail box the caret is in, so passkeys, Apple Passwords' accounts or your
+// card can hang from it. Search keeps no passwords of its own: nothing here
+// reads what is typed into a password box to remember it.
 //
 // Filling goes through the field's own setter and fires the events a keystroke
 // would. Assigning to .value behind a framework's back leaves it thinking the
@@ -32,17 +33,6 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         else { return }
         MainActor.assumeIsolated {
             switch kind {
-            case "form":
-                tab?.foundSignIn()
-            case "submit":
-                tab?.sentSignIn(
-                    user: body["user"] as? String ?? "",
-                    password: body["password"] as? String ?? ""
-                )
-            case "name":
-                tab?.gaveName(body["user"] as? String ?? "")
-            case "settled":
-                tab?.settleSignIn(navigated: false)
             case "focus":
                 // Set only when it changes: every assignment to a published
                 // value redraws whatever watches the tab, same value or not.
@@ -760,9 +750,6 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         },
         // Whether a box is offered codes, for the tests.
         coded: function (el) { return codeBox(el || document.activeElement); },
-        // Whether there is still a sign-in on the page. Asked after a
-        // password went out, to tell a sign-in that took from one refused.
-        hasPassword: function () { return !!pair(); },
         // Your card's details, picked from under a box for one: how many
         // boxes took one.
         contact: function (card, alone, box, tint) { return fillContact(card || {}, !!alone, box, tint); },
@@ -772,95 +759,9 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         // What a box would be offered, for the tests: null, or whether a
         // pick puts in the name alone and whether the site's other hosts'
         // accounts come too.
-        verdict: function (el) { return judge(el || document.activeElement); },
-        // A form the browser has just seen go out. Sent from the page's
-        // script — form.submit() fires no submit event, and the link or
-        // timer that called it is no button — nothing below heard it.
-        // Unless something did a moment ago: a page that swaps the
-        // password for a hash of it before sending would have the hash
-        // saved instead.
-        sent: function () { if (Date.now() - offered > 2000) offer(); }
+        verdict: function (el) { return judge(el || document.activeElement); }
       };
 
-      // What is in the boxes when they are sent. Said every time — a click
-      // on "show password" says it too — because the browser only listens
-      // once the page has moved on, and keeps the last thing it heard.
-      //
-      // A first step says the name it is sending: the page after it asks
-      // for the password alone, and the name is what the browser saves it
-      // under.
-      var offered = 0;
-      function offer() {
-        var both = pair();
-        if (!both) {
-          var box = named();
-          var name = box ? box.value.trim() : '';
-          if (name) {
-            offered = Date.now();
-            window.webkit.messageHandlers.officeForms.postMessage({ kind: 'name', user: name });
-          }
-          return;
-        }
-        if (!both.pass.value) return;
-        offered = Date.now();
-        window.webkit.messageHandlers.officeForms.postMessage({
-          kind: 'submit',
-          user: both.user ? both.user.value : '',
-          password: both.pass.value
-        });
-      }
-
-      document.addEventListener('submit', offer, true);
-      document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Enter') return;
-        var both = pair();
-        if (both && (document.activeElement === both.pass || document.activeElement === both.user)) offer();
-        else if (!both && nameBox(document.activeElement)) offer();
-      }, true);
-      // Plenty of sign-in buttons aren't in a form and never fire submit.
-      document.addEventListener('click', function (e) {
-        var el = e.target;
-        if (!el || !el.closest) return;
-        if (el.closest('button, input[type="submit"], [role="button"]')) {
-          setTimeout(offer, 0);
-        }
-      }, true);
-
-      var told = false;
-      function tell() {
-        if (told || !pair()) return;
-        told = true;
-        window.webkit.messageHandlers.officeForms.postMessage({ kind: 'form' });
-      }
-      if (document.readyState === 'complete') { tell(); }
-      else { window.addEventListener('load', tell); }
-      // A form the page builds for itself, a moment after it loads — or the
-      // password step of a sign-in that asks for the name first.
-      setTimeout(tell, 700);
-      setTimeout(tell, 2200);
-      // The boxes going away without a new page — a sign-in done in place —
-      // is the other way a sign-in shows it took.
-      //
-      // Looked at a quarter of a second after the page changes, not at every
-      // change: a chat writing out its answer changes the page on every word,
-      // and looking for the boxes each time — through the whole page — made
-      // a long conversation slower with every word it wrote (3,000 words:
-      // 0.3 s without this, up to 3.7 s with it, and climbing).
-      var settling = null, looking = null;
-      function look() {
-        looking = null;
-        if (!told) { tell(); return; }
-        if (pair()) return;
-        told = false;
-        clearTimeout(settling);
-        settling = setTimeout(function () {
-          if (pair()) return;
-          window.webkit.messageHandlers.officeForms.postMessage({ kind: 'settled' });
-        }, 400);
-      }
-      new MutationObserver(function () {
-        if (!looking) looking = setTimeout(look, 250);
-      }).observe(document.documentElement, { childList: true, subtree: true });
 
       // Whether the caret is somewhere on the page that takes typing.
       //

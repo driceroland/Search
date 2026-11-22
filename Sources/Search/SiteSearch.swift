@@ -263,7 +263,7 @@ enum SiteSearch {
     static func learn(from page: URL, description: URL) {
         guard page.scheme == "https", description.scheme == "https",
               let host = siteHost(page.absoluteString), sameSite(description.absoluteString, host),
-              !builtIn.contains(where: { Vault.registrable(bare($0.host)) == Vault.registrable(host) }),
+              !builtIn.contains(where: { Registrable.of(bare($0.host)) == Registrable.of(host) }),
               !learned.contains(where: { $0.host == host }) else { return }
         var request = URLRequest(url: description, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
         request.httpShouldHandleCookies = false
@@ -322,7 +322,7 @@ enum SiteSearch {
     static func sameSite(_ address: String, _ host: String) -> Bool {
         guard let other = siteHost(address) else { return false }
         let mine = bare(host)
-        return other == mine || Vault.registrable(other) == Vault.registrable(mine)
+        return other == mine || Registrable.of(other) == Registrable.of(mine)
     }
 }
 

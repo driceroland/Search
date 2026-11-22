@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-// Search's own pages — Settings, History, Downloads, Bookmarks, Passwords,
+// Search's own pages — Settings, History, Downloads, Bookmarks,
 // Bring Things Over and the release notes — each in a tab of its own, as
 // chrome://settings is in Chrome, rather than a card over the page. A tab
 // is something you can leave open beside your work, come back to with ⌃Tab,
@@ -15,7 +15,7 @@ import SwiftUI
 /// Which of Search's own pages, and where inside it.
 struct InternalPage: Equatable {
     enum Kind: String, CaseIterable {
-        case settings, history, downloads, bookmarks, passwords, archive
+        case settings, history, downloads, bookmarks, archive
         case importing = "import"
         case notes = "release-notes"
     }
@@ -33,9 +33,12 @@ struct InternalPage: Equatable {
 
     /// search://settings, search://settings/privacy, search://import/Arc.
     init?(url: URL) {
-        guard url.scheme?.lowercased() == InternalPage.scheme,
-              let host = url.host()?.lowercased(), let kind = Kind(rawValue: host)
-        else { return nil }
+        guard url.scheme?.lowercased() == InternalPage.scheme, let host = url.host()?.lowercased() else { return nil }
+        // Search kept a list of passwords here once: a tab left open on it,
+        // from an earlier session, comes back as the Settings page that took
+        // its place (passkeys and Apple Passwords).
+        if host == "passwords" { self.init(.settings, "passwords"); return }
+        guard let kind = Kind(rawValue: host) else { return nil }
         let rest = url.path(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.init(kind, rest)
     }
@@ -54,7 +57,6 @@ struct InternalPage: Equatable {
         case .history: return "History"
         case .downloads: return "Downloads"
         case .bookmarks: return "Bookmarks"
-        case .passwords: return "Passwords"
         case .archive: return "Archived Tabs"
         case .importing: return "Bring Things Over"
         case .notes: return "What's New"
@@ -67,7 +69,6 @@ struct InternalPage: Equatable {
         case .history: return "clock"
         case .downloads: return "arrow.down.circle"
         case .bookmarks: return "book"
-        case .passwords: return "key"
         case .archive: return "archivebox"
         case .importing: return "square.and.arrow.down"
         case .notes: return "sparkles"
@@ -161,16 +162,6 @@ struct InternalPageView: View {
             DownloadsPanel(browser: browser, loot: browser.loot)
         case .bookmarks:
             BookmarksPanel(browser: browser, bookmarks: browser.bookmarks)
-        case .passwords:
-            // The list is read each time the page is drawn, whichever way it
-            // came: brought back from the last session, Settings › Passwords ›
-            // Open… turning the Settings tab into it, Back or Forward. Here,
-            // under `.id(page.kind)`, and not on the view around it, which a
-            // tab going from one of these pages to another keeps: there it
-            // ran once, and the page reached from Settings said "Nothing kept
-            // yet" while the sign-in box offered the accounts.
-            PasswordsPanel(browser: browser)
-                .onAppear { browser.relist() }
         case .archive:
             ArchivePanel(browser: browser, archive: browser.archive)
         case .importing:

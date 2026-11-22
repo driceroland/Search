@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Removed
+
+- Search's own password manager: it no longer saves, keeps or fills passwords, and its Passwords list, "Save this password?" bar, ⌥⌘L and the password import from other browsers are gone. Use a password manager's extension; passkeys and Apple Passwords stay. Passwords already kept in the keychain under "Search" are left where they are, for Keychain Access to show or delete. Pages with a sign-in also stop running the script that watched the page for a password to keep.
+
 ### Added
 
 - News by email and the Search for iPhone beta, offered at the foot of the What's New card after an update, as the welcome's last page and in Settings › About › News by email: an email field and a button, with a box for the iPhone beta. Nothing is sent until you press; then one POST to searchbrowser.app carries only the address, where you pressed and which Mac download you have. Search remembers only that you joined, never the address, and stops offering it on later cards once you have. `swift test --filter OptInTests`.

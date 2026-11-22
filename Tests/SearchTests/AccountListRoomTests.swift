@@ -18,9 +18,10 @@ final class AccountListRoomTests: XCTestCase {
     private let page = CGSize(width: 800, height: 600)
 
     private func list(_ count: Int, at y: CGFloat) -> Browser.Suggesting {
-        let logins = (0..<count).map { Kept(host: "example.com", user: "user\($0)@example.com") }
         var list = Browser.Suggesting(tab: UUID(), spot: CGRect(x: 40, y: y, width: 280, height: 30),
-                                      logins: logins, host: "example.com", clear: false)
+                                      host: "example.com", clear: false)
+        list.apple = (0..<count).map { AppleLogin(user: "user\($0)@example.com", sites: ["example.com"]) }
+        list.appleHost = "example.com"
         list.shown = Date().addingTimeInterval(-1)
         return list
     }

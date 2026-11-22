@@ -1,21 +1,19 @@
 import XCTest
 @testable import Search
 
-/// The pure parts of the password vault and the updater: which host a login
-/// belongs to, how an export is read, and that an unsigned feed is refused.
-/// Nothing here touches the keychain: every CSV row below is one that is
-/// skipped, so nothing is ever saved.
-final class VaultAndUpdaterTests: XCTestCase {
+/// The pure parts of the site helpers and the updater: which host an address
+/// names, which site a host belongs to, and that an unsigned feed is refused.
+final class SiteAndUpdaterTests: XCTestCase {
     func testHostIsTheSiteWithoutWWW() {
-        XCTAssertEqual(Vault.host(of: "https://www.example.com/login?next=/"), "example.com")
-        XCTAssertEqual(Vault.host(of: "  Example.COM  "), "example.com")
-        XCTAssertEqual(Vault.host(of: "http://accounts.example.com"), "accounts.example.com")
+        XCTAssertEqual(Registrable.host(of: "https://www.example.com/login?next=/"), "example.com")
+        XCTAssertEqual(Registrable.host(of: "  Example.COM  "), "example.com")
+        XCTAssertEqual(Registrable.host(of: "http://accounts.example.com"), "accounts.example.com")
     }
 
     func testHostIsEmptyForAnythingButAWebsite() {
-        XCTAssertEqual(Vault.host(of: "android://hash@com.vendor.app/"), "")
-        XCTAssertEqual(Vault.host(of: "ftp://example.com"), "")
-        XCTAssertEqual(Vault.host(of: ""), "")
+        XCTAssertEqual(Registrable.host(of: "android://hash@com.vendor.app/"), "")
+        XCTAssertEqual(Registrable.host(of: "ftp://example.com"), "")
+        XCTAssertEqual(Registrable.host(of: ""), "")
     }
 
     private let suffixes: Set<String> = ["com", "uk", "co.uk", "github.io"]
@@ -43,45 +41,6 @@ final class VaultAndUpdaterTests: XCTestCase {
 
     func testRegistrableDomainWithoutASuffixListIsTheHost() {
         XCTAssertEqual(Registrable.domain(of: "accounts.example.com", isSuffix: nil), "accounts.example.com")
-    }
-
-    func testExportWithoutAPasswordColumnIsSkippedWhole() {
-        let result = Vault.take(csv: "url,username\nhttps://example.com,me\nhttps://example.org,you\n")
-        XCTAssertEqual(result.kept, 0)
-        XCTAssertEqual(result.skipped, 2)
-    }
-
-    func testEmptyExportKeepsAndSkipsNothing() {
-        let result = Vault.take(csv: "")
-        XCTAssertEqual(result.kept, 0)
-        XCTAssertEqual(result.skipped, 0)
-    }
-
-    func testRowsThatCannotBeKeptAreCountedAsSkipped() {
-        let csv = """
-        name,url,username,password,note
-        no password,https://example.com,me,,
-        no site,,me,secret,
-        an app,android://hash@com.vendor.app/,me,secret,
-        too short,https://example.com
-        """
-        let result = Vault.take(csv: csv)
-        XCTAssertEqual(result.kept, 0)
-        XCTAssertEqual(result.skipped, 4)
-    }
-
-    func testQuotedFieldsWithNewlinesAndQuotesStayOneRow() {
-        // If the newline inside the quotes split the row, this would count
-        // two skipped, not one.
-        let csv = "url,username,password\nandroid://hash@com.vendor.app/,\"a \"\"quoted\"\"\nname\",secret\n"
-        let result = Vault.take(csv: csv)
-        XCTAssertEqual(result.kept, 0)
-        XCTAssertEqual(result.skipped, 1)
-    }
-
-    func testWindowsLineEndingsAndBlankLinesDoNotAddRows() {
-        let csv = "url,username,password\r\nandroid://x@com.app/,me,secret\r\n\r\n"
-        XCTAssertEqual(Vault.take(csv: csv).skipped, 1)
     }
 
     private func release(minimum: String?) -> Updater.Release {

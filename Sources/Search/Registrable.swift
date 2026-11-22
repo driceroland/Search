@@ -22,4 +22,22 @@ enum Registrable {
         let left = domain(of: a, isSuffix: isSuffix)
         return left.contains(".") && left == domain(of: b, isSuffix: isSuffix)
     }
+
+    /// example.com for www.example.com and accounts.example.com; bbc.co.uk
+    /// stays bbc.co.uk.
+    static func of(_ host: String) -> String {
+        domain(of: host, isSuffix: Passkeys.publicSuffix.map { test in { test($0 as CFString) } })
+    }
+
+    /// The host of an address typed or exported as text, without "www.":
+    /// a website's, and nothing else. Empty for anything that is not an
+    /// http or https address (an Android app's name in an export, say).
+    static func host(of text: String) -> String {
+        var value = text.trimmingCharacters(in: .whitespaces)
+        if !value.contains("://") { value = "https://" + value }
+        guard let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              let host = url.host()?.lowercased()
+        else { return "" }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
 }

@@ -28,7 +28,7 @@ It was built by a design studio that spends its whole day in a browser and was t
 - **Hide anything, for good.** `⇧⌘H`, then click a cookie banner, a newsletter overlay, a rail of "related" nonsense — it goes, and it is still gone on that site next time, before the page has drawn a single frame.
 - **An ad blocker that runs before the page.** Third-party trackers and ad networks are stopped at the network level, so there is nothing to render and nothing to slow down. On by default, off per site if something breaks.
 - **Video that follows you.** `⇧⌘P` lifts the video out of the page into a small window that stays above everything, including other apps.
-- **Passwords, in your keychain.** Search offers to save a sign-in once it has actually worked, and offers your saved accounts, and the Mac's passkeys for the site, under the field when you click it — the way Safari does, never filling anything on its own. Everything lives in the macOS keychain, encrypted by the system, readable only by Search. Bring yours in from Chrome, Arc, Dia, Brave or Edge in one click; nothing leaves the Mac. Keep them in Apple's Passwords app instead? Turn it on in Settings › Passwords and its accounts and verification codes come up under their box too.
+- **No passwords of its own.** Search doesn't save, keep or fill passwords: use a password manager's extension (Proton Pass, 1Password, Bitwarden). Under a sign-in box it still offers the Mac's passkeys for the site, the way Safari does, and — if you turn it on in Settings › Passwords — the accounts and verification codes of Apple's Passwords app. Nothing is ever filled on its own.
 - **Light, dark, or the Mac's own.** The frame and the pages follow.
 - **A wall behind the blank tab, if you like.** Settings › Themes paints it with a scenic mural, a pack of stickers, a colour, a gradient or a picture of your own, in light and dark, drawn once and kept so it costs nothing while you browse. Off until you choose one.
 - **Bookmarks, history, downloads** — each a panel, each searchable, each one keystroke away.
@@ -39,8 +39,8 @@ It was built by a design studio that spends its whole day in a browser and was t
 
 On purpose:
 
-- No extension you have to install to feel at home. Blocking ads, hiding clutter, reading mode, picture-in-picture and passwords are built in; extensions are there for everything else.
-- No sync, no account, no cloud. Your tabs, history and passwords are on your Mac and nowhere else.
+- No extension you have to install to feel at home. Blocking ads, hiding clutter, reading mode and picture-in-picture are built in; extensions are there for everything else, password managers included.
+- No sync, no account, no cloud. Your tabs and history are on your Mac and nowhere else.
 - No telemetry, no analytics, no crash reports sent anywhere. The only things that leave your Mac are the pages you ask for, their icons, and one small request a day to see whether there is a newer version.
 - One window. Tabs are the only kind of "new" there is.
 
@@ -48,7 +48,6 @@ On purpose:
 
 | What | Where it is | Who can read it |
 |---|---|---|
-| Passwords | The macOS login keychain, as ordinary keychain items tagged `Search` | Search, signed by Office Commun. Any other app triggers the system's permission dialog. |
 | History, bookmarks, open tabs, hidden elements | Small JSON files in `~/Library/Application Support/Search/` | You. |
 | Cookies and site data | WebKit's own store for the app | The sites that set them, as in any browser. |
 | Extensions | Unpacked in `~/Library/Application Support/Search/Extensions/`, their data in WebKit's extension store | Each extension, within the permissions you accepted when adding it. |
@@ -65,7 +64,7 @@ Apps you allow in System Settings › Privacy & Security › Automation can read
 |---|---|
 | `⌘L` address · `⌘K` switch tab · `⌘T` new tab · `⌘W` close · `⇧⌘T` reopen | `⌘[` `⌘]` back, forward · `⇧⌘[` `⇧⌘]` previous, next tab · `⌘1`–`⌘9` jump |
 | `⇧⌘S` tabs down the left or across the top · `⌘S` fold the sidebar away · `⇧⌘B` bookmark this page | `⇧⌘R` reading mode · `⇧⌘P` float the video · `⇧⌘H` hide something · `⇧⌘U` what is hidden here |
-| `⌘F` find · `⌘D` duplicate tab · `⇧⌘C` copy address · `⇧⌘V` paste and go | `⌘Y` history · `⇧⌘J` downloads · `⌘,` settings · `⌥⌘L` passwords |
+| `⌘F` find · `⌘D` duplicate tab · `⇧⌘C` copy address · `⇧⌘V` paste and go | `⌘Y` history · `⇧⌘J` downloads · `⌘,` settings |
 
 Space keys (Control+1–9 by default) and the modifier used to peek at a link can be changed in Settings › Shortcuts while those features are enabled.
 
@@ -101,7 +100,7 @@ A build you make yourself won't be notarized or carry Office Commun's Developer 
 - Hidden elements are a per-site list of selectors injected as a stylesheet at document start, so nothing is ever seen appearing and vanishing.
 - Every colour is a light/dark pair in `Design.swift`, resolved by the window's appearance; nothing else in the code knows which mode it is in.
 - Extensions run on `WKWebExtension` (macOS 15.4+). `Crx.swift` fetches an extension from the Chrome Web Store's public update address and checks the CRX3 signature against the extension's id before anything is unpacked. `Extensions.swift` is the browser's side of WebKit's contract — tabs, the window, permissions, popups. `ExtensionShims.swift` adds, at install, a small script to the extension's worker, pages and content scripts: it defines the Chrome APIs WebKit lacks — `userScripts`, `privacy`, `browsingData`, `sessions`, the old FileSystem API and more — as calls answered natively by Search, and mends the places where WebKit behaves differently from Chrome: replies from pages that don't answer, listeners added after a worker starts, workers WebKit loses track of, members and constants it leaves out. Extension pages are served from `chrome-extension://<id>/`, the address they have in Chrome, so servers and sites recognise them. `./bench ext-*` drives all of it from the shell against a test run. `ExtensionNative.swift` speaks Chrome's native messaging to hosts registered in Chrome's `NativeMessagingHosts` folders.
-- `Sources/Search/` is one file per concern: `Vault.swift` is the keychain, `Shield.swift` the ad blocker, `Curtain.swift` the hidden elements, `Session.swift` what comes back at launch, `Updater.swift` the update, `Bench.swift` the test socket, and so on. There's no framework of its own to learn first.
+- `Sources/Search/` is one file per concern: `Shield.swift` the ad blocker, `Curtain.swift` the hidden elements, `Session.swift` what comes back at launch, `Updater.swift` the update, `Bench.swift` the test socket, and so on. There's no framework of its own to learn first.
 
 ### Testing it without closing it
 

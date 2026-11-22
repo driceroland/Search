@@ -94,20 +94,19 @@
                                        test run: the card of a page asking for the camera, microphone or location;
                                        screen/window/noscreen answer a page asking to share your screen
     ./bench accounts [ROW]             test run: the list under the sign-in box the caret is in (passkeys,
-                                       then passwords); ROW: a click on that row, from 0
+                                       Apple Passwords); ROW: a click on that row, from 0
     ./bench pull DX [STEPS] [MS]       test run: two fingers DX points sideways over the page (back is +) — where it went
     ./bench keyeq CHARS CODE [shift]   test run: ⌘CHARS pressed while the page has the keyboard — who took it
     ./bench import BROWSER [WHAT…] [--profile NAME|all] [--replace]
-                                     test run: bookmarks, history, passwords from a made-up profile in the world's Import/
+                                     test run: bookmarks, history from a made-up profile in the world's Import/
                                      (the one used most recently, unless a profile is named, or all)
     ./bench import-preview           test run: each browser found, its profiles, the one used most recently, and what
                                      it holds as the Bring things over sheet counts it — without asking for a key
-    ./bench import-file PATH         test run: a bookmarks .html, a passwords .csv or Safari's export .zip, as File… brings it
+    ./bench import-file PATH         test run: a bookmarks .html or Safari's export .zip, as File… brings it
     ./bench import-file-start PATH   test run: start file import without waiting for completion
     ./bench import-file-status       test run: current filename, stage, counts and cancellation state
     ./bench import-file-cancel       test run: request cancellation of the current file import
     ./bench remove-folder TITLE        test run: the bookmarks list's Remove on a top-level folder, its question left up
-    ./bench passwords [TEXT] [remove]  test run: the passwords list, narrowed to TEXT; remove: its Remove All… / Remove N… (ui confirm on|off answers it, Touch ID included)
     ./bench menu [open]                test run: the Bookmarks menu as it is about to open, and its first
                                        folder (open: its first bookmark picked)
     ./bench marks                      test run: each bookmark on the bar (its size), in the bar's folders'
@@ -147,7 +146,7 @@
                                        off every screen), on a made-up 1440×900 screen, or two side by side:
                                        where a flick, a pull at a side, a dock or a click on the sliver
                                        leaves it, and how far it swings on the way
-    ./bench ui KEY VALUE               settings/passwords/welcome/history/downloads/bookmarks/hidden on|off,
+    ./bench ui KEY VALUE               settings/welcome/history/downloads/bookmarks/hidden on|off,
                                        import on|off|extensions|BROWSER,
                                        look light|dark|system, sidebar on|off, side left|right, spaces on|off, sharedpins on|off, swipepages on|off, confirm on|off, hides on|off,
                                        folded on|off, peek on|off, peeklink keep|close, pages120 never|onPower|always,
@@ -483,7 +482,7 @@ def main(argv):
         request["url"] = args[0]
         request["new"] = len(args) == 2
     elif verb == "import":
-        kinds = ("bookmarks", "history", "passwords", "spaces")
+        kinds = ("bookmarks", "history", "spaces")
         if "--replace" in args:
             request["replace"] = True
             args = [a for a in args if a != "--replace"]
@@ -492,7 +491,7 @@ def main(argv):
             if at + 1 >= len(args): sys.exit("usage: bench import BROWSER [WHAT…] --profile NAME|all")
             request["profile"] = args[at + 1]
             args = args[:at] + args[at + 2:]
-        if not args or any(a not in kinds for a in args[1:]): sys.exit("usage: bench import BROWSER [bookmarks] [history] [passwords] [spaces] [--profile NAME|all]")
+        if not args or any(a not in kinds for a in args[1:]): sys.exit("usage: bench import BROWSER [bookmarks] [history] [spaces] [--profile NAME|all]")
         request["from"] = args[0]
         request["what"] = args[1:]
     elif verb in ("import-file", "import-file-start"):
@@ -501,10 +500,6 @@ def main(argv):
     elif verb == "remove-folder":
         if len(args) != 1: sys.exit("usage: bench remove-folder TITLE")
         request["title"] = args[0]
-    elif verb == "passwords":
-        for a in args:
-            if a == "remove": request["remove"] = True
-            else: request["filter"] = a
     elif verb in ("import-file-status", "import-file-cancel"):
         if args: sys.exit(f"usage: bench {verb}")
     elif verb == "menu":

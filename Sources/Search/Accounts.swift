@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The accounts kept for a site, hanging from the sign-in box the caret is
+/// The accounts offered for a site, hanging from the sign-in box the caret is
 /// in. The same white and hairline as everything else that floats over a
 /// page; one line per account, the name in ink and the site under it in
 /// grey; a click puts both into the form. The Mac's passkeys for a page
@@ -105,7 +105,7 @@ struct AccountList: View {
             let choices = asked.choices
             ForEach(Array(choices.enumerated()), id: \.offset) { at, choice in
                 if at == asked.othersFrom {
-                    Text("Other accounts on \(Vault.registrable(asked.host))")
+                    Text("Other accounts on \(Registrable.of(asked.host))")
                         .font(.system(size: 10.5))
                         .foregroundStyle(Palette.faint)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -124,9 +124,6 @@ struct AccountList: View {
         case .passkey(let passkey):
             Row(mark: .symbol("person.badge.key"), name: passkey.name,
                 detail: "Passkey" + (passkey.provider.map { " · \($0)" } ?? ""), lit: lit) { browser.choose(passkey) }
-        case .login(let login):
-            Row(mark: .letter(login.user.first.map { String($0).uppercased() } ?? "•"),
-                name: login.user.isEmpty ? "No name" : login.user, detail: login.host, lit: lit) { browser.choose(login) }
         case .apple(let login):
             // The Mac's Passwords app, when turned on (ApplePasswords.swift):
             // marked as Apple's.
@@ -151,21 +148,20 @@ struct AccountList: View {
 
     /// Nothing but the offer: no footer under it, the row says it all.
     private var offerOnly: Bool {
-        asked.appleOffer != nil && asked.logins.isEmpty && asked.passkeys.isEmpty && asked.apple.isEmpty && asked.codes.isEmpty && !asked.appleConnect
+        asked.appleOffer != nil && asked.passkeys.isEmpty && asked.apple.isEmpty && asked.codes.isEmpty && !asked.appleConnect
             && asked.contacts.isEmpty
     }
 
     /// Nothing but your card's rows.
     private var contactsOnly: Bool {
-        !asked.contacts.isEmpty && asked.logins.isEmpty && asked.passkeys.isEmpty && asked.apple.isEmpty && asked.codes.isEmpty
+        !asked.contacts.isEmpty && asked.passkeys.isEmpty && asked.apple.isEmpty && asked.codes.isEmpty
             && !asked.appleConnect
     }
 
     private var footer: String {
         if contactsOnly { return "From your card in Contacts" }
-        if asked.logins.isEmpty && asked.apple.isEmpty && asked.codes.isEmpty && !asked.appleConnect { return "Passkeys on this Mac" }
-        if asked.logins.isEmpty { return "From Apple Passwords" }
-        return asked.apple.isEmpty ? "From your keychain" : "From your keychain and Apple Passwords"
+        if asked.apple.isEmpty && asked.codes.isEmpty && !asked.appleConnect { return "Passkeys on this Mac" }
+        return "From Apple Passwords"
     }
 
     private enum Mark { case letter(String), symbol(String) }
@@ -288,7 +284,6 @@ extension Browser.Suggesting {
     /// One row of the list, which a click or Return on it picks.
     enum Choice: Equatable {
         case passkey(Passkeys.Offered)
-        case login(Kept)
         case apple(AppleLogin)
         case code(AppleCode)
         /// "Connect Apple Passwords…"
@@ -300,20 +295,18 @@ extension Browser.Suggesting {
 
     /// The rows top to bottom, as drawn and as ↓ walks them.
     var choices: [Choice] {
-        passkeys.map(Choice.passkey) + ownLogins.map(Choice.login) + ownApple.map(Choice.apple)
-            + siteLogins.map(Choice.login) + siteApple.map(Choice.apple) + codes.map(Choice.code)
+        passkeys.map(Choice.passkey) + ownApple.map(Choice.apple)
+            + siteApple.map(Choice.apple) + codes.map(Choice.code)
             + (appleConnect ? [.connect] : []) + (appleOffer != nil ? [.offer] : []) + contacts.map(Choice.contact)
     }
 
     /// Where "Other accounts on …" goes, before the first of the rest of the
     /// site's accounts: only when this host has some of its own above them.
     var othersFrom: Int? {
-        guard !(ownLogins.isEmpty && ownApple.isEmpty), !(siteLogins.isEmpty && siteApple.isEmpty) else { return nil }
-        return passkeys.count + ownLogins.count + ownApple.count
+        guard !ownApple.isEmpty, !siteApple.isEmpty else { return nil }
+        return passkeys.count + ownApple.count
     }
 
-    private var ownLogins: [Kept] { logins.filter { Vault.belongs($0.host, to: host, wide: false) } }
-    private var siteLogins: [Kept] { logins.filter { !Vault.belongs($0.host, to: host, wide: false) } }
     private var ownApple: [AppleLogin] { apple.filter { owns($0) } }
     private var siteApple: [AppleLogin] { apple.filter { !owns($0) } }
 
