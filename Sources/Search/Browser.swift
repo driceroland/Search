@@ -7142,6 +7142,9 @@ final class Browser: NSObject, ObservableObject {
     /// General). Only one lifted this way goes home on its own when Search
     /// comes back.
     private var liftedAway = false
+    /// Watching the window's occlusion while the app is left with the
+    /// window still in view (appLeft).
+    private var awayWatch: NSObjectProtocol?
 
     func appLeft() {
         guard prefs.floatsAway, spaceFloat.pending == nil, Browsers.front == nil || Browsers.front === self else { return }
@@ -7149,12 +7152,41 @@ final class Browser: NSObject, ObservableObject {
         // you work on the one under the pointer: nothing to get out of the
         // way of, and the video stays where you put it.
         if let shown = window?.screen, let here = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }), shown != here { return }
+        // Still in view on this screen too, beside the app you went to: the
+        // video stays in its page until the window is out of sight, covered,
+        // minimised or on another Space, as macOS says by its occlusion
+        // (idea 470). Before, it floated at the first click in another app.
+        if let window, window.occlusionState.contains(.visible) {
+            awayWatch = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.outOfSight() }
+            }
+            return
+        }
+        liftAway()
+    }
+
+    /// The window, left in view when the app was left, has gone out of sight.
+    private func outOfSight() {
+        guard !NSApp.isActive, let window, !window.occlusionState.contains(.visible) else { return }
+        stopAwayWatch()
+        liftAway()
+    }
+
+    private func liftAway() {
         liftedAway = !floater.showing && pictured == nil
         lift(active, quietly: true, otherwise: otherPane)
     }
 
+    private func stopAwayWatch() {
+        if let awayWatch { NotificationCenter.default.removeObserver(awayWatch) }
+        awayWatch = nil
+    }
+
     /// Back, and still on the tab it came from: into the tab again.
     func appBack() {
+        stopAwayWatch()
         defer { liftedAway = false }
         if liftedAway, let id = floating, id == activeID { land() }
         if liftedAway, let id = pictured, id == activeID { unpicture() }
