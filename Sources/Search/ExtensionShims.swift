@@ -51,10 +51,54 @@ enum ExtensionShims {
     nonisolated static let stamp = ".search-shim"
     /// Raised when `prepare` changes what it does to a package, so that
     /// extensions prepared before are prepared again.
-    nonisolated private static let preparation = "6"
+    nonisolated private static let preparation = "7"
     nonisolated static let version: String = {
         SHA256.hash(data: Data((script + PasskeyRelay.page + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
+
+    /// Chrome's least for a Manifest V3 extension's own pages, whatever its
+    /// manifest asks: scripts only from the package, WebAssembly allowed.
+    nonisolated static let minimumPagesPolicy = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+
+    /// A Manifest V3 manifest with its pages' policy held to that minimum,
+    /// as Chrome holds it. WebKit uses the manifest's policy as it is, and
+    /// one that names no script-src restricts no script. A policy already
+    /// within the minimum is left alone; any other gets the minimum beside
+    /// it, as a second policy a page has to satisfy as well, as Chrome adds
+    /// its own.
+    nonisolated static func holdingPagesPolicy(_ manifest: [String: Any]) -> [String: Any] {
+        guard (manifest["manifest_version"] as? Int) == 3 else { return manifest }
+        let held = { (policy: String) -> String in
+            if policy.hasSuffix(", " + minimumPagesPolicy) || withinMinimum(policy) { return policy }
+            let given = policy.trimmingCharacters(in: .whitespacesAndNewlines)
+            return given.isEmpty ? minimumPagesPolicy : given + ", " + minimumPagesPolicy
+        }
+        var manifest = manifest
+        if let policy = manifest["content_security_policy"] as? String {
+            manifest["content_security_policy"] = held(policy)
+        } else if var policies = manifest["content_security_policy"] as? [String: Any],
+                  let policy = policies["extension_pages"] as? String {
+            policies["extension_pages"] = held(policy)
+            manifest["content_security_policy"] = policies
+        }
+        return manifest
+    }
+
+    /// One policy, with a script-src, whose script directives allow only
+    /// what Chrome's minimum does, or a local server, as Chrome lets a
+    /// package in development.
+    nonisolated static func withinMinimum(_ policy: String) -> Bool {
+        guard !policy.contains(",") else { return false }
+        let scripts: Set = ["script-src", "script-src-elem", "script-src-attr", "worker-src", "object-src"]
+        let allowed: Set = ["'self'", "'wasm-unsafe-eval'", "'none'", "'inline-speculation-rules'"]
+        let local = #/https?://(localhost|127\.0\.0\.1)(:(\d+|\*))?/?/#
+        let directives = policy.split(separator: ";").map { $0.split(whereSeparator: \.isWhitespace).map { $0.lowercased() } }
+        guard directives.contains(where: { $0.first == "script-src" }) else { return false }
+        return directives.allSatisfy { words in
+            guard let name = words.first, scripts.contains(name) else { return true }
+            return words.dropFirst().allSatisfy { allowed.contains($0) || $0.wholeMatch(of: local) != nil }
+        }
+    }
 
     /// `fresh`: a package just unpacked or copied in. What only Search writes
     /// beside an extension — which permissions it added, which shim it
@@ -225,6 +269,8 @@ enum ExtensionShims {
                 return entry
             }
         }
+
+        manifest = holdingPagesPolicy(manifest)
 
         let data = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .withoutEscapingSlashes])
         try data.write(to: manifestURL, options: .atomic)
