@@ -19,7 +19,6 @@ struct SettingsPanel: View {
     @Environment(\.asTab) private var asTab
 
     @ObservedObject private var updater = Updater.shared
-    @ObservedObject private var shield = Shield.shared
     @ObservedObject private var sync = Sync.shared
     @ObservedObject private var icloud = ICloudSync.shared
     /// The keys rows name, as Settings › Shortcuts has them now.
@@ -468,7 +467,6 @@ struct SettingsPanel: View {
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail
         case "search.keywords": return keywordDetail
-        case "shield": return shield.trouble ?? item.detail
         case "updates.version": return versionDetail
         case "arc.import": return arcHere ? item.detail : "Arc isn't on this Mac. Bring Things Over can read an export"
         default: return item.detail
@@ -821,7 +819,6 @@ struct SettingsPanel: View {
                     prefs.fillsContacts = true
                 }
             }))
-        case "shield": Switch(on: $prefs.shielded)
         case "sites.keep": Switch(on: Binding(get: { !prefs.keepsSignIns }, set: { prefs.keepsSignIns = !$0 }))
         case "privacy.clickIDs": Switch(on: $prefs.removesClickIDs)
         case "privacy.gpc": Switch(on: $prefs.sendsPrivacySignal)
@@ -862,8 +859,6 @@ struct SettingsPanel: View {
         case "about.notes": Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
         case "bench": Switch(on: $prefs.bench)
         case "agents": Switch(on: $prefs.agents)
-        case "news.updates": OptInSettingsField(betaOnly: false) { _ = browser.open($0, foreground: true) }
-        case "news.iphone": OptInSettingsField(betaOnly: true) { _ = browser.open($0, foreground: true) }
         default: EmptyView()
         }
     }
@@ -885,14 +880,6 @@ struct SettingsPanel: View {
             // What ⌘T opens to, and the way back after an extension took
             // it. Only there while an extension offers a page.
             if !searched { HomePageLine() }
-        case "shield":
-            if let trouble = shield.trouble {
-                Rule()
-                Line(trouble, "Nothing is being blocked until this clears. Try again, or restart Search") {
-                    Pill("Try again") { shield.compile() }
-                }
-                .under()
-            }
         case "privacy.forget":
             if !searched {
                 Group {
@@ -1086,7 +1073,7 @@ struct SettingsPanel: View {
                 Text("Search")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Palette.ink)
-                Text("by Office Commun · version \(Updater.version)")
+                Text("by Paul0k · version \(Updater.version)")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
             }

@@ -7,9 +7,8 @@ privately first.
 ## How to report
 
 Report it on GitHub: the repository's **Security** tab ›
-[**Report a vulnerability**](https://github.com/driceroland/Search/security/advisories/new).
-Only the maintainers see it. Or write to **hello@officecommun.com** with
-"security" in the subject. Either way, say what you found, where in the
+[**Report a vulnerability**](https://github.com/Paul0k/Search/security/advisories/new).
+Only the maintainers see it. Say what you found, where in the
 code, and how to see it happen. A proof of concept
 that stays on your own machine is welcome; please don't try it on other
 people's accounts or data.
@@ -36,4 +35,4 @@ extensions layer and `./bench` are all in scope.
 
 A site that doesn't work, or an extension that behaves differently from
 Chrome, is a bug rather than a security problem: open an
-[issue](https://github.com/driceroland/Search/issues) for those.
+[issue](https://github.com/Paul0k/Search/issues) for those.

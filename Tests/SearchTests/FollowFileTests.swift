@@ -42,12 +42,10 @@ final class FollowFileTests: XCTestCase {
 
     func testAProtectionWrittenFromOutsideWaitsForLaunch() {
         let prefs = Preferences()
-        let keys = ["shield", "tabs.address"]
+        let keys = ["tabs.address"]
         defer { keys.forEach(Store.settings.removeObject) }
-        Store.settings.set(false, forKey: "shield")
         Store.settings.set(false, forKey: "tabs.address")
         prefs.reread()
-        XCTAssertTrue(prefs.shielded)
         XCTAssertTrue(prefs.showsAddress)
     }
 

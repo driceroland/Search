@@ -1007,7 +1007,6 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(dusk, contentWorld: Web.world, name: DuskRelay.name)
         controller.add(translateRelay, contentWorld: Web.world, name: TranslateRelay.name)
         PopupGestureRelay.install(on: controller)
-        Shield.shared.protect(controller)
         built = web
         // Set before loadAndVerify gives this view a page: a tab restored or
         // woken muted must not make its first sound while that page boots.
@@ -1215,10 +1214,6 @@ final class Tab: ObservableObject, Identifiable {
         if let dusk = Dusk.shared.script(for: Dusk.host(of: url ?? pageAddress)) {
             add(dusk, .atDocumentStart, mainFrameOnly: false, in: Web.world)
         }
-        // YouTube's ads, while Shield is on for the site this tab is on
-        // (see YouTubeAds.swift). Every frame; each script does nothing in a
-        // frame that isn't YouTube's.
-        scripts += YouTubeAds.scripts(for: Dusk.host(of: url ?? pageAddress))
         if !css.isEmpty {
             add(Veiling.style(css), .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
@@ -1433,14 +1428,9 @@ final class Tab: ObservableObject, Identifiable {
         cover = nil
         adoptIcon()
         loadGeneration &+= 1
-        // Not before Shield's list is ready, at launch (see Shield.whenReady).
-        let token = loadGeneration
-        Shield.shared.whenReady { [weak self] in
-            guard let self, self.loadGeneration == token else { return }
-            self.web.open(url)
-            // Back, from a page that came out of one of Search's own, goes there.
-            self.steps()
-        }
+        self.web.open(url)
+        // Back, from a page that came out of one of Search's own, goes there.
+        self.steps()
     }
 
     /// Brought back from the last session: everything the row needs to draw it,
@@ -1686,10 +1676,7 @@ final class Tab: ObservableObject, Identifiable {
         loadGeneration &+= 1
         let token = loadGeneration
         let view = web
-        // Not before Shield's list is ready, at launch (see Shield.whenReady).
-        Shield.shared.whenReady { [weak self] in
-            self?.continueLoadAndVerify(url, state: state, view: view, token: token, waited: false)
-        }
+        continueLoadAndVerify(url, state: state, view: view, token: token, waited: false)
     }
 
     private func continueLoadAndVerify(_ url: URL, state: Any?, view: PageView, token: UInt64, waited: Bool) {

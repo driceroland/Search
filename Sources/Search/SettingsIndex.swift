@@ -67,7 +67,7 @@ enum SettingsIndex {
         .init(id: "tablook", page: .appearance, title: "Tabs", icon: "textformat.size"),
         .init(id: "motion", page: .appearance, title: "Motion", icon: "wind"),
 
-        .init(id: "themes", page: .themes, title: "Home background", icon: "photo.artframe"),
+        .init(id: "themes", page: .themes, title: "Browser colour and home background", icon: "photo.artframe"),
 
         .init(id: "newtabs", page: .tabs, title: "New tabs", icon: "plus.square"),
         .init(id: "memory", page: .tabs, title: "Memory", icon: "moon.zzz"),
@@ -95,7 +95,6 @@ enum SettingsIndex {
         .init(id: "anywhere", page: .keyboard, title: "From any app", icon: "macwindow.on.rectangle"),
 
         .init(id: "updates", page: .about, title: "Updates", icon: "arrow.triangle.2.circlepath"),
-        .init(id: "news", page: .about, title: "News by email", icon: "envelope.open"),
         .init(id: "developer", page: .about, title: "Developer", icon: "hammer"),
 
         // Drawn by ExtensionsPage itself; here so the find field reaches it.
@@ -158,10 +157,10 @@ enum SettingsIndex {
 
         // Themes
         .init(id: "home.theme", group: "themes", icon: "photo.artframe",
-              title: "Home background", detail: "Paint the blank tab: a wall, stickers, a colour, a gradient or your own picture",
+              title: "Browser colour and home background", detail: "Colour the whole browser with a colour or a gradient, and paint the blank tab: a wall, stickers or your own picture",
               more: "Off by default. Drawn once and kept, so it costs nothing while you browse, and only the blank tab shows it. A picture you choose is copied inside Search; nothing leaves your Mac.",
-              keys: ["home.theme", "home.theme.image", "home.tuning", "home.shuffle"],
-              words: ["themes", "wallpaper", "background", "mural", "painting", "scenery", "shuffle", "stickers", "gradient", "colour", "color", "new tab", "image"],
+              keys: ["browser.theme", "home.theme", "home.theme.image", "home.tuning", "home.shuffle"],
+              words: ["themes", "wallpaper", "background", "mural", "painting", "scenery", "shuffle", "stickers", "gradient", "colour", "color", "new tab", "image", "arc", "browser colour", "window colour", "tint", "strength"],
               kind: .wide),
 
         // Appearance
@@ -505,10 +504,6 @@ enum SettingsIndex {
               keys: ["contacts.fill"], words: ["autofill", "address", "email", "phone", "name", "contacts", "me card"]),
 
         // Privacy
-        .init(id: "shield", group: "blocking", icon: "shield.lefthalf.filled",
-              title: "Block ads and trackers", detail: "Third parties whose only job is to watch, and YouTube's ads",
-              more: "On YouTube, the ads announced in the player's own data are taken out before the video starts. Turn it off for one site in its card: click the tab you're on.",
-              keys: ["shield"], words: ["adblock", "ad blocker", "ads", "youtube"]),
         .init(id: "sites.keep", group: "blocking", icon: "eye.slash",
               title: "Prevent cross-site tracking", detail: "As in Safari. Private tabs keep it on",
               more: "On, as in Safari, a site you mostly reach from a tracker's link (YouTube from Google, GitHub from a sign-in button) can lose its saved preferences, and in time its sign-in, after a week of browsing without a click or typing on it. Off, sites you rarely open keep their sign-ins, and trackers inside other sites can follow you across them again, as in Chrome.",
@@ -583,18 +578,6 @@ enum SettingsIndex {
               title: "Found something wrong?", detail: "Opens a draft with the version already in it", words: ["bug", "feedback", "report"]),
         .init(id: "about.notes", group: "updates", icon: "sparkles",
               title: "What's new", detail: "Every version's notes, newest first", words: ["release notes", "changelog"]),
-        // An email field each, never sent without a press (OptIn.swift).
-        // Only booleans are kept, never the address.
-        .init(id: "news.updates", group: "news", icon: "envelope",
-              title: "News by email", detail: "Rare emails: useful new features and big updates, nothing else",
-              more: "Your email goes to searchbrowser.app with the word app-settings and which Mac download this is, and through Resend, our email service. Every email has a link to stop them. This Mac remembers only that you joined, never the address.",
-              keys: [OptIn.joinedKey],
-              words: ["newsletter", "email", "mailing list", "subscribe", "news", "updates by email"], kind: .wide),
-        .init(id: "news.iphone", group: "news", icon: "iphone",
-              title: "Search for iPhone beta", detail: "Ask for the iPhone beta, sent to your email",
-              more: "Your email goes to searchbrowser.app with the word app-settings, for your beta access and now and then news about the beta. Every email has a link to stop them. This Mac remembers only that you asked, never the address.",
-              keys: [OptIn.betaKey],
-              words: ["iphone", "ios", "beta", "testflight", "mobile", "phone", "email"], kind: .wide),
         .init(id: "bench", group: "developer", icon: "terminal",
               title: "Let a script drive Search", detail: "A local socket for testing; its tabs never take over",
               more: "Its tabs open beside yours with a flask on them. See ./bench.",

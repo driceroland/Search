@@ -800,7 +800,7 @@ struct SideBar: View {
     /// among them and the room after it, added up as rowsHeight adds up the
     /// column's own.
     private struct PreviewLine: Identifiable {
-        enum Kind { case pin(PinRowLine), heading(TabGroup), tab(Tab, inset: Bool = false), keep, newTab }
+        enum Kind { case pin(PinRowLine), heading(TabGroup), tab(Tab, inset: Bool = false), keep }
         let id: AnyHashable
         let kind: Kind
         let y: CGFloat
@@ -855,12 +855,6 @@ struct SideBar: View {
         }
         if keeps { add("keep", .keep, KeepLine.height) }
         for tab in rest { add(tab.id, .tab(tab), lines(tab) * rowHeight, front: tab.id == front) }
-        // The row that makes another, with its gap above it (newTab).
-        if let last = out.last {
-            out[out.count - 1] = PreviewLine(id: last.id, kind: last.kind, y: last.y, height: last.height, after: 0, front: last.front)
-            y -= last.after
-        }
-        add("new-tab", .newTab, rowHeight + SideBar.gap, after: 0)
         return (out, tints)
     }
 
@@ -889,8 +883,6 @@ struct SideBar: View {
                 .padding(.trailing, inset ? Self.groupInset : 0)
         case .keep:
             KeepLine(clears: false) {}
-        case .newTab:
-            newTab
         }
     }
 
@@ -904,7 +896,7 @@ struct SideBar: View {
         return top + shelf + pinBlock + rowsHeight
     }
 
-    /// The pinned rows, the loose tabs and the row that makes another, added
+    /// The pinned rows and the loose tabs, added
     /// up the same way, with a few points to spare: what decides whether
     /// they scroll.
     private var rowsHeight: CGFloat {
@@ -926,7 +918,7 @@ struct SideBar: View {
         let headings = CGFloat(grouped.count) * (heading + SideBar.gap)
             + CGFloat(grouped.filter(\.isEmpty).count) * SideBar.gap
         let loose = CGFloat(rows.count) * (rowHeight + SideBar.gap) + CGFloat(pairs) * rowHeight + headings
-        return listBlock + loose + rowHeight + 8
+        return listBlock + loose + 8
     }
 
     /// The pinned rows' height: each row, or with pin folders each line,
@@ -1573,13 +1565,12 @@ struct SideBar: View {
         return true
     }
 
-    /// The pinned rows, the loose tabs and the row that makes another,
+    /// The pinned rows and the loose tabs,
     /// which scroll as one.
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
             listed
             loose
-            newTab
         }
     }
 
@@ -1595,22 +1586,6 @@ struct SideBar: View {
     private static let agentRow: CGFloat = 30
     /// An agent's pill is showing in this window (AgentControl).
     private var agentHere: Bool { agents.shownIn == ObjectIdentifier(browser) }
-
-    @ViewBuilder
-    private var newTab: some View {
-        if icons {
-            Quiet(icon: "plus", title: "", height: rowHeight, size: prefs.sideTitle, centred: true) { browser.launch() }
-                .shortcutHelp("New Tab", "file.newTab")
-                // The column's menu on a right-click, as round it.
-                .overlay { RightClick(menu: columnMenu) }
-                .padding(.top, SideBar.gap)
-        } else {
-            Quiet(icon: "plus", title: "New tab", height: rowHeight, size: prefs.sideTitle) { browser.launch() }
-                .shortcutHelp("New Tab", "file.newTab")
-                .overlay { RightClick(menu: columnMenu) }
-                .padding(.top, SideBar.gap)
-        }
-    }
 
     /// The doors from one end of the column to the other, the top fading
     /// as the foot rises, and back: down once they no longer fit, up once
