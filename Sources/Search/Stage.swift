@@ -303,6 +303,12 @@ final class StageView: NSView {
     /// A page on its way back from full screen, once chosen (see `bringHome`).
     private var homecoming: NSKeyValueObservation?
 
+    /// The page whose video was full screen, its placeholder here, when
+    /// another tab was shown in front of it (idea 936). Chosen again while
+    /// still full screen, it has only that placeholder here, which WebKit
+    /// draws white: the stage was a white screen, the video gone from it.
+    private weak var leftFullScreen: WKWebView?
+
     /// How a page is asked to end its full screen: as its own button does.
     /// Its own property for the tests, which can't go full screen.
     var endFullScreen: (WKWebView) -> Void = { web in
@@ -405,17 +411,23 @@ final class StageView: NSView {
             dock.removeFromSuperview()
         }
         let chosen = page !== wanted
+        if chosen, let leaving = wanted as? WKWebView, leaving.fullscreenState != .notInFullscreen,
+           subviews.contains(where: Self.isPlaceholder) {
+            leftFullScreen = leaving
+        }
+        if leftFullScreen?.fullscreenState == .notInFullscreen { leftFullScreen = nil }
         wanted = page
         if chosen { bringHome() }
         settle()
     }
 
-    /// The page wanted here, if WebKit's full-screen window has it and no
-    /// place is kept for it here: another tab was shown in the meantime, and
-    /// the placeholder went with the rest of what wasn't wanted.
+    /// The page wanted here, if WebKit's full-screen window has it and
+    /// another tab was shown here in the meantime: its placeholder, kept
+    /// under that tab, is all there is of it here. Or none is left at all.
     private var stranded: WKWebView? {
         guard let web = wanted as? WKWebView, web.fullscreenState != .notInFullscreen,
-              web.superview !== self, !subviews.contains(where: Self.isPlaceholder) else { return nil }
+              web.superview !== self else { return nil }
+        guard web === leftFullScreen || !subviews.contains(where: Self.isPlaceholder) else { return nil }
         return web
     }
 
@@ -434,6 +446,7 @@ final class StageView: NSView {
                 switch web.fullscreenState {
                 case .notInFullscreen:
                     self.homecoming = nil
+                    if self.leftFullScreen === web { self.leftFullScreen = nil }
                     self.settle()
                     // WebKit gave the keys back to a page in no window.
                     if let window = self.window, web.superview === self, window.firstResponder === window {
@@ -498,11 +511,14 @@ final class StageView: NSView {
         for view in subviews where view !== wanted && !(docked && Self.isInspector(view)) {
             // Another tab in front while this page fills the screen: WebKit
             // brings the page home to its placeholder, so that stays, under
-            // the tab in front, and so does the page on its way back.
-            if Shared.prefs.keepsWindow {
-                if Self.isPlaceholder(view) { continue }
-                if let page = view as? WKWebView, page.fullscreenState != .notInFullscreen { continue }
-            }
+            // the tab in front, and so does the page on its way back. Taken
+            // away, it left WebKit nowhere to put the page as it came out of
+            // full screen — ⌃Tab and ⌘1–⌘9 end it as they leave (#1042) —
+            // and the tab came back white, the video out of it (idea 936).
+            // Once home it is put away as any tab behind is (see the
+            // fullscreenState watch in Tab.build).
+            if Self.isPlaceholder(view) { continue }
+            if let page = view as? WKWebView, page.fullscreenState != .notInFullscreen { continue }
             // Unseen, and still drawn: WebKit asks whether its view is in a
             // window and not hidden, not whether anything shows of it.
             if view === parting {
@@ -890,7 +906,7 @@ struct DragStrip: NSViewRepresentable {
 
         override func mouseEntered(with event: NSEvent) { aim(event.locationInWindow) }
         override func mouseMoved(with event: NSEvent) { aim(event.locationInWindow) }
-        override func mouseExited(with event: NSEvent) { hold(false); passing = [] }
+        override func mouseExited(with event: NSEvent) { hold(false); passing = []; aimed = nil }
 
         override func viewWillMove(toWindow newWindow: NSWindow?) {
             hold(false)
@@ -900,8 +916,14 @@ struct DragStrip: NSViewRepresentable {
         private func aim(_ point: NSPoint) {
             guard let window else { return }
             if overPage { ask(point) }
+            aimed = point
             hold(DragStrip.holdsWindow(at: point, in: window))
         }
+
+        /// Where the pointer was last over the band: the page's answer comes
+        /// after the move that asked for it, and the window is held or let
+        /// go again by it there, for a press that comes before any next move.
+        private var aimed: NSPoint?
 
         /// Asks the page under `point` (the window's) whether it has
         /// something to press there, and keeps the answer in `passing`.
@@ -910,26 +932,23 @@ struct DragStrip: NSViewRepresentable {
         /// the band is title bar.
         private func ask(_ point: NSPoint) {
             guard !asking else { askNext = point; return }
-            guard let window, let web = PageUnder.web(in: window, at: point) else { passing = []; page = nil; return }
-            let scale = max(0.01, web.magnification * web.pageZoom)
-            let at = web.convert(point, from: nil)
+            guard let window, PageUnder.web(in: window, at: point) != nil else { passing = []; page = nil; return }
             asking = true
-            web.evaluateJavaScript(PageUnder.script(x: at.x / scale, y: at.y / scale), in: nil, in: Web.world) { [weak self, weak web] result in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.asking = false
-                    if let web, let box = try? result.get() as? [Double], box.count == 4 {
-                        let rect = NSRect(x: box[0] * scale, y: box[1] * scale,
-                                          width: max(0, box[2] - box[0]) * scale, height: max(0, box[3] - box[1]) * scale)
-                        self.page = web
-                        self.passing = [web.convert(rect, to: nil)]
-                    } else {
-                        self.passing = []
-                    }
-                    if let next = self.askNext {
-                        self.askNext = nil
-                        self.ask(next)
-                    }
+            PageUnder.ask(in: window, at: point) { [weak self] web, rect in
+                guard let self else { return }
+                self.asking = false
+                if let web, let rect {
+                    self.page = web
+                    self.passing = [rect]
+                } else {
+                    self.passing = []
+                }
+                if let aimed = self.aimed, let window = self.window, self.askNext == nil {
+                    self.hold(DragStrip.holdsWindow(at: aimed, in: window))
+                }
+                if let next = self.askNext {
+                    self.askNext = nil
+                    self.ask(next)
                 }
             }
         }
@@ -940,7 +959,135 @@ struct DragStrip: NSViewRepresentable {
             let id = ObjectIdentifier(window)
             let count = max(0, (Strip.hovered[id] ?? 0) + (on ? 1 : -1))
             Strip.hovered[id] = count == 0 ? nil : count
-            window.isMovable = count == 0
+            window.isMovable = Strip.movable(window)
+        }
+
+        /// What AppKit itself said, in the last hover, of a single press
+        /// there: that it would move the window (for the bench).
+        static var titleDrag: Bool?
+
+        /// AppKit's own word on whether a single press at `point` starts the
+        /// window's drag, where it gives one (a private method: the bench
+        /// only).
+        static func appKitDrags(_ window: NSWindow, at point: NSPoint) -> Bool? {
+            let sel = NSSelectorFromString("_shouldStartWindowDragForEvent:")
+            guard window.responds(to: sel),
+                  let press = NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [],
+                                                 timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                                 clickCount: 1, pressure: 1)
+            else { return nil }
+            typealias Ask = @convention(c) (AnyObject, Selector, NSEvent) -> Bool
+            return unsafeBitCast(window.method(for: sel), to: Ask.self)(window, sel, press)
+        }
+
+        /// Windows whose page has something to press under the pointer in
+        /// AppKit's title bar, below every strip (see holdForPage).
+        private static var pageHeld: Set<ObjectIdentifier> = []
+
+        /// The page in a window's title bar: where the pointer is there (nil
+        /// once it has left), whether a question to the page is out and for
+        /// where, and the page's last answer, in the window's coordinates,
+        /// and where it was asked for.
+        private struct Zone {
+            var at: NSPoint?
+            var asking = false
+            var asked: NSPoint?
+            var box: NSRect?
+            var answered: NSPoint?
+
+            /// Held where the last answer says the page has something, and
+            /// wherever the page has not answered yet: Amazon's page, busy,
+            /// took longer than a moving pointer to answer (bench, hidden,
+            /// over 0.4 s), and a press in that time is the page's rather
+            /// than the window's. Let go only where the page said it has
+            /// nothing.
+            func holds(_ point: NSPoint) -> Bool {
+                box?.contains(point) == true || answered != point
+            }
+        }
+        private static var zones: [ObjectIdentifier: Zone] = [:]
+
+        private static func setHeld(_ on: Bool, _ window: NSWindow) {
+            let id = ObjectIdentifier(window)
+            guard on != pageHeld.contains(id) else { return }
+            if on { pageHeld.insert(id) } else { pageHeld.remove(id) }
+            window.isMovable = movable(window)
+        }
+
+        /// Movable unless the pointer is over a strip's held part or over the
+        /// page in the title bar.
+        static func movable(_ window: NSWindow) -> Bool {
+            let id = ObjectIdentifier(window)
+            return hovered[id] == nil && !pageHeld.contains(id)
+        }
+
+        /// The page in the title bar. With the tabs in the column the page
+        /// goes up to the window's top, and AppKit takes the top 32 points of
+        /// a window with a see-through title bar as title bar: a single press
+        /// anywhere there, on whatever view, starts the window's drag, before
+        /// the view under it hears of the press, while the window is movable
+        /// (NSWindow _shouldStartWindowDragForEvent:: movable, see-through,
+        /// not full screen, in the title bar's frame). Amazon's search box
+        /// starts 11 points down its page, under the band (Fold.top, 12
+        /// points), and most of it lay in those 32: a press-drag to select its
+        /// text moved the window though the band handed its own part to the
+        /// page (idea 935). So, as for a tab in the row (#668), the window is
+        /// unmovable while the pointer is over what the page has to press
+        /// there, asked of the page as the band asks it (PageUnder), at each
+        /// move the page hears (PointerGate), and until the page has
+        /// answered (Zone.holds). The last answer holds the window at once
+        /// while the pointer stays over the same thing; over empty page,
+        /// once the page has said so, the window is movable, for window
+        /// managers (idea 744), as over the band.
+        static func holdForPage(_ page: NSView, at point: NSPoint) {
+            guard let window = page.window else { return }
+            let id = ObjectIdentifier(window)
+            var inside = false
+            if point.y >= window.contentLayoutRect.maxY, !window.styleMask.contains(.fullScreen),
+               let frame = window.contentView?.superview,
+               let hit = frame.hitTest(frame.convert(point, from: nil)) {
+                inside = hit === page || hit.isDescendant(of: page)
+            }
+            var zone = zones[id] ?? Zone()
+            guard inside else {
+                if zone.at != nil { zone.at = nil; zones[id] = zone }
+                setHeld(false, window)
+                return
+            }
+            zone.at = point
+            zones[id] = zone
+            setHeld(zone.holds(point), window)
+            askZone(window)
+        }
+
+        /// Asks the page about where the pointer is in its title bar, one
+        /// question at a time, and holds or lets go the window by the answer.
+        private static func askZone(_ window: NSWindow) {
+            let id = ObjectIdentifier(window)
+            guard var zone = zones[id], !zone.asking, let at = zone.at else { return }
+            zone.asking = true
+            zone.asked = at
+            zones[id] = zone
+            PageUnder.ask(in: window, at: at) { [weak window] _, box in
+                guard var zone = zones[id] else { return }
+                zone.asking = false
+                zone.box = box
+                zone.answered = zone.asked
+                zones[id] = zone
+                guard let window else { zones[id] = nil; return }
+                guard let now = zone.at else { return }
+                setHeld(zone.holds(now), window)
+                if now != zone.asked { askZone(window) }
+            }
+        }
+
+        /// The pointer has left the page: nothing of it holds the window.
+        static func releaseForPage(_ window: NSWindow?) {
+            guard let window else { return }
+            let id = ObjectIdentifier(window)
+            zones[id]?.at = nil
+            setHeld(false, window)
         }
 
         /// The bench's hover (`hit … hover`): the pointer put at `point` over
@@ -953,10 +1100,19 @@ struct DragStrip: NSViewRepresentable {
                    strip.bounds.contains(strip.convert(point, from: nil)) { under.append(strip) }
                 for sub in view.subviews { walk(sub) }
             }
-            if let frame = window.contentView?.superview { walk(frame) }
+            var pages: [NSView] = []
+            func pagesUnder(_ view: NSView) {
+                if view is PageView, !view.isHiddenOrHasHiddenAncestor,
+                   view.bounds.contains(view.convert(point, from: nil)) { pages.append(view) }
+                for sub in view.subviews { pagesUnder(sub) }
+            }
+            if let frame = window.contentView?.superview { walk(frame); pagesUnder(frame) }
             for strip in under { strip.aim(point) }
+            for page in pages { holdForPage(page, at: point) }
             let movable = window.isMovable
-            for strip in under { strip.hold(false) }
+            titleDrag = appKitDrags(window, at: point)
+            for strip in under { strip.hold(false); strip.aimed = nil }
+            releaseForPage(window)
             return movable
         }
 
@@ -1005,7 +1161,7 @@ struct DragStrip: NSViewRepresentable {
             moved = true
             window.isMovable = true
             window.performDrag(with: pressed)
-            window.isMovable = Strip.hovered[ObjectIdentifier(window)] == nil
+            window.isMovable = Strip.movable(window)
         }
 
         /// A double-click does what a title bar's does, unless this strip
@@ -1060,6 +1216,24 @@ enum PageUnder {
         }
         walk(root)
         return found
+    }
+
+    /// Asks the page under `point` (the window's) what a press there is
+    /// for, and hands back that page and the box of it, in the window's
+    /// coordinates, or nil where the page has nothing (or there is no page).
+    @MainActor static func ask(in window: NSWindow, at point: NSPoint,
+                               _ done: @escaping @MainActor (WKWebView?, NSRect?) -> Void) {
+        guard let web = web(in: window, at: point) else { done(nil, nil); return }
+        let scale = max(0.01, web.magnification * web.pageZoom)
+        let at = web.convert(point, from: nil)
+        web.evaluateJavaScript(script(x: at.x / scale, y: at.y / scale), in: nil, in: Web.world) { [weak web] result in
+            MainActor.assumeIsolated {
+                guard let web, let box = try? result.get() as? [Double], box.count == 4 else { done(nil, nil); return }
+                let rect = NSRect(x: box[0] * scale, y: box[1] * scale,
+                                  width: max(0, box[2] - box[0]) * scale, height: max(0, box[3] - box[1]) * scale)
+                done(web, web.convert(rect, to: nil))
+            }
+        }
     }
 
     /// The page's own answer, in its isolated world: the box, in CSS pixels

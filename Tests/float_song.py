@@ -66,6 +66,46 @@ CASES = {
 }
 NOTHING = dict(cover="", video_style="display:none", source=SONG, meta="")
 
+# YouTube Music's playlist page, as it was with a track playing (idea 933):
+# the top bar, the side drawer, the page's content and the player bar at the
+# foot each say visibility:visible themselves, fixed and above the player
+# page; the player page slides up over the page with a transition, here one
+# that never gets there; and the track is a music video, with a picture.
+# All of them inside the app's own elements, not the body's children.
+# Floated, the little window showed those parts over the video, the player
+# bar's buttons stacked, and the video a window's height below.
+PLAYLIST = """<!doctype html><meta charset=utf-8><title>{name}</title>
+<style>body{{margin:0;background:#030303}}
+.nav{{position:fixed;top:0;left:0;right:0;height:64px;z-index:5;visibility:visible}}
+.drawer{{position:fixed;top:64px;left:0;width:240px;bottom:72px;z-index:5;visibility:visible}}
+.content{{position:relative;visibility:visible;margin-left:240px;padding-top:64px}}
+.page{{position:fixed;top:64px;left:0;right:0;bottom:72px;z-index:2;visibility:visible;transform:translateY(100vh);transition:transform 600s linear}}
+.page.open{{transform:translateY(0)}}
+.bar{{position:fixed;left:0;right:0;bottom:0;height:72px;z-index:4;visibility:visible;display:flex;flex-wrap:wrap}}
+button{{width:60px;height:40px}}</style>
+<div class=app><div class=layout>
+<div class=nav><button>Home</button><button>Explore</button><button>Sign in</button></div>
+<div class=drawer><button>Library</button></div>
+<div class=content><img class=header src="/cover.svg" style="width:264px;height:264px"><button>Shuffle</button><button>Play</button></div>
+<div class=page><div class=player style="position:relative;width:640px;margin:20px auto">
+<div class=video-box><video muted playsinline style="{video_style}"></video></div></div></div>
+<div class=bar><div class=controls><button>prev</button><button>pause</button><button>next</button></div><button>like</button><button>queue</button></div>
+</div></div>
+<canvas width=320 height=180 style="display:none"></canvas>
+<script>
+var v=document.querySelector('video');
+{source}
+v.play();
+{meta}
+requestAnimationFrame(function(){{document.querySelector('.page').classList.add('open')}});
+</script>"""
+LIST_CASES = {
+    # A music video from the playlist: the video, alone.
+    "list-video": dict(video_style="width:640px;height:360px", source=FILM, meta=META),
+    # A song from it, with no picture: Now Playing's cover.
+    "list-song": dict(video_style="width:640px;height:360px", source=SONG, meta=META),
+}
+
 SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="{n}" height="{n}"><rect width="100%" height="100%" fill="{fill}"/></svg>"""
 
 # The cover over the whole view, in front of the buttons: the buttons are
@@ -80,6 +120,18 @@ a.style.removeProperty('pointer-events');
 return JSON.stringify({art:a.getAttribute('src'),x:r.left,y:r.top,w:r.width,h:r.height,iw:innerWidth,ih:innerHeight,
 vis:s.visibility,disp:s.display,fit:s.objectFit,covers:hit===a&&mid===a,
 playing:!document.querySelector('video').paused,marked:!!document.querySelector('video[data-office-float]')})})()"""
+
+# What of the playlist page shows: the video's box, the buttons and the
+# header picture still visible, what is hit across the view (with the
+# cover hit-testable for the moment).
+ALONE = """(function(){var v=document.querySelector('video'),a=document.getElementById('office-float-art');
+var r=v.getBoundingClientRect();
+var shown=[].filter.call(document.querySelectorAll('button,img.header'),function(e){return getComputedStyle(e).visibility==='visible'}).map(function(e){return e.innerText||e.className});
+if(a)a.style.setProperty('pointer-events','auto','important');
+var hits=[];for(var x=0.05;x<1;x+=0.3)for(var y=0.05;y<1;y+=0.3){var e=document.elementFromPoint(innerWidth*x,innerHeight*y);hits.push(e?e.tagName+(e.id?'#'+e.id:''):'')}
+if(a)a.style.removeProperty('pointer-events');
+return JSON.stringify({video:v.getClientRects().length?[r.left,r.top,r.width,r.height]:null,iw:innerWidth,ih:innerHeight,shown:shown,hits:hits,
+art:a?a.getAttribute('src'):null,marked:v.hasAttribute('data-office-float')})})()"""
 
 
 def tone():
@@ -99,6 +151,8 @@ def main():
     Path(pages, "art-next.svg").write_text(SVG.format(n=512, fill="#cc3"))
     for name, parts in {**CASES, "song-nothing": NOTHING}.items():
         Path(pages, f"{name}.html").write_text(PAGE.format(name=name, **parts))
+    for name, parts in LIST_CASES.items():
+        Path(pages, f"{name}.html").write_text(PLAYLIST.format(name=name, **parts))
 
     class Quiet(SimpleHTTPRequestHandler):
         def log_message(self, *args):
@@ -151,6 +205,38 @@ def main():
             time.sleep(1.2)
             p = json.loads(sv.cmd({"do": "eval", "id": tab, "js": PROBE})["value"])
             t.ok(f"{name}: back in its tab, the cover is gone and the song plays on", p["art"] is None and not p["floating"] and not p["marked"]
+                 and sv.cmd({"do": "eval", "id": tab, "js": playing})["value"] is True, p)
+            sv.sp("close", id=tab)
+        for name in LIST_CASES:
+            tab = sv.sp("open", url=f"{base}/{name}.html")["resultID"]
+            sv.cmd({"do": "resize", "width": 1180, "height": 780, "steps": 2})
+            for _ in range(40):
+                if sv.cmd({"do": "eval", "id": tab, "js": playing})["value"] is True:
+                    break
+                time.sleep(0.25)
+            t.ok(f"{name}: the track plays", sv.cmd({"do": "eval", "id": tab, "js": playing})["value"] is True)
+            said = sv.cmd({"do": "eval", "id": tab, "js": isolate, "world": "search"}).get("value")
+            video = name == "list-video"
+            t.ok(f"{name}: floats" + (", with the video's frame to cut a still from" if video else " as a cover"),
+                 isinstance(said, dict) and said.get("floating") is True and (("alone" in said) == video), said)
+            for width, height in [(440, 247), (700, 500), (300, 300)]:
+                sv.cmd({"do": "resize", "width": width, "height": height, "steps": 2})
+                time.sleep(0.3)
+                p = json.loads(sv.cmd({"do": "eval", "id": tab, "js": ALONE})["value"])
+                if video:
+                    whole = p["video"] and abs(p["video"][0] + p["video"][2] / 2 - p["iw"] / 2) < 2 and abs(p["video"][1] + p["video"][3] / 2 - p["ih"] / 2) < 2 \
+                        and (abs(p["video"][2] - p["iw"]) < 2 or abs(p["video"][3] - p["ih"]) < 2)
+                    t.ok(f"{name} {width}x{height}: the video alone, whole and in the middle, no buttons or bars over it",
+                         p["marked"] and whole and p["shown"] == [] and set(p["hits"]) <= {"VIDEO", "HTML", "BODY"} and "VIDEO" in p["hits"], p)
+                else:
+                    t.ok(f"{name} {width}x{height}: the cover alone, no buttons or bars over it",
+                         (p["art"] or "").endswith("/art-512.svg") and p["shown"] == [] and set(p["hits"]) == {"IMG#office-float-art"}, p)
+            sv.cmd({"do": "resize", "width": 1180, "height": 780, "steps": 2})
+            sv.cmd({"do": "eval", "id": tab, "js": restore, "world": "search"})
+            time.sleep(1.2)
+            p = json.loads(sv.cmd({"do": "eval", "id": tab, "js": ALONE})["value"])
+            t.ok(f"{name}: back in its tab, the page is as it was and the track plays on",
+                 not p["marked"] and p["art"] is None and len(p["shown"]) == 12
                  and sv.cmd({"do": "eval", "id": tab, "js": playing})["value"] is True, p)
             sv.sp("close", id=tab)
     finally:

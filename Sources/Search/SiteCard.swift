@@ -64,7 +64,7 @@ enum SiteCardPanel {
                         // The edit began: the card comes up under the field once it
                         // is in its window.
                         original = draft
-                        place(tab, browser, tries: 0)
+                        if browser.tabEditCard { place(tab, browser, tries: 0) }
                     } else if draft != original {
                         // Typing somewhere else: the card was about the page you are on.
                         hide()

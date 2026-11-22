@@ -770,6 +770,14 @@ final class Tab: ObservableObject, Identifiable {
     var home: URL?
     /// For a pin, which of the pins it is, in every window (see Pins.swift).
     var pinID: UUID?
+    /// For a pin, the title it is kept with in pins.json (PinDef.title), and
+    /// what its row says at rest on its pinned page: the page's title when
+    /// it was pinned, or the name a pin renamed in Arc or Zen was brought in
+    /// with. Never the title of wherever the pin wandered since: written
+    /// from that, a name brought in was lost the first time the pin was
+    /// browsed in, and ⌘W with Pins go back home left the host in its
+    /// place, the row saying 127.0.0.1 or mail.google.com (idea 937).
+    var pinTitle: String?
     /// For a pin, one every space shows (see Pins.shared). Set when the row
     /// is built; pins.json, not the session, says which pins these are.
     var everywhere = false
@@ -926,6 +934,7 @@ final class Tab: ObservableObject, Identifiable {
     var label: String {
         if let name, !name.isEmpty { return name }
         if let page { return page.title }
+        if atPinnedPage, let pinTitle, !pinTitle.isEmpty { return pinTitle }
         if popup, let host = address?.host(), !host.isEmpty {
             return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         }
@@ -1091,7 +1100,7 @@ final class Tab: ObservableObject, Identifiable {
                     let on = state == .enteringFullscreen || state == .inFullscreen
                     if self.immersed != on { self.immersed = on }
                     // Home behind another tab: its stage puts it away.
-                    if state == .notInFullscreen, Shared.prefs.keepsWindow { self.built?.superview?.needsLayout = true }
+                    if state == .notInFullscreen { self.built?.superview?.needsLayout = true }
                 }
             },
         ]
@@ -1174,7 +1183,10 @@ final class Tab: ObservableObject, Identifiable {
         add(KeptScroll.script, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         add(Veiling.picker, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         add(PageDrafts.script, .atDocumentStart, mainFrameOnly: false, in: Web.world)
-        add(FormRelay.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
+        // Every frame: one of the page's own origin offers its sign-in's
+        // boxes the page's accounts; any other returns at once (see the
+        // script's first lines).
+        add(FormRelay.script, .atDocumentEnd, mainFrameOnly: false, in: Web.world)
         // The form script looks at boxes for your card only with Fill in
         // your contact details on.
         if FormRelay.contacts {
@@ -1593,6 +1605,14 @@ final class Tab: ObservableObject, Identifiable {
         pending = url
         memory = state
         adoptIcon()
+    }
+
+    /// A pin at rest on the page it was pinned at: closed with ⌘W, not yet
+    /// opened since launch, or put to sleep there. Its row says the pin's
+    /// own title (pinTitle), and the page's while it shows the page.
+    var atPinnedPage: Bool {
+        guard pin != nil, asleep, let home, let address else { return false }
+        return Browser.samePage(home, address)
     }
 
     /// True for a tab that has a place and an address but is holding no page —
@@ -3546,10 +3566,20 @@ final class PointerGate: NSResponder {
         _ = target.perform(selector, with: event)
     }
 
-    override func mouseMoved(with event: NSEvent) { pass(#selector(NSResponder.mouseMoved(with:)), event) }
-    override func mouseEntered(with event: NSEvent) { pass(#selector(NSResponder.mouseEntered(with:)), event) }
+    /// The page in the window's title bar keeps the window still while the
+    /// pointer is over it there (DragStrip.Strip.holdForPage, idea 935).
+    private func aim(_ event: NSEvent) {
+        guard let page, event.window == nil || event.window === page.window else { return }
+        DragStrip.Strip.holdForPage(page, at: event.locationInWindow)
+    }
+
+    override func mouseMoved(with event: NSEvent) { aim(event); pass(#selector(NSResponder.mouseMoved(with:)), event) }
+    override func mouseEntered(with event: NSEvent) { aim(event); pass(#selector(NSResponder.mouseEntered(with:)), event) }
     override func cursorUpdate(with event: NSEvent) { pass(#selector(NSResponder.cursorUpdate(with:)), event) }
-    override func mouseExited(with event: NSEvent) { pass(#selector(NSResponder.mouseExited(with:)), event, always: true) }
+    override func mouseExited(with event: NSEvent) {
+        DragStrip.Strip.releaseForPage(page?.window)
+        pass(#selector(NSResponder.mouseExited(with:)), event, always: true)
+    }
 }
 
 /// Carries the page's scroll position back to its tab.

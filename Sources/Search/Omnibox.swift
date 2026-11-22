@@ -131,8 +131,10 @@ struct Omnibox: View {
                     // A slow, almost invisible breath under the field. It is
                     // the only thing on an empty tab, and a thing that never
                     // moves at all reads as a picture of an app rather than
-                    // an app.
-                    Breath()
+                    // an app. Not over a theme (Settings › Themes): the wall
+                    // moves the eye already, and the ink's haze lay over a
+                    // picture as a white or dark smudge (idea 952).
+                    UnlessThemed(over: over) { Breath() }
 
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Palette.ground)
@@ -376,6 +378,27 @@ private struct SiteOfferRow: View {
         .onHover { hovering = $0 }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Search \(site.name), press Tab")
+    }
+}
+
+/// Its content only where no theme is behind the field: over a page (⌘L) or
+/// on a plain blank tab. A view of its own, so only it watches the settings.
+private struct UnlessThemed<Content: View>: View {
+    let over: Bool
+    @ViewBuilder let content: () -> Content
+    @ObservedObject private var prefs = Shared.prefs
+
+    var body: some View {
+        if over || !themed { content() }
+    }
+
+    /// A chosen picture that can't be read shows as Off (HomeBackground).
+    private var themed: Bool {
+        switch prefs.homeTheme {
+        case .off: return false
+        case .custom: return HomeBackground.load(prefs.homeThemeImage) != nil
+        default: return true
+        }
     }
 }
 

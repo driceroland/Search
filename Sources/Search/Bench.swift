@@ -1065,6 +1065,33 @@ final class Bench {
                 // a page, or a button it shouldn't be.
                 "responder": (NSApp.keyWindow ?? Links.window)?.firstResponder.map { "\(type(of: $0))" } ?? "",
             ]
+            // What decides whether the page in front counts as seen and as
+            // focused (idea 949): its window, whether that window is visible,
+            // key and uncovered, whether the page or a view around it is
+            // hidden, whether it has the keys, and every other web view
+            // the app holds showing the same address, in which window.
+            if let tab = browser.active, let web = tab.built {
+                func pages(_ view: NSView) -> [WKWebView] { ((view as? WKWebView).map { [$0] } ?? []) + view.subviews.flatMap(pages) }
+                let address = web.url?.absoluteString
+                let copies = NSApp.windows.flatMap { window in
+                    (window.contentView.map(pages) ?? []).filter { $0 !== web && address != nil && $0.url?.absoluteString == address }
+                        .map { ["window": "\(type(of: window))", "hidden": $0.isHiddenOrHasHiddenAncestor, "sameWindow": window === web.window] }
+                }
+                out["pageActivity"] = [
+                    "inBrowserWindow": web.window != nil && web.window === browser.window,
+                    "window": web.window.map { "\(type(of: $0))" } ?? "",
+                    "windowVisible": web.window?.isVisible ?? false,
+                    "windowKey": web.window?.isKeyWindow ?? false,
+                    "windowUncovered": web.window?.occlusionState.contains(.visible) ?? false,
+                    "appActive": NSApp.isActive,
+                    "appHidden": NSApp.isHidden,
+                    "pageHidden": web.isHiddenOrHasHiddenAncestor,
+                    "alpha": Double(web.alphaValue),
+                    "hasKeys": (web.window?.firstResponder as? NSView).map { $0 === web || $0.isDescendant(of: web) } ?? false,
+                    "windowResponder": web.window?.firstResponder.map { "\(type(of: $0))" } ?? "",
+                    "copies": copies,
+                ] as [String: Any]
+            }
             // Whether that is the address field's own editor: a find field or
             // a tab's title being renamed is an NSTextView too.
             if let window = browser.window ?? Links.window, let editor = window.firstResponder as? NSTextView {
@@ -1763,6 +1790,9 @@ final class Bench {
                 // Whether the window is movable with the pointer resting
                 // there, as window managers find it (idea 744).
                 "movableHovered": DragStrip.hover(window, at: point),
+                // And whether AppKit would then carry it off on a single
+                // press there, by its own rule (idea 935).
+                "titleDragHovered": DragStrip.Strip.titleDrag ?? NSNull(),
             ])
 
         case "field":
@@ -5037,6 +5067,8 @@ final class Bench {
             // The tab on screen clicked again: its address opened, as typed
             // into nothing yet, the site card under it.
             if request["opentab"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab) }
+            // The tab's menu › Site Information… on the tab on screen.
+            if request["siteinfo"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab, card: true) }
             if request["finishedit"] as? Bool == true { browser.finishTabEdit() }
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }
             // Settings › Privacy › Clear › Cache, answered once every store
@@ -5595,6 +5627,9 @@ final class Bench {
                 [
                     "id": Bench.short(tab),
                     "title": tab.title,
+                    // What its row says (Tab.label), and the name you gave it.
+                    "label": tab.label,
+                    "name": tab.name ?? "",
                     "url": tab.address?.absoluteString ?? "",
                     "blank": tab.isBlank,
                     // One of Search's own pages (InternalPages.swift), by its address.

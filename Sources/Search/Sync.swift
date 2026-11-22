@@ -83,7 +83,7 @@ enum SyncSettings {
     static let known: Set<String> = [
         "look", "glyph", "search.engine", "search.custom", "search.suggest", "search.keywords", "spaces",
         "pins.list", "pins.home", "tabs.close.after", "tabs.newPlace", "tabs.shortcuts", "shield",
-        "privacy.clickIDs", "privacy.gpc", "bookmarks.bar", "quit.confirm",
+        "privacy.clickIDs", "privacy.gpc", "bookmarks.bar", "bookmarks.side", "quit.confirm",
     ]
 
     private static func coded<T: Codable & Equatable>(_ key: String, _ path: ReferenceWritableKeyPath<Preferences, T>) -> Setting {
