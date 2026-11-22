@@ -1763,6 +1763,9 @@ final class Bench {
                 // Whether the window is movable with the pointer resting
                 // there, as window managers find it (idea 744).
                 "movableHovered": DragStrip.hover(window, at: point),
+                // And whether AppKit would then carry it off on a single
+                // press there, by its own rule (idea 935).
+                "titleDragHovered": DragStrip.Strip.titleDrag ?? NSNull(),
             ])
 
         case "field":

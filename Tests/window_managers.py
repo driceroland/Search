@@ -75,6 +75,10 @@ def main():
         probe = sv.cmd({"do": "probe"})
         lights = probe.get("lights") or []
         y = lights[0][1] if lights else 20
+        # Under the band, the page lies in AppKit's title bar: the window
+        # holds still there until the page has said it has nothing under
+        # the pointer (idea 935), so the pointer comes there first.
+        at(600, y); time.sleep(0.5)
         v, movable, _ = at(600, y)
         t.ok("column: the band along the top over the page is movable", movable, v)
         v, movable, _ = at(200, y)

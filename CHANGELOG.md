@@ -32,6 +32,7 @@ in [ROADMAP.md](ROADMAP.md).
 - A pin renamed in Arc or Zen and brought over showed its address instead of its name once browsed in and closed: at rest on its pinned page it shows its own name again, the page's title only while it shows the page. `python3 Tests/pin_names.py` (idea 937)
 - Floating a music video from a YouTube Music playlist shows the video alone, not the top bar, side drawer and the player bar's stacked buttons over it, nor the video a window's height below the little window while the player was still sliding up. Tests/float_song.py.
 - In full screen, the bar with the window's buttons comes down with the menu bar no taller than macOS's own, as in Safari: on 1.0.18 it was 36 points taller and grey, and pushed the tabs and the page down that much more. `swift test --filter TopEdgeTests` (idea 934)
+- With the tabs in the column, a press-drag in Amazon's search box selects its text instead of moving the window. The box lies just under the thin band along the top, in the 32 points macOS takes as title bar, where a press moved the window whatever was under it; there too the window now holds still over a field, a button, a link or text, and still moves over empty page. `python3 Tests/top_band_field.py` (idea 935)
 
 ### Held back
 

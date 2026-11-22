@@ -3563,10 +3563,20 @@ final class PointerGate: NSResponder {
         _ = target.perform(selector, with: event)
     }
 
-    override func mouseMoved(with event: NSEvent) { pass(#selector(NSResponder.mouseMoved(with:)), event) }
-    override func mouseEntered(with event: NSEvent) { pass(#selector(NSResponder.mouseEntered(with:)), event) }
+    /// The page in the window's title bar keeps the window still while the
+    /// pointer is over it there (DragStrip.Strip.holdForPage, idea 935).
+    private func aim(_ event: NSEvent) {
+        guard let page, event.window == nil || event.window === page.window else { return }
+        DragStrip.Strip.holdForPage(page, at: event.locationInWindow)
+    }
+
+    override func mouseMoved(with event: NSEvent) { aim(event); pass(#selector(NSResponder.mouseMoved(with:)), event) }
+    override func mouseEntered(with event: NSEvent) { aim(event); pass(#selector(NSResponder.mouseEntered(with:)), event) }
     override func cursorUpdate(with event: NSEvent) { pass(#selector(NSResponder.cursorUpdate(with:)), event) }
-    override func mouseExited(with event: NSEvent) { pass(#selector(NSResponder.mouseExited(with:)), event, always: true) }
+    override func mouseExited(with event: NSEvent) {
+        DragStrip.Strip.releaseForPage(page?.window)
+        pass(#selector(NSResponder.mouseExited(with:)), event, always: true)
+    }
 }
 
 /// Carries the page's scroll position back to its tab.
