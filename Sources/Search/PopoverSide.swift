@@ -56,6 +56,13 @@ enum PopoverSide {
         return Placement(turn: up > 0 ? .above : .under, move: across.move)
     }
 
+    /// The screens, each its whole frame and its usable part, in screen
+    /// points. The tests give a screen of their own, far off every real one,
+    /// so a window measured there is never put on the user's screen.
+    nonisolated(unsafe) static var screens: () -> [(frame: NSRect, room: NSRect)] = {
+        NSScreen.screens.map { ($0.frame, $0.visibleFrame) }
+    }
+
     /// The same for `rect` in `view`, measured on the screen the rect is on,
     /// which needn't be the one most of the window is on. As asked while the
     /// view is in no window.
@@ -63,9 +70,9 @@ enum PopoverSide {
         guard let window = view.window else { return Placement(turn: .none, move: .zero) }
         let frame = window.convertToScreen(view.convert(rect, to: nil))
         let middle = NSPoint(x: frame.midX, y: frame.midY)
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(middle) }) ?? window.screen
+        guard let room = screens().first(where: { $0.frame.contains(middle) })?.room ?? window.screen?.visibleFrame
         else { return Placement(turn: .none, move: .zero) }
-        return placement(of: frame, in: screen.visibleFrame, beside: beside)
+        return placement(of: frame, in: room, beside: beside)
     }
 
     /// Whether an arrow moved by `move` has left the `size` it pointed at:

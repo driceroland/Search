@@ -65,26 +65,72 @@ final class PopoverSideTests: XCTestCase {
         XCTAssertEqual(PopoverSide.placement(of: view.bounds, in: view, beside: true), .init(turn: .none, move: .zero))
     }
 
-    /// A real window at the foot of the screen, at its left edge: measured
-    /// on the screen the button is on, in screen points.
-    func testAButtonInAWindowAtTheScreensCorner() throws {
-        let screen = try XCTUnwrap(NSScreen.main)
-        let room = screen.visibleFrame
-        try XCTSkipIf(room.width < 4 * clear || room.height < 4 * clear, "screen too small")
-        let window = NSWindow(contentRect: NSRect(origin: room.origin, size: NSSize(width: 200, height: 200)),
+    // MARK: - a window on a screen of the tests' own
+
+    /// A screen far off every real one, with a Dock and a menu bar: a
+    /// window measured there is never shown, and never on the user's screen.
+    private let farScreen = NSRect(x: -40_000, y: -40_000, width: 2560, height: 1440)
+    private var farRoom: NSRect {
+        NSRect(x: farScreen.minX, y: farScreen.minY + 70, width: farScreen.width, height: farScreen.height - 70 - 25)
+    }
+    private var realScreens: (() -> [(frame: NSRect, room: NSRect)])?
+
+    override func setUp() {
+        super.setUp()
+        realScreens = PopoverSide.screens
+        let screen = farScreen, room = farRoom
+        PopoverSide.screens = { [(screen, room)] }
+    }
+
+    override func tearDown() {
+        if let realScreens { PopoverSide.screens = realScreens }
+        super.tearDown()
+    }
+
+    /// A window at the foot of the far screen, at its left edge, never
+    /// ordered in: its content counted where it would stand.
+    private func cornerWindow(size: NSSize) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(origin: farRoom.origin, size: size),
                               styleMask: [.borderless], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
-        window.setFrameOrigin(room.origin)
+        window.setFrameOrigin(farRoom.origin)
+        XCTAssertFalse(window.isVisible)
+        return window
+    }
+
+    /// A window at the foot of the screen, at its left edge: measured on the
+    /// screen the button is on, in screen points.
+    func testAButtonInAWindowAtTheScreensCorner() throws {
+        let window = cornerWindow(size: NSSize(width: 200, height: 200))
         defer { window.close() }
         let button = NSView(frame: NSRect(x: 10, y: 7, width: 26, height: 26))
         window.contentView?.addSubview(button)
         let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
-        try XCTSkipIf(abs(frame.minX - (room.minX + 10)) > 1 || abs(frame.minY - (room.minY + 7)) > 1, "window not placed where asked")
+        XCTAssertEqual(frame.minX, farRoom.minX + 10, accuracy: 1, "window placed where asked")
+        XCTAssertEqual(frame.minY, farRoom.minY + 7, accuracy: 1)
 
         let beside = PopoverSide.placement(of: button.bounds, in: button, beside: true)
         XCTAssertEqual(beside.turn, .above)
         XCTAssertEqual(beside.move.dx, clear - 23, accuracy: 0.5)
         XCTAssertEqual(beside.move.dy, 0)
+    }
+
+    /// The first button at the column's foot in a window at the screen's
+    /// corner: moved off the button, the rect is shown from the column, on
+    /// it, at the same place in the window.
+    func testTheFirstButtonInTheCornerIsShownFromTheColumn() throws {
+        let window = cornerWindow(size: NSSize(width: 400, height: 300))
+        defer { window.close() }
+        let (button, column, content) = foot()
+        window.contentView = content
+        let place = PopoverSide.placement(of: button.bounds, in: button, beside: false)
+        XCTAssertEqual(place.move.dx, clear - 23, accuracy: 0.5)
+        XCTAssertGreaterThanOrEqual(place.move.dx, button.bounds.width, "the case: moved off the button")
+        let moved = button.bounds.offsetBy(dx: place.move.dx, dy: 0)
+        let hung = try XCTUnwrap(PopoverSide.holder(of: moved, in: button, edge: .maxY))
+        XCTAssertTrue(hung.view === column)
+        XCTAssertTrue(column.bounds.intersects(hung.rect), "NSPopover shows from a rect on its view")
+        XCTAssertEqual(column.convert(hung.rect, to: nil), button.convert(moved, to: nil))
     }
 
     // MARK: - the view the popover is shown from
@@ -150,7 +196,15 @@ final class PopoverSideTests: XCTestCase {
 
     /// What it is for, in a real window at the screen's corner: the popover
     /// comes up. Shown straight from the moved rect, it does not.
+    ///
+    /// The one test here that puts a window, and a popover, on the real
+    /// screen, so it runs only when asked: SEARCH_ONSCREEN_TESTS=1.
+    /// testTheFirstButtonInTheCornerIsShownFromTheColumn checks the same
+    /// path without showing anything.
     func testAPopoverFromTheFirstButtonInTheCornerComesUp() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["SEARCH_ONSCREEN_TESTS"] == "1",
+                          "shows a window on screen: SEARCH_ONSCREEN_TESTS=1 to run it")
+        if let realScreens { PopoverSide.screens = realScreens }
         let screen = try XCTUnwrap(NSScreen.main)
         let room = screen.visibleFrame
         try XCTSkipIf(room.width < 4 * clear || room.height < 4 * clear, "screen too small")
