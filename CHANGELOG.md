@@ -19,6 +19,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- The email field for news and the iPhone beta (the What's New card, the welcome and Settings › About) asks "Did you mean name@gmail.com?" under it when the domain looks like a typo (gmail.con, gnail.com, studio.cmo); the address in the line fills the field, and pressing Join again sends it as typed. Worked out on the Mac, nothing is sent to check it. `swift test --filter EmailTypoTests`
 - On macOS 15, Settings › Extensions says under a Manifest V3 extension whose pages need WebAssembly, Bitwarden's among them, that it won't run there: WebKit on macOS 15 refuses WebAssembly in these extensions' own pages whatever they ask, and the popup only said WebAssembly isn't supported. On macOS 26 it runs. `swift test --filter ExtensionLimitsTests`. Reported by [@Rokai-Jibe](https://github.com/Rokai-Jibe) ([#1383](https://github.com/driceroland/Search/issues/1383))
 
 ### Fixed

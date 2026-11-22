@@ -217,6 +217,10 @@ struct OptInForm: View {
     @State private var beta: Bool
     @State private var phase: Phase
     @State private var betaSent: Bool
+    /// "Did you mean …?", and the address it was shown for: the next press
+    /// with that address sends it as typed.
+    @State private var suggestion: String?
+    @State private var suggestedFor: String?
 
     /// `start` and `email`: where the form starts, for pictures.
     init(source: OptIn.Source, betaOnly: Bool = false, button: String = "Join", offersBeta: Bool = true,
@@ -247,6 +251,9 @@ struct OptInForm: View {
                         .disabled(phase == .sending || email.trimmingCharacters(in: .whitespaces).isEmpty)
                         .opacity(email.trimmingCharacters(in: .whitespaces).isEmpty ? 0.55 : 1)
                 }
+                if let suggestion {
+                    hint(suggestion)
+                }
                 if offersBeta && !betaOnly {
                     Tick(on: $beta, title: "Also send me the iPhone beta")
                 }
@@ -259,6 +266,29 @@ struct OptInForm: View {
             }
         }
         .animation(Motion.settle, value: phase)
+        .onChange(of: email) { _, now in
+            if now.trimmingCharacters(in: .whitespacesAndNewlines) != suggestedFor {
+                suggestion = nil
+                suggestedFor = nil
+            }
+        }
+    }
+
+    /// One quiet line under the field; the address in it fills the field.
+    private func hint(_ better: String) -> some View {
+        HStack(spacing: 0) {
+            Text("Did you mean ")
+            Button { email = better } label: {
+                Text(verbatim: better).underline().foregroundStyle(Palette.ink)
+            }
+            .buttonStyle(.plain)
+            Text("?")
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(Palette.muted)
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .transition(.opacity)
     }
 
     private var isFailed: Bool { if case .failed = phase { return true } else { return false } }
@@ -305,6 +335,12 @@ struct OptInForm: View {
 
     private func send() {
         guard phase != .sending, phase != .done else { return }
+        if let better = EmailTypo.hold(email, shownFor: suggestedFor) {
+            suggestion = better
+            suggestedFor = email.trimmingCharacters(in: .whitespacesAndNewlines)
+            return
+        }
+        suggestion = nil
         let list: OptIn.List = betaOnly ? .iPhoneBeta : .news(iPhoneBeta: offersBeta && beta)
         phase = .sending
         let store = store
