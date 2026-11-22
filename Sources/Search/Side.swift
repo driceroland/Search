@@ -496,7 +496,9 @@ struct SideBar: View {
             // width the edge went through, and it lagged the pointer (Bench
             // "edgetime": a frame in ten 30–120ms, now 12ms). Made again as
             // it is let go, in the time the column's own rows take anyway.
-            if live == nil { SwipeSided(side: browser.mapDrawn) { _ in others } }
+            // Nor while ⌘S takes the column to icons only or back
+            // (Browser.columnTurning), for the same reason (idea 927).
+            if live == nil, !browser.columnTurning { SwipeSided(side: browser.mapDrawn) { _ in others } }
         }
         // The card for a new space, with its field, only while the fingers
         // bring it. Over the pages, not among them: among them, each swipe's

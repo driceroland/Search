@@ -371,6 +371,11 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘S on its way to folding the column: the page already has the room,
     /// the column has not moved yet (see Browser.toggleFold).
     @Published var foldingAway = false
+    /// ⌘S taking the column to icons only or back (Preferences.shrinks):
+    /// its width glides, and the other spaces' rows kept out of sight for a
+    /// swipe (SideBar.others) are left out meanwhile (idea 927).
+    @Published var columnTurning = false
+    var turnTicket = 0
     var foldTicket = 0
     /// ⌘S sliding the column in or out: the page beside it is laid out to
     /// the column's edge on every frame of the slide, as it moves, rather

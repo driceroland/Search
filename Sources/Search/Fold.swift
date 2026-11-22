@@ -55,8 +55,21 @@ extension Browser {
         if prefs.shrinks, !folded {
             // Narrowed to the strip by its edge: the titles come back, as
             // pulling the edge out would bring them.
+            // The other spaces' rows, kept out of sight for a swipe, out of
+            // the column while its width glides: laid out again with it,
+            // with three spaces of 25 tabs the column moved on every other
+            // frame at best (idea 927, since 1.0.16: frames 20 ms apart at
+            // 120 Hz, 8 with one space). Made again once it rests, as after
+            // the edge is let go (SideBar.pages).
+            turnTicket += 1
+            let ticket = turnTicket
+            if !columnTurning { columnTurning = true }
             withAnimation(Motion.glide) {
                 if prefs.narrowStrip { prefs.narrowed = false } else { prefs.sideIcons.toggle() }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self, ticket == self.turnTicket else { return }
+                self.columnTurning = false
             }
             return
         }
