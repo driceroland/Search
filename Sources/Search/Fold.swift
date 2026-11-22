@@ -346,6 +346,9 @@ struct Fold: View {
 
     /// How near the edge the pointer has to be.
     private static let edge: CGFloat = 6
+    /// For a column hidden for good, which waits for the pointer to settle
+    /// (see dwell): a wider edge to find, as a hand reaches for it (#1279).
+    private static let hiddenEdge: CGFloat = 10
     /// How far past the window's edge, on the column's side, the pointer
     /// still counts as on it.
     private static let overshoot: CGFloat = 48
@@ -362,10 +365,14 @@ struct Fold: View {
     /// it was hard to find with the pointer; 12 is still under a page's
     /// own first line of anything to click.
     private static let top: CGFloat = 12
-    /// How long the pointer rests on the edge before a column folded for
-    /// good comes out. Long enough to cross the edge, short enough not to be
-    /// waited for.
+    /// How long the pointer rests on the edge before the strip comes out,
+    /// whose edge is the way to the menu bar. Long enough to cross the edge,
+    /// short enough not to be waited for.
     private static let dwell: TimeInterval = 0.15
+    /// The same for a column hidden for good: a hand on its way along the
+    /// side crosses its edge in a frame or two, and anything longer was felt
+    /// as a wait (#1279).
+    private static let columnDwell: TimeInterval = 0.05
 
     var body: some View {
         ZStack(alignment: onRight ? .topTrailing : .topLeading) {
@@ -603,7 +610,7 @@ struct Fold: View {
             let over = onOwnPanel || popup || holding || overshot || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
-        } else if inWindow, distance < Fold.edge,
+        } else if inWindow, distance < (prefs.sidebar && prefs.sideHides ? Fold.hiddenEdge : Fold.edge),
                   // In full screen, not from the corner where macOS brings
                   // the window's buttons down with the menu bar: the column
                   // came out over them there, on the way to the red one (#241).
@@ -654,7 +661,7 @@ struct Fold: View {
             peek(true)
         }
         arriving = coming
-        DispatchQueue.main.asyncAfter(deadline: .now() + Fold.dwell, execute: coming)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (prefs.sidebar ? Fold.columnDwell : Fold.dwell), execute: coming)
     }
 
     /// The pointer crossed the edge without stopping.
