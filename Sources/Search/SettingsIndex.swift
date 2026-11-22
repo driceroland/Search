@@ -566,7 +566,7 @@ enum SettingsIndex {
               more: "Each space can be signed in where the others are or start afresh. Mission Control's own Control-1 to Control-9, if you turned them on, take those keys first.",
               keys: ["spaces"], words: ["workspaces", "profiles"]),
         .init(id: "spaces.extras", group: "spaces", icon: "rectangle.3.group",
-              title: "More for spaces", detail: "⌘1–⌘9, a button per space, and asking where links go",
+              title: "More for spaces", detail: "⌘1–⌘9, a button per space, asking where links go, and the same tab across spaces",
               kind: .wide, advanced: true),
         .init(id: "spaces.commandNumbers", group: "spaces", icon: "command",
               title: "⌘1–⌘9 switch spaces", detail: "Tabs move to ⌃1–⌃9, as in Arc",
@@ -598,6 +598,11 @@ enum SettingsIndex {
               more: "A small panel lists every space: a number key opens the link in that space, and Return in the marked one. With Send links to a space on, Always saves a rule for its site.",
               keys: ["links.ask", "links.ask.last"],
               words: ["choose space", "which space", "links from other apps", "panel", "ask"], advanced: true, within: "spaces.extras"),
+        .init(id: "pins.sameTab", group: "spaces", icon: "pin",
+              title: "Use the same tab across spaces",
+              detail: "A pin kept in every space keeps its page in spaces that share sign-ins",
+              more: "Open a shared pin in another space in the same window and pick up where you left off without reloading the page.",
+              keys: ["pins.sameTab"], words: ["shared pins", "video", "playback", "scroll"], advanced: true, within: "spaces.extras"),
         .init(id: "pins.keep", group: "pins", icon: "pin.circle",
               title: "Pins keep their site", detail: "Links elsewhere open over the pin, and ⌘W takes it back home",
               more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at. With Links from pinned tabs open in a new tab on, those links open as tabs instead of peeks.",
@@ -981,7 +986,7 @@ enum SettingsIndex {
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
-        case "spaces.links", "links.ask", "spaces.buttons": return prefs.usesSpaces
+        case "spaces.links", "links.ask", "spaces.buttons", "pins.sameTab": return prefs.usesSpaces
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent", "newtab.arc": return prefs.floatingNewTab
         case "mail.default": return prefs.webmail != .none
@@ -1010,7 +1015,7 @@ enum SettingsIndex {
         case "tabs.clickKeepsName": return "Only with the address bar always shown, titles in the column or tabs across the top, and Double click to rename off"
         case "tabs.clickRenames": return "Only with titles in the column or tabs across the top"
         case "profiles.oneWindow": return "Only with more than one profile"
-        case "spaces.links", "links.ask", "spaces.buttons": return "Only with Spaces on"
+        case "spaces.links", "links.ask", "spaces.buttons", "pins.sameTab": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent", "newtab.arc": return "Only with the new tab in a floating field"
@@ -1237,6 +1242,7 @@ extension SettingsIndex {
             "tabs.sleep": prefs.sleepChoice.rawValue,
             "float.own": prefs.floatOwn.rawValue,
             "pins.keep": prefs.pinsKeepSite,
+            "pins.sameTab": prefs.pinsSameTab,
             "pins.home": prefs.pinsGoHome,
             "pins.peek": prefs.pinsPeek,
             "pins.linksNewTab": prefs.pinLinksOpenTabs,
@@ -1280,6 +1286,9 @@ extension SettingsIndex {
         case "tabs.mirror":
             guard let on = value as? Bool else { return false }
             prefs.mirrorsTabs = on
+        case "pins.sameTab":
+            guard let on = value as? Bool else { return false }
+            prefs.pinsSameTab = on
         case "pins.folders":
             guard let on = value as? Bool else { return false }
             prefs.pinFolders = on

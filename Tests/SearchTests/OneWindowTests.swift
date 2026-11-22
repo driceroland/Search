@@ -20,11 +20,19 @@ final class OneWindowTests: XCTestCase {
         XCTAssertEqual(back.tucked, true)
     }
 
+    func testRecordKeepsTheSharedPinOwner() throws {
+        var record = WindowRecord(space: Space.firstID)
+        record.sharedPinOwner = UUID()
+        let back = try JSONDecoder().decode(WindowRecord.self, from: JSONEncoder().encode(record))
+        XCTAssertEqual(back.sharedPinOwner, record.sharedPinOwner)
+    }
+
     func testOlderRecordIsAWindowOfItsOwn() throws {
         let old = #"{"id":"\#(UUID().uuidString)","space":"\#(Space.firstID.uuidString)"}"#
         let back = try JSONDecoder().decode(WindowRecord.self, from: Data(old.utf8))
         XCTAssertNil(back.merge)
         XCTAssertNil(back.tucked)
+        XCTAssertNil(back.sharedPinOwner)
     }
 
     func testOffByDefaultAndFindable() {

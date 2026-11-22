@@ -605,7 +605,7 @@ struct SideBar: View {
         let here = space == browser.spaceID
         let row = here
             ? Parked(tabs: browser.tabs, active: browser.activeID, splits: browser.splits, groups: browser.tabGroups)
-            : browser.parked[space] ?? Parked(tabs: [], active: nil)
+            : browser.arrivingRow(space)
         // Only when it isn't scrolled where the map would draw it anyway,
         // as it is once it has come: told every time, its rows in sight were
         // all made again as a swipe set off.

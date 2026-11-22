@@ -6289,9 +6289,16 @@ final class Bench {
                 "swipe": Double(browser.spaceSwipe),
                 // Each space off screen as a swipe draws it passing by
                 // (Parked.drawn): its groups, folded or not, and their tabs.
-                "drawn": Dictionary(uniqueKeysWithValues: browser.parked.map { id, row in
+                // And its pins, each the page that comes in with the space
+                // when the same tab is used across spaces (arrivingRow), with
+                // what its square draws of it: dimmed asleep, and its count.
+                "drawn": Dictionary(uniqueKeysWithValues: browser.parked.keys.map { id in
+                    let row = browser.arrivingRow(id)
                     let (groups, loose) = row.drawn(groupsOn: browser.prefs.usesTabGroups, splitView: browser.prefs.splitView)
                     return (browser.spaces.first { $0.id == id }?.name ?? id.uuidString, [
+                        "pins": row.tabs.filter { $0.pin != nil }.map {
+                            ["id": Bench.short($0), "asleep": $0.asleep, "unread": $0.unread ?? ""] as [String: Any]
+                        },
                         "groups": groups.map { ["name": $0.group.name, "collapsed": $0.group.collapsed,
                                                 "tabs": $0.tabs.map(Bench.short)] as [String: Any] },
                         "loose": loose.map(Bench.short),

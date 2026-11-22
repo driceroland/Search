@@ -379,7 +379,7 @@ struct TabBar: View {
             let space = browser.spaces[index]
             let row = space.id == browser.spaceID
                 ? Parked(tabs: browser.tabs, active: browser.activeID, splits: browser.splits)
-                : browser.parked[space.id] ?? Parked(tabs: [], active: nil)
+                : browser.arrivingRow(space.id)
             let groupsOn = browser.prefs.usesTabGroups
             // Its groups as they were left, folded or not (see Parked.drawn):
             // drawn flat, a folded group's tabs came out for the swipe.

@@ -14,7 +14,7 @@ final class SettingsIndexTests: XCTestCase {
     private let touched = ["sidebar", "sidebar.position", "tabs.sleep", SleepPace.key, "float.leave", "float.away",
                            "pins.home", "pins.peek", "links.peek", "links.peekClick", "pages.120", "pages.120.mode",
                            "swipe.history", "tabs.address", "links.show", "float.flicks", "spaces", "pins.list",
-                           "newtab.floating", "search.shift", "search.shiftCustom", "tabs.swipeBackCloses"]
+                           "newtab.floating", "search.shift", "search.shiftCustom", "tabs.swipeBackCloses", "pins.sameTab"]
 
     private func fresh(_ body: () -> Void) {
         let saved = touched.map { ($0, Store.settings.object(forKey: $0)) }
@@ -65,6 +65,32 @@ final class SettingsIndexTests: XCTestCase {
             XCTAssertFalse(Preferences().showsLoadingLine)
             Store.settings.set(true, forKey: "fold.loadingLine")
             XCTAssertTrue(Preferences().showsLoadingLine, "turned on by hand, it stays on")
+        }
+    }
+
+    func testSameTabAcrossSpacesIsOffByDefaultAndFindable() {
+        fresh {
+            let prefs = Preferences()
+            let key = "pins.sameTab"
+            XCTAssertFalse(prefs.pinsSameTab)
+            XCTAssertNil(Store.settings.object(forKey: key))
+            let row = SettingsIndex.item(key)
+            XCTAssertEqual(row?.keys, [key])
+            // A line of More for spaces, under Advanced, beside the other
+            // switches that only apply with Spaces on.
+            XCTAssertEqual(row?.within, "spaces.extras")
+            XCTAssertEqual(row?.advanced, true)
+            XCTAssertEqual(row?.group, "spaces")
+            XCTAssertEqual(row?.page, .spaces)
+            XCTAssertTrue(SettingsIndex.find("shared pins video").contains { $0.id == key })
+            if let row {
+                prefs.usesSpaces = false
+                XCTAssertFalse(SettingsIndex.applies(row, prefs))
+                prefs.usesSpaces = true
+                XCTAssertTrue(SettingsIndex.applies(row, prefs))
+            }
+            XCTAssertTrue(SettingsIndex.apply(key, true, to: prefs))
+            XCTAssertTrue(Preferences().pinsSameTab)
         }
     }
 

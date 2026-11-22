@@ -35,6 +35,8 @@ struct WindowRecord: Codable {
     /// Its column, or the strip across the top, folded away with ⌘S (see
     /// Fold.swift). Nil, as in any line written before it was kept: shown.
     var folded: Bool?
+    /// Last space holding this window’s shared pin pages while a separate sign-in space is open.
+    var sharedPinOwner: UUID?
 
     init(space: UUID = Space.firstID) { self.space = space }
 
@@ -46,6 +48,7 @@ struct WindowRecord: Codable {
         rows = (try? values.decode([String: Session.Shape].self, forKey: .rows)) ?? [:]
         merge = try? values.decode(UUID.self, forKey: .merge)
         tucked = try? values.decode(Bool.self, forKey: .tucked)
+        sharedPinOwner = try? values.decode(UUID.self, forKey: .sharedPinOwner)
         folded = try? values.decode(Bool.self, forKey: .folded)
     }
 
@@ -569,6 +572,8 @@ enum Browsers {
     /// oldest, or when it is going away — its rows.
     static func record(of browser: Browser, rows: Bool, keeping: Bool = false) -> WindowRecord {
         var record = browser.record
+        record.sharedPinOwner = browser.prefs.reusesSharedPins
+            ? browser.sharedPinOwner : nil
         record.space = browser.spaceID
         if let window = browser.window { record.frame = NSStringFromRect(window.frame) }
         if rows { record.rows = browser.allRows(keeping: keeping) }
