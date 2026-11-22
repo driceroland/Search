@@ -41,11 +41,16 @@ def check(label, slides=True):
     a = sv.cmd({"do": "foldtime"})
     passes = a["passes"]
     t.ok(f"{label}: folded", a["folded"], a)
-    t.ok(f"{label}: the room the page grew into was covered", a.get("covers", 0) >= 1, a.get("covers"))
+    following = [p for p in passes if p.get("follows")]
     if slides:
-        moving = [p for p in passes if p["folded"]]
-        t.ok(f"{label}: covered while the column slides",
-             bool(moving) and moving[0]["covered"] >= 1, [(p["at"], p["folded"], p["covered"]) for p in passes][:8])
+        # Sliding, the page follows the column (fold_follow.py): what it
+        # grows into is its own colour, the view's ground, all the slide.
+        t.ok(f"{label}: the page follows the column", bool(following), [(p["at"], p.get("follows")) for p in passes][:6])
+        t.ok(f"{label}: in its own colour while the column slides", all(p["grounded"] for p in following),
+             [(p["at"], p["grounded"]) for p in following][:8])
+        t.ok(f"{label}: …and its own ground back once it rests", not passes[-1]["grounded"], passes[-1])
+    else:
+        t.ok(f"{label}: the room the page grew into was covered", a.get("covers", 0) >= 1, a.get("covers"))
     t.ok(f"{label}: the cover goes once the page is drawn", a.get("coveredAfter") == 0, a.get("coveredAfter"))
     time.sleep(0.5)
     b = sv.cmd({"do": "foldtime"})

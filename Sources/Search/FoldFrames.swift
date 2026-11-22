@@ -17,6 +17,9 @@ import WebKit
 /// loop and how long it ran; and the window's layers half way through,
 /// with those that make the window server draw apart (masks, shadows,
 /// filters, rounded clips) and those laid out beyond the window.
+/// With "track", where the column's edge and the page's content are on
+/// each frame (see `shown`, fold_follow.py); with "peek", the pointer at
+/// the edge brings the folded column out and back instead of ⌘S.
 @MainActor
 enum FoldFrames {
     /// The window's frame before it was staged, kept for nothing but a check.
@@ -43,7 +46,7 @@ enum FoldFrames {
                             "atRest": census(window)])
                     return
                 }
-                once(browser, window, span: span) { found in
+                once(browser, window, span: span, request: request) { found in
                     presses.append(found)
                     later(rest) { press(n + 1) }
                 }
@@ -105,6 +108,41 @@ enum FoldFrames {
         @objc func tick(_ link: CADisplayLink) { ticks.append((link.timestamp, column())); look() }
     }
 
+    /// Where things are on a display frame, as Core Animation shows them
+    /// (presentation layers): the page's own left edge and width in the
+    /// window, and each of the page's composited layers of a size asked
+    /// for (`track`, [[w, h]…]: an element of the probe's page with a
+    /// layer of its own), its left edge in the window. With WebKit's
+    /// layers drawn in this process, those are the page's content as it
+    /// is put on screen, not as the page last laid it out.
+    static func shown(_ web: WKWebView?, _ root: CALayer, track: [CGSize]) -> [String: Any] {
+        guard let web, let layer = web.layer else { return [:] }
+        let top = root.presentation() ?? root
+        func place(_ l: CALayer) -> CGRect { (l.presentation() ?? l).convert((l.presentation() ?? l).bounds, to: top) }
+        let page = place(layer)
+        var found: [String: Double] = [:]
+        if !track.isEmpty {
+            func walk(_ l: CALayer) {
+                for (n, size) in track.enumerated() where found["m\(n)"] == nil
+                    && abs(l.bounds.width - size.width) < 0.5 && abs(l.bounds.height - size.height) < 0.5 {
+                    found["m\(n)"] = Double(place(l).minX)
+                }
+                for sub in l.sublayers ?? [] { walk(sub) }
+            }
+            walk(layer)
+        }
+        var out: [String: Any] = ["x": Double(page.minX), "w": Double(page.width), "frameW": Double(web.frame.width)]
+        // What shows where the page hasn't drawn yet: the view's own ground,
+        // and whether that is the page's colour.
+        var under: CGColor?
+        web.effectiveAppearance.performAsCurrentDrawingAppearance { under = web.underPageBackgroundColor.cgColor }
+        // (Or covered in the page's colour, Browser.cover's way.)
+        out["groundIsPage"] = web.subviews.contains { $0 is FoldCover }
+            || (layer.presentation() ?? layer).backgroundColor.map { ground in under.map { ground == $0 } ?? false } ?? false
+        for (k, v) in found { out[k] = (v * 10).rounded() / 10 }
+        return out
+    }
+
     /// Each layer's model state, frame to frame: what the window server is
     /// handed again. Moved (position, bounds, opacity, hidden) and redrawn
     /// (new contents), counted per frame, with who redrew.
@@ -145,8 +183,11 @@ enum FoldFrames {
     }
 
     /// One ⌘S, timed for `span` seconds.
-    private static func once(_ browser: Browser, _ window: NSWindow, span: Double,
+    private static func once(_ browser: Browser, _ window: NSWindow, span: Double, request: [String: Any] = [:],
                              _ done: @escaping @MainActor ([String: Any]) -> Void) {
+        let track = (request["track"] as? [[Double]] ?? []).compactMap { $0.count == 2 ? CGSize(width: $0[0], height: $0[1]) : nil }
+        var seen: [[String: Any]] = []
+        var started = CACurrentMediaTime()
         guard let root = window.contentView?.superview else { done([:]); return }
         func catches(in view: NSView) -> [NSView] {
             (String(describing: type(of: view)) == "Catch" ? [view] : []) + view.subviews.flatMap(catches)
@@ -163,6 +204,12 @@ enum FoldFrames {
         var pageWidths: [Int] = []
         if let top = root.layer {
             ticker.look = {
+                if request["track"] != nil {
+                    var at = shown(browser.active?.built, top, track: track)
+                    at["t"] = ((CACurrentMediaTime() - started) * 10000).rounded() / 10
+                    at["col"] = ticker.column()
+                    seen.append(at)
+                }
                 layers.look(top)
                 if let w = browser.active?.built.map({ Int($0.frame.width) }), pageWidths.last != w { pageWidths.append(w) }
             }
@@ -182,9 +229,13 @@ enum FoldFrames {
         let link = (NSScreen.main ?? NSScreen.screens[0]).displayLink(target: ticker, selector: #selector(Ticker.tick(_:)))
         link.add(to: .main, forMode: .common)
         let before = browser.folded
-        let started = CACurrentMediaTime()
+        let peeked = browser.peeking
+        seen.removeAll()
+        started = CACurrentMediaTime()
         let cpu0 = cpu()
-        browser.toggleFold()
+        // "peek": the folded column out over the page and back, as the
+        // pointer at the edge brings it, rather than ⌘S.
+        if request["peek"] as? Bool == true { browser.peek(!browser.peeking) } else { browser.toggleFold() }
         var middle: [String: Any] = [:]
         later(0.1) { middle = census(window) }
         later(span) {
@@ -212,7 +263,7 @@ enum FoldFrames {
                   "longestPass": ((passes.max() ?? 0) * 10).rounded() / 10,
                   "cpuMs": ((cpu1 - cpu0) * 10000).rounded() / 10,
                   "layersMoved": layers.moved, "layersMovedMax": layers.maxMoved, "redrawn": layers.redrawn, "addedLayers": layers.added,
-                  "redrawers": layers.redrawers, "pageWidths": pageWidths,
+                  "redrawers": layers.redrawers, "pageWidths": pageWidths, "peeked": peeked, "seen": seen,
                   "middle": middle])
         }
     }

@@ -372,6 +372,12 @@ final class Browser: NSObject, ObservableObject {
     /// the column has not moved yet (see Browser.toggleFold).
     @Published var foldingAway = false
     var foldTicket = 0
+    /// ⌘S sliding the column in or out: the page beside it is laid out to
+    /// the column's edge on every frame of the slide, as it moves, rather
+    /// than given or giving up its room at one end of it (see
+    /// Browser.slidePage).
+    @Published var pageFollows = false
+    var followTicket = 0
     /// The column kept in its place while it fades out or in (see
     /// Browser.moveColumn and Motion.fadesColumn).
     @Published var fadeHeld = false

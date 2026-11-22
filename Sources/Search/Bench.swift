@@ -1349,7 +1349,10 @@ final class Bench {
                                "page": Double(web.frame.width), "rows": built - rows, "folded": browser.folded,
                                "away": browser.foldingAway, "peeking": browser.peeking, "column": columnX(), "held": browser.fadeHeld,
                                // Covers over what the page has yet to draw (Browser.cover).
-                               "covered": web.subviews.filter { $0 is FoldCover }.count])
+                               "covered": web.subviews.filter { $0 is FoldCover }.count,
+                               // Following the column, in its own colour (Browser.slidePage).
+                               "follows": browser.pageFollows,
+                               "grounded": (web as? PageView)?.ground != nil])
                 rows = built
                 woke = 0
                 if lights == nil, let slide = Fold.titlebar?.layer?.animation(forKey: "fold") {

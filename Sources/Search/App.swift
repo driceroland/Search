@@ -573,10 +573,15 @@ struct ContentView: View {
             // strip, not behind them — a page sliding beneath floating chrome
             // is a browser showing off, and it costs a compositing pass.
             //
-            // When the column or the strip comes or goes, the page slides with
-            // it and is resized once, not on every frame of the slide: laid out
-            // again thirty times a second, the page juddered along its right
-            // edge and overshot the window with the spring (see `room`).
+            // When the strip comes or goes, or the column as the tabs move
+            // between it and the strip or to its other side, the page slides
+            // with it and is resized
+            // once, not on every frame of the slide: laid out again thirty
+            // times a second, the page juddered along its right edge and
+            // overshot the window with the spring (see `room`). ⌘S's slide of
+            // the column is the exception: the page follows the column's
+            // edge, resized on every frame, or what it centres jumped half
+            // the column's width at one end of the slide (Browser.slidePage).
             //
             // With the tabs down the side the page is a card on the window's
             // ground: a gap on the far side and along the bottom here, at the
@@ -762,8 +767,15 @@ struct ContentView: View {
             && fullscreenTab == nil
     }
 
-    /// The room the page is laid out to leave them, which is not animated.
-    private var roomed: CGSize { room ?? chrome }
+    /// The room the page is laid out to leave them, which is not animated;
+    /// while ⌘S slides the column, the column's own, which is (see
+    /// Browser.slidePage).
+    private var roomed: CGSize {
+        if browser.pageFollows, browser.prefs.sidebar, edges.side == nil {
+            return CGSize(width: chrome.width, height: (room ?? chrome).height)
+        }
+        return room ?? chrome
+    }
 
     private var sideOnRight: Bool {
         browser.prefs.sidebar && browser.prefs.sidePosition == .right
@@ -786,6 +798,15 @@ struct ContentView: View {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) { room = CGSize(width: max(Metrics.sideMin, new.width - 40), height: new.height) }
+            return
+        }
+        // ⌘S sliding the column: the page follows it (see `roomed`), and
+        // has this room once it rests.
+        if browser.pageFollows, browser.prefs.sidebar, new.height == now.height {
+            roomTicket += 1
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { room = new }
             return
         }
         // Given already, with the chrome itself (see `immersing`).

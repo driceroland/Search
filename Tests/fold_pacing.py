@@ -20,8 +20,9 @@ background there. Measured against 1.0.15 the same way:
   frames longer than three display frames (one press in ten may have one,
   as 1.0.15's did, never past 50 ms), the 95th percentile one frame;
 - the page is never drawn clear while the column moves;
-- folding the column away paints the page no more often than bringing it
-  back does (1.0.15: the same; 1.0.16: twice as often);
+- folding the column away paints the page no more than a page following
+  the column's edge needs to (fold_follow.py; 1.0.15 and 1.0.17 resized it
+  once, 1.0.16 painted it twice over, drawn clear);
 - and a window made wider still clears its page's ground while WebKit
   catches up (#1250), and one made narrower doesn't, having nothing undrawn.
 """
@@ -73,7 +74,14 @@ try:
         t.ok(f"{name}: the page is never drawn clear mid-slide", not any(clear), clear)
         away = statistics.median(painted(p) for p in presses if not p["was"])
         back = statistics.median(painted(p) for p in presses if p["was"])
-        t.ok(f"{name}: folding away paints the page no more than coming back", away <= back + 2, (away, back))
+        # The page follows the column (fold_follow.py): going away it is
+        # drawn at each wider width it passes through, coming back it is
+        # only cut narrower, so going away paints more (195 tiles against
+        # 120 on springs, 22 Nov 2026). 1.0.16's second paint came with the
+        # page drawn clear, which is checked for itself above.
+        print(f"    {name}: tiles painted going away {away}, coming back {back}")
+        t.ok(f"{name}: folding away paints the page no more than a page following the column does",
+             away <= 2.5 * back + 10, (away, back))
     # #1250 kept: a window made wider still clears its page's own ground
     # while WebKit catches up, and gives it back; made narrower, nothing
     # is left undrawn, so nothing is cleared.
