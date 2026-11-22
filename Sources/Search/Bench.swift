@@ -5040,6 +5040,8 @@ final class Bench {
             // The tab on screen clicked again: its address opened, as typed
             // into nothing yet, the site card under it.
             if request["opentab"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab) }
+            // The tab's menu › Site Information… on the tab on screen.
+            if request["siteinfo"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab, card: true) }
             if request["finishedit"] as? Bool == true { browser.finishTabEdit() }
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }
             // Settings › Privacy › Clear › Cache, answered once every store

@@ -528,6 +528,12 @@ final class Preferences: ObservableObject {
     @Published var showsAddress: Bool {
         didSet { store.set(showsAddress, forKey: "tabs.address") }
     }
+    /// A click on the tab you're on opens its address to edit and nothing
+    /// else: no site card under it. Site Information… in the tab's menu
+    /// still shows the card. Off unless turned on (idea 951).
+    @Published var tabClickAddressOnly: Bool {
+        didSet { store.set(tabClickAddressOnly, forKey: "tabs.clickAddressOnly") }
+    }
     /// The ad blocker. On unless turned off; there is nothing else to it.
     @Published var shielded: Bool {
         didSet { store.set(shielded, forKey: "shield") }
@@ -1238,6 +1244,7 @@ final class Preferences: ObservableObject {
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
         // Security's advice); a choice made before stands.
         showsAddress = store.object(forKey: "tabs.address") as? Bool ?? true
+        tabClickAddressOnly = store.bool(forKey: "tabs.clickAddressOnly")
         shielded = store.object(forKey: "shield") as? Bool ?? true
         let keeps = store.bool(forKey: "sites.keep")
         keepsSignIns = keeps
@@ -1486,6 +1493,7 @@ final class Preferences: ObservableObject {
         Swipe.bounces = bounces
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
+        take(\.tabClickAddressOnly, store.bool(forKey: "tabs.clickAddressOnly"))
         take(\.instantMotion, store.bool(forKey: Motion.instantKey))
         take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))
         take(\.spacesOnCommand, store.bool(forKey: Preferences.spacesOnCommandKey))

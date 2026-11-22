@@ -709,6 +709,7 @@ struct SettingsPanel: View {
                 get: { prefs.showsAddress },
                 set: { on in withAnimation(Motion.glide) { prefs.showsAddress = on } }
             ))
+        case "tabs.clickAddressOnly": Switch(on: $prefs.tabClickAddressOnly)
         case "note.groups", "note.awake": Always()
         default: EmptyView()
         }

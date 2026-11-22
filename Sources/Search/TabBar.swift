@@ -1997,7 +1997,7 @@ struct TabMenu: View {
         // The card a click on the tab you are on shows under its address.
         Button("Site Information…") {
             if browser.activeID != tab.id { browser.select(tab) }
-            browser.beginTabEdit(tab)
+            browser.beginTabEdit(tab, card: true)
         }
         .disabled(tab.isBlank || tab.address == nil || tab.pin != nil)
         Button("Copy Address") {

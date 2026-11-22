@@ -2513,8 +2513,13 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var tabPicked: Int?
     /// The address the edit began with: nothing is offered for that.
     private var tabOriginal = ""
+    /// Whether this edit brings the site card under the field: not for a
+    /// click with Settings › "Clicking the tab you're on edits its address
+    /// only" on; always for Site Information… (SiteCardPanel.follow).
+    private(set) var tabEditCard = true
 
-    func beginTabEdit(_ tab: Tab) {
+    /// `card`: nil for a click on the tab, which follows the setting.
+    func beginTabEdit(_ tab: Tab, card: Bool? = nil) {
         // The column of icons has no row to type in: the field over the
         // page, with the address in it, as ⌘L brings it.
         guard let url = tab.shownURL, !prefs.iconColumn else {
@@ -2526,6 +2531,7 @@ final class Browser: NSObject, ObservableObject {
         tabOriginal = tabDraft
         tabOffers = []
         tabPicked = nil
+        tabEditCard = card ?? !prefs.tabClickAddressOnly
         editingTab = tab.id
     }
 
