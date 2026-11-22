@@ -269,11 +269,31 @@ final class Preferences: ObservableObject {
     /// and not with the column kept folded, where ⌘S is what brings it out
     /// to stay (see Fold.swift).
     var shrinks: Bool { sidebar && foldsToIcons && !sideHides }
-    /// Whether the column is showing as icons now: down a side, and asked for.
-    var iconColumn: Bool { sidebar && sideIcons }
+    /// Pulled narrower than Metrics.narrowLine, the column becomes a strip
+    /// of the sites' marks with its buttons, and pulled back out it has its
+    /// titles again: under that width the rows' titles, the lights' row and
+    /// the foot ran into each other. Off unless asked for; Settings ›
+    /// Appearance › Tabs.
+    @Published var narrowsToIcons: Bool {
+        didSet { store.set(narrowsToIcons, forKey: "sidebar.narrowIcons") }
+    }
+    /// Whether the column was last let go of as that strip. Kept, so it is
+    /// still a strip after a relaunch.
+    @Published var narrowed: Bool {
+        didSet { store.set(narrowed, forKey: "sidebar.narrowed") }
+    }
+    /// The strip it narrows to: the column of icons, without back, forward
+    /// and reload, its buttons where Buttons at the top puts them.
+    var narrowStrip: Bool { sidebar && !sideIcons && narrowsToIcons && narrowed }
+    /// Whether the column is showing as icons now: down a side, and asked
+    /// for, or pulled narrow enough to become the strip.
+    var iconColumn: Bool { sidebar && sideIcons || narrowStrip }
     /// The column's width as drawn: fixed with icons only, pulled by its
-    /// edge otherwise (the width pulled is kept for when titles come back).
-    var columnWidth: CGFloat { iconColumn ? Metrics.iconColumn : sideWidth }
+    /// edge otherwise (the width pulled is kept for when titles come back),
+    /// and never under the line while narrowing to the strip is on.
+    var columnWidth: CGFloat {
+        iconColumn ? Metrics.iconColumn : narrowsToIcons ? max(Metrics.narrowLine, sideWidth) : sideWidth
+    }
     /// A tab playing sound out of sight shows at the foot of the sidebar,
     /// with its pause (see Player.swift). Off unless asked for.
     @Published var showsPlayer: Bool {
@@ -1152,6 +1172,8 @@ final class Preferences: ObservableObject {
         foldButton = store.bool(forKey: "sidebar.foldButton")
         sideIcons = store.bool(forKey: "sidebar.icons")
         foldsToIcons = store.bool(forKey: "sidebar.foldIcons")
+        narrowsToIcons = store.bool(forKey: "sidebar.narrowIcons")
+        narrowed = store.bool(forKey: "sidebar.narrowed")
         showsPlayer = store.bool(forKey: "sidebar.player")
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
@@ -1428,6 +1450,8 @@ final class Preferences: ObservableObject {
         take(\.foldButton, store.bool(forKey: "sidebar.foldButton"))
         take(\.sideIcons, store.bool(forKey: "sidebar.icons"))
         take(\.foldsToIcons, store.bool(forKey: "sidebar.foldIcons"))
+        take(\.narrowsToIcons, store.bool(forKey: "sidebar.narrowIcons"))
+        take(\.narrowed, store.bool(forKey: "sidebar.narrowed"))
         take(\.sideWidth, "sidebar.width", (store.object(forKey: "sidebar.width") as? Double).map { CGFloat($0) }
             .flatMap { (Metrics.sideMin...Metrics.sideMax).contains($0) ? $0 : nil }, or: Metrics.side)
         take(\.sidePanelWidth, "sidepanel.width", (store.object(forKey: "sidepanel.width") as? Double).map { CGFloat($0) }

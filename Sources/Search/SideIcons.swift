@@ -125,7 +125,9 @@ struct IconTile: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(live ? Palette.ink : Palette.muted)
             } else {
-                Mark(icon: tab.icon, letter: tab.monogram, size: 16, dim: tab.asleep)
+                // The strip shows what the rows with titles would, letters
+                // or icons; icons only has always shown icons.
+                Mark(icon: prefs.narrowStrip && prefs.glyph == .letters ? nil : tab.icon, letter: tab.monogram, size: 16, dim: tab.asleep)
                     .opacity(live || hovering ? 1 : 0.85)
             }
         }

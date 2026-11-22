@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Added
 
 - A sidebar button, in Settings › Appearance › Tabs: right of the window's own buttons, before back, forward and reload, it hides the sidebar as ⌘S does, where Safari and Arc keep theirs. With the sidebar out over the page at the window's edge, the same click keeps it out. Only with titles in the column; off unless you turn it on. Thanks [@petty](https://github.com/petty) ([#1351](https://github.com/driceroland/Search/pull/1351))
+- Settings › Appearance › Tabs › Narrow to icons, off unless you turn it on: pull the sidebar narrower than 200 points, where titles, the window's buttons and the foot started to run into each other, and it becomes a thin strip of the tabs' letters or icons, as you have them, with its buttons — before the pins with Buttons at the top, after the tabs otherwise — in the space's colour. Back, forward and reload stay on their keys. Pull the edge back out, double-click it, or press ⌘S where ⌘S shrinks the column, for titles again. `swift test --filter NarrowStripTests`. Thanks [@petty](https://github.com/petty) ([#1360](https://github.com/driceroland/Search/pull/1360))
 
 ### Fixed
 
