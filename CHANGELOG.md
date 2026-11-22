@@ -11,6 +11,14 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+## 1.0.17 — 22 November 2026
+
 ### Added
 
 - Settings › Privacy › Try HTTPS first, off unless you turn it on: an http:// link, bookmark or history entry tries HTTPS first and loads as asked only where the site has none. Sites WebKit already knew have HTTPS were upgraded before; with it on, any site is. Local addresses (localhost, .test, .local, IP addresses) are left as they are. macOS 15.2 and later. Thanks [@beatsbypedro](https://github.com/beatsbypedro)
@@ -32,9 +40,6 @@ in [ROADMAP.md](ROADMAP.md).
 - Right-click one of several tabs picked with ⌘ or ⇧ and the menu lists only what can be done to all of them, and does it to all of them: Move to Group, Pin or Unpin, Move to Space, Open in Split View, Move to Window, Copy Addresses, Mute, Put to Sleep, Close and Close Other Tabs. An action shows only when every picked tab can take it, and moving them to a space with other sign-ins asks once, not once a tab. `swift test --filter TabSelectionTests`. Thanks [@xenonwellz](https://github.com/xenonwellz) ([#1287](https://github.com/driceroland/Search/pull/1287), [#1283](https://github.com/driceroland/Search/issues/1283))
 - Settings › Appearance › Tabs show says what the choice is, "A letter or the site's icon"; where it shows, beside the title and on a pinned square, is behind the (i). The line only said where, and tabs wearing letters were taken for site icons that hadn't loaded. Thanks [@dnhuan](https://github.com/dnhuan) ([#1276](https://github.com/driceroland/Search/pull/1276), [#1271](https://github.com/driceroland/Search/issues/1271))
 - The welcome's two small pictures, Sidebar and Tab strip, show what the tabs wear as Tabs wear is switched: a letter in a faint square, or a patch of colour where a site's icon would be. Thanks [@dnhuan](https://github.com/dnhuan) ([#1275](https://github.com/driceroland/Search/pull/1275), [#1271](https://github.com/driceroland/Search/issues/1271))
-
-### Changed
-
 - Profiles can be put in any order, Personal no longer always first. With Settings › Spaces & Pins › Profiles in one window on, Move Left on a profile's first space, or Move Right on its last, moves the whole profile past the one beside it: the space's menu, ⌃1–⌃9, the swipe and the profiles list follow, and the order is kept. `python3 Tests/profile_order.py` (reported by email)
 - Spaces brought over from Arc (or Zen) take the place of the space you started with when nothing was ever put in it (no pins, no tab but an empty one), as in Arc, instead of leaving an unused "Personal" beside them. A first space with anything in it stays. `python3 Tests/space_arc_replace.py` ([#1326](https://github.com/driceroland/Search/issues/1326))
 
@@ -81,13 +86,6 @@ in [ROADMAP.md](ROADMAP.md).
 - The extensions button at the foot of the column sits centred between its neighbours: the puzzle's drawing leans almost a point left in its own box, and looked pulled toward the space's icon. Reported by [@xenonwellz](https://github.com/xenonwellz) ([#1281](https://github.com/driceroland/Search/issues/1281))
 - A double-click along the top of the window fills the screen and stays there, instead of snapping straight back, and a double-click in the empty run beside the tabs opens a new tab without also filling the window. Since 1.0.16 kept the window movable over the top for window managers, macOS answered the title bar's double-click as well as Search; the strip now takes the double-click itself, so only one answers. `swift test --filter DragStripDoubleClickTests`. Thanks [@ricardo-rp](https://github.com/ricardo-rp) ([#1338](https://github.com/driceroland/Search/pull/1338))
 - Switching spaces with ⌃1–⌃9 or the space's menu changes the window's colour at once. It waited for the next space's tabs to slide in and settle, up to most of a second, before the colour began to change. Thanks [@petty](https://github.com/petty) ([#1339](https://github.com/driceroland/Search/pull/1339))
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
-
 
 ## 1.0.16 — 20 November 2026
 
