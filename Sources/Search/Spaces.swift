@@ -414,11 +414,17 @@ extension Browser {
     /// profile shown. None with spaces off, and while a new one is being
     /// made, as the dot has.
     var wash: SpaceLook? {
-        prefs.usesSpaces && !makingSpace ? washSpace.look : nil
+        if makingSpace { return nil }
+        if prefs.usesSpaces, let own = washSpace.look { return own }
+        return prefs.browserTheme.look
     }
 
-    /// How strongly the wash is drawn: the space on screen's strength.
-    var washStrength: SpaceStrength { wash == nil ? .subtle : washSpace.washStrength }
+    /// How strongly the wash is drawn: the space on screen's strength, or
+    /// the browser colour's where that is what shows.
+    var washStrength: SpaceStrength {
+        if prefs.usesSpaces, !makingSpace, washSpace.look != nil { return washSpace.washStrength }
+        return wash == nil ? .subtle : prefs.browserTheme.strength
+    }
 
     /// The space the wash is of: the one a click is taking you to, already,
     /// or the one on screen. Waiting for the switch itself, the old colour

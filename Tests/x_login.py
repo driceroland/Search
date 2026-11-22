@@ -9,8 +9,8 @@ Continue with Apple buttons are pressed (real clicks, the bench's tap). No
 window is made or shown, and no account is used.
 
 It checks that the whole form is drawn (the name field, Google's and Apple's
-buttons), that X's own requests all come back, that Shield blocks none of the
-hosts the sign-in uses, that Google's window keeps its opener (as a tab, and
+buttons), that X's own requests all come back, that Google's window keeps
+its opener (as a tab, and
 as a small window with Settings › Tabs › Pop-ups in small windows), and that
 Apple's button raises the system's Sign in with Apple sheet, as in a bare
 WKWebView and in Safari.
@@ -50,12 +50,6 @@ FORM = r"""JSON.stringify({
 SIGN_IN_HOSTS = ["x.com", "api.x.com", "jf.x.com", "abs.twimg.com", "pbs.twimg.com", "twitter.com",
                  "client-api.arkoselabs.com", "x-api.arkoselabs.com", "challenges.cloudflare.com",
                  "accounts.google.com", "appleid.apple.com", "appleid.cdn-apple.com"]
-
-
-def shield_domains():
-    src = (sv.ROOT / "Sources/Search/Shield.swift").read_text()
-    start = src.index("private static let unwanted = [")
-    return re.findall(r'"([^"]+)"', src[start:src.index("]", start)])
 
 
 def load():
@@ -109,10 +103,6 @@ def main():
         t.ok("Continue with Apple is drawn", form["apple"], form)
         calls = (form["xl"] or {}).get("calls", [])
         t.ok("X's own requests all come back", calls and all(c[1] == 200 for c in calls), calls)
-        unwanted = shield_domains()
-        hit = [h for h in set(SIGN_IN_HOSTS + form["hosts"])
-               if any(h == d or h.endswith("." + d) for d in unwanted)]
-        t.ok("Shield blocks none of the hosts the sign-in uses", not hit, hit)
         google(t, tab, "in a tab", windows=False)
         # Apple's button: WebKit hands the request to macOS (AppSSO), whose
         # sheet asks, as in Safari. On a hidden window it stays unseen.

@@ -71,7 +71,6 @@ enum SyncSettings {
         raw("tabs.close.after", \.tabLife),
         raw("tabs.newPlace", \.newTabPlace),
         coded("tabs.shortcuts", \.showsTabShortcuts),
-        coded("shield", \.shielded),
         coded("privacy.clickIDs", \.removesClickIDs),
         coded("privacy.gpc", \.sendsPrivacySignal),
         coded("bookmarks.bar", \.bookmarksBar),
@@ -81,7 +80,7 @@ enum SyncSettings {
     /// Their keys, readable anywhere (SyncItems.understood).
     static let known: Set<String> = [
         "look", "glyph", "search.engine", "search.custom", "search.suggest", "search.keywords", "spaces",
-        "pins.list", "pins.home", "tabs.close.after", "tabs.newPlace", "tabs.shortcuts", "shield",
+        "pins.list", "pins.home", "tabs.close.after", "tabs.newPlace", "tabs.shortcuts",
         "privacy.clickIDs", "privacy.gpc", "bookmarks.bar", "quit.confirm",
     ]
 

@@ -18,6 +18,10 @@ struct ThemesPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            browserColours
+
+            Text("Home background")
+                .font(.system(size: 13, weight: .semibold))
             mock
 
             Picker("", selection: Binding(get: { family }, set: choose)) {
@@ -64,6 +68,77 @@ struct ThemesPage: View {
         }
     }
 
+    // MARK: - the browser's colour
+
+    private func setBrowser(_ change: (inout BrowserTheme) -> Void) {
+        var theme = prefs.browserTheme
+        change(&theme)
+        prefs.browserTheme = theme
+    }
+
+    /// The colour of the whole window, as in Arc: one of the colours, a
+    /// ready-made gradient or one of your own, and how strongly it shows. A
+    /// space with a colour of its own (its menu › Colour…) keeps it.
+    private var browserColours: some View {
+        let theme = prefs.browserTheme
+        let gradient = theme.gradient.flatMap { $0.usable ? $0 : nil }
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Browser colour")
+                .font(.system(size: 13, weight: .semibold))
+            Text("Colours the tabs, the bars and the ground around the page. A space with a colour of its own keeps it.")
+                .font(.system(size: 12)).foregroundStyle(Palette.muted)
+
+            ColourSwatches(selected: gradient == nil ? theme.colour : nil) { index in
+                setBrowser { $0.colour = index; $0.gradient = nil }
+            }
+
+            HStack(spacing: 10) {
+                ForEach(SpaceGradient.presets.indices, id: \.self) { at in
+                    let preset = SpaceGradient.presets[at]
+                    ColourSwatches.swatch(selected: gradient?.colours == preset.gradient.colours, name: preset.name,
+                                          action: {
+                        setBrowser {
+                            $0.gradient = SpaceGradient(colours: preset.gradient.colours,
+                                                        angle: gradient?.angle ?? SpaceGradient.defaultAngle,
+                                                        grain: gradient?.grain ?? false)
+                        }
+                    }) {
+                        Circle().fill(LinearGradient(stops: preset.gradient.stops(count: 8),
+                                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                    }
+                }
+            }
+
+            if let gradient {
+                HStack(spacing: 16) {
+                    ForEach(gradient.colours.indices, id: \.self) { index in
+                        ColorPicker("Colour \(index + 1)", selection: Binding(
+                            get: { Color(hex: gradient.colours[index]) },
+                            set: { colour in
+                                setBrowser { if var g = $0.gradient, g.colours.indices.contains(index) { g.colours[index] = colour.hex; $0.gradient = g } }
+                            }), supportsOpacity: false)
+                    }
+                }
+                ThemeSlider(title: "Angle", value: gradient.angle, range: 0...360, unit: "°") { angle in
+                    setBrowser { if var g = $0.gradient { g.angle = angle; $0.gradient = g } }
+                }
+                Toggle("Grain", isOn: Binding(get: { gradient.grain }, set: { on in
+                    setBrowser { if var g = $0.gradient { g.grain = on; $0.gradient = g } }
+                }))
+                .toggleStyle(.checkbox)
+                .font(.system(size: 12))
+            }
+
+            if theme.look != nil {
+                Picker("Strength", selection: Binding(get: { theme.strength }, set: { value in setBrowser { $0.strength = value } })) {
+                    ForEach(SpaceStrength.allCases, id: \.self) { Text($0.name).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 260)
+            }
+        }
+    }
+
     // MARK: - the live preview
 
     /// The window in small: the tabs where yours are, the address field in
@@ -75,6 +150,8 @@ struct ThemesPage: View {
         let right = prefs.sidePosition == .right
         return ZStack {
             Palette.ground
+            SpaceWash(look: prefs.browserTheme.look)
+                .environment(\.washStrength, prefs.browserTheme.strength)
             if prefs.homeTheme != .off {
                 HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage,
                                shuffle: prefs.homeShuffle)

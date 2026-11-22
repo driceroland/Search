@@ -2742,8 +2742,6 @@ final class Browser: NSObject, ObservableObject {
         usesFiles = !websitePopup && (record == nil || !Browsers.all.contains { $0.profileID == profile && $0.usesFiles && !$0.isPopup })
         if first {
             Spaces.seedHistories()
-            Shield.shared.enabled = prefs.shielded
-            Shield.shared.compile()
             if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
             if prefs.bench {
                 Bench.shared.start(for: self)
@@ -3089,15 +3087,6 @@ final class Browser: NSObject, ObservableObject {
                     if let row = parked[key] { parked[key]?.splits = row.splits.filter { Browser.holds($0, in: row.tabs) } }
                 }
                 writeSession(now: true)
-            }
-            .store(in: &bag)
-        prefs.$shielded
-            .dropFirst()
-            .sink { [weak self] on in
-                guard let self else { return }
-                Shield.shared.enabled = on
-                Shield.shared.apply(to: tabs.compactMap { $0.built?.configuration.userContentController })
-                announce(on ? "Ads and trackers blocked" : "Blocking off — reload to see the difference")
             }
             .store(in: &bag)
 
@@ -8142,8 +8131,6 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         if action.targetFrame?.isMainFrame ?? true, let tab = tab(for: webView) {
             let host = curtain.host(of: url)
             tab.arm(hiding: curtain.css(on: host), to: url)
-            // And the blocker, on or off for where it is going.
-            Shield.shared.tune(tab.contentController ?? webView.configuration.userContentController, for: host)
             // The frames that were told about the last page's darkening go
             // with it.
             tab.duskFrames.removeAll()

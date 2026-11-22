@@ -206,6 +206,45 @@ enum SpaceStrength: String, CaseIterable, Codable, Hashable {
     }
 }
 
+/// The colour of the whole browser, set once in Settings › Themes, as Arc
+/// colours its window: a colour or a gradient, and how strongly. A space
+/// that has a look of its own keeps it; every other space, and the window
+/// with spaces off, wears this one. Nothing set is the look Search always
+/// had, and nothing is written for it.
+struct BrowserTheme: Codable, Equatable {
+    var colour = 0
+    var gradient: SpaceGradient?
+    var strength = SpaceStrength.subtle
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey { case colour, gradient, strength }
+
+    /// Never fails: what doesn't read is no colour at all.
+    init(from decoder: Decoder) throws {
+        let fields = try? decoder.container(keyedBy: CodingKeys.self)
+        colour = (try? fields?.decodeIfPresent(Int.self, forKey: .colour)) ?? 0
+        gradient = (try? fields?.decodeIfPresent(SpaceGradient.self, forKey: .gradient)) ?? nil
+        strength = (try? fields?.decodeIfPresent(SpaceStrength.self, forKey: .strength)) ?? .subtle
+    }
+
+    var look: SpaceLook? {
+        if let gradient, gradient.usable { return .gradient(gradient) }
+        return colour > 0 && Spaces.colours.indices.contains(colour) ? .colour(colour) : nil
+    }
+
+    static func read(_ text: String?) -> BrowserTheme? {
+        guard let data = text?.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(BrowserTheme.self, from: data)
+    }
+
+    var text: String {
+        let coder = JSONEncoder()
+        coder.outputFormatting = [.sortedKeys]
+        return (try? coder.encode(self)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    }
+}
+
 extension Space {
     /// How strongly it washes the chrome: Subtle unless chosen.
     var washStrength: SpaceStrength { strength ?? .subtle }
