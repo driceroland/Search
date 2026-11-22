@@ -912,3 +912,103 @@ final class FoldCover: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override var isOpaque: Bool { true }
 }
+
+/// Settings › The column folded away › A loading line (idea 269): with the
+/// tabs out of sight nothing said a page was coming, since the ring is on
+/// its tab. A hairline along the page's top, as far as WebKit says the page
+/// has come, only while it is loading. Drawn by a layer watching the view,
+/// so the page's progress never makes SwiftUI lay anything out again.
+struct LoadingLine: NSViewRepresentable {
+    let web: WKWebView?
+
+    func makeNSView(context: Context) -> LineView { LineView() }
+    func updateNSView(_ view: LineView, context: Context) { view.watch(web) }
+    static func dismantleNSView(_ view: LineView, coordinator: ()) { view.watch(nil) }
+
+    final class LineView: NSView {
+        private let line = CALayer()
+        private var watched: [NSKeyValueObservation] = []
+        private weak var web: WKWebView?
+        /// What the bench reads: shown, and how far along.
+        private(set) var shown = false
+        private(set) var fraction: Double = 0
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            line.backgroundColor = NSColor.controlAccentColor.cgColor
+            line.opacity = 0
+            line.anchorPoint = .zero
+            layer?.addSublayer(line)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        /// Seen, never pressed.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override var isFlipped: Bool { true }
+
+        func watch(_ next: WKWebView?) {
+            guard next !== web || (next == nil && !watched.isEmpty) else { return }
+            watched = []
+            web = next
+            guard let next else { show(false, 0, animated: false); return }
+            let changed: (WKWebView) -> Void = { [weak self] web in
+                MainActor.assumeIsolated { self?.show(web.isLoading, web.estimatedProgress, animated: true) }
+            }
+            watched = [
+                next.observe(\.estimatedProgress, options: [.new]) { web, _ in changed(web) },
+                next.observe(\.isLoading, options: [.new]) { web, _ in changed(web) },
+            ]
+            show(next.isLoading, next.estimatedProgress, animated: false)
+        }
+
+        override func layout() {
+            super.layout()
+            place(animated: false)
+        }
+
+        private func show(_ loading: Bool, _ progress: Double, animated: Bool) {
+            let was = shown
+            fraction = loading ? max(0.08, progress) : (was ? 1 : 0)
+            shown = loading
+            CATransaction.begin()
+            // A new load starts from the left at once, not run back to it.
+            CATransaction.setDisableActions(!animated || (loading && !was))
+            CATransaction.setAnimationDuration(0.2)
+            place(animated: animated)
+            if loading {
+                line.opacity = 0.9
+            } else if was {
+                // Run to the end, then fade, as a line that just stopped
+                // halfway reads as a page that didn't come.
+                CATransaction.setCompletionBlock { [weak self] in
+                    guard let self, !self.shown else { return }
+                    CATransaction.begin()
+                    CATransaction.setAnimationDuration(0.3)
+                    self.line.opacity = 0
+                    CATransaction.commit()
+                }
+            } else {
+                line.opacity = 0
+            }
+            CATransaction.commit()
+        }
+
+        private func place(animated: Bool) {
+            line.frame = CGRect(x: 0, y: 0, width: bounds.width * fraction, height: 2)
+        }
+    }
+}
+
+/// The loading line for the tab in front, following its view as it is
+/// built, woken or let go.
+struct TabLoadingLine: View {
+    @ObservedObject var tab: Tab
+
+    var body: some View {
+        LoadingLine(web: tab.isWeb ? tab.built : nil)
+            .frame(height: 2)
+            .allowsHitTesting(false)
+    }
+}

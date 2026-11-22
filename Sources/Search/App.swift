@@ -592,6 +592,14 @@ struct ContentView: View {
             // side by side are a card each (see PaneStage).
             stage
                 .modifier(CardEdge(on: cards && !browser.prefs.splitView))
+                // The tabs folded away: a line says the page is coming
+                // (Settings, idea 269), clear of the card's round corners.
+                .overlay(alignment: .top) {
+                    if browser.folded, browser.prefs.showsLoadingLine, fullscreenTab == nil, let tab = browser.active {
+                        TabLoadingLine(tab: tab)
+                            .padding(.horizontal, cards ? Metrics.cardRadius : 0)
+                    }
+                }
                 .padding(.leading, sideOnRight ? farGap + panelRoom : 0)
                 .padding(.trailing, sideOnRight ? 0 : farGap + panelRoom)
                 .padding(.bottom, farGap)
