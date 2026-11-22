@@ -255,6 +255,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
        whatever is running on localhost. -->
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+  <!-- Since macOS 15, reaching a device on the local network (a .local
+       name, a router's or a printer's address) needs the user's yes, and
+       an app without this sentence is refused without being asked (#1348).
+       No NSBonjourServices: a page at printer.local is looked up by name,
+       not browsed for, and that list is only for browsing. Chrome lists
+       one, _googlecast._tcp, for casting; Safari, part of macOS, needs none. -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Search uses the local network to open pages on devices and servers in your home or office, such as .local addresses.</string>
   <!-- A browser is asked for these by the pages it shows, not by itself. macOS
        still wants a sentence to put in its own prompt, and touching the APIs
        without one is a crash rather than a refusal. -->
