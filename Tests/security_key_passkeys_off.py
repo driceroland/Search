@@ -23,6 +23,7 @@ side itself, past the patch, is refused there too. With passkeys on, the
 same sign-in is offered both the Mac's passkeys and the key, as before.
 """
 import json
+import subprocess
 import sys
 import threading
 import time
@@ -118,9 +119,21 @@ def one(tid, name):
     return got, reached, (probe.get("passkeyLast") or {}) if reached else {}
 
 
+def entitled_build():
+    """Whether the build has Apple's passkey entitlement (Search.provisionprofile
+    beside build.sh): the switch is kept as set only when "passkeys.for" names
+    the kind of build it runs in (Preferences.init)."""
+    out = subprocess.run(["codesign", "-d", "--entitlements", ":-", sv.APP],
+                         capture_output=True, text=True).stdout
+    return "com.apple.developer.web-browser.public-key-credential" in out
+
+
 def run(t, port, offered):
     label = "on" if offered else "off"
-    sv.setup(**{"passkeys": offered, "passkeys.for": False, "passkeys.entitled": False})
+    # "passkeys.for" names the kind of build, so the switch is kept as set
+    # here rather than reset for it.
+    kind = entitled_build()
+    sv.setup(**{"passkeys": offered, "passkeys.for": kind, "passkeys.entitled": kind})
     sv.launch()
     try:
         tid = sv.cmd({"do": "open", "url": f"http://127.0.0.1:{port}/key"})["id"]

@@ -26,6 +26,7 @@ With passkeys on: the same page reaches its passkey (a test run's made-up
 one) and nothing throws.
 """
 import json
+import subprocess
 import sys
 import threading
 import time
@@ -116,11 +117,21 @@ def until(tid, js, within):
     return value
 
 
+def entitled_build():
+    """Whether the build has Apple's passkey entitlement (Search.provisionprofile
+    beside build.sh): the switch is kept as set only when "passkeys.for" names
+    the kind of build it runs in (Preferences.init)."""
+    out = subprocess.run(["codesign", "-d", "--entitlements", ":-", sv.APP],
+                         capture_output=True, text=True).stdout
+    return "com.apple.developer.web-browser.public-key-credential" in out
+
+
 def run(t, port, offered):
     label = "on" if offered else "off"
-    # A debug build has no entitlement: "passkeys.for" false keeps the switch
-    # as set here rather than reset for the kind of build.
-    sv.setup(**{"passkeys": offered, "passkeys.for": False, "passkeys.entitled": False})
+    # "passkeys.for" names the kind of build, so the switch is kept as set
+    # here rather than reset for it.
+    kind = entitled_build()
+    sv.setup(**{"passkeys": offered, "passkeys.for": kind, "passkeys.entitled": kind})
     sv.launch()
     try:
         tid = sv.cmd({"do": "open", "url": f"http://127.0.0.1:{port}/login"})["id"]
