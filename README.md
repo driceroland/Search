@@ -1,12 +1,10 @@
 # Search
 
-A small, fast, quiet web browser for the Mac, by [Office Commun](https://officecommun.com).
+A small, fast, quiet web browser for the Mac. A personal fork of [driceroland/Search](https://github.com/driceroland/Search) by [Office Commun](https://officecommun.com), with no updater: build it yourself with `./build.sh`.
 
 ![Search, with its tabs down the left and a page taking the rest of the window](.github/screenshot.png)
 
-**[Download for macOS →](https://searchbrowser.app)** · macOS 14 or later · free · about 10 MB
-
-Or with [Homebrew](https://brew.sh): `brew install --cask driceroland/tap/search`
+macOS 14 or later · build with `./build.sh` (see [Releases](https://github.com/Paul0k/Search/releases) if there are any)
 
 ---
 

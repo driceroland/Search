@@ -1,7 +1,6 @@
 #!/bin/bash
 # Assembles a double-clickable .app around the SwiftPM binary — and, when
-# asked, the disk image people install it from and the ZIP the updater
-# fetches.
+# asked, the disk image people install it from.
 #
 #   ./build.sh                 debug-free release build, ad-hoc signed: runs here
 #   SEARCH_DEV=1 ./build.sh    the same as a dev build: yellow icon, named for
@@ -9,8 +8,7 @@
 #                              claude/split-view-4a6927)
 #   SEARCH_DEV=1 SEARCH_FEATURE=name ./build.sh
 #                              the same, named Search-name
-#   ./build.sh release dmg     + build/Search.dmg, build/Search.zip and
-#                                build/appcast.json, signed with Developer ID
+#   ./build.sh release dmg     + build/Search.dmg, signed with Developer ID
 #                                if there is one in the keychain
 #   ./build.sh release ship    + both notarised, the DMG stapled
 #
@@ -20,16 +18,10 @@
 # Same shape as the one next door: SwiftPM builds the executable, and a macOS
 # app bundle is just a folder with a plist and the binary in the right place.
 #
-# The three files keep the same names from release to release, so the site
-# links to them once and the updater reads one address forever. ./publish.sh
-# copies them into the site.
-#
-# Two builds from 1.0.5, each for one kind of Mac: Apple Silicon, in build/,
-# and Intel, in build/intel/, served from the site's search/intel/ folder
-# with an appcast of its own. A single universal app would have weighed
-# twice as much for everyone (10.9 MB of binary instead of 5.4). The app's
-# updater reads the feed for the chip it was built for (Updater.feed).
-# SEARCH_ARCH picks the chip; without it, the Mac's own.
+# Two builds, each for one kind of Mac: Apple Silicon, in build/, and Intel,
+# in build/intel/. A single universal app would have weighed twice as much
+# for everyone (10.9 MB of binary instead of 5.4). SEARCH_ARCH picks the
+# chip; without it, the Mac's own.
 #
 # "dmg" lays the disk image's window out with dmgbuild, installed into .build
 # on first use (Python 3 and a network, once).
@@ -39,13 +31,9 @@
 #     (SEARCH_SIGN_IDENTITY names it; otherwise the first one found is used)
 #   - a notarytool profile: xcrun notarytool store-credentials "search"
 #     (SEARCH_NOTARY_PROFILE names it; default "search")
-#   - SEARCH_DOWNLOAD_URL, the https folder the three files are served from,
-#     for the appcast. Default https://officecommun.com/search, which is
-#     where Updater.feed in Updater.swift looks.
 #
 # NOTES.md, next to this script, is what's new: newest release first, one
-# paragraph each. The first paragraph goes into the appcast, and from there
-# under the version line in Settings.
+# paragraph each; the app shows it under What's New.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -393,87 +381,11 @@ rm -rf "$ART"
 [ -n "$IDENTITY" ] && codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 echo "packed: $DMG"
 
-# The ZIP is what the updater fetches, and its hash is what the updater
-# checks before opening it.
-ZIP="$OUT/$NAME.zip"
-rm -f "$ZIP"
-ditto -c -k --keepParent "$APP" "$ZIP"
-SHA="$(shasum -a 256 "$ZIP" | cut -d' ' -f1)"
-echo "packed: $ZIP"
+if [ "$STEP" = "dmg" ]; then exit 0; fi
 
-# What the updater reads. The first paragraph of NOTES.md, with the two
-# characters JSON minds escaped, is the line under the version in Settings.
-# Written last — after notarisation has stapled its ticket to the DMG, which
-# changes it — so the DMG's hash is the one people download.
-BASE="${SEARCH_DOWNLOAD_URL:-https://officecommun.com/search}"
-BASE="${BASE%/}$SUBFOLDER"
-NOTES=""
-if [ -f NOTES.md ]; then
-  NOTES="$(awk 'NF { printf "%s%s", (n++ ? " " : ""), $0; next } n { exit }' NOTES.md \
-    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
-fi
-# The AI add-on's engine (engine.sh), when this release offers one: Apple
-# Silicon only for now. SEARCH_AI_ENGINE_VERSION names it — a number that
-# only goes up, as Search never takes a lower one — and the signed,
-# notarised binary in build/engine/ goes beside the other files, under ai/,
-# with its hash and size in the feed. The feed's own signature is what
-# vouches for them; Search then checks the engine's signature itself.
-AIBLOCK=""
-write_engine() {
-  local ENGINE="build/engine/search-ai-engine-arm64"
-  [ "$ARCH" = "arm64" ] && [ -n "${SEARCH_AI_ENGINE_VERSION:-}" ] || return 0
-  [[ "$SEARCH_AI_ENGINE_VERSION" =~ ^[0-9]+$ ]] || { echo "SEARCH_AI_ENGINE_VERSION is a whole number" >&2; exit 1; }
-  [ -f "$ENGINE" ] || { echo "$ENGINE is missing — ./engine.sh arm64 makes it" >&2; exit 1; }
-  codesign --verify --strict -R='anchor apple generic and identifier "com.officecommun.search.ai-engine" and certificate leaf[subject.OU] = "7BYKA895MC"' "$ENGINE" \
-    || { echo "$ENGINE isn't signed with the Developer ID as com.officecommun.search.ai-engine" >&2; exit 1; }
-  local FILE="search-ai-engine-arm64-$SEARCH_AI_ENGINE_VERSION"
-  mkdir -p "$OUT/ai"
-  cp "$ENGINE" "$OUT/ai/$FILE"
-  AIBLOCK=",
-  \"ai\": {\"engine\": {\"version\": $SEARCH_AI_ENGINE_VERSION, \"url\": \"$BASE/ai/$FILE\", \"sha256\": \"$(shasum -a 256 "$ENGINE" | cut -d' ' -f1)\", \"size\": $(stat -f%z "$ENGINE")}}"
-  echo "engine: $OUT/ai/$FILE"
-}
-write_appcast() {
-  local DMGSHA
-  DMGSHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
-  write_engine
-  cat > "$OUT/appcast.json" <<JSON
-{
-  "version": "$VERSION",
-  "build": $BUILD,
-  "url": "$BASE/$NAME.zip",
-  "dmg": "$BASE/$NAME.dmg",
-  "sha256": "$SHA",
-  "dmgSha256": "$DMGSHA",
-  "notes": "$NOTES",
-  "minimumSystemVersion": "$MINIMUM"$AIBLOCK
-}
-JSON
-  echo "wrote: $OUT/appcast.json ($VERSION, $ARCH, build $BUILD)"
-  # The same file, signed with the Developer ID that signs the app (codesign
-  # keeps the signature in the file's extended attributes, ditto carries them
-  # in the ZIP). Builds from 1.0.4 read only this one; older ones read the
-  # plain file beside it. No key of its own to keep, or to lose.
-  rm -f "$OUT/appcast.json.zip"
-  if [ -n "$IDENTITY" ]; then
-    local SIGNED
-    SIGNED="$(mktemp -d)"
-    cp "$OUT/appcast.json" "$SIGNED/appcast.json"
-    codesign --force --timestamp --sign "$IDENTITY" --identifier com.officecommun.search.appcast "$SIGNED/appcast.json"
-    ditto -c -k --sequesterRsrc "$SIGNED/appcast.json" "$OUT/appcast.json.zip"
-    rm -rf "$SIGNED"
-    echo "signed: $OUT/appcast.json.zip"
-  fi
-}
-if [ "$STEP" = "dmg" ]; then write_appcast; exit 0; fi
-
-# Notarisation: Apple looks both over. The ticket is stapled to the image,
-# so it opens on a Mac that has never seen this app and is offline; the ZIP
-# is fetched by an app that already trusts it, and is left as hashed.
+# Notarisation: Apple looks the image over. The ticket is stapled to it, so
+# it opens on a Mac that has never seen this app and is offline.
 [ -z "$IDENTITY" ] && { echo "can't ship without a Developer ID certificate" >&2; exit 1; }
-for FILE in "$DMG" "$ZIP"; do
-  xcrun notarytool submit "$FILE" --keychain-profile "${SEARCH_NOTARY_PROFILE:-search}" --wait
-done
+xcrun notarytool submit "$DMG" --keychain-profile "${SEARCH_NOTARY_PROFILE:-search}" --wait
 xcrun stapler staple "$DMG"
-write_appcast
-echo "shipped: $DMG, $ZIP, $OUT/appcast.json and its signed ZIP — ./publish.sh <folder> puts them on the site"
+echo "shipped: $DMG"
