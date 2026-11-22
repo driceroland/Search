@@ -393,8 +393,12 @@ final class Browser: NSObject, ObservableObject {
             // the next ⌘T or ⌘K came up in the line instead of over the
             // page, and with the line turned off, nowhere at all (#1374).
             if !editing, inlineEdit { inlineEdit = false }
+            if !editing { editingPeek = false }
         }
     }
+    /// The field was raised by ⌘L over a peek: it shows the peek's address,
+    /// and Return takes the peek there, not the tab underneath (idea 691).
+    private(set) var editingPeek = false
     /// True while the field is up over a page for a tab that doesn't exist
     /// yet (Settings › General › New tab in a floating field): Return opens
     /// what was typed in a new tab, and putting the field away leaves the
@@ -8113,8 +8117,12 @@ final class Browser: NSObject, ObservableObject {
         let words = wordsToCarry
         summoning = false
         launching = false
-        typed = words ?? shownAddress
+        // A peek in front is the page being read: its address, not the
+        // one of the tab underneath (idea 691).
+        let peek = words == nil && peekInFront ? peekTab?.shownURL : nil
+        typed = words ?? peek?.absoluteString ?? shownAddress
         editing = true
+        editingPeek = peek != nil
         focusRequest += 1
     }
 
@@ -8255,6 +8263,8 @@ final class Browser: NSObject, ObservableObject {
             // Opened behind the page by hand, as a ⌘-clicked link is: it may
             // wait to load (Settings › Tabs › Load background tabs…).
             open(url, foreground: front, from: active, mayWait: true)
+        } else if editingPeek, peekInFront, let peek = peekTab {
+            peek.go(to: url)
         } else {
             (active ?? tabs.first)?.go(to: url)
         }
