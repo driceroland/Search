@@ -28,6 +28,7 @@ in [ROADMAP.md](ROADMAP.md).
 - With one button per space, a coloured space's button wears its colour only while that space is on screen; the others are grey alike, so a coloured one no longer reads as the space you're in. Thanks [@petty](https://github.com/petty) ([#1385](https://github.com/driceroland/Search/pull/1385))
 - Opening YouTube from the address field now and then saved its home page into Downloads as www.youtube.com.html instead of showing it: with YouTube's service worker asleep, WebKit can hand the tab an empty answer, no address and no type, as the page moves to a new process, and Search took that for a file. It now asks for the page once more, which comes through; once only, so a page that keeps answering so is stopped rather than loaded for ever. Thanks [@gxlactuss](https://github.com/gxlactuss) ([#1387](https://github.com/driceroland/Search/pull/1387))
 - Continue Anyway on a site whose certificate isn't trusted now trusts that certificate alone, for the rest of the launch, not the site: a different bad certificate on the same name, as someone in the middle would show, asks again. `swift test --filter CertificateExceptionTests`. Thanks [@datasciritwik](https://github.com/datasciritwik) ([#1377](https://github.com/driceroland/Search/pull/1377))
+- A tab whose video was in full screen, left for another tab and come back to, showed a big white screen with the video out of full screen: the page now comes back where it was, the video playing in it. `swift test --filter StageFullScreenTests` (idea 936)
 
 ### Held back
 

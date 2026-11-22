@@ -303,6 +303,12 @@ final class StageView: NSView {
     /// A page on its way back from full screen, once chosen (see `bringHome`).
     private var homecoming: NSKeyValueObservation?
 
+    /// The page whose video was full screen, its placeholder here, when
+    /// another tab was shown in front of it (idea 936). Chosen again while
+    /// still full screen, it has only that placeholder here, which WebKit
+    /// draws white: the stage was a white screen, the video gone from it.
+    private weak var leftFullScreen: WKWebView?
+
     /// How a page is asked to end its full screen: as its own button does.
     /// Its own property for the tests, which can't go full screen.
     var endFullScreen: (WKWebView) -> Void = { web in
@@ -405,17 +411,23 @@ final class StageView: NSView {
             dock.removeFromSuperview()
         }
         let chosen = page !== wanted
+        if chosen, let leaving = wanted as? WKWebView, leaving.fullscreenState != .notInFullscreen,
+           subviews.contains(where: Self.isPlaceholder) {
+            leftFullScreen = leaving
+        }
+        if leftFullScreen?.fullscreenState == .notInFullscreen { leftFullScreen = nil }
         wanted = page
         if chosen { bringHome() }
         settle()
     }
 
-    /// The page wanted here, if WebKit's full-screen window has it and no
-    /// place is kept for it here: another tab was shown in the meantime, and
-    /// the placeholder went with the rest of what wasn't wanted.
+    /// The page wanted here, if WebKit's full-screen window has it and
+    /// another tab was shown here in the meantime: its placeholder, kept
+    /// under that tab, is all there is of it here. Or none is left at all.
     private var stranded: WKWebView? {
         guard let web = wanted as? WKWebView, web.fullscreenState != .notInFullscreen,
-              web.superview !== self, !subviews.contains(where: Self.isPlaceholder) else { return nil }
+              web.superview !== self else { return nil }
+        guard web === leftFullScreen || !subviews.contains(where: Self.isPlaceholder) else { return nil }
         return web
     }
 
@@ -434,6 +446,7 @@ final class StageView: NSView {
                 switch web.fullscreenState {
                 case .notInFullscreen:
                     self.homecoming = nil
+                    if self.leftFullScreen === web { self.leftFullScreen = nil }
                     self.settle()
                     // WebKit gave the keys back to a page in no window.
                     if let window = self.window, web.superview === self, window.firstResponder === window {
@@ -498,11 +511,14 @@ final class StageView: NSView {
         for view in subviews where view !== wanted && !(docked && Self.isInspector(view)) {
             // Another tab in front while this page fills the screen: WebKit
             // brings the page home to its placeholder, so that stays, under
-            // the tab in front, and so does the page on its way back.
-            if Shared.prefs.keepsWindow {
-                if Self.isPlaceholder(view) { continue }
-                if let page = view as? WKWebView, page.fullscreenState != .notInFullscreen { continue }
-            }
+            // the tab in front, and so does the page on its way back. Taken
+            // away, it left WebKit nowhere to put the page as it came out of
+            // full screen — ⌃Tab and ⌘1–⌘9 end it as they leave (#1042) —
+            // and the tab came back white, the video out of it (idea 936).
+            // Once home it is put away as any tab behind is (see the
+            // fullscreenState watch in Tab.build).
+            if Self.isPlaceholder(view) { continue }
+            if let page = view as? WKWebView, page.fullscreenState != .notInFullscreen { continue }
             // Unseen, and still drawn: WebKit asks whether its view is in a
             // window and not hidden, not whether anything shows of it.
             if view === parting {
