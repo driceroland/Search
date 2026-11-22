@@ -18,7 +18,6 @@ struct SettingsPanel: View {
     var found: String? = nil
     @Environment(\.asTab) private var asTab
 
-    @ObservedObject private var updater = Updater.shared
     @ObservedObject private var sync = Sync.shared
     @ObservedObject private var icloud = ICloudSync.shared
     /// The keys rows name, as Settings › Shortcuts has them now.
@@ -445,7 +444,6 @@ struct SettingsPanel: View {
 
     private func title(of item: SettingsItem) -> String {
         switch item.id {
-        case "updates.version": return versionTitle
         // ⌃ while it picks the tabs (Settings › Spaces & Pins).
         case "tabs.shortcuts" where prefs.usesSpaces && prefs.spacesOnCommand: return "Show tab numbers while ⌃ is held"
         default: return item.title
@@ -467,7 +465,6 @@ struct SettingsPanel: View {
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail
         case "search.keywords": return keywordDetail
-        case "updates.version": return versionDetail
         case "arc.import": return arcHere ? item.detail : "Arc isn't on this Mac. Bring Things Over can read an export"
         default: return item.detail
         }
@@ -853,8 +850,6 @@ struct SettingsPanel: View {
         case "launcher.key": LauncherKeyBox(prefs: prefs)
         case "launcher.little": Switch(on: $prefs.launcherLittle)
         case "note.switcher": Always()
-        case "updates.version": versionControl
-        case "updates.auto": Switch(on: $prefs.installsUpdates)
         case "about.feedback": Pill("Send Feedback") { Links.writeFeedback() }
         case "about.notes": Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
         case "bench": Switch(on: $prefs.bench)
@@ -1077,55 +1072,6 @@ struct SettingsPanel: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
             }
-        }
-    }
-
-    /// The version line follows the newer build from found to fetched to
-    /// in place; with none, it is simply this one.
-    private var versionTitle: String {
-        switch updater.stage {
-        case .none: return "Updates"
-        case .fetching(let next): return "Search \(next.version) is downloading…"
-        case .ready(let next): return "Search \(next.version) is ready"
-        case .offered(let next), .waiting(let next): return "Search \(next.version) is out"
-        }
-    }
-
-    private var versionDetail: String {
-        switch updater.stage {
-        case .none:
-            return updater.lastChecked.map { "Checked \($0.formatted(.relative(presentation: .named))), every hour on its own" }
-                ?? "Checked every hour on its own"
-        case .fetching(let next):
-            return next.notes ?? "Quietly, in the background. Nothing you have set is touched"
-        case .ready(let next):
-            return next.notes ?? "It's there the next time you open Search"
-        case .offered(let next):
-            return next.notes ?? "Open the disk image, the same as the first time"
-        case .waiting(let next):
-            return next.notes ?? "Checked and put in place when you press Install"
-        }
-    }
-
-    @ViewBuilder
-    private var versionControl: some View {
-        switch updater.stage {
-        case .none:
-            Pill(updater.checking ? "Checking…" : "Check now") {
-                updater.check { found in
-                    if found == nil { browser.announce("This is the latest one") }
-                }
-            }
-            .disabled(updater.checking)
-        case .fetching:
-            Ring(size: 12)
-        case .ready:
-            Pill("Relaunch now", filled: true) { updater.relaunch() }
-        case .offered:
-            Pill(updater.fetchingDisk ? "Downloading…" : "Download", filled: true) { updater.openDisk() }
-                .disabled(updater.fetchingDisk)
-        case .waiting:
-            Pill("Install", filled: true) { updater.install() }
         }
     }
 

@@ -18,7 +18,7 @@ import Foundation
 
 @MainActor
 enum AISignIn {
-    static let callback = URL(string: "https://officecommun.com/search/ai/callback")!
+    static let callback = URL(string: "https://github.com/Paul0k/Search/ai/callback")!
 
     /// openrouter.ai itself, where you sign in — in a test run, the stand-in.
     static var site: URL {

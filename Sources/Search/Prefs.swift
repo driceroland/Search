@@ -909,16 +909,6 @@ final class Preferences: ObservableObject {
     @Published var keepsWindow: Bool {
         didSet { store.set(keepsWindow, forKey: "fullscreen.keepsWindow") }
     }
-    /// A newer build is fetched, checked and put in place on its own, as it
-    /// always was. Off, Search still looks every hour and says so, and waits
-    /// for Install in Settings (see Updater.installsOnItsOwn).
-    @Published var installsUpdates: Bool {
-        didSet {
-            store.set(installsUpdates, forKey: Updater.installKey)
-            // Switched back on with one waiting: it goes in now.
-            if installsUpdates { Updater.shared.install() }
-        }
-    }
     /// Separate sets of tabs, each with its own sign-ins (see Spaces.swift).
     /// Off unless asked for.
     @Published var usesSpaces: Bool {
@@ -1265,7 +1255,6 @@ final class Preferences: ObservableObject {
         waitsForPlay = store.bool(forKey: Preferences.waitsKey)
         translateTarget = store.string(forKey: "translate.target") ?? ""
         translateAlways = Set(store.stringArray(forKey: PageTranslator.alwaysKey) ?? [])
-        installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")

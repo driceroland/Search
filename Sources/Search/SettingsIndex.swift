@@ -569,11 +569,6 @@ enum SettingsIndex {
               keys: ["launcher.little"], words: ["little arc", "little window", "small window", "quick look", "option command n"], parent: "launcher.on"),
 
         // About
-        .init(id: "updates.version", group: "updates", icon: "arrow.down.app",
-              title: "Updates", detail: "Checked every hour on its own", words: ["version", "update"]),
-        .init(id: "updates.auto", group: "updates", icon: "arrow.triangle.2.circlepath",
-              title: "Install updates on its own", detail: "Off, Search tells you and waits for Install",
-              keys: [Updater.installKey], words: ["automatic updates"]),
         .init(id: "about.feedback", group: "updates", icon: "envelope",
               title: "Found something wrong?", detail: "Opens a draft with the version already in it", words: ["bug", "feedback", "report"]),
         .init(id: "about.notes", group: "updates", icon: "sparkles",
