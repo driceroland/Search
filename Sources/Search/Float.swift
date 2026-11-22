@@ -1365,6 +1365,14 @@ enum Isolate {
         'html.office-floating, html.office-floating body {',
         'background:#000 !important; overflow:hidden !important; margin:0 !important}',
         'html.office-floating body > * { visibility:hidden !important }',
+        // And everything else, ancestors of the video aside: a part that
+        // makes itself visible again comes back whatever its ancestors say.
+        // YouTube Music's do — its top bar, side drawer, the page's content
+        // and the player bar at the foot, fixed and above the player — and
+        // floating a music video from a playlist, the little window showed
+        // them over the video, the player bar's buttons stacked (idea 933).
+        'html.office-floating body *:not([data-office-float]):not(:has([data-office-float])):not(#office-float-art)',
+        ':not(.player-timedtext):not(.player-timedtext *) { visibility:hidden !important }',
         'html.office-floating [data-office-float] {',
         'visibility:visible !important; position:fixed !important;',
         'left:0 !important; top:0 !important; right:0 !important; bottom:0 !important;',
@@ -1419,6 +1427,11 @@ enum Isolate {
         'filter:none !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important;',
         'perspective:none !important; contain:none !important; container-type:normal !important;',
         'will-change:auto !important; content-visibility:visible !important;',
+        // A transform on its way somewhere wins over all of this until it
+        // gets there: YouTube Music's player slides up over the page, and
+        // left before it had, or out of sight, where it never moves, the
+        // video was a window's height below the little window.
+        'transition:none !important; animation:none !important;',
         'clip-path:none !important; mask:none !important; -webkit-mask:none !important;',
         'opacity:1 !important}',
         // The player's own controls would sit under ours, and two sets of

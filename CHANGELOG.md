@@ -30,6 +30,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Continue Anyway on a site whose certificate isn't trusted now trusts that certificate alone, for the rest of the launch, not the site: a different bad certificate on the same name, as someone in the middle would show, asks again. `swift test --filter CertificateExceptionTests`. Thanks [@datasciritwik](https://github.com/datasciritwik) ([#1377](https://github.com/driceroland/Search/pull/1377))
 - A tab whose video was in full screen, left for another tab and come back to, showed a big white screen with the video out of full screen: the page now comes back where it was, the video playing in it. `swift test --filter StageFullScreenTests` (idea 936)
 - A pin renamed in Arc or Zen and brought over showed its address instead of its name once browsed in and closed: at rest on its pinned page it shows its own name again, the page's title only while it shows the page. `python3 Tests/pin_names.py` (idea 937)
+- Floating a music video from a YouTube Music playlist shows the video alone, not the top bar, side drawer and the player bar's stacked buttons over it, nor the video a window's height below the little window while the player was still sliding up. Tests/float_song.py.
 
 ### Held back
 
