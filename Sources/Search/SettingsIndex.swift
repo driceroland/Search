@@ -65,9 +65,8 @@ enum SettingsIndex {
         .init(id: "theme", page: .appearance, title: "Light and dark", icon: "circle.lefthalf.filled"),
         .init(id: "window", page: .appearance, title: "Window", icon: "macwindow"),
         .init(id: "tablook", page: .appearance, title: "Tabs", icon: "textformat.size"),
+        .init(id: "themes", page: .appearance, title: "Theme", icon: "photo.artframe"),
         .init(id: "motion", page: .appearance, title: "Motion", icon: "wind"),
-
-        .init(id: "themes", page: .themes, title: "Browser colour and home background", icon: "photo.artframe"),
 
         .init(id: "newtabs", page: .tabs, title: "New tabs", icon: "plus.square"),
         .init(id: "memory", page: .tabs, title: "Memory", icon: "moon.zzz"),
@@ -157,10 +156,10 @@ enum SettingsIndex {
 
         // Themes
         .init(id: "home.theme", group: "themes", icon: "photo.artframe",
-              title: "Browser colour and home background", detail: "Colour the whole browser with a colour or a gradient, and paint the blank tab: a wall, stickers or your own picture",
+              title: "Theme", detail: "One choice for the blank tab and the whole window: a wall, stickers, a colour, a gradient or your own picture",
               more: "Off by default. Drawn once and kept, so it costs nothing while you browse, and only the blank tab shows it. A picture you choose is copied inside Search; nothing leaves your Mac.",
               keys: ["browser.theme", "home.theme", "home.theme.image", "home.tuning", "home.shuffle"],
-              words: ["themes", "wallpaper", "background", "mural", "painting", "scenery", "shuffle", "stickers", "gradient", "colour", "color", "new tab", "image", "arc", "browser colour", "window colour", "tint", "strength"],
+              words: ["themes", "wallpaper", "background", "mural", "painting", "scenery", "shuffle", "stickers", "gradient", "colour", "color", "new tab", "image", "arc", "browser colour", "window colour", "tint", "strength", "theme", "home background"],
               kind: .wide),
 
         // Appearance
@@ -301,7 +300,7 @@ enum SettingsIndex {
               more: "Make a folder called Home in Bookmarks and put sites in it: a blank tab shows up to 16 of them as tiles with their names, in the order you keep them.",
               keys: ["home.grid"], words: ["home", "home page", "start page", "new tab", "speed dial", "favorites"]),
         .init(id: "tabs.undoReopens", group: "newtabs", icon: "arrow.uturn.backward.circle",
-              title: "⌘Z reopens a closed tab", detail: "Right after closing it, as ⇧⌘T would bring it back",
+              title: "⌘Z reopens a closed tab", detail: "Right after closing it, as ⌥⌘T would bring it back",
               more: "Only while closing it is the last thing you did: type or click anything else and ⌘Z undoes as before. A page that uses ⌘Z itself, such as a document or a drawing, keeps it.",
               keys: ["tabs.undoReopens"], words: ["undo", "reopen", "closed tab", "cmd z", "restore"]),
         .init(id: "tabs.switcherBehindFirst", group: "newtabs", icon: "rectangle.stack",
@@ -328,7 +327,7 @@ enum SettingsIndex {
               title: "Dim sleeping tabs", detail: "A resting tab's title and icon fade until you go to it",
               keys: ["tabs.sleep.dim"], words: ["sleep", "dim", "fade", "inactive", "suspend"]),
         .init(id: "tabs.close.after", group: "memory", icon: "timer",
-              title: "Close tabs you leave alone", detail: "Pinned, named and grouped tabs stay. ⇧⌘T brings one back",
+              title: "Close tabs you leave alone", detail: "Pinned, named and grouped tabs stay. ⌥⌘T brings one back",
               more: "Counted from when you last left the tab, while Search is quit too. Private tabs, sound, calls and anything typed stay.",
               keys: ["tabs.close.after"], words: ["auto close", "archive", "clean up"]),
         .init(id: "tabs.shortcuts", group: "tabbar", icon: "command",

@@ -42,13 +42,12 @@ struct SettingsPanel: View {
     @MainActor static var arcBefore: Preferences.ArcSetup?
 
     enum Page: String, CaseIterable, Identifiable {
-        case general, appearance, themes, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
+        case general, appearance, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
         var id: String { rawValue }
         var title: String {
             switch self {
             case .general: return "General"
             case .appearance: return "Appearance"
-            case .themes: return "Themes"
             case .tabs: return "Tabs"
             case .browsing: return "Browsing"
             case .spaces: return "Spaces & Pins"
@@ -64,7 +63,6 @@ struct SettingsPanel: View {
             switch self {
             case .general: return "gearshape"
             case .appearance: return "paintbrush"
-            case .themes: return "photo.artframe"
             case .tabs: return "square.on.square"
             case .browsing: return "globe"
             case .spaces: return "square.stack"
@@ -83,12 +81,13 @@ struct SettingsPanel: View {
             switch name.lowercased() {
             case "downloads": return .general
             case "shortcuts", "mouse": return .keyboard
+            case "themes": return .appearance
             default: return Page(rawValue: name.lowercased())
             }
         }
         /// The rail's three blocks: the browser, your data and tools, About.
         static var blocks: [[Page]] {
-            [[.general, .appearance, .themes, .tabs, .browsing, .spaces],
+            [[.general, .appearance, .tabs, .browsing, .spaces],
              [.passwords, .privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .keyboard],
              [.about]]
         }
@@ -479,7 +478,6 @@ struct SettingsPanel: View {
         switch item.page {
         case .general: generalControl(item.id)
         case .appearance: appearanceControl(item.id)
-        case .themes: ThemesPage(prefs: prefs)
         case .tabs: tabsControl(item.id)
         case .browsing: browsingControl(item.id)
         case .spaces: spacesControl(item.id)
@@ -577,6 +575,7 @@ struct SettingsPanel: View {
     @ViewBuilder
     private func appearanceControl(_ id: String) -> some View {
         switch id {
+        case "home.theme": ThemesPage(prefs: prefs)
         case "look":
             Pictures(options: Look.allCases.map { look in
                 (look, look == .system ? "Auto" : look.title, AnyView(LookPicture(look: look)))
