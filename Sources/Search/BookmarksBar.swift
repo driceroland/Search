@@ -1,8 +1,10 @@
 import SwiftUI
 
 // The bookmarks bar: the top of the bookmarks, in a thin row above the page,
-// as Chrome and Safari have one. A folder opens as a menu. More than the row
-// holds scrolls sideways.
+// as Chrome and Safari have one. A folder opens as a menu. What the row can't
+// hold goes into a » at its end, a menu of the rest, as in Chrome and Safari
+// (idea 958): the row once scrolled sideways, with nothing to show it did,
+// and only a trackpad could scroll it.
 //
 // Off unless asked for — Settings › Tabs, or Bookmarks › Show Bookmarks Bar
 // — since the page gives up a strip of its height to it. It goes with the
@@ -17,12 +19,42 @@ struct BookmarksBar: View {
     var onFrame = false
 
     static let height: CGFloat = 30
+    /// The space between two on the bar, and the air at its ends.
+    static let gap: CGFloat = 2
+    static let air: CGFloat = 10
+    /// The » at the end, and the space before it.
+    static let more: CGFloat = 22 + 4
+
+    /// Each one's width as laid out, by id.
+    @State private var widths: [Bookmark.ID: CGFloat] = [:]
+    /// The bar's own width.
+    @State private var room: CGFloat = 0
+
+    /// How many, from the first, the bar holds in `room`, given their
+    /// widths: all of them if they fit, or as many as fit beside the ».
+    static func fit(_ widths: [CGFloat], room: CGFloat) -> Int {
+        let open = room - 2 * air
+        let all = widths.reduce(0, +) + gap * CGFloat(max(widths.count - 1, 0))
+        guard all > open else { return widths.count }
+        var end: CGFloat = 0
+        for (index, width) in widths.enumerated() {
+            end += (index == 0 ? 0 : gap) + width
+            if end > open - more { return index }
+        }
+        return widths.count
+    }
 
     var body: some View {
         let _ = Bench.count("bar")
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
-                ForEach(bookmarks.roots) { node in
+        let roots = bookmarks.roots
+        let shown = room > 0 ? BookmarksBar.fit(roots.map { widths[$0.id] ?? 0 }, room: room) : roots.count
+        let hidden = Array(roots.dropFirst(shown))
+        let _ = Bench.barHides(browser, hidden)
+        // The row over the bar rather than in it: a row longer than the
+        // window leaves the bar as wide as the window, held at its start.
+        Color.clear.overlay(alignment: .leading) {
+            HStack(spacing: BookmarksBar.gap) {
+                ForEach(Array(roots.enumerated()), id: \.element.id) { index, node in
                     Item(node: node) {
                         if node.isFolder {
                             BookmarkMenu.shared.popUp(node)
@@ -36,10 +68,26 @@ struct BookmarksBar: View {
                         }
                     }
                     .contextMenu { BookmarkActions(browser: browser, bookmarks: bookmarks, node: node) }
+                    .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) {
+                        widths[node.id] = $0.width
+                        Bench.barLaid(node.id, $0)
+                    }
+                    .opacity(index < shown ? 1 : 0)
+                    .allowsHitTesting(index < shown)
+                    .accessibilityHidden(index >= shown)
                 }
             }
-            .padding(.horizontal, 10)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, BookmarksBar.air)
         }
+        .clipped()
+        .overlay(alignment: .trailing) {
+            if !hidden.isEmpty {
+                More { BookmarkMenu.shared.popUp(hidden, title: "More Bookmarks") }
+                    .padding(.trailing, BookmarksBar.air - 4)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { room = $0 }
         .frame(height: BookmarksBar.height)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
@@ -63,6 +111,26 @@ struct BookmarksBar: View {
         }
         .overlay(alignment: .bottom) {
             if !onFrame { Rectangle().fill(Palette.hairline).frame(height: 1) }
+        }
+    }
+
+    /// The » at the bar's end, when some don't fit: a menu of those.
+    struct More: View {
+        let act: () -> Void
+        @State private var hovering = false
+
+        var body: some View {
+            Image(systemName: "chevron.right.2")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Palette.muted)
+                .frame(width: 22, height: 22)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? Palette.hover : .clear))
+                .contentShape(Rectangle())
+                .onTapGesture(perform: act)
+                .onHover { hovering = $0 }
+                .help("More bookmarks")
+                .accessibilityLabel("More Bookmarks")
+                .accessibilityAddTraits(.isButton)
         }
     }
 

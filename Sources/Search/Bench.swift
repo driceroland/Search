@@ -77,6 +77,17 @@ final class Bench {
     static func count(_ name: String) {
         if counting { bodies[name, default: 0] += 1 }
     }
+    /// What each window's bookmarks bar has no room for, as last laid out:
+    /// what its » lists. For "bar".
+    static var barHidden: [ObjectIdentifier: [Bookmark.ID]] = [:]
+    /// Where each on a bar was laid out, from the window's top left.
+    static var barFrames: [Bookmark.ID: CGRect] = [:]
+    static func barLaid(_ id: Bookmark.ID, _ frame: CGRect) {
+        if counting { barFrames[id] = frame }
+    }
+    static func barHides(_ browser: Browser, _ hidden: [Bookmark]) {
+        if counting { barHidden[ObjectIdentifier(browser)] = hidden.map(\.id) }
+    }
     /// Each row in the column's own answer to the pointer coming and going,
     /// the very one its onHover gives (SideRow), for "hoversweep". Counted,
     /// since a row built anew can appear before the one it replaces has
@@ -2154,6 +2165,52 @@ final class Bench {
                     "closed": Double(NSHostingView(rootView: closed).fittingSize.height),
                     "shown": Double(NSHostingView(rootView: shown).fittingSize.height),
                     "opening": opening.count])
+
+        case "bar":
+            // The bookmarks bar as laid out in this window, off every screen:
+            // its top level, which of them its » holds, and that menu, every
+            // folder in it opened. "width": the window that wide first (a
+            // hidden probe's, on no screen). "pick": the »'s item of that
+            // title chosen, as a click on it would.
+            guard Store.testing else { answer(["error": "bar only works on a --test run — it would size your window"]); return }
+            guard let window = browser.window else { answer(["error": "no window"]); return }
+            if let width = request["width"] as? Double {
+                var frame = window.frame
+                frame.size.width = width
+                window.setFrame(frame, display: false)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                window.contentView?.layoutSubtreeIfNeeded()
+                let hiddenIDs = Bench.barHidden[ObjectIdentifier(browser)] ?? []
+                let roots = browser.bookmarks.roots
+                let hidden = roots.filter { hiddenIDs.contains($0.id) }
+                let menu = BookmarkMenu.shared.overflow(hidden, title: "More Bookmarks")
+                func lines(_ items: [NSMenuItem], _ depth: Int) -> [[String: Any]] {
+                    items.flatMap { item -> [[String: Any]] in
+                        var out: [[String: Any]] = [["depth": depth, "title": item.title, "folder": item.submenu != nil]]
+                        if let sub = item.submenu {
+                            BookmarkMenu.shared.menuNeedsUpdate(sub)
+                            // A folder's Open All at its foot left out, as `marks` does.
+                            out += lines(sub.items.filter { !$0.isSeparatorItem && $0.tag != 0x5EAD }, depth + 1)
+                        }
+                        return out
+                    }
+                }
+                let before = browser.tabs.count
+                if let pick = request["pick"] as? String, let index = menu.items.firstIndex(where: { $0.title == pick }) {
+                    menu.performActionForItem(at: index)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    let frames = roots.map { node -> [Double] in
+                        let f = Bench.barFrames[node.id] ?? .zero
+                        return [Double(f.minX), Double(f.minY), Double(f.width), Double(f.height)]
+                    }
+                    answer(["width": Double(window.frame.width), "roots": roots.map(\.label), "frames": frames,
+                            "hidden": hidden.map(\.label), "menu": lines(menu.items, 0),
+                            "tabsBefore": before, "tabsAfter": browser.tabs.count,
+                            "active": browser.active?.address?.absoluteString ?? ""])
+                }
+            }
 
         case "marks":
             // Each bookmark wherever it is shown, nothing drawn on a screen:
