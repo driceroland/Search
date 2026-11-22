@@ -42,7 +42,7 @@ struct SettingsPanel: View {
     @MainActor static var arcBefore: Preferences.ArcSetup?
 
     enum Page: String, CaseIterable, Identifiable {
-        case general, appearance, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
+        case general, appearance, tabs, browsing, spaces, privacy, ai, extensions, keyboard, about
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -51,7 +51,6 @@ struct SettingsPanel: View {
             case .tabs: return "Tabs"
             case .browsing: return "Browsing"
             case .spaces: return "Spaces & Pins"
-            case .passwords: return "Forms"
             case .privacy: return "Privacy"
             case .ai: return "AI"
             case .extensions: return "Extensions"
@@ -66,7 +65,6 @@ struct SettingsPanel: View {
             case .tabs: return "square.on.square"
             case .browsing: return "globe"
             case .spaces: return "square.stack"
-            case .passwords: return "character.cursor.ibeam"
             case .privacy: return "hand.raised"
             case .ai: return "sparkles"
             case .extensions: return "puzzlepiece.extension"
@@ -75,11 +73,11 @@ struct SettingsPanel: View {
             }
         }
         /// A section by its name in an address or in the settings file,
-        /// the old names included: Downloads is in General now, Shortcuts
-        /// is Keyboard & Mouse.
+        /// the old names included: Downloads and Forms (once Passwords) are
+        /// in General now, Shortcuts is Keyboard & Mouse.
         static func named(_ name: String) -> Page? {
             switch name.lowercased() {
-            case "downloads": return .general
+            case "downloads", "forms", "passwords": return .general
             case "shortcuts", "mouse": return .keyboard
             case "themes": return .appearance
             default: return Page(rawValue: name.lowercased())
@@ -88,7 +86,7 @@ struct SettingsPanel: View {
         /// The rail's three blocks: the browser, your data and tools, About.
         static var blocks: [[Page]] {
             [[.general, .appearance, .tabs, .browsing, .spaces],
-             [.passwords, .privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .keyboard],
+             [.privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .keyboard],
              [.about]]
         }
     }
@@ -481,7 +479,7 @@ struct SettingsPanel: View {
         case .tabs: tabsControl(item.id)
         case .browsing: browsingControl(item.id)
         case .spaces: spacesControl(item.id)
-        case .passwords, .privacy: keptControl(item.id)
+        case .privacy: keptControl(item.id)
         case .keyboard, .about: otherControl(item.id)
         default: EmptyView()
         }
@@ -791,6 +789,7 @@ struct SettingsPanel: View {
         case "commandbar": Switch(on: $prefs.commandBar)
         case "start.fresh": Switch(on: $prefs.startsFresh)
         case "note.sharedpins", "note.pinback": Always()
+        case "contacts.fill": keptControl(id)
         default: EmptyView()
         }
     }
