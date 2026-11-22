@@ -2021,10 +2021,7 @@ private struct SideRow: View, Equatable {
                     }
                     if tab.recording {
                         // An extension recording from this page (RecordingIndicator).
-                        Image(systemName: "record.circle")
-                            .font(.system(size: 10))
-                            .foregroundStyle(colour.opacity(0.8))
-                            .help("Recording")
+                        RecordingDot(colour: colour)
                     }
                     // A window the page asked for was refused (BlockedPopups).
                     PopupSign(browser: browser, tab: tab, colour: colour)

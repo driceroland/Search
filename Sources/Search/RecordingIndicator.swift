@@ -32,6 +32,10 @@ final class RecordingIndicator: ObservableObject {
     @Published private(set) var lines: [RecordingLine] = []
     /// What Stop does, for a line's extension.
     var onStop: ((String) -> Void)?
+    /// Put away with Hide: the recording goes on, marked only by the red
+    /// dot on its tab, which brings the pill back. A new recording, after
+    /// all have stopped, shows it again.
+    @Published private(set) var hidden = false
 
     private var panel: PillPanel?
     /// Offscreen pages lent to the pill while they record, with where each
@@ -43,6 +47,7 @@ final class RecordingIndicator: ObservableObject {
     /// none. A tab whose page is among them wears a mark in the row.
     func update(_ lines: [RecordingLine], pages: [WKWebView] = []) {
         if self.lines != lines { self.lines = lines }
+        if lines.isEmpty, hidden { hidden = false }
         let capturing = Set(pages.map(ObjectIdentifier.init))
         for browser in Browsers.all {
             for tab in browser.tabs {
@@ -55,6 +60,11 @@ final class RecordingIndicator: ObservableObject {
 
     /// A line's Stop.
     func stop(_ id: String) { onStop?(id) }
+
+    /// Hide, from the pill; the tab's dot undoes it.
+    func hide() { hidden = true; settle() }
+    func show() { hidden = false; settle() }
+    func toggle() { hidden ? show() : hide() }
 
     // MARK: - lending an offscreen page (phase 2)
 
@@ -91,14 +101,65 @@ final class RecordingIndicator: ObservableObject {
         hosted.removeAll { $0.web.superview == nil && $0.web.window == nil && !isLent($0.web) }
         let wanted = !lines.isEmpty || !hosted.isEmpty
         guard wanted else {
+            ScreenInk.shared.stop()
             panel?.orderOut(nil)
             return
         }
         let panel = ownPanel()
+        guard !Store.testing else { panel.fit(); return }
+        // It rides on the window of the tab that records, near its top,
+        // rather than over the page's own controls at the foot of the
+        // screen; it moves and hides with that window.
+        let home = Browsers.all.first { $0.tabs.contains(where: \.recording) }?.window
+            ?? NSApp.keyWindow ?? NSApp.mainWindow
+        panel.attach(to: home)
         panel.fit()
-        guard !Store.testing else { return }
+        // Hidden, it stays up but unseen and untouchable (a page lent to it
+        // must still count as on screen to record); the menu bar holds Stop.
+        panel.alphaValue = hidden ? 0 : 1
+        panel.ignoresMouseEvents = hidden
         if !panel.isVisible { panel.orderFrontRegardless() }
+        menuBar()
     }
+
+    // MARK: - in the menu bar, while hidden
+
+    private var item: NSStatusItem?
+
+    /// A red record mark beside the clock while the pill is hidden: its
+    /// menu says what records, with Stop for each, and Show.
+    private func menuBar() {
+        guard hidden, !lines.isEmpty, !Store.testing else {
+            if let item { NSStatusBar.system.removeStatusItem(item); self.item = nil }
+            return
+        }
+        let item = self.item ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        self.item = item
+        if let button = item.button {
+            let image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: "Recording")?
+                .withSymbolConfiguration(.init(paletteColors: [.white, .systemRed]))
+            image?.isTemplate = false
+            button.image = image
+            button.toolTip = lines.map { "\($0.name) \($0.what)" }.joined(separator: "\n")
+        }
+        let menu = NSMenu()
+        for line in lines {
+            let title = NSMenuItem(title: "\(line.name) \(line.what)", action: nil, keyEquivalent: "")
+            title.isEnabled = false
+            menu.addItem(title)
+            menu.addItem(MenuAction("Stop", { [weak self] in self?.stop(line.id) }).item)
+        }
+        menu.addItem(.separator())
+        menu.addItem(MenuAction("Draw on Screen", { ScreenInk.shared.start() }).item)
+        if ScreenInk.shared.active {
+            menu.addItem(MenuAction("Stop Drawing", { ScreenInk.shared.stop() }).item)
+        }
+        menu.addItem(MenuAction("Show Pill", { [weak self] in self?.show() }).item)
+        item.menu = menu
+    }
+
+    /// The menu bar menu again, for Stop Drawing coming and going.
+    func refreshMenu() { menuBar() }
 
     private func isLent(_ web: WKWebView) -> Bool { panel?.holds(web) == true }
 
@@ -139,7 +200,7 @@ private final class PillPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
-        isMovableByWindowBackground = true
+        isMovableByWindowBackground = false
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
@@ -160,15 +221,49 @@ private final class PillPanel: NSPanel {
 
     func holds(_ web: WKWebView) -> Bool { web.superview === lending }
 
-    /// Its size for what it says, at the foot of the screen, centred.
+    /// The window it rides on, and whether it has been placed there yet:
+    /// once placed (or dragged), it stays where it is.
+    private weak var home: NSWindow?
+    private var placed = false
+
+    func attach(to window: NSWindow?) {
+        guard window !== home else { return }
+        home?.removeChildWindow(self)
+        home = window
+        placed = false
+        if let window {
+            level = window.level
+            collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
+            window.addChildWindow(self, ordered: .above)
+        } else {
+            level = .statusBar
+            collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        }
+    }
+
+    /// Its size for what it says; first placed at the top of its window,
+    /// centred, just under the toolbar (or at the foot of the screen with
+    /// no window). After that it keeps where it is, wherever it was dragged.
     func fit() {
         content.layoutSubtreeIfNeeded()
         let size = content.fittingSize
-        let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen ?? NSScreen.main
-        let area = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let frame = NSRect(x: area.midX - size.width / 2, y: area.minY + 24, width: size.width, height: size.height)
         content.frame = NSRect(origin: .zero, size: size)
-        if isVisible { setFrame(NSRect(origin: self.frame.origin, size: size), display: true) } else { setFrame(frame, display: false) }
+        if placed {
+            // Growing or shrinking, it keeps its top centre where it was.
+            let origin = NSPoint(x: frame.midX - size.width / 2, y: frame.maxY - size.height)
+            setFrame(NSRect(origin: origin, size: size), display: isVisible)
+            return
+        }
+        let origin: NSPoint
+        if let home {
+            let area = home.frame
+            origin = NSPoint(x: area.midX - size.width / 2, y: area.maxY - 64 - size.height)
+        } else {
+            let area = (NSScreen.main?.visibleFrame) ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            origin = NSPoint(x: area.midX - size.width / 2, y: area.minY + 24)
+        }
+        setFrame(NSRect(origin: origin, size: size), display: false)
+        placed = true
     }
 }
 
@@ -177,6 +272,10 @@ struct PillView: View {
     @ObservedObject var indicator: RecordingIndicator
 
     var body: some View {
+        full
+    }
+
+    private var full: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(indicator.lines) { line in
                 HStack(spacing: 8) {
@@ -191,6 +290,29 @@ struct PillView: View {
                         .lineLimit(1)
                         .fixedSize()
                     Spacer(minLength: 12)
+                    // Mark up the screen while sharing it.
+                    Button { ScreenInk.shared.toggle() } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Palette.ink)
+                            .frame(width: 26, height: 22)
+                            .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Draw on screen")
+                    .accessibilityLabel("Draw on screen")
+                    // Out of the way: the tab's red dot brings it back.
+                    Button { indicator.hide() } label: {
+                        Text("Hide")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Palette.ink)
+                            .padding(.horizontal, 9)
+                            .frame(height: 22)
+                            .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Hide; Stop stays in the menu bar")
+                    .accessibilityLabel("Hide")
                     Button { indicator.stop(line.id) } label: {
                         Text("Stop")
                             .font(.system(size: 12, weight: .medium))
@@ -207,6 +329,8 @@ struct PillView: View {
         .padding(.leading, 14)
         .padding(.trailing, 7)
         .padding(.vertical, 7)
+        // Anywhere off the buttons drags it.
+        .background(PillDragArea())
         // A capsule for one line; the same corners round a taller card.
         .background(Palette.ground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
@@ -214,4 +338,27 @@ struct PillView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Recording")
     }
+}
+
+/// Behind the pill's words: a press there drags the pill, wherever it goes.
+private struct PillDragArea: NSViewRepresentable {
+    final class Grip: NSView {
+        override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    }
+    func makeNSView(context: Context) -> NSView { Grip() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+/// A menu item that runs a closure: the item keeps its target alive.
+private final class MenuAction: NSObject {
+    let run: () -> Void
+    let item: NSMenuItem
+    init(_ title: String, _ run: @escaping () -> Void) {
+        self.run = run
+        item = NSMenuItem(title: title, action: #selector(fire), keyEquivalent: "")
+        super.init()
+        item.target = self
+        item.representedObject = self
+    }
+    @objc func fire() { run() }
 }

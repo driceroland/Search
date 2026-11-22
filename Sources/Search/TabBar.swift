@@ -1016,10 +1016,9 @@ private struct TabPill: View, Equatable {
                 }
                 if tab.recording {
                     // An extension recording from this page (RecordingIndicator).
-                    Image(systemName: "record.circle")
-                        .font(.system(size: 10))
-                        .foregroundStyle(colour.opacity(0.8))
-                        .help("Recording")
+                    // Pressed, it shows or hides the pill with Stop; red
+                    // while the pill is hidden, the one sign left.
+                    RecordingDot(colour: colour)
                 }
                 // A window the page asked for was refused (BlockedPopups).
                 PopupSign(browser: browser, tab: tab, colour: colour)
@@ -2416,5 +2415,21 @@ struct PinField: NSViewRepresentable {
             let browser = browser
             DispatchQueue.main.async { browser.endPinEdit() }
         }
+    }
+}
+
+/// The mark on a recording tab: shows or hides the recording pill.
+struct RecordingDot: View {
+    let colour: Color
+    @ObservedObject private var indicator = RecordingIndicator.shared
+
+    var body: some View {
+        Button { indicator.toggle() } label: {
+            Image(systemName: "record.circle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(indicator.hidden ? Color(nsColor: .systemRed) : colour.opacity(0.8))
+        }
+        .buttonStyle(.plain)
+        .help(indicator.hidden ? "Recording: show Stop" : "Recording: hide Stop")
     }
 }
