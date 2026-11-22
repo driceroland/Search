@@ -22,10 +22,6 @@ struct TabBar: View {
 
     /// Which tab is under the hand, where it started, and how far it has come.
     @State private var landing = false
-    @State private var groupFrames: [UUID: GroupDropFrame] = [:]
-    @State private var looseFrames = LooseFrames()
-    /// A tab of the run is being carried along it (see Carried).
-    @State private var carrying = false
     /// The plus only comes out when the pointer is in the row.
     @State private var nearby = false
     @State private var plussed = false
@@ -113,10 +109,8 @@ struct TabBar: View {
                                     HStack(spacing: Metrics.tabGap) {
                                         if browser.prefs.usesTabGroups {
                                             let pins = browser.displayedTabs.filter { $0.pin != nil }
-                                            let pinSteps = steps(pins, each: each)
-                                            ForEach(Array(pins.enumerated()), id: \.element.id) { index, tab in
-                                                topTab(tab, index: index, steps: pinSteps,
-                                                       group: nil, strip: geo.size.width, each: each)
+                                            ForEach(pins) { tab in
+                                                topTab(tab, strip: geo.size.width, each: each)
                                             }
                                             if pinLine { PinLine() }
                                             ForEach(browser.tabGroups) { group in
@@ -132,31 +126,23 @@ struct TabBar: View {
                                                             GroupBand(group: group, piece: group.id, first: true, last: members.isEmpty)
                                                         }
                                                     }
-                                                let memberSteps = steps(members, each: each)
                                                 ForEach(Array(members.enumerated()), id: \.element.id) { index, tab in
-                                                    topTab(tab, index: index, steps: memberSteps,
-                                                           group: group.id, strip: geo.size.width, each: each,
+                                                    topTab(tab, strip: geo.size.width, each: each,
                                                            band: banded ? group : nil, last: index == members.count - 1)
                                                 }
                                             }
                                             let ungrouped = browser.displayedTabs.filter { $0.pin == nil && browser.group(of: $0) == nil }
-                                            let ungroupedSteps = steps(ungrouped, each: each)
-                                            ForEach(Array(ungrouped.enumerated()), id: \.element.id) { index, tab in
-                                                topTab(tab, index: index, steps: ungroupedSteps,
-                                                       group: nil, strip: geo.size.width, each: each)
+                                            ForEach(ungrouped) { tab in
+                                                topTab(tab, strip: geo.size.width, each: each)
                                             }
                                         } else {
                                             // Drawn before the first tab that isn't a pin,
-                                            // rather than by splitting the run in two: the
-                                            // index and the places each tab is given are what
-                                            // carrying one along the row works from.
+                                            // rather than by splitting the run in two.
                                             let shown = browser.displayedTabs
                                             let firstLoose = shown.firstIndex { $0.pin == nil }
-                                            let shownSteps = steps(shown, each: each)
                                             ForEach(Array(shown.enumerated()), id: \.element.id) { index, tab in
                                                 if pinLine, index == firstLoose { PinLine() }
-                                                topTab(tab, index: index, steps: shownSteps,
-                                                       group: nil, strip: geo.size.width, each: each)
+                                                topTab(tab, strip: geo.size.width, each: each)
                                             }
                                         }
                                     }
@@ -168,15 +154,8 @@ struct TabBar: View {
                                         if missed != unaccounted { unaccounted = missed }
                                         TabBar.laidOut = laid
                                     }
-                                    .environment(\.rowCarrying, carrying)
-                                    .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
                                 }
                                 .scrollDisabled(!row.overflowing)
-                                // The run ends where its tabs do, so a tab
-                                // carried past either end was cut off there.
-                                // Not when it fills the row: its neighbours
-                                // would show over the lights and the doors.
-                                .scrollClipDisabled(carrying && !row.overflowing)
                                 .frame(width: row.run)
                                 .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { TabBar.runShown = $0 }
                                 // Only as tall as the tabs: a scroll view is
@@ -449,11 +428,9 @@ struct TabBar: View {
 
     /// `each`: every loose tab's width (see `width(in:)`), worked out once
     /// for the run.
-    /// `steps`: every place in the run the tab is carried along (see
-    /// `steps(_:each:)`), worked out once for the run as `each` is.
     /// `band`: the open group it is drawn in, whose band it carries a piece
     /// of (GroupBand); `last`, the piece that ends it.
-    private func topTab(_ tab: Tab, index: Int, steps: [CGFloat], group: UUID?, strip: CGFloat, each: CGFloat,
+    private func topTab(_ tab: Tab, strip: CGFloat, each: CGFloat,
                         band: TabGroup? = nil, last: Bool = false) -> some View {
         let pair = browser.prefs.splitView ? browser.split(for: tab) : nil
         let isPairRepresentative = pair?.left == tab.id
@@ -465,34 +442,10 @@ struct TabBar: View {
                     SplitDropZone(browser: browser, tab: tab, kind: .strip)
                 }
             }
-            .modifier(Carried(index: index, steps: steps, vertical: false,
-                              space: "strip", onDropTab: { source, point in drop(source, at: point) },
-                              groupDestination: { source, point in destination(source, at: point) },
-                              loose: group == nil && browser.prefs.usesTabGroups && tab.pin == nil ? looseFrames : nil,
-                              outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
-                              holding: { carrying = $0 }) {
-                if browser.prefs.usesTabGroups && tab.pin == nil {
-                    browser.move(tab, within: group, to: $0)
-                } else {
-                    browser.moveDisplayedTab(tab, to: $0)
-                }
-            })
-            // After Carried: its piece stays where the tab's place is while
-            // the tab itself goes with the hand.
             .background {
                 if let band { GroupBand(group: band, piece: tab.id, last: last) }
             }
             .id(tab.id)
-    }
-
-    /// Each place in a run: a pin's width, a pair's or a tab's, and the gap.
-    private func steps(_ run: [Tab], each: CGFloat) -> [CGFloat] {
-        let pairs = browser.prefs.splitView
-            ? Dictionary(browser.splits.filter { $0.left != $0.right }.map { ($0.left, $0.tabs.count) }, uniquingKeysWith: { first, _ in first })
-            : [:]
-        return run.map { tab in
-            (tab.pin != nil ? Metrics.pinWidth : pairs[tab.id].map { splitItemWidth(base: each, pages: $0) } ?? each) + Metrics.tabGap
-        }
     }
 
     @ViewBuilder
@@ -523,27 +476,6 @@ struct TabBar: View {
                     live: tab.id == activeID, width: width, room: room, pill: pill,
                     close: interactive ? { browser.closeTab(tab) } : {})
         }
-    }
-
-    private func destination(_ tab: Tab, at point: CGPoint) -> GroupDropTarget? {
-        guard browser.prefs.usesTabGroups, tab.pin == nil else { return nil }
-        return GroupDropFrames.resolve(point, frames: groupFrames, groups: browser.tabGroups,
-                                       excluding: tab.id, vertical: false)
-    }
-
-    private func drop(_ tab: Tab, at point: CGPoint) {
-        if let target = destination(tab, at: point) {
-            browser.move(tab, toGroup: target)
-        } else if let out = leaving(tab, at: point) {
-            browser.move(tab, outOfGroupBefore: out.before)
-        }
-    }
-
-    private func leaving(_ tab: Tab, at point: CGPoint) -> LooseDrop? {
-        guard browser.prefs.usesTabGroups, tab.pin == nil else { return nil }
-        let loose = Set(browser.tabs.filter { $0.pin == nil && browser.group(of: $0) == nil }.map(\.id))
-        return GroupDropFrames.leaving(point, frames: groupFrames, loose: looseFrames.rects.filter { loose.contains($0.key) },
-                                       groups: browser.tabGroups, source: tab.id, vertical: false)
     }
 
     private struct Measures {
@@ -834,7 +766,6 @@ private struct TabPill: View, Equatable {
     /// tint rather than sit on it as grey patches (see Greys).
     @Environment(\.liquidTabs) private var liquid
     @Environment(\.greys) private var greys
-    @Environment(\.rowCarrying) private var rowCarrying
     let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
@@ -932,7 +863,7 @@ private struct TabPill: View, Equatable {
                 loose
             }
         }
-        .background { ground.animation(Motion.quick, value: rowCarrying) }
+        .background { ground }
         .overlay {
             if selected {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -1147,7 +1078,7 @@ private struct TabPill: View, Equatable {
         } else if hovering {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(greys.hover)
-        } else if pinned || compact || rowCarrying {
+        } else if pinned || compact {
             // A letter with nothing behind it reads as debris. A pinned tab
             // keeps a faint ground of its own so the block of them reads as
             // one thing, and a tab down to its mark stands in the same place:
@@ -1459,20 +1390,6 @@ struct Carried: ViewModifier {
             travel = 0
             reordered = false
         }
-    }
-}
-
-/// A tab is being carried along the run of tabs across the top: every tab of
-/// it wears the faint grey of a pinned one, so a tab half under the one
-/// carried still shows where it is.
-private struct RowCarryingKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    var rowCarrying: Bool {
-        get { self[RowCarryingKey.self] }
-        set { self[RowCarryingKey.self] = newValue }
     }
 }
 
