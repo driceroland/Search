@@ -75,6 +75,10 @@ struct SearchApp: App {
                 Divider()
                 Button("Open Address…") { browser.edit() }
                     .shortcut("file.openAddress")
+                // A page, PDF or picture on this Mac, as Safari's File ›
+                // Open File… (idea 755).
+                Button("Open File…") { browser.openFile() }
+                    .shortcut("file.openFile")
                 Divider()
                 // Another browser's bookmarks, history, passwords and the
                 // rest, as Safari's File › Import From: the one sheet every

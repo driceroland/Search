@@ -6796,6 +6796,27 @@ final class Browser: NSObject, ObservableObject {
         }
     }
 
+    /// File › Open File…, as Safari's: a page, a PDF, a picture or a text
+    /// file on this Mac, each in a tab of its own, as if its file:// address
+    /// had been typed (idea 755). No SVG: a file: page is not given one
+    /// (see Open With).
+    func openFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = Browser.openableFiles
+        let take: (NSApplication.ModalResponse) -> Void = { [weak self] answer in
+            guard answer == .OK, let self else { return }
+            for url in panel.urls { open(url, foreground: true) }
+        }
+        if let window { panel.beginSheetModal(for: window, completionHandler: take) } else { take(panel.runModal()) }
+    }
+
+    /// What Open File… offers.
+    static let openableFiles: [UTType] =
+        [.html, .webArchive, .pdf, .png, .jpeg, .gif, .webP, .heic, .tiff, .bmp, .plainText]
+        + [UTType("public.xhtml")].compactMap { $0 }
+
     /// The save panel for a page, named after its title (or its site), in
     /// Downloads.
     private func askWhereToSave(_ tab: Tab?, as type: UTType, ending: String, then save: @escaping (Tab, URL) -> Void) {
