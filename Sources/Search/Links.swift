@@ -550,7 +550,7 @@ final class Links: NSObject, NSApplicationDelegate {
     static func writeFeedback() {
         var text = URLComponents()
         text.scheme = "mailto"
-        text.path = "hello@officecommun.com"
+        text.path = "hello@searchbrowser.app"
         text.queryItems = [
             URLQueryItem(name: "subject", value: "Search feedback — \(Updater.version) (\(Updater.build))"),
             URLQueryItem(name: "body", value: "\n\n—\nSearch \(Updater.version), build \(Updater.build), macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"),

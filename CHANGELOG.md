@@ -20,6 +20,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- Send Feedback (⇧⌘F, the Help menu, About) and the help links write to hello@searchbrowser.app, Search's own address.
 - With the tabs across the top, an open tab group now shows where it starts and ends: a soft band runs behind its name and its tabs, in the group's colour or a faint grey without one. Right-click the group's name and choose Colour… to set it there too. A folded group looks as before. `python3 Tests/group_band.py`
 
 ### Fixed

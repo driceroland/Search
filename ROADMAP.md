@@ -3,7 +3,7 @@
 Every idea and every report about Search, in one place: what is being built
 right now, what goes out with the next version, what comes after, and what
 is not on the list — each with where it came from. GitHub issues, pull
-requests, the emails that reach hello@officecommun.com and the replies on X
+requests, the emails that reach hello@searchbrowser.app and the replies on X
 all land here.
 
 **The live version is [officecommun.com/search/roadmap](https://officecommun.com/search/roadmap)**:

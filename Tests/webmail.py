@@ -104,7 +104,7 @@ try:
     mail(action="feedback"); time.sleep(1)
     seen = mail()["seen"]
     q = parse_qs(urlsplit(seen[-1].split(": ", 1)[1]).query) if seen[-1].startswith("feedback: ") else {}
-    t.ok("Send Feedback opens Gmail's compose page", q.get("to") == ["hello@officecommun.com"]
+    t.ok("Send Feedback opens Gmail's compose page", q.get("to") == ["hello@searchbrowser.app"]
          and q.get("su", [""])[0].startswith("Search feedback"), seen[-1])
     sv.quit()
 
