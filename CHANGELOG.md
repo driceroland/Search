@@ -29,6 +29,7 @@ in [ROADMAP.md](ROADMAP.md).
 - A new mark: a narrow column beside a larger block, the window itself with its tabs down the left and the page next to them. It replaces the pill with an S cut out of it in the app icon (light, dark, tinted and the yellow dev build) and on the welcome screen and in Settings › About.
 - Roomier tabs is gone from Settings › Appearance; the sidebar keeps the normal row height and title size. A saved choice is ignored.
 - With the tabs across the top, an open tab group now shows where it starts and ends: a soft band runs behind its name and its tabs, in the group's colour or a faint grey without one. Right-click the group's name and choose Colour… to set it there too. A folded group looks as before. `python3 Tests/group_band.py`
+- Filling in forms (your card in Contacts) moves into Settings › General; Forms is no longer a section of its own. Addresses and saved choices that named it open General.
 
 ### Fixed
 

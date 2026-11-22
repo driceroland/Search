@@ -35,9 +35,9 @@ struct InternalPage: Equatable {
     init?(url: URL) {
         guard url.scheme?.lowercased() == InternalPage.scheme, let host = url.host()?.lowercased() else { return nil }
         // Search kept a list of passwords here once: a tab left open on it,
-        // from an earlier session, comes back as the Settings page that took
-        // its place (passkeys and Apple Passwords).
-        if host == "passwords" { self.init(.settings, "passwords"); return }
+        // from an earlier session, comes back as Settings › General, where
+        // filling in forms is now.
+        if host == "passwords" { self.init(.settings, "general"); return }
         guard let kind = Kind(rawValue: host) else { return nil }
         let rest = url.path(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.init(kind, rest)

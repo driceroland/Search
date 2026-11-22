@@ -212,7 +212,7 @@ struct WelcomePanel: View {
                 Key("⇧⌘P", "Float a video in Search's window, or in macOS's picture in picture. Settings › Browsing.")
                 Key("⌃-click", "Claude or ChatGPT in a side panel beside the page: right-click a tab › Open in Side Panel, or View › Side Panel.")
                 Key("⌘Q", "Search can ask before it quits. Settings › General.")
-                Key("⌘,", "Your Apple passwords, under the sign-in field — Settings › Passwords.")
+                Key("⌘,", "Your card in Contacts under a box for your name, email or address — Settings › General.")
                 if PageTranslator.available {
                     Key("⌃-click", "Translate a page into your language, on this Mac — nothing is sent anywhere. Right-click the page › Translate Page.")
                 }

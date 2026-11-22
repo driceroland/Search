@@ -3,7 +3,7 @@ import Contacts
 
 // Your own details under a form's boxes: name, email, phone, address, from
 // your card in Contacts (the one marked Make This My Card), as Safari does.
-// Off unless turned on in Settings › Passwords, which is when macOS asks
+// Off unless turned on in Settings › General, which is when macOS asks
 // whether Search may read Contacts.
 //
 // Only your card is read, never anyone else's, and nothing of it is

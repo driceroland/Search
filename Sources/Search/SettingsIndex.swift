@@ -61,6 +61,7 @@ enum SettingsIndex {
     static let groups: [SettingsGroup] = [
         .init(id: "browser", page: .general, title: "Your browser", icon: "globe.desk"),
         .init(id: "downloads", page: .general, title: "Downloads", icon: "arrow.down.circle"),
+        .init(id: "forms", page: .general, title: "Filling in forms", icon: "character.cursor.ibeam"),
 
         .init(id: "theme", page: .appearance, title: "Light and dark", icon: "circle.lefthalf.filled"),
         .init(id: "window", page: .appearance, title: "Window", icon: "macwindow"),
@@ -83,8 +84,6 @@ enum SettingsIndex {
         .init(id: "spaces", page: .spaces, title: "Spaces and profiles", icon: "rectangle.3.group"),
         .init(id: "pins", page: .spaces, title: "Pins", icon: "pin"),
         .init(id: "opening", page: .spaces, title: "Opening and starting", icon: "command"),
-
-        .init(id: "forms", page: .passwords, title: "Filling in forms", icon: "character.cursor.ibeam"),
 
         .init(id: "blocking", page: .privacy, title: "Blocking", icon: "shield"),
         .init(id: "permissions", page: .privacy, title: "Site permissions", icon: "checkmark.shield"),
@@ -496,7 +495,7 @@ enum SettingsIndex {
               title: "Start with a fresh window", detail: "Pins, groups and named tabs come back; last time's others don't",
               keys: [Preferences.freshKey], words: ["restore", "session", "startup"]),
 
-        // Passwords
+        // General › Filling in forms
         .init(id: "contacts.fill", group: "forms", icon: "person.crop.rectangle",
               title: "Fill in your contact details", detail: "Your card in Contacts under name, email, phone and address boxes",
               more: "A click fills the rest of the form's empty boxes too. Only your own card is read, and macOS asks first.",
