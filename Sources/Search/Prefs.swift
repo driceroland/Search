@@ -515,7 +515,10 @@ final class Preferences: ObservableObject {
         didSet { store.set(showsTabShortcuts, forKey: "tabs.shortcuts") }
     }
     @Published var showsReading: Bool {
-        didSet { store.set(showsReading, forKey: "tabs.reading") }
+        didSet {
+            store.set(showsReading, forKey: "tabs.reading")
+            ScrollRelay.reading = showsReading
+        }
     }
     /// Tab titles in full ink (black or white) instead of the soft greys
     /// used for tabs that aren't the one you're on. Off unless asked for.
@@ -1179,7 +1182,9 @@ final class Preferences: ObservableObject {
         engineSuggests = store.bool(forKey: "search.suggest")
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
         showsTabShortcuts = store.bool(forKey: "tabs.shortcuts")
-        showsReading = store.bool(forKey: "tabs.reading")
+        let reading = store.bool(forKey: "tabs.reading")
+        showsReading = reading
+        ScrollRelay.reading = reading
         highContrastText = store.bool(forKey: "tabs.highContrast")
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
         // Security's advice); a choice made before stands.

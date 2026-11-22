@@ -1147,7 +1147,9 @@ final class Tab: ObservableObject, Identifiable {
             scripts.append(Armed.script(source, time, mainFrameOnly: mainFrameOnly, in: world, line: line))
         }
         add(PopupGestureRelay.script, .atDocumentStart, mainFrameOnly: false, in: Web.world)
-        add(ScrollRelay.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
+        // Only while Settings says so: off, pages report their length once and
+        // on resize (for the switcher's moons) with no scroll listener at all.
+        add(ScrollRelay.reading ? ScrollRelay.script : ScrollRelay.measure, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
         // At the start, so its pageshow runs ahead of the page's own
         // (see KeptScroll.swift).
         add(KeptScroll.script, .atDocumentStart, mainFrameOnly: true, in: Web.world)
@@ -1373,13 +1375,18 @@ final class Tab: ObservableObject, Identifiable {
     /// Called from the page, a few dozen times a second at most — the script
     /// already waits for a frame before it says anything.
     func scrolled(to y: Double, of ceiling: Double, screens: Double? = nil) {
-        if let screens { self.screens = (max(1, screens) * 10).rounded() / 10 }
+        if let screens { measured(screens: screens) }
         // In hundredths, and only when that changes. The page reports once a
         // frame while it scrolls — 120 times a second on a 120 Hz screen — and
         // each new value had the window redraw the tab's fill, a third of a
         // core on the thread WebKit needs to put the scrolled page on screen.
         let fraction = ceiling > 0 ? (min(1, max(0, y / ceiling)) * 100).rounded() / 100 : 0
         if fraction != reading { reading = fraction }
+    }
+
+    /// How long the page is, in screens of it (see `Tab.screens`).
+    func measured(screens: Double) {
+        self.screens = (max(1, screens) * 10).rounded() / 10
     }
 
     func go(to url: URL) {
@@ -3377,6 +3384,10 @@ final class PointerGate: NSResponder {
 /// alive by the very page it was told to stop showing.
 final class ScrollRelay: NSObject, WKScriptMessageHandler {
     static let name = "officeScroll"
+    /// Whether pages report where you have scrolled to (`Prefs.showsReading`).
+    /// Off, a page only reports its height once and on resize (for
+    /// `Tab.screens`), and attaches no scroll listener at all.
+    @MainActor static var reading = false
 
     weak var tab: Tab?
 
@@ -3389,31 +3400,79 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
             MainActor.assumeIsolated { tab?.built?.answer(free: side == "free") }
             return
         }
-        guard let y = body["y"] as? Double,
-              let ceiling = body["max"] as? Double
-        else { return }
         let screens = body["screens"] as? Double
-        MainActor.assumeIsolated { tab?.scrolled(to: y, of: ceiling, screens: screens) }
+        if let y = body["y"] as? Double, let ceiling = body["max"] as? Double {
+            MainActor.assumeIsolated { tab?.scrolled(to: y, of: ceiling, screens: screens) }
+        } else if let screens {
+            MainActor.assumeIsolated { tab?.measured(screens: screens) }
+        }
     }
+
+    /// For a page already up when the reading fill is turned off: its scroll
+    /// listener comes off.
+    static let off = "if (window.__officeScroll) window.__officeScroll.off();"
+
+    /// With the reading fill off: reports how many screens tall the page is
+    /// once as it loads and when the window resizes (for TabSwitcher's moons),
+    /// with no scroll listener at all.
+    static let measure = """
+    (function () {
+      var waiting = false, last = -1;
+      function tell() {
+        var root = document.documentElement;
+        if (!root) return;
+        var screens = (root.scrollHeight || 0) / Math.max(1, window.innerHeight);
+        var rounded = Math.round(Math.max(1, screens) * 10);
+        if (rounded === last) return;
+        last = rounded;
+        window.webkit.messageHandlers.\(name).postMessage({ screens: screens });
+      }
+      function schedule() {
+        if (waiting) return;
+        waiting = true;
+        requestAnimationFrame(function () { waiting = false; tell(); });
+      }
+      window.addEventListener('resize', schedule, { passive: true });
+      if (document.readyState !== 'complete') {
+        window.addEventListener('load', tell, { once: true });
+      }
+      tell();
+    })();
+    """
 
     /// Reports at most once a frame, and passively, so a page that scrolls
     /// smoothly without us keeps scrolling smoothly with us.
     static let script = """
     (function () {
-      var waiting = false;
+      if (window.__officeScroll) { window.__officeScroll.on(); return; }
+      var waiting = false, listening = false;
       function tell() {
         var root = document.documentElement;
+        if (!root) return;
         var y = window.scrollY || root.scrollTop || 0;
         var ceiling = Math.max(1, (root.scrollHeight || 0) - window.innerHeight);
         var screens = (root.scrollHeight || 0) / Math.max(1, window.innerHeight);
         window.webkit.messageHandlers.\(name).postMessage({ y: y, max: ceiling, screens: screens });
       }
-      window.addEventListener('scroll', function () {
+      function onScroll() {
         if (waiting) return;
         waiting = true;
-        requestAnimationFrame(function () { waiting = false; tell(); });
-      }, { passive: true });
-      tell();
+        requestAnimationFrame(function () { waiting = false; if (listening) tell(); });
+      }
+      function on() {
+        if (!listening) {
+          listening = true;
+          window.addEventListener('scroll', onScroll, { passive: true });
+        }
+        tell();
+      }
+      function off() {
+        if (!listening) return;
+        listening = false;
+        window.removeEventListener('scroll', onScroll);
+      }
+      window.__officeScroll = { on: on, off: off };
+      on();
     })();
     """
 }

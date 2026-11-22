@@ -2822,6 +2822,21 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // Every tab's next page, and the page each is showing now (see ScrollRelay).
+        prefs.$showsReading
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] on in
+                guard let self else { return }
+                // Published before didSet runs; tab.arm reads ScrollRelay.reading now.
+                ScrollRelay.reading = on
+                for tab in tabs + parkedTabs + LittleWindow.all.map(\.tab) {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.built?.evaluateInSearch(on ? ScrollRelay.script : ScrollRelay.off)
+                }
+            }
+            .store(in: &bag)
+
         // Every open page that hasn't a size of its own takes the new one.
         // Asleep, a tab has no page to resize; it takes it on waking.
         prefs.$pageZoom

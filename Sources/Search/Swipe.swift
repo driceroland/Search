@@ -84,9 +84,15 @@ enum Swipe {
       function mark(el) {
         var root = el === document.documentElement, vv = window.visualViewport;
         var x = root ? (vv ? vv.pageLeft : window.scrollX) : el.scrollLeft;
-        // A side bouncing past its edge is not moving along: held to it.
-        var max = root ? document.documentElement.scrollWidth - (vv ? vv.width : window.innerWidth) : el.scrollWidth - el.clientWidth;
-        x = Math.max(0, Math.min(Math.max(0, max), x));
+        // At or past the left edge, clamping always yields 0 — skip reading
+        // scrollWidth/clientWidth on every vertical scroll.
+        if (x > 0) {
+          // A side bouncing past its edge is not moving along: held to it.
+          var max = root ? document.documentElement.scrollWidth - (vv ? vv.width : window.innerWidth) : el.scrollWidth - el.clientWidth;
+          x = Math.min(Math.max(0, max), x);
+        } else {
+          x = 0;
+        }
         if (at.has(el) && Math.abs(at.get(el) - x) < 1) return;
         at.set(el, x);
         moved.set(el, Date.now());
@@ -124,14 +130,18 @@ enum Swipe {
             left = vv.pageLeft;
             max = (rootCanScroll() ? document.documentElement.scrollWidth : document.documentElement.clientWidth) - vv.width;
           } else if (root) {
-            can = rootCanScroll();
-            left = window.scrollX || 0;
             max = document.documentElement.scrollWidth - window.innerWidth;
+            can = max > 1 && rootCanScroll();
+            left = window.scrollX || 0;
           } else {
-            var ox = getComputedStyle(el).overflowX;
-            can = ox === 'auto' || ox === 'scroll';
-            left = el.scrollLeft;
             max = el.scrollWidth - el.clientWidth;
+            if (max > 1) {
+              var ox = getComputedStyle(el).overflowX;
+              can = ox === 'auto' || ox === 'scroll';
+              left = el.scrollLeft;
+            } else {
+              can = false;
+            }
           }
           if (can && max > 1) {
             if (e.deltaX > 0 ? left < max - 1 : left > 1) return true;
