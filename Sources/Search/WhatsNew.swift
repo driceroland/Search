@@ -61,8 +61,6 @@ enum WhatsNew {
         Toggle(title: "⌘T finds your open tabs", detail: "As you type in ⌘T's field, a matching open tab or pin comes first.",
                since: "1.0.17", get: { $0.arcTabPopup }, set: { $0.arcTabPopup = $1 },
                shown: { $0.floatingNewTab }),
-        Toggle(title: "Swipe back closes a tab a link opened", detail: "Back to the tab you were on, as Safari and Arc do.",
-               since: "1.0.17", get: { $0.swipeBackCloses }, set: { $0.swipeBackCloses = $1 }),
         Toggle(title: "Home bookmarks on a new tab", detail: "The sites of your bookmark folder called Home, as tiles.",
                since: "1.0.17", get: { $0.homeGrid }, set: { $0.homeGrid = $1 }),
         Toggle(title: "One button per space", detail: "Every space beside the bookmarks, one click away.",
