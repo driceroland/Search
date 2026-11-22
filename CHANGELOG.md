@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Fixed
 
 - A fast scroll down no longer goes back a page now and then, and a swipe back is called off with a short pull back. Two fingers that set off a little sideways while the page was still gliding from the last flick read as a swipe; a new gesture within a moment of scrolling up or down now has to be plainly sideways to be one, and never a mere flick. And once pulled far enough to go, the swipe went on letting go anywhere past that point, so taking it back meant pulling nearly all the way; drawn back 20 points from the furthest the fingers went, it lets go of the page, with the lighter tap to say so. `python3 Tests/swipe_intent.py`. Reported by [@AKwasTaken](https://github.com/AKwasTaken) ([#1389](https://github.com/driceroland/Search/issues/1389))
+- With the Home bookmarks on a new tab, the empty side of a Split View lists the open tabs to bring in under the Home tiles instead of over them. `swift test --filter HomeGridTests`. Reported by [@ryadhiprasetya](https://github.com/ryadhiprasetya) ([#1381](https://github.com/driceroland/Search/issues/1381))
 
 ### Held back
 

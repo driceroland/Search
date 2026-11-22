@@ -52,6 +52,34 @@ final class HomeGridTests: XCTestCase {
         browser.prefs.homeGrid = true
         browser.active?.restore(url: URL(string: "https://example.com/")!, title: "x")
         XCTAssertEqual(size().height, 0, "gone once the tab has a page")
+        XCTAssertEqual(HomeGrid.height(browser), 0, "and what lies under it doesn't make room for it (#1381)")
+
+    }
+
+    /// A Split View's empty side lists the open tabs under the field; with
+    /// the grid there too, they go under its tiles rather than over them.
+    func testGridHeightIsWhatItDraws() {
+        _ = NSApplication.shared
+        let browser = Browser(record: WindowRecord())
+        let saved = browser.bookmarks.roots
+        defer { browser.bookmarks.adopt(saved); browser.closeAll() }
+        let was = browser.prefs.homeGrid
+        defer { browser.prefs.homeGrid = was }
+        browser.prefs.homeGrid = true
+        func drawn() -> CGFloat {
+            let host = NSHostingView(rootView: HomeGrid(browser: browser).frame(width: 800, height: 800))
+            host.frame = NSRect(x: 0, y: 0, width: 800, height: 800)
+            host.layoutSubtreeIfNeeded()
+            return HomeGrid.height(browser)
+        }
+        browser.bookmarks.adopt([])
+        XCTAssertEqual(drawn(), 0)
+        browser.bookmarks.adopt([.folder("Home", (0..<5).map { site("S\($0)") })])
+        XCTAssertEqual(drawn(), 2 * 50 + 8, "two rows of 50 and the gap between")
+        browser.bookmarks.adopt([.folder("Home", (0..<16).map { site("S\($0)") })])
+        XCTAssertEqual(drawn(), 4 * 50 + 3 * 8, "four rows at most")
+        browser.prefs.homeGrid = false
+        XCTAssertEqual(drawn(), 0, "nothing with the switch off")
 
     }
 }

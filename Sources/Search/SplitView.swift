@@ -289,6 +289,14 @@ private struct OpenTabs: View {
             .map { $0 }
     }
 
+    /// The Home grid's height and a gap, when this side shows it (HomeGrid,
+    /// drawn only on the side you're on).
+    private var below: CGFloat {
+        guard browser.activeID == blank.id else { return 0 }
+        let grid = HomeGrid.height(browser)
+        return grid > 0 ? grid + 20 : 0
+    }
+
     var body: some View {
         let list = candidates
         GeometryReader { geo in
@@ -307,8 +315,9 @@ private struct OpenTabs: View {
                 .padding(.horizontal, 12)
                 .frame(width: min(Metrics.fieldWidth, max(0, geo.size.width - 28)), alignment: .leading)
                 .frame(maxWidth: .infinity)
-                // Under the field, which stands 60 points above the middle.
-                .offset(y: geo.size.height / 2 + 10)
+                // Under the field, which stands 60 points above the middle,
+                // and under the Home grid when it stands there (#1381).
+                .offset(y: geo.size.height / 2 + 10 + below)
             }
         }
     }
