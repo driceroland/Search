@@ -196,7 +196,52 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // keep their values back for good, even after a "show password"
       // button turns one into a text box.
       var secrets = globalThis.__searchSecrets || (globalThis.__searchSecrets = new WeakSet());
-      function keepSecret(box) { try { if (box) secrets.add(box); } catch (e) {} }
+      // A "show password" that swaps the box for a new one holding the
+      // same value: the new one is as secret as the one it replaced. Started
+      // only once this page actually has a secret field to guard, so pages
+      // without one never pay for a whole-document MutationObserver.
+      var watchingSecrets = false;
+      function watchSecrets() {
+        if (watchingSecrets) return;
+        watchingSecrets = true;
+        try {
+          function inputs(node, into) {
+            if (!node || node.nodeType !== 1) return;
+            if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') { into.push(node); return; }
+            if (node.childElementCount && node.querySelectorAll) {
+              Array.prototype.push.apply(into, node.querySelectorAll('input, textarea'));
+            }
+          }
+          new MutationObserver(function (changes) {
+            var gone = [];
+            for (var i = 0; i < changes.length; i++) {
+              var removed = changes[i].removedNodes;
+              for (var j = 0; j < removed.length; j++) inputs(removed[j], gone);
+            }
+            if (!gone.length) return;
+            var held = [];
+            for (var k = 0; k < gone.length; k++) {
+              if (secrets.has(gone[k]) && gone[k].value) held.push(gone[k].value);
+            }
+            if (!held.length) return;
+            var came = [];
+            for (var m = 0; m < changes.length; m++) {
+              var added = changes[m].addedNodes;
+              for (var n = 0; n < added.length; n++) inputs(added[n], came);
+            }
+            for (var p = 0; p < came.length; p++) {
+              if (held.indexOf(came[p].value) >= 0) keepSecret(came[p]);
+            }
+          }).observe(document, { childList: true, subtree: true });
+        } catch (err) {}
+      }
+      function keepSecret(box) {
+        try {
+          if (!box) return;
+          secrets.add(box);
+          watchSecrets();
+        } catch (e) {}
+      }
       function passwordBox(el) { return !!el && el.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'password'; }
       // The box itself, inside an open shadow root too: the event's target
       // is only its host from out here.
@@ -213,25 +258,6 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         }, true);
       });
       Array.prototype.forEach.call(document.querySelectorAll('input[type="password"]'), keepSecret);
-      // A "show password" that swaps the box for a new one holding the
-      // same value: the new one is as secret as the one it replaced.
-      try {
-        new MutationObserver(function (changes) {
-          var gone = [], came = [];
-          function inputs(node, into) {
-            if (!node || node.nodeType !== 1) return;
-            if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') into.push(node);
-            if (node.querySelectorAll) Array.prototype.push.apply(into, node.querySelectorAll('input, textarea'));
-          }
-          changes.forEach(function (c) {
-            Array.prototype.forEach.call(c.removedNodes, function (n) { inputs(n, gone); });
-            Array.prototype.forEach.call(c.addedNodes, function (n) { inputs(n, came); });
-          });
-          var held = gone.filter(function (b) { return secrets.has(b) && b.value; }).map(function (b) { return b.value; });
-          if (!held.length) return;
-          came.forEach(function (b) { if (held.indexOf(b.value) >= 0) keepSecret(b); });
-        }).observe(document, { childList: true, subtree: true });
-      } catch (err) {}
 
       // The password box, and the last box before it that could hold a name.
       function pair() {
