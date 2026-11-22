@@ -100,7 +100,7 @@ def main():
 
         # (3) Saving the nameless one with a new password changes it alone.
         c = open_page(base, "/code")
-        sv.ev(c, f"document.getElementById('p').value = '{NEW_PW}'; document.forms[0].requestSubmit(); true")
+        sv.ev(c, f"document.getElementById('p').value = '{NEW_PW}'; document.getElementById('p').dispatchEvent(new Event('input', {{bubbles: true}})); document.forms[0].requestSubmit(); true")
         time.sleep(3)
         r = acc()
         t.ok("a password box alone offers to update the nameless one",

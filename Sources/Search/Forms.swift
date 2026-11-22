@@ -208,13 +208,20 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       var secrets = globalThis.__searchSecrets || (globalThis.__searchSecrets = new WeakSet());
       function keepSecret(box) { try { if (box) secrets.add(box); } catch (e) {} }
       function passwordBox(el) { return !!el && el.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'password'; }
+      // Password boxes something typed or filled into: a keystroke, a
+      // paste, a password manager or Search's own fill all say so with an
+      // input or a change. Only their passwords are offered a place in the
+      // keychain. A box the page filled by itself — a masked key or secret
+      // shown on a dashboard — never is, whatever button is pressed near it.
+      var touched = new WeakSet();
+      function touch(box) { try { if (box) touched.add(box); } catch (e) {} }
       // The box itself, inside an open shadow root too: the event's target
       // is only its host from out here.
       function boxOf(e) { var path = e.composedPath ? e.composedPath() : []; return path[0] || e.target; }
       ['focusin', 'input', 'change'].forEach(function (kind) {
         document.addEventListener(kind, function (e) {
           var box = boxOf(e);
-          if (passwordBox(box)) return keepSecret(box);
+          if (passwordBox(box)) { if (kind !== 'focusin') touch(box); return keepSecret(box); }
           // A code typed in by hand: a one-time-code box, or one of a row
           // of one-character boxes.
           if (kind !== 'focusin' && box && box.tagName === 'INPUT') {
@@ -239,7 +246,11 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           });
           var held = gone.filter(function (b) { return secrets.has(b) && b.value; }).map(function (b) { return b.value; });
           if (!held.length) return;
-          came.forEach(function (b) { if (held.indexOf(b.value) >= 0) keepSecret(b); });
+          var typed = gone.filter(function (b) { return touched.has(b) && b.value; }).map(function (b) { return b.value; });
+          came.forEach(function (b) {
+            if (held.indexOf(b.value) >= 0) keepSecret(b);
+            if (typed.indexOf(b.value) >= 0) touch(b);
+          });
         }).observe(document, { childList: true, subtree: true });
       } catch (err) {}
 
@@ -258,10 +269,26 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         var user = null;
         for (var i = 0; i < all.length; i++) {
           if (all[i] === pass) break;
-          var kind = (all[i].type || 'text').toLowerCase();
-          if (kind === 'text' || kind === 'email' || kind === 'tel') user = all[i];
+          if (couldBeName(all[i], scope === document)) user = all[i];
         }
         return { user: user, pass: pass };
+      }
+      // A box a sign-in's name could be in: one to type text, an address
+      // or a phone number into, that is there to see and to type in. Not a
+      // list's picker, a page size, a search or a code: a dashboard's
+      // "40 items" was offered as the name. One marked autocomplete=
+      // "username" or "email" is, even hidden or read-only, as the name a
+      // password step keeps out of sight for password managers. With no
+      // form around the password, any box on the page comes before it, so
+      // only one that says it takes a name counts.
+      function couldBeName(el, loose) {
+        var kind = (el.type || 'text').toLowerCase();
+        if (kind !== 'text' && kind !== 'email' && kind !== 'tel') return false;
+        if (vouched(el) && !elsewhere(el)) return true;
+        if (el.disabled || el.readOnly || el.getAttribute('aria-hidden') === 'true') return false;
+        var r = el.getBoundingClientRect();
+        if (!(r.width > 0 && r.height > 0)) return false;
+        return !aside(el) && !elsewhere(el) && (!loose || claimsName(el));
       }
 
       // Which boxes a saved account is offered in. Strict on purpose, as
@@ -736,6 +763,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           if (!both) return false;
           if (both.user && !both.user.value) put(both.user, user);
           keepSecret(both.pass);
+          touch(both.pass);
           put(both.pass, password);
           return true;
         },
@@ -801,7 +829,9 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           }
           return;
         }
-        if (!both.pass.value) return;
+        // Only a password that was typed or filled in: one the page put
+        // there by itself is not a sign-in going out.
+        if (!both.pass.value || !touched.has(both.pass)) return;
         offered = Date.now();
         window.webkit.messageHandlers.officeForms.postMessage({
           kind: 'submit',

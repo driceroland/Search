@@ -122,7 +122,7 @@ def main():
         t.ok("password page: the account named on the step before comes first",
              r.get("shown") and r["rows"][0].get("login") == TWO and r.get("nameOnly") is False, r)
         sv.ev(a, "document.activeElement.blur(); true"); time.sleep(0.4)
-        go(a, "document.getElementById('p').value = 'idf-new-pass'; document.forms[0].requestSubmit(); true", 3)
+        go(a, "document.getElementById('p').value = 'idf-new-pass'; document.getElementById('p').dispatchEvent(new Event('input', {bubbles: true})); document.forms[0].requestSubmit(); true", 3)
         r = acc()
         t.ok("the save question keeps the name given on the step before",
              r.get("offer", {}).get("user") == TWO and r["offer"].get("changed") is True, r)
@@ -134,7 +134,7 @@ def main():
              r.get("shown") and r.get("nameOnly") is True, r)
         go(f, f"document.getElementById('u').value = '{ONE}'; document.getElementById('u').dispatchEvent("
               "new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); document.forms[0].requestSubmit(); true")
-        go(f, "document.getElementById('p').value = 'idf-new-pass'; document.forms[0].requestSubmit(); true", 3)
+        go(f, "document.getElementById('p').value = 'idf-new-pass'; document.getElementById('p').dispatchEvent(new Event('input', {bubbles: true})); document.forms[0].requestSubmit(); true", 3)
         r = acc()
         t.ok("…and the name typed there is the one the password is saved with",
              r.get("offer", {}).get("user") == ONE, r)
@@ -143,13 +143,13 @@ def main():
         b = open_page(base, "/step1")
         go(b, f"document.getElementById('u').value = '{TWO}'; document.forms[0].requestSubmit(); true")
         c = open_page(base, "/step2")
-        go(c, "document.getElementById('p').value = 'idf-other-pass'; document.forms[0].requestSubmit(); true", 3)
+        go(c, "document.getElementById('p').value = 'idf-other-pass'; document.getElementById('p').dispatchEvent(new Event('input', {bubbles: true})); document.forms[0].requestSubmit(); true", 3)
         r = acc()
         t.ok("another tab's password page doesn't get this tab's name", r.get("offer", {}).get("user") == "", r)
 
         # Another site (localhost is not 127.0.0.1): never the name.
         go(b, f"location.href = 'http://localhost:{PORT}/step2'; true", 2)
-        go(b, "document.getElementById('p').value = 'idf-other-pass'; document.forms[0].requestSubmit(); true", 3)
+        go(b, "document.getElementById('p').value = 'idf-other-pass'; document.getElementById('p').dispatchEvent(new Event('input', {bubbles: true})); document.forms[0].requestSubmit(); true", 3)
         r = acc()
         t.ok("another site's password page doesn't get the name either", r.get("offer", {}).get("user") == "", r)
 
