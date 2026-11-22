@@ -37,6 +37,8 @@ final class FollowFileTests: XCTestCase {
             // The column narrowed to icons, and the sidebar button beside the
             // window's buttons (#1360, #1351).
             "narrowed", "narrowsToIcons", "foldButton",
+            // The bookmarks bar at the top of the sidebar (#1390).
+            "bookmarksInSidebar",
         ])
     }
 

@@ -128,6 +128,14 @@ final class FloatUnseenTests: XCTestCase {
         }
         owner.contentView = tab.web
         owner.orderFrontRegardless()
+        // The tab opens about:blank only once Shield's list is ready, up to
+        // a second after the run's first tab (Shield.whenReady): loaded
+        // before that, the page below was replaced by about:blank, and the
+        // run's first test found no video ("InvalidTransition").
+        await withCheckedContinuation { (ready: CheckedContinuation<Void, Never>) in
+            Shield.shared.whenReady { ready.resume() }
+        }
+        try await waitFor { !tab.web.isLoading }
         tab.web.loadHTMLString("""
             <canvas width=64 height=36></canvas>
             <video muted playsinline style='width:320px;height:180px'></video>
