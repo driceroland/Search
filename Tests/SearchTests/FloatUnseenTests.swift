@@ -3,10 +3,12 @@ import WebKit
 import XCTest
 @testable import Search
 
-/// A muted video whose window goes out of sight — another desktop comes
-/// forward — is paused by WebKit, as every silent video nobody can see is.
-/// Leaving the app still floats it, as it floats one with sound, and WebKit
-/// plays it again once it can be seen there. One paused by hand stays put.
+/// A video muted after it was heard, whose window goes out of sight — another
+/// desktop comes forward — is paused by WebKit, as every silent video nobody
+/// can see is. Leaving the app still floats it, as it floats one with sound,
+/// and WebKit plays it again once it can be seen there. One paused by hand
+/// stays put. One never heard doesn't float on its own at all (Isolate.real,
+/// idea 923; Tests/float_preview.py).
 @MainActor
 final class FloatUnseenTests: XCTestCase {
     override class func setUp() {
@@ -21,6 +23,7 @@ final class FloatUnseenTests: XCTestCase {
 
     func testMutedVideoStoppedOutOfSightFloats() async throws {
         try await withPlayer(style: .search) { browser, owner, tab, floating in
+            try await self.hearThenMute(tab)
             owner.orderOut(nil)
             try await waitForStop(tab)
             let stopped = try await paused(tab)
@@ -37,6 +40,7 @@ final class FloatUnseenTests: XCTestCase {
 
     func testMutedVideoStoppedOutOfSightGoesIntoPictureInPicture() async throws {
         try await withPlayer(style: .system) { browser, owner, tab, floating in
+            try await self.hearThenMute(tab)
             owner.orderOut(nil)
             try await waitForStop(tab)
             browser.appLeft()
@@ -183,6 +187,19 @@ final class FloatUnseenTests: XCTestCase {
                 done.resume(with: result.map { $0 as Any? })
             }
         }
+    }
+
+    /// Heard, then muted by hand, as somebody watching does: its sound
+    /// turned on while it plays (a script Search runs counts as the click a
+    /// page needs), then off again once the page has noted it.
+    private func hearThenMute(_ tab: Tab) async throws {
+        _ = try await inPage(tab, "document.querySelector('video').muted = false; true;")
+        try await waitFor { try await self.inPage(tab, "var v = document.querySelector('video'); !v.paused && !v.muted") as? Bool == true }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        _ = try await inPage(tab, "document.querySelector('video').muted = true; true;")
+        try await waitFor { try await self.paused(tab) == false }
+        let heard = try await inPage(tab, "var v = document.querySelector('video'); v.muted && window.__officeFloatHeard(v)") as? Bool
+        XCTAssertEqual(heard, true, "the video was heard before it was muted")
     }
 
     private func paused(_ tab: Tab) async throws -> Bool? {
