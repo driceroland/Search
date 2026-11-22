@@ -248,6 +248,7 @@ extension Browser {
             done?(reason)
             return
         }
+        let web = tab.built, document = tab.documentGeneration, touched = tab.touched
         tab.unsaved { [weak self, weak tab] typed in
             guard let self, let tab else { done?("gone"); return }
             if typed {
@@ -258,17 +259,22 @@ extension Browser {
                 done?(reason)
                 return
             }
-            // Its sessionStorage, for the view that wakes it (KeptSession).
-            KeptSession.keep(tab, in: self) { [weak self, weak tab] in
+            tab.snapshot { [weak self, weak tab] picture in
                 guard let self, let tab else { done?("gone"); return }
-                tab.snapshot { [weak self, weak tab] picture in
-                    guard let self, let tab else { done?("gone"); return }
-                    if let reason = self.awake(because: tab) {
-                        done?(reason)
-                        return
+                if let reason = self.awake(because: tab) { done?(reason); return }
+                KeptSession.capture(tab) { storage in
+                    // A draft may have appeared while WebKit took the picture or read storage.
+                    tab.unsaved { typed in
+                        if tab.built !== web || tab.documentGeneration != document || tab.touched != touched {
+                            done?("page changed")
+                            return
+                        }
+                        if typed { done?("holding something typed"); return }
+                        if let reason = self.awake(because: tab) { done?(reason); return }
+                        KeptSession.remember(storage, for: tab, in: self)
+                        tab.sleep(picture: picture)
+                        done?("asleep")
                     }
-                    tab.sleep(picture: picture)
-                    done?("asleep")
                 }
             }
         }
@@ -312,21 +318,20 @@ enum KeptSession {
         })()
         """
 
-    /// Before the tab's view goes (Browser.sleep): keeps what its page has,
-    /// then carries on. A page that doesn't answer keeps nothing.
-    static func keep(_ tab: Tab, in browser: Browser, then: @escaping () -> Void) {
+    /// Read the current page before its view goes. A page that doesn't answer keeps nothing.
+    static func capture(_ tab: Tab, then: @escaping (String?) -> Void) {
+        guard !tab.shy, let web = tab.built else { return then(nil) }
+        web.evaluateJavaScript(read, in: nil, in: Web.world) { result in
+            let json = (try? result.get()) as? String
+            then(json.flatMap { $0.utf8.count <= cap ? $0 : nil })
+        }
+    }
+
+    /// Publish the captured state only if the tab actually goes to sleep.
+    static func remember(_ storage: String?, for tab: Tab, in browser: Browser) {
         let open = Set((browser.tabs + browser.parkedTabs).map(\.id))
         kept = kept.filter { open.contains($0.key) }
-        kept[tab.id] = nil
-        guard !tab.shy, let web = tab.built else { return then() }
-        web.evaluateJavaScript(read, in: nil, in: Web.world) { result in
-            MainActor.assumeIsolated {
-                if let json = (try? result.get()) as? String, json.utf8.count <= cap {
-                    kept[tab.id] = json
-                }
-                then()
-            }
-        }
+        kept[tab.id] = storage
     }
 
     /// For the woken tab's next document (Tab.arm), ahead of its scripts:
