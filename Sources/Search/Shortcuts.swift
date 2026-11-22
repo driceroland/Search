@@ -213,9 +213,9 @@ struct Command: Identifiable {
         Command("file.newTab", "New Tab", .file, KeyCombo("t")) { $0.launch() },
         // A new tab on its own blank ground, never the field over the page
         // that ⌘T raises when the floating field is on.
-        Command("file.newBlankTab", "New Blank Tab", .file, KeyCombo("t", shift: true)) { $0.newTab() },
+        Command("file.newBlankTab", "New Blank Tab", .file, KeyCombo("t", option: true)) { $0.newTab() },
         Command("file.newPrivateTab", "New Private Tab", .file, KeyCombo("n", shift: true)) { $0.newShyTab() },
-        Command("file.reopen", "Reopen Closed Tab", .file, KeyCombo("t", option: true)) { $0.reopen() },
+        Command("file.reopen", "Reopen Closed Tab", .file, KeyCombo("t", shift: true)) { $0.reopen() },
         Command("file.openAddress", "Open Address…", .file, KeyCombo("l")) { $0.edit() },
         Command("file.closeTab", "Close Tab", .file, KeyCombo("w")) { $0.closeFront() },
         Command("file.closeWindow", "Close Window", .file, KeyCombo("w", shift: true)) { $0.closeWindow() },
