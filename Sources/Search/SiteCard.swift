@@ -6,7 +6,7 @@ import SwiftUI
 // The site card: what a click on the tab you are on shows under its address,
 // in the column and in the bar across the top alike — whether the connection
 // is private, and the few things that belong to the page (copy its address,
-// print it, its zoom, whether the blocker works there, whether it may play
+// print it, its zoom, whether it may play
 // sound by itself, whether its videos float out). Right-click › Site
 // Information… opens the same. It goes as soon as you type, when the
 // address is left, or when one of its lines is used.
@@ -327,7 +327,6 @@ struct SiteCard: View {
             Separator()
             Row("Print…", keys: ShortcutStore.shared.key(for: "file.print")?.display ?? "") { after { browser.printPage() } }
             zoom
-            blocker
             if let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
                 Row("Site Permissions", submenu: true) { showingPermissions = true }
             }
@@ -419,18 +418,6 @@ struct SiteCard: View {
         }
     }
 
-    /// Whether the blocker works on this site (see Shield.pause), a switch
-    /// like the sound's. Only with the blocker on and nothing wrong with it,
-    /// and not in a private tab, which remembers nothing. The page reloads,
-    /// as the blocker is decided for a page as it starts (#861).
-    @ViewBuilder private var blocker: some View {
-        if !tab.shy, browser.prefs.shielded, Shield.shared.trouble == nil,
-           let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased()),
-           let host = browser.curtain.host(of: url) {
-            Blocker(host: host) { tab.reload() }
-        }
-    }
-
     /// Whether the site may play sound by itself (see Autoplay), a switch at
     /// the end of its line. Not in a private tab, which remembers nothing,
     /// nor with Settings › Videos wait for a click on, which lets no site.
@@ -502,38 +489,6 @@ struct SiteCard: View {
             .padding(.trailing, MenuMetrics.trailing)
             .frame(height: MenuMetrics.row)
             .onChange(of: on) { _, value in Autoplay.set(value, for: host) }
-        }
-    }
-
-    /// Its line: on is the blocker at work here.
-    private struct Blocker: View {
-        let host: String
-        let reload: () -> Void
-        @State private var on: Bool
-
-        init(host: String, reload: @escaping () -> Void) {
-            self.host = host
-            self.reload = reload
-            _on = State(initialValue: !Shield.shared.isPaused(on: host))
-        }
-
-        var body: some View {
-            HStack(spacing: 0) {
-                Text("Block Ads and Trackers")
-                    .font(MenuMetrics.font)
-                    .foregroundStyle(Color(nsColor: .labelColor))
-                    .fixedSize()
-                Spacer(minLength: 24)
-                Switch(on: $on)
-            }
-            .padding(.leading, MenuMetrics.text)
-            .padding(.trailing, MenuMetrics.trailing)
-            .frame(height: MenuMetrics.row)
-            .help("Turn off here if the site breaks; the page reloads")
-            .onChange(of: on) { _, value in
-                Shield.shared.pause(host, !value)
-                reload()
-            }
         }
     }
 

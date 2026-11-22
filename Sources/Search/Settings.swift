@@ -19,7 +19,6 @@ struct SettingsPanel: View {
     @Environment(\.asTab) private var asTab
 
     @ObservedObject private var updater = Updater.shared
-    @ObservedObject private var shield = Shield.shared
     @ObservedObject private var sync = Sync.shared
     @ObservedObject private var icloud = ICloudSync.shared
     /// The keys rows name, as Settings › Shortcuts has them now.
@@ -475,7 +474,6 @@ struct SettingsPanel: View {
                 : Passkeys.access == .denied
                 ? "macOS was told no: System Settings › Privacy & Security › Passkeys"
                 : item.detail
-        case "shield": return shield.trouble ?? item.detail
         case "updates.version": return versionDetail
         case "arc.import": return arcHere ? item.detail : "Arc isn't on this Mac. Bring Things Over can read an export"
         default: return item.detail
@@ -833,7 +831,6 @@ struct SettingsPanel: View {
                     prefs.fillsContacts = true
                 }
             }))
-        case "shield": Switch(on: $prefs.shielded)
         case "sites.keep": Switch(on: Binding(get: { !prefs.keepsSignIns }, set: { prefs.keepsSignIns = !$0 }))
         case "privacy.clickIDs": Switch(on: $prefs.removesClickIDs)
         case "privacy.gpc": Switch(on: $prefs.sendsPrivacySignal)
@@ -897,14 +894,6 @@ struct SettingsPanel: View {
             // What ⌘T opens to, and the way back after an extension took
             // it. Only there while an extension offers a page.
             if !searched { HomePageLine() }
-        case "shield":
-            if let trouble = shield.trouble {
-                Rule()
-                Line(trouble, "Nothing is being blocked until this clears. Try again, or restart Search") {
-                    Pill("Try again") { shield.compile() }
-                }
-                .under()
-            }
         case "privacy.forget":
             if !searched {
                 Group {
