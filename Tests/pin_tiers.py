@@ -90,12 +90,16 @@ try:
     t.ok("Clear: an empty tab in front", front and front[0]["blank"], front)
     sv.sp("select", id=ids["a"]); sv.page("h"); sv.sp("select", id=ids["a"]); sv.sp("clear"); st = sv.sp("state")
     t.ok("Clear from a pin: the pin stays in front", st["activeID"] == ids["a"] and loose(st) == ["g"], (st["activeID"], loose(st)))
-    # An empty tab of yours, in a group, is the one Clear's new tab reuses:
-    # the undo leaves it where it is.
+    # An empty tab of yours, in a group, is never the one Clear's new tab
+    # takes, as ⌘T's never is (#1151): Clear's is in no group, and the
+    # undo takes it away and leaves yours where it is.
     gid = st["groupIDs"][[x["id"] for x in st["tabs"]].index(ids["g"])]
     sv.sp("newTab"); blank = sv.sp("state")["activeID"]; sv.sp("group", id=blank, group=gid)
-    sv.sp("select", id=ids["a"]); k = sv.page("k"); sv.sp("clear"); time.sleep(0.5)
-    t.ok("Clear reuses your empty tab in a group", sv.sp("state")["activeID"] == blank)
+    sv.sp("select", id=ids["a"]); k = sv.page("k"); sv.sp("clear"); time.sleep(0.5); st = sv.sp("state")
+    made = st["activeID"]
+    made_group = st["groupIDs"][[x["id"] for x in st["tabs"]].index(made)] if made in [x["id"] for x in st["tabs"]] else "?"
+    t.ok("Clear leaves your empty tab in a group alone: its own, in no group, in front",
+         made != blank and not made_group and any(x["id"] == made and x["blank"] for x in st["tabs"]), (made, blank, made_group))
     sv.sp("reopen"); time.sleep(0.5); st = sv.sp("state")
     kept = [(x["id"], st["groupIDs"][i]) for i, x in enumerate(st["tabs"]) if x["blank"]]
     t.ok("undo: your empty tab in a group stays", kept == [(blank, gid)], kept)
