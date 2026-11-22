@@ -5187,7 +5187,18 @@ final class Browser: NSObject, ObservableObject {
             // their site, as Arc's pins are: the pin wakes on the page it was
             // pinned at, not wherever its links had taken it.
             let going = together.map { pair in tabs.filter { pair.contains($0.id) } } ?? [tab]
-            for each in going { each.rest(at: prefs.pinsGoHome || prefs.pinsPeek ? each.home : nil) }
+            for each in going {
+                let home = prefs.pinsGoHome || prefs.pinsPeek ? each.home : nil
+                // A pin on an extension's page has that extension's
+                // configuration, and a website stays blank in a web view
+                // created with it. If the pin goes back to a website, give it
+                // the normal configuration for its next web view.
+                // (The opposite case is Tab.useExtensionConfiguration.)
+                let here = each.built?.url ?? each.address
+                let leavesExtension = here.flatMap(Browser.extensionHost(of:)) != nil
+                    && home.map { Browser.extensionHost(of: $0) == nil } == true
+                each.rest(at: home, websiteConfiguration: leavesExtension ? websiteConfiguration(for: each) : nil)
+            }
             leave(tab)
             writeSession(now: true)
             return
@@ -6530,16 +6541,8 @@ final class Browser: NSObject, ObservableObject {
     /// an extension sending a website's tab to one of its own pages.
     func replace(_ tab: Tab, going url: URL) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-        // A private tab stays private, and keeps its own sign-ins when it
-        // had them; an extension's page it showed was in that extension's
-        // store, so going back to the web takes a new private one.
         let page = Browser.extensionConfiguration(for: url)
-        let fresh = if tab.shy {
-            Tab(shy: true, bench: tab.bench, configuration: page
-                ?? Web.configuration(shy: true, store: tab.store.isPersistent ? nil : tab.store))
-        } else {
-            Tab(bench: tab.bench, configuration: page ?? Web.configuration(space: spaceID))
-        }
+        let fresh = Tab(shy: tab.shy, bench: tab.bench, configuration: page ?? websiteConfiguration(for: tab))
         // Preserve the sign-in popup's link to the page that opened it —
         // and, since a website can now start the swap, what you made of the
         // tab: a pinned one stays pinned, a named one keeps its name.
@@ -6567,6 +6570,15 @@ final class Browser: NSObject, ObservableObject {
         if wasActive { activeID = fresh.id }
         tab.close()
         rememberSession()
+    }
+
+    /// The normal configuration for `tab` to show a website in this window.
+    /// A private tab stays private, and keeps its own sign-ins when it
+    /// had them; an extension's page it showed was in that extension's
+    /// store, so going back to the web takes a new private one.
+    private func websiteConfiguration(for tab: Tab) -> WKWebViewConfiguration {
+        tab.shy ? Web.configuration(shy: true, store: tab.store.isPersistent ? nil : tab.store)
+            : Web.configuration(space: spaceID)
     }
 
     /// An address from before extensions moved to chrome-extension://, as

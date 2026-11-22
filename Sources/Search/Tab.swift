@@ -1559,6 +1559,10 @@ final class Tab: ObservableObject, Identifiable {
             onCross(self, url)
             return
         }
+        // A sleeping tab sent to a new address gets its web view here, not in
+        // wake(), so it needs the same check. An extension does this when it
+        // moves its sleeping pin to another of its own pages.
+        if asleep { useExtensionConfiguration(for: url) }
         // Set straight away rather than waiting for the observer: the tab has to
         // stop being blank in the same frame the field disappears, or the empty
         // state flashes back for an instant on its way out.
@@ -1624,7 +1628,11 @@ final class Tab: ObservableObject, Identifiable {
     /// pin you are not reading costs a line in a file and nothing else.
     /// Given `home`, it is put down there instead of where it was: Arc's pin
     /// that goes back to its pinned page once closed (see Preferences.pinsGoHome).
-    func rest(at home: URL? = nil) {
+    ///
+    /// Given `websiteConfiguration`, the tab uses it for its next web view.
+    /// Browser.close passes it when the tab was on an extension's page and
+    /// `home` is a website (see there).
+    func rest(at home: URL? = nil, websiteConfiguration: WKWebViewConfiguration? = nil) {
         guard let url = home ?? address else { return }
         // The title was the page it is leaving; the host stands in until the
         // pinned page is woken and names itself.
@@ -1646,6 +1654,7 @@ final class Tab: ObservableObject, Identifiable {
         // gave up and reloaded by hand. Only tearing the view down ends the
         // page; the next wake() builds a fresh one, and a fresh one boots.
         discard()
+        if let websiteConfiguration { configuration = websiteConfiguration }
     }
 
     /// Nobody has looked at this page for a while. Its view goes, as with a
@@ -1934,6 +1943,28 @@ final class Tab: ObservableObject, Identifiable {
         }
     }
 
+    /// WebKit only loads an extension's page (chrome-extension://…) in a web
+    /// view created with that extension's configuration. In any other web
+    /// view the page stays blank.
+    ///
+    /// A sleeping pin can have the wrong configuration for its address:
+    /// - After a restart, the pin is created before the extensions have
+    ///   loaded, so it gets the normal website configuration.
+    /// - A pin that was on a website has the website configuration. ⌘W sends
+    ///   it back to its pinned address, which can be an extension's page.
+    ///
+    /// So before a sleeping tab gets its web view, switch to the extension's
+    /// configuration if `url` is an extension's page. Only call this for a
+    /// sleeping tab: a popup must keep the configuration WebKit gave it.
+    ///
+    /// The opposite case, an extension's configuration on a tab that goes to
+    /// sleep at a website, is handled in Browser.close.
+    private func useExtensionConfiguration(for url: URL) {
+        if built == nil, let extensionConfiguration = Browser.extensionConfiguration(for: url) {
+            configuration = extensionConfiguration
+        }
+    }
+
     /// Opened for the first time since the app started, or coming back from
     /// ⌘W while pinned. Answers whether there was anything to wake — the
     /// caller's own `revive()`, right after this, is for a tab that went
@@ -1942,6 +1973,7 @@ final class Tab: ObservableObject, Identifiable {
     @discardableResult
     func wake() -> Bool {
         guard let url = pending else { return false }
+        useExtensionConfiguration(for: url)
         pending = nil
         failure = nil
         reading = 0

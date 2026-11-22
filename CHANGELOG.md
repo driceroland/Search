@@ -27,6 +27,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A pinned tab on an extension's page (its options page, for example) no longer opens blank after restarting Search, after closing the pin with ⌘W while it was on a website, or after the extension moves the sleeping pin to another of its pages. A pinned website closed with ⌘W while it was on an extension's page no longer opens blank either. `python3 Tests/pin_swap.py`
 - Switching spaces with the tabs in the column, by swiping, ⌃1–⌃9 or the space's menu, the space's icon at the foot of the column turns over to the new space's as its tabs and colour come in. It went on showing the last space until the space was taken, a moment after the hand was still. `python3 Tests/space_switch_paint.py` (idea 954)
 - Swiping to another space with the tabs in the column, the column takes that space's colour as its tabs come in, as a click or ⌃1–⌃9 already brought it. It kept the last space's colour until the space was taken, a moment after the hand was still, and with fingers resting on the trackpad not until a click in the column. `python3 Tests/space_switch_paint.py` (idea 954)
 - Switching spaces with the tabs in the column, the tabs in a group come in set in under its name and, holding no page, dimmed, as they stay: drawn on their way in from the map of every space's tabs, a group without a colour had its tabs flush left and none of them dimmed, and as the space was taken they jumped in and faded. `python3 Tests/space_switch_paint.py` (idea 955)
