@@ -52,6 +52,7 @@ On purpose:
 | History, bookmarks, open tabs, hidden elements | Small JSON files in `~/Library/Application Support/Search/` | You. |
 | Cookies and site data | WebKit's own store for the app | The sites that set them, as in any browser. |
 | Extensions | Unpacked in `~/Library/Application Support/Search/Extensions/`, their data in WebKit's extension store | Each extension, within the permissions you accepted when adding it. |
+| News by email, the iPhone beta | Only if you type your email and press Join or Ask (the What's New card, the welcome, Settings › About): one HTTPS POST to searchbrowser.app with the address, where you pressed (`app-whats-new`, `app-welcome`, `app-settings`), which Mac download you have and, if ticked, that you want the iPhone beta. Your Mac keeps two yes/no flags, never the address. See `OptIn.swift`. | Office Commun, to send those emails through Resend; every one has a link to stop them, and hello@searchbrowser.app removes the address. |
 | Anything else | Nowhere. There is no server. | — |
 
 A **private tab** (`⇧⌘N`) has its own cookie jar and leaves nothing behind when it closes.
