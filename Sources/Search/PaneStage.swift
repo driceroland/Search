@@ -400,7 +400,7 @@ final class PaneStage: NSView {
         super.layout()
         let area = bounds
         var frames: [CGRect] = Array(repeating: .zero, count: tabs.count)
-        var resized = false // see backPages
+        var grew = false // see backPages
         let lines = dividers
         if paired {
             let widths = self.widths(room: room)
@@ -428,7 +428,12 @@ final class PaneStage: NSView {
             let frame = index < frames.count ? frames[index] : .zero
             let visible = index < tabs.count && shown(index) && frame.width > 0
             slot.isHidden = !visible
-            if visible, slot.frame.size != frame.size, slot.frame.width > 0 { resized = true }
+            // Grown, by a page not already covered for it by ⌘S's cover.
+            if visible, slot.frame.width > 0,
+               frame.width > slot.frame.width + 0.5 || frame.height > slot.frame.height + 0.5,
+               !((page(tabs[index]) as? WKWebView).map { FoldCover.coming.contains($0) } ?? false) {
+                grew = true
+            }
             if slot.frame != frame { slot.frame = frame }
             if index < shadows.count {
                 // Pages run the stage's full height, so its flip is no matter.
@@ -443,7 +448,7 @@ final class PaneStage: NSView {
         // A window made too narrow for two takes the other page off, and
         // gives it back once there is room.
         feed()
-        if resized { backPages() }
+        if grew { backPages() }
         if let bar = findBar {
             let page = focused.flatMap { id in tabs.firstIndex { $0.id == id } }
                 .flatMap { frames.indices.contains($0) ? frames[$0] : nil }
@@ -578,7 +583,7 @@ final class PaneStage: NSView {
     // MARK: - the pages' own colour behind them while they resize
 
     /// Behind each page while the stage's pages change size — the divider
-    /// held, the window resized, the column sliding — the page's own colour,
+    /// held, the window resized, the column's edge let go — the page's own colour,
     /// until half a second after the last change. WebKit draws a page at its
     /// new size a frame or more after its view is resized, and the room it
     /// hadn't drawn yet showed the web view's own background, dark grey in
@@ -587,6 +592,13 @@ final class PaneStage: NSView {
     /// it's turned off with `_setDrawsBackground:` (private, checked for
     /// first) and the stage's slot shows `underPageBackgroundColor` there
     /// instead, as Safari does. Nothing runs while nothing resizes.
+    ///
+    /// Only for a page that grows: one that shrinks has nothing undrawn. And
+    /// not for ⌘S, whose own cover lies over the room a page grows into
+    /// (Browser.cover). Switched off and on, the background had WebKit paint
+    /// the whole page twice and the page drawn clear, blended over what is
+    /// under it, all through the column's slide, and the window server
+    /// stuttered over it (idea 847: 1.0.16).
     private func backPages() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             for (index, slot) in slots.enumerated() {

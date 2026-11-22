@@ -1176,12 +1176,64 @@ enum Isolate {
     (function () {
       var videos = document.querySelectorAll('video');
       var unseen = window.__officeFloatUnseen || function () { return false; };
-      var best = null, area = 0;
+      // A video with a picture to show, before one without: YouTube Music
+      // plays a song through a video that is hidden, or has no picture at
+      // all, and shows the album's cover beside it. Floated as a video, the
+      // window showed whatever of the player was left, its buttons and tabs.
+      function pictured(v) {
+        var b = v.getBoundingClientRect();
+        return v.videoWidth > 0 && v.videoHeight > 0 && b.width > 0 && b.height > 0;
+      }
+      var best = null, area = 0, blind = null, most = 0;
       for (var i = 0; i < videos.length; i++) {
         var v = videos[i];
         if ((v.paused && !unseen(v)) || v.ended || v.readyState < 2) continue;
         var box = v.getBoundingClientRect();
-        if (box.width * box.height >= area) { area = box.width * box.height; best = v; }
+        if (!pictured(v)) {
+          if (box.width * box.height >= most) { most = box.width * box.height; blind = v; }
+        } else if (box.width * box.height >= area) { area = box.width * box.height; best = v; }
+      }
+      // Such a song floats as its cover: the one the page gives the system
+      // for Now Playing, or else the largest picture in its player. With
+      // neither there is nothing to show, and nothing floats.
+      var art = document.getElementById('office-float-art');
+      if (art) art.remove();
+      window.__officeFloatArt = null;
+      if (!best && blind) {
+        var cover = coverOf(blind);
+        if (!cover) return 'none';
+        best = blind;
+        art = document.createElement('img');
+        art.id = 'office-float-art';
+        art.alt = '';
+        art.src = cover;
+        document.body.appendChild(art);
+        window.__officeFloatArt = function () {
+          var now = coverOf(best);
+          if (now && art.getAttribute('src') !== now) art.src = now;
+        };
+      }
+      function coverOf(v) {
+        try {
+          var meta = navigator.mediaSession && navigator.mediaSession.metadata;
+          var list = meta && meta.artwork ? Array.prototype.slice.call(meta.artwork) : [];
+          var pick = null, side = -1;
+          for (var a = 0; a < list.length; a++) {
+            var n = parseInt(String(list[a].sizes || '0').split('x')[0], 10) || 0;
+            if (list[a].src && n > side) { side = n; pick = list[a].src; }
+          }
+          if (pick) return pick;
+        } catch (e) {}
+        for (var up = v.parentElement; up && up !== document.body && up !== document.documentElement; up = up.parentElement) {
+          var found = null, big = 64 * 64, imgs = up.querySelectorAll('img');
+          for (var k = 0; k < imgs.length; k++) {
+            var r = imgs[k].getBoundingClientRect(), s = getComputedStyle(imgs[k]);
+            if (!imgs[k].currentSrc || s.visibility !== 'visible' || s.opacity === '0') continue;
+            if (r.width * r.height >= big) { big = r.width * r.height; found = imgs[k].currentSrc; }
+          }
+          if (found) return found;
+        }
+        return null;
       }
       if (!best) return 'none';
 
@@ -1285,7 +1337,15 @@ enum Isolate {
         // The player's own controls would sit under ours, and two sets of
         // buttons on one small window is one set too many.
         'html.office-floating [data-office-float]::-webkit-media-controls {',
-        'display:none !important}'
+        'display:none !important}',
+        // A song's cover, over the whole window and whatever is under it.
+        'html.office-floating #office-float-art {',
+        'visibility:visible !important; display:block !important; position:fixed !important;',
+        'left:0 !important; top:0 !important; width:100vw !important; height:100vh !important;',
+        'margin:0 !important; padding:0 !important; border:0 !important; background:#000 !important;',
+        'object-fit:contain !important; opacity:1 !important; transform:none !important;',
+        'z-index:2147483647 !important; pointer-events:none !important}',
+        'html:not(.office-floating) #office-float-art { display:none !important}'
       ].join('');
       document.documentElement.classList.add('office-floating');
 
@@ -1306,6 +1366,8 @@ enum Isolate {
       if (window.__officeFloatUnwatch) window.__officeFloatUnwatch();
       clearInterval(window.__officeFloatWatch);
       var remark = function () {
+        // The next song's cover, once the page has it.
+        if (window.__officeFloatArt) window.__officeFloatArt();
         if (document.querySelector('[data-office-float]')) return;
         var again = null, most = 0;
         var all = document.querySelectorAll('video');
@@ -1340,6 +1402,8 @@ enum Isolate {
       // Where the picture is once the rest of the page is out of the way,
       // as large as it goes whole and in the middle, for cutting it out of a
       // picture of the page taken then (Float.still, Browser.lift).
+      // A cover has no frame to cut out yet: the window's black until it is in.
+      if (window.__officeFloatArt) return { floating: true, page: [innerWidth, innerHeight] };
       var whole = shown[0] && shown[1] ? shown : [vw, vh];
       var by = Math.min(innerWidth / whole[0], innerHeight / whole[1]) || 0;
       var alone = [(innerWidth - whole[0] * by) / 2, (innerHeight - whole[1] * by) / 2, whole[0] * by, whole[1] * by];
@@ -1444,6 +1508,9 @@ enum Isolate {
         if (sheet) sheet.textContent = '';
         var video = document.querySelector('[data-office-float]');
         if (video) video.removeAttribute('data-office-float');
+        var art = document.getElementById('office-float-art');
+        if (art) art.remove();
+        window.__officeFloatArt = null;
         settle(video);
         reopen();
         redraw(video);
