@@ -17,6 +17,10 @@ in [ROADMAP.md](ROADMAP.md).
 - Settings › Appearance › Tabs › Narrow to icons, off unless you turn it on: pull the sidebar narrower than 200 points, where titles, the window's buttons and the foot started to run into each other, and it becomes a thin strip of the tabs' letters or icons, as you have them, with its buttons — before the pins with Buttons at the top, after the tabs otherwise — in the space's colour. Back, forward and reload stay on their keys. Pull the edge back out, double-click it, or press ⌘S where ⌘S shrinks the column, for titles again. `swift test --filter NarrowStripTests`. Thanks [@petty](https://github.com/petty) ([#1360](https://github.com/driceroland/Search/pull/1360))
 - bench-mcp reads a page as an outline too: `outline_page` gives what needs attention (dialogs, alerts, invalid fields, the focused control) and then the page's sections with their size and first words, and opens a section by its id with handles for its controls; `read_section` gives a section's words and `find_in_page` where words are. Wikipedia's Hyderabad article is 510 bytes as an outline and 72 KB from `read_page`. Its handles are a read's like `read_page`'s, it only reads, and a password or card field's value never leaves the page. `python3 Tests/bench_mcp.py`. Thanks [@kalki-kgp](https://github.com/kalki-kgp) ([#1371](https://github.com/driceroland/Search/pull/1371), [#1329](https://github.com/driceroland/Search/issues/1329), idea 869)
 
+### Changed
+
+- With the tabs across the top, an open tab group now shows where it starts and ends: a soft band runs behind its name and its tabs, in the group's colour or a faint grey without one. Right-click the group's name and choose Colour… to set it there too. A folded group looks as before. `python3 Tests/group_band.py`
+
 ### Fixed
 
 - Closing a window while another stays open stops that window’s background checks for tabs to put to sleep. `swift test --filter KeepAwakeTests`. Thanks [@shawn-t516](https://github.com/shawn-t516) ([#1356](https://github.com/driceroland/Search/pull/1356))

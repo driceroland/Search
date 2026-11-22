@@ -3250,6 +3250,11 @@ final class Bench {
                     let made = browser.addTabGroup(containing: tab)
                     if !named.isEmpty { browser.renameTabGroup(made, to: named) }
                     browser.editingGroupID = nil
+                } else if request["out"] as? Bool == true {
+                    // Carried out of its group and let go in the row, as the
+                    // strip's drop does it: before "before", or at the end.
+                    let before = (request["before"] as? String).flatMap { id in browser.tabs.first { Bench.short($0) == id }?.id }
+                    browser.move(tab, outOfGroupBefore: before)
                 } else if named == "none" {
                     browser.move(tab, toGroup: nil)
                 } else if let group {
@@ -3257,6 +3262,10 @@ final class Bench {
                 } else {
                     answer(["error": "no group “\(named)”"]); return
                 }
+            } else if let colour = request["colour"] as? Int {
+                // Colour… from its menu: 0 is None.
+                guard let group else { answer(["error": "no group “\(named)”"]); return }
+                browser.setTabGroupColour(group.id, to: colour)
             } else if request["fold"] as? Bool == true {
                 guard let group else { answer(["error": "no group “\(named)”"]); return }
                 browser.toggleTabGroup(group.id)
@@ -3301,7 +3310,7 @@ final class Bench {
             answer(["viewItems": items(view), "spaceItems": items(SpaceMenu.menu(for: browser)), "brackets": brackets,
                     "on": browser.prefs.usesTabGroups, "groups": browser.tabGroups.map { group in
                 ["id": String(group.id.uuidString.prefix(8)).lowercased(), "name": group.name, "collapsed": group.collapsed,
-                 "tabs": browser.tabs(in: group.id).map(Bench.short)] as [String: Any]
+                 "colour": group.colour ?? 0, "tabs": browser.tabs(in: group.id).map(Bench.short)] as [String: Any]
             }])
 
         case "tospace":
@@ -4097,20 +4106,40 @@ final class Bench {
             // The row of tabs across the top, drawn off screen at a width,
             // with what the browser has now — for what the row looks like
             // without a window on anybody's screen.
+            // "appearance": "light" or "dark" rather than the Mac's. With it
+            // come where each group's band was drawn, piece by piece
+            // (GroupBand): the heading or tab under it and the piece itself,
+            // [minX, maxX] in the row, by group.
             guard let path = request["path"] as? String else { answer(["error": "strip needs a path"]); return }
             let width = request["width"] as? Double ?? 1100
-            let host = NSHostingView(rootView: TabBar(browser: browser).frame(width: width, height: Metrics.strip).background(Palette.ground))
+            let host = NSHostingView(rootView: TabBar(browser: browser).frame(width: width, height: Metrics.strip).background(Palette.ground)
+                .environment(\.recordsBands, true))
             host.frame = NSRect(x: 0, y: 0, width: width, height: Double(Metrics.strip))
             let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
-            window.appearance = NSApp.effectiveAppearance
+            switch request["appearance"] as? String {
+            case "dark": window.appearance = NSAppearance(named: .darkAqua)
+            case "light": window.appearance = NSAppearance(named: .aqua)
+            default: window.appearance = NSApp.effectiveAppearance
+            }
+            TabBar.drawnBands = [:]
             window.contentView = host
             host.layoutSubtreeIfNeeded()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 guard let picture = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { answer(["error": "nothing drawn"]); return }
                 host.cacheDisplay(in: host.bounds, to: picture)
+                var bands: [String: [[String: Any]]] = [:]
+                for (piece, drawn) in TabBar.drawnBands.sorted(by: { $0.value.band.minX < $1.value.band.minX }) {
+                    let id = String(drawn.group.uuidString.prefix(8)).lowercased()
+                    let name = piece == drawn.group ? "heading" : String(piece.uuidString.prefix(8)).lowercased()
+                    bands[id, default: []].append(["piece": name,
+                                                   "item": [Double(drawn.item.minX), Double(drawn.item.maxX)],
+                                                   "band": [Double(drawn.band.minX), Double(drawn.band.maxX)],
+                                                   "height": Double(drawn.band.height)])
+                }
+                TabBar.drawnBands = [:]
                 do {
                     try picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
-                    answer(["saved": path])
+                    answer(["saved": path, "bands": bands])
                 } catch { answer(["error": error.localizedDescription]) }
                 window.contentView = nil
             }
