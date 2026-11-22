@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- A sidebar button, in Settings › Appearance › Tabs: right of the window's own buttons, before back, forward and reload, it hides the sidebar as ⌘S does, where Safari and Arc keep theirs. With the sidebar out over the page at the window's edge, the same click keeps it out. Only with titles in the column; off unless you turn it on. Thanks [@petty](https://github.com/petty) ([#1351](https://github.com/driceroland/Search/pull/1351))
+
 ### Fixed
 
 - Closing a window while another stays open stops that window’s background checks for tabs to put to sleep. `swift test --filter KeepAwakeTests`. Thanks [@shawn-t516](https://github.com/shawn-t516) ([#1356](https://github.com/driceroland/Search/pull/1356))
