@@ -31,6 +31,7 @@ in [ROADMAP.md](ROADMAP.md).
 - A tab whose video was in full screen, left for another tab and come back to, showed a big white screen with the video out of full screen: the page now comes back where it was, the video playing in it. `swift test --filter StageFullScreenTests` (idea 936)
 - A pin renamed in Arc or Zen and brought over showed its address instead of its name once browsed in and closed: at rest on its pinned page it shows its own name again, the page's title only while it shows the page. `python3 Tests/pin_names.py` (idea 937)
 - Floating a music video from a YouTube Music playlist shows the video alone, not the top bar, side drawer and the player bar's stacked buttons over it, nor the video a window's height below the little window while the player was still sliding up. Tests/float_song.py.
+- In full screen, the bar with the window's buttons comes down with the menu bar no taller than macOS's own, as in Safari: on 1.0.18 it was 36 points taller and grey, and pushed the tabs and the page down that much more. `swift test --filter TopEdgeTests` (idea 934)
 
 ### Held back
 
