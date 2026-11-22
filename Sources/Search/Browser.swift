@@ -2690,6 +2690,12 @@ final class Browser: NSObject, ObservableObject {
         announce("Address copied")
     }
 
+    /// Edit › Paste and Match Style: the clipboard as plain text, in the
+    /// field or page being typed in (idea 814), as ⇧⌘V there already does.
+    static func pasteMatchingStyle() {
+        NSApp.sendAction(#selector(NSTextView.pasteAsPlainText(_:)), to: nil, from: nil)
+    }
+
     /// ⌥⇧⌘C. The address without its tracking parameters (CleanLink).
     func copyCleanLink() {
         guard let url = active?.address else { return }

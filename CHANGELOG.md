@@ -20,6 +20,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Settings › Appearance › Tabs › Show the bookmarks bar in the sidebar, off unless you turn it on: with the bookmarks bar shown and the tabs down a side, it moves from above the page to the top of the column, a row for each of its bookmarks and folders before your pinned rows, the same in every space of the profile. A folder opens as a menu, as on the bar, and a right-click offers what the bar's does; with the column as icons, each is a tile. Show Bookmarks Bar hides and shows it there too. `swift test --filter SideBookmarksTests`. Thanks [@petty](https://github.com/petty) ([#1390](https://github.com/driceroland/Search/pull/1390))
 - Next Space and Previous Space in Settings › Keyboard & Mouse › Shortcuts, with no key until you give them one (Arc's ⌥⌘← and ⌥⌘→, for one): the space after or before the one on screen, stopping at the ends as the swipe does. (idea 761)
 - File › Open File… (⌘O), as in Safari: an HTML page, a PDF, a picture or a text file from your Mac, each in a tab of its own, without typing its file:// address. (idea 755)
+- Edit › Paste and Match Style (⌥⇧⌘V), as in Safari: the clipboard as plain text in the field or page you're typing in, what ⇧⌘V already does there. (idea 814)
 
 ### Changed
 
