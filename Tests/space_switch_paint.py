@@ -4,7 +4,7 @@
 Build first (`./build.sh`), then `python3 Tests/space_switch_paint.py`
 (needs Pillow). A hidden probe in a world of its own (split_view.py's
 harness): two spaces, blue and orange, each with a plain group, a red group
-and loose tabs, tabs in the column. Bench "layershot" stages the window off
+and loose tabs, tabs in the column, the space's icon at its foot. Bench "layershot" stages the window off
 every screen, where its glides run at the display's pace and nobody sees
 it, and pictures the column's layers as Core Animation holds them, frame
 after frame, without asking a view to draw.
@@ -17,12 +17,16 @@ thing to come. Until 1.0.18 the map drew another space's grouped rows apart
 from the column's own: a plain group's rows were not set in under its
 heading, and its tabs holding no page were not dimmed; on landing they
 jumped in and faded (955). And a swipe left the column in the last space's
-colour until it landed (954). Checked, on the frames while the space is on
+colour until it landed (954), and the space's icon at the column's foot
+(SpaceDot) went on showing the last space, swipe, ⌃N or menu alike, until
+it landed. Checked, on the frames while the space is on
 its way and once it has landed:
 
 - the column wears the coming space's colour from the first frame its rows
   stand in;
-- the rows stand exactly where, and as, they are once it has landed.
+- the rows stand exactly where, and as, they are once it has landed;
+- the icon at the foot is the coming space's, in its colour, as it is once
+  it has landed.
 """
 import json
 import os
@@ -67,6 +71,23 @@ def tint(image):
     return "One" if b > r else "Two"
 
 
+def dot(image, scale):
+    """The space's icon at the column's foot (SpaceDot: 26 points square, 10
+    in from the side and the bottom), short of its edges, where the name
+    shown on landing casts its shadow."""
+    h = image.size[1]
+    return image.crop((int(12 * scale), h - int(34 * scale), int(34 * scale), h - int(12 * scale)))
+
+
+def dot_tint(image, scale):
+    """Blue or orange: the icon's own colour, its most coloured pixels."""
+    data = dot(image, scale).convert("RGB").tobytes()
+    pixels = [p for p in zip(data[0::3], data[1::3], data[2::3]) if max(p) - min(p) > 80]
+    if not pixels:
+        return None
+    return "One" if sum(b - r for r, _, b in pixels) > 0 else "Two"
+
+
 def rows(image, scale):
     """The column's rows from the first heading down to the loose tabs,
     short of the tab in front and the column's edge."""
@@ -92,6 +113,13 @@ def run(name, req, to):
     boxes = [ImageChops.difference(rows(image, scale), after).point(lambda v: 255 if v > 24 else 0).getbbox()
              for image in held]
     t.ok(f"{name}: its rows stand where and as they do once it has landed (grouped rows set in, put away dimmed)",
+         all(box is None for box in boxes), boxes)
+    t.ok(f"{name}: on its way, the icon at the foot is already {to}'s",
+         all(dot_tint(image, scale) == to for image in held), [dot_tint(image, scale) for image in held])
+    icon = dot(landed[-1], scale).convert("L")
+    boxes = [ImageChops.difference(dot(image, scale).convert("L"), icon).point(lambda v: 255 if v > 24 else 0).getbbox()
+             for image in held]
+    t.ok(f"{name}: the icon at the foot stands as it does once it has landed",
          all(box is None for box in boxes), boxes)
 
 
