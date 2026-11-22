@@ -366,6 +366,28 @@ struct GroupBand: View {
         }
     }
 
+    /// The open groups in `groups` that something follows in the row:
+    /// another group, or with `looseAfter` the tabs in none. Their bands end
+    /// with more air than a tab's gap (Air), so a tab after one, ⌘T's
+    /// (#1151), plainly isn't in it. A folded group, or one last in the row,
+    /// is spaced as before.
+    static func spaced(_ groups: [TabGroup], looseAfter: Bool) -> Set<UUID> {
+        Set(groups.enumerated().filter { index, group in
+            !group.collapsed && (looseAfter || index < groups.count - 1)
+        }.map(\.element.id))
+    }
+
+    /// The air after a band: with the row's gap on either side, `space`
+    /// more than between two tabs, 10 points in all.
+    struct Air: View {
+        static let space: CGFloat = 8
+        var body: some View {
+            Color.clear
+                .frame(width: Self.space - Metrics.tabGap, height: 1)
+                .allowsHitTesting(false)
+        }
+    }
+
     /// What one piece was drawn over, and the piece itself, in the row's space.
     struct Drawn {
         var group: UUID

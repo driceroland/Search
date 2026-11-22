@@ -119,6 +119,8 @@ struct TabBar: View {
                                                        group: nil, strip: geo.size.width, each: each)
                                             }
                                             if pinLine { PinLine() }
+                                            let ungrouped = browser.displayedTabs.filter { $0.pin == nil && browser.group(of: $0) == nil }
+                                            let spaced = GroupBand.spaced(browser.tabGroups, looseAfter: !ungrouped.isEmpty)
                                             ForEach(browser.tabGroups) { group in
                                                 let members = browser.visibleTabs(in: group)
                                                 // An open group's band, its name
@@ -138,8 +140,8 @@ struct TabBar: View {
                                                            group: group.id, strip: geo.size.width, each: each,
                                                            band: banded ? group : nil, last: index == members.count - 1)
                                                 }
+                                                if spaced.contains(group.id) { GroupBand.Air() }
                                             }
-                                            let ungrouped = browser.displayedTabs.filter { $0.pin == nil && browser.group(of: $0) == nil }
                                             let ungroupedSteps = steps(ungrouped, each: each)
                                             ForEach(Array(ungrouped.enumerated()), id: \.element.id) { index, tab in
                                                 topTab(tab, index: index, steps: ungroupedSteps,
@@ -391,6 +393,7 @@ struct TabBar: View {
                                 height: Metrics.strip, interactive: false, pill: pill)
                     }
                     if line { PinLine() }
+                    let spaced = GroupBand.spaced(groupsShown.map(\.group), looseAfter: !looseShown.isEmpty)
                     ForEach(groupsShown) { drawn in
                         // The same band as the row on screen (GroupBand).
                         let members = drawn.tabs.filter { fit.contains($0.id) }
@@ -407,6 +410,7 @@ struct TabBar: View {
                                     if banded { GroupBand(group: drawn.group, piece: tab.id, last: tab.id == members.last?.id) }
                                 }
                         }
+                        if spaced.contains(drawn.group.id) { GroupBand.Air() }
                     }
                     ForEach(looseShown) { tab in
                         rowItem(tab, in: row.tabs, splits: row.splits, activeID: row.active,
@@ -482,6 +486,7 @@ struct TabBar: View {
             .background {
                 if let band { GroupBand(group: band, piece: tab.id, last: last) }
             }
+            .modifier(RecordsItem(id: tab.id))
             .id(tab.id)
     }
 
@@ -571,6 +576,8 @@ struct TabBar: View {
     static var laidOut: CGFloat = 0
     /// Each group band piece of a row drawn for the bench (GroupBand).
     static var drawnBands: [UUID: GroupBand.Drawn] = [:]
+    /// Where each tab of a row drawn for the bench was laid out (RecordsItem).
+    static var drawnItems: [UUID: CGRect] = [:]
     /// Each title of a row drawn for the bench (RecordsTitle), by its tab's
     /// id and which line: "title" or "rest", the address said at rest.
     static var drawnTitles: [String: DrawnTitle] = [:]
@@ -593,6 +600,14 @@ struct TabBar: View {
     /// since it shows even when its group holds no visible tab.
     static func showsPinLine(_ tabs: [Tab], groups: Int = 0) -> Bool {
         tabs.contains { $0.pin != nil } && (groups > 0 || tabs.contains { $0.pin == nil })
+    }
+
+    /// The air after the open groups' bands something follows in this
+    /// window's run (GroupBand.Air), for the widths.
+    private var bandAir: CGFloat {
+        guard browser.prefs.usesTabGroups else { return 0 }
+        let loose = browser.displayedTabs.contains { $0.pin == nil && browser.group(of: $0) == nil }
+        return CGFloat(GroupBand.spaced(browser.tabGroups, looseAfter: loose).count) * GroupBand.Air.space
     }
 
     /// Whether this window's own run carries the line.
@@ -621,7 +636,7 @@ struct TabBar: View {
         let shown = Int(pinned + loose + headers)
         var total = pinned * Metrics.pinWidth + loose * each + extra
             + headingWidth + CGFloat(max(0, shown - 1)) * Metrics.tabGap
-            + (pinLine ? PinLine.space : 0)
+            + (pinLine ? PinLine.space : 0) + bandAir
         if let id = browser.editingTab, let tab = browser.tabs.first(where: { $0.id == id }) {
             let splitWidth = browser.prefs.splitView ? browser.split(for: tab).map { splitItemWidth(base: each, pages: $0.tabs.count) } : nil
             let oldWidth = splitWidth ?? (tab.pin != nil ? Metrics.pinWidth : each)
@@ -664,7 +679,7 @@ struct TabBar: View {
             let spent = CGFloat(pins) * Metrics.pinWidth + extra
                 + browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name, numbered: browser.prefs.showsTabShortcuts && $1.collapsed) }
                 + CGFloat(max(0, pins + count + browser.tabGroups.count - 1)) * Metrics.tabGap
-                + (pinLine ? PinLine.space : 0)
+                + (pinLine ? PinLine.space : 0) + bandAir
             return max(Metrics.tabMinWidth, min(Metrics.tabWidth, (room(in: strip) - spent) / CGFloat(count)))
         }
         return width(in: strip, tabs: displayed, splits: browser.splits)
@@ -702,6 +717,23 @@ struct TabBar: View {
         return splits.reduce(CGFloat.zero) { total, pair in
             guard pair.left != pair.right, ids.contains(pair.left) else { return total }
             return total + splitItemWidth(base: base, pages: pair.tabs.count) - base
+        }
+    }
+}
+
+/// On a row drawn off screen for the bench, where a tab of the run was laid
+/// out (TabBar.drawnItems); nothing on the window's own row.
+private struct RecordsItem: ViewModifier {
+    @Environment(\.recordsBands) private var records
+    let id: UUID
+
+    func body(content: Content) -> some View {
+        if records {
+            content.onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("strip")) }) { rect in
+                TabBar.drawnItems[id] = rect
+            }
+        } else {
+            content
         }
     }
 }
