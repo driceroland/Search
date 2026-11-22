@@ -103,9 +103,10 @@ try:
     # Send Feedback: compose directly, the version in its subject.
     mail(action="feedback"); time.sleep(1)
     seen = mail()["seen"]
-    q = parse_qs(urlsplit(seen[-1].split(": ", 1)[1]).query) if seen[-1].startswith("feedback: ") else {}
-    t.ok("Send Feedback opens Gmail's compose page", q.get("to") == ["hello@officecommun.com"]
-         and q.get("su", [""])[0].startswith("Search feedback"), seen[-1])
+    u = urlsplit(seen[-1].split(": ", 1)[1]) if seen[-1].startswith("feedback: ") else None
+    q = parse_qs(u.query) if u else {}
+    t.ok("Send Feedback opens a new GitHub issue", u is not None and u.netloc == "github.com"
+         and u.path == "/Paul0k/Search/issues/new" and q.get("title", [""])[0].startswith("Feedback"), seen[-1])
     sv.quit()
 
     # A small window for links from other apps: compose in one.
@@ -130,7 +131,7 @@ try:
     t.ok("None: a click in a page is handed off as before", sv.cmd({"do": "probe"})["handedOff"][-1:] == ["mailto: asked"],
          sv.cmd({"do": "probe"})["handedOff"])
     mail(action="feedback")
-    t.ok("None: Send Feedback goes to the mail app", mail()["seen"][-1] == "feedback: system", mail()["seen"])
+    t.ok("None: Send Feedback still opens the GitHub issue", mail()["seen"][-1].startswith("feedback: https://github.com/"), mail()["seen"])
 finally:
     t.done(); sv.finish(); unregister()
 sys.exit(1 if t.failed else 0)

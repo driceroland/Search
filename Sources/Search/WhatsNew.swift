@@ -664,24 +664,10 @@ struct WhatsNewCard: View {
     let notes: () -> Void
     /// A link from the card (the privacy page), opened in a tab.
     var open: (URL) -> Void = { NSWorkspace.shared.open($0) }
-    /// For pictures: the email block's state, and whether it is offered
-    /// whatever this Mac remembers.
-    var optInStart: OptInForm.Phase = .idle
-    var optInEmail = ""
-    var optInForced: Bool? = nil
 
     /// Read once, as the card opens: a switch turned on here stays in the
     /// list rather than vanishing under the hand.
     @State private var earlier: [WhatsNew.Toggle]?
-    /// The email block (OptIn.swift), read once as the card opens: offered
-    /// until an email has been given, and kept after one is, for its thanks.
-    @State private var offering: Bool?
-    @ObservedObject private var reach = OptIn.Reach.shared
-
-    /// Pinned under the list, outside its scroll, so it is always in sight;
-    /// left off while the Mac is offline, where a press could only fail.
-    private var showsOptIn: Bool { (optInForced ?? offering ?? OptIn.offered()) && (optInForced != nil || reach.online) }
-
     private var fresh: [WhatsNew.Toggle] { WhatsNew.toggles.filter { $0.since == release.version && $0.shown(prefs) } }
 
     var body: some View {
@@ -697,11 +683,8 @@ struct WhatsNewCard: View {
                         }
                     }
                 }
-                .frame(maxHeight: showsOptIn ? 360 : 470)
+                .frame(maxHeight: 470)
                 .fixedSize(horizontal: false, vertical: true)
-                if showsOptIn {
-                    OptInBlock(source: .whatsNew, open: open, start: optInStart, startEmail: optInEmail)
-                }
             }
         } foot: {
             HStack {
@@ -716,7 +699,6 @@ struct WhatsNewCard: View {
             }
         }
         .onAppear {
-            if offering == nil { offering = OptIn.offered() }
             if earlier == nil {
                 earlier = WhatsNew.toggles.filter { WhatsNew.older($0.since, than: release.version) && !$0.get(prefs) && $0.shown(prefs) }
             }

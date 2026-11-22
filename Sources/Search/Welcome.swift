@@ -2,9 +2,8 @@ import SwiftUI
 
 /// The first time. Four short pages over the window, in the app's own
 /// language: what this is, what to bring over, how to hold it, and whether
-/// links from other apps should come here — and a fifth, until an email has
-/// been given once, offering the iPhone beta and news by email (OptIn.swift).
-/// Nothing is asked twice, and every page can be skipped.
+/// links from other apps should come here. Nothing is asked twice, and every
+/// page can be skipped.
 struct WelcomePanel: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
@@ -27,16 +26,11 @@ struct WelcomePanel: View {
     @State private var asked = false
 
 
-    /// Read once: the email page stays to the end once it is there, for
-    /// its thanks.
-    @State private var offersEmail = OptIn.offered()
-    /// For pictures: the page to open at, and the email page's state.
+    /// For pictures: the page to open at.
     var startPage = 0
-    var optInStart: OptInForm.Phase = .idle
-    var optInEmail = ""
     @State private var began = false
 
-    private var pages: Int { offersEmail ? 5 : 4 }
+    private let pages = 4
 
     var body: some View {
         ZStack {
@@ -49,8 +43,7 @@ struct WelcomePanel: View {
                     case 0: welcome
                     case 1: bring
                     case 2: hold
-                    case 3: links
-                    default: early
+                    default: links
                     }
                 }
                 .frame(maxWidth: 520)
@@ -227,15 +220,6 @@ struct WelcomePanel: View {
                     Key("⌘,", "AI summaries and questions about a page — off until you turn it on in Settings › AI.")
                 }
             }
-        }
-    }
-
-    /// Light, and skippable like every page: Start browsing goes on
-    /// without it (OptIn.swift).
-    private var early: some View {
-        OptInWelcomePage(start: optInStart, startEmail: optInEmail) { url in
-            finish()
-            _ = browser.open(url, foreground: true)
         }
     }
 
