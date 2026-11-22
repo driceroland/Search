@@ -9,7 +9,7 @@ import SwiftUI
 struct PinFolderHeading: View {
     @Environment(\.greys) private var greys
     @ObservedObject var browser: Browser
-    /// For the row's size: a tab's own, roomier tabs and all.
+    /// For the row's size: a tab's own.
     @ObservedObject var prefs: Preferences
     let folder: PinFolder
     let depth: Int
@@ -33,7 +33,7 @@ struct PinFolderHeading: View {
     }
 
     /// The width a tab row gives its site's icon (SideRow's Mark).
-    private var mark: CGFloat { prefs.roomyTabs ? 17 : 15 }
+    private var mark: CGFloat { 15 }
 
     private var editing: Bool { interactive && browser.editingPinFolder == folder.id }
 
@@ -78,7 +78,7 @@ struct PinFolderHeading: View {
     private var long: some View {
         HStack(spacing: 6) {
             Image(systemName: "chevron.right")
-                .font(.system(size: prefs.roomyTabs ? 9.5 : 8.5, weight: .semibold))
+                .font(.system(size: 8.5, weight: .semibold))
                 .rotationEffect(.degrees(folder.collapsed ? 0 : 90))
                 .frame(width: 10)
             HStack(spacing: 8) {

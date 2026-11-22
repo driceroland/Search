@@ -29,7 +29,7 @@ BEFORE = {
     "quit.confirm": "quitting", "downloads": "save to", "downloads.ask": "ask where",
     "downloads.button": "downloads button", "look": "dark mode", "pages.dusk": "darken",
     "sidebar": "sidebar", "sidebar.position": "right", "sidebar.hides": "hide the column",
-    "layout.cards": "card", "toolbar.left": "back forward", "sidebar.roomy": "roomier",
+    "layout.cards": "card", "toolbar.left": "back forward",
     "glyph": "favicon", "tabs.reading": "how far", "tabs.give": "pressed", "bookmarks.bar": "bookmarks bar",
     "motion.light": "low power", "tabs.newPlace": "new tab position", "tabs.newAfterLast": "last tab",
     "tabs.lazy": "background tabs", "tabs.popupWindows": "pop-ups", "tabs.sleep": "sleep",

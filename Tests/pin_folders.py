@@ -36,16 +36,13 @@ try:
     t.ok("Work is drawn, Docs inside it", any("Work" in x for x in flat) and any("Docs" in x for x in flat), flat)
     saved = st.get("saved") or []
     t.ok("pins.json keeps each pin's folder", ["a", "Work"] in saved and ["b", "Docs"] in saved, saved)
-    # A folder's row is as tall as a pin's beside it, normal and roomier.
-    for roomy in (False, True):
-        d = pf(action="drawn", roomy=roomy)
-        hs = d.get("heights") or []
-        folders_h = {h[2] for h in hs if h[0] == "folder"}
-        pins_h = {h[2] for h in hs if h[0] == "pin"}
-        mode = "roomier" if roomy else "normal"
-        t.ok(f"{mode}: a folder row is as tall as a tab row ({d.get('row')})",
-             folders_h == pins_h == {d.get("row")}, hs)
-    pf(action="drawn", roomy=False)
+    # A folder's row is as tall as a pin's beside it.
+    d = pf(action="drawn")
+    hs = d.get("heights") or []
+    folders_h = {h[2] for h in hs if h[0] == "folder"}
+    pins_h = {h[2] for h in hs if h[0] == "pin"}
+    t.ok(f"a folder row is as tall as a tab row ({d.get('row')})",
+         folders_h == pins_h == {d.get("row")}, hs)
     # A folder carried by its heading: out of its folder, reordered, back in.
     def tops(st): return [x[2] for x in st.get("lines") or [] if x[0] == "folder" and x[1] == 0]
     st = pf(action="carry", name="Docs", over=c)

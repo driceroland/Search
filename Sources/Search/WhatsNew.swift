@@ -124,8 +124,6 @@ enum WhatsNew {
                since: "1.0.6", get: { $0.pinsKeepSite }, set: { $0.pinsKeepSite = $1 }),
         Toggle(title: "Darken light pages", detail: "While Search is dark, pages with no dark look of their own are darkened.",
                since: "1.0.6", get: { $0.darkensPages }, set: { $0.darkensPages = $1 }),
-        Toggle(title: "Roomier tabs", detail: "Taller rows and larger titles in the sidebar.",
-               since: "1.0.6", get: { $0.roomyTabs }, set: { $0.roomyTabs = $1 }),
         Toggle(title: "New tab in a floating field", detail: "⌘T raises the address field over the page you are on, as in Arc.",
                since: "1.0.6", get: { $0.floatingNewTab }, set: { $0.floatingNewTab = $1 }),
 
@@ -486,7 +484,7 @@ enum WhatsNew {
                 "Pins go back home and keep their site, with links elsewhere in a peek; pins can sit above every space.",
                 "Tabs can close themselves after a while, and chosen sites can stay awake.",
                 "⇧⌘W closes the window, the mouse's side buttons change space, and media keys reach the page.",
-                "New tabs at the top or the bottom, a floating ⌘T, roomier tabs, and light pages darkened in dark mode.",
+                "New tabs at the top or the bottom, a floating ⌘T, and light pages darkened in dark mode.",
                 "Select several tabs with ⌘- or ⇧-click, export a page as a PDF, and Open With from the Finder.",
             ],
             better: [

@@ -95,7 +95,7 @@ struct PlayerRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Mark(icon: tab.icon, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15)
+            Mark(icon: tab.icon, letter: tab.monogram, size: 15)
             Text(tab.label)
                 .font(.system(size: prefs.sideTitle))
                 .lineLimit(1)

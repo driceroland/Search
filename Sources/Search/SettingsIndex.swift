@@ -239,9 +239,6 @@ enum SettingsIndex {
               title: "Liquid Glass tab", detail: "The tab you're on under a pane of Liquid Glass that glides, stretches and settles",
               more: "It bends the tabs it passes over. Pinned tabs and split pages keep their grey. Under Reduce Motion it goes straight to the tab you pick.",
               keys: ["tabs.liquid"], words: ["liquid glass", "liquid", "glass", "active tab", "selected tab", "animation", "wobble"]),
-        .init(id: "sidebar.roomy", group: "tablook", icon: "textformat.size.larger",
-              title: "Roomier tabs", detail: "Taller rows and larger titles in the column",
-              keys: ["sidebar.roomy"], words: ["bigger", "larger", "text size", "accessibility"], parent: "tabs.layout"),
         .init(id: "sidebar.doorsUp", group: "tablook", icon: "rectangle.topthird.inset.filled",
               title: "Buttons at the top", detail: "Bookmarks, extensions and downloads beside back, forward and reload, when they fit",
               keys: ["sidebar.doorsUp"], words: ["minimal", "toolbar", "footer", "bottom", "icons", "clean"], parent: "tabs.layout"),
@@ -715,7 +712,7 @@ enum SettingsIndex {
         switch item.id {
         case "pages.dusk": return prefs.look != .light
         case "inspector.dark": return prefs.look != .dark
-        case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
+        case "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
         case "address.width": return prefs.addressLine && !prefs.sidebar
@@ -745,7 +742,7 @@ enum SettingsIndex {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "inspector.dark": return "Only while Search isn't set to Dark"
         case "toolbar.left", "tabs.compact", "address.width": return "Only with the tabs across the top"
-        case "sidebar.roomy", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return "Only with titles in the column"
+        case "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return "Only with titles in the column"
         case "tabs.liquid": return LiquidTab.available ? "Only with titles in the column, or the tabs across the top" : "Liquid Glass needs macOS 26"
         case "window.glass.style": return GlassStyle.liquidAvailable ? "Only with Glass on" : "Liquid Glass needs macOS 26"
         case "window.glass.clear", "window.glass.grain": return "With spaces on, in the space's menu › Colour…"

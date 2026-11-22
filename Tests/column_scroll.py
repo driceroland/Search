@@ -7,7 +7,7 @@ or brought forward, everything removed afterwards. A short window, a dozen
 groups (most folded, as a user with many folders had them) and loose tabs
 past its height: the column must scroll, a wheel take it back up to the
 folders and down again, and the tab you go to be scrolled into sight. Then
-the same with the column on the right, as icons only, with roomier rows,
+the same with the column on the right, as icons only
 and folded away and out over the page. The column is read through the
 bench's `column`: its room, what the rows add up to and measure, and its
 scroll view's offset.
@@ -125,13 +125,6 @@ def main():
         for x in loose + ids[:16]: sv.sp("close", id=x)
         c = settle(lambda c: not c["scrolls"])
         t.ok("few rows: the column doesn't scroll", not c["scrolls"], c)
-
-        # Roomier rows, from the start.
-        sv.quit()
-        sv.setup(**{"tabs.groups": True, "sidebar": True, "sidebar.roomy": True}); sv.launch()
-        sv.cmd({"do": "resize", "width": 1000, "height": 560, "steps": 1})
-        ids, loose = fill()
-        check("roomier", loose, ids[20])
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)
