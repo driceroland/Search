@@ -10,6 +10,7 @@ is what gets posted as the update. What is planned but not done yet lives
 in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
+- Tabs across the top can no longer be dragged to put them in another order, into or out of a group, into Split View or into another window. The column's tabs are moved by dragging as before.
 
 ### Removed
 
