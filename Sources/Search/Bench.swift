@@ -3120,22 +3120,49 @@ final class Bench {
             // measures a screen point (from the top of the main screen).
             let middle = web.convert(NSPoint(x: web.bounds.midX, y: web.bounds.midY), to: nil)
             let over = CGPoint(x: middle.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - middle.y)
-            func send(_ phase: Int64, _ delta: Double) {
-                guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: Int32(delta), wheel3: 0) else { return }
+            // "dy": up or down along with it, spread the same way. "back":
+            // drawn back this far after DX, in steps of its own, before the
+            // fingers lift. "down": a flick down of that many points, let go
+            // with its glide still going when the sideways one starts (#1389).
+            let dy = request["dy"] as? Double ?? 0
+            let back = request["back"] as? Double ?? 0
+            let down = request["down"] as? Double ?? 0
+            func send(_ phase: Int64, _ delta: Double, _ vertical: Double = 0, momentum: Int64 = 0) {
+                guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: Int32(vertical), wheel2: Int32(delta), wheel3: 0) else { return }
                 cg.location = over
                 cg.setIntegerValueField(CGEventField(rawValue: 88)!, value: 1) // kCGScrollWheelEventIsContinuous
                 cg.setIntegerValueField(CGEventField(rawValue: 99)!, value: phase) // kCGScrollWheelEventScrollPhase
+                cg.setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentum)
                 cg.setIntegerValueField(CGEventField(rawValue: 97)!, value: Int64(delta)) // kCGScrollWheelEventPointDeltaAxis2
+                cg.setIntegerValueField(CGEventField(rawValue: 96)!, value: Int64(vertical)) // kCGScrollWheelEventPointDeltaAxis1
                 if let event = NSEvent(cgEvent: cg) { web.scrollWheel(with: event) }
             }
-            send(1, 0)
-            for n in 1...steps {
-                DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000 * Double(n) / Double(steps)) {
-                    send(2, dx / Double(steps))
-                    if n == steps { send(4, 0) }
+            var start = 0.0
+            if down != 0 {
+                send(1, 0)
+                for _ in 1...4 { send(2, 0, -down / 4) }
+                send(4, 0)
+                // The glide: on through the sideways gesture's start.
+                for n in 0..<12 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.016 * Double(n + 1)) {
+                        send(0, 0, -down / 8 * pow(0.85, Double(n + 1)), momentum: n == 0 ? 1 : (n == 11 ? 3 : 2))
+                    }
+                }
+                start = 0.06
+            }
+            let backSteps = back > 0 ? max(2, steps / 2) : 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + start) { send(1, 0) }
+            for n in 1...(steps + backSteps) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + start + ms / 1000 * Double(n) / Double(steps)) {
+                    if n <= steps {
+                        send(2, dx / Double(steps), dy / Double(steps))
+                    } else {
+                        send(2, -(dx < 0 ? -1 : 1) * back / Double(backSteps))
+                    }
+                    if n == steps + backSteps { send(4, 0) }
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000 + 1.2) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + start + ms / 1000 * Double(steps + backSteps) / Double(steps) + 1.2) {
                 answer(["before": before, "after": tab.address?.absoluteString ?? ""])
             }
 
