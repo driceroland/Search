@@ -149,7 +149,7 @@ final class SidebarPressTests: XCTestCase {
         let window = makeWindow(browser)
         try await settle()
         for index in [0, 1] {
-            let point = NSPoint(x: 70, y: window.frame.height - Metrics.strip - 14 - CGFloat(index) * 28)
+            let point = NSPoint(x: 70, y: window.frame.height - Metrics.strip - 17 - CGFloat(index) * 36)
             try await send(.leftMouseDown, at: point, in: window)
             XCTAssertEqual(browser.activeID, tabs[index].id)
             try await send(.leftMouseUp, at: point, in: window)
@@ -381,7 +381,7 @@ final class SidebarPressTests: XCTestCase {
     }
 
     private func rowPoint(_ index: Int, in window: NSWindow) -> NSPoint {
-        NSPoint(x: 70, y: window.frame.height - Metrics.strip - 14 - CGFloat(index) * 30)
+        NSPoint(x: 70, y: window.frame.height - Metrics.strip - 17 - CGFloat(index) * 36)
     }
 
     private func settle() async throws {

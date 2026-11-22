@@ -99,7 +99,7 @@ final class PinStuckTests: XCTestCase {
         XCTAssertEqual(browser.squarePins.map(\.id), [t[0], t[1]].map(\.id))
         let loose = browser.tabs.filter { $0.pin == nil }
         for row in [1, 2, 0] {
-            try await click(point(x: 160, y: Metrics.strip + 44 + 14 + CGFloat(row) * 30, in: window), in: window)
+            try await click(point(x: 160, y: Metrics.strip + 44 + 17 + CGFloat(row) * 36, in: window), in: window)
             XCTAssertEqual(browser.activeID, loose[row].id, "row \(row) where it was before the carry")
         }
     }

@@ -84,7 +84,7 @@ struct SideBar: View {
     private var rowHeight: CGFloat { prefs.sideRow }
     /// The column's width: the setting, or where the edge is while it is held.
     private var width: CGFloat { live ?? prefs.columnWidth }
-    private static let gap: CGFloat = 2
+    private static let gap: CGFloat = 4
     private static let groupInset: CGFloat = 4
     private static let square: CGFloat = 34
     private static let pinGap: CGFloat = 4
@@ -2079,7 +2079,7 @@ private struct SideRow: View, Equatable {
                     // The page is translated (Translate.swift).
                     TranslateSign(tab: tab, colour: colour)
                     TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
-                                size: prefs.sideTitle, colour: colour, roomy: true, dim: dim)
+                                size: prefs.sideTitle, colour: colour, roomy: true, dim: dim, fades: true)
                 }
                 Spacer(minLength: 0)
             }
@@ -2241,11 +2241,9 @@ private struct SideRow: View, Equatable {
     }
 
     private var colour: Color {
-        if live || prefs.highContrastText {
-            return putAway ? Palette.ink.opacity(0.45) : Palette.ink
-        }
-        let colour = hovering ? Palette.ink.opacity(0.7) : greys.muted
-        return putAway ? colour.opacity(0.45) : colour
+        // Black (white in the dark) for every title, as Zen's are, not the
+        // soft grey High contrast text used to be the only way out of.
+        putAway ? Palette.ink.opacity(0.45) : Palette.ink
     }
 }
 
