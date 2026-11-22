@@ -91,7 +91,7 @@ struct TitleAtRest: View {
                             HStack(spacing: 0) {
                                 Rectangle()
                                 LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                                    .frame(width: 22)
+                                    .frame(width: 8)
                             }
                         }
                 } else {
