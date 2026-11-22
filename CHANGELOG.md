@@ -39,6 +39,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A download that fails because its file can't be made or written, such as "Cannot create file", offers Retry and no longer Resume, which would only pick up the same file and fail again. `swift test --filter FetchEntryTests`. Thanks [@jolly-0806](https://github.com/jolly-0806) ([#1400](https://github.com/driceroland/Search/pull/1400), [#1292](https://github.com/driceroland/Search/issues/1292), idea 884)
 - Settings › Passwords › Apple Passwords: pressing Connect… again on a Mac where the helper can't start no longer makes the row shrink and grow back; it says Connecting… only once starting takes a moment. Where macOS stops Apple's helper the instant Search starts it (its launch constraint, seen on macOS 15), the row says Apple's Passwords helper isn't available to Search on this version of macOS, with no button that can't work.
 - The bookmarks bar with more than the window holds: a » at its end lists the bookmarks and folders it has no room for, as in Chrome and Safari, folders as submenus, and a pick opens as a click on the bar does. The bar used to run off the window's right edge with nothing to show it, and only a sideways trackpad swipe reached the rest. `python3 Tests/bookmarks_bar_overflow.py` (idea 958)
 - A Manifest V3 extension's own pages are held to Chrome's minimum script policy (scripts from its package only, WebAssembly allowed), whatever else its manifest's policy says, as in Chrome.
