@@ -714,6 +714,14 @@ final class Preferences: ObservableObject {
             AutoScroll.on = autoScroll
         }
     }
+    /// A mouse wheel's notches glide instead of jumping (see WheelGlide.swift).
+    /// Off unless asked for.
+    @Published var wheelGlides: Bool {
+        didSet {
+            store.set(wheelGlides, forKey: "wheel.smooth")
+            WheelGlide.on = wheelGlides
+        }
+    }
     /// Pages bounce at their top and bottom, as in Safari, rather than stop
     /// there (see Swipe.calm). Off unless asked for.
     @Published var bounces: Bool {
@@ -1385,6 +1393,9 @@ final class Preferences: ObservableObject {
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls
+        let glides = store.bool(forKey: "wheel.smooth")
+        wheelGlides = glides
+        WheelGlide.on = glides
         let bouncing = store.bool(forKey: "pages.bounce")
         bounces = bouncing
         Swipe.bounces = bouncing

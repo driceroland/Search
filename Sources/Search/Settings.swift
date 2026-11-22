@@ -873,6 +873,7 @@ struct SettingsPanel: View {
         case "links.peek.stays": Switch(on: $prefs.peekStays)
         case "links.optionSplit": Switch(on: $prefs.optionClickSplits)
         case "autoscroll": Switch(on: $prefs.autoScroll)
+        case "wheel.smooth": Switch(on: $prefs.wheelGlides)
         case "pages.bounce": Switch(on: $prefs.bounces)
         case "swipe.history": Switch(on: $prefs.holdsHistory)
         case "launcher.on": Switch(on: $prefs.launcher)

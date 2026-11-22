@@ -3222,8 +3222,17 @@ final class PageView: WKWebView {
         """
     }
 
+    /// A mouse wheel's notches eased over a few frames (WheelGlide.swift).
+    private(set) lazy var glider = WheelGlide(self)
+
+    /// A step of a glided notch, straight to WebKit: it is no swipe.
+    func glide(_ event: NSEvent) {
+        super.scrollWheel(with: event)
+    }
+
     override func scrollWheel(with event: NSEvent) {
         onTouch?()
+        if WheelGlide.on, stops == nil, glider.take(event) { return }
         if event.phase == .mayBegin || event.phase == .began {
             went = false
             Swipe.calm(self)

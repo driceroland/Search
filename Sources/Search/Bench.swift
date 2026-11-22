@@ -408,6 +408,54 @@ final class Bench {
             let limit = Date().addingTimeInterval(request["seconds"] as? Double ?? 20)
             wait(for: tab, until: limit, answer)
 
+        case "wheel":
+            // A mouse wheel's notches on a tab's page, as a wheel that steps
+            // in lines sends them, and where the page was every 4 ms from
+            // the first: the positions it went through say whether a notch
+            // jumped or glided (WheelGlide). "smooth" sets the switch first.
+            // Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "wheel only works on a --test run"]); return }
+            guard let tab = find(request, in: browser), let web = tab.built else { answer(missing(request)); return }
+            if let on = request["smooth"] as? Bool { WheelGlide.on = on }
+            let notches = request["notches"] as? Int ?? 3
+            let gap = (request["gap"] as? Double ?? 250) / 1000
+            let lines = request["lines"] as? Double ?? -1
+            let probe = request["probe"] as? String ?? "scrollY"
+            // The page's middle, in the window. A hidden probe's window is on
+            // no screen, so the notch carries the place as the window's own
+            // point, which is how WebKit reads an event from no window.
+            let middle = web.convert(NSPoint(x: web.bounds.midX, y: web.bounds.midY), to: nil)
+            func notch() -> NSEvent? {
+                guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 0, wheel2: 0, wheel3: 0)
+                else { return nil }
+                cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 0)
+                cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: lines)
+                cg.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: Int64(lines.rounded()))
+                let height = NSScreen.screens.first?.frame.height ?? 0
+                cg.location = CGPoint(x: middle.x, y: height - middle.y)
+                return NSEvent(cgEvent: cg)
+            }
+            let start = CACurrentMediaTime()
+            var seen: [[Int]] = []
+            let look = Timer(timeInterval: 0.004, repeats: true) { _ in
+                let t = Int((CACurrentMediaTime() - start) * 1000)
+                web.evaluateJavaScript(probe) { value, _ in
+                    let y = (value as? NSNumber)?.intValue ?? -1
+                    if seen.last?[1] != y { seen.append([t, y]) }
+                }
+            }
+            RunLoop.main.add(look, forMode: .common)
+            for n in 0..<notches {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05 + Double(n) * gap) {
+                    if let e = notch() { web.scrollWheel(with: e) }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05 + Double(notches) * gap + 0.6) {
+                look.invalidate()
+                // Steps of a notch: positions it went through before the next.
+                answer(["positions": seen, "last": seen.last?[1] ?? -1, "smooth": WheelGlide.on])
+            }
+
         case "sleep":
             // Now rather than after half an hour, but past every other check
             // a tab has to clear — the answer says which one kept it awake.
