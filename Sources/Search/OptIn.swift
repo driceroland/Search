@@ -297,9 +297,9 @@ struct OptInForm: View {
     }
 
     private var thanksLine: String {
-        if betaOnly { return "Thanks. The iPhone beta comes to your inbox soon." }
+        if betaOnly { return "Thanks. We'll email you when your iPhone beta spot opens." }
         return betaSent
-            ? "Thanks, you're on the list. The iPhone beta comes to your inbox soon."
+            ? "Thanks, you're on the list. We'll email you when your iPhone beta spot opens."
             : "Thanks, you're on the list."
     }
 
