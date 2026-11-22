@@ -339,7 +339,12 @@ struct Command: Identifiable {
                 KeyCombo(String(number), command: false, control: true)) { browser in
             browser.switchSpace(index: number - 1)
         }
-    }
+    } + [
+        // As the swipe goes, and stopping at the ends as it does. No key
+        // until you give one in Settings › Shortcuts (idea 761).
+        Command("spaces.next", "Next Space", .spaces, nil) { $0.stepSpace(1) },
+        Command("spaces.previous", "Previous Space", .spaces, nil) { $0.stepSpace(-1) },
+    ]
 }
 
 /// What you've changed, on top of the defaults: a new key, or none. One for
