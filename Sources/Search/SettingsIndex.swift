@@ -273,6 +273,11 @@ enum SettingsIndex {
         .init(id: "bookmarks.bar", group: "tablook", icon: "bookmark",
               title: "Show the bookmarks bar", detail: "Your bookmarks in a row above the page",
               keys: ["bookmarks.bar"], words: ["favorites bar"]),
+        .init(id: "bookmarks.side", group: "tablook", icon: "list.bullet.rectangle",
+              title: "Show the bookmarks bar in the sidebar", detail: "At the top of the sidebar in every space, instead of above the page",
+              more: "A row for each bookmark and folder on the bar, before your pinned rows. A folder opens as a menu, as on the bar.",
+              keys: ["bookmarks.side"], words: ["favorites bar", "bookmarks toolbar", "sidebar", "column", "folders"],
+              parent: "bookmarks.bar"),
         .init(id: "motion.light", group: "motion", icon: "leaf",
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
@@ -725,6 +730,7 @@ enum SettingsIndex {
         case "window.glass.clear", "window.glass.grain": return prefs.glass && !prefs.usesSpaces
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
+        case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
         case "spaces.links", "links.ask", "spaces.buttons": return prefs.usesSpaces
@@ -760,6 +766,7 @@ enum SettingsIndex {
         case "mail.default": return "Only with a webmail chosen for email links"
         case "links.peek.stays": return "Only when links or pins open peeks"
         case "launcher.key": return "Only with the address field from any app on"
+        case "bookmarks.side": return "Only with the bookmarks bar shown and the tabs down a side"
         default: return "Only with the tabs down a side"
         }
     }

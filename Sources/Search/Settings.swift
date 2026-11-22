@@ -650,6 +650,11 @@ struct SettingsPanel: View {
         case "tabs.reading": Switch(on: $prefs.showsReading)
         case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
+        case "bookmarks.side":
+            Switch(on: Binding(
+                get: { prefs.bookmarksInSidebar },
+                set: { on in withAnimation(Motion.glide) { prefs.bookmarksInSidebar = on } }
+            ))
         case "motion.light": Switch(on: $prefs.lightMotion)
         case "motion.instant": Switch(on: $prefs.instantMotion)
         case "note.split": Always()

@@ -14,6 +14,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Added
 
 - Open Link in Private Tab in a link's right-click menu, after Open Link in New Tab (and Open Link in Split View), as the bookmarks bar already has it: the link in a private tab in front, with nothing of the page it came from. Not on a private page, where Open Link in New Tab is private already. `python3 Tests/link_menu.py`. Thanks [@xibrox](https://github.com/xibrox) ([#1384](https://github.com/driceroland/Search/pull/1384), [#902](https://github.com/driceroland/Search/issues/902), idea 568)
+- Settings › Appearance › Tabs › Show the bookmarks bar in the sidebar, off unless you turn it on: with the bookmarks bar shown and the tabs down a side, it moves from above the page to the top of the column, a row for each of its bookmarks and folders before your pinned rows, the same in every space of the profile. A folder opens as a menu, as on the bar, and a right-click offers what the bar's does; with the column as icons, each is a tile. Show Bookmarks Bar hides and shows it there too. `swift test --filter SideBookmarksTests`. Thanks [@petty](https://github.com/petty) ([#1390](https://github.com/driceroland/Search/pull/1390))
 
 ### Changed
 

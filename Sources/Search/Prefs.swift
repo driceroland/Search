@@ -855,6 +855,17 @@ final class Preferences: ObservableObject {
     @Published var bookmarksBar: Bool {
         didSet { store.set(bookmarksBar, forKey: "bookmarks.bar") }
     }
+    /// The bookmarks bar at the top of the column instead of above the page:
+    /// a row for each of its bookmarks and folders, in every space, before
+    /// the pinned rows. Off unless asked for; Settings › Appearance › Tabs.
+    @Published var bookmarksInSidebar: Bool {
+        didSet { store.set(bookmarksInSidebar, forKey: "bookmarks.side") }
+    }
+    /// Whether the bookmarks bar is in the column now: the bar shown, asked
+    /// for there, and the tabs down a side. With the bar hidden it is hidden
+    /// in the column too (Show Bookmarks Bar still says where it is); with
+    /// the tabs across the top it stays above the page, where it always was.
+    var sideBookmarks: Bool { sidebar && bookmarksBar && bookmarksInSidebar }
     /// Where a link goes, at the bottom of the page while the pointer is on
     /// it (see StatusLine.swift). On unless turned off.
     @Published var showsLinks: Bool {
@@ -1349,6 +1360,7 @@ final class Preferences: ObservableObject {
         asksSpaceForLinks = store.bool(forKey: "links.ask")
         linkChoices = (store.array(forKey: "links.ask.last") ?? []).compactMap(LinkChooser.Choice.init(plist:))
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
+        bookmarksInSidebar = store.bool(forKey: "bookmarks.side")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
         downloadsOpening = store.string(forKey: "downloads.open").flatMap(DownloadsOpening.init(rawValue:)) ?? .tab
         let links = store.object(forKey: "links.show") as? Bool ?? true
@@ -1478,6 +1490,7 @@ final class Preferences: ObservableObject {
         take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))
         take(\.spacesOnCommand, store.bool(forKey: Preferences.spacesOnCommandKey))
         take(\.bookmarksBar, store.bool(forKey: "bookmarks.bar"))
+        take(\.bookmarksInSidebar, store.bool(forKey: "bookmarks.side"))
         take(\.alwaysShowsDownloads, store.bool(forKey: "downloads.button"))
     }
 
