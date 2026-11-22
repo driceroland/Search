@@ -2406,8 +2406,6 @@ final class Browser: NSObject, ObservableObject {
             newsShowing = WhatsNew.due(prefs: prefs, welcoming: welcoming)
             // With your other Macs, if that is on (see Sync.swift).
             Sync.shared.start()
-            // With iCloud, if that is on instead (see ICloudSync.swift).
-            ICloudSync.shared.start()
             // An icon that arrives is looked for again by every tab showing
             // that site, in every window, not only the one that asked for it:
             // each puts on its own page's, or its nearest neighbour's.
@@ -7134,12 +7132,6 @@ final class Browser: NSObject, ObservableObject {
         visited.forEach(add)
         // A bookmark found only through a typo: under where you have been.
         kept.slips.forEach(add)
-        // Tabs open on your other devices (Sync with iCloud), as Safari
-        // shows iCloud Tabs: under your own places, a page here already
-        // being the same row.
-        for page in ICloudSync.shared.offers(for: typed) where seen.insert(History.identity(for: page.url)).inserted {
-            list.append(page)
-        }
         // Last in the list, and only when what was typed cannot be a place.
         if !typed.isEmpty, Address.url(from: typed) == nil {
             if let (keyword, rest) = Keyword.match(typed, in: prefs.keywords),
@@ -7171,7 +7163,7 @@ final class Browser: NSObject, ObservableObject {
         // would promise a place Return doesn't go to.
         // Towards where you have been first, as before bookmarks were here,
         // then towards a bookmark.
-        let places = list.filter { $0.kind != .open && $0.kind != .elsewhere && !$0.kind.isCommand }
+        let places = list.filter { $0.kind != .open && !$0.kind.isCommand }
         let ending = command != nil ? nil
             : history.completion(for: typed, among: places.filter { $0.kind != .bookmark } + places.filter { $0.kind == .bookmark })
         // Worked out from the addresses, before a search page's row is read
