@@ -4128,6 +4128,69 @@ final class Bench {
                 }
             }
 
+        case "layershot":
+            // The window's layers as Core Animation holds them, without
+            // asking any view to draw: what was last handed to the window
+            // server, stale or not (film, by drawing the views afresh, shows
+            // what they would draw now). "frames" pictures "every" seconds
+            // apart; after the first, "action": "space" (⌃N to "index"),
+            // "swipe" (two fingers, "dx"). "stage": the window first staged
+            // off every screen (FoldFrames.stage), so it is drawn and its
+            // glides run at the display's pace. Test runs, hidden, only.
+            guard Store.testing, NSApp.isHidden else { answer(["error": "layershot is for hidden test runs"]); return }
+            guard let window = browser.window, let root = window.contentView?.superview, let top = root.layer,
+                  let path = request["path"] as? String else { answer(["error": "layershot needs the window and a path"]); return }
+            if request["stage"] as? Bool == true, !FoldFrames.stage(window) { answer(["error": "the window would have shown"]); return }
+            let count = min(60, max(1, request["frames"] as? Int ?? 10))
+            let every = min(1, max(0.005, request["every"] as? Double ?? 1.0 / 60))
+            let scale = window.backingScaleFactor
+            let started = CACurrentMediaTime()
+            var shots: [[String: Any]] = []
+            var pictures: [(Int, CGImage)] = []
+            func take(_ index: Int) {
+                guard index < count else {
+                    for (at, image) in pictures {
+                        let file = path + String(format: "-%02d.png", at)
+                        if let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]),
+                           (try? data.write(to: URL(fileURLWithPath: file))) != nil { shots[at]["file"] = file }
+                    }
+                    answer(["frames": shots, "scale": Double(scale)])
+                    return
+                }
+                let size = top.bounds.size
+                // The column's side: the window's first 420 points across.
+                let w = Int(min(size.width, 420) * scale), h = Int(size.height * scale)
+                let shot: [String: Any] = ["t": Int((CACurrentMediaTime() - started) * 1000), "space": browser.space.name]
+                if let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                       space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                    ctx.scaleBy(x: scale, y: scale)
+                    top.render(in: ctx)
+                    // Written once the filming is over.
+                    if let image = ctx.makeImage() { pictures.append((index, image)) }
+                }
+                shots.append(shot)
+                if index == 0 {
+                    switch request["action"] as? String {
+                    case "space":
+                        // Slid in through the map, as on screen.
+                        SpaceSwipe.glidesHidden = true
+                        browser.switchSpace(index: (request["index"] as? Int ?? 1) - 1)
+                        SpaceSwipe.glidesHidden = false
+                    case "swipe":
+                        let dx = request["dx"] as? Double ?? -160
+                        SpaceSwipe.shared.start(for: browser)
+                        SpaceSwipe.shared.began()
+                        for step in 0..<8 {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + Double(step) / 60) { SpaceSwipe.shared.moved(along: dx / 8) }
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0 / 60) { SpaceSwipe.shared.ended() }
+                    default: break
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + every) { take(index + 1) }
+            }
+            take(0)
+
         case "film":
             // The whole window, title bar and lights included, drawn every few
             // hundredths of a second while something animates — what a person

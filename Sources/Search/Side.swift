@@ -809,7 +809,7 @@ struct SideBar: View {
     /// among them and the room after it, added up as rowsHeight adds up the
     /// column's own.
     private struct PreviewLine: Identifiable {
-        enum Kind { case pin(PinRowLine), heading(TabGroup), tab(Tab, inset: Bool = false), keep, newTab }
+        enum Kind { case pin(PinRowLine), heading(TabGroup), tab(Tab, group: TabGroup? = nil), keep, newTab }
         let id: AnyHashable
         let kind: Kind
         let y: CGFloat
@@ -854,9 +854,8 @@ struct SideBar: View {
             // A folded group showing none of its tabs still has its empty
             // stack under its heading, and the gap after it.
             add("heading-\(drawn.group.id)", .heading(drawn.group), heading, after: drawn.tabs.isEmpty ? 2 * SideBar.gap : SideBar.gap)
-            let inset = groupRowInset(drawn.group) > 0
             for tab in drawn.tabs {
-                add(tab.id, .tab(tab, inset: inset), lines(tab) * rowHeight, front: tab.id == front)
+                add(tab.id, .tab(tab, group: drawn.group), lines(tab) * rowHeight, front: tab.id == front)
             }
             if let colour = drawn.group.colour, let last = out.last {
                 tints.append(PreviewTint(id: drawn.group.id, colour: colour, top: top, bottom: last.y + last.height))
@@ -891,11 +890,17 @@ struct SideBar: View {
             }
         case .heading(let group):
             GroupHeading(browser: browser, group: group, compact: icons)
-        case .tab(let tab, let inset):
+        case .tab(let tab, let group):
+            // Set in under its heading and dimmed when it holds no page, as
+            // the column's own rows are (groupRows, SideRow.putAway), so
+            // nothing moves or brightens as the space lands. Only a coloured
+            // group's rows were set in here, with no inset in a plain one,
+            // and none of them was dimmed: the space's own groups decided
+            // that, and another space's tab is in none of them (idea 955).
             rowItem(tab, tabs: row.tabs, splits: row.splits, activeID: row.active,
-                    interactive: false, pill: pill, close: {})
-                .padding(.leading, inset ? 14 : 0)
-                .padding(.trailing, inset ? Self.groupInset : 0)
+                    interactive: false, pill: pill, close: {}, grouped: group != nil)
+                .padding(.leading, group != nil && !icons ? 14 : 0)
+                .padding(.trailing, group.map(groupRowInset) ?? 0)
         case .keep:
             KeepLine(clears: false) {}
         case .newTab:
@@ -966,7 +971,8 @@ struct SideBar: View {
         activeID: Tab.ID?,
         interactive: Bool,
         pill: Namespace.ID,
-        close: @escaping () -> Void
+        close: @escaping () -> Void,
+        grouped: Bool? = nil
     ) -> some View {
         let pair = prefs.splitView ? splits.first(where: { $0.left == tab.id }) : nil
         let pages = pair.map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? []
@@ -989,7 +995,7 @@ struct SideBar: View {
         } else {
             SideRow(browser: browser, prefs: prefs, tab: tab,
                     live: tab.id == activeID, pill: pill, close: close,
-                    interactive: interactive)
+                    interactive: interactive, grouped: grouped)
         }
     }
 
@@ -2003,7 +2009,7 @@ private struct SideRow: View, Equatable {
     private let grouped: Bool
 
     init(browser: Browser, prefs: Preferences, tab: Tab, live: Bool, pill: Namespace.ID,
-         close: @escaping () -> Void, interactive: Bool = true) {
+         close: @escaping () -> Void, interactive: Bool = true, grouped: Bool? = nil) {
         self.browser = browser
         self.prefs = prefs
         self.tab = tab
@@ -2020,7 +2026,9 @@ private struct SideRow: View, Equatable {
         peek = browser.peekFrom == tab.id ? browser.peekTab : nil
         refusals = browser.refusals
         putsAway = browser.putsAway(tab)
-        grouped = prefs.usesTabGroups && browser.group(of: tab) != nil
+        // Another space's row in the map says itself: the browser knows
+        // only this space's groups.
+        self.grouped = prefs.usesTabGroups && (grouped ?? (browser.group(of: tab) != nil))
     }
 
     /// The close action is left out: it closes the same tab every time.
