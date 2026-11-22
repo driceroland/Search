@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """A pin keeps its id, its home and its place in every space when its tab
 is swapped between an extension's page and a website, in a hidden probe.
+Across spaces its live view follows the profile's shared sign-ins when
+reuse is enabled.
 
 Build first (`./build.sh`), then `python3 Tests/pin_swap.py`. It uses the
 split suite's harness in a world of its own (see split_view.use()), so it
@@ -23,6 +25,44 @@ t = sv.T()
 def pins(): return json.load(open(f"{sv.SUPPORT}/pins.json"))
 def pinned():
     st = sv.sp("state"); return [x for x in st["tabs"] if x["id"] in st["pins"]]
+
+def command(operation, window, **fields):
+    return sv.cmd({"do": operation, "window": window, **fields})
+
+
+def visit(window, action, **fields):
+    command("space", window, action=action, **fields)
+    time.sleep(0.8)
+
+
+def shared_pin(window):
+    state = sv.sp("state", window=window)
+    pin, = state["everywhere"]
+    return next(tab for tab in state["tabs"] if tab["id"] == pin)
+
+
+def open_shared_pin(window, url):
+    tab = sv.sp("open", window=window, url=url)["resultID"]
+    command("wait", window, id=tab)
+    command("pin", window, id=tab)
+    command("pin", window, id=tab, everywhere=True)
+    return shared_pin(window)
+
+
+def read_pin(window, js):
+    tab = shared_pin(window)["id"]
+    command("select", window, id=tab)
+    command("wait", window, id=tab)
+    return command("eval", window, id=tab, js=js).get("value")
+
+
+def check_handoff(window, source, url, marker, label):
+    page = read_pin(window, "[location.href, window.marker || null]")
+    pin = shared_pin(window)
+    t.ok(label, pin["id"] == source["id"] and pin["web"] == source["web"]
+         and page == [url, marker], (source["id"], pin["id"], page))
+
+
 folder = Path(tempfile.mkdtemp(prefix="pin-swap-"))
 try:
     (folder / "manifest.json").write_text(json.dumps({
@@ -163,6 +203,59 @@ try:
     # Leave only the first pin, for whatever follows.
     sv.cmd({"do": "pin", "id": down[0]["id"], "off": True})
     sv.sp("close", id=down[0]["id"]); sv.sp("close", id=helper)
+
+    sv.cmd({"do": "pin", "id": pinned()[0]["id"], "off": True})
+    sv.cmd({"do": "window"})
+    command("settings", 1, set="pins.sameTab", value=True)
+    visit(1, "new", name="Separate", fresh=True)
+    separate = open_shared_pin(1, home)
+    read_pin(1, "window.marker = 'separate'")
+    visit(1, "new", name="Shared")
+    picked = read_pin(1, "[location.href, window.marker || null]")
+    other = shared_pin(1)
+    t.ok("separate sign-ins open their own extension document",
+         other["id"] != separate["id"] and other["web"] != separate["web"] and picked == [home, None], picked)
+    read_pin(1, "window.marker = 'other'")
+    visit(1, "go", index=2)
+    check_handoff(1, separate, home, "separate", "returning to separate sign-ins keeps the original page")
+
+    command("profile", 1, action="new", name="Work")
+    command("profile", 1, action="window", name="Work")
+    work = open_shared_pin(2, home)
+    read_pin(2, "window.marker = 'work'")
+    visit(2, "new", name="Work Two")
+    check_handoff(2, work, home, "work", "Work spaces keep one live extension page")
+
+    web_url = sv.BASE + "/work-page"
+    command("go", 2, id=shared_pin(2)["id"], url=web_url)
+    time.sleep(0.8)
+    read_pin(2, "window.marker = 'web'")
+    web = shared_pin(2)
+    visit(2, "go", index=1)
+    check_handoff(2, web, web_url, "web", "after navigating to a website, its live view follows the pin")
+    command("pin", 2, id=shared_pin(2)["id"], home=True)
+    time.sleep(0.8)
+    read_pin(2, "window.marker = 'back'")
+    back = shared_pin(2)
+    visit(2, "go", index=2)
+    check_handoff(2, back, home, "back", "back at the extension, its replacement view follows the pin")
+
+    # Delete the space holding the live page from another Work window.
+    # The first Work window is showing a space with separate sign-ins.
+    visit(2, "new", name="Work Separate", fresh=True)
+    command("windows", 2, action="front", n=2)
+    command("windows", 2, action="new")
+    visit(3, "go", index=2)
+    visit(3, "delete")
+    visit(2, "go", index=1)
+    check_handoff(2, back, home, "back", "deleting the parked owner preserves the extension page")
+
+    command("settings", 2, set="pins.sameTab", value=False)
+    visit(2, "new", name="Independent")
+    page = read_pin(2, "[location.href, window.marker || null]")
+    copy = shared_pin(2)
+    t.ok("reuse off opens an independent extension page",
+         copy["id"] != back["id"] and copy["web"] != back["web"] and page == [home, None], page)
 finally:
     t.done(); sv.finish(); shutil.rmtree(folder, ignore_errors=True)
 sys.exit(1 if t.failed else 0)

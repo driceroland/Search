@@ -2889,6 +2889,9 @@ final class Browser: NSObject, ObservableObject {
     var rowKeys: [Tab.ID: Int] = [:]
     var lastRowKey = 0
     var parked: [UUID: Parked] = [:]
+    /// The last row to own this profile's shared pages, across a visit to
+    /// a space with separate sign-ins.
+    var sharedPinOwner: UUID?
     /// How far the column's rows have followed two fingers sideways, and
     /// whether the card for a new space stands in for them (see SpaceSwipe).
     /// The distance changes with every event of the swipe, so it is kept
@@ -3182,6 +3185,16 @@ final class Browser: NSObject, ObservableObject {
         // A website pop-up holds only the page WebKit hands over: no pins,
         // restored tabs or warm pages from other spaces.
         guard !websitePopup else { return }
+        if prefs.reusesSharedPins {
+            // The window's line is read only here, where the space on screen
+            // can't say who holds the shared pages: one with its own sign-ins.
+            if sharesPinPages(in: spaceID) {
+                sharedPinOwner = spaceID
+            } else if let owner = (record ?? Browsers.read().first)?.sharedPinOwner,
+                      spaces.contains(where: { $0.id == owner }), sharesPinPages(in: owner) {
+                sharedPinOwner = owner
+            }
+        }
         restoreSession()
         // The open tabs every window lists, a turn from now: by then a
         // window made for an extension's pop-up is known to be one, and has
@@ -3350,7 +3363,16 @@ final class Browser: NSObject, ObservableObject {
         prefs.$sharesPins.dropFirst().map { _ in () }
             .merge(with: prefs.$usesSpaces.dropFirst().map { _ in () })
             .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.sharedPinsChanged() }
+            .sink { [weak self] in
+                self?.sharedPinsChanged()
+                // Whoever held the shared pages before the switch may hold
+                // none now (see claimSharedPins).
+                self?.claimSharedPins()
+            }
+            .store(in: &bag)
+        prefs.$pinsSameTab.dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.sharedPinReuseChanged() }
             .store(in: &bag)
         // Peek stays with its tab turned off: a peek hidden behind another
         // tab goes at once, as that tab would have put it away. Left, it
@@ -4333,6 +4355,12 @@ final class Browser: NSObject, ObservableObject {
     /// quit, before there is a process left to finish the wait on its behalf.
     func flushSession() {
         writeSession(now: true)
+        // A shared page may have navigated or moved to another parked row
+        // since leaving it. Save the row the window will take its page from.
+        if prefs.reusesSharedPins,
+           let owner = sharedPinOwner, let row = parked[owner], row.tabs.contains(where: \.everywhere) {
+            writeSession(now: true, space: owner, row: row)
+        }
     }
 
     // MARK: - tabs
@@ -6956,7 +6984,9 @@ final class Browser: NSObject, ObservableObject {
         // As restoreSession has it: nothing in front after a fresh start, so
         // the space opens on an empty tab beside its pins (see enter); and a
         // tab whose place no longer reads falls to the first that isn't a pin.
-        if saved.active < 0 {
+        if saved.tabs.isEmpty && saved.active >= 0 {
+            restored.setEmptySessionSelection(reusingPins: prefs.reusesSharedPins)
+        } else if saved.active < 0 {
             restored.active = nil
         } else if restored.active == nil {
             restored.active = restored.tabs.first { $0.pin == nil }?.id ?? restored.tabs.first?.id

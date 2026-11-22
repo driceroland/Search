@@ -14,7 +14,7 @@ final class SettingsIndexTests: XCTestCase {
     private let touched = ["sidebar", "sidebar.position", "tabs.sleep", SleepPace.key, "float.leave", "float.away",
                            "pins.home", "pins.peek", "links.peek", "links.peekClick", "pages.120", "pages.120.mode",
                            "swipe.history", "tabs.address", "links.show", "float.flicks", "spaces", "pins.list",
-                           "newtab.floating", "search.shift", "search.shiftCustom"]
+                           "newtab.floating", "search.shift", "search.shiftCustom", "pins.sameTab"]
 
     private func fresh(_ body: () -> Void) {
         let saved = touched.map { ($0, Store.settings.object(forKey: $0)) }
@@ -52,6 +52,28 @@ final class SettingsIndexTests: XCTestCase {
             for key in ["pins.home", "pins.peek", "pages.120.mode", "swipe.history", "tabs.address"] {
                 XCTAssertNil(Store.settings.object(forKey: key), key)
             }
+        }
+    }
+
+    func testSameTabAcrossSpacesIsOffByDefaultAndFindable() {
+        fresh {
+            let prefs = Preferences()
+            let key = "pins.sameTab"
+            XCTAssertFalse(prefs.pinsSameTab)
+            XCTAssertNil(Store.settings.object(forKey: key))
+            let row = SettingsIndex.item(key)
+            XCTAssertEqual(row?.keys, [key])
+            XCTAssertEqual(row?.group, "pins")
+            XCTAssertEqual(row?.page, .spaces)
+            XCTAssertTrue(SettingsIndex.find("shared pins video").contains { $0.id == key })
+            if let row {
+                prefs.usesSpaces = false
+                XCTAssertFalse(SettingsIndex.applies(row, prefs))
+                prefs.usesSpaces = true
+                XCTAssertTrue(SettingsIndex.applies(row, prefs))
+            }
+            XCTAssertTrue(SettingsIndex.apply(key, true, to: prefs))
+            XCTAssertTrue(Preferences().pinsSameTab)
         }
     }
 

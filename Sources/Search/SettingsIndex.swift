@@ -500,6 +500,12 @@ enum SettingsIndex {
               words: ["arc", "folder", "folders", "nested", "subfolder", "pinned folder", "pinned tabs", "organise", "organize",
                       "live folder", "feed", "rss", "atom"],
               parent: "pins.list"),
+        .init(id: "pins.sameTab", group: "pins", icon: "pin",
+              title: "Use the same tab across spaces",
+              detail: "A pin kept in every space keeps its page in spaces that share sign-ins",
+              more: "Open a shared pin in another space in the same window and pick up where you left off without reloading the page.",
+              keys: ["pins.sameTab"], words: ["shared pins", "video", "playback", "scroll"],
+              parent: "spaces"),
         .init(id: "pins.commandNewTab", group: "pins", icon: "command",
               title: "⌘-click on a pin opens a new tab",
               detail: "Opens a tab at the pin's site, or moves a wandered page to loose tabs",
@@ -765,7 +771,7 @@ enum SettingsIndex {
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
-        case "spaces.links", "links.ask", "spaces.buttons": return prefs.usesSpaces
+        case "spaces.links", "links.ask", "spaces.buttons", "pins.sameTab": return prefs.usesSpaces
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent", "newtab.arc": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
@@ -790,7 +796,7 @@ enum SettingsIndex {
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "icloud.erase": return "Only while Sync with iCloud is on"
         case "profiles.oneWindow": return "Only with more than one profile"
-        case "spaces.links", "links.ask", "spaces.buttons": return "Only with Spaces on"
+        case "spaces.links", "links.ask", "spaces.buttons", "pins.sameTab": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent", "newtab.arc": return "Only with the new tab in a floating field"
@@ -955,6 +961,7 @@ extension SettingsIndex {
             "tabs.sleep": prefs.sleepChoice.rawValue,
             "float.own": prefs.floatOwn.rawValue,
             "pins.keep": prefs.pinsKeepSite,
+            "pins.sameTab": prefs.pinsSameTab,
             "pins.home": prefs.pinsGoHome,
             "pins.peek": prefs.pinsPeek,
             "links.peek": prefs.peekChoice.rawValue,
@@ -996,6 +1003,9 @@ extension SettingsIndex {
         case "tabs.mirror":
             guard let on = value as? Bool else { return false }
             prefs.mirrorsTabs = on
+        case "pins.sameTab":
+            guard let on = value as? Bool else { return false }
+            prefs.pinsSameTab = on
         case "pins.folders":
             guard let on = value as? Bool else { return false }
             prefs.pinFolders = on
