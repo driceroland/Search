@@ -2710,6 +2710,9 @@ final class Browser: NSObject, ObservableObject {
 
     /// The names extensions asked their downloads to be saved under.
     var namedDownloads: [URL: String] = [:]
+    /// The page each view last loaded again after WebKit handed it an empty
+    /// answer (see decidePolicyFor response), so it is asked for only once.
+    private var emptyAnswerRetried: [ObjectIdentifier: URL] = [:]
 
     /// Tabs you closed, newest last, so ⌘⇧T can put them back where they were
     /// and the History menu can offer them by name.
@@ -8832,6 +8835,23 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         decidePolicyFor response: WKNavigationResponse,
         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
     ) {
+        // An answer with nothing in it, no address and no type: WebKit hands
+        // one over when a page that came past the site's service worker is
+        // moved to a new process as it arrives. youtube.com does it on
+        // macOS 27.0.1 when its worker has gone to sleep. Nothing WebKit can
+        // show, so it was kept as a file, and the page landed in Downloads
+        // as www.youtube.com.html instead of in the tab. Asked for again, the
+        // page comes through; only once, so one that keeps answering like
+        // this is stopped rather than loaded for ever.
+        if response.isForMainFrame, response.response.url == nil {
+            decisionHandler(.cancel)
+            let id = ObjectIdentifier(webView)
+            if let url = webView.url, emptyAnswerRetried[id] != url {
+                emptyAnswerRetried[id] = url
+                webView.load(URLRequest(url: url))
+            }
+            return
+        }
         // A redirect (3xx) has nowhere to be shown and carries no content of
         // its own, but must be followed rather than downloaded — even if its
         // headers say `application/binary` or `application/octet-stream`, as
