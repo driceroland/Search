@@ -5,7 +5,7 @@ and jump the whole notch at once with it off, in a hidden probe.
 Build first (`./build.sh`), then `python3 Tests/wheel_glide.py`. Uses the
 split suite's harness in a world of its own; no window is made or brought
 forward. The bench sends three notches of one line, 250 ms apart, to a long
-page and reads where the page is every 4 ms (bench `wheel`): off, each notch
+page and reads where the page is every 4 ms (bench `notches`): off, each notch
 is one step of 40 points; on, each is many small steps that end at the same
 place, and a notch the other way during a glide drops what was left of it.
 """
@@ -20,7 +20,7 @@ sv.use("wheel-glide")
 
 
 def wheel(id, **f):
-    return sv.cmd({"do": "wheel", "id": id, **f})
+    return sv.cmd({"do": "notches", "id": id, **f})
 
 
 def main():

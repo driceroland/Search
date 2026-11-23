@@ -42,6 +42,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A sideways swipe in Google Sheets scrolls the sheet and no longer goes back a page, at column A included: a page that sets overscroll-behavior-x to none or contain on its root is never swiped away from, as in Chrome. Sheets does, and its grid, which scrolls itself, doesn't always claim the scroll.
 - A post opened from a live folder goes among your tabs as a new tab does: with a tab in a group in front, it went into that group, as if it were a link from that page. `python3 Tests/live_folder_post_place.py` (idea 978)
 - A link in an extension's popup meant to open in a new tab now does: Raindrop.io's Sign in did nothing, no tab and no window, because WebKit asked about the link and then never for the new page. It now opens as a tab and the popup closes, as in Chrome. `python3 Tests/extension_popup_link.py` (idea 972)
 - Readwise Highlighter starts again: its button answers, and Save Page to Reader and Highlight and Save to Reader are back in the right-click menu. Its background stopped at its first lines: Search gave every extension's worker a `window` that reads as nothing, for Eagle's, and Readwise's sets up a `window` of its own only when there is none, as in Chrome, then failed on the empty one. Only a worker whose extension asks for its background page, as Eagle's does, gets that `window` now. (idea 813)
