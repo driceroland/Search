@@ -23,6 +23,10 @@ threw, and half its scripts never loaded. What is checked:
 
 - the worker can do Eagle's `getBackgroundPage() === window` without
   throwing, and `typeof window` is still "undefined";
+- a worker that never asks for getBackgroundPage has no `window` at all, as
+  in Chrome: Readwise Highlighter's sets `self.window = globalThis` only
+  when `'window' in self` is false, and threw as it started while the name
+  was there for every worker;
 
 - the worker's GET and POST to the address it declares come back readable,
   and the POST arrives with its body;
@@ -133,6 +137,23 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     }
 
 
+# A worker that never asks for getBackgroundPage, setting up `window` as
+# Readwise Highlighter's does.
+PLAIN = {
+    "manifest.json": json.dumps({
+        "manifest_version": 3, "name": "Plain worker", "version": "1.0",
+        "background": {"service_worker": "sw.js"},
+    }),
+    "sw.js": """
+const out = { inSelf: 'window' in self, typeofWindow: typeof window };
+if (!('window' in self)) { self.window = globalThis; }
+try { out.crypto = 'crypto' in window; } catch (e) { out.crypto = String(e); }
+chrome.runtime.onMessage.addListener((m, sender, reply) => { reply(out); });
+""",
+    "page.html": "<!doctype html><p>page</p>",
+}
+
+
 def probe_copy():
     """build/Search.app under a bundle id of its own, signed ad hoc."""
     app = work / "Search.app"
@@ -195,6 +216,20 @@ def main():
         r = run(tid, "chrome.runtime.sendMessage({background: true})")
         t.ok("the worker can compare getBackgroundPage() with window without throwing, window still undefined",
              r == {"threw": None, "typeofWindow": "undefined", "selfWindow": True}, r)
+
+        plain = work / "plain"
+        plain.mkdir()
+        for name, body in PLAIN.items():
+            (plain / name).write_text(body)
+        sv.cmd({"do": "ext-folder", "path": str(plain), "yes": True})
+        other_ext = loaded(lambda x: x["name"] == "Plain worker", 15)
+        t.ok("a second extension loads", other_ext is not None)
+        if other_ext:
+            pid = sv.cmd({"do": "ext-page", "id": other_ext["id"], "path": "page.html"})["id"]
+            time.sleep(1.5)
+            r = run(pid, "chrome.runtime.sendMessage({})")
+            t.ok("a worker that never asks for getBackgroundPage has no window, and sets one up as in Chrome",
+                 r == {"inSelf": False, "typeofWindow": "undefined", "crypto": True}, r)
 
         info = f"http://localhost:{port}/api/application/info"
         r = worker(tid, info)

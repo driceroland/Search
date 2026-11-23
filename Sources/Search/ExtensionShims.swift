@@ -485,12 +485,16 @@ enum ExtensionShims {
     /// can take their listeners late (see the end of the script).
     nonisolated static func shim(for folder: URL) -> String {
         var found = Set<String>()
+        // Whether its own scripts ask for getBackgroundPage: only then does
+        // its worker need `window` to be a name it can read (see the script).
+        var namesWindow = false
         let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil)
         while let url = walker?.nextObject() as? URL {
             guard url.pathExtension == "js", url.lastPathComponent != file,
                   var text = try? String(contentsOf: url, encoding: .utf8) else { continue }
             // Not the shim's own words, in a worker that already carries it.
             if text.hasPrefix(marker), let end = text.range(of: ender) { text = String(text[end.upperBound...]) }
+            if url.lastPathComponent != contentFile, text.contains("getBackgroundPage") { namesWindow = true }
             let range = NSRange(text.startIndex..., in: text)
             for match in eventExpression.matches(in: text, range: range) {
                 guard let a = Range(match.range(at: 1), in: text), let b = Range(match.range(at: 2), in: text) else { continue }
@@ -514,6 +518,7 @@ enum ExtensionShims {
             .replacingOccurrences(of: "__SEARCH_SCRIPTS__", with: shipped)
             .replacingOccurrences(of: "__SEARCH_CHROME__", with: Crx.chromeVersion)
             .replacingOccurrences(of: "__SEARCH_VERBOSE__", with: Store.testing ? "true" : "false")
+            .replacingOccurrences(of: "__SEARCH_NAMES_WINDOW__", with: namesWindow ? "yes" : "no")
     }
 
     /// The shim as a content script runs it: everything up to the `return`
@@ -915,8 +920,14 @@ enum ExtensionShims {
       // the worker's `chrome` be replaced (its events stop). So the name
       // `window` reads as undefined in the worker instead of throwing:
       // `typeof window` and `self.window` are as before, and a worker that
-      // sets `self.window` itself gets what it set.
-      if (worker && !("window" in root)) {
+      // sets `self.window` itself gets what it set. Only for an extension
+      // whose scripts ask for getBackgroundPage at all (ExtensionShims
+      // .shim(for:)): the name is there to be found, so `'window' in self`
+      // reads true, and Readwise Highlighter's worker, which sets
+      // `self.window = globalThis` only when that reads false, as it does
+      // in Chrome, then threw on `'crypto' in window` and never started
+      // (no button, no right-click items, nothing saved).
+      if (worker && "__SEARCH_NAMES_WINDOW__" !== "no" && !("window" in root)) {
         try {
           Object.defineProperty(root, "window", {
             configurable: true, enumerable: false,
