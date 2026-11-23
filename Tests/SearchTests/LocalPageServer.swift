@@ -11,6 +11,8 @@ final class LocalPageServer {
         var body: String
         var withoutLength = false
         var slowly = false
+        /// More header lines, each "Name: value", as the response sends them.
+        var headers: [String] = []
     }
 
     private let socket: Int32
@@ -132,6 +134,7 @@ final class LocalPageServer {
         let head = "HTTP/1.1 \(page.status)\r\n"
             + "Content-Type: \(page.type)\r\n"
             + (page.withoutLength ? "" : "Content-Length: \(body.count)\r\n")
+            + page.headers.map { $0 + "\r\n" }.joined()
             + "Connection: close\r\n\r\n"
         guard send(client, Data(head.utf8)) else { return }
         if !page.slowly {
