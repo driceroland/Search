@@ -30,6 +30,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Settings › Spaces & Pins › The field in the middle of the window, off unless you turn it on: ⌘T's and ⌘L's field over a page is centred on the whole window and higher up, near where Spotlight comes, as in Arc and Zen, instead of on the page beside the column. (idea 753)
 - Settings › Appearance › A loading line with the tabs hidden, off unless you turn it on: with the tabs folded away (⌘S), a thin line along the page's top runs as the page loads and goes once it is there. (idea 269)
 - Open Image in Split View in a picture's right-click menu, beside Open Image in New Tab and Copy Image Address, as a link's menu has it. (idea 474)
+- Add Image to Photos in a picture's right-click menu, under Download Image, as in Safari: the picture goes straight into your Photos library as the site served it, a GIF with its frames. Also over a picture that is also a link, a Pinterest pin's. macOS asks once, for add-only access: Search can put pictures in, never read any back.
 
 ### Changed
 

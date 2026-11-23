@@ -12,6 +12,9 @@
   <!-- Your own card in Contacts, for filling in forms (MeCard.swift), once
        you turn it on. -->
   <key>com.apple.security.personal-information.addressbook</key><true/>
+  <!-- Add Image to Photos (ImageMenu.swift): the hardened runtime refuses
+       the library otherwise, without asking. -->
+  <key>com.apple.security.personal-information.photos-library</key><true/>
   <!-- Passkeys, for any site. Apple grants this to browsers on request; it
        only works with the matching Developer ID provisioning profile
        embedded in the app, which build.sh does when Search.provisionprofile

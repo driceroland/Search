@@ -277,6 +277,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <string>Websites you visit can ask for your location. Search asks you each time a site does, unless you choose Always allow for it; Settings › Privacy forgets those choices.</string>
   <key>NSLocationWhenInUseUsageDescription</key>
   <string>Websites you visit can ask for your location. Search asks you each time a site does, unless you choose Always allow for it; Settings › Privacy forgets those choices.</string>
+  <!-- Add Image to Photos in a picture's right-click menu: add-only, so
+       Search can put a picture in the library and never read one back. -->
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>Search adds the pictures you choose with Add Image to Photos to your library. It can't see or read anything already there.</string>
   <key>NSDownloadsFolderUsageDescription</key>
   <string>Files you download are saved to your Downloads folder.</string>
   <!-- Only once you turn on Settings › Passwords › Fill in your contact

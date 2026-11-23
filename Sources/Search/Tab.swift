@@ -661,9 +661,9 @@ final class Tab: ObservableObject, Identifiable {
     /// download it and then, on at least some sites, does neither — see
     /// ImageMenu.swift for why this is built rather than patched.
     var onImageMenu: ((Tab, URL) -> Void)?
-    /// WebKit's Copy Image (true) or Download Image (false) chosen over a
-    /// picture that is also a link, done as the image menu does them.
-    var onImageItem: ((Tab, URL, Bool) -> Void)?
+    /// WebKit's Copy Image or Download Image, or Add Image to Photos, chosen
+    /// over a picture that is also a link, done as the image menu does them.
+    var onImageItem: ((Tab, URL, ImageAction) -> Void)?
     /// Where the last image right-clicked came from (see ImageMenu.swift).
     var imageFrame: WKFrameInfo? { images.frame }
     var searchName: (() -> String?)?
@@ -980,9 +980,9 @@ final class Tab: ObservableObject, Identifiable {
         web.searchName = { [weak self] in self?.searchName?() }
         web.translating = { [weak self] in self.map { $0.translator != nil && $0.translation?.failed != true } ?? false }
         web.onTranslate = { [weak self] in self?.toggleTranslation() }
-        web.onImage = { [weak self] url, copy in
+        web.onImage = { [weak self] url, action in
             guard let self else { return }
-            self.onImageItem?(self, url, copy)
+            self.onImageItem?(self, url, action)
         }
         web.onSearch = { [weak self] text in
             guard let self else { return }
@@ -2587,6 +2587,17 @@ final class PageView: WKWebView {
                 item.action = action
                 item.representedObject = image
             }
+            // Add Image to Photos, which WebKit's menu doesn't have and the
+            // picture menu does: under Download Image, as in Safari's.
+            let id = { (item: NSMenuItem) in item.identifier?.rawValue }
+            if let index = menu.items.firstIndex(where: { id($0) == "WKMenuItemIdentifierDownloadImage" })
+                ?? menu.items.firstIndex(where: { id($0) == "WKMenuItemIdentifierCopyImage" }) {
+                let photos = NSMenuItem(title: "Add Image to Photos", action: #selector(addImageToPhotos(_:)), keyEquivalent: "")
+                photos.identifier = NSUserInterfaceItemIdentifier("SearchAddImageToPhotos")
+                photos.target = self
+                photos.representedObject = image
+                menu.insertItem(photos, at: index + 1)
+            }
         }
         // The bench's linkmenu: the item it names is chosen as the menu
         // comes up, the way a hand would choose it, and the menu goes.
@@ -2719,15 +2730,19 @@ final class PageView: WKWebView {
     /// The picture under the right-click, when this menu is WebKit's over
     /// one (see ImageRelay), or nil.
     var keptImage: URL?
-    /// Copy Image (true) or Download Image (false), this app's own.
-    var onImage: ((URL, Bool) -> Void)?
+    /// Copy Image, Download Image or Add Image to Photos, this app's own.
+    var onImage: ((URL, ImageAction) -> Void)?
 
     @objc private func copyImage(_ item: NSMenuItem) {
-        if let url = item.representedObject as? URL { onImage?(url, true) }
+        if let url = item.representedObject as? URL { onImage?(url, .copy) }
     }
 
     @objc private func downloadImage(_ item: NSMenuItem) {
-        if let url = item.representedObject as? URL { onImage?(url, false) }
+        if let url = item.representedObject as? URL { onImage?(url, .download) }
+    }
+
+    @objc private func addImageToPhotos(_ item: NSMenuItem) {
+        if let url = item.representedObject as? URL { onImage?(url, .addToPhotos) }
     }
 
     /// Open Link in Split View: the same action, the tab it makes marked to

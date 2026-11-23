@@ -12,5 +12,8 @@
   <!-- Your own card in Contacts, for filling in forms (MeCard.swift), once
        you turn it on. -->
   <key>com.apple.security.personal-information.addressbook</key><true/>
+  <!-- Add Image to Photos (ImageMenu.swift): the hardened runtime refuses
+       the library otherwise, without asking. -->
+  <key>com.apple.security.personal-information.photos-library</key><true/>
 </dict>
 </plist>

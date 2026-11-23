@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import Photos
 import WebKit
 
 // Right-click on an image, own menu.
@@ -168,6 +169,9 @@ extension Browser {
         menu.addItem(ImageMenuItem("Download Image") { [weak self] in
             self?.downloadImage(at: url, from: webView)
         })
+        menu.addItem(ImageMenuItem("Add Image to Photos") { [weak self] in
+            self?.addImageToPhotos(at: url, in: tab)
+        })
         menu.addItem(.separator())
         menu.addItem(ImageMenuItem("Copy Image Address") {
             NSPasteboard.general.clearContents()
@@ -246,6 +250,40 @@ extension Browser {
             self?.keep(download)
         }
     }
+
+    /// Add Image to Photos, as Safari's picture menu has it: the bytes Copy
+    /// Image fetches, handed to the library as they came, so a JPEG stays
+    /// the JPEG the site served and a GIF keeps its frames. Add-only access:
+    /// Search can put a picture in the library, never read one out of it.
+    func addImageToPhotos(at url: URL, in tab: Tab) {
+        Task {
+            guard let data = await imageData(at: url, in: tab), Browser.reasonable(data) else {
+                announce("Couldn't add that image to Photos")
+                return
+            }
+            switch await PHPhotoLibrary.requestAuthorization(for: .addOnly) {
+            case .authorized, .limited:
+                break
+            default:
+                announce("Search can't add to Photos: allow it in System Settings › Privacy & Security › Photos")
+                return
+            }
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
+                }
+                announce("Added to Photos")
+            } catch {
+                announce("Couldn't add that image to Photos")
+            }
+        }
+    }
+}
+
+/// What a picture's right-click item asks for, from WebKit's own menu over a
+/// picture that is also a link (Tab.onImageItem): the image menu's own.
+enum ImageAction {
+    case copy, download, addToPhotos
 }
 
 /// A menu item that runs a closure. NSMenuItem wants a target and a
