@@ -970,12 +970,13 @@ enum DeveloperLighthouseLantern {
     /// The trace's main-thread tasks as the observed metrics count them,
     /// on the page's clock (ms from navigation): what Total Blocking Time is
     /// measured from when a trace was recorded, in place of the observer's
-    /// timer gaps. Nil without a trace or a main document to place it by.
+    /// timer gaps. Nil if the trace cannot place any tasks in this navigation.
     static func pageTasks(_ input: DeveloperLighthouseInput) -> [(start: Double, duration: Double)]? {
         guard let trace = input.traceTasks, let document = mainDocument(input),
               let clock = clock(input, document: input.requests[document]) else { return nil }
-        return trace.map { (start: clock.ms($0.start), duration: $0.duration * 1_000) }
+        let tasks = trace.map { (start: clock.ms($0.start), duration: $0.duration * 1_000) }
             .filter { $0.start + $0.duration > 0 && $0.duration > 0 }
+        return tasks.isEmpty ? nil : tasks
     }
 
     /// Lantern's estimates for a Navigation run: nil when the load can't be

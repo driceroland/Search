@@ -81,13 +81,10 @@ enum DeveloperSpeedIndex {
     }
 }
 
-/// Snapshots of a web view, one per display frame, while a page loads.
-/// Lighthouse's filmstrip has a screenshot of every frame Chrome paints; a
-/// WKWebView snapshot of the current layers costs well under a millisecond
-/// at this width, so taking one every frame gives the same resolution. A
-/// coarser cadence dates each visual change late, by up to the interval:
-/// at 100 ms Speed Index came out 60–120 ms above Chrome's for the same
-/// paints. Only frames that differ from the one before are kept.
+/// Snapshots of a web view at roughly 60 Hz while a page loads. A coarser
+/// cadence dates visual changes later. At 100 ms intervals, Speed Index
+/// came out 60–120 ms above Chrome's for the same paints. Only frames that
+/// differ from the previous one are kept.
 @MainActor
 final class DeveloperFilmstripRecorder {
     private(set) var frames: [(time: Date, histogram: [Int])] = []
@@ -115,6 +112,7 @@ final class DeveloperFilmstripRecorder {
             while !Task.isCancelled, let web, let self {
                 if let image = try? await web.takeSnapshot(configuration: configuration),
                    let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                    guard !Task.isCancelled else { return }
                     // Timed when it came back: a snapshot shows what was on
                     // screen by then, never later.
                     self.record(Date(), DeveloperSpeedIndex.histogram(cg))

@@ -44,7 +44,9 @@ enum DeveloperLighthouseRules {
             audits: audits, warnings: warnings, userAgent: input.userAgent, emulation: input.emulation, totalTime: totalTime)
         report.throttling = input.throttling
         report.simulation = input.simulated
-        if input.page.viewportWidth > 0, input.page.viewportHeight > 0 {
+        if input.page.viewportWidth.isFinite, input.page.viewportWidth > 0,
+           input.page.viewportHeight.isFinite, input.page.viewportHeight > 0,
+           input.page.devicePixelRatio.isFinite, input.page.devicePixelRatio > 0 {
             report.viewport = .init(width: input.page.viewportWidth, height: input.page.viewportHeight,
                                     devicePixelRatio: input.page.devicePixelRatio)
         }
@@ -244,7 +246,7 @@ enum DeveloperLighthouseRules {
         case .speedIndex:
             guard let value = metrics.speedIndex else { return notApplicable(id, speedIndexReason) }
             measured = value
-            warning = "Measured from \(metrics.speedIndexFrames) snapshots of the view, one per display frame, rather than from a trace's screenshots."
+            warning = "Measured from \(metrics.speedIndexFrames) snapshots of the view at roughly 16 ms intervals."
         case .interactionToNextPaint:
             guard metrics.inpSupported else {
                 return notApplicable(id, "This WebKit doesn't report event timing entries, so interactions can't be timed.")

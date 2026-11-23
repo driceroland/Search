@@ -289,7 +289,7 @@ final class DeveloperLighthouseModel: ObservableObject {
             guard !Task.isCancelled else { return }
             phase = .loading
             let filmstrip = DeveloperFilmstripRecorder()
-            filmstrip.start(web)
+            if performance { filmstrip.start(web) }
             defer { filmstrip.stop() }
             session.reload()
             guard await waitForLoad(web) else {
@@ -307,7 +307,8 @@ final class DeveloperLighthouseModel: ObservableObject {
             }
             if let raw = await readMetrics(web) {
                 var measured = DeveloperLighthouseMetrics(raw)
-                if let origin = (try? await web.evaluateJavaScript("performance.timeOrigin")) as? NSNumber {
+                if performance, let origin = (try? await web.evaluateJavaScript("performance.timeOrigin")) as? NSNumber,
+                   origin.doubleValue.isFinite {
                     let start = Date(timeIntervalSince1970: origin.doubleValue / 1_000)
                     let frames = filmstrip.timed(from: start)
                     measured.speedIndexFrames = filmstrip.captured

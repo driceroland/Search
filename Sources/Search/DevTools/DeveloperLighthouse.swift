@@ -401,7 +401,8 @@ struct DeveloperLighthouseReport: Equatable, Identifiable {
         var devicePixelRatio: Double
 
         var summary: String {
-            "\(Int(width.rounded()))×\(Int(height.rounded())) CSS px at \(devicePixelRatio.formatted())×"
+            let sizeFormat = FloatingPointFormatStyle<Double>.number.grouping(.never).precision(.fractionLength(0))
+            return "\(width.rounded().formatted(sizeFormat))×\(height.rounded().formatted(sizeFormat)) CSS px at \(devicePixelRatio.formatted())×"
         }
     }
 
