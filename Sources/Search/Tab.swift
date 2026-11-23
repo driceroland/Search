@@ -2207,6 +2207,8 @@ final class Tab: ObservableObject, Identifiable {
         guard let web = built else { return }
         (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
+        // A process too busy to hear the view go would outlive it (#1264).
+        Stuck.watch(web)
         // Back and Forward said what the view let go of could do. The next
         // view starts with nothing to go back to, and its observers only hear
         // a change: left as it was, a pin put down showed Back lit, and Back
