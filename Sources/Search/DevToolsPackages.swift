@@ -204,12 +204,15 @@ final class DevToolsPackages: ObservableObject {
         return all
     }
 
-    /// The package View › Developer uses: the one installed, or the one
-    /// picked of two.
+    /// The package View › Developer uses: the one picked of two, or else
+    /// the one installed last (its version folder is made at install).
     var primary: Installed? {
         let all = installed
         if let id = primaryID, let chosen = all[id] { return chosen }
-        return all.values.sorted { $0.offer.id < $1.offer.id }.first
+        func installedAt(_ kept: Installed) -> Date {
+            (try? kept.folder.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+        }
+        return all.values.max { (installedAt($0), $1.offer.id) < (installedAt($1), $0.offer.id) }
     }
 
     // MARK: - loaded

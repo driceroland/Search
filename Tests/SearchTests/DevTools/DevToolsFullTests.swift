@@ -189,7 +189,11 @@ final class DevToolsFullTests: XCTestCase {
             && self.packages.states["lite"] == .idle }
 
         let tab = try await open("/app")
+        // Nothing picked: the one installed last.
+        packages.primaryID = nil
+        XCTAssertEqual(packages.primary?.offer.id, "lite", "the most recently installed package")
         packages.primaryID = "full"
+        XCTAssertEqual(packages.primary?.offer.id, "full", "a pick stays")
         XCTAssertEqual(Set(packages.takenKeys.keys), ["devtools", "console", "pick"])
         browser.toggleInspector()
         _ = try await perform("ready", [:], tab)
