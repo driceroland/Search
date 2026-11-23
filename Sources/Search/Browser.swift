@@ -2621,9 +2621,12 @@ final class Browser: NSObject, ObservableObject {
         // a bookmark's is.
         guard renamesInPlace(tab) else {
             cancelTabEdit()
+            let shown = tab.label
             Ask.name("Rename Tab", detail: "Without a name, the tab shows its page's title.",
-                     placeholder: tab.title, initial: tab.label, confirm: "Rename", empty: true) { [weak self, weak tab] typed in
+                     placeholder: tab.title, initial: shown, confirm: "Rename", empty: true) { [weak self, weak tab] typed in
                 guard let self, let tab else { return }
+                // Rename pressed on the title as it came: still no name (see commitTabEdit).
+                if tab.name == nil, typed == shown.trimmingCharacters(in: .whitespacesAndNewlines) { return }
                 tab.name = typed.isEmpty ? nil : typed
                 self.writeSession(now: true)
             }
@@ -2631,6 +2634,7 @@ final class Browser: NSObject, ObservableObject {
         }
         renamingTab = true
         tabDraft = tab.label
+        tabOriginal = tab.label
         editingTab = tab.id
     }
 
@@ -2647,6 +2651,14 @@ final class Browser: NSObject, ObservableObject {
         guard let id = editingTab, let tab = tabs.first(where: { $0.id == id }) else { return }
         if renamingTab {
             let typed = tabDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            // A tab with no name of its own, its page's title left as it
+            // was: still no name, so it goes on following its page (#1354 —
+            // an edit ended before anything was typed kept the title it was
+            // showing as the tab's name for good).
+            if tab.name == nil, typed == tabOriginal.trimmingCharacters(in: .whitespacesAndNewlines) {
+                cancelTabEdit()
+                return
+            }
             tab.name = typed.isEmpty ? nil : typed
             cancelTabEdit()
             writeSession(now: true)
