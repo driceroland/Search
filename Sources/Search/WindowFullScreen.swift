@@ -106,7 +106,27 @@ final class WindowFullScreen {
             MainActor.assumeIsolated { if !on { WindowFullScreen.shared.end(web) } }
         })
         if !tab.immersed { tab.immersed = true }
-        if took { toggle(window) }
+        if took {
+            toggle(window)
+        } else if let host = web.url?.host?.lowercased(), host == "youtube.com" || host.hasSuffix(".youtube.com") {
+            refreshPlayerLayout(web)
+        }
+    }
+
+    // If the window already fills the screen, hiding the chrome can leave
+    // the viewport unchanged. YouTube then keeps its compact buttons and
+    // cached chapter widths even when the outer seek bar fills the page.
+    private func refreshPlayerLayout(_ web: WKWebView) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak web] in
+            guard let web, self.fills(web), web.frame.height > 1 else { return }
+            let size = web.frame.size
+            let reduced = NSSize(width: size.width, height: size.height - 1)
+            web.setFrameSize(reduced)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak web] in
+                guard let web, web.frame.size == reduced else { return }
+                web.setFrameSize(size)
+            }
+        }
     }
 
     /// Full screen ended from Search's side: Esc, a key that goes to another
