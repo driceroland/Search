@@ -42,6 +42,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With the tabs across the top, a full row still leaves something to take the window by: the tabs give way 40 points before the buttons at the far end, as in Chrome, where they used to run up to them and leave 8 points past the plus. With few tabs nothing changes. `python3 Tests/window_managers.py`
 - A post opened from a live folder goes among your tabs as a new tab does: with a tab in a group in front, it went into that group, as if it were a link from that page. `python3 Tests/live_folder_post_place.py` (idea 978)
 - A link in an extension's popup meant to open in a new tab now does: Raindrop.io's Sign in did nothing, no tab and no window, because WebKit asked about the link and then never for the new page. It now opens as a tab and the popup closes, as in Chrome. `python3 Tests/extension_popup_link.py` (idea 972)
 - Readwise Highlighter starts again: its button answers, and Save Page to Reader and Highlight and Save to Reader are back in the right-click menu. Its background stopped at its first lines: Search gave every extension's worker a `window` that reads as nothing, for Eagle's, and Readwise's sets up a `window` of its own only when there is none, as in Chrome, then failed on the empty one. Only a worker whose extension asks for its background page, as Eagle's does, gets that `window` now. (idea 813)

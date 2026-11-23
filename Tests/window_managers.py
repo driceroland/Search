@@ -67,6 +67,18 @@ def main():
             t.ok("tabs: over the lights the window is movable (the green button's tiling)", movable, v)
         v, movable, bar = at(300, 300)
         t.ok("tabs: over the page the window is movable", movable and not bar, (v, movable, bar))
+        # A full row: past the plus there is still a stretch of title bar to
+        # take the window by (Metrics.tabRowHold), not the few points between
+        # the last tab and the buttons at the far end.
+        for i in range(27):
+            sv.page(f"full{i}")
+        time.sleep(0.8)
+        run = best = 0
+        for x in range(width // 2, width - 4, 4):
+            v, movable, _ = at(x, y)
+            run = run + 4 if v == "Strip" and movable else 0
+            best = max(best, run)
+        t.ok("tabs: a full row keeps a stretch past the plus that moves the window", best >= 32, best)
         sv.quit()
 
         # The column of tabs.
