@@ -279,6 +279,12 @@ final class WindowFullScreen {
           'html[' + ROOT + '] body *:not([' + FILLS + ']):not([' + ABOVE + ']):not([' + FILLS + '] *)' +
           ' { visibility: hidden !important; }' +
           'video[' + FILLS + '] { background-color: #000 !important; }';
+        // YouTube can measure its controls while moving the player between
+        // containers and leave them 100px wide until the viewport resizes.
+        if (location.hostname === 'youtube.com' || location.hostname.endsWith('.youtube.com')) {
+          sheet.textContent += 'html[' + ROOT + '] #movie_player.ytp-fullscreen .ytp-chrome-bottom' +
+            '[style*="width: 100px;"][style*="left: 12px;"] { width: auto !important; right: 12px !important; }';
+        }
         (document.head || document.documentElement).appendChild(sheet);
       }
 
