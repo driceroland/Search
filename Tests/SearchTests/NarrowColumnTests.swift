@@ -54,11 +54,16 @@ final class NarrowColumnTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.usesSpaces, prefs.spaceButtons, prefs.foldButton, prefs.sideWidth, prefs.sideHides)
+        let previous = (prefs.sidebar, prefs.usesSpaces, prefs.spaceButtons, prefs.foldButton, prefs.sideWidth, prefs.sideHides,
+                        prefs.sidePosition)
         restorePreferences = {
-            (prefs.sidebar, prefs.usesSpaces, prefs.spaceButtons, prefs.foldButton, prefs.sideWidth, prefs.sideHides) = previous
+            (prefs.sidebar, prefs.usesSpaces, prefs.spaceButtons, prefs.foldButton, prefs.sideWidth, prefs.sideHides,
+             prefs.sidePosition) = previous
         }
         prefs.sidebar = true
+        // On the left, where the lights are: a test before this one may have
+        // left the column on the right, and its edge's line then drawn at x 0.
+        prefs.sidePosition = .left
         prefs.sideHides = false
         prefs.usesSpaces = true
         prefs.sideWidth = Metrics.side
