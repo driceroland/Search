@@ -1586,9 +1586,12 @@ final class Extensions: NSObject, ObservableObject {
         let patterns = context.webExtension.allRequestedMatchPatterns.filter { !withheld($0) }
         for pattern in patterns {
             // WebKit copies injected scripts per granted pattern. A wildcard
-            // already covers its named hosts; keep schemes and paths unchanged.
+            // already covers its named hosts, and a site's /* its narrower
+            // paths (Enhancer for YouTube's /embed/*, /live_chat*, /shorts/*
+            // had its scripts run four times on every YouTube page, #1465);
+            // keep schemes unchanged.
             let covered = patterns.contains { other in
-                other.string != pattern.string && other.scheme == pattern.scheme && other.path == pattern.path
+                other.string != pattern.string && other.scheme == pattern.scheme
                     && other.matches(pattern) && (!pattern.matches(other) || other.string < pattern.string)
             }
             guard !covered else { continue }
