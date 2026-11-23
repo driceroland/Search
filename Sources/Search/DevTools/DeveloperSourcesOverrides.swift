@@ -52,8 +52,17 @@ final class DeveloperLocalOverrides: ObservableObject {
     /// The text of each file, read when listed or saved.
     private var contents: [String: String] = [:]
     private var sessions: [Weak] = []
+    private var applyPending = false
+    private var applying = false
 
     private struct Weak { weak var session: DeveloperToolsSession? }
+
+    private struct Application {
+        let sessions: [Weak]
+        let items: [[String: Any]]
+        let rules: [[String: Any]]
+        let headerCount: Int
+    }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -357,11 +366,56 @@ final class DeveloperLocalOverrides: ObservableObject {
     func attach(_ session: DeveloperToolsSession) {
         sessions.removeAll { $0.session == nil || $0.session === session }
         sessions.append(Weak(session: session))
-        apply(to: session)
+        applyAll()
     }
 
     private func applyAll() {
-        for item in sessions { if let session = item.session { apply(to: session) } }
+        applyPending = true
+        guard !applying, sessions.contains(where: { $0.session?.ready == true }) else { return }
+        applying = true
+        // The frontend applies each update asynchronously. Finish an operation
+        // already sent, then use the latest folder and switches.
+        Task { [weak self] in
+            defer { self?.applying = false }
+            while let application = self?.nextApplication() {
+                for entry in application.sessions {
+                    guard self?.applyPending == false else { break }
+                    guard let session = entry.session, session.ready else { continue }
+                    var notes: [String] = []
+                    do {
+                        let result = try await session.evaluateInFrontend(Self.script, ["items": application.items]) as? [String: Any]
+                        if let reason = result?["reason"] as? String {
+                            notes.append(reason)
+                        } else if let count = result?["count"] as? Int, count > 0 {
+                            notes.append("\(count) file\(count == 1 ? "" : "s") overridden")
+                        }
+                    } catch {
+                        notes.append(error.localizedDescription)
+                    }
+                    guard self?.applyPending == false else { break }
+                    guard session.ready else { continue }
+                    // Header overrides are answered by DeveloperNetworkBridgeScript.
+                    do {
+                        let result = try await session.evaluateInFrontend("""
+                            if (typeof globalThis.perchNetwork?.setHeaderOverrides !== "function")
+                                return rules.length ? {reason: "This version of WebKit can’t override response headers."} : {active: false};
+                            return await perchNetwork.setHeaderOverrides(rules);
+                            """, ["rules": application.rules]) as? [String: Any]
+                        if let reason = result?["reason"] as? String {
+                            notes.append(reason)
+                        } else if application.headerCount > 0 {
+                            let count = application.headerCount
+                            notes.append("headers from \(count) .headers file\(count == 1 ? "" : "s")")
+                        }
+                    } catch {
+                        if !application.rules.isEmpty { notes.append(error.localizedDescription) }
+                    }
+                    guard self?.applyPending == false else { break }
+                    guard session.ready else { continue }
+                    self?.status = notes.isEmpty ? nil : notes.joined(separator: ", ")
+                }
+            }
+        }
     }
 
     /// What WebKit is handed: each checked file's pattern, type and body.
@@ -404,40 +458,11 @@ final class DeveloperLocalOverrides: ObservableObject {
         }
     }
 
-    private func apply(to session: DeveloperToolsSession) {
-        guard session.ready else { return }
-        let items = overrides
-        let rules = headerRules
-        let headerCount = enabled && folder != nil ? headerFiles.count : 0
-        Task { [weak self] in
-            var notes: [String] = []
-            do {
-                let result = try await session.evaluateInFrontend(Self.script, ["items": items]) as? [String: Any]
-                if let reason = result?["reason"] as? String {
-                    notes.append(reason)
-                } else if let count = result?["count"] as? Int, count > 0 {
-                    notes.append("\(count) file\(count == 1 ? "" : "s") overridden")
-                }
-            } catch {
-                notes.append(error.localizedDescription)
-            }
-            // Header overrides are answered by DeveloperNetworkBridgeScript.
-            do {
-                let result = try await session.evaluateInFrontend("""
-                    if (typeof globalThis.perchNetwork?.setHeaderOverrides !== "function")
-                        return rules.length ? {reason: "This version of WebKit can’t override response headers."} : {active: false};
-                    return await perchNetwork.setHeaderOverrides(rules);
-                    """, ["rules": rules]) as? [String: Any]
-                if let reason = result?["reason"] as? String {
-                    notes.append(reason)
-                } else if headerCount > 0 {
-                    notes.append("headers from \(headerCount) .headers file\(headerCount == 1 ? "" : "s")")
-                }
-            } catch {
-                if !rules.isEmpty { notes.append(error.localizedDescription) }
-            }
-            self?.status = notes.isEmpty ? nil : notes.joined(separator: ", ")
-        }
+    private func nextApplication() -> Application? {
+        guard applyPending else { return nil }
+        applyPending = false
+        return Application(sessions: sessions, items: overrides, rules: headerRules,
+                           headerCount: enabled && folder != nil ? headerFiles.count : 0)
     }
 
     /// Replaces the frontend's local overrides with Search's. The hidden
