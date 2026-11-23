@@ -114,8 +114,8 @@ struct SideBar: View {
     }
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
 
-    /// The window's buttons' corner: gone in full screen, where macOS takes
-    /// them away, and back, forward and reload move up to the edge (idea 184).
+    /// The navigation row shares the room that opens for the buttons.
+    private var reveal: SidebarLightsReveal { browser.sidebarLightsReveal }
     private var lights: CGFloat {
         SideBar.lights(width, fullScreen: browser.fullScreen, fold: fold, prefs: prefs)
     }
@@ -130,7 +130,6 @@ struct SideBar: View {
         max(SideBar.beyondHelm(prefs.columnWidth, fullScreen: browser.fullScreen,
                                fold: SideBar.folds(prefs, width: prefs.columnWidth, fullScreen: browser.fullScreen), prefs: prefs), SideFoot.keptWidth(prefs, spaces: SpaceButtons.count(prefs, browser.spaces)))
     }
-    private var doorsUp: Bool { SideBar.doorsUp(prefs, width: width, fullScreen: browser.fullScreen, spaces: SpaceButtons.count(prefs, browser.spaces)) }
     /// Where the doors are: up in the lights' row or down at the foot. Not
     /// doorsUp itself: while the edge is held, the doors up there stay up as
     /// it pushes them under the helm, and only go once they are under it
@@ -170,6 +169,10 @@ struct SideBar: View {
         guard narrows else { return (false, min(Metrics.sideMax, max(Metrics.sideMin, wanted))) }
         if wanted < Metrics.narrowLine { return (true, nil) }
         return (false, min(Metrics.sideMax, wanted))
+    }
+
+    @MainActor private static func lightsRoom(_ width: CGFloat, prefs: Preferences) -> CGFloat {
+        max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors(prefs)))
     }
 
     /// `prefs`: back, forward and reload as Settings leaves them (idea 815).
@@ -231,6 +234,7 @@ struct SideBar: View {
                     DragStrip(trailing: doorsTop ? upRoom + 10 : 0, menu: columnMenu)
                 }
                 .frame(height: Metrics.strip)
+                .offset(y: reveal.top)
             }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -274,6 +278,8 @@ struct SideBar: View {
                                 .accessibilityHidden(!doorsTop)
                         }
                     }
+                    .offset(y: reveal.top)
+                    .zIndex(reveal.top > 0 ? 1 : 0)
                     // The page's address, when it is to be in sight.
                     if prefs.addressLine {
                         AddressLine(browser: browser, height: prefs.sideRow)

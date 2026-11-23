@@ -3015,6 +3015,7 @@ final class Browser: NSObject, ObservableObject {
     /// they move down with it instead of lying under it (see
     /// FullScreenReveal). Zero when nothing is revealed.
     @Published var revealInset: CGFloat = 0
+    @Published var sidebarLightsReveal = SidebarLightsReveal.zero
     /// The page as a card on the window's ground, the one switch for it
     /// (see CardEdge): with the tabs down the side, unless Settings › Tabs ›
     /// The page as a card is off, and never with the window filling the

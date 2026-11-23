@@ -1057,12 +1057,13 @@ struct ContentView: View {
             // is pressed the page is on its way, and the field is not what
             // there is to watch.
             .animation(browser.fieldShowing ? Motion.settle : Motion.quick, value: browser.fieldShowing)
-            // The menu bar brought down in full screen takes the top: the bars
-            // start under it (see FullScreenReveal).
+            // The horizontal tabs leave room for the native full-screen
+            // title bar as it comes down (see FullScreenReveal).
             .padding(.top, browser.revealInset)
             .ignoresSafeArea()
             .background(windowSetup)
             .onChange(of: browser.prefs.sidebar) { _, _ in
+                reveal?.measure()
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             .onChange(of: browser.asCards) { _, _ in
@@ -1075,8 +1076,12 @@ struct ContentView: View {
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             .onChange(of: browser.prefs.sidePosition) { _, _ in
+                reveal?.measure()
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
+            .onChange(of: browser.prefs.iconColumn) { _, _ in reveal?.measure() }
+            .onChange(of: browser.folded) { _, _ in reveal?.measure() }
+            .onChange(of: browser.peeking) { _, _ in reveal?.measure() }
             .onChange(of: browser.prefs.columnWidth) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
@@ -1122,7 +1127,10 @@ struct ContentView: View {
             // And as it is once there, or back: a way in that macOS gave up
             // on half way says so only by where the window ends up.
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { browser.fullScreen = window.styleMask.contains(.fullScreen) }
+                if let window, (note.object as? NSWindow) === window {
+                    browser.fullScreen = window.styleMask.contains(.fullScreen)
+                    reveal?.measure()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { browser.fullScreen = window.styleMask.contains(.fullScreen) }
