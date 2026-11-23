@@ -7178,6 +7178,10 @@ final class Browser: NSObject, ObservableObject {
     private var awayWatch: NSObjectProtocol?
 
     func appLeft() {
+        // A watch from a leave not yet come back from goes: kept, a second
+        // leave left it on for good, to lift the video at any later
+        // occlusion change while Search was in the background.
+        stopAwayWatch()
         guard prefs.floatsAway, spaceFloat.pending == nil, Browsers.front == nil || Browsers.front === self else { return }
         // Still in view on another screen — a TV, a second display — while
         // you work on the one under the pointer: nothing to get out of the

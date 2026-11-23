@@ -86,7 +86,7 @@ in [ROADMAP.md](ROADMAP.md).
 - With the column as icons only, the card for a new space comes over the page beside the column, at its full width; it was cut to a few letters inside the narrow column, its name field unusable. (idea 835)
 - Settings › Liquid Glass tab: in light mode the glass over the tab you're on has a faint tint and a hairline edge, where it all but vanished on a light column. (idea 843)
 - In full screen, a split screen's half included, the window's buttons no longer show twice, one row under the other, while the other app has the focus. (idea 929)
-- With Float the video when you switch apps on, the video stays in its page while the window is still in view beside the app you went to, and floats once the window is out of sight (covered, minimised or on another Space). It floated at the first click in another app. (idea 470)
+- With Float the video when you switch apps on, the video stays in its page while the window is still in view beside the app you went to, and floats once the window is out of sight (covered, minimised or on another Space). It floated at the first click in another app. Search left twice before coming back no longer leaves a watch on, which lifted the video at a later change. `python3 Tests/float_away_sight.py` (idea 470)
 
 ### Held back
 
