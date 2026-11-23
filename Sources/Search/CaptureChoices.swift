@@ -82,6 +82,43 @@ enum CaptureChoices {
         return saved[0] ? .allow : .refuse
     }
 
+    static var listedKinds: [Kind] { [.camera, .microphone, .location, .notifications] }
+
+    struct Saved: Identifiable {
+        let origin: String
+        let kind: Kind
+        let choice: Choice
+        let alternativeSpelling: Bool
+        var id: String { "\(origin)|\(kind.suffix)" }
+    }
+
+    static func saved(in settings: UserDefaults = Store.settings) -> [Saved] {
+        var entries: [String: Saved] = [:]
+        for key in settings.dictionaryRepresentation().keys where key.hasPrefix("capture.") {
+            guard let split = key.lastIndex(of: "|"),
+                  let kind = listedKinds.first(where: { $0.suffix == key[key.index(after: split)...] })
+            else { continue }
+            var origin = String(key[..<split].dropFirst("capture.".count))
+            guard !origin.isEmpty else { continue }
+            var alternative = false
+            if var parts = URLComponents(string: origin),
+               (parts.scheme?.lowercased() == "https" && parts.port == 443) ||
+               (parts.scheme?.lowercased() == "http" && parts.port == 80) {
+                if kind.media {
+                    parts.port = nil
+                    origin = parts.string ?? origin
+                } else {
+                    alternative = true
+                }
+            }
+            let answer = choice(kind, origin: origin, in: settings)
+            guard answer != .ask else { continue }
+            let entry = Saved(origin: origin, kind: kind, choice: answer, alternativeSpelling: alternative)
+            entries[entry.id] = entry
+        }
+        return entries.values.sorted { $0.id < $1.id }
+    }
+
     // Invalidate a queued question if the user changes its setting before it
     // can be shown. The stored answer format remains unchanged.
     private static var revisions: [String: UInt] = [:]
