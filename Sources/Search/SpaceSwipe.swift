@@ -225,6 +225,7 @@ final class SpaceSwipe {
         let jumps = browser.spaces.firstIndex { $0.id == id } != taken(browser) + step
         if jumps { browser.mapDrawn.value += 1 }
         browser.showAhead(id)
+        browser.swipeShown()
         SwipeGlide.start(browser, to: -CGFloat(step) * width, speed: letGoSpeed, land: {
             if jumps { browser.mapDrawn.value += 1 }
             browser.spaceComing = nil
@@ -262,6 +263,11 @@ final class SpaceSwipe {
         browser.comingSlot = slot
         // Drawn out of its order: the map is drawn again, even mid-swipe.
         if moved, slot != to - here { browser.mapDrawn.value += 1 }
+        // The colours of the spaces now in sight, the rows still where they
+        // are: told once all of the above is said. Told as each part of it
+        // was, a stroke let go just short of the next space sent the rows
+        // coming in off the column and back.
+        browser.swipeShown()
         landing?.cancel()
         // Its page comes halfway: put in front as they set off, the
         // stage's work (and a page asleep woken) stalled the slide's first
@@ -358,11 +364,12 @@ final class SpaceSwipe {
     /// snaps back without moving (Motion.settle).
     private func carry(_ browser: Browser, to offset: CGFloat, then arrived: @escaping () -> Void) {
         guard !Motion.reduced else { return arrived() }
-        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
-            browser.spaceSwipe = offset
-        } completion: {
-            arrived()
-        }
+        // A frame at a time, as a space is brought (bring). Animated in one
+        // go, the rows were at the end of the way at once: those of the
+        // space on screen, a whole page off, were parked there (SwipeShift),
+        // and slid back across the column to their parking place as they
+        // faded, over the card coming in.
+        SwipeGlide.start(browser, to: offset, speed: letGoSpeed, done: arrived)
     }
 
     /// Where the tabs are: the column, or the bar across the top.
@@ -801,6 +808,63 @@ final class SwipeOffset: ObservableObject {
 /// it, and the rows waited up to a tenth of a second to follow the fingers.
 final class SwipeSide: ObservableObject {
     @Published var value = 0
+}
+
+/// The two spaces whose rows a swipe has in sight, side by side
+/// (`Browser.swipeBlend`): the window's colour goes from the one to the
+/// other as the rows do, rather than cut over at once, or crossfaded once
+/// the fingers had let go and the slide was under way. Kept apart, as
+/// SwipeSide is, for the washes, the dot and the space buttons alone, and
+/// told again only when the rows pass from one pair to the next; how far
+/// along it is changes with every step, and is kept apart too (SwipeToward).
+final class SwipeBlend: ObservableObject {
+    @Published private(set) var ends: SwipeEnds?
+    /// The one of the two more than half in sight: its button lit, its icon
+    /// on the dot.
+    @Published private(set) var space: Space?
+
+    func show(_ ends: SwipeEnds?, toward: CGFloat) {
+        if ends != self.ends { self.ends = ends }
+        let half = ends.map { toward > 0.5 ? $0.far : $0.near }
+        if half != space { space = half }
+    }
+
+    /// What a space washes the chrome with, as strongly as it asks: Subtle
+    /// for one with no colour (Browser.washStrength). As `spaces` has it
+    /// now, if it is there: given a new colour, or taken away, while the
+    /// fingers rest, it is not told again until they move.
+    static func look(of space: Space, in spaces: [Space]) -> (look: SpaceLook?, strength: SpaceStrength) {
+        let space = spaces.first { $0.id == space.id } ?? space
+        return (space.look, space.look == nil ? .subtle : space.washStrength)
+    }
+}
+
+/// Two spaces a swipe has in sight: `near` the one `slot` pages along from
+/// the space the column has, `far` the one a page further. Where nothing is
+/// drawn — before the first space, past the last, the card for a new one —
+/// the other one stands in, so the colour stays as it is.
+struct SwipeEnds: Equatable {
+    let slot: Int
+    let near: Space
+    let far: Space
+    /// Where they sit among the spaces, for the mark under their buttons;
+    /// one past an end where nothing is drawn.
+    let nearAt: Int
+    let farAt: Int
+
+    /// Where the mark under the space buttons stands, `toward` of the way
+    /// from the near one's button to the far one's (SpaceMark).
+    func place(_ toward: CGFloat, count: Int) -> CGFloat {
+        let place = CGFloat(nearAt) + CGFloat(farAt - nearAt) * toward
+        return min(max(place, 0), CGFloat(max(count - 1, 0)))
+    }
+}
+
+/// How far a swipe has carried the rows from its near space to its far
+/// one, 0 to 1 (`Browser.swipeToward`): the one value the washes and the
+/// mark follow at every step, the views that draw the spaces left alone.
+final class SwipeToward: ObservableObject {
+    @Published var value: CGFloat = 0
 }
 
 /// Out of sight while a swipe is under way.

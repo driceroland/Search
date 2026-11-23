@@ -318,7 +318,7 @@ struct TabBar: View {
                 // The space's colour, if it has one, over whatever ground the
                 // row lies on: the window's, or the one it brings along when
                 // it comes down over the page. On glass the glass wears it.
-                if !browser.glassUnder { SpaceWash(look: browser.wash) }
+                if !browser.glassUnder { SpaceWash(browser) }
                 if browser.prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
@@ -353,9 +353,7 @@ struct TabBar: View {
 
     /// Where the space on screen sits among them: one past the last while
     /// the row for a new one is up.
-    private var spaceAt: Int {
-        browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
-    }
+    private var spaceAt: Int { browser.spaceAt }
 
     /// Another space's row, drawn with the same pills as this one's so the
     /// two read as one bar while they pass — nothing to press until it is

@@ -593,14 +593,14 @@ struct ContentView: View {
             if fullscreenTab != nil {
                 Color.black
             } else if browser.glassy {
-                GlassGround(prefs: browser.prefs, look: browser.wash)
+                GlassGround(browser)
             } else {
                 cards ? Palette.frame : Palette.ground
             }
             // As cards, the column, the bookmarks bar and the gaps around the
             // page share that ground, so the space's colour washes all of it
             // alike. Edge to edge the column and the strip bring their own.
-            if cards && !browser.glassy { SpaceWash(look: browser.wash) }
+            if cards && !browser.glassy { SpaceWash(browser) }
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome

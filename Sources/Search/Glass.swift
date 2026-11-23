@@ -55,6 +55,13 @@ extension Browser {
 struct GlassGround: View {
     @ObservedObject var prefs: Preferences
     let look: SpaceLook?
+    /// Whether the spaces wear their colours at all (Browser.wash).
+    let on: Bool
+    let spaces: [Space]
+    /// The two spaces a swipe has in sight, the one fading into the other
+    /// (SwipeBlend), as SpaceWash has them.
+    @ObservedObject var blend: SwipeBlend
+    let toward: SwipeToward
     @Environment(\.washStrength) private var strength
     @Environment(\.washRoom) private var room
     @Environment(\.colorScheme) private var scheme
@@ -66,12 +73,30 @@ struct GlassGround: View {
     /// still reads as glass rather than as noise.
     static let mostGrain = 0.113
 
+    init(_ browser: Browser) {
+        prefs = browser.prefs
+        look = browser.wash
+        on = browser.prefs.usesSpaces && !browser.makingSpace
+        spaces = browser.spaces
+        blend = browser.swipeBlend
+        toward = browser.swipeToward
+    }
+
     var body: some View {
         ZStack {
             // The blur is always whole; Transparency takes the colour off it,
             // down to the glass alone.
             material
-            tint.opacity((1 - prefs.glassClear) * Self.mostTint)
+            let ends = on ? blend.ends : nil
+            let clear = (1 - prefs.glassClear) * Self.mostTint
+            tint(ends.map { SwipeBlend.look(of: $0.near, in: spaces) } ?? (look, strength))
+                .opacity(clear)
+                .modifier(SwipeWeight(toward: toward, side: ends == nil ? nil : .near))
+            if let ends {
+                tint(SwipeBlend.look(of: ends.far, in: spaces))
+                    .opacity(clear)
+                    .modifier(SwipeWeight(toward: toward, side: .far))
+            }
             if prefs.glassGrain > 0 {
                 Image(nsImage: Grain.tile)
                     .resizable(resizingMode: .tile)
@@ -79,6 +104,8 @@ struct GlassGround: View {
             }
         }
         .allowsHitTesting(false)
+        // From one pair of spaces to the next with the rows, as SpaceWash.
+        .transaction(value: on ? blend.ends : nil) { $0.animation = nil }
         .animation(Motion.quick, value: look)
     }
 
@@ -94,15 +121,15 @@ struct GlassGround: View {
     /// of it lies on the glass.
     /// Toned as the wash tones it (Subtle, Rich or Vivid), so a space keeps
     /// the hue it has without glass.
-    @ViewBuilder private var tint: some View {
+    @ViewBuilder private func tint(_ worn: (look: SpaceLook?, strength: SpaceStrength)) -> some View {
         let dark = scheme == .dark
-        switch look {
+        switch worn.look {
         case .colour(let colour)? where Spaces.wash(colour, dark: dark) != nil:
-            Spaces.toned(colour, strength, dark: dark)
+            Spaces.toned(colour, worn.strength, dark: dark)
         case .gradient(let gradient)?:
             GeometryReader { geo in
                 let ends = gradient.points(frame: geo.frame(in: .global), room: room)
-                LinearGradient(stops: gradient.stops(strength: strength, dark: dark), startPoint: ends.start, endPoint: ends.end)
+                LinearGradient(stops: gradient.stops(strength: worn.strength, dark: dark), startPoint: ends.start, endPoint: ends.end)
             }
             .id(gradient)
             .transition(.opacity)

@@ -2934,6 +2934,10 @@ final class Browser: NSObject, ObservableObject {
     /// rows are drawn, is kept apart too (SwipeSide).
     let spaceSwipeOffset = SwipeOffset()
     let swipeSide = SwipeSide()
+    /// The two spaces whose rows the swipe has in sight (SwipeBlend), and
+    /// how far it is from one to the other (SwipeToward).
+    let swipeBlend = SwipeBlend()
+    let swipeToward = SwipeToward()
     /// Told when a space is drawn out of its order in the map (comingSlot).
     let mapDrawn = SwipeSide()
     /// How far the column's rows are scrolled, in which space, and how far
@@ -2959,6 +2963,7 @@ final class Browser: NSObject, ObservableObject {
             spaceSwipeOffset.value = newValue
             let side = newValue > 0 ? 1 : newValue < 0 ? -1 : 0
             if side != swipeSide.value { swipeSide.value = side }
+            swipeShown()
         }
     }
     @Published var makingSpace = false

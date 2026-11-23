@@ -391,7 +391,7 @@ struct SideBar: View {
                 // The space's colour, if it has one: over the ground, so the
                 // column stays opaque and folded out over the page it brings
                 // the same wash along. On glass the glass wears it.
-                if !browser.glassUnder { SpaceWash(look: browser.wash) }
+                if !browser.glassUnder { SpaceWash(browser) }
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
@@ -486,9 +486,7 @@ struct SideBar: View {
 
     /// Where the space on screen sits among them: one past the last while
     /// the card for a new one is up.
-    private var spaceAt: Int {
-        browser.makingSpace ? browser.spaces.count : (browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0)
-    }
+    private var spaceAt: Int { browser.spaceAt }
 
     private var pages: some View {
         ZStack(alignment: .topLeading) {

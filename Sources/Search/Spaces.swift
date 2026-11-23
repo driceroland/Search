@@ -676,6 +676,63 @@ extension Browser {
         return index - at == comingSlot ? 1000 : index - at
     }
 
+    /// Where the space the column has sits among them: one past the last
+    /// while the card for a new one is up (SideBar.spaceAt).
+    var spaceAt: Int {
+        makingSpace ? spaces.count : (spaces.firstIndex { $0.id == spaceID } ?? 0)
+    }
+
+    /// The space whose rows a swipe draws `slot` pages along from this
+    /// one's: in the column's map (mapSlot), here worked out for one slot
+    /// rather than asked of every space, as it is at each step; in the bar
+    /// only the one above or below, the space sliding in from further
+    /// along on its own side (TabBar.beside).
+    func spaceDrawn(at slot: Int) -> Int? {
+        let at = spaceAt
+        let coming = spaceComing.flatMap { id in spaces.firstIndex { $0.id == id } }
+        guard prefs.sidebar else {
+            guard abs(slot) == 1 else { return nil }
+            if slot == spaceStep, let coming { return coming }
+            return spaces.indices.contains(at + slot) ? at + slot : nil
+        }
+        if let coming, comingSlot != coming - at {
+            if slot == comingSlot { return coming }
+            let index = at + slot
+            return spaces.indices.contains(index) && index != coming ? index : nil
+        }
+        return spaces.indices.contains(at + slot) ? at + slot : nil
+    }
+
+    /// The two spaces whose rows a swipe has in sight, and how far it has
+    /// carried them from one to the other, told to the washes (SwipeBlend)
+    /// and the mark (SwipeToward) as the rows move, or the spaces under
+    /// them change. Nothing while they stand where they are: then the
+    /// wash is the browser's own (washSpace). Nor with the card for a new
+    /// space up, which has no colour of its own.
+    func swipeShown() {
+        let page = SpaceSwipe.page(self)
+        guard prefs.usesSpaces, !makingSpace, page > 0, spaceSwipe != 0 || spaceComing != nil,
+              let here = spaces.firstIndex(where: { $0.id == spaceID }) else {
+            swipeBlend.show(nil, toward: 0)
+            if swipeToward.value != 0 { swipeToward.value = 0 }
+            return
+        }
+        let travelled = -spaceSwipe / page
+        let slot = Int(travelled.rounded(.down))
+        let toward = travelled - CGFloat(slot)
+        let near = slot == 0 ? here : spaceDrawn(at: slot)
+        let far = slot == -1 ? here : spaceDrawn(at: slot + 1)
+        guard let either = near ?? far else {
+            swipeBlend.show(nil, toward: 0)
+            if swipeToward.value != 0 { swipeToward.value = 0 }
+            return
+        }
+        let ends = SwipeEnds(slot: slot, near: spaces[near ?? either], far: spaces[far ?? either],
+                             nearAt: near ?? either - 1, farAt: far ?? either + 1)
+        if swipeToward.value != toward { swipeToward.value = toward }
+        swipeBlend.show(ends, toward: toward)
+    }
+
     /// The icon a new space gets unless told: the first no space wears yet.
     var freeIcon: String {
         let used = Set(spaces.map(\.symbol))
@@ -843,39 +900,90 @@ extension Browser {
 /// the menu. When the space changes the icon turns over the way the spaces
 /// went — out on one side, the next one in from the other.
 /// A space's colour, or its gradient, laid faintly over the chrome's own
-/// ground. Handed the look rather than the browser, so it is drawn again
-/// only when the look changes, not on everything the browser announces. A
-/// change crossfades once and is done: nothing runs while it stays.
+/// ground. Handed the look rather than reading it off the browser, so it
+/// is drawn again only when the look changes, not on everything the
+/// browser announces; under a swipe, the two spaces in sight, the one
+/// fading into the other as the rows go (SwipeBlend). A change crossfades
+/// once and is done: nothing runs while it stays.
 struct SpaceWash: View {
     let look: SpaceLook?
+    /// Whether the spaces wear their colours at all (Browser.wash).
+    let on: Bool
+    let spaces: [Space]
+    @ObservedObject var blend: SwipeBlend
+    let toward: SwipeToward
     @Environment(\.colorScheme) private var scheme
     /// Subtle, Rich or Vivid: set for the whole window (see washStrength).
     @Environment(\.washStrength) private var strength
 
+    init(_ browser: Browser) {
+        look = browser.wash
+        on = browser.prefs.usesSpaces && !browser.makingSpace
+        spaces = browser.spaces
+        blend = browser.swipeBlend
+        toward = browser.swipeToward
+    }
+
     var body: some View {
+        let ends = on ? blend.ends : nil
         ZStack {
-            switch look {
-            case .colour(let colour)?:
-                if Spaces.wash(colour, dark: scheme == .dark) != nil {
-                    Spaces.toned(colour, strength, dark: scheme == .dark).opacity(strength.opacity(dark: scheme == .dark))
-                }
-            case .gradient(let gradient)?:
-                // One gradient for another crossfades, as a colour does.
-                GradientWash(gradient: gradient, strength: strength)
-                    .id(gradient)
-                    .transition(.opacity)
-            case nil:
-                EmptyView()
+            layer(ends.map { SwipeBlend.look(of: $0.near, in: spaces) } ?? (look, strength))
+                .modifier(SwipeWeight(toward: toward, side: ends == nil ? nil : .near))
+            if let ends {
+                layer(SwipeBlend.look(of: ends.far, in: spaces))
+                    .modifier(SwipeWeight(toward: toward, side: .far))
             }
         }
         .allowsHitTesting(false)
+        // Inside the two below, so it has the last word: from one pair of
+        // spaces to the next the rows have carried the colour there
+        // already, and crossfaded again, it came a beat after them.
+        .transaction(value: ends) { $0.animation = nil }
         .animation(Motion.quick, value: look)
         .animation(Motion.quick, value: strength)
+    }
+
+    @ViewBuilder private func layer(_ worn: (look: SpaceLook?, strength: SpaceStrength)) -> some View {
+        let dark = scheme == .dark
+        switch worn.look {
+        case .colour(let colour)?:
+            if Spaces.wash(colour, dark: dark) != nil {
+                Spaces.toned(colour, worn.strength, dark: dark).opacity(worn.strength.opacity(dark: dark))
+            }
+        case .gradient(let gradient)?:
+            // One gradient for another crossfades, as a colour does.
+            GradientWash(gradient: gradient, strength: worn.strength)
+                .id(gradient)
+                .transition(.opacity)
+        case nil:
+            EmptyView()
+        }
+    }
+}
+
+/// How much of one of the two spaces a swipe has in sight is drawn: all of
+/// the near one at the start, all of the far one a page along. On its own,
+/// as SwipeShift is, so that at each step only the fade is drawn again,
+/// not what it fades.
+struct SwipeWeight: ViewModifier {
+    enum Side { case near, far }
+    @ObservedObject var toward: SwipeToward
+    /// Nil when nothing is under way: drawn whole.
+    let side: Side?
+
+    func body(content: Content) -> some View {
+        switch side {
+        case .near?: content.opacity(1 - toward.value)
+        case .far?: content.opacity(toward.value)
+        case nil: content
+        }
     }
 }
 
 struct SpaceDot: View {
     @ObservedObject var browser: Browser
+    /// The space a swipe has more than half in sight (SwipeBlend).
+    @ObservedObject private var blend: SwipeBlend
     @State private var hovering = false
     /// What is drawn, a step behind the browser: the space changes in a
     /// frame with nothing animated (see SpaceSwipe.slide), and the icon
@@ -884,17 +992,26 @@ struct SpaceDot: View {
     /// The space's name, for a moment after a switch (see naming()).
     @State private var named: String?
     @State private var naming = 0
+    /// Which way the icon last turned over: 1 on to a later space, -1 back.
+    @State private var turn = 1
     /// Its name beside it after a switch; off where something else says it.
     var names = true
 
     static let width: CGFloat = 26
 
+    init(browser: Browser, names: Bool = true) {
+        self.browser = browser
+        blend = browser.swipeBlend
+        self.names = names
+    }
+
     /// The space on its way in, from the moment its rows and colour come
     /// (Browser.spaceHeading), or the one on screen. By spaceID, the icon
     /// turned over only once the space was taken, when the hand had been
     /// still a moment, under rows and a colour that were already the new
-    /// space's (idea 954).
-    private var space: Space { browser.washSpace }
+    /// space's (idea 954). Under the fingers, the one they have more than
+    /// half in sight, as the window's colour is.
+    private var space: Space { blend.space ?? browser.washSpace }
     private var symbol: String { browser.makingSpace ? "plus" : space.symbol }
     private var key: String { browser.makingSpace ? "new" : "\(space.id.uuidString)-\(space.symbol)" }
     /// The space's colour, if it has one; none while a new one is being made.
@@ -910,8 +1027,8 @@ struct SpaceDot: View {
                     // The way the tabs go: sideways in the column; in the bar
                     // across the top, up for the next space, down going back.
                     .transition(.push(from: browser.prefs.sidebar
-                        ? (browser.spaceStep > 0 ? .trailing : .leading)
-                        : (browser.spaceStep > 0 ? .bottom : .top)))
+                        ? (turn > 0 ? .trailing : .leading)
+                        : (turn > 0 ? .bottom : .top)))
             }
             .frame(width: SpaceDot.width, height: 26)
             .clipped()
@@ -925,8 +1042,13 @@ struct SpaceDot: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        // Another space's colour at once, with its icon: the window's is
+        // halfway there already (SpaceWash).
+        .transaction(value: space.id) { $0.animation = nil }
         .animation(Motion.quick, value: space.look)
         .help("\(browser.space.name) — \(KeyCombo.spacesOnCommand ? "⌘1–⌘9" : "⌃1–⌃9"), or two fingers \(browser.prefs.sidebar ? "sideways" : "up or down") over the tabs, to switch")
+        // Before the icon turns over (below, a turn of the run loop later).
+        .onChange(of: browser.makingSpace ? nil : space.id) { old, now in turn = way(from: old, to: now) }
         .onChange(of: key) { _, now in
             let symbol = symbol
             DispatchQueue.main.async {
@@ -961,6 +1083,15 @@ struct SpaceDot: View {
         .animation(Motion.quick, value: named)
     }
 
+    /// The way the spaces lie from one to the other, so a swipe turned back
+    /// halfway turns the icon back the way it came. To or from the card for
+    /// a new space, or another profile's space, the way the switch went.
+    private func way(from old: UUID?, to now: UUID?) -> Int {
+        guard let old, let now, let from = browser.spaces.firstIndex(where: { $0.id == old }),
+              let to = browser.spaces.firstIndex(where: { $0.id == now }), to != from else { return browser.spaceStep }
+        return to > from ? 1 : -1
+    }
+
     private func name() {
         guard !browser.makingSpace else { return }
         naming += 1
@@ -982,11 +1113,24 @@ struct SpaceDot: View {
 /// button per space (Preferences.spaceButtons).
 struct SpaceButtons: View {
     @ObservedObject var browser: Browser
+    /// The spaces a swipe has in sight: the button of the one more than
+    /// half in sight lit, the mark on its way between theirs (SwipeBlend).
+    @ObservedObject private var blend: SwipeBlend
     /// One above the other, in the column of icons.
     var vertical = false
     /// Narrower than 26 each, down to 20, where the row has less room than
     /// that: the column's foot, narrowed (idea 1010).
     var squeezes = false
+
+    /// Between one button and the next (the layout's spacing, below).
+    static let gap: CGFloat = 2
+
+    init(browser: Browser, vertical: Bool = false, squeezes: Bool = false) {
+        self.browser = browser
+        blend = browser.swipeBlend
+        self.vertical = vertical
+        self.squeezes = squeezes
+    }
 
     /// How many buttons are drawn, for the foot to make room for them.
     /// One space still has its button: it is the way to the menu, and to
@@ -997,14 +1141,62 @@ struct SpaceButtons: View {
 
     var body: some View {
         if SpaceButtons.count(browser.prefs, browser.spaces) > 0 {
-            let layout = vertical ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
+            let layout = vertical ? AnyLayout(VStackLayout(spacing: SpaceButtons.gap)) : AnyLayout(HStackLayout(spacing: SpaceButtons.gap))
+            // The one a click is taking you to, or the one on screen, is the
+            // one selected; under the fingers the lit one goes ahead of it.
+            let chosen = browser.spaceHeading ?? browser.spaceID
+            let ends = browser.prefs.usesSpaces && !browser.makingSpace ? blend.ends : nil
+            let lit = ends == nil ? chosen : blend.space?.id ?? chosen
             layout {
                 ForEach(Array(browser.spaces.enumerated()), id: \.element.id) { index, space in
-                    SpaceButton(browser: browser, space: space, index: index, current: space.id == (browser.spaceHeading ?? browser.spaceID),
-                                squeezes: squeezes)
+                    SpaceButton(browser: browser, space: space, index: index,
+                                lit: space.id == lit, current: space.id == chosen, squeezes: squeezes)
+                }
+            }
+            // Under the buttons as they are laid out, squeezed or not.
+            .background(alignment: .topLeading) {
+                GeometryReader { row in
+                    SpaceMark(toward: browser.swipeToward, ends: ends, count: browser.spaces.count,
+                              at: browser.spaces.firstIndex { $0.id == lit } ?? 0,
+                              tint: browser.spaces.first { $0.id == lit }?.tint, vertical: vertical,
+                              length: vertical ? row.size.height : row.size.width)
                 }
             }
         }
+    }
+}
+
+/// The ground under the lit button, carried from button to button with the
+/// rows as a swipe or a click moves them, rather than lit under the next
+/// button once the rows have got there. In the lit button's colour, as the
+/// window wears it: on a jump from the first to the fourth, tinted by each
+/// button it went by, it flickered. On its own, as SwipeShift is: the one
+/// view drawn again at each step, the buttons left as they are.
+private struct SpaceMark: View {
+    @ObservedObject var toward: SwipeToward
+    /// The spaces a swipe has in sight, if it is under way.
+    let ends: SwipeEnds?
+    let count: Int
+    /// The lit button, where the mark stands while nothing moves.
+    let at: Int
+    let tint: Color?
+    let vertical: Bool
+    /// The row's length along the buttons: each as long as the others, 26
+    /// or, squeezed, down to 20.
+    let length: CGFloat
+    @Environment(\.displayScale) private var scale
+
+    var body: some View {
+        let side = max(0, (length - SpaceButtons.gap * CGFloat(count - 1)) / CGFloat(max(count, 1)))
+        let place = ends?.place(toward.value, count: count) ?? CGFloat(at)
+        // On the screen's own pixels, as the rows are (SwipeShift).
+        let shift = (place * (side + SpaceButtons.gap) * scale).rounded() / scale
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(tint.map { $0.opacity(0.18) } ?? Palette.hover)
+            .frame(width: vertical ? 26 : side, height: vertical ? side : 26)
+            .offset(x: vertical ? 0 : shift, y: vertical ? shift : 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -1012,6 +1204,12 @@ private struct SpaceButton: View {
     let browser: Browser
     let space: Space
     let index: Int
+    /// Drawn as the one on screen: under a swipe, the one more than half
+    /// in sight, ahead of the switch.
+    let lit: Bool
+    /// The one on screen, or a click's on its way to: what a click on it,
+    /// its tip and VoiceOver go by, so none of them changes under the
+    /// fingers before the space does.
     let current: Bool
     var squeezes = false
     @State private var hovering = false
@@ -1025,22 +1223,20 @@ private struct SpaceButton: View {
                 // Its colour only while it's the one on screen: the others
                 // all grey alike, coloured or not, so a coloured space's
                 // button didn't read as the one you're in.
-                .foregroundStyle(current ? (space.tint ?? Palette.ink) : hovering ? Palette.ink : Palette.muted)
-                .opacity(current || hovering ? 1 : 0.75)
+                .foregroundStyle(lit ? (space.tint ?? Palette.ink) : hovering ? Palette.ink : Palette.muted)
+                .opacity(lit || hovering ? 1 : 0.75)
                 .frame(minWidth: squeezes ? 20 : 26, idealWidth: 26, maxWidth: 26, minHeight: 26, maxHeight: 26)
                 .background(
-                    // The one on screen on a wash, of its colour if it has one.
+                    // The one on screen stands on the mark (SpaceMark).
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(current
-                              ? (space.tint.map { $0.opacity(0.18) } ?? Palette.hover)
-                              : (hovering ? Palette.hover : .clear))
+                        .fill(hovering && !lit ? Palette.hover : .clear)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(Motion.quick, value: hovering)
-        .animation(Motion.quick, value: current)
+        .animation(Motion.quick, value: lit)
         // Its name and its key as it stands: ⌃N, ⌘N with ⌘1–⌘9 on spaces,
         // or one of yours. The one you're in says its click opens the menu.
         .shortcutHelp { keys in
