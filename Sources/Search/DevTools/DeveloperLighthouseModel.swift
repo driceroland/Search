@@ -308,10 +308,11 @@ final class DeveloperLighthouseModel: ObservableObject {
             if let raw = await readMetrics(web) {
                 var measured = DeveloperLighthouseMetrics(raw)
                 if let origin = (try? await web.evaluateJavaScript("performance.timeOrigin")) as? NSNumber {
-                    let frames = filmstrip.timed(from: Date(timeIntervalSince1970: origin.doubleValue / 1_000))
-                        .filter { $0.ms >= 0 }
-                    measured.speedIndexFrames = frames.count
-                    measured.speedIndex = DeveloperSpeedIndex.speedIndex(frames, fcp: measured.fcp)
+                    let start = Date(timeIntervalSince1970: origin.doubleValue / 1_000)
+                    let frames = filmstrip.timed(from: start)
+                    measured.speedIndexFrames = filmstrip.captured
+                    measured.speedIndex = DeveloperSpeedIndex.speedIndex(
+                        frames, fcp: measured.fcp, end: filmstrip.lastCapture.map { $0.timeIntervalSince(start) * 1_000 })
                 }
                 metrics = measured
             } else {
@@ -377,7 +378,8 @@ final class DeveloperLighthouseModel: ObservableObject {
             .map { DeveloperLighthouseConsoleError(text: $0.text, url: $0.url) }
         let issues = DeveloperIssuesModel.model(for: session).groups.map { group in
             DeveloperLighthouseIssue(title: group.title, category: group.category.rawValue, subtitle: group.subtitle,
-                                     count: group.count, deprecation: group.code == .deprecation)
+                                     count: group.count, deprecation: group.code == .deprecation,
+                                     scored: group.code.countsInLighthouse)
         }
         let page = DeveloperLighthousePage(scanned)
         var input = DeveloperLighthouseInput(
@@ -387,7 +389,16 @@ final class DeveloperLighthouseModel: ObservableObject {
             warnings: warnings)
         input.scriptCoverage = scriptCoverage
         input.throttling = settings.mode == .navigation ? settings.throttling : .none
-        if let trace, !trace.isEmpty { input.traceTasks = DeveloperLighthouseLantern.tasks(fromTimeline: trace) }
+        if let trace, !trace.isEmpty {
+            input.traceTasks = DeveloperLighthouseLantern.tasks(fromTimeline: trace)
+            // WebKit's own task bounds, not the observer's timer gaps, which
+            // count the timer's clamp and queueing as blocking too.
+            if settings.mode == .navigation, input.metrics?.taskSource != .longTask,
+               let tasks = DeveloperLighthouseLantern.pageTasks(input) {
+                input.metrics?.tasks = tasks
+                input.metrics?.taskSource = .trace
+            }
+        }
         if settings.mode != .timespan {
             if performance { input.styleCoverage = await session.coverage.lighthouseStyleSheets() }
             if performance || bestPractices { input.contents = await Self.contents(session) }

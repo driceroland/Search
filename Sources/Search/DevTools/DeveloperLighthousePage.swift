@@ -441,7 +441,12 @@ struct DeveloperLighthouseMetrics: Equatable {
         /// PerformanceObserver `longtask` entries.
         case longTask = "longtask"
         /// Estimated from gaps in a zero-delay timer loop: WebKit has no `longtask`.
+        /// A gap also holds the timer's own clamp and anything queued ahead
+        /// of it, so it runs a few ms long per task.
         case eventLoopGaps = "gaps"
+        /// The top-level tasks of the run's WebKit timeline recording: the
+        /// task bounds Lighthouse reads from Chrome's trace.
+        case trace
         case none
     }
 
@@ -580,6 +585,8 @@ struct DeveloperLighthouseIssue: Equatable {
     var subtitle: String?
     var count: Int
     var deprecation: Bool
+    /// One of the issue types Lighthouse's inspector-issues audit fails on.
+    var scored = true
 }
 
 /// A script's or stylesheet's text as WebKit has it (Page.getResourceContent).

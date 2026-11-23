@@ -23,6 +23,24 @@ enum DeveloperPerformanceMetric: String, CaseIterable, Identifiable {
 
     var id: Self { self }
 
+    /// The row's name. The raw values are saved settings, so they stay
+    /// Chrome's; Chrome's "DOM Nodes" counts every node, text included,
+    /// where Search counts elements (getElementsByTagName("*")).
+    var title: String { self == .domNodes ? "DOM elements" : rawValue }
+
+    /// What the reading is, for the row's tooltip.
+    var about: String {
+        switch self {
+        case .domNodes:
+            "Elements in the page and its same-origin frames. Text and comment nodes aren’t counted, as they are in Chrome’s DOM Nodes."
+        case .jsHeap:
+            "The JavaScript heap as WebKit’s memory tracking reports it live. Memory held outside the heap, such as an "
+                + "ArrayBuffer’s backing store, can show at its full size in a heap snapshot without the same rise here."
+        default:
+            rawValue
+        }
+    }
+
     enum Kind { case percent, bytes, count, rate }
 
     var kind: Kind {

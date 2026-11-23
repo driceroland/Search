@@ -12,7 +12,8 @@ enum DeveloperSpeedIndex {
     static let bins = 256
 
     /// Per-channel histograms (R, G, B: 768 counts) of an image, without
-    /// pixels whose channels are all above 249, as speedline leaves them out.
+    /// pixels whose channels are all 249 or more, as speedline's
+    /// isWhitePixel leaves them out.
     static func histogram(_ image: CGImage) -> [Int] {
         let width = image.width, height = image.height
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
@@ -34,7 +35,7 @@ enum DeveloperSpeedIndex {
         while index + 3 < pixels.count {
             let r = Int(pixels[index]), g = Int(pixels[index + 1]), b = Int(pixels[index + 2])
             index += 4
-            if r > 249 && g > 249 && b > 249 { continue }
+            if r >= 249 && g >= 249 && b >= 249 { continue }
             counts[r] += 1
             counts[bins + g] += 1
             counts[bins * 2 + b] += 1
@@ -42,7 +43,8 @@ enum DeveloperSpeedIndex {
         return counts
     }
 
-    /// speedline's calculateFrameProgress, 0...1.
+    /// speedline's calculateFrameProgress, 0...1, in whole percent as
+    /// speedline floors it.
     static func progress(_ current: [Int], initial: [Int], target: [Int]) -> Double {
         var total = 0, matched = 0
         for bin in 0..<Swift.min(current.count, initial.count, target.count) {
@@ -51,21 +53,25 @@ enum DeveloperSpeedIndex {
             matched += Swift.min(currentDiff, targetDiff)
             total += targetDiff
         }
-        return total == 0 ? 1 : Double(matched) / Double(total)
+        return total == 0 ? 1 : (Double(matched) * 100 / Double(total)).rounded(.down) / 100
     }
 
-    /// Speed Index in ms from frames timed from navigation start. Frames
-    /// before First Contentful Paint still show the page that was there
-    /// before the reload, so they count as blank; the result is never below
-    /// First Contentful Paint, as in Lighthouse.
-    static func speedIndex(_ frames: [(ms: Double, histogram: [Int])], fcp: Double?) -> Double? {
-        guard let fcp, let last = frames.last, last.ms >= fcp else { return nil }
+    /// Speed Index in ms from frames timed from navigation start, each
+    /// showing the screen from its time until the next frame's (or `end`,
+    /// when the filmstrip stopped). Before First Contentful Paint the screen
+    /// still shows the page from before the reload, so it counts as blank;
+    /// a frame that was still on screen at First Contentful Paint counts
+    /// from then. Nil when the filmstrip stopped before First Contentful Paint.
+    static func speedIndex(_ frames: [(ms: Double, histogram: [Int])], fcp: Double?, end: Double? = nil) -> Double? {
+        guard let fcp, let last = frames.last, (end ?? last.ms) >= fcp else { return nil }
         let blank = Array(repeating: 0, count: bins * 3)
         let target = last.histogram
         var points: [(ms: Double, progress: Double)] = [(0, 0)]
-        for frame in frames where frame.ms > 0 {
-            let value = frame.ms < fcp ? 0 : progress(frame.histogram, initial: blank, target: target)
-            points.append((frame.ms, value))
+        for (index, frame) in frames.enumerated() {
+            let until = index + 1 < frames.count ? frames[index + 1].ms : Swift.max(end ?? frame.ms, frame.ms)
+            let from = Swift.max(frame.ms, fcp)
+            guard from <= until, from > 0 || until > 0 else { continue }
+            points.append((from, progress(frame.histogram, initial: blank, target: target)))
         }
         var area = 0.0
         for (index, point) in points.enumerated().dropLast() {
@@ -75,32 +81,54 @@ enum DeveloperSpeedIndex {
     }
 }
 
-/// Snapshots of a web view every `interval` while a page loads.
+/// Snapshots of a web view, one per display frame, while a page loads.
+/// Lighthouse's filmstrip has a screenshot of every frame Chrome paints; a
+/// WKWebView snapshot of the current layers costs well under a millisecond
+/// at this width, so taking one every frame gives the same resolution. A
+/// coarser cadence dates each visual change late, by up to the interval:
+/// at 100 ms Speed Index came out 60–120 ms above Chrome's for the same
+/// paints. Only frames that differ from the one before are kept.
 @MainActor
 final class DeveloperFilmstripRecorder {
     private(set) var frames: [(time: Date, histogram: [Int])] = []
+    /// Snapshots taken, the unchanged ones included, and when the last was.
+    private(set) var captured = 0
+    private(set) var lastCapture: Date?
     private var task: Task<Void, Never>?
     let interval: Duration
+    let limit: Int
 
-    init(interval: Duration = .milliseconds(100)) { self.interval = interval }
+    init(interval: Duration = .milliseconds(16), limit: Int = 3_000) {
+        self.interval = interval
+        self.limit = limit
+    }
 
     func start(_ web: WKWebView) {
         frames = []
+        captured = 0
+        lastCapture = nil
         task?.cancel()
         task = Task { [weak self, weak web] in
             let configuration = WKSnapshotConfiguration()
             configuration.snapshotWidth = 160
             configuration.afterScreenUpdates = false
             while !Task.isCancelled, let web, let self {
-                let time = Date()
                 if let image = try? await web.takeSnapshot(configuration: configuration),
                    let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                    self.frames.append((time, DeveloperSpeedIndex.histogram(cg)))
+                    // Timed when it came back: a snapshot shows what was on
+                    // screen by then, never later.
+                    self.record(Date(), DeveloperSpeedIndex.histogram(cg))
                 }
-                if self.frames.count >= 400 { return }
+                if self.captured >= self.limit { return }
                 try? await Task.sleep(for: self.interval)
             }
         }
+    }
+
+    func record(_ time: Date, _ histogram: [Int]) {
+        captured += 1
+        lastCapture = time
+        if frames.last?.histogram != histogram { frames.append((time, histogram)) }
     }
 
     func stop() {

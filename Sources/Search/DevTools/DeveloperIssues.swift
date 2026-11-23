@@ -91,6 +91,21 @@ enum DeveloperIssueCode: String, CaseIterable {
     // Other
     case sharedArrayBuffer, deprecation, quirksMode, lowTextContrast
 
+    /// Lighthouse's inspector-issues audit fails only on these: mixed
+    /// content, cookie, blocked-by-response (CORP/COEP), heavy ad and CSP
+    /// issues. Form, ARIA, CORS, quirks-mode and the other issues stay in
+    /// the Issues tool without costing Best Practices; the form and ARIA
+    /// ones are Accessibility's audits already.
+    var countsInLighthouse: Bool {
+        switch self {
+        case .cspURL, .cspInline, .cspEval, .cspTrustedTypes, .mixedContent, .coepCorpMissing,
+             .cookieSameSiteNoneInsecure, .cookieTooLarge, .cookieAttributeTooLarge, .cookieInvalidDomain, .cookieThirdPartyBlocked:
+            true
+        default:
+            false
+        }
+    }
+
     var category: DeveloperIssueCategory {
         switch self {
         case .cspURL, .cspInline, .cspEval, .cspTrustedTypes: .contentSecurityPolicy

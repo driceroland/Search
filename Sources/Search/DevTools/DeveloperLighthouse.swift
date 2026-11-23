@@ -390,6 +390,20 @@ struct DeveloperLighthouseReport: Equatable, Identifiable {
     var simulation: DeveloperLighthouseLantern.Estimates?
     /// The page's JavaScript by script and source-map module, for View treemap.
     var treemap: [DeveloperLighthouseTreemap.Node] = []
+    /// The viewport the page actually had (innerWidth × innerHeight, CSS
+    /// px) and its device pixel ratio: what visual metrics such as Speed
+    /// Index and CLS depend on, set beside the emulated screen.
+    var viewport: Viewport?
+
+    struct Viewport: Equatable {
+        var width: Double
+        var height: Double
+        var devicePixelRatio: Double
+
+        var summary: String {
+            "\(Int(width.rounded()))×\(Int(height.rounded())) CSS px at \(devicePixelRatio.formatted())×"
+        }
+    }
 
     func audit(_ id: String) -> DeveloperLighthouseAudit? { audits[id] }
 
@@ -542,6 +556,16 @@ enum DeveloperLighthouseLHR {
     static let version = "12.0.0"
     static let note = "Search's own implementation of Lighthouse's audits, run on WebKit; not Lighthouse itself."
 
+    /// Lighthouse's environment, plus the viewport the page really had
+    /// (Search's own key: Lighthouse keeps it in its artifacts, not the LHR).
+    static func environment(_ report: DeveloperLighthouseReport) -> [String: Any] {
+        var out: [String: Any] = ["networkUserAgent": report.userAgent, "hostUserAgent": report.userAgent, "benchmarkIndex": 0]
+        if let viewport = report.viewport {
+            out["viewport"] = ["width": viewport.width, "height": viewport.height, "devicePixelRatio": viewport.devicePixelRatio]
+        }
+        return out
+    }
+
     static func object(_ report: DeveloperLighthouseReport) -> [String: Any] {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -580,8 +604,7 @@ enum DeveloperLighthouseLHR {
             "fetchTime": iso.string(from: report.fetchTime),
             "gatherMode": report.mode.gatherMode,
             "userAgent": report.userAgent,
-            "environment": ["networkUserAgent": report.userAgent, "hostUserAgent": report.userAgent,
-                            "benchmarkIndex": 0] as [String: Any],
+            "environment": environment(report),
             "runWarnings": [note] + report.warnings,
             "configSettings": [
                 "formFactor": ff.lhr, "locale": "en-US", "channel": "perch-devtools",

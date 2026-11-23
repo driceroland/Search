@@ -535,6 +535,7 @@ private struct DeveloperLighthouseReportView: View {
             row("Fetch time", report.fetchTime.formatted(date: .abbreviated, time: .standard))
             row("Mode", report.mode.rawValue)
             row("Device", report.mode == .navigation ? report.formFactor.rawValue : "Window's own viewport")
+            if let viewport = report.viewport { row("Viewport", viewport.summary) }
             row("Emulation", report.emulation)
             if report.mode == .navigation {
                 row("Throttling", report.simulation?.summary ?? report.throttling.rawValue)

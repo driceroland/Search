@@ -72,7 +72,7 @@ struct DeveloperPerformanceMonitorView: View {
                 .tint(color)
                 .disabled(metric.neverAvailable)
             VStack(alignment: .leading, spacing: 0) {
-                Text(metric.rawValue)
+                Text(metric.title)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -84,9 +84,9 @@ struct DeveloperPerformanceMonitorView: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 2)
-        .help(reason ?? metric.rawValue)
+        .help(reason ?? metric.about)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(metric.rawValue)
+        .accessibilityLabel(metric.title)
         .accessibilityValue(metric.format(value))
     }
 
@@ -168,7 +168,7 @@ private struct DeveloperPerformanceChart: View {
             }
             .overlay(alignment: .topLeading) {
                 HStack(spacing: 6) {
-                    Text(metric.rawValue).foregroundStyle(color)
+                    Text(metric.title).foregroundStyle(color)
                     Spacer(minLength: 0)
                     Text(metric.format(maximum)).foregroundStyle(.secondary).monospacedDigit()
                 }
@@ -189,6 +189,6 @@ private struct DeveloperPerformanceChart: View {
         .frame(minHeight: 36, maxHeight: .infinity)
         .clipped()
         .accessibilityElement()
-        .accessibilityLabel(metric.rawValue + " chart")
+        .accessibilityLabel(metric.title + " chart")
     }
 }

@@ -44,6 +44,10 @@ enum DeveloperLighthouseRules {
             audits: audits, warnings: warnings, userAgent: input.userAgent, emulation: input.emulation, totalTime: totalTime)
         report.throttling = input.throttling
         report.simulation = input.simulated
+        if input.page.viewportWidth > 0, input.page.viewportHeight > 0 {
+            report.viewport = .init(width: input.page.viewportWidth, height: input.page.viewportHeight,
+                                    devicePixelRatio: input.page.devicePixelRatio)
+        }
         return report
     }
 
@@ -240,7 +244,7 @@ enum DeveloperLighthouseRules {
         case .speedIndex:
             guard let value = metrics.speedIndex else { return notApplicable(id, speedIndexReason) }
             measured = value
-            warning = "Measured from \(metrics.speedIndexFrames) snapshots of the view taken about every 100 ms, not from a trace's screenshots of every frame."
+            warning = "Measured from \(metrics.speedIndexFrames) snapshots of the view, one per display frame, rather than from a trace's screenshots."
         case .interactionToNextPaint:
             guard metrics.inpSupported else {
                 return notApplicable(id, "This WebKit doesn't report event timing entries, so interactions can't be timed.")
@@ -977,7 +981,7 @@ enum DeveloperLighthouseRules {
     static func inspectorIssues(_ input: DeveloperLighthouseInput) -> Audit {
         let id = "inspector-issues"
         guard let issues = input.issues else { return notApplicable(id, "The Issues tool couldn't be read.") }
-        let found = issues.filter { !$0.deprecation && $0.category != DeveloperIssueCategory.lowTextContrast.rawValue }
+        let found = issues.filter { $0.scored && !$0.deprecation && $0.category != DeveloperIssueCategory.lowTextContrast.rawValue }
         guard !found.isEmpty else { return binary(id, passed: true) }
         return binary(id, passed: false, details: DeveloperLighthouseDetails(headings: [
             Heading(key: "issueType", label: "Issue type", valueType: "text"),

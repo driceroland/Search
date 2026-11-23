@@ -254,6 +254,7 @@ enum DeveloperLighthouseHTML {
             ("Captured at", report.fetchTime.formatted(date: .abbreviated, time: .standard)),
             ("Mode", report.mode.rawValue),
             ("Device", device),
+            ("Viewport", report.viewport?.summary ?? ""),
             ("Emulation", report.emulation),
             ("Network throttling", networkThrottling(report)),
             ("CPU throttling", cpuThrottling(report)),
