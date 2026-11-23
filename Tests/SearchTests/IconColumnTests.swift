@@ -167,6 +167,15 @@ final class IconColumnTests: XCTestCase {
         restorePreferences = {
             (prefs.sidebar, prefs.sideIcons, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.usesSpaces, prefs.sharesPins) = previous
         }
+        // Each test its own tabs: the profile's first window reads the
+        // session files the last test's window left (Browser.usesFiles), so
+        // run alone, these tests found every earlier test's tabs. In the
+        // whole suite another class's window still held the files.
+        Disk.drain()
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: Store.folder.path)) ?? []
+        where name.hasPrefix("session") && name.hasSuffix(".json") {
+            try? FileManager.default.removeItem(at: Store.folder.appendingPathComponent(name))
+        }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
         browser.prefs.tabsLayout = .icons
