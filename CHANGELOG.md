@@ -42,6 +42,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A store update check that fails (no network yet after the Mac wakes, the store not answering) is tried again an hour later, then after two, four… hours, never more than a day apart, instead of counting as the day's check: the day was stamped before the check ran, so one failure held back every store extension's updates for 20 hours, uBlock Origin Lite's too. `python3 Tests/extension_store_update.py` (idea 992)
 - Extensions from the Chrome Web Store update to the version a new install gets: the daily check now asks the store as Chrome's Update button does (installsource=ondemand, with Chrome's os, arch and product details). Asked as a background check, the store answered "no update" for Bitwarden 2026.11.0 from 19 Nov whatever version was named, so Bitwarden stayed at 2026.10.2. (idea 992)
 - A sideways swipe in Google Sheets scrolls the sheet and no longer goes back a page, at column A included: a page that sets overscroll-behavior-x to none or contain on its root is never swiped away from, as in Chrome. Sheets does, and its grid, which scrolls itself, doesn't always claim the scroll. `python3 Tests/swipe_sheets.py` (idea 990)
 - A post opened from a live folder goes among your tabs as a new tab does: with a tab in a group in front, it went into that group, as if it were a link from that page. `python3 Tests/live_folder_post_place.py` (idea 978)

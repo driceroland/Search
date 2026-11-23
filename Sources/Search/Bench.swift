@@ -5521,7 +5521,7 @@ final class Bench {
                     "size": [Double(size.width), Double(size.height)],
                     "least": [Double(StylePanel.least.width), Double(StylePanel.least.height)]])
 
-        case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-safari", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-enable", "ext-private", "ext-sites", "capture", "capture-stop":
+        case "extensions", "ext-add", "ext-crx", "ext-fetches", "ext-folder", "ext-safari", "ext-press", "ext-remove", "ext-reload", "ext-page", "ext-popup", "ext-menu", "ext-pin", "ext-shot", "ext-answer", "ext-check", "ext-enable", "ext-private", "ext-sites", "capture", "capture-stop":
             guard #available(macOS 15.4, *) else {
                 answer(["error": "extensions need macOS 15.4"])
                 return
@@ -6145,6 +6145,34 @@ final class Bench {
             default: extensions.answerForTests = nil
             }
             answer(["answer": request["answer"] as? String ?? "ask", "asked": extensions.asked])
+        case "ext-check":
+            // Test runs only: the store update check, now if it is due. `age`
+            // moves the last check and the planned retry that many seconds
+            // into the past, as if time had gone by; `base` asks somewhere
+            // else (an address that refuses, for a failed check). Answers
+            // once the round is over, with what is planned next.
+            guard Store.testing else { answer(["error": "ext-check only works on a --test run"]); return }
+            let settings = Store.settings
+            if let base = request["base"] as? String { Crx.updateBase = base }
+            if let age = request["age"] as? Double {
+                for key in [Extensions.checkedKey, Extensions.retryKey] {
+                    if let date = settings.object(forKey: key) as? Date { settings.set(date.addingTimeInterval(-age), forKey: key) }
+                }
+            }
+            let before = extensions.updateRound
+            extensions.checkForUpdates()
+            let round = extensions.updateRound
+            Task { @MainActor in
+                await round?.value
+                func date(_ key: String) -> Any { (settings.object(forKey: key) as? Date).map { $0.timeIntervalSinceNow } ?? NSNull() }
+                answer([
+                    "ran": round != nil && round != before,
+                    "checkedAgo": (settings.object(forKey: Extensions.checkedKey) as? Date).map { -$0.timeIntervalSinceNow } ?? NSNull(),
+                    "retryIn": date(Extensions.retryKey),
+                    "failures": settings.integer(forKey: Extensions.failuresKey),
+                    "versions": Dictionary(uniqueKeysWithValues: extensions.installed.map { ($0.id, $0.version) }),
+                ])
+            }
         case "ext-shot":
             // A picture of the extension's popup, while it is open.
             guard let id = request["id"] as? String, ExtensionPopup.shared.extensionID == id,
