@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 import XCTest
 @testable import Search
 
@@ -64,5 +65,45 @@ final class SpaceFloatTests: XCTestCase {
         XCTAssertEqual(browser.spaceID, first)
         XCTAssertEqual(browser.spaceFloat.pending, pending)
         if let pending { browser.spaceFloat.finish(pending) }
+    }
+
+    func testPictureReturnFindsTheTabInAnotherSpace() {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        let browser = Browser(record: WindowRecord())
+        let oldUsesSpaces = browser.prefs.usesSpaces
+        let oldFloatsOnLeave = browser.prefs.floatsOnLeave
+        let oldSpaces = browser.spaces
+        defer {
+            browser.closeAll()
+            browser.prefs.usesSpaces = oldUsesSpaces
+            browser.prefs.floatsOnLeave = oldFloatsOnLeave
+            browser.spaces = oldSpaces
+        }
+        browser.prefs.usesSpaces = true
+        browser.prefs.floatsOnLeave = false
+        let first = browser.spaceID
+        let second = UUID()
+        browser.spaces = [Space(id: first, name: "First", colour: 0),
+                          Space(id: second, name: "Second", colour: 1)]
+        browser.closeAll()
+        let video = Tab(configuration: Web.configuration(space: first))
+        let other = Tab(configuration: Web.configuration(space: first))
+        let web = video.web
+        browser.showRow([video, other], active: other.id)
+        browser.switchSpace(to: second)
+
+        browser.webViewFullscreenMayReturnToInline(web)
+        XCTAssertEqual(browser.spaceID, first)
+        XCTAssertEqual(browser.activeID, video.id)
+
+        browser.select(other, floatPrevious: false)
+        browser.webViewFullscreenMayReturnToInline(web)
+        XCTAssertEqual(browser.spaceID, first)
+        XCTAssertEqual(browser.activeID, video.id)
+
+        browser.webViewFullscreenMayReturnToInline(WKWebView())
+        XCTAssertEqual(browser.spaceID, first)
+        XCTAssertEqual(browser.activeID, video.id)
     }
 }

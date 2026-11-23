@@ -7292,7 +7292,11 @@ final class Browser: NSObject, ObservableObject {
     /// its own video where it is rather than taking the window's place.
     @objc(_webViewFullscreenMayReturnToInline:)
     func webViewFullscreenMayReturnToInline(_ webView: WKWebView) {
-        guard let tab = tab(for: webView) else { return }
+        guard let tab = anyTab(for: webView) else { return }
+        if let space = parked.first(where: { $0.value.tabs.contains { $0 === tab } })?.key {
+            switchSpace(to: space)
+        }
+        guard tabs.contains(where: { $0 === tab }) else { return }
         if pictured == tab.id { pictured = nil }
         select(tab, floatPrevious: false)
         Browsers.show(self)
