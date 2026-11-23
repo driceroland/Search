@@ -790,6 +790,7 @@ struct SettingsPanel: View {
         case "media.click": Switch(on: $prefs.waitsForPlay)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
         case "fullscreen.keepsWindow": Switch(on: $prefs.keepsWindow)
+        case "fullscreen.inWindow": Switch(on: $prefs.fullScreenInWindow)
         case "translate.target":
             if PageTranslator.available { TranslateTargetPicker(prefs: prefs) }
             else { Text("Requires macOS 15").foregroundStyle(Palette.muted) }

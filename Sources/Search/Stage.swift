@@ -411,6 +411,10 @@ final class StageView: NSView {
             dock.removeFromSuperview()
         }
         let chosen = page !== wanted
+        // Full screen in the window (WindowFullScreen) ends with its tab
+        // going from view: the page it filled is no longer
+        // the one in the window.
+        if chosen, let leaving = wanted as? WKWebView { WindowFullScreen.shared.end(leaving) }
         if chosen, let leaving = wanted as? WKWebView, leaving.fullscreenState != .notInFullscreen,
            subviews.contains(where: Self.isPlaceholder) {
             leftFullScreen = leaving

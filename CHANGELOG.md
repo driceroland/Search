@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Settings › Video › Full screen in the window, off unless you turn it on: a video's full screen fills the browser window, which goes into macOS full screen itself, instead of a window and a desktop of WebKit's own beside it. If the window is full screen already, the video just fills it and no desktop is made. Esc, another tab, or the window leaving full screen ends it, and the window goes back as it was. Pages already open take it at once; a player embedded in one follows once the page is reloaded. `python3 Tests/fullscreen_in_window.py` ([#1423](https://github.com/driceroland/Search/issues/1423))
+
 ### Fixed
 
 - With two profiles or more, the profile item in a space's right-click menu is called Switch to Profile, where it said "Profile: Personal". It switches the window to that profile (the ticked one is the window's) and never moved the space, but read like a setting of the space, so choosing Work looked like moving the space there and losing it. (reported by email, idea 983)

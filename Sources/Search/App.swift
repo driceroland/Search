@@ -1461,6 +1461,16 @@ struct ContentView: View {
             // is the page's, which lets the pointer go on it, ahead of the
             // find bar, the field, or a full screen's Esc twice.
             if PointerLock.shared.escape(event) { return event }
+            // A page filling this window itself (WindowFullScreen): no WebKit
+            // window to take the key, so it is ended here, wherever the keys
+            // are, and the page never sees the press.
+            if event.keyCode == 53, let window, event.window === window,
+               let page = browser.tabs.lazy.compactMap(\.built).first(where: { WindowFullScreen.shared.fills($0) }) {
+                if browser.tabSwitcher.active { browser.tabSwitcher.cancel() }
+                if browser.prefs.escapeTwice, !FullScreenEscape.shared.passes(event, to: page) { return nil }
+                WindowFullScreen.shared.end(page)
+                return nil
+            }
             // Escape on a page filling the screen is WebKit's, which leaves
             // on the first one, as Safari does. Its window isn't a browser's,
             // so the key came here first and put away what was left up in
@@ -1481,6 +1491,7 @@ struct ContentView: View {
             // left, and the tab they went to was there only after Esc (#1042).
             if let page = ContentView.pageFillingScreen(event), ContentView.movesTab(event) {
                 page.evaluateInSearch("if (document.fullscreenElement) document.exitFullscreen(); void 0")
+                WindowFullScreen.shared.end(page)
             }
             // A key typed while the field is on its way is the field's (holdKey),
             // Escape in a full-screen window included.

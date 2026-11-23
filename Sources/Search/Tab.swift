@@ -1226,6 +1226,13 @@ final class Tab: ObservableObject, Identifiable {
         // Every frame, in the page's own world and ahead of its scripts: a
         // live player's speed nudges go through it (see LiveRate.swift).
         add(LiveRate.script, .atDocumentStart, mainFrameOnly: false, in: .page)
+        // Only while Settings › Video says so: a page's full screen in the
+        // window itself (see WindowFullScreen.swift). Every
+        // frame, in the page's world, for an embedded player's button.
+        if Shared.prefs.fullScreenInWindow {
+            add(WindowFullScreen.page, .atDocumentStart, mainFrameOnly: false, in: .page)
+            add(WindowFullScreen.bridge, .atDocumentStart, mainFrameOnly: true, in: Web.world)
+        }
         // Every frame, in the page's own world: a page an extension lists
         // reaches it as chrome.runtime (see ExtensionExternal.swift).
         if let external = ExtensionExternal.script {
