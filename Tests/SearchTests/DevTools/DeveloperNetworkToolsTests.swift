@@ -2,6 +2,7 @@ import AppKit
 import Network
 import WebKit
 import XCTest
+import os
 @testable import Search
 
 @MainActor
@@ -372,17 +373,19 @@ final class EchoSocketServer: @unchecked Sendable {
     static func start() async throws -> EchoSocketServer {
         let server = try EchoSocketServer()
         let port: UInt16 = try await withCheckedThrowingContinuation { done in
-            var finished = false
+            let finished = OSAllocatedUnfairLock(initialState: false)
             server.listener.stateUpdateHandler = { state in
-                guard !finished else { return }
-                switch state {
-                case .ready:
-                    finished = true
-                    done.resume(returning: server.listener.port?.rawValue ?? 0)
-                case .failed(let error):
-                    finished = true
-                    done.resume(throwing: error)
-                default: break
+                finished.withLock { resumed in
+                    guard !resumed else { return }
+                    switch state {
+                    case .ready:
+                        resumed = true
+                        done.resume(returning: server.listener.port?.rawValue ?? 0)
+                    case .failed(let error):
+                        resumed = true
+                        done.resume(throwing: error)
+                    default: break
+                    }
                 }
             }
             server.listener.newConnectionHandler = { connection in

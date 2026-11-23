@@ -3,6 +3,7 @@ import Network
 import Security
 import WebKit
 import XCTest
+import os
 @testable import Search
 
 /// Mixed content on a real HTTPS page: a page served over TLS (a throwaway
@@ -153,13 +154,19 @@ final class TinyServer: @unchecked Sendable {
             }
         }
         let port: UInt16 = try await withCheckedThrowingContinuation { continuation in
-            var resumed = false
+            let resumed = OSAllocatedUnfairLock(initialState: false)
             listener.stateUpdateHandler = { state in
-                guard !resumed else { return }
-                switch state {
-                case .ready: resumed = true; continuation.resume(returning: listener.port?.rawValue ?? 0)
-                case .failed(let error): resumed = true; continuation.resume(throwing: error)
-                default: break
+                resumed.withLock { done in
+                    guard !done else { return }
+                    switch state {
+                    case .ready:
+                        done = true
+                        continuation.resume(returning: listener.port?.rawValue ?? 0)
+                    case .failed(let error):
+                        done = true
+                        continuation.resume(throwing: error)
+                    default: break
+                    }
                 }
             }
             listener.start(queue: queue)

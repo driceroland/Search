@@ -84,7 +84,7 @@ final class DeveloperMemoryFiltersTests: XCTestCase {
         XCTAssertEqual(DeveloperHeapSnapshot.quoted(String(repeating: "x", count: 5), limit: 3), "\"xxx…\"")
     }
 
-    func testRetentionFiltersFollowChromesMenu() throws {
+    func testRetentionFiltersFollowChromesMenu() async throws {
         typealias Entry = DeveloperMemory.Entry
         let snapshot = try DeveloperHeapSnapshot(json: json)
         let taken = Entry(id: 1, snapshot: snapshot, allocations: nil, objectGeneration: 0)
@@ -93,7 +93,8 @@ final class DeveloperMemoryFiltersTests: XCTestCase {
                         "Objects retained by the DevTools console"])
         XCTAssertEqual(DeveloperMemory.retentionFilters(for: taken).map(\.scope),
                        [.duplicatedStrings, .retainedByDetachedNodes, .retainedByConsole])
-        let loaded = Entry(id: 2, snapshot: snapshot, allocations: nil, objectGeneration: DeveloperMemory.loadedGeneration,
+        let generation = await DeveloperMemory.loadedGeneration
+        let loaded = Entry(id: 2, snapshot: snapshot, allocations: nil, objectGeneration: generation,
                            json: json, fileName: "Heap-saved")
         XCTAssertEqual(DeveloperMemory.retentionFilters(for: loaded).map(\.filter), [.retainedByConsole])
         let options = DeveloperMemory.allocationFilters(for: taken, in: [taken])

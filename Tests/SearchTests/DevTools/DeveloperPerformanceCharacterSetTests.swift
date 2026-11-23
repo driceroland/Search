@@ -36,7 +36,7 @@ final class DeveloperPerformanceCharacterSetTests: XCTestCase {
     }
 
     func testTheMetaTagIsReadFromThePage() {
-        XCTAssertNil(Page.charsetMeta([:]), "not asked")
+        XCTAssertEqual(Page.charsetMeta([:]), nil, "not asked")
         XCTAssertEqual(Page.charsetMeta(["charsetMeta": "null"]), .some(nil), "asked, and there is none")
         XCTAssertEqual(Page.charsetMeta(["charsetMeta": "{\"charset\":\" utf-8 \",\"end\":80}"]),
                        .some(Page.CharsetMeta(charset: "utf-8", end: 80)))
