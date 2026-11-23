@@ -544,6 +544,11 @@ enum SettingsIndex {
         .init(id: "passwords.fill", group: "passwords", icon: "rectangle.and.pencil.and.ellipsis",
               title: "Fill in sign-ins", detail: "Click a sign-in box and your accounts for the site hang from it",
               keys: ["passwords.fill"], words: ["autofill", "login"]),
+        .init(id: "passwords.fill.prove", group: "passwords", icon: "touchid",
+              title: "Ask for Touch ID before filling", detail: "Or your Mac's password, before a saved password goes into a page",
+              more: "Once you've said yes, Search doesn't ask again for a minute, until your Mac sleeps or locks. Apple Passwords and extensions ask in their own way.",
+              keys: ["passwords.fill.prove"], words: ["touch id", "authenticate", "autofill", "lock", "biometric", "fingerprint", "password", "secure"],
+              parent: "passwords.fill"),
         .init(id: "passkeys", group: "passwords", icon: "person.badge.key",
               title: "Offer passkeys", detail: "Touch ID or an iCloud passkey, on sites that offer one",
               keys: ["passkeys"], words: ["webauthn", "touch id"]),
@@ -769,6 +774,7 @@ enum SettingsIndex {
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
         case "bookmarks.iconsOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
+        case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
         case "spaces.links", "links.ask", "spaces.buttons": return prefs.usesSpaces

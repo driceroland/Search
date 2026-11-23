@@ -3187,7 +3187,14 @@ final class Bench {
             // with "forget", every login this test world kept — its own
             // label's, never another world's or the real one's. "keep" is
             // the save question's Save.
+            // "prove": Settings › Passwords › Ask for Touch ID before
+            // filling, switched; "proofAge": the last yes made that many
+            // seconds old (0 forgets it). Every answer says how many times
+            // a fill has asked ("proofs") — answered as `ui confirm`
+            // says, never by the Mac's own question.
             guard Store.testing else { answer(["error": "accounts only works on a --test run"]); return }
+            if let on = request["prove"] as? Bool { browser.prefs.asksBeforeFilling = on }
+            if let age = request["proofAge"] as? Double { age == 0 ? Vault.FillProof.forget() : Vault.FillProof.age(age) }
             if request["keep"] as? Bool == true { browser.keepOffer() }
             if request["forget"] as? Bool == true {
                 Vault.all().forEach { Vault.forget(host: $0.host, user: $0.user) }
@@ -3200,7 +3207,11 @@ final class Bench {
             let offer: [String: Any] = browser.offering.map { ["user": $0.login.user, "host": $0.login.host, "changed": $0.changed] } ?? [:]
             // Every account this world keeps, by name, without a secret.
             let users = Vault.all().map(\.user)
-            guard let list = browser.suggesting else { answer(["shown": false, "offer": offer, "kept": users.count, "users": users]); return }
+            let proofs: [String: Any] = ["proofs": Vault.FillProof.asked, "asking": Vault.FillProof.asking,
+                                         "fresh": Vault.FillProof.fresh(), "prove": browser.prefs.asksBeforeFilling]
+            guard let list = browser.suggesting else {
+                answer(["shown": false, "offer": offer, "kept": users.count, "users": users].merging(proofs) { a, _ in a }); return
+            }
             let rows = list.passkeys.map { ["passkey": $0.name] } + list.logins.map { ["login": $0.user] }
             if let press = request["press"] as? [Double], press.count == 2 {
                 // A press and a release at a point of the window, from its
@@ -3224,12 +3235,19 @@ final class Bench {
                 answer(["pressed": "\(type(of: target))", "responder": window.firstResponder.map { "\(type(of: $0))" } ?? ""])
                 return
             }
+            // "lit": ↓ that many times and Return, as App.take hands the
+            // keys to the list under the box.
+            if let lit = request["lit"] as? Int {
+                for _ in 0..<lit { _ = browser.moveChoice(by: 1) }
+                _ = browser.takeLitChoice()
+            }
             if let pick = request["pick"] as? Int {
                 guard rows.indices.contains(pick) else { answer(["error": "no row \(pick)"]); return }
                 if pick < list.passkeys.count { browser.choose(list.passkeys[pick]) } else { browser.choose(list.logins[pick - list.passkeys.count]) }
             }
             var out: [String: Any] = ["shown": true, "rows": rows, "nameOnly": list.nameOnly, "wide": list.wide, "offer": offer, "kept": users.count,
                                       "users": users, "spot": [list.spot.minX, list.spot.minY, list.spot.width, list.spot.height]]
+            out.merge(proofs) { a, _ in a }
             // With Split View's stage, the card as drawn, in the window from
             // its top-left, and the page-sized box it hangs in.
             if let drawn = PaneStage.accountCard() {

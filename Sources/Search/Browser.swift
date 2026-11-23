@@ -1448,8 +1448,28 @@ final class Browser: NSObject, ObservableObject {
             }
             return
         }
-        // Its secret is read now, once it is picked: see `Vault.kept(for:)`.
-        guard let login = Vault.login(login) else {
+        // Asked for Touch ID first, when Settings says so (idea 993): the
+        // secret is not even read until the owner has said yes, and a
+        // cancel fills nothing.
+        guard prefs.asksBeforeFilling else {
+            fill(login, into: tab, host: list.host, clear: list.clear)
+            return
+        }
+        Vault.FillProof.ask(list.host) { [weak self, weak tab] ok in
+            guard ok, let self, let tab else { return }
+            self.fill(login, into: tab, host: list.host, clear: list.clear)
+        }
+    }
+
+    /// A kept account's password into the page it was picked for: read from
+    /// the keychain now, once it is picked (see `Vault.kept(for:)`). Asked
+    /// again whether the tab is still on that site, since the Touch ID
+    /// question may have stood a while; a page that moved on gets nothing.
+    private func fill(_ kept: Kept, into tab: Tab, host: String, clear: Bool) {
+        guard tabs.contains(where: { $0.id == tab.id }), curtain.host(of: tab.pageAddress) == host,
+              (tab.pageAddress?.scheme?.lowercased() == "http") == clear
+        else { return }
+        guard let login = Vault.login(kept) else {
             announce("The keychain refused it")
             return
         }

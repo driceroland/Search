@@ -620,6 +620,15 @@ final class Preferences: ObservableObject {
     @Published var fillsPasswords: Bool {
         didSet { store.set(fillsPasswords, forKey: "passwords.fill") }
     }
+    /// Touch ID, or the Mac's password, before one of Search's own kept
+    /// passwords goes into a page (Vault.FillProof, idea 993). Off unless
+    /// turned on.
+    @Published var asksBeforeFilling: Bool {
+        didSet {
+            store.set(asksBeforeFilling, forKey: "passwords.fill.prove")
+            Vault.FillProof.forget()
+        }
+    }
     /// Your card in Contacts under the boxes for your name, email, phone and
     /// address (MeCard). Off unless turned on, which is when macOS asks.
     @Published var fillsContacts: Bool {
@@ -1344,6 +1353,7 @@ final class Preferences: ObservableObject {
         asksWhereToSave = store.bool(forKey: "downloads.ask")
         savesPasswords = store.object(forKey: "passwords.save") as? Bool ?? true
         fillsPasswords = store.object(forKey: "passwords.fill") as? Bool ?? true
+        asksBeforeFilling = store.bool(forKey: "passwords.fill.prove")
         applePasswords = store.bool(forKey: "passwords.apple")
         let contacts = store.bool(forKey: "contacts.fill")
         fillsContacts = contacts

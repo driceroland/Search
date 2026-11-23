@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Security
 import LocalAuthentication
 
@@ -265,6 +266,80 @@ enum Vault {
         }
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { ok, _ in
             DispatchQueue.main.async { done(ok) }
+        }
+    }
+
+    // MARK: - before a fill
+
+    /// Settings › Passwords › Ask for Touch ID before filling (idea 993):
+    /// one of Search's own passwords goes into a page only once the Mac's
+    /// owner has said so — Touch ID, the watch, or the Mac's password where
+    /// there is no Touch ID — as Safari's "Use Touch ID to AutoFill" and
+    /// Chrome's "Use your screen lock when filling passwords" ask. Off unless
+    /// turned on. Apple Passwords' rows and extensions' fills are theirs to
+    /// guard, not this.
+    ///
+    /// One yes holds for `grace`, Chrome's minute, so a sign-in that wants
+    /// its password again a moment later, or a second tab of the same site,
+    /// isn't asked twice; it ends early when the screens sleep or lock, or
+    /// the session switches away. Every fill of a kept password goes through
+    /// `Browser.choose(_: Kept)`, by click, by Return or by a test's pick,
+    /// and that is where it asks: nothing is ever filled on page load.
+    @MainActor enum FillProof {
+        static let grace: TimeInterval = 60
+        /// When the owner last said yes, if within `grace`.
+        private static var provenAt: Date?
+        /// A question is up: a second pick meanwhile fills nothing.
+        private(set) static var asking = false
+        /// How many times a fill asked, for a test run's bench `accounts`.
+        private(set) static var asked = 0
+        private static var watching = false
+
+        static func fresh(at now: Date = Date()) -> Bool {
+            guard let provenAt else { return false }
+            let age = now.timeIntervalSince(provenAt)
+            return age >= 0 && age < grace
+        }
+
+        /// `done(true)` once proven, or still within the grace; `false` for
+        /// a cancel, a failure, or a question already up.
+        static func ask(_ host: String, _ done: @escaping (Bool) -> Void) {
+            if fresh() { done(true); return }
+            guard !asking else { done(false); return }
+            watch()
+            asking = true
+            if Store.testing { asked += 1 }
+            let answered: (Bool) -> Void = { ok in
+                asking = false
+                if ok { provenAt = Date() }
+                done(ok)
+            }
+            // A test run never puts the Mac's own question on the screen: it
+            // answers as `ui confirm on|off` says, and no with nothing set.
+            if Store.testing, Ask.testing == nil { answered(false); return }
+            Vault.prove("fill your password for \(host)", answered)
+        }
+
+        /// The yes is spent: the next fill asks again.
+        static func forget() { provenAt = nil }
+
+        /// A test run's, to look at the grace's end without waiting for it.
+        static func age(_ seconds: TimeInterval) {
+            guard Store.testing else { return }
+            provenAt = Date().addingTimeInterval(-seconds)
+        }
+
+        private static func watch() {
+            guard !watching else { return }
+            watching = true
+            let spend: (Notification) -> Void = { _ in MainActor.assumeIsolated { forget() } }
+            let workspace = NSWorkspace.shared.notificationCenter
+            for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification,
+                         NSWorkspace.sessionDidResignActiveNotification] {
+                workspace.addObserver(forName: name, object: nil, queue: .main, using: spend)
+            }
+            DistributedNotificationCenter.default().addObserver(
+                forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main, using: spend)
         }
     }
 

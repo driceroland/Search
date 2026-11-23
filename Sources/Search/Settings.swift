@@ -851,6 +851,7 @@ struct SettingsPanel: View {
         case "passwords.open": Pill("Open…") { browser.lead(to: InternalPage(.passwords)) }
         case "passwords.save": Switch(on: $prefs.savesPasswords)
         case "passwords.fill": Switch(on: $prefs.fillsPasswords)
+        case "passwords.fill.prove": Switch(on: $prefs.asksBeforeFilling)
         case "passkeys": Switch(on: $prefs.passkeys)
         case "passwords.apple": Switch(on: $prefs.applePasswords)
         // Turned on, macOS is asked whether Search may read Contacts; a no,
