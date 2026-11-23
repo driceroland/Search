@@ -40,6 +40,10 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Window stutters between screens** Dragging the window from one screen to another stutters. Needs a trace recorded on two screens. *(X)*
 - [ ] **Figma and LinkedIn feel slow** Figma blurs for a moment as you zoom in; LinkedIn's feed and profiles scroll with lag. *(email)*
 
+## Done, in the next version
+
+- [x] **Drag a download out of Downloads** A finished download whose file is still there can be dragged to Finder or another app, as a file. Built for 1.0.20: drag it from the Downloads tab, side panel or card onto a page (an upload) or into another app. *([#920](https://github.com/driceroland/Search/issues/920), [#1388](https://github.com/driceroland/Search/issues/1388))*
+
 ## Now — fixes for the next update
 
 - [ ] **Spaces sometimes don't switch** *(email)*
@@ -91,7 +95,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **The hidden elements' list holds the page still** With the list open the page can't scroll, and resting on a line scrolls the page to it with no way back to where you were. *(email)*
 - [ ] **⌘T's floating field loses the caret on macOS 14** With New tab in a floating field on, on macOS 14 and an Intel Mac, the field takes the caret for a moment after ⌘T and then loses it. *(email)*
 - [ ] **Back closes a tab a link opened** Back, or the swipe back, on a tab with nothing to go back to closes it and returns to the tab that opened it, as in Arc and Safari. As an option. *([#921](https://github.com/driceroland/Search/issues/921), [#759](https://github.com/driceroland/Search/issues/759))*
-- [ ] **Drag a download out of Downloads** A finished download whose file is still there can be dragged to Finder or another app, as a file. *([#920](https://github.com/driceroland/Search/issues/920))*
 - [ ] **Remember a site's choice to open an app** A box in the Open app question to always let that site open that app, listed in Settings › Privacy with Remove. *([#909](https://github.com/driceroland/Search/issues/909))*
 - [ ] **Open Link in Private Tab** In a link's right-click menu, after Open Link in New Tab, as the bookmarks bar already has it. *([#902](https://github.com/driceroland/Search/issues/902))*
 - [ ] **Escape stays with the page in full screen** In the window's own full screen (the green button, ⌃⌘F), one Escape takes the window out of full screen even when a site wanted it, to close its own pop-up. Safari leaves the window as it is and gives the key to the page; only a video's full screen goes at one Escape. Needs checking against Press Esc twice to leave full screen, which keeps the first press from the page. *([#981](https://github.com/driceroland/Search/issues/981))*
