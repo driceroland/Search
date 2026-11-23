@@ -63,7 +63,9 @@ final class PageFind {
             }
 
             if status == "stale" { return Self.staleResult }
-            if status == "pdf" {
+            // "cut" is a page too big to walk with nothing in the part read:
+            // WebKit's own find looks past where the walk stopped.
+            if status == "pdf" || status == "cut" {
                 guard !wholeWords else {
                     return Result(
                         count: nil, index: nil, more: false, found: false, nativeFallback: true,
@@ -260,19 +262,22 @@ final class PageFind {
     const hiddenTags = new Set(["script", "style", "noscript", "template", "head", "title", "select", "option", "optgroup"]);
 
     // Null when the element and what is inside it are not drawn; otherwise
-    // whether it breaks the text into a block of its own.
+    // whether it breaks the text into a block of its own, and whether its
+    // own text is drawn.
+    // A hidden element's child may set `visibility: visible` again,
+    // so only the text directly in it is left out (`shown`), not the child.
     function layout(element, doc) {
         if (hiddenTags.has(element.localName)) return null;
         if (element.hidden || element.hasAttribute("hidden")) return null;
         let style = null;
         try { style = doc.defaultView.getComputedStyle(element); } catch (_) {}
-        if (!style) return { block: true };
+        if (!style) return { block: true, shown: true };
         const display = style.display;
-        if (display === "none" || style.visibility === "hidden"
-            || style.visibility === "collapse" || style.contentVisibility === "hidden"
+        if (display === "none" || style.contentVisibility === "hidden"
             || style.opacity === "0") return null;
         return {
-            block: !(display.startsWith("inline") || display === "contents" || display === "ruby")
+            block: !(display.startsWith("inline") || display === "contents" || display === "ruby"),
+            shown: style.visibility === "visible"
         };
     }
 
@@ -287,7 +292,8 @@ final class PageFind {
                 if (win !== window) {
                     // Cross-origin frames cannot be read from this world.
                     const frame = win.frameElement;
-                    if (!frame || !layout(frame, frame.ownerDocument)) return;
+                    const frameBox = frame && layout(frame, frame.ownerDocument);
+                    if (!frameBox || !frameBox.shown) return;
                     const box = frame.getBoundingClientRect();
                     if (box.width === 0 || box.height === 0) return;
                 }
@@ -300,7 +306,7 @@ final class PageFind {
     }
 
     function observe(context) {
-        if (state.observers.some(item => item.doc === context.doc)) return;
+        if (state.observers.some(item => !item.shadow && item.doc === context.doc)) return;
         try {
             const observer = new context.win.MutationObserver(() => { state.dirty = true; });
             observer.observe(context.doc.documentElement, {
@@ -342,13 +348,17 @@ final class PageFind {
         run.length += piece.length;
     }
 
+    // Soft hyphens and zero-width characters are read past, as WebKit's
+    // own find does, so "documentation" finds "docu&shy;mentation".
+    const unseen = /[\u00AD\u200B\u2060\uFEFF]/g;
     function addValue(run, node, value) {
-        const space = /\s+/g;
+        const space = /[\u00AD\u200B\u2060\uFEFF]+|\s+/g;
         let last = 0;
         let found;
         while ((found = space.exec(value))) {
             if (found.index > last) addPiece(run, node, last, value.slice(last, found.index));
             const end = found.index + found[0].length;
+            if (/^[\u00AD\u200B\u2060\uFEFF]/.test(found[0])) { last = end; continue; }
             if (!run.pending) run.pending = { sn: node, so: found.index, en: node, eo: end };
             else { run.pending.en = node; run.pending.eo = end; }
             last = end;
@@ -463,10 +473,17 @@ final class PageFind {
             run = controlRun;
             flush();
         }
-        function walk(node) {
+        // The page is walked as it's drawn, into open shadow trees
+        // (Reddit, MSN), with each slot's assigned nodes where the slot is.
+        // A run never spans two trees, since a range can't.
+        let shadows = null;
+        function walkChildren(parent, shown) {
+            for (let child = parent.firstChild; child; child = child.nextSibling) walk(child, shown);
+        }
+        function walk(node, shown = true) {
             if (node.nodeType === 3) {
                 const value = node.nodeValue || "";
-                if (!value) return;
+                if (!value || !shown) return;
                 addValue(run, run.nodes.push(node) - 1, value);
                 return;
             }
@@ -493,17 +510,45 @@ final class PageFind {
             }
             if (tag === "br") { flush(); return; }
             if (box.block) flush();
-            for (let child = element.firstChild; child; child = child.nextSibling) walk(child);
+            const root = element.shadowRoot;
+            if (root) {
+                try {
+                    if (!shadows) shadows = new context.win.MutationObserver(() => { state.dirty = true; });
+                    shadows.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
+                } catch (_) {}
+                flush();
+                walkChildren(root, box.shown);
+                flush();
+            } else if (tag === "slot") {
+                const assigned = element.assignedNodes({ flatten: true });
+                if (assigned.length) {
+                    flush();
+                    for (const child of assigned) walk(child, box.shown);
+                    flush();
+                } else {
+                    walkChildren(element, box.shown);
+                }
+            } else {
+                walkChildren(element, box.shown);
+            }
             if (box.block) flush();
         }
         walk(context.doc.body);
         flush();
+        if (shadows) {
+            shadows.doc = context.doc;
+            shadows.shadow = true;
+            state.observers.push(shadows);
+        }
     }
 
     function buildRuns(foundContexts) {
         state.controls = [];
         state.budget = 60000;
         state.cut = false;
+        // The shadow trees are watched anew with each walk.
+        for (const observer of state.observers) if (observer.shadow) observer.disconnect();
+        state.observers = state.observers.filter(observer => !observer.shadow);
         const runs = [];
         for (const context of foundContexts) {
             observe(context);
@@ -542,7 +587,7 @@ final class PageFind {
     }
 
     function startMatching() {
-        const spaced = needle.replace(/\s+/gu, " ").normalize("NFC");
+        const spaced = needle.replace(unseen, "").replace(/\s+/gu, " ").normalize("NFC");
         state.loose = !state.matchCase && bare(spaced) === spaced;
         const normalizedNeedle = spaced;
         const escaped = normalizedNeedle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -569,6 +614,7 @@ final class PageFind {
             const range = run.doc.createRange();
             range.setStart(from.node, from.offset);
             range.setEnd(to.node, to.offset);
+            if (range.collapsed) return null;
             const rects = range.getClientRects();
             for (let i = 0; i < rects.length; i++) {
                 if (rects[i].width > 0 || rects[i].height > 0) return { kind: "range", win: run.win, range };
@@ -634,7 +680,7 @@ final class PageFind {
 
     // The selection alone is drawn pale grey while the find bar has the keys,
     // so every match is painted too: yellow, the current one orange. Matches
-    // in fields and shadow trees keep only their selection.
+    // in fields keep only their selection.
     // Each window gets its two highlights once; after that they are only
     // cleared and added to. A highlight repaints the ranges it gains or
     // loses, whereas one set into or deleted from `CSS.highlights` could
@@ -687,6 +733,13 @@ final class PageFind {
                     painted.set(match.win, highlights);
                     state.painted.push(highlights);
                 }
+                // A shadow tree takes no rules from the document's
+                // sheets, so its matches need the sheet there too, before
+                // the range is added, which is what repaints it.
+                const root = match.range.startContainer.getRootNode();
+                if (root.host && !root.adoptedStyleSheets.includes(highlights.sheet)) {
+                    root.adoptedStyleSheets = [...root.adoptedStyleSheets, highlights.sheet];
+                }
                 highlights.all.add(match.range);
             } catch (_) {}
         }
@@ -699,7 +752,9 @@ final class PageFind {
     function scrollRange(range, win) {
         const target = range.startContainer;
         const element = target.nodeType === 1 ? target : target.parentElement;
-        for (let ancestor = element; ancestor && ancestor !== win.document.documentElement; ancestor = ancestor.parentElement) {
+        // Up the drawn tree, so out of a shadow tree through its host.
+        const up = (node) => node.assignedSlot || node.parentElement || node.getRootNode().host || null;
+        for (let ancestor = element; ancestor && ancestor !== win.document.documentElement; ancestor = up(ancestor)) {
             try {
                 const style = win.getComputedStyle(ancestor);
                 const scrollsY = /(auto|scroll|overlay)/.test(style.overflowY)
@@ -802,7 +857,9 @@ final class PageFind {
         unpaint();
         state.savedSelections = [];
         state.index = -1;
-        return answer("ok", 0, 0);
+        // A page too big to read through within the budget may hold
+        // it past where the walk stopped; WebKit's own find looks there.
+        return answer(state.cut ? "cut" : "ok", 0, 0);
     }
 
     let target;

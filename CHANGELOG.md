@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Find on Page finds text inside a page's own components (open shadow trees and what their slots show), as on Reddit, where every post's "N comments" said No matches, and MSN, where nothing could be found; their matches are painted too. Also a child that sets `visibility: visible` inside a hidden parent, and a word broken by a soft hyphen or zero-width space. On a page too long to read through, a word in the part not read is left to WebKit's own find ("Match found") rather than reported missing. `./test-find`
+
 ### Held back
 
 Not in this version, kept on main for a later one:
