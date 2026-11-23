@@ -3833,6 +3833,52 @@ final class Bench {
                 }
             }
 
+        case "seam":
+            // The browser's window told it is in full screen ("fullScreen")
+            // or in sight ("visible", with the occlusion notification macOS
+            // would post), without AppKit doing either (BenchSeams), and
+            // Search left for another app and come back to ("app": "left" or
+            // "back"), as its notifications say. "real" undoes the telling.
+            // Answers what the window says, the Escapes and full-screen asks
+            // that reached it, and the floating video. Hidden test runs only.
+            guard Store.testing, NSApp.isHidden else { answer(["error": "seam is for hidden test runs"]); return }
+            guard let window = browser.window else { answer(["error": "seam needs the browser's window"]); return }
+            if request["real"] as? Bool == true {
+                BenchSeams.fullScreen = nil
+                BenchSeams.visible = nil
+                BenchSeams.restore(window)
+            }
+            if request["fullScreen"] is Bool || request["visible"] is Bool || request["count"] is Bool { BenchSeams.fake(window) }
+            if let on = request["fullScreen"] as? Bool { BenchSeams.fullScreen = on }
+            if request["count"] as? Bool == true { BenchSeams.escapes = 0; BenchSeams.toggles = 0 }
+            if let on = request["visible"] as? Bool {
+                BenchSeams.visible = on
+                NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            }
+            switch request["app"] as? String {
+            case "left":
+                // The little window off every screen; the page taken for a
+                // player's, and drawn as if seen, so its video plays on.
+                Float.benchAway = NSPoint(x: -20000, y: -20000)
+                if let tab = browser.active {
+                    if let host = tab.address?.host() { Players.benchHosts.insert(host) }
+                    let occlusion = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+                    if tab.web.responds(to: occlusion) {
+                        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+                        unsafeBitCast(tab.web.method(for: occlusion), to: Setter.self)(tab.web, occlusion, false)
+                    }
+                }
+                browser.appLeft()
+            case "back": browser.appBack()
+            default: break
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + (request["wait"] as? Double ?? 0.3)) {
+                answer(["fullScreen": window.styleMask.contains(.fullScreen), "visible": window.occlusionState.contains(.visible),
+                        "escapes": BenchSeams.escapes, "toggles": BenchSeams.toggles,
+                        "showing": browser.floater.showing, "floating": browser.floating?.uuidString ?? "",
+                        "playing": browser.active?.playingVideo ?? false])
+            }
+
         case "float":
             // The floating window's gestures, handed to it as a trackpad, a
             // wheel or a click would, on screens made up far off the real
@@ -5530,9 +5576,9 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
 
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }
