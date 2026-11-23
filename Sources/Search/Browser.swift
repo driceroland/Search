@@ -615,12 +615,12 @@ final class Browser: NSObject, ObservableObject {
         return "\(index) of \(count)\(result.more ? "+" : "")"
     }
 
-    /// ⌘F on the Settings tab: its Find a setting field takes the keys.
-    @Published var settingsFind = 0
+    /// Focus Find a setting, with the text that started the search if any.
+    let settingsFind = PassthroughSubject<String?, Never>()
 
     func openFind() {
         if active?.page?.kind == .settings {
-            settingsFind += 1
+            settingsFind.send(nil)
             return
         }
         guard active?.isWeb == true else { return }

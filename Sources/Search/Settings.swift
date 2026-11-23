@@ -11,6 +11,7 @@ import SwiftUI
 struct SettingsPanel: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
+    let tabID: Tab.ID
     /// The section the tab's address names (search://settings/privacy),
     /// when Settings is a tab: asked for again, it moves there.
     var asked: String? = nil
@@ -104,7 +105,21 @@ struct SettingsPanel: View {
         Group {
             if asTab { tabbed } else { card }
         }
-        .onChange(of: browser.settingsFind) { _, _ in finding = true }
+        .onReceive(browser.settingsFind) { text in
+            guard browser.activeID == tabID else { return }
+            if let text {
+                query += text
+                // Programmatic focus selects the field's contents by default.
+                // Leave the caret after the text that started the search.
+                DispatchQueue.main.async {
+                    guard finding, let editor = browser.window?.firstResponder as? NSTextView,
+                          editor.string == query, editor.selectedRange().length == editor.string.utf16.count
+                    else { return }
+                    editor.moveToEndOfDocument(nil)
+                }
+            }
+            finding = true
+        }
         .onAppear { if let found { query = found } }
     }
 
