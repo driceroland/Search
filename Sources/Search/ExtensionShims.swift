@@ -5764,14 +5764,38 @@ enum ExtensionShims {
         return visible.indices.contains(index) ? visible[index] : nil
     }
 
-    /// Each icon drawn once; the image is held so its identity stays its own.
-    private static var favIcons: [ObjectIdentifier: (icon: NSImage, url: String)] = [:]
-    static func forgetIcons() { favIcons.removeAll() }
+    /// An installed extension as chrome.management describes it (Chrome's
+    /// ExtensionInfo). One turned off in Settings has no context: it is read
+    /// from its folder, as Chrome still lists a disabled one. Its icon is a
+    /// small PNG, Search having no chrome://extension-icon to point at.
+    private static func managementInfo(_ id: String, owner: Extensions) async -> [String: Any] {
+        let item = owner.installed.first { $0.id == id }
+        var found = owner.contexts[id]?.webExtension
+        if found == nil { found = try? await WKWebExtension(resourceBaseURL: Extensions.folder(for: id)) }
+        let manifest = found?.manifest ?? [:]
+        let strings = { (key: String) in (manifest[key] as? [Any] ?? []).compactMap { $0 as? String } }
+        let hosts = strings("host_permissions") + (manifest["manifest_version"] as? Int == 2
+            ? strings("permissions").filter { $0.contains("://") || $0 == "<all_urls>" } : [])
+        var info: [String: Any] = [
+            "id": id, "name": found?.displayName ?? item?.name ?? "", "shortName": found?.displayShortName ?? item?.name ?? "",
+            "version": found?.version ?? item?.version ?? "", "description": found?.displayDescription ?? "",
+            "enabled": item?.enabled ?? true, "type": "extension", "isApp": false,
+            "installType": item?.fromStore == false ? "development" : "normal",
+            "mayDisable": true, "mayEnable": true, "offlineEnabled": manifest["offline_enabled"] as? Bool ?? false,
+            "homepageUrl": manifest["homepage_url"] as? String ?? "",
+            "optionsUrl": owner.contexts[id]?.optionsPageURL?.absoluteString ?? "",
+            "permissions": strings("permissions").filter { !$0.contains("://") && $0 != "<all_urls>" },
+            "hostPermissions": hosts,
+        ]
+        if item?.enabled == false { info["disabledReason"] = "unknown" }
+        if let found, let versionName = found.displayVersion, versionName != found.version { info["versionName"] = versionName }
+        if let icon = found?.icon(for: CGSize(width: 48, height: 48)), let url = pngURL(icon, side: 48) {
+            info["icons"] = [["size": 48, "url": url]]
+        }
+        return info
+    }
 
-    private static func favIconURL(_ tab: Tab) -> String? {
-        guard let icon = tab.icon ?? Favicons.shared.cached(for: tab.address, shy: tab.shy) else { return nil }
-        if let known = favIcons[ObjectIdentifier(icon)] { return known.url }
-        let side = 32
+    private static func pngURL(_ icon: NSImage, side: Int) -> String? {
         guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
                                             samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
                                             bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
@@ -5779,8 +5803,17 @@ enum ExtensionShims {
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
         icon.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
         NSGraphicsContext.restoreGraphicsState()
-        guard let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
-        let url = "data:image/png;base64," + png.base64EncodedString()
+        return bitmap.representation(using: .png, properties: [:]).map { "data:image/png;base64," + $0.base64EncodedString() }
+    }
+
+    /// Each icon drawn once; the image is held so its identity stays its own.
+    private static var favIcons: [ObjectIdentifier: (icon: NSImage, url: String)] = [:]
+    static func forgetIcons() { favIcons.removeAll() }
+
+    private static func favIconURL(_ tab: Tab) -> String? {
+        guard let icon = tab.icon ?? Favicons.shared.cached(for: tab.address, shy: tab.shy) else { return nil }
+        if let known = favIcons[ObjectIdentifier(icon)] { return known.url }
+        guard let url = pngURL(icon, side: 32) else { return nil }
         if favIcons.count > 500 { favIcons.removeAll() }
         favIcons[ObjectIdentifier(icon)] = (icon, url)
         return url
@@ -6101,15 +6134,26 @@ enum ExtensionShims {
         case _ where api.hasPrefix("fontSettings.set") || api.hasPrefix("fontSettings.clear"):
             return nil
 
-        // MARK: management — only itself
-        case "management.getSelf", "management.get":
-            let found = context.webExtension
-            return ["id": id, "name": found.displayName ?? "", "shortName": found.displayShortName ?? "",
-                    "version": found.version ?? "", "description": found.displayDescription ?? "",
-                    "enabled": true, "type": "extension", "installType": owner.installed.first { $0.id == id }?.fromStore == false ? "development" : "normal",
-                    "mayDisable": true, "offlineEnabled": true, "isApp": false, "hostPermissions": [], "permissions": []]
+        // MARK: management — itself for anyone; the others, as in Chrome,
+        // only with "management" (#1431)
+        case "management.getSelf":
+            return await managementInfo(id, owner: owner)
+        case "management.get":
+            let asked = first as? String ?? id
+            guard asked == id || allowed(id, context: context).contains("management") else {
+                throw Unsupported(what: "The extension never asked for \u{201C}management\u{201D}")
+            }
+            guard owner.installed.contains(where: { $0.id == asked }) else {
+                throw Unsupported(what: "Failed to find extension with id \(asked).")
+            }
+            return await managementInfo(asked, owner: owner)
         case "management.getAll":
-            return []
+            guard allowed(id, context: context).contains("management") else {
+                throw Unsupported(what: "The extension never asked for \u{201C}management\u{201D}")
+            }
+            var all: [[String: Any]] = []
+            for item in owner.installed { all.append(await managementInfo(item.id, owner: owner)) }
+            return all
         case "management.setEnabled", "management.uninstallSelf":
             throw Unsupported(what: "Extensions are turned on and off in Settings › Extensions")
 
