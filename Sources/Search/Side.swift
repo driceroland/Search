@@ -114,20 +114,27 @@ struct SideBar: View {
     }
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
 
-    /// The window's buttons' corner: gone in full screen, where macOS takes
-    /// them away, and back, forward and reload move up to the edge (idea 184).
+    /// The navigation row shares the room that opens for the buttons.
+    private var reveal: SidebarLightsReveal { browser.sidebarLightsReveal }
     private var lights: CGFloat {
-        browser.fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors(prefs)))
+        SideBar.lightsRoom(width, prefs: prefs) * (browser.fullScreen ? reveal.amount : 1)
     }
 
     /// What is left of the lights' row right of back, forward and reload.
-    private var beyondHelm: CGFloat { SideBar.beyondHelm(width, fullScreen: browser.fullScreen, fold: prefs.foldButton, prefs: prefs) }
+    private var beyondHelm: CGFloat {
+        SideBar.beyondHelm(width, fullScreen: browser.fullScreen && reveal.amount == 0, fold: prefs.foldButton, prefs: prefs)
+    }
     /// The room right of the helm at the width let go at, for the doors up
     /// there: how many pinned extensions show, not changing under the pointer.
     private var upRoom: CGFloat {
-        max(SideBar.beyondHelm(prefs.columnWidth, fullScreen: browser.fullScreen, fold: prefs.foldButton, prefs: prefs), SideFoot.keptWidth(prefs, spaces: SpaceButtons.count(prefs, browser.spaces)))
+        max(SideBar.beyondHelm(prefs.columnWidth, fullScreen: browser.fullScreen && reveal.amount == 0,
+                               fold: prefs.foldButton, prefs: prefs),
+            SideFoot.keptWidth(prefs, spaces: SpaceButtons.count(prefs, browser.spaces)))
     }
-    private var doorsUp: Bool { SideBar.doorsUp(prefs, width: width, fullScreen: browser.fullScreen, spaces: SpaceButtons.count(prefs, browser.spaces)) }
+    private var doorsUp: Bool {
+        SideBar.doorsUp(prefs, width: width, fullScreen: browser.fullScreen && reveal.amount == 0,
+                        spaces: SpaceButtons.count(prefs, browser.spaces))
+    }
     /// Where the doors are: up in the lights' row or down at the foot. Not
     /// doorsUp itself: while the edge is held, the doors up there stay up as
     /// it pushes them under the helm, and only go once they are under it
@@ -169,9 +176,13 @@ struct SideBar: View {
         return (false, min(Metrics.sideMax, wanted))
     }
 
+    @MainActor private static func lightsRoom(_ width: CGFloat, prefs: Preferences) -> CGFloat {
+        max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors(prefs)))
+    }
+
     /// `prefs`: back, forward and reload as Settings leaves them (idea 815).
     @MainActor static func beyondHelm(_ width: CGFloat, fullScreen: Bool, fold: Bool = false, prefs: Preferences) -> CGFloat {
-        let lights = fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors(prefs)))
+        let lights = fullScreen ? 0 : lightsRoom(width, prefs: prefs)
         return width - 20 - lights - foldDoor(fold) - Metrics.helm(prefs)
     }
     /// The door that folds the column away, between the lights and back
@@ -215,6 +226,7 @@ struct SideBar: View {
                     DragStrip(trailing: doorsTop ? upRoom + 10 : 0, menu: columnMenu)
                 }
                 .frame(height: Metrics.strip)
+                .offset(y: reveal.top)
             }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -258,6 +270,8 @@ struct SideBar: View {
                                 .accessibilityHidden(!doorsTop)
                         }
                     }
+                    .offset(y: reveal.top)
+                    .zIndex(reveal.top > 0 ? 1 : 0)
                     // The page's address, when it is to be in sight.
                     if prefs.addressLine {
                         AddressLine(browser: browser, height: prefs.sideRow)
