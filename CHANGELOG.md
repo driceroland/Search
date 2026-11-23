@@ -39,7 +39,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- The return button in macOS picture in picture goes back to the video's tab even after switching to another space. `swift test --filter SpaceFloatTests` (related to [#809](https://github.com/driceroland/Search/issues/809), [#772](https://github.com/driceroland/Search/issues/772))
+- The return button in macOS picture in picture brings Search forward on the video's tab, even from another app or after switching to another space. `swift test --filter SpaceFloatTests` (related to [#809](https://github.com/driceroland/Search/issues/809), [#772](https://github.com/driceroland/Search/issues/772))
 
 - A pinned tab on an extension's page (its options page, for example) no longer opens blank after restarting Search, after closing the pin with ⌘W while it was on a website, or after the extension moves the sleeping pin to another of its pages. A pinned website closed with ⌘W while it was on an extension's page no longer opens blank either. `python3 Tests/pin_swap.py`. Thanks [@max-zelinski](https://github.com/max-zelinski) ([#1410](https://github.com/driceroland/Search/pull/1410))
 - A tab showing an extension's own page, its options or a page it opens in a tab of its own, wears the extension's icon, as it does in Chrome, where it showed a letter: the first of the extension's id, which says nothing about it. An extension's pages aren't asked for an icon the way a site's are, so they never had one; bookmarks and history of them wear it too. `python3 Tests/extension_page_icon.py`. Thanks [@dadalar](https://github.com/dadalar) ([#1398](https://github.com/driceroland/Search/pull/1398))
