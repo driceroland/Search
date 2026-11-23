@@ -312,6 +312,7 @@ extension Browser {
         // elements' list and a site's style (a click beside either puts it
         // away), Welcome and What's New.
         if tabSwitcher.visible || reviewing || styling != nil || welcoming || newsShowing || iphoneAsking { return true }
+        if fullScreenLights?.covers(point) == true { return true }
         // The Find bar is a pill over one corner of the page: whatever a
         // click there would land on decides. Asking the window costs far more
         // than the flags above, so only while the bar is open.

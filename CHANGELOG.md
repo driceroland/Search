@@ -13,7 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- In full screen with tabs down the left, the window buttons slide in from the left and the sidebar's navigation buttons make room for them. With the sidebar hidden, a small backing keeps the lights visible over the page. ([#1432](https://github.com/driceroland/Search/issues/1432))
+- In full screen with tabs down the left, the window buttons slide in from the left and the sidebar's navigation buttons make room for them. The tabs and footer stay put. With the sidebar hidden, a small backing keeps the lights visible over the page. On a touch display, tap the floating buttons once to enlarge them, then tap the button you want. ([#1432](https://github.com/driceroland/Search/issues/1432))
 - With two profiles or more, the profile item in a space's right-click menu is called Switch to Profile, where it said "Profile: Personal". It switches the window to that profile (the ticked one is the window's) and never moved the space, but read like a setting of the space, so choosing Work looked like moving the space there and losing it. (reported by email, idea 983)
 
 ### Held back

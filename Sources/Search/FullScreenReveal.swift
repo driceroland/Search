@@ -153,6 +153,7 @@ final class FullScreenReveal: NSObject {
     private func restoreBar() {
         compact?.restore()
         compact = nil
+        browser?.fullScreenLights = nil
         setSidebarReveal(.zero)
     }
 
@@ -162,16 +163,20 @@ final class FullScreenReveal: NSObject {
     }
 
     private func compactBar(_ bar: NSWindow, in content: NSView, window: NSWindow,
-                            amount: CGFloat, menuInset: CGFloat) -> Bool {
-        guard let frame = content.superview, let layer = bar.contentView?.superview?.layer else { return false }
+                            amount: CGFloat, menuInset: CGFloat, inline: Bool) -> Bool {
+        guard let browser, let frame = content.superview,
+              let layer = bar.contentView?.superview?.layer else { return false }
         if compact?.nativeLayer !== layer {
             restoreBar()
             let originals = FullScreenLights.buttonTypes.compactMap { window.standardWindowButton($0) }
             guard originals.count == FullScreenLights.buttonTypes.count,
                   originals.allSatisfy({ $0.window === bar }) else { return false }
-            compact = FullScreenLights(window: window, bar: bar, layer: layer, originals: originals)
+            compact = FullScreenLights(window: window, bar: bar, layer: layer, originals: originals) { [weak self] in
+                self?.measure()
+            }
+            browser.fullScreenLights = compact
         }
-        guard let compact, let browser else { return false }
+        guard let compact else { return false }
         compact.hideNativeBar()
         if amount == 0 {
             compact.removeFromSuperview()
@@ -179,11 +184,11 @@ final class FullScreenReveal: NSObject {
             return true
         }
 
-        if compact.superview !== frame {
-            frame.addSubview(compact, positioned: .above, relativeTo: content)
+        // Hit testing follows the view order, even when the layers put the
+        // controls in front of everything on screen.
+        if frame.subviews.last !== compact {
+            frame.addSubview(compact, positioned: .above, relativeTo: nil)
         }
-        let inline = browser.prefs.sidePosition == .left && !browser.prefs.iconColumn
-            && (!browser.folded || browser.peeking)
         let top = compact.show(amount: amount, menuInset: menuInset, over: content, floating: !inline)
         setSidebarReveal(inline ? SidebarLightsReveal(amount: amount, top: top) : .zero)
         return true
@@ -191,7 +196,20 @@ final class FullScreenReveal: NSObject {
 
     func measure() {
         guard let window, let browser else { return }
-        if window.styleMask.contains(.fullScreen),
+        let fullScreen = window.styleMask.contains(.fullScreen)
+        let useCompact = fullScreen && accessory != nil && browser.prefs.sidebar
+        let inline = browser.prefs.sidePosition == .left && !browser.prefs.iconColumn
+            && (!browser.folded || browser.peeking)
+        if let compact, compact.touchExpanded {
+            // The finger is aimed at the enlarged controls. The native bar
+            // can retract or go away altogether before the next tap.
+            if useCompact, !inline, window.isKeyWindow {
+                compact.hideNativeBar()
+                return
+            }
+            compact.endTouchExpansion()
+        }
+        if fullScreen,
            let content = window.contentView, let bar = container, let barWindow = bar.window {
             let separate = barWindow !== window
             follow(separate ? barWindow : nil, container: separate ? bar : nil)
@@ -203,8 +221,8 @@ final class FullScreenReveal: NSObject {
                                    contentTop: contentTop, barBottom: barBottom)
             let progress = barWindow.isVisible ? min(1, max(0, amount ?? (inset > 0 ? 1 : 0))) : 0
             let menuInset = max(0, contentTop - barWindow.frame.maxY).rounded()
-            if separate, accessory != nil, browser.prefs.sidebar,
-               compactBar(barWindow, in: content, window: window, amount: progress, menuInset: menuInset) {
+            if separate, useCompact,
+               compactBar(barWindow, in: content, window: window, amount: progress, menuInset: menuInset, inline: inline) {
                 if browser.revealInset != 0 { browser.revealInset = 0 }
                 return
             }
@@ -243,13 +261,27 @@ struct SidebarLightsReveal: Equatable {
 /// keeps that job, while its visual and mouse surfaces give way to a row
 /// of standard AppKit buttons on Search's own window.
 @MainActor
-private final class FullScreenLights: NSView {
+final class FullScreenLights: NSView {
     static let buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
 
     private weak var bar: NSWindow?
     private(set) weak var nativeLayer: CALayer?
     private let blank = CALayer()
     private let backing = CALayer()
+    private let glyphs = ["xmark", "minus", "arrow.up.left.and.arrow.down.right"].map { name in
+        let layer = CALayer()
+        let configuration = NSImage.SymbolConfiguration(pointSize: 8, weight: .bold)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [.black]))
+        if let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) {
+            layer.contents = symbol.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            layer.bounds.size = symbol.size
+        }
+        layer.zPosition = 1
+        layer.opacity = 0.75
+        layer.isHidden = true
+        return layer
+    }
     private let originalMask: CALayer?
     private let background: NSColor
     private let originalOpaque: Bool
@@ -258,11 +290,17 @@ private final class FullScreenLights: NSView {
     private let buttons: [NSButton]
     private let originals: [NSButton]
 
-    init?(window: NSWindow, bar: NSWindow, layer: CALayer, originals: [NSButton]) {
+    private let touchExpansionChanged: () -> Void
+    private var collapseTask: Task<Void, Never>?
+    private(set) var touchExpanded = false
+
+    init?(window: NSWindow, bar: NSWindow, layer: CALayer, originals: [NSButton],
+          touchExpansionChanged: @escaping () -> Void) {
         let style = window.styleMask.subtracting(.fullScreen)
         let buttons = Self.buttonTypes.compactMap { NSWindow.standardWindowButton($0, for: style) }
         guard buttons.count == Self.buttonTypes.count else { return nil }
         self.buttons = buttons
+        self.touchExpansionChanged = touchExpansionChanged
         self.originals = originals
         self.bar = bar
         nativeLayer = layer
@@ -279,10 +317,84 @@ private final class FullScreenLights: NSView {
         self.layer?.addSublayer(backing)
         updateBackingColors()
         isHidden = true
-        for button in buttons { addSubview(button) }
+        // The native bar's controls can be disabled during retraction. These
+        // controls act on the browser window even while that bar is away.
+        let actions: [Selector?] = [#selector(NSWindow.performClose(_:)), nil, #selector(NSWindow.toggleFullScreen(_:))]
+        for (button, action) in zip(buttons, actions) {
+            button.target = window
+            button.action = action
+            button.toolTip = nil
+            addSubview(button)
+        }
+        buttons[0].isEnabled = style.contains(.closable)
+        buttons[1].isEnabled = false  // A full-screen window can't be minimized.
+        buttons[2].isEnabled = true
+        for glyph in glyphs { self.layer?.addSublayer(glyph) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved,
+                                                             .activeInKeyWindow, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+        if #available(macOS 27, *) {
+            // Leave mouse clicks to the standard window buttons.
+            let tap = NSClickGestureRecognizer(target: self, action: #selector(touchWindowControls(_:)))
+            tap.buttonMask = 0
+            tap.allowedTouchTypes = .direct
+            addGestureRecognizer(tap)
+        }
     }
 
     required init?(coder: NSCoder) { nil }
+
+    @objc private func touchWindowControls(_ tap: NSClickGestureRecognizer) {
+        handleTouch(at: tap.location(in: nil))
+    }
+
+    func handleTouch(at windowPoint: NSPoint) {
+        guard !isHiddenOrHasHiddenAncestor, window != nil else { return }
+        let point = convert(windowPoint, from: nil)
+        if !backing.isHidden {
+            guard backing.frame.contains(point) else { return }
+            if !touchExpanded {
+                return expandForTouch()
+            }
+        }
+        let button = touchExpanded
+            ? buttons.min { abs($0.frame.midX - point.x) < abs($1.frame.midX - point.x) }
+            : buttons.first { $0.frame.contains(point) }
+        guard let button, button.isEnabled else { return }
+        button.performClick(nil)
+        if touchExpanded {
+            endTouchExpansion()
+            touchExpansionChanged()
+        }
+    }
+
+    private func expandForTouch() {
+        guard let window, let parent = superview, let content = window.contentView else { return }
+        let current = content.convert(frame, from: parent)
+        let scale: CGFloat = 1.65
+        let height = current.height * scale
+        let centred = current.midY - height / 2
+        let y = content.isFlipped ? max(content.bounds.minY, centred) : min(content.bounds.maxY - height, centred)
+        let expanded = NSRect(x: max(content.bounds.minX, current.minX), y: y,
+                              width: current.width * scale, height: height)
+        touchExpanded = true
+        let unscaled = bounds
+        frame = parent.convert(expanded, from: content)
+        bounds = unscaled
+        updateHover(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        collapseTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, let self else { return }
+            self.endTouchExpansion()
+            self.touchExpansionChanged()
+        }
+    }
+
+    func endTouchExpansion() {
+        collapseTask?.cancel()
+        collapseTask = nil
+        touchExpanded = false
+    }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -296,14 +408,48 @@ private final class FullScreenLights: NSView {
         }
     }
 
+    override func mouseEntered(with event: NSEvent) {
+        updateHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        updateHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    private func updateHover(at point: NSPoint) {
+        let hoverArea = backing.isHidden
+            ? buttons.reduce(NSRect.null) { $0.union($1.frame) }.insetBy(dx: -5, dy: -5)
+            : backing.frame
+        let over = !isHiddenOrHasHiddenAncestor && hoverArea.contains(point)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (glyph, button) in zip(glyphs, buttons) {
+            glyph.isHidden = !(over || touchExpanded) || !button.isEnabled
+        }
+        CATransaction.commit()
+    }
+
+    /// The floating backdrop lies over the page and owns its pointer area.
+    func covers(_ point: NSPoint) -> Bool {
+        window != nil && !isHiddenOrHasHiddenAncestor && !backing.isHidden
+            && backing.frame.contains(convert(point, from: nil))
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
-        return hit === self ? nil : hit
+        if hit === self, backing.isHidden || !backing.frame.contains(convert(point, from: superview)) {
+            return nil
+        }
+        return hit
     }
 
     func hideNativeBar() {
-        guard let bar, let nativeLayer else { return }
-        if nativeLayer.mask !== blank { nativeLayer.mask = blank }
+        guard let bar else { return }
+        if let nativeLayer, nativeLayer.mask !== blank { nativeLayer.mask = blank }
         if bar.backgroundColor != .clear { bar.backgroundColor = .clear }
         if bar.isOpaque { bar.isOpaque = false }
         if bar.hasShadow { bar.hasShadow = false }
@@ -313,7 +459,7 @@ private final class FullScreenLights: NSView {
     /// Return the small downward correction needed when the menu bar
     /// overlaps the header. The rest of the slide is horizontal.
     func show(amount: CGFloat, menuInset: CGFloat, over content: NSView, floating: Bool) -> CGFloat {
-        guard let parent = superview, let window else { return 0 }
+        guard !touchExpanded, let parent = superview, let window else { return 0 }
         let strip = Metrics.strip
         let top = max(0, menuInset - (strip - 26) / 2)
         let first = originals[0].frame
@@ -325,6 +471,8 @@ private final class FullScreenLights: NSView {
         let y = content.isFlipped ? content.bounds.minY + top : content.bounds.maxY - strip - top
         let next = parent.convert(NSRect(x: content.bounds.minX + x, y: y, width: reach, height: strip), from: content)
         if frame != next { frame = next }
+        let logicalBounds = NSRect(x: 0, y: 0, width: reach, height: strip)
+        if bounds != logicalBounds { bounds = logicalBounds }
         // Over a page, an opaque surface keeps the lights legible even
         // when the site has buttons or text in the same corner.
         if floating {
@@ -340,20 +488,24 @@ private final class FullScreenLights: NSView {
             }
         }
         backing.isHidden = !floating
-        for (button, original) in zip(buttons, originals) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (index, button) in buttons.enumerated() {
+            let original = originals[index]
             let size = original.frame.size
             let origin = NSPoint(x: leading + original.frame.minX - first.minX,
                                  y: (strip - size.height) / 2)
             button.frame = NSRect(origin: origin, size: size)
-            button.target = original.target ?? window
-            button.action = original.action
-            button.isEnabled = original.isEnabled
+            glyphs[index].position = NSPoint(x: button.frame.midX, y: button.frame.midY)
         }
+        CATransaction.commit()
         isHidden = false
+        updateHover(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))
         return top
     }
 
     func restore() {
+        endTouchExpansion()
         removeFromSuperview()
         if nativeLayer?.mask === blank { nativeLayer?.mask = originalMask }
         bar?.backgroundColor = background

@@ -117,7 +117,7 @@ struct SideBar: View {
     /// The navigation row shares the room that opens for the buttons.
     private var reveal: SidebarLightsReveal { browser.sidebarLightsReveal }
     private var lights: CGFloat {
-        SideBar.lights(width, fullScreen: browser.fullScreen, fold: fold, prefs: prefs)
+        SideBar.lights(width, fullScreen: browser.fullScreen && onRight, fold: fold, prefs: prefs) * (browser.fullScreen ? reveal.amount : 1)
     }
     /// The fold door, where it fits (SideBar.folds).
     private var fold: Bool { SideBar.folds(prefs, width: width, fullScreen: browser.fullScreen) }
@@ -130,6 +130,7 @@ struct SideBar: View {
         max(SideBar.beyondHelm(prefs.columnWidth, fullScreen: browser.fullScreen,
                                fold: SideBar.folds(prefs, width: prefs.columnWidth, fullScreen: browser.fullScreen), prefs: prefs), SideFoot.keptWidth(prefs, spaces: SpaceButtons.count(prefs, browser.spaces)))
     }
+    private var doorsUp: Bool { SideBar.doorsUp(prefs, width: width, fullScreen: browser.fullScreen, spaces: SpaceButtons.count(prefs, browser.spaces)) }
     /// Where the doors are: up in the lights' row or down at the foot. Not
     /// doorsUp itself: while the edge is held, the doors up there stay up as
     /// it pushes them under the helm, and only go once they are under it
@@ -171,13 +172,9 @@ struct SideBar: View {
         return (false, min(Metrics.sideMax, wanted))
     }
 
-    @MainActor private static func lightsRoom(_ width: CGFloat, prefs: Preferences) -> CGFloat {
-        max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors(prefs)))
-    }
-
     /// `prefs`: back, forward and reload as Settings leaves them (idea 815).
     @MainActor static func beyondHelm(_ width: CGFloat, fullScreen: Bool, fold: Bool = false, prefs: Preferences) -> CGFloat {
-        width - 20 - lights(width, fullScreen: fullScreen, fold: fold, prefs: prefs) - foldDoor(fold) - Metrics.helm(prefs)
+        width - 20 - lights(width, fullScreen: fullScreen && prefs.sidePosition == .right, fold: fold, prefs: prefs) - foldDoor(fold) - Metrics.helm(prefs)
     }
     /// The room left of the fold door, or of back, forward and reload, for
     /// the window's buttons: what the row has after the doors, up to
@@ -233,7 +230,7 @@ struct SideBar: View {
                     // The doors, when they are up here, at its far end.
                     DragStrip(trailing: doorsTop ? upRoom + 10 : 0, menu: columnMenu)
                 }
-                .frame(height: Metrics.strip)
+                .frame(width: width, height: Metrics.strip)
                 .offset(y: reveal.top)
             }
 
@@ -263,7 +260,9 @@ struct SideBar: View {
                         Helm(browser: browser)
                         Spacer(minLength: 0)
                     }
-                    .frame(height: Metrics.strip)
+                    // The navigation row can be wider than the space between
+                    // the margins. Keep that overflow from shifting the column.
+                    .frame(width: width - 20, height: Metrics.strip)
                     // At the column's far end, fading out as the foot rises,
                     // and back (settleDoors). Laid over the row, the width
                     // let go at, not the one held: sized to the edge as it

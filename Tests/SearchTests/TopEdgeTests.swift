@@ -60,11 +60,19 @@ final class TopEdgeTests: XCTestCase {
     /// A window dressed as Search's (Windows.swift, ContentView.dress), with
     /// the title bar's container grown to the strip as Lights does. Never
     /// ordered in.
-    private func searchWindow() -> NSWindow {
+    private final class TestWindow: NSWindow {
+        private(set) var closes = 0
+        private(set) var fullScreenToggles = 0
+
+        override func performClose(_ sender: Any?) { closes += 1 }
+        override func toggleFullScreen(_ sender: Any?) { fullScreenToggles += 1 }
+    }
+
+    private func searchWindow() -> TestWindow {
         _ = NSApplication.shared
-        let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 900, height: 600),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
+        let window = TestWindow(contentRect: NSRect(x: -20000, y: -20000, width: 900, height: 600),
+                                styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                                backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -120,6 +128,106 @@ final class TopEdgeTests: XCTestCase {
         window.addTitlebarAccessoryViewController(bar)
         XCTAssertGreaterThan(window.frame.height - window.contentLayoutRect.height, room)
         window.close()
+    }
+
+    func testFloatingLightsHoverAndTouchExpansion() throws {
+        let window = searchWindow()
+        let bar = searchWindow()
+        let browser = Browser(record: WindowRecord())
+        browser.window = window
+        browser.welcoming = false
+        defer {
+            browser.window = nil
+            browser.closeAll()
+            bar.close()
+            window.close()
+        }
+        let content = try XCTUnwrap(window.contentView)
+        let frame = try XCTUnwrap(content.superview)
+        let originals = FullScreenLights.buttonTypes.compactMap { bar.standardWindowButton($0) }
+        let lights = try XCTUnwrap(FullScreenLights(window: window, bar: bar, layer: CALayer(),
+                                                   originals: originals) {})
+        browser.fullScreenLights = lights
+        frame.addSubview(lights, positioned: .above, relativeTo: nil)
+        defer { lights.restore() }
+        _ = lights.show(amount: 1, menuInset: 36, over: content, floating: true)
+        let buttons = lights.subviews.compactMap { $0 as? NSButton }
+        let close = try XCTUnwrap(buttons.first)
+        let zoom = try XCTUnwrap(buttons.last)
+        let width = lights.convert(close.frame, to: frame).width
+        func centre(of button: NSButton) -> NSPoint {
+            button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
+        }
+        let over = centre(of: close)
+        let outside = NSPoint(x: over.x + 150, y: over.y)
+        XCTAssertTrue(browser.covers(content, at: over))
+        XCTAssertFalse(browser.covers(content, at: outside))
+        XCTAssertTrue(buttons.allSatisfy { $0.toolTip == nil })
+
+        func move(to point: NSPoint) throws {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: point, modifierFlags: [],
+                                                        timestamp: 0, windowNumber: window.windowNumber,
+                                                        context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+            lights.mouseMoved(with: event)
+        }
+        let glyphs = lights.layer?.sublayers?.filter { $0.zPosition == 1 } ?? []
+        XCTAssertEqual(glyphs.count, 3)
+        XCTAssertTrue(glyphs.allSatisfy { $0.contents != nil })
+        try move(to: over)
+        XCTAssertEqual(glyphs.map(\.isHidden), [false, true, false])
+        try move(to: outside)
+        XCTAssertTrue(glyphs.allSatisfy(\.isHidden))
+
+        lights.handleTouch(at: over)
+        XCTAssertTrue(lights.touchExpanded)
+        XCTAssertEqual(window.closes, 0)
+        XCTAssertEqual(window.fullScreenToggles, 0)
+        XCTAssertGreaterThan(lights.convert(close.frame, to: frame).width, width)
+        let expanded = lights.frame
+        for original in originals {
+            original.isEnabled = false
+            original.action = nil
+        }
+        bar.ignoresMouseEvents = false
+        lights.hideNativeBar()
+        XCTAssertTrue(bar.ignoresMouseEvents)
+        _ = lights.show(amount: 0, menuInset: 0, over: content, floating: true)
+        XCTAssertEqual(lights.frame, expanded)
+        XCTAssertEqual(buttons.map(\.isEnabled), [true, false, true])
+        XCTAssertEqual(glyphs.map(\.isHidden), [false, true, false])
+
+        let exit = centre(of: zoom)
+        XCTAssertIdentical(frame.hitTest(frame.convert(exit, from: nil)), zoom)
+        lights.handleTouch(at: exit)
+        XCTAssertEqual(window.fullScreenToggles, 1)
+        XCTAssertEqual(window.closes, 0)
+        XCTAssertFalse(lights.touchExpanded)
+
+        _ = lights.show(amount: 1, menuInset: 0, over: content, floating: true)
+        lights.handleTouch(at: centre(of: close))
+        lights.handleTouch(at: centre(of: close))
+        XCTAssertEqual(window.closes, 1)
+        XCTAssertFalse(lights.touchExpanded)
+
+        _ = lights.show(amount: 1, menuInset: 0, over: content, floating: true)
+        lights.handleTouch(at: centre(of: close))
+        let click = centre(of: close)
+        XCTAssertIdentical(frame.hitTest(frame.convert(click, from: nil)), close)
+        func mouseEvent(_ type: NSEvent.EventType) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type, location: click, modifierFlags: [],
+                                             timestamp: ProcessInfo.processInfo.systemUptime,
+                                             windowNumber: window.windowNumber, context: nil,
+                                             eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1))
+        }
+        // A standard button tracks the pointer synchronously until release.
+        window.orderFrontRegardless()
+        NSApp.postEvent(try mouseEvent(.leftMouseUp), atStart: true)
+        window.sendEvent(try mouseEvent(.leftMouseDown))
+        XCTAssertEqual(window.closes, 2)
+        lights.endTouchExpansion()
+
+        _ = lights.show(amount: 1, menuInset: 0, over: content, floating: false)
+        XCTAssertFalse(browser.covers(content, at: centre(of: close)))
     }
 
     // MARK: DragStrip over a page
