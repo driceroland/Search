@@ -209,7 +209,7 @@ enum DeveloperCommandMenu {
             })
         }
         for tool in DeveloperDrawerTool.offered where tool != .console {
-            rows.append(.init(title: "Show " + tool.rawValue, category: "Drawer") { shell.showDrawer(.tool(tool)) })
+            rows.append(.init(title: "Show " + tool.title, category: "Drawer") { shell.showDrawer(.tool(tool)) })
         }
         rows.append(.init(title: "Toggle drawer", category: "Drawer", shortcut: "Esc") { shell.toggleDrawer() })
 
@@ -294,16 +294,39 @@ enum DeveloperCommandMenu {
                           category: "Rendering") { rendering.update(in: session) { $0.paintFlashing.toggle() } })
         rows.append(.init(title: rendering.options.layerBorders ? "Hide layer borders" : "Show layer borders",
                           category: "Rendering") { rendering.update(in: session) { $0.layerBorders.toggle() } })
+        rows.append(.init(title: rendering.options.layoutShifts ? "Hide layout shift regions" : "Show layout shift regions",
+                          category: "Rendering") { rendering.update(in: session) { $0.layoutShifts.toggle() } })
+        rows.append(.init(title: rendering.options.frameStats ? "Hide frames per second (FPS) meter" : "Show frames per second (FPS) meter",
+                          category: "Rendering") { rendering.update(in: session) { $0.frameStats.toggle() } })
         rows.append(.init(title: "Emulate CSS print media type", category: "Rendering") { rendering.update(in: session) { $0.mediaType = "print" } })
         rows.append(.init(title: "Emulate CSS screen media type", category: "Rendering") { rendering.update(in: session) { $0.mediaType = "screen" } })
         rows.append(.init(title: "Do not emulate CSS media type", category: "Rendering") { rendering.update(in: session) { $0.mediaType = "" } })
-        rows.append(.init(title: "Emulate CSS prefers-color-scheme: light", category: "Rendering") { rendering.update(in: session) { $0.colorScheme = "light" } })
-        rows.append(.init(title: "Emulate CSS prefers-color-scheme: dark", category: "Rendering") { rendering.update(in: session) { $0.colorScheme = "dark" } })
+        rows.append(.init(title: "Emulate CSS prefers-color-scheme: light", category: "Rendering") { rendering.update(in: session) { $0.colorScheme = "Light" } })
+        rows.append(.init(title: "Emulate CSS prefers-color-scheme: dark", category: "Rendering") { rendering.update(in: session) { $0.colorScheme = "Dark" } })
         rows.append(.init(title: "Do not emulate CSS prefers-color-scheme", category: "Rendering") { rendering.update(in: session) { $0.colorScheme = nil } })
-        rows.append(.init(title: "Emulate CSS prefers-reduced-motion: reduce", category: "Rendering") { rendering.update(in: session) { $0.reducedMotion = "reduce" } })
+        rows.append(.init(title: "Emulate CSS prefers-reduced-motion: reduce", category: "Rendering") { rendering.update(in: session) { $0.reducedMotion = "Reduce" } })
         rows.append(.init(title: "Do not emulate CSS prefers-reduced-motion", category: "Rendering") { rendering.update(in: session) { $0.reducedMotion = nil } })
-        rows.append(.init(title: "Emulate CSS prefers-contrast: more", category: "Rendering") { rendering.update(in: session) { $0.contrast = "more" } })
-        rows.append(.init(title: "Do not emulate CSS prefers-contrast", category: "Rendering") { rendering.update(in: session) { $0.contrast = nil } })
+        // Every media feature the Rendering tool emulates, as Chrome lists them:
+        // one command per value and one to stop.
+        let features: [(name: String, values: [String], key: WritableKeyPath<DeveloperRendering.Options, String?>)] = [
+            ("prefers-contrast", ["more", "less", "custom", "no-preference"], \.contrast),
+            ("forced-colors", ["active", "none"], \.forcedColors),
+            ("prefers-reduced-data", ["reduce"], \.reducedData),
+            ("prefers-reduced-transparency", ["reduce", "no-preference"], \.reducedTransparency),
+            ("color-gamut", ["srgb", "p3", "rec2020"], \.colorGamut),
+        ]
+        for feature in features {
+            for value in feature.values {
+                rows.append(.init(title: "Emulate CSS \(feature.name): \(value)", category: "Rendering") {
+                    rendering.update(in: session) { $0[keyPath: feature.key] = value }
+                })
+            }
+            rows.append(.init(title: "Do not emulate CSS \(feature.name)", category: "Rendering") {
+                rendering.update(in: session) { $0[keyPath: feature.key] = nil }
+            })
+        }
+        rows.append(.init(title: rendering.options.focusedPage ? "Do not emulate a focused page" : "Emulate a focused page",
+                          category: "Rendering") { rendering.update(in: session) { $0.focusedPage.toggle() } })
         for deficiency in DeveloperRendering.VisionDeficiency.allCases {
             let title = deficiency == .none ? "Do not emulate any vision deficiency"
                 : "Emulate " + deficiency.rawValue.prefix { $0 != "(" }.trimmingCharacters(in: .whitespaces).lowercased()

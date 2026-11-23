@@ -140,7 +140,7 @@ struct DeveloperNetworkSearchView: View {
     }
 }
 
-/// The "Network request blocking" drawer, Chrome's Request conditions:
+/// The Request conditions drawer (Network request blocking before Chrome renamed it):
 /// patterns, each switchable, that block matching requests or delay them
 /// with a throttling profile.
 struct DeveloperNetworkBlockingView: View {
@@ -155,8 +155,8 @@ struct DeveloperNetworkBlockingView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: DeveloperToolsStyle.gutter) {
-                Text("Network request blocking").font(.system(size: 11, weight: .semibold))
-                Toggle("Enable network request blocking", isOn: $tools.blockingEnabled)
+                Text("Request conditions").font(.system(size: 11, weight: .semibold))
+                Toggle("Enable blocking and throttling", isOn: $tools.blockingEnabled)
                     .toggleStyle(.developerCheckbox)
                     .controlSize(.small)
                     .foregroundStyle(.secondary)

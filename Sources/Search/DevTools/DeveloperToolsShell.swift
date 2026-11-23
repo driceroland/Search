@@ -32,6 +32,11 @@ enum DeveloperDrawerTool: String, CaseIterable, Identifiable {
 
     var id: Self { self }
 
+    /// The name shown. Chrome renamed Network request blocking to Request
+    /// conditions when it added per-pattern throttling; the raw value
+    /// stays because saved drawer tabs are stored by it.
+    var title: String { self == .requestBlocking ? "Request conditions" : rawValue }
+
     var icon: String {
         switch self {
         case .console: "apple.terminal"
@@ -85,7 +90,7 @@ enum DeveloperDrawerItem: Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .tool(let tool): tool.rawValue
+        case .tool(let tool): tool.title
         case .panel(let panel): panel.rawValue
         }
     }

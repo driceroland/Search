@@ -310,16 +310,14 @@ struct DeveloperPerformanceView: View {
                 Divider().frame(height: 16).padding(.horizontal, 2)
                 if !profile.isEmpty && !session.recordingTimeline {
                     Text("\(DeveloperPerformanceRuler.label(window.lower)) – \(DeveloperPerformanceRuler.label(window.upper))")
-                        .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+                        .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary).fixedSize()
                     DeveloperPanelIcon(symbol: "arrow.up.left.and.arrow.down.right", title: "Show the whole recording") {
                         window = breadcrumbs.select(0)
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, DeveloperToolsStyle.gutter)
-            .frame(height: DeveloperToolsStyle.toolbarHeight)
-            .background(DeveloperToolsStyle.chrome)
+            .developerToolbarRow()
             Divider()
         }
     }
@@ -2123,21 +2121,22 @@ private struct DeveloperPerformanceDetails: View, Equatable {
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
                 ForEach(rows) { row in
                     GridRow {
-                        Text(time(row.value)).monospacedDigit().gridColumnAlignment(.trailing)
+                        Text(time(row.value)).monospacedDigit().fixedSize().gridColumnAlignment(.trailing)
                         RoundedRectangle(cornerRadius: 2).fill(row.color).frame(width: 10, height: 10)
-                        Text(row.name)
+                        // Names stay whole; the bar gives way in a narrow pane.
+                        Text(row.name).fixedSize()
                         GeometryReader { space in
                             RoundedRectangle(cornerRadius: 2).fill(row.color)
                                 .frame(width: max(1, space.size.width * CGFloat(total > 0 ? row.value / total : 0)))
                         }
-                        .frame(width: 160, height: 8)
+                        .frame(minWidth: 24, maxWidth: 160, minHeight: 8, maxHeight: 8)
                     }
                 }
                 GridRow {
-                    Text(time(total)).monospacedDigit().fontWeight(.semibold)
+                    Text(time(total)).monospacedDigit().fontWeight(.semibold).fixedSize()
                     Color.clear.frame(width: 10, height: 10)
-                    Text("Total").fontWeight(.semibold)
-                    Color.clear.frame(width: 160, height: 8)
+                    Text("Total").fontWeight(.semibold).fixedSize()
+                    Color.clear.frame(minWidth: 24, maxWidth: 160, minHeight: 8, maxHeight: 8)
                 }
             }
         }

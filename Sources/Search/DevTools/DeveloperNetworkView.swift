@@ -459,7 +459,7 @@ private struct DeveloperNetworkPanel: View {
     }
 
     private var blockingIcon: some View {
-        icon("hand.raised", "Network request blocking",
+        icon("hand.raised", "Request conditions",
              color: options.blockingShown || tools.blockingActive ? DeveloperToolsStyle.tint : .secondary) {
             options.blockingShown.toggle()
         }
@@ -486,7 +486,7 @@ private struct DeveloperNetworkPanel: View {
                     Button("Import HAR file…", action: importHAR)
                     Button("Export HAR (sanitized)…") { tools.exportHAR(rows, sanitize: true, host: session.host) }
                     Button("Export HAR (with sensitive data)…") { tools.exportHAR(rows, sanitize: false, host: session.host) }
-                    Toggle("Network request blocking", isOn: $options.blockingShown)
+                    Toggle("Request conditions", isOn: $options.blockingShown)
                 }
             }
         } label: {
@@ -1314,8 +1314,8 @@ private struct DeveloperNetworkPanel: View {
             }
             if tools.blockingActive {
                 Image(systemName: "hand.raised")
-                    .help("Network request blocking is on")
-                    .accessibilityLabel("Request blocking active")
+                    .help("Request conditions are on")
+                    .accessibilityLabel("Request conditions active")
             }
         }
         .lineLimit(1)

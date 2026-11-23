@@ -391,7 +391,7 @@ private struct DeveloperToolsView: View {
             Button(shell.drawerOpen ? "Hide console drawer  Esc" : "Show console drawer  Esc") { shell.toggleDrawer() }
             Menu("More tools") {
                 ForEach(DeveloperDrawerTool.offered) { tool in
-                    Button { shell.showDrawer(.tool(tool)) } label: { Label(tool.rawValue, systemImage: tool.icon) }
+                    Button { shell.showDrawer(.tool(tool)) } label: { Label(tool.title, systemImage: tool.icon) }
                 }
                 let closed = shell.panels.order.filter { shell.panels.closed.contains($0) }
                 if !closed.isEmpty {

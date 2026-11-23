@@ -81,33 +81,44 @@ enum DeveloperSpeedIndex {
     }
 }
 
-/// Snapshots of a web view at roughly 60 Hz while a page loads. A coarser
+/// Snapshots of a web view at roughly 60 Hz for Lighthouse and
+/// Performance. Performance also keeps a bounded JPEG filmstrip. A coarser
 /// cadence dates visual changes later. At 100 ms intervals, Speed Index
 /// came out 60–120 ms above Chrome's for the same paints. Only frames that
 /// differ from the previous one are kept.
 @MainActor
 final class DeveloperFilmstripRecorder {
     private(set) var frames: [(time: Date, histogram: [Int])] = []
+    private(set) var images: [(time: Date, jpeg: String)] = []
     /// Snapshots taken, the unchanged ones included, and when the last was.
     private(set) var captured = 0
     private(set) var lastCapture: Date?
     private var task: Task<Void, Never>?
     let interval: Duration
     let limit: Int
+    private let keepsImages: Bool
+    private let imageWidth: CGFloat
+    private let imageLimit: Int
 
-    init(interval: Duration = .milliseconds(16), limit: Int = 3_000) {
+    init(interval: Duration = .milliseconds(16), limit: Int = 3_000, images: Bool = false,
+         imageWidth: CGFloat = 240, imageLimit: Int = 300) {
         self.interval = interval
         self.limit = limit
+        keepsImages = images
+        self.imageWidth = imageWidth
+        self.imageLimit = imageLimit
     }
 
     func start(_ web: WKWebView) {
         frames = []
+        images = []
         captured = 0
         lastCapture = nil
         task?.cancel()
+        let width = keepsImages ? imageWidth : 160
         task = Task { [weak self, weak web] in
             let configuration = WKSnapshotConfiguration()
-            configuration.snapshotWidth = 160
+            configuration.snapshotWidth = NSNumber(value: Double(width))
             configuration.afterScreenUpdates = false
             while !Task.isCancelled, let web, let self {
                 if let image = try? await web.takeSnapshot(configuration: configuration),
@@ -115,7 +126,7 @@ final class DeveloperFilmstripRecorder {
                     guard !Task.isCancelled else { return }
                     // Timed when it came back: a snapshot shows what was on
                     // screen by then, never later.
-                    self.record(Date(), DeveloperSpeedIndex.histogram(cg))
+                    self.record(Date(), DeveloperSpeedIndex.histogram(cg), image: self.keepsImages ? cg : nil)
                 }
                 if self.captured >= self.limit { return }
                 try? await Task.sleep(for: self.interval)
@@ -123,10 +134,15 @@ final class DeveloperFilmstripRecorder {
         }
     }
 
-    func record(_ time: Date, _ histogram: [Int]) {
+    func record(_ time: Date, _ histogram: [Int], image: CGImage? = nil) {
         captured += 1
         lastCapture = time
-        if frames.last?.histogram != histogram { frames.append((time, histogram)) }
+        guard frames.last?.histogram != histogram else { return }
+        frames.append((time, histogram))
+        if keepsImages, images.count < imageLimit, let image,
+           let jpeg = NSBitmapImageRep(cgImage: image).representation(using: .jpeg, properties: [.compressionFactor: 0.6]) {
+            images.append((time, jpeg.base64EncodedString()))
+        }
     }
 
     func stop() {

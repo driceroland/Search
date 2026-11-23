@@ -32,8 +32,9 @@ final class DeveloperRendering: ObservableObject {
         /// What WebKit's Page domain is asked for. `prefers-contrast: more`
         /// goes to WebKit when it can emulate it; every other contrast is
         /// rewritten in the page.
-        fileprivate func payload(nativeContrast: Bool) -> [String: Any] {
-            let contrast = nativeContrast && self.contrast == "more" ? self.contrast : nil
+        func payload(nativeContrast: Bool) -> [String: Any] {
+            // WebKit's Page.UserPreferenceValue is "More"; it refuses "more".
+            let contrast = nativeContrast && self.contrast == "more" ? "More" : nil
             return [
                 "paintFlashing": paintFlashing, "layerBorders": layerBorders, "mediaType": mediaType,
                 "colorScheme": colorScheme as Any? ?? NSNull(), "reducedMotion": reducedMotion as Any? ?? NSNull(),

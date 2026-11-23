@@ -127,6 +127,10 @@ final class DeveloperToolsSession: ObservableObject {
     /// What the page's metrics script answered as the recording stopped:
     /// its timings and shifts for the Timings and Layout shifts tracks.
     private var trackPage: [String: Any]?
+    /// When trackPage was answered, to put the screenshots' times on the page's clock.
+    private var trackPageDate: Date?
+    /// Performance's screenshots, a frame of the view whenever it changes.
+    private var trackShots: DeveloperFilmstripRecorder?
     private(set) var recordingTimelineMemory = false
     @Published private(set) var throttle: NetworkCondition = .unrestricted
     @Published private(set) var requestInterception = false
@@ -324,6 +328,8 @@ final class DeveloperToolsSession: ObservableObject {
         stopPicking(clearHighlight: false)
         pump?.cancel()
         operations?.cancel()
+        trackShots?.stop()
+        trackShots = nil
         selection?.cancel()
         panelRefresh?.cancel()
         highlight?.cancel()
@@ -899,14 +905,23 @@ final class DeveloperToolsSession: ObservableObject {
             guard capturingTracks else { return }
             capturingTracks = false
             recordingTimelineMemory = false
+            trackShots?.stop()
             if let start = trackStart, let end = params["endTime"] as? Double, end >= start {
+                record = Self.withinRecording(record, from: start)
                 record.append(Timing(type: "RecordingBounds", start: start, end: end))
                 record += trackNetwork.timings(from: start, to: end)
-                if let page = trackPage { DeveloperPerformancePageTimings.merge(page, into: &record, bounds: start...end) }
+                if let page = trackPage,
+                   let sync = DeveloperPerformancePageTimings.merge(page, into: &record, bounds: start...end),
+                   let shots = trackShots, let date = trackPageDate, let now = DeveloperMeasure.finite(page["now"]) {
+                    record += DeveloperPerformancePageTimings.screenshots(shots.images, pageNow: now, pageDate: date,
+                                                                          sync: sync, bounds: start...end)
+                }
             }
             trackStart = nil
             trackNetwork = .init()
             trackPage = nil
+            trackPageDate = nil
+            trackShots = nil
         case "Memory.trackingUpdate":
             guard capturingTracks, recordingTimelineMemory, let start = trackStart,
                   let sample = params["event"] as? [String: Any], let time = sample["timestamp"] as? Double,
@@ -2139,6 +2154,10 @@ final class DeveloperToolsSession: ObservableObject {
         recordingTimelineMemory = false
         trackStart = nil
         trackNetwork = .init()
+        trackPage = nil
+        trackPageDate = nil
+        trackShots?.stop()
+        trackShots = nil
         timeline = Self.cappedTimeline(timings)
         timelineAnnotations = annotations
     }
@@ -2177,15 +2196,15 @@ final class DeveloperToolsSession: ObservableObject {
                 session.capturingTracks = true
                 session.trackStart = nil
                 session.trackNetwork = .init()
+                session.trackShots?.stop()
+                session.trackShots = nil
                 session.recordingTimelineMemory = memory
                 // Memory.trackingUpdate reaches the app only for such a
                 // recording, CPUProfiler.trackingUpdate only while recording.
                 try? await session.updateEventDomains()
-                // Performance's Screenshots checkbox: WebKit's Screenshot
-                // instrument records a frame as the page paints.
-                let screenshots = DeveloperPerformanceScreenshots.enabled
+                // WebKit's Screenshot instrument captures full-size frames and can
+                // stall compositing. Track screenshots using small view snapshots.
                 var instruments = ["Timeline", "ScriptProfiler"]
-                if screenshots { instruments.append("Screenshot") }
                 if memory { instruments.append("Memory") }
                 // The CPU and Animations tracks' instruments; WebKit refuses
                 // the whole list over an instrument it doesn't know.
@@ -2195,7 +2214,10 @@ final class DeveloperToolsSession: ObservableObject {
                 await DeveloperPerformanceAnimationTrack.begin(session)
                 // The page's metrics script watches its shifts throughout.
                 session.trackPage = nil
+                session.trackPageDate = nil
                 if let web = session.web, !session.paused { await DeveloperLiveMetricsModel.hold(web, true) }
+            } else {
+                session.trackShots?.stop()
             }
             if !start, session.recordingTimelineMemory, !DeveloperPerformanceMonitorModel.isRunning(for: session) {
                 _ = try? await session.command("Memory.stopTracking")
@@ -2207,6 +2229,7 @@ final class DeveloperToolsSession: ObservableObject {
                 // While still recording: the page's clock lined up with the
                 // timeline's, and its timings and shifts, for the tracks.
                 session.trackPage = await DeveloperLiveMetricsModel.recording(web)
+                session.trackPageDate = Date()
                 await DeveloperLiveMetricsModel.hold(web, false)
             }
             do {
@@ -2215,11 +2238,17 @@ final class DeveloperToolsSession: ObservableObject {
                 session.capturingTracks = false
                 session.recordingTimelineMemory = false
                 session.collectingScriptSamples = false
+                session.trackShots = nil
                 try? await session.updateEventDomains()
                 throw error
             }
             if start {
                 // Manual Timeline.start does not start the other instruments on some WebKit versions.
+                if DeveloperPerformanceScreenshots.enabled, let web = session.web {
+                    let shots = DeveloperFilmstripRecorder(images: true, imageLimit: DeveloperToolsSession.screenshotLimit)
+                    shots.start(web)
+                    session.trackShots = shots
+                }
                 session.scriptProfilerStarted = (try? await session.command("ScriptProfiler.startTracking", ["includeSamples": true])) != nil
                 session.collectingScriptSamples = session.scriptProfilerStarted
                 if memory { _ = try? await session.command("Memory.startTracking") }
@@ -2282,6 +2311,14 @@ final class DeveloperToolsSession: ObservableObject {
             result += derived[type] ?? []
         }
         return result
+    }
+
+    /// A recording's records without those that were over before it
+    /// started: WebKit can send a record left from before
+    /// Timeline.recordingStarted, and the earliest record sets the
+    /// recording's zero, so one such record put the page load seconds in.
+    nonisolated static func withinRecording(_ records: [Timing], from start: Double) -> [Timing] {
+        records.filter { $0.end >= start }
     }
 
     /// A WebKit timeline record and the records nested in it, in the order

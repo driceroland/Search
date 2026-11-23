@@ -16,6 +16,7 @@ struct DeveloperCheckboxStyle: ToggleStyle {
     private struct Box: View {
         let configuration: ToggleStyleConfiguration
         @Environment(\.isEnabled) private var enabled
+        @Environment(\.developerToolbarRow) private var inToolbar
 
         var body: some View {
             let on = configuration.isOn || configuration.isMixed
@@ -35,7 +36,9 @@ struct DeveloperCheckboxStyle: ToggleStyle {
                             }
                         }
                         .frame(width: 13, height: 13)
-                    configuration.label
+                    // In a toolbar a label stays on one line, as Chrome's
+                    // do; a narrow pane cuts the row off instead.
+                    configuration.label.fixedSize(horizontal: inToolbar, vertical: false)
                 }
                 .contentShape(Rectangle())
             }
@@ -149,5 +152,32 @@ struct DeveloperSettingsNote: View {
             .foregroundStyle(Palette.muted)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.leading, 2)
+    }
+}
+
+private struct DeveloperToolbarRowKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Inside a DevTools toolbar row (`developerToolbarRow()`).
+    var developerToolbarRow: Bool {
+        get { self[DeveloperToolbarRowKey.self] }
+        set { self[DeveloperToolbarRowKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// A DevTools toolbar row, as Chrome draws one: one line of controls
+    /// at the toolbar's height on its chrome, labels that never wrap, and
+    /// a narrow pane cutting the row off at its trailing edge rather than
+    /// squeezing the controls or widening the panel.
+    func developerToolbarRow() -> some View {
+        environment(\.developerToolbarRow, true)
+            .padding(.horizontal, DeveloperToolsStyle.gutter)
+            .frame(height: DeveloperToolsStyle.toolbarHeight)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .background(DeveloperToolsStyle.chrome)
     }
 }

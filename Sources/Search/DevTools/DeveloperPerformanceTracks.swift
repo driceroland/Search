@@ -210,7 +210,11 @@ enum DeveloperPerformancePageTimings {
 
     /// The page's marks, measures, milestones (and shifts) added to
     /// `record` within `bounds`, the sync timestamp taken out of it.
-    static func merge(_ page: [String: Any], into record: inout [Timing], bounds: ClosedRange<Double>) {
+    /// Returns the page time and timeline time it lined up, for other
+    /// page-clock times (Performance's screenshots).
+    @discardableResult
+    static func merge(_ page: [String: Any], into record: inout [Timing],
+                      bounds: ClosedRange<Double>) -> (page: Double, timeline: Double)? {
         var sync: (page: Double, timeline: Double)?
         if let index = record.lastIndex(where: { $0.type == "TimeStamp" && ($0.data["message"] ?? "").hasPrefix(syncPrefix) }) {
             let stamp = record[index]
@@ -220,8 +224,22 @@ enum DeveloperPerformancePageTimings {
             record.remove(at: index)
         }
         if sync == nil, let now = DeveloperMeasure.finite(page["now"]) { sync = (page: now, timeline: bounds.upperBound) }
-        guard let sync else { return }
+        guard let sync else { return nil }
         record += timings(page, sync: sync, bounds: bounds)
+        return sync
+    }
+
+    /// Screenshots taken at `images`' times as Screenshot records on the
+    /// timeline: `pageNow` was the page's clock at `pageDate`, and `sync`
+    /// lines the page's clock up with the timeline's.
+    static func screenshots(_ images: [(time: Date, jpeg: String)], pageNow: Double, pageDate: Date,
+                            sync: (page: Double, timeline: Double), bounds: ClosedRange<Double>) -> [Timing] {
+        images.compactMap { image in
+            let page = pageNow - pageDate.timeIntervalSince(image.time) * 1_000
+            let at = sync.timeline + (page - sync.page) / 1_000
+            guard bounds.contains(at) else { return nil }
+            return Timing(type: "Screenshot", start: at, end: at, data: ["imageData": "data:image/jpeg;base64," + image.jpeg])
+        }
     }
 
     /// The page's entries as records: "PageTiming" (data kind and name),

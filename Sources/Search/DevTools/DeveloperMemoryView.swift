@@ -121,8 +121,14 @@ struct DeveloperMemoryView: View {
                 .labelsHidden().controlSize(.small).fixedSize()
                 .disabled(memory.progress != nil || memory.recordingAllocations)
                 .accessibilityIdentifier("developer-memory-profile-type")
-                if let entry = memory.selectedEntry {
-                    Divider().frame(height: 16).padding(.horizontal, 2)
+                Spacer(minLength: 0)
+            }
+            .developerToolbarRow()
+            // The selected profile's own toolbar, a row of its own as in
+            // Chrome, so a narrow pane doesn't squeeze the class filter.
+            if let entry = memory.selectedEntry {
+                Divider()
+                HStack(spacing: DeveloperToolsStyle.controlSpacing) {
                     if entry.allocations == nil, entry.detached == nil {
                         Picker("Perspective", selection: $perspective) {
                             ForEach(Perspective.allCases) { Text($0.rawValue).tag($0) }
@@ -130,9 +136,9 @@ struct DeveloperMemoryView: View {
                         .labelsHidden().controlSize(.small).fixedSize()
                     }
                     if entry.detached != nil {
-                        TextField("Filter", text: $filter).developerToolsField().frame(maxWidth: 180)
+                        TextField("Filter", text: $filter).developerToolsField().frame(minWidth: 90, maxWidth: 180)
                     } else if entry.allocations != nil || perspective == .summary || perspective == .comparison {
-                        TextField("Class filter", text: $filter).developerToolsField().frame(maxWidth: 180)
+                        TextField("Class filter", text: $filter).developerToolsField().frame(minWidth: 90, maxWidth: 180)
                     }
                     if perspective == .summary, entry.allocations == nil, entry.detached == nil {
                         let options = DeveloperMemory.allocationFilters(for: entry, in: memory.snapshots)
@@ -157,16 +163,10 @@ struct DeveloperMemoryView: View {
                         .disabled(others.isEmpty)
                         .help("The snapshot to compare against")
                     }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .developerToolbarRow()
             }
-            .padding(.horizontal, DeveloperToolsStyle.gutter)
-            .frame(height: DeveloperToolsStyle.toolbarHeight)
-            // A narrow pane cuts the toolbar off rather than widening the
-            // panel past the pane's edge.
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            .clipped()
-            .background(DeveloperToolsStyle.chrome)
             Divider()
             if let message = memory.message {
                 Text(message).foregroundStyle(.secondary).textSelection(.enabled)

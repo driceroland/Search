@@ -86,9 +86,8 @@ final class DeveloperTimelineScreenshotLiveTests: XCTestCase {
         }
     }
 
-    /// Performance's Screenshots: WebKit's Screenshot instrument records a
-    /// frame as the page paints; they reach the profile as a filmstrip,
-    /// not as flame chart records, and decode to images of the page.
+    /// Performance turns snapshots of changing page content into a JPEG
+    /// filmstrip that the profile keeps outside the flame chart.
     func testRecordingCarriesScreenshotsOfThePage() async throws {
         let live = try await open("""
             <!doctype html><title>Shots</title><body style='margin:0;background:#fff'>
@@ -109,6 +108,7 @@ final class DeveloperTimelineScreenshotLiveTests: XCTestCase {
         let profile = DeveloperPerformanceProfile(live.session.timeline)
         XCTAssertFalse(profile.events.contains { $0.type == "Screenshot" })
         XCTAssertGreaterThanOrEqual(profile.screenshots.count, 2, "\(profile.screenshots.count) screenshots")
+        XCTAssertTrue(profile.screenshots.allSatisfy { $0.imageData.hasPrefix("data:image/jpeg;base64,") })
         XCTAssertEqual(profile.screenshots.map(\.time), profile.screenshots.map(\.time).sorted())
         var colours = Set<String>()
         for shot in profile.screenshots {
