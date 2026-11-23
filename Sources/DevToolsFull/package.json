@@ -1,0 +1,45 @@
+{
+  "id": "full",
+  "name": "Developer Tools Full",
+  "summary": "Chrome-style developer tools docked beside the page, on ⌥⌘I in place of Web Inspector",
+  "adds": [
+    "Chrome's panels, docking and keys",
+    "Lighthouse",
+    "Recorder",
+    "Device toolbar",
+    "Performance insights",
+    "CSS overview",
+    "Coverage",
+    "Issues"
+  ],
+  "version": 1,
+  "display": "1.0",
+  "api": 1,
+  "principal": "SearchDevToolsFull",
+  "menu": [
+    {
+      "id": "devtools",
+      "title": "Developer Tools"
+    },
+    {
+      "id": "console",
+      "title": "Console"
+    },
+    {
+      "id": "pick",
+      "title": "Inspect Element"
+    },
+    {
+      "id": "lighthouse",
+      "title": "Lighthouse"
+    },
+    {
+      "id": "recorder",
+      "title": "Recorder"
+    },
+    {
+      "id": "device",
+      "title": "Device Toolbar"
+    }
+  ]
+}

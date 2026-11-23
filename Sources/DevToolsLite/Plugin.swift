@@ -34,25 +34,10 @@ import WebKit
 //     private tab. Reports and recordings live with the tab, and go to a file
 //     only through a save panel.
 
-/// A tool of the three.
-enum DevTool: String, CaseIterable, Identifiable {
-    case lighthouse, recorder, device
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .lighthouse: "Lighthouse"
-        case .recorder: "Recorder"
-        case .device: "Device Toolbar"
-        }
-    }
-}
-
 /// The package's principal class (Info.plist NSPrincipalClass).
 @objc(SearchDevToolsLite)
 @MainActor
-public final class LitePlugin: NSObject, SearchDevToolsPlugin {
+public final class LitePlugin: NSObject, SearchDevToolsPlugin, DevToolsOwner {
     public static var apiVersion: Int { SearchDevToolsAPI.version }
 
     /// The one instance, once Search has started it.
@@ -63,9 +48,6 @@ public final class LitePlugin: NSObject, SearchDevToolsPlugin {
     private var sessions: [ObjectIdentifier: DevToolsSession] = [:]
     private var docks: [ObjectIdentifier: NSView] = [:]
     private var bars: [ObjectIdentifier: NSView] = [:]
-
-    /// The recorder's message handler, on the package's world only.
-    static let channel = "searchDeveloper"
 
     override public required init() { super.init() }
 
@@ -120,9 +102,17 @@ public final class LitePlugin: NSObject, SearchDevToolsPlugin {
         host?.invalidate()
     }
 
+    func toolsIdle(webView: WKWebView) { close(webView: webView) }
+
     public func isOpen(webView: WKWebView) -> Bool { sessions[ObjectIdentifier(webView)] != nil }
 
     public func keyDown(_ event: NSEvent, webView: WKWebView) -> Bool { false }
+
+    public func inspect(at point: NSPoint, webView: WKWebView) -> Bool { false }
+
+    public func dockPlacement(webView: WKWebView) -> [String: Any]? { nil }
+
+    public func setDockSize(_ size: Double, webView: WKWebView) {}
 
     public func dockView(webView: WKWebView) -> NSView? {
         let id = ObjectIdentifier(webView)
@@ -167,174 +157,6 @@ public final class LitePlugin: NSObject, SearchDevToolsPlugin {
     public func perform(_ command: String, arguments: [String: Any], webView: WKWebView?,
                         completion: @escaping ([String: Any]) -> Void) {
         Automation.perform(command, arguments, webView, plugin: self, completion: completion)
-    }
-}
-
-/// One tab's tools.
-@MainActor
-final class DevToolsSession: ObservableObject {
-    weak var web: WKWebView?
-    weak var plugin: LitePlugin?
-
-    /// The panel beside the page, if one is up.
-    @Published var panel: DevTool? {
-        didSet { if panel != oldValue { plugin?.host?.invalidate() } }
-    }
-
-    let lighthouse: LighthouseModel
-    let recorder: RecorderModel
-    let device: DeviceEmulation
-
-    /// The last main-document answer.
-    var response: HTTPURLResponse?
-
-    /// A private tab keeps nothing, not even the tools' choices.
-    var keeps: Bool {
-        guard let web, let host = plugin?.host else { return false }
-        return !host.isPrivate(web)
-    }
-
-    var world: WKContentWorld { plugin?.world ?? .defaultClient }
-
-    private var relay: DevToolsRelay?
-
-    init(web: WKWebView, plugin: LitePlugin) {
-        self.web = web
-        self.plugin = plugin
-        lighthouse = LighthouseModel()
-        recorder = RecorderModel()
-        device = DeviceEmulation()
-        lighthouse.session = self
-        recorder.session = self
-        device.session = self
-        lighthouse.restore()
-        device.restore()
-    }
-
-    var idle: Bool { panel == nil && !device.on && !recorder.busy && !lighthouse.running }
-
-    func setting(_ key: String) -> Any? { plugin?.host?.setting(forKey: key) }
-
-    func keep(_ value: Any?, _ key: String) {
-        guard keeps else { return }
-        plugin?.host?.setSetting(value, forKey: key)
-    }
-
-    /// The scripts the open tools need in the next document.
-    func scripts() -> [WKUserScript] {
-        lighthouse.scripts() + recorder.scripts() + device.scripts()
-    }
-
-    /// The tab's scripts again, now that a tool needs others.
-    func rearm() {
-        if let web { plugin?.host?.rearm(web) }
-    }
-
-    func invalidate() { plugin?.host?.invalidate() }
-
-    /// The recorder's handler, on the package's world only, while it records.
-    func listen(_ on: Bool) {
-        guard let controller = web?.configuration.userContentController else { return }
-        if on, relay == nil {
-            let made = DevToolsRelay(session: self)
-            controller.removeScriptMessageHandler(forName: LitePlugin.channel, contentWorld: world)
-            controller.add(made, contentWorld: world, name: LitePlugin.channel)
-            relay = made
-        } else if !on, relay != nil {
-            controller.removeScriptMessageHandler(forName: LitePlugin.channel, contentWorld: world)
-            relay = nil
-        }
-    }
-
-    /// Run in the package's world: a function body, its arguments passed as
-    /// values, never written into the source.
-    func call(_ body: String, _ arguments: [String: Any] = [:]) async -> Any? {
-        guard let web else { return nil }
-        do {
-            return try await web.callAsyncJavaScript(body, arguments: arguments, in: nil, contentWorld: world)
-        } catch {
-            return nil
-        }
-    }
-
-    /// `quietly`: the page view is going, so nothing is loaded again.
-    func end(quietly: Bool = false) {
-        lighthouse.cancel()
-        recorder.end()
-        device.end(reloading: !quietly)
-        listen(false)
-        panel = nil
-    }
-
-    fileprivate func heard(_ body: [String: Any]) {
-        recorder.heard(body)
-    }
-}
-
-/// The recorder's handler. A message counts only from the package's world,
-/// in this tab's main frame, as a small dictionary: anything else is dropped.
-private final class DevToolsRelay: NSObject, WKScriptMessageHandler {
-    weak var session: DevToolsSession?
-
-    init(session: DevToolsSession) { self.session = session }
-
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        MainActor.assumeIsolated {
-            guard let session, message.world == session.world, message.frameInfo.isMainFrame,
-                  let web = session.web, message.webView === web,
-                  let body = message.body as? [String: Any], body.count <= 8,
-                  DevToolsRelay.small(body, depth: 0) else { return }
-            session.heard(body)
-        }
-    }
-
-    /// Bounded: no deep nesting, no long strings, no huge lists.
-    static func small(_ value: Any, depth: Int) -> Bool {
-        guard depth < 6 else { return false }
-        switch value {
-        case let text as String: return text.utf16.count <= 20_000
-        case is NSNumber: return true
-        case let list as [Any]: return list.count <= 64 && list.allSatisfy { small($0, depth: depth + 1) }
-        case let map as [String: Any]:
-            return map.count <= 32 && map.allSatisfy { $0.key.utf16.count <= 64 && small($0.value, depth: depth + 1) }
-        case is NSNull: return true
-        default: return false
-        }
-    }
-}
-
-/// The package's look: the system's own colours, close to Search's.
-enum Look {
-    static let ink = Color(nsColor: .labelColor)
-    static let muted = Color(nsColor: .secondaryLabelColor)
-    static let faint = Color(nsColor: .tertiaryLabelColor)
-    static let hairline = Color(nsColor: .separatorColor)
-    static let ground = Color(nsColor: .textBackgroundColor)
-    static let wash = Color(nsColor: .quaternaryLabelColor).opacity(0.5)
-    static let frame = Color(nsColor: .windowBackgroundColor)
-    static let safe = Color(nsColor: .systemGreen)
-    static let unsafe = Color(nsColor: .systemOrange)
-}
-
-/// A small borderless symbol button, as Search's own.
-struct IconButton: View {
-    let icon: String
-    var help = ""
-    let act: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: act) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Look.muted)
-                .frame(width: 22, height: 22)
-                .background(hovering ? Look.wash : .clear, in: RoundedRectangle(cornerRadius: 6))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .onHover { hovering = $0 }
     }
 }
 

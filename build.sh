@@ -114,7 +114,7 @@ SWIFTFLAGS=(-c "$CONFIG" --arch "$ARCH")
 # <Product>.bundle, its ZIP and <Product>.entry.json, the feed entry less
 # its address (write_devtools adds that). `./build.sh release devtools`
 # makes only these.
-DEVTOOLS_PACKAGES=(DevToolsLite)
+DEVTOOLS_PACKAGES=(DevToolsLite DevToolsFull)
 build_devtools() {
   local PRODUCT="$1"
   local META="Sources/$PRODUCT/package.json"

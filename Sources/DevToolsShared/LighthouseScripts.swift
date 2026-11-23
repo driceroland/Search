@@ -1,125 +1,11 @@
 import Foundation
 
-// The page side of the Lighthouse audits: three scripts, each run in the
+// The page side of the Lighthouse audits: these two and the load observer
+// (PageObserver.swift, shared with Performance), each run in the
 // tools' own world, never the page's. They read the page and change nothing
 // in it. What they call is the tools' world's own, so a page that replaces
 // querySelector or JSON on its side can't change what they find.
 enum LighthouseScripts {
-    /// Put in the tab at the start of a Navigation run's load (a user script
-    /// of the tools' world, main frame), and taken out after: paint and
-    /// largest-contentful-paint entries where this WebKit has them, errors
-    /// the page threw, main-thread blocking as the gaps in a zero-delay
-    /// timer loop (WebKit has no longtask entries), and layout shifts found
-    /// by comparing boxes between samples (it has no layout-shift entries
-    /// either). It only watches.
-    static let observe = #"""
-    (() => {
-        if (window.__searchDeveloperLoad) return;
-        const state = { started: performance.now(), fcp: null, lcp: null, lcpElement: null, lcpSupported: false,
-            cls: 0, shifts: 0, tasks: [], errors: [], stopped: false };
-        window.__searchDeveloperLoad = state;
-        const limit = 60000;
-        const types = (typeof PerformanceObserver !== "undefined" && PerformanceObserver.supportedEntryTypes) || [];
-        const observe = (type, callback) => {
-            if (!types.includes(type)) return false;
-            try {
-                new PerformanceObserver((list) => { for (const entry of list.getEntries()) callback(entry); })
-                    .observe({ type, buffered: true });
-                return true;
-            } catch (e) { return false; }
-        };
-        observe("paint", (entry) => {
-            if (entry.name === "first-contentful-paint" && state.fcp === null) state.fcp = entry.startTime;
-        });
-        state.lcpSupported = observe("largest-contentful-paint", (entry) => {
-            state.lcp = entry.renderTime || entry.loadTime || entry.startTime;
-            state.lcpElement = entry.element || null;
-        });
-        const errored = (message, source) => {
-            if (state.errors.length < 50) state.errors.push([String(message || "").slice(0, 300), String(source || "").slice(0, 300)]);
-        };
-        window.addEventListener("error", (event) => {
-            if (event.target && event.target !== window) {
-                errored("Failed to load resource", event.target.src || event.target.href || "");
-            } else {
-                errored(event.message, event.filename);
-            }
-        }, true);
-        window.addEventListener("unhandledrejection", (event) => {
-            const reason = event.reason;
-            errored("Unhandled rejection: " + (reason && reason.message ? reason.message : String(reason)), location.href);
-        });
-        let last = performance.now();
-        const tick = () => {
-            const now = performance.now();
-            const gap = now - last;
-            if (gap > 50 && document.visibilityState === "visible") state.tasks.push([last, gap]);
-            last = now;
-            if (!state.stopped && now - state.started < limit) setTimeout(tick, 0);
-        };
-        setTimeout(tick, 0);
-        // Layout shifts: each sample takes the boxes of up to 1500 elements
-        // in document coordinates; those that moved make a shift worth the
-        // share of the viewport they cover times how far they went. Shifts
-        // within half a second of input don't count, and the score is the
-        // worst run of shifts less than a second apart (five at most), as
-        // Core Web Vitals counts it.
-        const previous = new WeakMap();
-        let lastInput = -Infinity;
-        for (const type of ["pointerdown", "keydown", "mousedown"]) {
-            window.addEventListener(type, (event) => { if (event.isTrusted) lastInput = performance.now(); }, true);
-        }
-        let windowValue = 0, windowStart = 0, windowLast = 0;
-        const grid = 100;
-        const sample = () => {
-            if (state.stopped || performance.now() - state.started > limit) return;
-            const width = innerWidth, height = innerHeight;
-            const root = document.body || document.documentElement;
-            if (root && width > 0 && height > 0) {
-                const sx = scrollX, sy = scrollY;
-                const moved = [];
-                let distance = 0;
-                const all = root.getElementsByTagName("*");
-                for (let i = 0; i < all.length && i < 1500; i++) {
-                    const rect = all[i].getBoundingClientRect();
-                    if (rect.width === 0 && rect.height === 0) { previous.delete(all[i]); continue; }
-                    const now = { x: rect.left + sx, y: rect.top + sy, w: rect.width, h: rect.height };
-                    const before = previous.get(all[i]);
-                    previous.set(all[i], now);
-                    if (!before) continue;
-                    const dx = now.x - before.x, dy = now.y - before.y;
-                    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
-                    moved.push([before.x - sx, before.y - sy, before.w, before.h], [rect.left, rect.top, rect.width, rect.height]);
-                    distance = Math.max(distance, Math.abs(dx), Math.abs(dy));
-                    if (moved.length >= 200) break;
-                }
-                const at = performance.now();
-                if (moved.length && at - lastInput > 500) {
-                    const cells = new Uint8Array(grid * grid);
-                    let covered = 0;
-                    for (const [x, y, w, h] of moved) {
-                        const x0 = Math.max(0, Math.floor(x / width * grid)), x1 = Math.min(grid, Math.ceil((x + w) / width * grid));
-                        const y0 = Math.max(0, Math.floor(y / height * grid)), y1 = Math.min(grid, Math.ceil((y + h) / height * grid));
-                        for (let gy = y0; gy < y1; gy++) for (let gx = x0; gx < x1; gx++) {
-                            if (!cells[gy * grid + gx]) { cells[gy * grid + gx] = 1; covered++; }
-                        }
-                    }
-                    const value = covered / (grid * grid) * Math.min(1, distance / Math.max(width, height));
-                    if (value > 0) {
-                        state.shifts += 1;
-                        if (windowValue > 0 && at - windowLast < 1000 && at - windowStart < 5000) windowValue += value;
-                        else { windowValue = value; windowStart = at; }
-                        windowLast = at;
-                        if (windowValue > state.cls) state.cls = windowValue;
-                    }
-                }
-            }
-            setTimeout(sample, 50);
-        };
-        setTimeout(sample, 0);
-    })();
-    """#
-
     /// After the load: what the observer saw, and the navigation's timing,
     /// in milliseconds from the navigation's start. A function body.
     static let metrics = #"""
@@ -129,7 +15,7 @@ enum LighthouseScripts {
     const out = { observed: !!state, fcp: null, lcp: null, lcpSupported: false, cls: 0, shifts: 0, tasks: [], errors: [],
         ttfb: null, load: null, redirects: 0, now: performance.now() };
     if (state) {
-        state.stopped = true;
+        state.lighthouseDone = true;
         Object.assign(out, { fcp: state.fcp, lcp: state.lcp, lcpSupported: state.lcpSupported, cls: state.cls,
             shifts: state.shifts, tasks: state.tasks.slice(0, 5000), errors: state.errors.slice(0, 50) });
         const el = state.lcpElement;

@@ -9,6 +9,7 @@ let package = Package(
         // A developer tools package: downloaded on request, never in the
         // app (build.sh devtools, DevToolsPackages.swift).
         .library(name: "DevToolsLite", type: .dynamic, targets: ["DevToolsLite"]),
+        .library(name: "DevToolsFull", type: .dynamic, targets: ["DevToolsFull"]),
     ],
     targets: [
         // What Search and a developer tools package say to each other.
@@ -22,6 +23,16 @@ let package = Package(
             dependencies: ["SearchPluginAPI"],
             path: "Sources/DevToolsLite",
             // What build.sh puts in the feed for it, not code.
+            exclude: ["package.json"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // Developer Tools Full: the Chrome-style panels. Its Lighthouse,
+        // Recorder and device toolbar are Lite's, the same sources compiled
+        // into each (Sources/DevToolsShared, linked in as Shared/).
+        .target(
+            name: "DevToolsFull",
+            dependencies: ["SearchPluginAPI"],
+            path: "Sources/DevToolsFull",
             exclude: ["package.json"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),

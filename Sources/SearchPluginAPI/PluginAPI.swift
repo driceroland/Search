@@ -33,8 +33,11 @@ public protocol SearchDevToolsHost: NSObjectProtocol {
     func keepAwake(_ on: Bool, webView: WKWebView)
     /// Opens an address in a new tab in front.
     func openURL(_ url: URL)
-    /// The package's own settings, kept in the profile under its id. Nil
-    /// removes. Only property-list values.
+    /// The package's own settings: a store of its own in the profile, never
+    /// Search's, deleted with the package. Only the choices made in the
+    /// tools go there, never what a page showed them.
+    var defaults: UserDefaults { get }
+    /// One setting of that store. Nil removes. Only property-list values.
     func setting(forKey key: String) -> Any?
     func setSetting(_ value: Any?, forKey key: String)
     /// A private tab keeps nothing.
@@ -57,7 +60,11 @@ public protocol SearchDevToolsPlugin: NSObjectProtocol {
     /// Search is going, or the package was removed: put everything back.
     func shutdown()
 
-    /// The menu's items, as [["id": String, "title": String]].
+    /// The menu's items, as [["id": String, "title": String]]. Three ids
+    /// mean an inspector, and take Search's own inspector keys while the
+    /// package is the one View › Developer uses: "devtools" (⌥⌘I),
+    /// "console" (⌥⌘J) and "pick" (⌥⌘C). Search reads them from the
+    /// package.json it installed, so a menu never loads the package.
     func menuItems() -> [[String: String]]
     /// A menu item, on the tab's page.
     func open(_ item: String, webView: WKWebView)
@@ -65,9 +72,18 @@ public protocol SearchDevToolsPlugin: NSObjectProtocol {
     func isOpen(webView: WKWebView) -> Bool
     /// A key, before Search's own; true if the package took it.
     func keyDown(_ event: NSEvent, webView: WKWebView) -> Bool
+    /// Inspect Element from the page's menu, at a point in the page view's
+    /// coordinates: true if the package showed it, false to leave it to Web
+    /// Inspector. Asked only of a package whose menu has "devtools".
+    func inspect(at point: NSPoint, webView: WKWebView) -> Bool
 
     /// The panel beside the page, if one is up.
     func dockView(webView: WKWebView) -> NSView?
+    /// Where that panel goes and how big it is: ["edge": "right" | "left" |
+    /// "bottom", "size": points]. Nil: on the right, 360 points.
+    func dockPlacement(webView: WKWebView) -> [String: Any]?
+    /// The person dragged the panel's edge to `size` points.
+    func setDockSize(_ size: Double, webView: WKWebView)
     /// A bar over the page, if one is up.
     func barView(webView: WKWebView) -> NSView?
     /// The page's size in points, when the package wants it framed (a

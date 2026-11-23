@@ -509,7 +509,7 @@ struct DeviceBar: View {
     }
 
     private func closeIfIdle(_ session: DevToolsSession) {
-        if session.idle, let web = session.web { session.plugin?.close(webView: web) }
+        if session.idle, let web = session.web { session.plugin?.toolsIdle(webView: web) }
     }
 }
 

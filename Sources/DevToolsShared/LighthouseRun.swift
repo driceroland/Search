@@ -4,7 +4,7 @@ import WebKit
 // A Lighthouse run on the tab, and the audits worked out from what it read.
 //
 // Navigation loads the page again from a blank one, as Lighthouse does: the
-// load observer goes in for that load only (LighthouseScripts.observe), the
+// load observer goes in for that load only (PageObserver.source), the
 // page is photographed small every tenth of a second for the Speed Index,
 // and once it has settled the metrics are read, then the page itself.
 // Snapshot reads the page as it is. Mobile scores against Lighthouse's
@@ -50,7 +50,7 @@ final class LighthouseModel: ObservableObject {
 
     func scripts() -> [WKUserScript] {
         guard observing, let session else { return [] }
-        return [WKUserScript(source: LighthouseScripts.observe, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: session.world)]
+        return [WKUserScript(source: PageObserver.source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: session.world)]
     }
 
     func run() {
