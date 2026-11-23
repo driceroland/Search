@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Run every Swift test; isolate WebKit download journeys in fresh processes."""
+"""Run every Swift test with independent native WebKit test sessions."""
 import os
 import re
 import subprocess
 import sys
 
 suite = "DownloadLifecycleTests"
-# The rest of the suite runs together; native WebKit state is never reused by
-# two download journeys. No retry or skipped download assertion is involved.
-result = subprocess.run(["swift", "test", "--skip", suite])
+devtools = r"^SearchTests\.Developer"
+# DevTools uses hidden WebKit inspector windows. Run those tests in their
+# own process so the browser suites start with their usual AppKit state.
+result = subprocess.run(["swift", "test", "--skip", f"{suite}|{devtools}"])
 failed = result.returncode != 0
+print("Isolated DevTools suites", flush=True)
+env = dict(os.environ, SEARCH_PROBE=f"ci-devtools-{os.getpid()}")
+result = subprocess.run(["swift", "test", "--skip-build", "--filter", devtools], env=env)
+failed |= result.returncode != 0
+
+# Native WebKit state is never reused by two download journeys.
 listing = subprocess.run(["swift", "test", "list"], check=True, capture_output=True, text=True)
 cases = [line.strip() for line in listing.stdout.splitlines()
          if re.fullmatch(r"SearchTests\.DownloadLifecycleTests/test\w+", line.strip())]

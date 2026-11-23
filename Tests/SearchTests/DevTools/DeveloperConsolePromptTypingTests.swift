@@ -32,10 +32,12 @@ final class DeveloperConsolePromptTypingTests: XCTestCase {
             let hosting = NSHostingView(rootView: DeveloperConsoleView(session: session))
             hosting.frame = NSRect(x: 0, y: 0, width: 500, height: 400)
             let window = NSWindow(contentRect: NSRect(x: -3000, y: -3000, width: 500, height: 400),
-                                  styleMask: [.titled], backing: .buffered, defer: false)
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentView = hosting
-            window.makeKeyAndOrderFront(nil)
+            // The typing goes straight to the text view. Lay it out offscreen
+            // without making the test process's window key.
+            window.orderFrontRegardless()
             defer { window.contentView = nil; window.close() }
             try await Task.sleep(for: .milliseconds(300))
             let prompt = try XCTUnwrap(Self.find(hosting))
