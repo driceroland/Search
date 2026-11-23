@@ -2110,6 +2110,7 @@ final class Browser: NSObject, ObservableObject {
         askedRevision = nil
         self.asking = nil
         Browser.cancelSiteQuestions(keys: invalidated, including: self)
+        if !invalidated.isEmpty { SiteNotifications.shared.objectWillChange.send() }
         decide(decision)
     }
 
@@ -9463,7 +9464,6 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             decide = { decision in
                 if decision == .grant { SiteNotifications.shared.authorize() }
                 decisionHandler(decision == .grant)
-                SiteNotifications.shared.objectWillChange.send()
             }
             decideTab = tab
             askedAbout = "\(site)|notifications"
