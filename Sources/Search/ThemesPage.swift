@@ -7,6 +7,10 @@ struct ThemesPage: View {
     /// The family on show. A family with nothing chosen yet (an image not
     /// picked) can be on show without being on the wall.
     @State private var family: HomeTheme.Family
+    /// How wide the preview is, as wide as the page allows, for the
+    /// families' picker and the cards. Not measured around the picker,
+    /// whose segments would hold it wide.
+    @State private var width: CGFloat = 0
 
     init(prefs: Preferences) {
         self.prefs = prefs
@@ -15,16 +19,23 @@ struct ThemesPage: View {
 
     private let thumb = CGSize(width: 160, height: 100)
     private let columns = Array(repeating: GridItem(.fixed(160 + 6), spacing: 14, alignment: .top), count: 3)
+    /// Where the page is too narrow for three, as many as fit.
+    private let fewer = [GridItem(.adaptive(minimum: 160 + 6, maximum: 160 + 6), spacing: 14, alignment: .top)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             mock
 
-            Picker("", selection: Binding(get: { family }, set: choose)) {
-                ForEach(HomeTheme.Family.allCases) { Text($0.title).tag($0) }
+            // A pop-up where the six segments (~488 pt, which don't
+            // shrink) would run off the card. By the preview's width (see
+            // mock): the segments' ideal width counts each as the widest.
+            Group {
+                if width >= 470 {
+                    families.pickerStyle(.segmented)
+                } else {
+                    families.pickerStyle(.menu).fixedSize()
+                }
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
 
             switch family {
             case .off:
@@ -64,6 +75,13 @@ struct ThemesPage: View {
         }
     }
 
+    private var families: some View {
+        Picker("", selection: Binding(get: { family }, set: choose)) {
+            ForEach(HomeTheme.Family.allCases) { Text($0.title).tag($0) }
+        }
+        .labelsHidden()
+    }
+
     // MARK: - the live preview
 
     /// The window in small: the tabs where yours are, the address field in
@@ -87,7 +105,13 @@ struct ThemesPage: View {
                 .frame(width: 220, height: 30)
             tabs(side: side, right: right)
         }
-        .frame(width: size.width, height: size.height)
+        .frame(maxWidth: size.width) // Narrower where the page is
+        .frame(height: size.height)
+        .background(GeometryReader { box in
+            Color.clear
+                .onAppear { width = box.size.width }
+                .onChange(of: box.size.width) { _, now in width = now }
+        })
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
         .accessibilityHidden(true)
@@ -138,7 +162,8 @@ struct ThemesPage: View {
     }
 
     private func grid(_ cards: [some View]) -> some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+        LazyVGrid(columns: width >= 470 ? columns : fewer, // Wraps when narrow
+                   alignment: .leading, spacing: 14) {
             ForEach(cards.indices, id: \.self) { cards[$0] }
         }
     }

@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Settings › Themes fits a narrow window: the preview narrows, the six choices become a pop-up menu where they wouldn't fit, and the pictures wrap, where before the page ran off the window's right edge.
+
 ### Held back
 
 Not in this version, kept on main for a later one:
