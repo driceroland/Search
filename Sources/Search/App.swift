@@ -12,8 +12,6 @@ struct SearchApp: App {
     /// Your own keys (Settings › Shortcuts): the menus are drawn again when
     /// one changes, and show it.
     @ObservedObject private var shortcuts = ShortcutStore.shared
-    /// Only for History's tabs on your other devices (Sync with iCloud).
-    @ObservedObject private var icloud = ICloudSync.shared
     /// Links from other apps, and the Dock icon.
     @NSApplicationDelegateAdaptor(Links.self) private var links
 
@@ -382,25 +380,6 @@ struct SearchApp: App {
                                 browser.reopen(ghost)
                             } label: {
                                 MenuLine(title: browser.closedTitle(for: ghost), url: ghost.url)
-                            }
-                        }
-                    }
-                }
-                // As Safari's iCloud Tabs: what is open on your iPhone and
-                // other Macs, a menu each, opened here only when picked.
-                if icloud.on, !icloud.devices.isEmpty {
-                    Section("Tabs on Your Other Devices") {
-                        ForEach(icloud.devices, id: \.id) { device in
-                            Menu(ICloudSync.title(device.tabs)) {
-                                ForEach(device.tabs.tabs, id: \.self) { page in
-                                    if let url = URL(string: page.url) {
-                                        Button {
-                                            browser.open(url, foreground: true)
-                                        } label: {
-                                            MenuLine(title: page.title.isEmpty ? Address.withoutWWW(page.url) : page.title, url: url)
-                                        }
-                                    }
-                                }
                             }
                         }
                     }

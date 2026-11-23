@@ -61,6 +61,7 @@ enum SettingsIndex {
     static let groups: [SettingsGroup] = [
         .init(id: "browser", page: .general, title: "Your browser", icon: "globe.desk"),
         .init(id: "downloads", page: .general, title: "Downloads", icon: "arrow.down.circle"),
+        .init(id: "forms", page: .general, title: "Filling in forms", icon: "character.cursor.ibeam"),
 
         .init(id: "theme", page: .appearance, title: "Light and dark", icon: "circle.lefthalf.filled"),
         .init(id: "window", page: .appearance, title: "Window", icon: "macwindow"),
@@ -82,8 +83,6 @@ enum SettingsIndex {
         .init(id: "arc", page: .pins, title: "Coming from Arc?", icon: "arrow.down.forward.square"),
         .init(id: "pins", page: .pins, title: "Pins", icon: "pin"),
         .init(id: "opening", page: .pins, title: "Opening and starting", icon: "command"),
-
-        .init(id: "forms", page: .passwords, title: "Filling in forms", icon: "character.cursor.ibeam"),
 
         .init(id: "blocking", page: .privacy, title: "Blocking", icon: "shield"),
         .init(id: "permissions", page: .privacy, title: "Site permissions", icon: "checkmark.shield"),
@@ -130,13 +129,6 @@ enum SettingsIndex {
               title: "Handoff to your iPhone and iPad", detail: "The page in front comes up in their app switcher, as Safari's does",
               more: "And at the end of the Dock on your other Macs. macOS carries the address to devices signed in to your Apple Account with Handoff on, in System Settings › General › AirDrop & Handoff on a Mac. Never a private tab. Pages handed off from your iPhone open here when Search is your default browser.",
               keys: ["handoff"], words: ["handoff", "continuity", "iphone", "ipad", "devices", "app switcher", "multitasking"]),
-        .init(id: "icloud", group: "browser", icon: "icloud",
-              title: "Sync with iCloud", detail: "Open tabs, pins, bookmarks and a few settings, with your iPhone",
-              more: "Through your own iCloud, end to end encrypted: Search on your iPhone and your other Macs see this Mac's open tabs (under History and in the address field, as Tabs on Your Other Devices) and share its pins, bookmarks, search engine and look. Private tabs never go, nor your history, passwords, cookies or sign-ins. Nothing leaves this Mac until you turn it on. Not together with Sync with your other Macs.",
-              keys: ["icloud.sync"], words: ["sync", "icloud", "iphone", "ios", "cloudkit", "other devices", "devices", "icloud tabs", "tabs on other devices", "handoff"]),
-        .init(id: "icloud.erase", group: "browser", icon: "trash",
-              title: "Delete Search's data from iCloud", detail: "For every device. What is on each one stays, and sync turns off here",
-              words: ["icloud", "delete", "erase", "remove", "sync"], parent: "icloud"),
         .init(id: "quit.confirm", group: "browser", icon: "power",
               title: "Confirm before quitting", detail: "Ask before ⌘Q or Quit Search closes the browser",
               keys: ["quit.confirm"], words: ["quit", "cmd q"]),
@@ -155,7 +147,7 @@ enum SettingsIndex {
 
         // Themes
         .init(id: "home.theme", group: "themes", icon: "photo.artframe",
-              title: "Theme", detail: "One choice for the blank tab and the whole window: a wall, stickers, a colour, a gradient or your own picture",
+              title: "Theme", detail: "For the blank tab and the window: a wall, stickers, a colour, a gradient or a picture",
               more: "Off by default. Drawn once and kept, so it costs nothing while you browse, and only the blank tab shows it. A picture you choose is copied inside Search; nothing leaves your Mac.",
               keys: ["browser.theme", "home.theme", "home.theme.image", "home.tuning", "home.shuffle"],
               words: ["themes", "wallpaper", "background", "mural", "painting", "scenery", "shuffle", "stickers", "gradient", "colour", "color", "new tab", "image", "arc", "browser colour", "window colour", "tint", "strength", "theme", "home background"],
@@ -299,7 +291,7 @@ enum SettingsIndex {
               more: "Make a folder called Home in Bookmarks and put sites in it: a blank tab shows up to 16 of them as tiles with their names, in the order you keep them.",
               keys: ["home.grid"], words: ["home", "home page", "start page", "new tab", "speed dial", "favorites"]),
         .init(id: "tabs.undoReopens", group: "newtabs", icon: "arrow.uturn.backward.circle",
-              title: "⌘Z reopens a closed tab", detail: "Right after closing it, as ⌥⌘T would bring it back",
+              title: "⌘Z reopens a closed tab", detail: "Right after closing it, as ⇧⌘T would bring it back",
               more: "Only while closing it is the last thing you did: type or click anything else and ⌘Z undoes as before. A page that uses ⌘Z itself, such as a document or a drawing, keeps it.",
               keys: ["tabs.undoReopens"], words: ["undo", "reopen", "closed tab", "cmd z", "restore"]),
         .init(id: "tabs.switcherBehindFirst", group: "newtabs", icon: "rectangle.stack",
@@ -326,7 +318,7 @@ enum SettingsIndex {
               title: "Dim sleeping tabs", detail: "A resting tab's title and icon fade until you go to it",
               keys: ["tabs.sleep.dim"], words: ["sleep", "dim", "fade", "inactive", "suspend"]),
         .init(id: "tabs.close.after", group: "memory", icon: "timer",
-              title: "Close tabs you leave alone", detail: "Pinned, named and grouped tabs stay. ⌥⌘T brings one back",
+              title: "Close tabs you leave alone", detail: "Pinned, named and grouped tabs stay. ⇧⌘T brings one back",
               more: "Counted from when you last left the tab, while Search is quit too. Private tabs, sound, calls and anything typed stay.",
               keys: ["tabs.close.after"], words: ["auto close", "archive", "clean up"]),
         .init(id: "tabs.shortcuts", group: "tabbar", icon: "command",
@@ -458,7 +450,7 @@ enum SettingsIndex {
               title: "Start with a fresh window", detail: "Pins, groups and named tabs come back; last time's others don't",
               keys: [Preferences.freshKey], words: ["restore", "session", "startup"]),
 
-        // Passwords
+        // General › Filling in forms
         .init(id: "contacts.fill", group: "forms", icon: "person.crop.rectangle",
               title: "Fill in your contact details", detail: "Your card in Contacts under name, email, phone and address boxes",
               more: "A click fills the rest of the form's empty boxes too. Only your own card is read, and macOS asks first.",
@@ -644,7 +636,6 @@ enum SettingsIndex {
         case "mail.default": return prefs.webmail != .none
         case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
         case "launcher.key": return prefs.launcher
-        case "icloud.erase": return ICloudSync.shared.on
         default: return true
         }
     }
@@ -660,7 +651,6 @@ enum SettingsIndex {
         case "window.glass.style": return GlassStyle.liquidAvailable ? "Only with Glass on" : "Liquid Glass needs macOS 26"
         case "window.glass.clear", "window.glass.grain": return "Only with Glass on"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
-        case "icloud.erase": return "Only while Sync with iCloud is on"
         case "sidebar.player": return "Only with titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent", "newtab.arc": return "Only with the new tab in a floating field"

@@ -10,10 +10,12 @@ is what gets posted as the update. What is planned but not done yet lives
 in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
+- Tabs across the top can no longer be dragged to put them in another order, into or out of a group, into Split View or into another window. The column's tabs are moved by dragging as before.
 
 ### Removed
 
 - Spaces and profiles. A window has one row of tabs and one set of pins again, with one history, one set of bookmarks and one set of sign-ins: no space dot, space buttons, ⌃1–⌃9 or ⌘1–⌘9 for spaces, swipe between spaces, Move to Space, pins in every space, Send links to a space, Ask which space for links from other apps, a colour or gradient per space (Settings › Themes › Browser colour colours the window), Profile badge or menu, Profiles in one window, or AppleScript's space and profile of a window. What the first space of the Personal profile had stays: its tabs (session.json), its pins (pins.json, with any pins once shown in every space put first), its pin folders, history, bookmarks and sign-ins. Other spaces' and profiles' tabs, history, bookmarks and cookies are no longer read, and their files are left on disk. Bringing Arc or Zen over brings their favourites as pins and each space's pinned pages into the row, in a tab group of the space's name when there is more than one. Sync with your other Macs and Sync with iCloud carry the pins, pin folders and bookmarks as before, and pass another device's spaces through untouched.
+- Sync with iCloud: the switch in Settings › General, Tabs on Your Other Devices under History and in the address field, and the iCloud entitlements `build.sh` signed with. Sync with your other Macs, through a folder such as one in iCloud Drive, stays.
 - Search's own password manager, passkeys and the Apple Passwords connection: it no longer saves, keeps or fills passwords, offers the Mac's passkeys, or reads the Passwords app, and its Passwords list, "Save this password?" bar, ⌥⌘L, Settings › Passwords' switches and the password import from other browsers are gone. Use a password manager's extension; sites are told there are no passkeys here, so they ask for the password. Settings › Passwords is now Settings › Forms (your card in Contacts under name, email and address boxes). Passwords already kept in the keychain under "Search" are left where they are, for Keychain Access to show or delete. Pages with a sign-in also stop running the script that watched the page for a password to keep.
 
 ### Added
@@ -29,6 +31,7 @@ in [ROADMAP.md](ROADMAP.md).
 - A new mark: a narrow column beside a larger block, the window itself with its tabs down the left and the page next to them. It replaces the pill with an S cut out of it in the app icon (light, dark, tinted and the yellow dev build) and on the welcome screen and in Settings › About.
 - Roomier tabs is gone from Settings › Appearance; the sidebar keeps the normal row height and title size. A saved choice is ignored.
 - With the tabs across the top, an open tab group now shows where it starts and ends: a soft band runs behind its name and its tabs, in the group's colour or a faint grey without one. Right-click the group's name and choose Colour… to set it there too. A folded group looks as before. `python3 Tests/group_band.py`
+- Filling in forms (your card in Contacts) moves into Settings › General; Forms is no longer a section of its own. Addresses and saved choices that named it open General.
 
 ### Fixed
 

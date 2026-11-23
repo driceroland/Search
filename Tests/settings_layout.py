@@ -79,7 +79,7 @@ def case_reachable(t):
     t.ok("…in Browsing › Video", any(i["page"] == "browsing" and i["groupTitle"] == "Video" for i in found))
     shown = [i for i in items if not i["findOnly"]]
     t.ok("about a hundred and twenty rows in the sections", 105 <= len(shown) <= 140, len(shown))
-    t.ok("eleven sections, Themes among them (#1318)", len(every["pages"]) == 11 and "themes" in every["pages"], every["pages"])
+    t.ok("nine sections, Pins among them", every["pages"] == ["general", "appearance", "tabs", "browsing", "pins", "privacy", "extensions", "keyboard", "about"], every["pages"])
     # Old addresses land in the new sections.
     sv.cmd({"do": "ui", "show": "search://settings/shortcuts"}); time.sleep(0.6)
     t.ok("search://settings/shortcuts opens Keyboard & Mouse", settings()["settingsPage"] == "keyboard",

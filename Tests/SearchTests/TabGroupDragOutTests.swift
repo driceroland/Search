@@ -175,31 +175,6 @@ final class TabGroupDragOutTests: XCTestCase {
         XCTAssertEqual(browser.tabs(in: group).map(\.id), [t[1].id], "the other stays")
     }
 
-    func testCarriedOutOfItsGroupAlongTheTop() async throws {
-        let browser = makeBrowser()
-        let t = browser.tabs
-        let group = browser.addTabGroup(containing: t[0])
-        browser.move(t[1], toGroup: group)
-        browser.editingGroupID = nil
-        browser.select(t[4])
-        let window = try makeTopRow(browser)
-        try await settle()
-        TabDrag.testPointer = NSPoint(x: window.frame.midX, y: window.frame.midY)
-        let y = Metrics.strip / 2
-        // The heading at about 100, one from 160 to 300, then two, three,
-        // four, and five ending near 930, before the buttons.
-        let x: CGFloat = 210
-        let end: CGFloat = 945
-        try await send(.leftMouseDown, at: NSPoint(x: x, y: y), in: window)
-        for step in stride(from: x + 4, through: end, by: 4) {
-            try await send(.leftMouseDragged, at: NSPoint(x: step, y: y), in: window)
-        }
-        try await send(.leftMouseUp, at: NSPoint(x: end, y: y), in: window)
-        try await settle()
-        XCTAssertNil(browser.group(of: t[0]), "out of its group")
-        XCTAssertEqual(browser.tabs.last?.id, t[0].id, "after the last tab in no group")
-    }
-
     // MARK: - helpers
 
     private func makeBrowser() -> Browser {
@@ -232,17 +207,6 @@ final class TabGroupDragOutTests: XCTestCase {
         window.contentView = NSHostingView(rootView: SideBar(browser: browser, prefs: browser.prefs))
         window.orderFrontRegardless()
         XCTAssertFalse(NSScreen.screens.contains { $0.frame.intersects(window.frame) }, "never on a screen")
-        windows.append(window)
-        return window
-    }
-
-    private func makeTopRow(_ browser: Browser) throws -> NSWindow {
-        browser.prefs.sidebar = false
-        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 1100, height: Metrics.strip),
-                              styleMask: .borderless, backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: TabBar(browser: browser))
-        window.orderFrontRegardless()
         windows.append(window)
         return window
     }

@@ -19,7 +19,6 @@ struct SettingsPanel: View {
     @Environment(\.asTab) private var asTab
 
     @ObservedObject private var sync = Sync.shared
-    @ObservedObject private var icloud = ICloudSync.shared
     /// The keys rows name, as Settings › Shortcuts has them now.
     @ObservedObject private var shortcuts = ShortcutStore.shared
     @State private var isDefault = Links.isDefault
@@ -42,7 +41,7 @@ struct SettingsPanel: View {
     @MainActor static var arcBefore: Preferences.ArcSetup?
 
     enum Page: String, CaseIterable, Identifiable {
-        case general, appearance, tabs, browsing, pins, passwords, privacy, ai, extensions, keyboard, about
+        case general, appearance, tabs, browsing, pins, privacy, ai, extensions, keyboard, about
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -51,7 +50,6 @@ struct SettingsPanel: View {
             case .tabs: return "Tabs"
             case .browsing: return "Browsing"
             case .pins: return "Pins"
-            case .passwords: return "Forms"
             case .privacy: return "Privacy"
             case .ai: return "AI"
             case .extensions: return "Extensions"
@@ -66,7 +64,6 @@ struct SettingsPanel: View {
             case .tabs: return "square.on.square"
             case .browsing: return "globe"
             case .pins: return "pin"
-            case .passwords: return "character.cursor.ibeam"
             case .privacy: return "hand.raised"
             case .ai: return "sparkles"
             case .extensions: return "puzzlepiece.extension"
@@ -75,11 +72,11 @@ struct SettingsPanel: View {
             }
         }
         /// A section by its name in an address or in the settings file,
-        /// the old names included: Downloads is in General now, Shortcuts
-        /// is Keyboard & Mouse.
+        /// the old names included: Downloads and Forms (once Passwords) are
+        /// in General now, Shortcuts is Keyboard & Mouse.
         static func named(_ name: String) -> Page? {
             switch name.lowercased() {
-            case "downloads": return .general
+            case "downloads", "forms", "passwords": return .general
             case "shortcuts", "mouse": return .keyboard
             case "themes": return .appearance
             default: return Page(rawValue: name.lowercased())
@@ -88,7 +85,7 @@ struct SettingsPanel: View {
         /// The rail's three blocks: the browser, your data and tools, About.
         static var blocks: [[Page]] {
             [[.general, .appearance, .tabs, .browsing, .pins],
-             [.passwords, .privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .keyboard],
+             [.privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .keyboard],
              [.about]]
         }
     }
@@ -455,8 +452,7 @@ struct SettingsPanel: View {
             return mailHandler.map { "Email links from other apps go to \($0) now" } ?? item.detail
         case "downloads.folder":
             return prefs.downloads.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
-        case "sync": return icloud.on ? "Off while Sync with iCloud is on" : sync.on ? sync.summary : item.detail
-        case "icloud": return icloud.summary(folderSyncOn: sync.on, otherwise: item.detail)
+        case "sync": return sync.on ? sync.summary : item.detail
         case "search.engine": return searchDetail
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail
@@ -478,7 +474,7 @@ struct SettingsPanel: View {
         case .tabs: tabsControl(item.id)
         case .browsing: browsingControl(item.id)
         case .pins: pinsControl(item.id)
-        case .passwords, .privacy: keptControl(item.id)
+        case .privacy: keptControl(item.id)
         case .keyboard, .about: otherControl(item.id)
         default: EmptyView()
         }
@@ -533,27 +529,8 @@ struct SettingsPanel: View {
             Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
         case "sync":
             // On asks for the folder first; cancelled, it stays off.
-            // Never with Sync with iCloud: the two would undo each other.
             Switch(on: Binding(get: { sync.on }, set: { $0 ? sync.choose() : sync.turnOff() }))
-                .disabled(icloud.on && !sync.on)
-                .opacity(icloud.on && !sync.on ? 0.4 : 1)
         case "handoff": Switch(on: $prefs.handoff)
-        case "icloud":
-            // Off limits in a build not signed for iCloud, and while the
-            // folder sync is on.
-            let locked = !icloud.on && (!icloud.available || sync.on)
-            Switch(on: Binding(get: { icloud.on }, set: { $0 ? icloud.turnOn() : icloud.turnOff() }))
-                .disabled(locked)
-                .opacity(locked ? 0.4 : 1)
-        case "icloud.erase":
-            Pill("Delete…") {
-                let alert = NSAlert()
-                alert.messageText = "Delete Search's data from iCloud?"
-                alert.informativeText = "Open tabs, pins, bookmarks and settings leave iCloud for every device. What is on each device stays. Sync with iCloud turns off here and on your other devices."
-                alert.addButton(withTitle: "Delete")
-                alert.addButton(withTitle: "Cancel")
-                if alert.runModal() == .alertFirstButtonReturn { icloud.erase() }
-            }
         case "quit.confirm": Switch(on: $prefs.confirmsQuit)
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)
@@ -781,6 +758,7 @@ struct SettingsPanel: View {
         case "commandbar": Switch(on: $prefs.commandBar)
         case "start.fresh": Switch(on: $prefs.startsFresh)
         case "note.sharedpins", "note.pinback": Always()
+        case "contacts.fill": keptControl(id)
         default: EmptyView()
         }
     }
