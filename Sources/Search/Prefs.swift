@@ -532,6 +532,12 @@ final class Preferences: ObservableObject {
     @Published var showsReading: Bool {
         didSet { store.set(showsReading, forKey: "tabs.reading") }
     }
+    /// The count a page puts at the front of its title — "(3) WhatsApp" —
+    /// as a badge on its pin, which shows no title (UnreadBadge). Off unless
+    /// asked for.
+    @Published var showsPinCounts: Bool {
+        didSet { store.set(showsPinCounts, forKey: "tabs.pinCounts") }
+    }
     /// Tab titles in full ink (black or white) instead of the soft greys
     /// used for tabs that aren't the one you're on. Off unless asked for.
     @Published var highContrastText: Bool {
@@ -1296,6 +1302,7 @@ final class Preferences: ObservableObject {
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
         showsTabShortcuts = store.bool(forKey: "tabs.shortcuts")
         showsReading = store.bool(forKey: "tabs.reading")
+        showsPinCounts = store.bool(forKey: "tabs.pinCounts")
         highContrastText = store.bool(forKey: "tabs.highContrast")
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
         // Security's advice); a choice made before stands.

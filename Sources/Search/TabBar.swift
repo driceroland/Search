@@ -1016,6 +1016,10 @@ private struct TabPill: View, Equatable {
                     }
                 }
                 .frame(width: 16, height: 16)
+                // What its page counts as waiting (UnreadBadge): a pin shows
+                // no title to say it in.
+                .unreadBadge(prefs.showsPinCounts && !lettering && shortcutNumbers[tab.id] == nil ? tab.unread : nil, icon: 16,
+                             ring: live ? greys.pinLive : selected ? greys.wash : hovering ? greys.hover : greys.tile)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 6)
                 .frame(width: span)
