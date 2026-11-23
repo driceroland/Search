@@ -88,6 +88,6 @@ final class DeveloperSpeedIndexTests: XCTestCase {
         XCTAssertEqual(audit.numericValue, 1_200)
         XCTAssertEqual(audit.displayValue, "1.2 s")
         XCTAssertGreaterThan(audit.score ?? 0, 0.9)
-        XCTAssertTrue(audit.warnings.first?.contains("30 snapshots of the view, one per display frame") ?? false)
+        XCTAssertTrue(audit.warnings.first?.contains("30 snapshots of the view at roughly 16 ms intervals") ?? false)
     }
 }
