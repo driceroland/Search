@@ -28,9 +28,9 @@ final class FollowFileTests: XCTestCase {
             "foldsToIcons", "instantMotion", "compactStrip",
             // Look and layout settings added since, each read again as it was
             // added: the column's slide, buttons at the top, the card in full
-            // screen, the address bar and its width, the glass window and the
+            // screen, the address bar and its width, the scroll bars, the glass window and the
             // Liquid Glass tab, the bounce, and ⌘1–⌘9 for spaces.
-            "slidesColumn", "doorsUp", "cardsInFullScreen", "addressLine", "addressWidth", "glass", "glassGrain",
+            "slidesColumn", "doorsUp", "cardsInFullScreen", "addressLine", "scrollbarsFade", "addressWidth", "glass", "glassGrain",
             "glassClear", "glassStyle", "liquidTabs", "bounces", "spacesOnCommand",
             // Themes: the empty tab's background is part of the look.
             "homeTheme", "homeThemeImage", "homeTuning", "homeShuffle",

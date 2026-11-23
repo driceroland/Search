@@ -322,6 +322,14 @@ final class Preferences: ObservableObject {
     @Published var addressLine: Bool {
         didSet { store.set(addressLine, forKey: "address.shown") }
     }
+    /// Scroll bars fade away when nothing is scrolling, whatever the Mac is
+    /// set to (see Scrollbars.swift). Off unless asked for.
+    @Published var scrollbarsFade: Bool {
+        didSet {
+            store.set(scrollbarsFade, forKey: "scrollbars.fade")
+            Scrollbars.fade = scrollbarsFade
+        }
+    }
     /// How wide it is before the tabs across the top.
     @Published var addressWidth: AddressWidth {
         didSet { store.set(addressWidth.rawValue, forKey: "address.width") }
@@ -1257,6 +1265,9 @@ final class Preferences: ObservableObject {
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
         cardsInFullScreen = store.bool(forKey: "layout.cardsFullScreen")
         addressLine = store.bool(forKey: "address.shown")
+        let fades = store.bool(forKey: "scrollbars.fade")
+        scrollbarsFade = fades
+        Scrollbars.fade = fades
         addressWidth = store.string(forKey: "address.width").flatMap(AddressWidth.init) ?? .small
         glass = store.bool(forKey: "window.glass")
         glassGrain = (store.object(forKey: "window.glass.grain") as? Double).map { min(1, max(0, $0)) } ?? 0.2
@@ -1552,6 +1563,7 @@ final class Preferences: ObservableObject {
         take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)
         take(\.cardsInFullScreen, store.bool(forKey: "layout.cardsFullScreen"))
         take(\.addressLine, store.bool(forKey: "address.shown"))
+        take(\.scrollbarsFade, store.bool(forKey: "scrollbars.fade"))
         take(\.addressWidth, "address.width", store.string(forKey: "address.width").flatMap(AddressWidth.init), or: .small)
         take(\.glass, store.bool(forKey: "window.glass"))
         take(\.glassGrain, "window.glass.grain", (store.object(forKey: "window.glass.grain") as? Double).map { min(1, max(0, $0)) }, or: 0.2)

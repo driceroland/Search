@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Settings › Appearance › Window › Hide scroll bars until you scroll, off unless you turn it on: pages, and Search's own lists, get the thin scroll bars macOS draws with a trackpad, over the page rather than beside it, that come up as it scrolls and fade out once it stops, even with System Settings › Appearance › Show scroll bars set to Always or a mouse plugged in. Pages already open change at once. `swift test --filter ScrollbarsTests`
+
 ### Held back
 
 Not in this version, kept on main for a later one:
