@@ -44,7 +44,10 @@ extension Browser {
             if web.cameraCaptureState == from { web.setCameraCaptureState(to) {} }
             if web.microphoneCaptureState == from { web.setMicrophoneCaptureState(to) {} }
         }
-        if !shown { settleCapture(for: page) }
+        if !shown {
+            settleCapture(for: page)
+            if let web = page.built { cancelDisplay(for: web) }
+        }
         if shown, let held = heldDialogs.removeValue(forKey: page.id) {
             DispatchQueue.main.async { held.forEach { $0.present() } }
         }
@@ -130,6 +133,7 @@ extension Browser {
         heldDialogs.removeValue(forKey: page.id)?.forEach { $0.dismiss() }
         dropCertificateAsks(for: page.id)
         settleCapture(for: page)
+        if let web = page.built { cancelDisplay(for: web) }
         page.close()
     }
 

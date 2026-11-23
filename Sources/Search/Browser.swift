@@ -9407,11 +9407,17 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
     /// WebKit's private delegate lets Search ask before opening the system picker.
     /// Extension pages use separate delegates.
+    ///
+    /// A peek asks too, over itself, as it does for the camera: a Meet link
+    /// from a pinned Calendar or Gmail opens in one, and its call was
+    /// refused without a word, so Meet sent you looking for a setting.
     @objc(_webView:requestDisplayCapturePermissionForOrigin:initiatedByFrame:withSystemAudio:decisionHandler:)
     func askedToShareScreen(_ webView: WKWebView, origin: WKSecurityOrigin, frame: WKFrameInfo,
                             systemAudio: Bool, decisionHandler: @escaping (Int) -> Void) {
         if tab(for: webView)?.agent == true { return decisionHandler(0) }
-        guard decideDisplay == nil, decide == nil, let tab = (tabs + parkedTabs).first(where: { $0.built === webView })
+        let peek = peekTab.flatMap { $0.built === webView ? $0 : nil }
+        guard decideDisplay == nil, decide == nil,
+              let tab = (tabs + parkedTabs).first(where: { $0.built === webView }) ?? peek
         else { return decisionHandler(0) }
         let request = UUID()
         displayRequest = request
@@ -9423,7 +9429,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // Recheck ownership when a background tab's question is shown.
         displayHeld = ask(from: webView, show: { [weak self, weak webView] in
             guard let self, displayRequest == request else { return }
-            guard let webView, activeID == tab.id, tab.built === webView, decide == nil else { return cancelDisplay() }
+            let onScreen = activeID == tab.id || (peekTab === tab && peekInFront)
+            guard let webView, onScreen, tab.built === webView, decide == nil else { return cancelDisplay() }
             asking = CaptureAsk(host: named, wants: "screen", screen: true, sound: systemAudio)
         }, drop: { [weak self] in
             guard let self, displayRequest == request else { return }
