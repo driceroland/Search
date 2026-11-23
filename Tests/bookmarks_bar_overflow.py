@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The bookmarks bar's » for what it has no room for, and a middle-click on
 its folders, in a hidden probe (ideas 958, 959).
+A ⌘-click on a folder does what its middle-click does, with icons only too.
 
 Build first (`./build.sh`), then `python3 Tests/bookmarks_bar_overflow.py`.
 It uses the split suite's harness: started hidden in a world of its own, no
@@ -107,6 +108,46 @@ def main():
         g = wide["frames"][1]
         m2 = sv.cmd({"do": "hit", "x": g[0] + g[2] / 2, "y": g[1] + g[3] / 2, "middle": True})
         t.ok("a middle-click on a bookmark still opens it in one new tab", m2.get("tabsAfter", 0) - m2.get("tabsBefore", 0) == 1, m2)
+
+        # A ⌘-click on a folder: the middle-click's path, as Chrome has it.
+        # A plain click isn't caught, so it still reaches the folder's own
+        # tap, its menu (SwiftUI's tap takes no event handed to a hidden
+        # window, so the menu itself isn't popped here); a ⌘-click on a
+        # bookmark isn't caught either and keeps its own way.
+        def click(frame, command):
+            return sv.cmd({"do": "hit", "x": frame[0] + frame[2] / 2, "y": frame[1] + frame[3] / 2,
+                           "click": True, "command": command})
+
+        def cmd_folder(frame, label):
+            before = sv.sp("state")
+            c = click(frame, True)
+            time.sleep(0.3)
+            after = sv.sp("state")
+            urls = [x["url"] for x in after["tabs"]]
+            t.ok(f"{label}a ⌘-click on a folder opens its three bookmarks in new tabs, no menu",
+                 c.get("caught") is True and c.get("tabsAfter", 0) - c.get("tabsBefore", 0) == 3
+                 and [u.rsplit("/", 1)[-1] for u in urls[-3:]] == ["f1", "f2", "f3"], (c, urls))
+            t.ok(f"{label}…behind the tab in front", after.get("active") == before.get("active"),
+                 (before.get("active"), after.get("active")))
+
+        def plain_folder(frame, label):
+            c = click(frame, False)
+            t.ok(f"{label}a plain click on a folder isn't caught: it goes on to the folder's menu, no tab",
+                 c.get("caught") is False and c.get("tabsAfter") == c.get("tabsBefore"), c)
+
+        plain_folder(f, "")
+        cmd_folder(f, "")
+        c = click(g, True)
+        t.ok("a ⌘-click on a bookmark isn't caught: it keeps its own way (a tab behind)",
+             c.get("caught") is False and c.get("tabsAfter") == c.get("tabsBefore"), c)
+
+        # The same with icons only (idea 980): folders keep their names
+        # and their clicks.
+        icons = sv.cmd({"do": "bar", "iconsOnly": True})
+        fi = icons["frames"][0]
+        t.ok("icons only: the bookmarks narrower, the folder still first", icons["frames"][1][2] < g[2], (icons["frames"][1], g))
+        plain_folder(fi, "icons only: ")
+        cmd_folder(fi, "icons only: ")
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)

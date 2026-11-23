@@ -2335,25 +2335,42 @@ struct CloseClick: NSViewRepresentable {
 /// the middle button and nothing else: to a left click, a drag or a right
 /// click it isn't there, and the tab's own gestures and menu go on as before.
 struct MiddleClick: NSViewRepresentable {
+    /// A ⌘-click (the left button, ⌘ alone held) taken too: a folder of the
+    /// bookmarks bar, opened all at once as Chrome does (idea 959). Every
+    /// other left click goes through to what is under it.
+    var command = false
     let act: () -> Void
 
     func makeNSView(context: Context) -> NSView { Catch() }
 
     func updateNSView(_ view: NSView, context: Context) {
         (view as? Catch)?.act = act
+        (view as? Catch)?.command = command
     }
 
-    private final class Catch: NSView {
+    final class Catch: NSView {
         var act: () -> Void = {}
+        var command = false
         private var pressed = false
+
+        /// Whether it takes this event: the middle button's, or with
+        /// `command` a ⌘-click's.
+        static func takes(_ event: NSEvent?, command: Bool) -> Bool {
+            guard let event else { return false }
+            switch event.type {
+            case .otherMouseDown, .otherMouseUp:
+                return event.buttonNumber == 2
+            case .leftMouseDown, .leftMouseUp:
+                return command && event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command
+            default:
+                return false
+            }
+        }
 
         /// Asked about every event that lands on the tab, the pointer moving
         /// over it included; the one being delivered is the one to judge by.
         override func hitTest(_ point: NSPoint) -> NSView? {
-            guard let event = NSApp.currentEvent,
-                  event.type == .otherMouseDown || event.type == .otherMouseUp,
-                  event.buttonNumber == 2
-            else { return nil }
+            guard Catch.takes(NSApp.currentEvent, command: command) else { return nil }
             return super.hitTest(point)
         }
 
@@ -2368,6 +2385,17 @@ struct MiddleClick: NSViewRepresentable {
             guard pressed else { return }
             pressed = false
             if bounds.contains(convert(event.locationInWindow, from: nil)) { act() }
+        }
+
+        /// A ⌘-click, taken back the same way.
+        override func mouseDown(with event: NSEvent) {
+            guard command else { return super.mouseDown(with: event) }
+            pressed = true
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            guard command else { return super.mouseUp(with: event) }
+            otherMouseUp(with: event)
         }
     }
 }

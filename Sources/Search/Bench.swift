@@ -1875,29 +1875,42 @@ final class Bench {
             else { answer(["error": "hit needs an x and a y"]); return }
             let point = NSPoint(x: x, y: Double(window.frame.height) - y)
             let hit = frame.hitTest(frame.convert(point, from: nil))
-            if request["middle"] as? Bool == true {
-                // The middle button pressed and let go there. A probe's window
+            let left = request["click"] as? Bool == true
+            if request["middle"] as? Bool == true || left {
+                // The middle button pressed and let go there — or, "click",
+                // the left one, "command": true with ⌘ held. A probe's window
                 // is hidden and takes no events through the app, so they are
-                // handed to the view that catches the middle button over the
-                // tabs (MiddleClick in TabBar.swift), the topmost one there.
-                guard Store.testing else { answer(["error": "hit … middle only works on a --test run"]); return }
-                func catcher(in view: NSView) -> NSView? {
+                // handed to the view that catches them over the tabs and the
+                // bookmarks bar (MiddleClick in TabBar.swift), the topmost
+                // there that would take them, as its hitTest judges. A left
+                // click none takes goes to what is under it, a folder's own
+                // tap (its menu), which a hidden window's events never reach:
+                // "caught": false says so, and nothing is sent.
+                guard Store.testing else { answer(["error": "hit … middle/click only works on a --test run"]); return }
+                let flags: NSEvent.ModifierFlags = request["command"] as? Bool == true ? .command : []
+                let (down, up): (NSEvent.EventType, NSEvent.EventType) = left ? (.leftMouseDown, .leftMouseUp) : (.otherMouseDown, .otherMouseUp)
+                func event(_ type: NSEvent.EventType) -> NSEvent? {
+                    NSEvent.mouseEvent(with: type, location: point, modifierFlags: left ? flags : [],
+                                       timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                       context: nil, eventNumber: 0, clickCount: 1, pressure: type == up ? 0 : 1)
+                }
+                func catcher(in view: NSView) -> MiddleClick.Catch? {
                     for sub in view.subviews.reversed() { if let found = catcher(in: sub) { return found } }
-                    guard String(describing: type(of: view)).contains("Catch") else { return nil }
+                    // (An otherMouseDown made here says button 0, so the
+                    // middle button's is taken as given.)
+                    guard let view = view as? MiddleClick.Catch, !left || MiddleClick.Catch.takes(event(down), command: view.command)
+                    else { return nil }
                     return view.convert(view.bounds, to: nil).contains(point) ? view : nil
                 }
-                guard let target = catcher(in: frame) else { answer(["error": "nothing catches the middle button there"]); return }
                 let before = browser.tabs.count
-                for type in [NSEvent.EventType.otherMouseDown, .otherMouseUp] {
-                    guard let event = NSEvent.mouseEvent(
-                        with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
-                        pressure: type == .otherMouseUp ? 0 : 1
-                    ) else { continue }
-                    if type == .otherMouseDown { target.otherMouseDown(with: event) } else { target.otherMouseUp(with: event) }
+                guard let target = catcher(in: frame) else {
+                    if left { answer(["caught": false, "tabsBefore": before, "tabsAfter": before]); return }
+                    answer(["error": "nothing catches the middle button there"]); return
                 }
+                if let press = event(down) { left ? target.mouseDown(with: press) : target.otherMouseDown(with: press) }
+                if let release = event(up) { left ? target.mouseUp(with: release) : target.otherMouseUp(with: release) }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    answer(["tabsBefore": before, "tabsAfter": browser.tabs.count])
+                    answer(["caught": true, "tabsBefore": before, "tabsAfter": browser.tabs.count])
                 }
                 return
             }
