@@ -14,7 +14,7 @@ import ObjectiveC
 
 @MainActor
 enum Scrollbars {
-    /// Settings › Appearance › Window › Hide scroll bars until you scroll.
+    /// Settings › Appearance › Window › Fade scroll bars when you stop scrolling.
     static var fade = false {
         didSet {
             guard fade != oldValue else { return }

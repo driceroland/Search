@@ -2,7 +2,7 @@ import AppKit
 import XCTest
 @testable import Search
 
-/// Hide scroll bars until you scroll: on, AppKit — and through it WebKit —
+/// Fade scroll bars when you stop scrolling: on, AppKit — and through it WebKit —
 /// is told Search prefers overlay scroll bars; off, the Mac's own answer.
 @MainActor
 final class ScrollbarsTests: XCTestCase {

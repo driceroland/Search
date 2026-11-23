@@ -227,7 +227,7 @@ enum SettingsIndex {
               title: "Address width", detail: "Before the tabs across the top",
               keys: ["address.width"], words: ["address bar", "url", "width", "wide"], parent: "address.shown"),
         .init(id: "scrollbars.fade", group: "window", icon: "scroll",
-              title: "Hide scroll bars until you scroll", detail: "Thin bars over the page that fade away once it stops, even with a mouse",
+              title: "Fade scroll bars when you stop scrolling", detail: "Thin bars over the page that come up only as it scrolls, even with a mouse",
               more: "As macOS draws them with a trackpad, whatever System Settings › Appearance › Show scroll bars says. Off, Search follows that setting.",
               keys: ["scrollbars.fade"], words: ["scroll bar", "scrollbar", "scrollbars", "overlay", "fade", "hide", "auto hide", "when scrolling"]),
         .init(id: "window.glass", group: "window", icon: "square.on.square.intersection.dashed",
