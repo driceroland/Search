@@ -970,6 +970,8 @@ struct SettingsPanel: View {
             }
         case "agents":
             if !searched, prefs.agents { RememberedAgents() }
+        case "devtools":
+            DevToolsPackageList().under()
         case "passwords.apple":
             ApplePasswordsCard(prefs: prefs, bare: true)
                 .under()

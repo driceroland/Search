@@ -357,6 +357,12 @@ final class Updater: ObservableObject {
                 AIEngine.shared.refreshState()
             }
         }
+        // Developer tools packages for this Mac, when the feed lists any (see
+        // DevToolsPackages): the list in Settings follows it.
+        let offers = DevToolsPackages.offers(from: json["devtools"]) { value in
+            link(value).flatMap { $0.scheme?.lowercased() == "https" ? $0 : nil }
+        }
+        await MainActor.run { DevToolsPackages.shared.offered = offers }
         return release
     }
 

@@ -9152,6 +9152,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         decidePolicyFor response: WKNavigationResponse,
         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
     ) {
+        if response.isForMainFrame { DevToolsPackages.heard(response.response, for: webView) }
         // An answer with nothing in it, no address and no type: WebKit hands
         // one over when a page that came past the site's service worker is
         // moved to a new process as it arrives. youtube.com does it on
