@@ -265,6 +265,16 @@ struct SearchApp: App {
                     .shortcut("view.console")
                 Button("Inspect Element") { browser.inspectElement() }
                     .shortcut("view.inspect")
+                // Only with a developer tools package installed (Settings ›
+                // About › Developer, see DevToolsPackages.swift).
+                if let package = DevToolsPackages.shared.primary, DevToolsPackages.shared.usable(package.offer.id) {
+                    Menu("Developer") {
+                        ForEach(package.offer.menu, id: \.self) { item in
+                            Button(item.title) { DevToolsPackages.shared.open(item.id, in: browser) }
+                        }
+                    }
+                    .disabled(!(browser.active?.isWeb ?? false) || browser.active?.page != nil)
+                }
                 // The system's own item, which replacing the toolbar group
                 // above took with it: ⌃⌘F did nothing (#1176). The key is
                 // the Mac's, never offered in Settings › Shortcuts.
@@ -607,6 +617,7 @@ struct ContentView: View {
             // top and on the column's side in the room (see chrome). Two pages
             // side by side are a card each (see PaneStage).
             stage
+                .modifier(DevToolsStage(browser: browser))
                 .modifier(CardEdge(on: cards && !browser.prefs.splitView))
                 // The tabs folded away: a line says the page is coming
                 // (Settings, idea 269), clear of the card's round corners.
@@ -1452,6 +1463,7 @@ struct ContentView: View {
             // is the page's, which lets the pointer go on it, ahead of the
             // find bar, the field, or a full screen's Esc twice.
             if PointerLock.shared.escape(event) { return event }
+            if DevToolsPackages.keyDown(event, in: browser) { return nil }
             // Escape on a page filling the screen is WebKit's, which leaves
             // on the first one, as Safari does. Its window isn't a browser's,
             // so the key came here first and put away what was left up in

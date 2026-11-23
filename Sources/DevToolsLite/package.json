@@ -1,0 +1,29 @@
+{
+  "id": "lite",
+  "name": "Developer Tools Lite",
+  "summary": "Lighthouse audits, a flow recorder and a device toolbar",
+  "adds": [
+    "Lighthouse",
+    "Recorder",
+    "Device toolbar",
+    "Sensors",
+    "Rendering"
+  ],
+  "version": 1,
+  "display": "1.0",
+  "api": 1,
+  "menu": [
+    {
+      "id": "lighthouse",
+      "title": "Lighthouse"
+    },
+    {
+      "id": "recorder",
+      "title": "Recorder"
+    },
+    {
+      "id": "device",
+      "title": "Device Toolbar"
+    }
+  ]
+}

@@ -218,6 +218,7 @@ extension Browser {
     /// What the page is in the middle of that letting it go would cut off:
     /// the part of staying awake that closing a tab asks too (Closing.swift).
     func busy(_ tab: Tab) -> String? {
+        if DevToolsPackages.busy(tab) { return "a developer tool is open" }
         if keepsAwake(tab) { return "kept awake for this site" }
         if tab.noisy { return "playing sound" }
         if tab.floating || floating == tab.id || pictured == tab.id { return "its video is out" }

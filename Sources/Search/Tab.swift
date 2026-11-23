@@ -1275,6 +1275,9 @@ final class Tab: ObservableObject, Identifiable {
         if let kept = KeptSession.script(for: self) {
             add(kept, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
+        // Only while a developer tools package has a tool open on this tab
+        // (DevToolsPackages.swift).
+        scripts += DevToolsPackages.scripts(for: self)
         // The same scripts as the document before's, the usual case, are
         // left where they are: taken out and put back, every one was sent to
         // the page's process again on every link followed.
@@ -1282,6 +1285,9 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeAllUserScripts()
         scripts.forEach(controller.addUserScript)
     }
+
+    /// The next document's scripts again, as they now stand.
+    func rearm() { arm(hiding: veils) }
 
     /// The same stylesheet, for the page that is already up.
     func applyVeils(_ css: String) {
@@ -2205,6 +2211,7 @@ final class Tab: ObservableObject, Identifiable {
         // What the player paused went with the page: nothing to play again.
         stilled = false
         guard let web = built else { return }
+        DevToolsPackages.unload(web)
         (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
         // Back and Forward said what the view let go of could do. The next
