@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- A finished download can be dragged out of the Downloads list (the tab, the side panel or the card under the button) as its file, with the file's icon under the pointer: onto a page to upload it, as a file from the Finder would be, or into the Finder, Mail or another app. A click still opens it; a download under way, a failed one or one whose file has gone has nothing to drag. `swift test --filter DownloadDragOutTests` ([#920](https://github.com/driceroland/Search/issues/920), [#1388](https://github.com/driceroland/Search/issues/1388), idea 566)
+
 ### Fixed
 
 - An extension's popup sends the sign-ins of the window it was opened from. With a second window on another profile or a signed-out space, a popup's requests to a site it had been given went with no cookies at all, so Monarch Money's "Connect Amazon" found Amazon signed out and did nothing, as Chrome never does. `python3 Tests/extension_popup_window_cookies.py` (reported by email, idea 1045)
