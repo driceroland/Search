@@ -66,7 +66,8 @@ struct TabBar: View {
                 DragStrip(reserved: lights + dot + leading + (making ? min(540, row.room) : row.run) + Metrics.tabGap + Metrics.plusWidth, trailing: doors + 12,
                           band: making ? nil : TabBar.band, onDoubleClick: browser.newTab)
                 // And the corner the lights sit in, which is title bar too —
-                // the one stretch left to take hold of when tabs fill the row.
+                // with the stretch past the plus a full row still keeps
+                // (Metrics.tabRowHold), where to take hold when tabs fill it.
                 DragStrip()
                     .frame(width: lights)
 
@@ -648,12 +649,13 @@ struct TabBar: View {
     }
 
     /// The strip, less the lights, the helm when it leads, the plus, the
-    /// doors at the far end and the air around them. The doors are measured;
+    /// stretch past it that moves the window (Metrics.tabRowHold), the doors
+    /// at the far end and the air around them. The doors are measured;
     /// until they have been, the helm and the bookmarks stand in for them —
     /// unless the helm leads, when nothing at the far end may be a real zero.
     private func room(in strip: CGFloat) -> CGFloat {
         let far = doors > 0 || browser.prefs.navigationLeft ? doors : Metrics.helm(browser.prefs) + 26
-        return max(0, strip - lights - dot - leading - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
+        return max(0, strip - lights - dot - leading - 12 - Metrics.plusWidth - Metrics.tabRowHold - far - 3 * Metrics.tabGap)
     }
 
     /// What the space's dot takes before the tabs, when there are spaces.

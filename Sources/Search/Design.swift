@@ -237,6 +237,11 @@ enum Metrics {
     static let pinWidth: CGFloat = 30
     /// The square at the end of the row that opens a new page.
     static let plusWidth: CGFloat = 30
+    /// What a full row of tabs still leaves past the plus to take the window
+    /// by, as Chrome's does: the tabs give way before it. Without it they ran
+    /// up to the buttons at the far end, and the corner the lights sit in was
+    /// all of the row that moved the window.
+    static let tabRowHold: CGFloat = 40
     /// The address field, in both the places it shows up.
     static let fieldWidth: CGFloat = 560
     /// The column of titles down the left, in the way that has one.
