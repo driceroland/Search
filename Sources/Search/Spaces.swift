@@ -1112,11 +1112,13 @@ enum SpaceMenu {
         menu.addItem(.separator())
         menu.addItem(item("New Space…") { browser.askForSpace() })
         // The profiles, once there is more than one (see Profiles.swift).
+        // It switches the window's profile, the one ticked; it doesn't move
+        // the space, so it isn't named like one of the space's own settings.
         if Profiles.shared.several {
             menu.addItem(.separator())
             let profiles = NSMenu()
             for entry in ProfileMenu.items(for: browser) { profiles.addItem(entry) }
-            let holder = NSMenuItem(title: "Profile: \(Profiles.shared.profile(browser.profileID).name)", action: nil, keyEquivalent: "")
+            let holder = NSMenuItem(title: "Switch to Profile", action: nil, keyEquivalent: "")
             holder.submenu = profiles
             menu.addItem(holder)
         }

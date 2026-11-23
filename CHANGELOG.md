@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- With two profiles or more, the profile item in a space's right-click menu is called Switch to Profile, where it said "Profile: Personal". It switches the window to that profile (the ticked one is the window's) and never moved the space, but read like a setting of the space, so choosing Work looked like moving the space there and losing it. (reported by email, idea 983)
+
 ### Held back
 
 Not in this version, kept on main for a later one:
