@@ -13,6 +13,12 @@ private final class LentPage: WKWebView {
     override var fullscreenState: WKWebView.FullscreenState { lent }
 }
 
+/// WebKit's private audio signal, as the stage sees it, without starting a
+/// real player in the test window.
+private final class SoundingPage: WKWebView {
+    @objc dynamic var _isPlayingAudio = false
+}
+
 /// Found by its name, as WebKit's own is (see StageView.isPlaceholder).
 private final class FakeFullScreenPlaceholderView: NSView {}
 
@@ -125,6 +131,24 @@ final class StageFullScreenTests: XCTestCase {
         video.removeFromSuperview()
         video.lent = .notInFullscreen
         XCTAssertTrue(video.superview === stage)
+    }
+
+    func testAPlayingAudioPageStaysInTheWindowBehindTheSelectedTab() {
+        let (stage, host) = stage()
+        defer { host.close() }
+        let music = SoundingPage(frame: .zero, configuration: WKWebViewConfiguration())
+        music._isPlayingAudio = true
+        stage.show(music)
+
+        let other = page()
+        stage.show(other)
+
+        XCTAssertTrue(music.superview === stage)
+        XCTAssertEqual(music.alphaValue, 0)
+        XCTAssertTrue(other.superview === stage)
+
+        stage.show(music)
+        XCTAssertEqual(music.alphaValue, 1)
     }
 
     /// Chosen while still on its way in: asked again once it is there, when

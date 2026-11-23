@@ -330,9 +330,15 @@ final class StageView: NSView {
     /// ImageCapture) stalls with it, and on a Meet call the others saw your
     /// picture frozen until you came back to the tab, where Safari and
     /// Chrome keep sending. Kept in the window, the page carries on as it
-    /// did in front. Only pages on a call: any other tab still leaves the
-    /// window, and is slowed and put to sleep as before.
+    /// did in front. Pages on a call or playing sound stay in the window;
+    /// everything else leaves and is slowed as before.
     private var calls: [ObjectIdentifier: CallWatch] = [:]
+
+    /// Audible pages stay in the window while another tab is on top. WebKit
+    /// throttles a page taken out of every window to one timer tick a second;
+    /// A streaming player may need its page alive to advance the queue. Keep
+    /// a short grace after sound stops, too: players are quiet between tracks.
+    private var sounds: [ObjectIdentifier: AudioStageWatch] = [:]
 
     /// Whether this page is using the camera, the microphone or the screen.
     /// Muted counts: a camera turned off from the call's own button is a
@@ -347,6 +353,10 @@ final class StageView: NSView {
     /// Whether this page is one kept here unseen for its call.
     func holdsCall(_ view: NSView) -> Bool {
         calls[ObjectIdentifier(view)]?.web === view
+    }
+
+    private func holdsSound(_ view: NSView) -> Bool {
+        sounds[ObjectIdentifier(view)]?.web === view
     }
 
     func keep(_ page: NSView) {
@@ -529,6 +539,17 @@ final class StageView: NSView {
                 hold(view)
                 continue
             }
+            if let web = view as? WKWebView {
+                let key = ObjectIdentifier(web)
+                if let watch = sounds[key] {
+                    if watch.keepsWindow { holdSound(web); continue }
+                    watch.stop()
+                    sounds[key] = nil
+                } else if AudioStageWatch.isPlaying(web) {
+                    holdSound(web)
+                    continue
+                }
+            }
             view.removeFromSuperview()
         }
         // Calls that ended, or pages that went elsewhere, are watched no more.
@@ -539,10 +560,22 @@ final class StageView: NSView {
                 continue
             }
         }
+        for (key, watch) in sounds {
+            guard let web = watch.web, web.superview === self, web !== wanted else {
+                watch.stop()
+                sounds[key] = nil
+                continue
+            }
+        }
     }
 
     private func placeWanted() {
         guard let wanted, window != nil else { return }
+        if let web = wanted as? WKWebView {
+            let key = ObjectIdentifier(web)
+            sounds[key]?.stop()
+            sounds[key] = nil
+        }
         let docked = inspecting
         if wanted.superview === self, wanted.alphaValue == 0, wanted !== parting,
            (wanted as? PageView)?.unpainted != true {
@@ -604,12 +637,30 @@ final class StageView: NSView {
         calls[key] = CallWatch(web) { [weak self] in self?.settle() }
     }
 
+    /// As `hold`, but for sound rather than a live call. WebKit stops
+    /// throttling the page while its view remains in this window, even with
+    /// alpha zero. A quiet interval protects the handover between tracks.
+    private func holdSound(_ web: WKWebView) {
+        web.alphaValue = 0
+        if !(inspecting && subviews.contains(where: Self.isInspector)) { web.frame = bounds }
+        if let window, let responder = window.firstResponder as? NSView,
+           responder === web || responder.isDescendant(of: web) {
+            window.makeFirstResponder(nil)
+        }
+        let key = ObjectIdentifier(web)
+        guard sounds[key]?.web !== web else { return }
+        sounds[key]?.stop()
+        sounds[key] = AudioStageWatch(web) { [weak self] in self?.settle() }
+    }
+
     /// Nothing reaches a page kept unseen: a click, a scroll or a drop
     /// there goes to the page on show.
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         if let parting, let hit, hit === parting || hit.isDescendant(of: parting) { return nil }
-        if let hit, let held = subviews.first(where: { holdsCall($0) && (hit === $0 || hit.isDescendant(of: $0)) }),
+        if let hit, let held = subviews.first(where: {
+            (holdsCall($0) || holdsSound($0)) && (hit === $0 || hit.isDescendant(of: $0))
+        }),
            held !== wanted {
             guard let wanted, wanted.superview === self else { return nil }
             return wanted.hitTest(convert(point, from: superview))
@@ -670,6 +721,67 @@ final class CallWatch: NSObject {
     override func observeValue(forKeyPath keyPath: String?, of object: Any?,
                                change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         DispatchQueue.main.async { [weak self] in self?.changed() }
+    }
+}
+
+/// Watches WebKit's indication that a page is playing audio, keeping the
+/// page's view in its window so its timers can advance playback. WebKit has
+/// no public audio-playing property; Tab already uses this same signal for
+/// its sound indicator and sleep protection.
+final class AudioStageWatch: NSObject {
+    private static let key = "_isPlayingAudio"
+
+    private(set) weak var web: WKWebView?
+    private let changed: () -> Void
+    private var quietUntil = Date.distantPast
+    private var quietWork: DispatchWorkItem?
+    private var observing = false
+
+    static func isPlaying(_ web: WKWebView) -> Bool {
+        guard web.responds(to: NSSelectorFromString(key)) else { return false }
+        return (web.value(forKey: key) as? Bool) == true
+    }
+
+    init(_ web: WKWebView, changed: @escaping () -> Void) {
+        self.web = web
+        self.changed = changed
+        if Self.isPlaying(web) { quietUntil = Date().addingTimeInterval(MediaKeys.wait) }
+        super.init()
+        guard web.responds(to: NSSelectorFromString(Self.key)) else { return }
+        web.addObserver(self, forKeyPath: Self.key, options: [.new], context: nil)
+        observing = true
+    }
+
+    var keepsWindow: Bool {
+        guard let web else { return false }
+        if Self.isPlaying(web) { quietUntil = Date().addingTimeInterval(MediaKeys.wait) }
+        return Date() < quietUntil
+    }
+
+    func stop() {
+        if observing, let web {
+            web.removeObserver(self, forKeyPath: Self.key)
+        }
+        observing = false
+        quietWork?.cancel()
+        quietWork = nil
+        web = nil
+    }
+
+    deinit { stop() }
+
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?,
+                               change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+        guard keyPath == Self.key else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.web != nil else { return }
+            self.quietUntil = Date().addingTimeInterval(MediaKeys.wait)
+            self.quietWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.changed() }
+            self.quietWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + MediaKeys.wait, execute: work)
+            self.changed()
+        }
     }
 }
 

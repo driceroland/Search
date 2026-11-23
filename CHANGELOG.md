@@ -44,6 +44,8 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Music could stop after the current track when its tab was in the background: a page playing audio now stays in the window while another tab is shown, including a short quiet interval between tracks.
+
 - A saved password or verification code goes into a page only while the page is still on the same scheme, host and port it is filled for, as your card's details already did: another port of the same host gets nothing. `python3 Tests/fill_touch_id.py`
 - A store update check that fails (no network yet after the Mac wakes, the store not answering) is tried again an hour later, then after two, four… hours, never more than a day apart, instead of counting as the day's check: the day was stamped before the check ran, so one failure held back every store extension's updates for 20 hours, uBlock Origin Lite's too. `python3 Tests/extension_store_update.py` (idea 992)
 - Extensions from the Chrome Web Store update to the version a new install gets: the daily check now asks the store as Chrome's Update button does (installsource=ondemand, with Chrome's os, arch and product details). Asked as a background check, the store answered "no update" for Bitwarden 2026.11.0 from 19 Nov whatever version was named, so Bitwarden stayed at 2026.10.2. (idea 992)
