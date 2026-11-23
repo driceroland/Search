@@ -7332,11 +7332,18 @@ final class Browser: NSObject, ObservableObject {
     /// its own video where it is rather than taking the window's place.
     @objc(_webViewFullscreenMayReturnToInline:)
     func webViewFullscreenMayReturnToInline(_ webView: WKWebView) {
-        guard let tab = tab(for: webView) else { return }
+        guard let tab = anyTab(for: webView) else { return }
+        if let space = parked.first(where: { $0.value.tabs.contains { $0 === tab } })?.key {
+            switchSpace(to: space)
+        }
+        guard tabs.contains(where: { $0 === tab }) else { return }
         if pictured == tab.id { pictured = nil }
         select(tab, floatPrevious: false)
         Browsers.show(self)
-        NSApp.activate()
+        // The system PiP button can be clicked while another app is active.
+        // Bring Search forward the same way as the floating window's button.
+        guard !Store.testing else { return }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// Everything but the video goes out of the way, and the page it lives in
