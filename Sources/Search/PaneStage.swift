@@ -17,6 +17,7 @@ import WebKit
 
 /// The stage, for SwiftUI. Its identity never changes; what it shows does.
 struct PaneStageView: NSViewRepresentable {
+    @Environment(\.devToolsFocusOnly) private var devToolsFocusOnly
     let tabs: [Tab]
     let split: TabSplit?
     let focused: Tab.ID?
@@ -38,6 +39,7 @@ struct PaneStageView: NSViewRepresentable {
     func makeNSView(context: Context) -> PaneStage { PaneStage() }
 
     func updateNSView(_ stage: PaneStage, context: Context) {
+        stage.devToolsFocusOnly = devToolsFocusOnly
         stage.corner = corner
         stage.immersedID = immersed
         stage.onCommit = commit
@@ -376,7 +378,12 @@ final class PaneStage: NSView {
 
     /// Two or more pages side by side, with room enough for all.
     private var paired: Bool {
-        tabs.count >= 2 && immersed == nil && fits(tabs.count)
+        tabs.count >= 2 && immersed == nil && !devToolsFocusOnly && fits(tabs.count)
+    }
+
+    /// Device emulation gives the inspected pane the whole stage.
+    var devToolsFocusOnly = false {
+        didSet { if devToolsFocusOnly != oldValue { needsLayout = true } }
     }
 
     /// A page lent to WebKit's full screen window: its slot has the stage.
@@ -392,7 +399,7 @@ final class PaneStage: NSView {
     private func shown(_ index: Int) -> Bool {
         if tabs.count < 2 { return true }
         if let immersed { return index == immersed }
-        if fits(tabs.count) || bounds.width == 0 { return true }
+        if !devToolsFocusOnly && (fits(tabs.count) || bounds.width == 0) { return true }
         return tabs[index].id == (focused ?? tabs[0].id)
     }
 

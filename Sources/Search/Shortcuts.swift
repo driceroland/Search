@@ -319,7 +319,7 @@ struct Command: Identifiable {
             if let tab = browser.active { browser.beginTabRename(tab) }
         },
         Command("tabs.duplicate", "Duplicate Tab", .tabs, KeyCombo("d")) { $0.duplicate() },
-        Command("tabs.copyAddress", "Copy Address", .tabs, KeyCombo("c", shift: true)) { $0.copyAddress() },
+        Command("tabs.copyAddress", "Copy Address", .tabs, KeyCombo("c", shift: true)) { $0.copyAddressOrPickElement() },
         Command("tabs.copyMarkdown", "Copy as Markdown Link", .tabs, nil) { $0.copyMarkdownLink() },
         Command("tabs.pasteAndGo", "Paste and Go", .tabs, KeyCombo("v", shift: true)) { $0.pasteAndGo() },
         Command("tabs.closeOthers", "Close Other Tabs", .tabs, nil) { browser in

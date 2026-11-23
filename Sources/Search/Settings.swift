@@ -909,6 +909,7 @@ struct SettingsPanel: View {
         case "updates.auto": Switch(on: $prefs.installsUpdates)
         case "about.feedback": Pill("Send Feedback") { Links.writeFeedback() }
         case "about.notes": Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
+        case "developerTools.enabled": Switch(on: $prefs.devTools)
         case "bench": Switch(on: $prefs.bench)
         case "agents": Switch(on: $prefs.agents)
         case "news.updates": OptInSettingsField(betaOnly: false) { _ = browser.open($0, foreground: true) }

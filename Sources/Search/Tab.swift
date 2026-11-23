@@ -1275,6 +1275,7 @@ final class Tab: ObservableObject, Identifiable {
         if let kept = KeptSession.script(for: self) {
             add(kept, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
+        scripts += ArmedRiders.scripts(for: controller)
         // The same scripts as the document before's, the usual case, are
         // left where they are: taken out and put back, every one was sent to
         // the page's process again on every link followed.
@@ -2205,6 +2206,9 @@ final class Tab: ObservableObject, Identifiable {
         // What the player paused went with the page: nothing to play again.
         stilled = false
         guard let web = built else { return }
+        if Shared.prefs.devTools && DeveloperTools.isOpen(for: self) {
+            DeveloperTools.shared.close()
+        }
         (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
         // Back and Forward said what the view let go of could do. The next
@@ -2616,10 +2620,14 @@ final class PageView: WKWebView {
             item.target = self
             item.action = #selector(searchSelection(_:))
         }
-        // Inspect Element is WebKit's own, from this menu rather than the
-        // View menu. Handed on, and then the coat, if one was asked for.
         if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierInspectElement" }) {
             inspectItem = (item.target, item.action)
+            if let browser, browser.prefs.devTools,
+               let tab = browser.tab(for: self), browser.developerPanelTarget(for: tab) === self {
+                inspectPoint = DeveloperToolsSession.pagePoint(event.locationInWindow, in: self)
+            } else {
+                inspectPoint = nil
+            }
             item.target = self
             item.action = #selector(inspectFromPage(_:))
         }
@@ -2675,11 +2683,22 @@ final class PageView: WKWebView {
 
     /// WebKit's Inspect Element, handed on so the inspector's coat follows.
     private var inspectItem: (target: AnyObject?, action: Selector?) = (nil, nil)
+    private var inspectPoint: NSPoint?
 
     @objc private func inspectFromPage(_ item: NSMenuItem) {
+        if let browser, browser.prefs.devTools,
+           let tab = browser.tab(for: self), browser.developerPanelTarget(for: tab) === self {
+            if browser.active !== tab { browser.select(tab) }
+            if browser.showDeveloperPanel(.elements, web: self, point: inspectPoint) { return }
+        }
         guard let action = inspectItem.action else { return }
-        NSApp.sendAction(action, to: inspectItem.target, from: item)
-        browser?.dressInspector(of: self)
+        let target = inspectItem.target
+        let enabled = browser?.prefs.devTools
+        NativeInspectorHandoff.whenReady { [weak self] in
+            guard let self, self.browser?.prefs.devTools == enabled else { return }
+            NSApp.sendAction(action, to: target, from: item)
+            self.browser?.dressInspector(of: self)
+        }
     }
 
     /// WebKit's Open Link in New Window, handed on once the tab it makes is
@@ -2911,7 +2930,9 @@ final class PageView: WKWebView {
 
     /// Whether a move, an entry or a cursor update for the page is to go
     /// through: not under cover (see PointerGate).
-    func hears(_ event: NSEvent) -> Bool { !underCover(event) }
+    func hears(_ event: NSEvent) -> Bool { !pickingElement && !underCover(event) }
+
+    var pickingElement = false
 
     /// WebKit's tracking areas aren't the view's: their owner is an object of
     /// WebKit's own (WKMouseTrackingObserver) that hands each move straight

@@ -35,9 +35,11 @@ import WebKit
 // `extensions.credentialedFetch` (default on, not in Settings) turns it
 // off, from the next request.
 
-@available(macOS 15.4, *)
 @MainActor
-enum ExtensionFetch {
+enum ExtensionFetch {}
+
+@available(macOS 15.4, *)
+extension ExtensionFetch {
     static let name = ExtensionShims.application + ".fetch"
     static let key = "extensions.credentialedFetch"
     static var on: Bool { Store.settings.object(forKey: key) as? Bool ?? true }
@@ -143,9 +145,11 @@ enum ExtensionFetch {
         guard let first = stores.first, stores.allSatisfy({ $0 === first }) else { return nil }
         return first
     }
+}
 
-    // MARK: - which cookies go
-
+// The cookie rules use Foundation alone. DevTools also uses them on macOS
+// versions before WebKit supports extensions.
+extension ExtensionFetch {
     /// Whether a top-level request to `url` would carry `cookie`, SameSite
     /// aside. Never a partitioned one: its partition is another site's top
     /// level, never this request's.
@@ -188,7 +192,10 @@ enum ExtensionFetch {
         }
         return false
     }
+}
 
+@available(macOS 15.4, *)
+extension ExtensionFetch {
     // MARK: - which cookies are kept
 
     /// One Set-Cookie line, read: the cookie, and whether it named a Domain

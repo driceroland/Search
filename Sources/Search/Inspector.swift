@@ -21,29 +21,68 @@ import WebKit
 extension Browser {
     /// ⌥⌘I: the inspector, or put away if it is up.
     func toggleInspector() {
-        guard let inspector = inspector() else { return }
-        if asks(inspector, "isVisible") {
-            send(inspector, "close")
-        } else {
-            send(inspector, "show")
-            watch(inspector, tries: 12)
+        if prefs.devTools {
+            if let tab = active, DeveloperTools.isOpen(for: tab) {
+                DeveloperTools.shared.close()
+                return
+            }
+            if showDeveloperPanel(.elements) { return }
+        }
+        withNativeInspector { inspector in
+            if self.asks(inspector, "isVisible") {
+                self.send(inspector, "close")
+            } else {
+                self.send(inspector, "show")
+                self.watch(inspector, tries: 12)
+            }
         }
     }
 
     /// ⌥⌘J: the inspector, at its console.
     func showConsole() {
-        guard let inspector = inspector() else { return }
-        send(inspector, "showConsole")
-        watch(inspector, tries: 12)
+        if prefs.devTools {
+            if let tab = active, let session = DeveloperTools.shared.session,
+               session.tab === tab, session.panel == .console {
+                DeveloperTools.shared.close()
+                return
+            }
+            if showDeveloperPanel(.console) { return }
+        }
+        withNativeInspector { inspector in
+            self.send(inspector, "showConsole")
+            self.watch(inspector, tries: 12)
+        }
     }
 
     /// ⌥⌘C: the inspector, and the next click on the page picks what it
     /// shows. Again, and the picking stops.
     func inspectElement() {
-        guard let inspector = inspector() else { return }
-        if !asks(inspector, "isVisible") { send(inspector, "show") }
-        send(inspector, "toggleElementSelection")
-        watch(inspector, tries: 12)
+        if prefs.devTools && showDeveloperPanel(.elements) {
+            DeveloperTools.shared.session?.togglePicker()
+            return
+        }
+        withNativeInspector { inspector in
+            if !self.asks(inspector, "isVisible") { self.send(inspector, "show") }
+            self.send(inspector, "toggleElementSelection")
+            self.watch(inspector, tries: 12)
+        }
+    }
+
+    func developerPanelTarget(for tab: Tab) -> WKWebView? {
+        // Console history and Recorder captures can outlive their session.
+        guard prefs.devTools, !isPopup, tab.isWeb, !tab.shy, !tab.floating, !tab.immersed,
+              let target = tab.built else { return nil }
+        // Extension-owned pages share a script controller. Use Web Inspector there.
+        if #available(macOS 15.4, *), let pages = Extensions.pages,
+           target.configuration.userContentController === pages { return nil }
+        return target
+    }
+
+    @discardableResult
+    func showDeveloperPanel(_ panel: DeveloperPanel, web: WKWebView? = nil, point: NSPoint? = nil) -> Bool {
+        guard let tab = active, let target = developerPanelTarget(for: tab),
+              web == nil || web === target else { return false }
+        return DeveloperTools.shared.open(in: self, panel: panel, web: target, point: point)
     }
 
     /// The page's own Inspect Element. WebKit opens the inspector itself;
@@ -64,9 +103,14 @@ extension Browser {
 
     /// The inspector of the tab in front — none for a blank tab, which has
     /// no page to look at.
-    private func inspector() -> NSObject? {
-        guard let tab = active, tab.isWeb else { return nil }
-        return inspector(of: tab.web)
+    private func withNativeInspector(_ action: @escaping (NSObject) -> Void) {
+        guard let tab = active, tab.isWeb else { return }
+        let enabled = prefs.devTools
+        NativeInspectorHandoff.whenReady {
+            guard self.active === tab, self.prefs.devTools == enabled,
+                  let inspector = self.inspector(of: tab.web) else { return }
+            action(inspector)
+        }
     }
 
     private func inspector(of web: WKWebView) -> NSObject? {

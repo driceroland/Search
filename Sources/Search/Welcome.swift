@@ -290,6 +290,7 @@ struct WelcomePanel: View {
                 Key("⌘T", "A new tab. Type a place, or words to search.")
                 Key("⌘K", "Every open tab, by name.")
                 Key("⌘,", "Settings, including passwords and updates. ⌘F there finds any setting.")
+                Key("⌥⌘I", "Dockable DevTools for web pages. Turn on Search DevTools in Settings › About › Developer.")
                 Key("⌃1", "Spaces: separate tabs and sign-ins. Turn them on in Settings › Spaces & Pins, or Set Up Like Arc there.")
                 Key("⌥⌘N", "Split a page in two, ⌥-click a tab to put it beside the page, or drag a tab onto a page; ⌃⌘← and ⌃⌘→ go from one page to the other, and ⌥⌘N again puts them apart.")
                 Key("⌘O", "Links from other apps open in a small window; ⌘O keeps one as a tab. Settings › Browsing.")

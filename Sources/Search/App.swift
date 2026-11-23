@@ -258,13 +258,24 @@ struct SearchApp: App {
                 Button(browser.prefs.actualSizeTitle) { browser.resetZoom() }
                     .shortcut("view.actualSize")
                 Divider()
-                // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
-                Button("Web Inspector") { browser.toggleInspector() }
+                Button(browser.prefs.devTools ? "Developer Tools" : "Web Inspector") { browser.toggleInspector() }
                     .shortcut("view.inspector")
                 Button("JavaScript Console") { browser.showConsole() }
                     .shortcut("view.console")
                 Button("Inspect Element") { browser.inspectElement() }
                     .shortcut("view.inspect")
+                if browser.prefs.devTools {
+                    Menu("Show Developer Panel") {
+                        ForEach(DeveloperPanel.allCases) { panel in
+                            Button(panel.rawValue) { browser.showDeveloperPanel(panel) }
+                        }
+                    }
+                    Menu("Dock Developer Tools") {
+                        ForEach(DeveloperDockPosition.allCases) { position in
+                            Button(position.title) { DeveloperTools.shared.dockPosition = position }
+                        }
+                    }
+                }
                 // The system's own item, which replacing the toolbar group
                 // above took with it: ⌃⌘F did nothing (#1176). The key is
                 // the Mac's, never offered in Settings › Shortcuts.
@@ -523,7 +534,7 @@ private struct MenuLine: View {
 /// and the sheet reads as empty air. This gives the sheet one arrow-sized
 /// rect to win with, frontmost because its NSView sits above the web view
 /// (a sheet is drawn by `.overlay { panels }` on `ContentView.body`).
-private struct CursorGround: NSViewRepresentable {
+struct CursorGround: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { CursorGroundView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
@@ -606,8 +617,7 @@ struct ContentView: View {
             // ground: a gap on the far side and along the bottom here, at the
             // top and on the column's side in the room (see chrome). Two pages
             // side by side are a card each (see PaneStage).
-            stage
-                .modifier(CardEdge(on: cards && !browser.prefs.splitView))
+            pageArea
                 // The tabs folded away: a line says the page is coming
                 // (Settings, idea 269), clear of the card's round corners.
                 .overlay(alignment: .top) {
@@ -674,6 +684,18 @@ struct ContentView: View {
             withTransaction(still) {
                 if away, sidebar { room = CGSize(width: foldedWidth, height: roomed.height) } else { room = chrome }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var pageArea: some View {
+        if browser.prefs.devTools {
+            DeveloperToolsDock(browser: browser, visible: fullscreenTab == nil,
+                               pageCard: cards && !browser.prefs.splitView) { _ in
+                stage
+            }
+        } else {
+            stage.modifier(CardEdge(on: cards && !browser.prefs.splitView))
         }
     }
 
@@ -1033,6 +1055,7 @@ struct ContentView: View {
                 }
             }
             .overlay { panels }
+            .overlay { if browser.prefs.devTools { DeveloperSheetLayer(browser: browser) } }
             .overlay { switcherOverlay }
             .overlay(alignment: .topTrailing) {
                 if let job = browser.fileImport { ImportProgress(browser: browser, job: job) }
@@ -1452,6 +1475,7 @@ struct ContentView: View {
             // is the page's, which lets the pointer go on it, ahead of the
             // find bar, the field, or a full screen's Esc twice.
             if PointerLock.shared.escape(event) { return event }
+            if browser.prefs.devTools && DeveloperToolsKeys.takeFirst(event) { return nil }
             // Escape on a page filling the screen is WebKit's, which leaves
             // on the first one, as Safari does. Its window isn't a browser's,
             // so the key came here first and put away what was left up in
@@ -2036,7 +2060,7 @@ struct ContentView: View {
         case "t" where shifted:
             browser.reopen()
         case "c" where shifted:
-            browser.copyAddress()
+            browser.copyAddressOrPickElement()
         case "d" where !shifted:
             browser.duplicate()
         // Dark pages, the site you're on (see Dusk.swift). Off, the key is

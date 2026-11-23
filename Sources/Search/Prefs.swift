@@ -701,6 +701,14 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// The dockable inspector, when chosen in Settings › About › Developer.
+    @Published var devTools: Bool {
+        didSet {
+            store.set(devTools, forKey: "developerTools.enabled")
+            if oldValue && !devTools { NativeInspectorHandoff.disconnectDevTools() }
+        }
+    }
+
     /// Chrome's colors on the Web Inspector (see Inspector.swift). Off
     /// unless asked for, so the inspector stays as it comes.
     @Published var inspectorChrome: Bool {
@@ -1422,6 +1430,7 @@ final class Preferences: ObservableObject {
         let styles = store.bool(forKey: "sites.styles")
         sitesStyles = styles
         SiteStyles.shared.on = styles
+        devTools = store.bool(forKey: "developerTools.enabled")
         inspectorChrome = store.bool(forKey: "inspector.chrome")
         inspectorDark = store.bool(forKey: "inspector.dark")
         let scrolls = store.bool(forKey: "autoscroll")
