@@ -1933,6 +1933,7 @@ struct ContentView: View {
         if ShortcutStore.shared.anyChanged || browser.prefs.usesSpaces, let combo = KeyCombo(event: event) {
             if let command = ShortcutStore.shared.customCommand(on: combo) {
                 if command.section == .spaces, !browser.prefs.usesSpaces { return false }
+                if command.section == .profiles, !Profiles.shared.several { return false }
                 if Command.split.contains(command.id), !browser.prefs.splitView { return false }
                 if Command.ai.contains(command.id), !browser.prefs.ai { return false }
                 if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }

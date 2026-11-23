@@ -155,6 +155,7 @@ enum AddressCommand: Equatable {
         guard let command = Command.named(id), !unoffered.contains(id) else { return false }
         let prefs = browser.prefs
         if command.section == .spaces, !prefs.usesSpaces { return false }
+        if command.section == .profiles, !Profiles.shared.several { return false }
         if Command.split.contains(id) {
             guard prefs.splitView else { return false }
             if id != "tabs.split", browser.activeSplit == nil { return false }

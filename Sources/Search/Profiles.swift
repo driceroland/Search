@@ -212,6 +212,24 @@ final class Profiles: ObservableObject {
     func spaces(of id: UUID) -> [Space] { Spaces.read(profile: id) }
 }
 
+extension Profiles {
+    /// Profile 1–9 (Settings › Shortcuts): the Nth in the profiles' order,
+    /// as File › Profile would bring it. Nothing past the last (#1437).
+    static func go(index: Int, from browser: Browser) {
+        let list = shared.list
+        guard shared.several, list.indices.contains(index), list[index].id != browser.profileID else { return }
+        Browsers.open(profile: list[index].id)
+    }
+
+    /// Next Profile and Previous Profile: the one after or before this
+    /// window's, round from the last to the first (#1437).
+    static func step(_ step: Int, from browser: Browser) {
+        let list = shared.list
+        guard shared.several, let here = list.firstIndex(where: { $0.id == browser.profileID }) else { return }
+        go(index: (here + step + list.count) % list.count, from: browser)
+    }
+}
+
 extension Browsers {
     /// A window of this profile: the one already open in front, or a new
     /// one at the space it was last in, its tabs read back from the
