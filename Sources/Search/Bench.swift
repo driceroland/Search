@@ -1332,6 +1332,9 @@ final class Bench {
             // (narrower only when it scrolls), and whether it scrolls.
             out["topRun"] = ["tabs": Double(TabBar.laidOut), "run": Double(TabBar.runShown), "scrolls": TabBar.scrolls]
             out["tabEditing"] = browser.editingTab.map { String($0.uuidString.prefix(8)).lowercased() } ?? ""
+            out["tabRenaming"] = browser.renamingTab
+            // Each tab's own name, if it has been given one (Rename).
+            out["tabNames"] = browser.tabs.map { $0.name ?? "" }
             // "Press Esc again to leave full screen", up over a page filling
             // the screen (Settings › General › Press Esc twice to leave full
             // screen).
@@ -5359,6 +5362,8 @@ final class Bench {
             if request["opentab"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab) }
             // The tab's menu › Site Information… on the tab on screen.
             if request["siteinfo"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab, card: true) }
+            // Rename, as the tab's right-click menu and Tabs › Rename Tab begin it.
+            if request["renametab"] as? Bool == true, let tab = browser.active { browser.beginTabRename(tab) }
             if request["finishedit"] as? Bool == true { browser.finishTabEdit() }
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }
             // Settings › Privacy › Clear › Cache, answered once every store
