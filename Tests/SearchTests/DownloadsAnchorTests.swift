@@ -49,13 +49,12 @@ final class DownloadsAnchorTests: XCTestCase {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let before = (prefs.sidebar, prefs.doorsUp, prefs.alwaysShowsDownloads, prefs.downloadsOpening, prefs.sideWidth)
+        let before = (prefs.doorsUp, prefs.alwaysShowsDownloads, prefs.downloadsOpening, prefs.sideWidth)
         restore = {
-            (prefs.sidebar, prefs.doorsUp, prefs.alwaysShowsDownloads, prefs.downloadsOpening, prefs.sideWidth) = before
+            (prefs.doorsUp, prefs.alwaysShowsDownloads, prefs.downloadsOpening, prefs.sideWidth) = before
         }
         let browser = Browser(record: WindowRecord())
         self.browser = browser
-        browser.prefs.sidebar = true
         browser.prefs.doorsUp = true
         browser.prefs.alwaysShowsDownloads = true
         browser.prefs.downloadsOpening = .popover

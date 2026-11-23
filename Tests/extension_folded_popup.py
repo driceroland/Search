@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""An extension's popup from its keyboard shortcut, with the column or the
-strip folded away, in a hidden probe.
+"""An extension's popup from its keyboard shortcut, with the sidebar visible or
+folded away, in a hidden probe.
 
 Build first (`./build.sh debug`), then
 `python3 Tests/extension_folded_popup.py`. It runs a copy of
@@ -169,8 +169,7 @@ def main():
         sv.cmd({"do": "ext-pin", "id": id, "on": True})
         page = sv.page("site")
         time.sleep(1)
-        for label, ui in [("column", {"sidebar": True, "folded": False}), ("column folded", {"sidebar": True, "folded": True}),
-                          ("strip", {"sidebar": False, "folded": False}), ("strip folded", {"sidebar": False, "folded": True})]:
+        for label, ui in [("column", {"folded": False}), ("column folded", {"folded": True})]:
             sv.cmd({"do": "ui", **ui}); time.sleep(1.2)
             for command, (code, chars, mods, hash) in KEYS.items():
                 close(id)

@@ -14,17 +14,14 @@ final class OmniboxTransitionTests: XCTestCase {
         _ = NSApplication.shared
         let browser = Browser(record: WindowRecord())
         browser.welcoming = false
-        browser.newsShowing = false
         let prefs = browser.prefs
-        let saved = (prefs.floatingNewTab, prefs.splitView, prefs.sidebar)
+        let saved = (prefs.floatingNewTab, prefs.splitView)
         defer {
             browser.closeAll()
             prefs.floatingNewTab = saved.0
             prefs.splitView = saved.1
-            prefs.sidebar = saved.2
         }
         prefs.floatingNewTab = true
-        prefs.sidebar = false
         browser.newTab()
         let tab = try XCTUnwrap(browser.active)
         tab.go(to: URL(string: "about:blank")!)

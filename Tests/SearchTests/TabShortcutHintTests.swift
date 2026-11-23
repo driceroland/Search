@@ -110,9 +110,8 @@ final class TabShortcutHintTests: XCTestCase {
         _ = NSApplication.shared
         let browser = Browser(record: WindowRecord())
         let prefs = browser.prefs
-        let saved = (prefs.showsTabShortcuts, prefs.sidebar, prefs.usesTabGroups, prefs.splitView)
+        let saved = (prefs.showsTabShortcuts, prefs.usesTabGroups, prefs.splitView)
         prefs.showsTabShortcuts = true
-        prefs.sidebar = true
         prefs.usesTabGroups = false
         prefs.splitView = true
         for number in 1...11 {
@@ -133,9 +132,8 @@ final class TabShortcutHintTests: XCTestCase {
             window.close()
             browser.closeAll()
             prefs.showsTabShortcuts = saved.0
-            prefs.sidebar = saved.1
-            prefs.usesTabGroups = saved.2
-            prefs.splitView = saved.3
+            prefs.usesTabGroups = saved.1
+            prefs.splitView = saved.2
         }
         try await settle()
         try await flags(.command, in: window)

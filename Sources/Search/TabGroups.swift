@@ -88,7 +88,6 @@ struct GroupHeading: View {
     @Environment(\.tabShortcutNumbers) private var shortcutNumbers
     @ObservedObject var browser: Browser
     let group: TabGroup
-    var horizontal = false
     var dragSpace: String? = nil
     /// In the column of icons (SideIcons.swift): the name's first letter in
     /// a short heading, the name itself in its tooltip.
@@ -111,25 +110,6 @@ struct GroupHeading: View {
     static let height: CGFloat = 24
     /// And in the column of icons.
     static let compactHeight: CGFloat = 18
-
-    /// A test run's stand-in for a name drawn wider than measured here, as on
-    /// another macOS (TabBar.measures): taken off every heading's width.
-    static var testShortfall: CGFloat = 0
-
-    /// Measured once a name: the row asks for every heading's on every redraw.
-    private static var measured: [String: CGFloat] = [:]
-    private static let font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
-    static func width(for name: String, numbered: Bool = false) -> CGFloat {
-        let text: CGFloat
-        if let known = measured[name] {
-            text = known
-        } else {
-            text = ceil((name as NSString).size(withAttributes: [.font: font]).width)
-            if measured.count > 500 { measured.removeAll() }
-            measured[name] = text
-        }
-        return text + 20 + (numbered ? 23 : 0) - testShortfall
-    }
 
     var body: some View {
         if compact { short } else { long }
@@ -179,7 +159,6 @@ struct GroupHeading: View {
                 TextField("Group name", text: $draft)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12.5, weight: .medium))
-                    .frame(width: horizontal ? max(60, Self.width(for: group.name) - 20) : nil)
                     .focused($focused)
                     .onSubmit(commit)
                     .onExitCommand { browser.editingGroupID = nil }
@@ -189,15 +168,13 @@ struct GroupHeading: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            if !horizontal { Spacer(minLength: 0) }
+            Spacer(minLength: 0)
             if !editing, group.collapsed {
                 if let number = shortcutNumbers[group.id] {
                     TabShortcutNumber(number: number)
-                } else if horizontal, browser.prefs.showsTabShortcuts {
-                    Color.clear.frame(width: 15, height: 15)
                 }
             }
-            if !editing && !horizontal {
+            if !editing {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .medium))
                     .rotationEffect(.degrees(group.collapsed ? -90 : 0))
@@ -206,15 +183,13 @@ struct GroupHeading: View {
         }
         .foregroundStyle(titleColour(hovering: false))
         .padding(.horizontal, 10)
-        .frame(height: horizontal ? 28 : Self.height)
-        .frame(maxWidth: horizontal ? nil : .infinity, alignment: .leading)
-        .fixedSize(horizontal: horizontal, vertical: false)
+        .frame(height: Self.height)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
             .fill(dropping ? greys.wash : (hovering ? greys.hover : .clear)))
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onTapGesture { if !editing { browser.toggleTabGroup(group.id) } }
-        .modifier(GroupHeadingShared(browser: browser, group: group, dragSpace: dragSpace, dropping: $dropping,
-                                     horizontal: horizontal))
+        .modifier(GroupHeadingShared(browser: browser, group: group, dragSpace: dragSpace, dropping: $dropping))
         .onHover { hovering = $0 }
         .onChange(of: editing) { _, now in
             if now {
@@ -243,9 +218,6 @@ private struct GroupHeadingShared: ViewModifier {
     let group: TabGroup
     let dragSpace: String?
     @Binding var dropping: Bool
-    /// Across the top, where its colour is the group's band (GroupBand):
-    /// the swatches hang below the name.
-    var horizontal = false
     @State private var choosingColour = false
 
     func body(content: Content) -> some View {
@@ -282,90 +254,12 @@ private struct GroupHeadingShared: ViewModifier {
                 Button("Close Group") { browser.closeTabGroup(group.id) }
             }
             .popover(isPresented: $choosingColour,
-                     hangingFrom: horizontal ? .bottom : (browser.prefs.sidePosition == .right ? .leading : .trailing)) {
+                     hangingFrom: browser.prefs.sidePosition == .right ? .leading : .trailing) {
                 let index = group.colour ?? 0
                 ColourSwatches(selected: Tints.colours.indices.contains(index) ? index : 0) {
                     browser.setTabGroupColour(group.id, to: $0)
                 }
                 .padding(16)
             }
-    }
-}
-
-/// An open group across the top, shown as one quiet band from its name to
-/// its last tab, as the column shows a coloured group (#921). Each piece is
-/// drawn behind its own heading or tab, under the place it is laid out at:
-/// nothing extra in the row, nothing that moves as it scrolls, and a tab
-/// carried by hand leaves its piece where its place is. Every piece but the
-/// last reaches over the gap after it, so the band has no seams; only its
-/// ends are round. The group's colour at the column's strength, or without
-/// one the faint grey a pinned tab wears.
-struct GroupBand: View {
-    @Environment(\.greys) private var greys
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.recordsBands) private var records
-    let group: TabGroup
-    /// The heading or tab it is drawn behind, for the bench.
-    let piece: UUID
-    var first = false
-    var last = false
-
-    static let radius: CGFloat = 9
-    /// A tab's height and a heading's: a pair in Split View is laid out as
-    /// tall as the strip, and its piece would stand out above and below.
-    static let height: CGFloat = 28
-
-    private var fill: Color {
-        if let colour = group.colour, let opacity = Tints.wash(colour, dark: scheme == .dark) {
-            return Tints.colours[colour].opacity(opacity)
-        }
-        return greys.tile
-    }
-
-    var body: some View {
-        let shape = UnevenRoundedRectangle(topLeadingRadius: first ? Self.radius : 0,
-                                           bottomLeadingRadius: first ? Self.radius : 0,
-                                           bottomTrailingRadius: last ? Self.radius : 0,
-                                           topTrailingRadius: last ? Self.radius : 0,
-                                           style: .continuous)
-        if records {
-            shape.fill(fill)
-                .frame(height: Self.height)
-                // Inside the padding the piece itself, reaching over the
-                // gap; outside it, what it is drawn behind.
-                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("strip")) }) { rect in
-                    TabBar.drawnBands[piece, default: .init(group: group.id)].band = rect
-                }
-                .padding(.trailing, last ? 0 : -Metrics.tabGap)
-                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("strip")) }) { rect in
-                    TabBar.drawnBands[piece, default: .init(group: group.id)].item = rect
-                }
-                .allowsHitTesting(false)
-        } else {
-            shape.fill(fill)
-                .frame(height: Self.height)
-                .padding(.trailing, last ? 0 : -Metrics.tabGap)
-                .allowsHitTesting(false)
-        }
-    }
-
-    /// What one piece was drawn over, and the piece itself, in the row's space.
-    struct Drawn {
-        var group: UUID
-        var item: CGRect = .zero
-        var band: CGRect = .zero
-    }
-}
-
-/// Set on a row drawn off screen for the bench: its band pieces say where
-/// they were drawn (TabBar.drawnBands). Never on the window's own row.
-private struct RecordsBandsKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    var recordsBands: Bool {
-        get { self[RecordsBandsKey.self] }
-        set { self[RecordsBandsKey.self] = newValue }
     }
 }

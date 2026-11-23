@@ -10,9 +10,7 @@ With Settings › Appearance › Tabs, ⌘S makes the column icons only, turned 
 stay in sight, the column is never folded away, it stays on its side and gets
 the width it had back. The layout is what changes, so it is kept when Search
 is opened again. Off, as it is unless turned on, ⌘S folds the column
-away as before. It is ⌘S as before too with the tabs across the top, and with
-the column hidden until the pointer reaches the edge, where ⌘S is what brings
-it out to stay.
+away. With the column hidden until the pointer reaches the edge, ⌘S brings it out to stay.
 """
 import subprocess
 import sys
@@ -100,11 +98,6 @@ try:
     t.ok("right: and back, on the right still", r["on"] is False and r["layout"] == "right", r["layout"])
     sv.quit()
 
-    # Across the top there is no column: the strip folds as before.
-    start(sidebar=False, **{"sidebar.foldIcons": True})
-    r = cmd_s()
-    t.ok("top: ⌘S folds the strip away", folded() is True, folded())
-    t.ok("top: and the layout is the same", r["on"] is False and r["layout"] == "top", r["layout"])
 finally:
     sv.finish()
 t.done()

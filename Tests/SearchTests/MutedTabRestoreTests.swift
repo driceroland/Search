@@ -82,6 +82,21 @@ final class MutedTabRestoreTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(restoredRow.tabs.first { $0.address?.absoluteString == heard }).muted)
     }
 
+    func testLegacyReleaseNotesAreSkippedAndMirroredTabsRestoreLocally() throws {
+        let page = "https://window.example/"
+        let written = try sessionShape(tabs: [
+            ["url": "search://release-notes", "title": "What's New"],
+            ["url": page, "title": "Page", "twinID": UUID().uuidString],
+        ], active: 1)
+        let browser = makeBrowser()
+        defer { browser.closeAll() }
+
+        let restored = browser.restoreRow(written, groups: [])
+        let webTabs = restored.tabs.filter { $0.pin == nil }
+        XCTAssertEqual(webTabs.compactMap { $0.address?.absoluteString }, [page])
+        XCTAssertEqual(restored.active, webTabs.first?.id)
+    }
+
     func testLegacySessionMuteDefaultsToFalseAndMuteRoundTrips() throws {
         let legacy = try JSONDecoder().decode(
             Session.Entry.self,

@@ -5,12 +5,10 @@ Build first (`./build.sh debug`), then `python3 Tests/split_settings_pane.py`.
 Search's own pages (Settings, History…) are drawn by SwiftUI over the stage
 (SplitView.swift), placed from the frames the stage tells. Settings is wider
 than a narrow pane can hold, and was drawn centred on its pane, past both
-edges: over the tabs column (seen through with Settings › Appearance ›
-Window › Glass on) and over the page beside it.
+edges: over the tabs column and the page beside it.
 
 Checked from pictures of the hidden window, never shown: Settings on the
-left of a pair beside a web page, column on the left, Glass and the Liquid
-Glass tab off and on. The same pair is pictured again with a web page where
+left of a pair beside a web page, column on the left, and the Liquid Glass tab off and on. The same pair is pictured again with a web page where
 Settings was; outside Settings' pane — the column under its rows, and the
 other page — the two pictures must be the same.
 """
@@ -46,8 +44,8 @@ def differs(one, other, box):
 
 def case(t, glass):
     global WIDTH
-    kind = "glass and the liquid tab" if glass else "plain"
-    sv.setup(sidebar=True, splitView=True, **{"window.glass": glass, "tabs.liquid": glass})
+    kind = "the liquid tab" if glass else "plain"
+    sv.setup(splitView=True, **{"tabs.liquid": glass})
     sv.launch()
     a = sv.page("a")
     sv.cmd({"do": "ui", "show": "search://settings"}); time.sleep(1)

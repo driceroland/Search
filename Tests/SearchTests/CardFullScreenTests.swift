@@ -16,9 +16,8 @@ final class CardFullScreenTests: XCTestCase {
         let browser = Browser(record: WindowRecord())
         defer { browser.closeAll() }
         let prefs = browser.prefs
-        let saved = (prefs.sidebar, prefs.cards, prefs.cardsInFullScreen)
-        defer { prefs.sidebar = saved.0; prefs.cards = saved.1; prefs.cardsInFullScreen = saved.2 }
-        prefs.sidebar = true
+        let saved = (prefs.cards, prefs.cardsInFullScreen)
+        defer { (prefs.cards, prefs.cardsInFullScreen) = saved }
         prefs.cards = true
         prefs.cardsInFullScreen = false
 
@@ -31,9 +30,6 @@ final class CardFullScreenTests: XCTestCase {
         XCTAssertTrue(browser.asCards, "On: still a card in full screen")
         prefs.cards = false
         XCTAssertFalse(browser.asCards, "Edge to edge chosen: never a card")
-        prefs.cards = true
-        prefs.sidebar = false
-        XCTAssertFalse(browser.asCards, "Tabs across the top: never a card")
     }
 
     func testOffByDefault() {

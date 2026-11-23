@@ -220,8 +220,7 @@ struct Command: Identifiable {
         Command("edit.findPrevious", "Find Previous", .edit, KeyCombo("g", shift: true)) { $0.look(forward: false) },
         Command("edit.copyCleanLink", "Copy Clean Link", .edit, KeyCombo("c", shift: true, option: true)) { $0.copyCleanLink() },
 
-        Command("view.sidebar", "Show Tabs in Sidebar", .view, KeyCombo("s", shift: true)) { $0.toggleSidebar() },
-        Command("view.fold", "Hide Sidebar or Tab Bar", .view, KeyCombo("s")) { $0.toggleFold() },
+        Command("view.fold", "Hide Sidebar", .view, KeyCombo("s")) { $0.toggleFold() },
         // Every tab group of the space at once, as Arc's folders (⌥⌘[ and ⌥⌘],
         // beside ⌘[ and ⌘], which go back and forward).
         Command("view.foldGroups", "Fold All Groups", .view, KeyCombo("[", option: true)) { $0.foldAllGroups(true) },

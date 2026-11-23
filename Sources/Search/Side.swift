@@ -172,7 +172,7 @@ struct SideBar: View {
     /// downloads counted whether running or not, so a download starting
     /// doesn't send them all back down.
     @MainActor static func doorsUp(_ prefs: Preferences, width: CGFloat, fullScreen: Bool) -> Bool {
-        prefs.doorsUp && prefs.sidebar && !prefs.iconColumn
+        prefs.doorsUp && !prefs.iconColumn
             && beyondHelm(width, fullScreen: fullScreen, fold: prefs.foldButton) >= SideFoot.keptWidth(prefs)
     }
 
@@ -322,7 +322,7 @@ struct SideBar: View {
             // Where they were drawn, kept from here on: left to doorsUp,
             // they were already at the other end by the time settleDoors
             // looked, and went there without moving.
-            if drawnUp == nil, !icons, prefs.doorsUp, prefs.sidebar {
+            if drawnUp == nil, !icons, prefs.doorsUp {
                 drawnUp = was
             }
             settleDoors()
@@ -355,13 +355,12 @@ struct SideBar: View {
         .clipped()
         .background {
             ZStack {
-                // On glass the window's ground shows through (Glass.swift).
-                if !browser.glassUnder { onFrame ? Palette.frame : Palette.ground }
+                onFrame ? Palette.frame : Palette.ground
                 if landing { greys.hover }
                 // The window's colour, if it has one: over the ground, so the
                 // column stays opaque and folded out over the page it brings
-                // the same wash along. On glass the glass wears it.
-                if !browser.glassUnder { ThemeWash(look: browser.wash) }
+                // the same wash along.
+                ThemeWash(look: browser.wash)
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
@@ -503,7 +502,7 @@ struct SideBar: View {
                                     withAnimation(Store.testing ? nil : Motion.glide) { scroll(proxy, to: representative) }
                                 }
                                 // A turn of the run loop later, as the row across
-                                // the top does it (TabBar.reveal): the folded
+                                // the folded
                                 // column comes out mid-animation, and asked at
                                 // once, before the rows had their height, the
                                 // scroll could be dropped and the tab you were on
@@ -686,7 +685,7 @@ struct SideBar: View {
     /// nothing below them yet. Not with the rows off, nor with nothing on
     /// either side of it: nothing kept above it either — no pin, square or
     /// row, and no group — until the first is pinned
-    /// (idea 444), as the row across the top has it (TabBar.showsPinLine).
+    /// (idea 444), separates the pinned and regular tabs.
     /// `loose`: the tabs under it that hold a page. Over nothing but the
     /// empty tab a window starts with, it was a line with nothing to keep
     /// apart (Drice, 18 Nov 2026).
@@ -805,7 +804,6 @@ struct SideBar: View {
             switch line {
             case .folder: return heading + SideBar.gap
             case .pin(let tab, _): return rowHeight * CGFloat(browser.split(for: tab)?.tabs.count ?? 1) + SideBar.gap
-            case .item: return rowHeight + SideBar.gap
             }
         }
         let drop = folderDrop
@@ -833,12 +831,6 @@ struct SideBar: View {
                         .modifier(Carried(index: index, steps: lineSteps, vertical: true, space: "listed",
                                           cross: { folderMoveCross(folder, $0) },
                                           land: { folderMoveLand(folder, $0) }) { _ in })
-                case .item(let item, _, let depth):
-                    // A live folder's post: opened, never carried.
-                    FeedItemRow(browser: browser, prefs: prefs, item: item, depth: depth, compact: icons)
-                        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
-                            pinLineFrames.rects[item.id] = $0
-                        }
                 case .pin(let tab, let depth):
                     // A split pinned whole as a split, as among the tabs.
                     rowItem(tab, tabs: browser.tabs, splits: browser.splits, activeID: browser.activeID,
@@ -888,7 +880,6 @@ struct SideBar: View {
             switch line {
             case .folder(let folder, let depth): return (.folder(folder, depth: depth), rect)
             case .pin(let tab, let depth): return (.pin(tab.id, depth: depth), rect)
-            case .item(let item, let folder, let depth): return (.item(item, folder: folder, depth: depth), rect)
             }
         }
         var folders: [UUID: UUID?] = [:]
@@ -1281,7 +1272,7 @@ struct SideBar: View {
     /// they do again — with the edge held, a little past that.
     private func settleDoors() {
         guard !icons else { return }
-        guard prefs.doorsUp, prefs.sidebar else { drawnUp = nil; return }
+        guard prefs.doorsUp else { drawnUp = nil; return }
         let up: Bool
         let kept = SideFoot.keptWidth(prefs)
         if doorsTop || live == nil {

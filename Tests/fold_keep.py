@@ -50,17 +50,6 @@ try:
     t.ok("unfolded: nothing written", kept == [None], kept)
     t.ok("unfolded: shown after a relaunch", folds() == [False], folds())
 
-    # The strip across the top folds and stays folded the same way.
-    sv.cmd({"do": "ui", "sidebar": False}); time.sleep(0.5)
-    fold(True)
-    relaunch()
-    t.ok("strip: still folded after a relaunch", folds() == [True], folds())
-    # Back to the column: the tabs come out, as a change of layout always did.
-    sv.cmd({"do": "ui", "sidebar": True}); time.sleep(0.5)
-    t.ok("strip to column: the column comes out", folds() == [False], folds())
-    relaunch()
-    t.ok("strip to column: shown after a relaunch", folds() == [False], folds())
-
     # Two windows, each its own.
     windows("new"); time.sleep(0.5)
     t.ok("two windows: the new one from a shown window is shown", folds() == [False, False], folds())

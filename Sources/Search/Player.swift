@@ -59,7 +59,7 @@ extension Browser {
     /// in this row that are out of sight. Nil with the switch off, with the
     /// tabs across the top, or with the sidebar as icons only or the strip.
     var player: Tab? {
-        guard prefs.showsPlayer, prefs.sidebar, !prefs.iconColumn else { return nil }
+        guard prefs.showsPlayer, !prefs.iconColumn else { return nil }
         let shown = visibleTabIDs
         for id in sounding.reversed() where !shown.contains(id) && id != floating {
             if let tab = tabs.first(where: { $0.id == id }) { return tab }

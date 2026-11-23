@@ -765,11 +765,6 @@ final class Tab: ObservableObject, Identifiable {
     /// PinFolders.swift). Set when the row is built, from pins.json.
     var pinFolder: UUID?
 
-    /// For an open tab that isn't a pin, which of the open tabs it is, in
-    /// every window, while Settings › Tabs › Same tabs in every window is on
-    /// (see Twins.swift). Each window holds its own tab for it, as for a pin.
-    var twinID: UUID?
-
     /// The group that holds this ordinary tab in the sidebar.
     @Published var groupID: UUID? {
         didSet { if groupID == nil, oldValue != nil { letGo = Date() } }

@@ -72,7 +72,6 @@ enum SettingsIndex {
         .init(id: "newtabs", page: .tabs, title: "New tabs", icon: "plus.square"),
         .init(id: "memory", page: .tabs, title: "Memory", icon: "moon.zzz"),
         .init(id: "tabbar", page: .tabs, title: "In the tab bar", icon: "number"),
-        .init(id: "tabwindows", page: .tabs, title: "Windows", icon: "macwindow.on.rectangle"),
 
         .init(id: "search", page: .browsing, title: "Searching", icon: "magnifyingglass"),
         .init(id: "links", page: .browsing, title: "Links", icon: "link"),
@@ -91,7 +90,7 @@ enum SettingsIndex {
         .init(id: "mouse", page: .keyboard, title: "Mouse and trackpad", icon: "computermouse"),
         .init(id: "anywhere", page: .keyboard, title: "From any app", icon: "macwindow.on.rectangle"),
 
-        .init(id: "updates", page: .about, title: "Updates", icon: "arrow.triangle.2.circlepath"),
+        .init(id: "feedback", page: .about, title: "Feedback", icon: "envelope"),
         .init(id: "developer", page: .about, title: "Developer", icon: "hammer"),
 
         // Drawn by ExtensionsPage itself; here so the find field reaches it.
@@ -121,14 +120,6 @@ enum SettingsIndex {
               title: "Bring things over", detail: "Bookmarks, history, passwords and extensions from another browser",
               more: "From another browser on this Mac, or from a file it exported. Nothing leaves your Mac.",
               words: ["import", "chrome", "safari", "arc", "migrate"]),
-        .init(id: "sync", group: "browser", icon: "arrow.triangle.2.circlepath",
-              title: "Sync with your other Macs", detail: "Pins, bookmarks and settings, through a folder you choose",
-              more: "Choose a folder your Macs share, in iCloud Drive or Dropbox for example, and turn this on with the same folder in Search on each Mac. Each profile syncs on its own. Never your history, passwords, cookies, sign-ins or open tabs. No account and no server: only small files in that folder.",
-              keys: ["sync.folder"], words: ["sync", "icloud", "dropbox", "other mac", "devices", "mac"]),
-        .init(id: "handoff", group: "browser", icon: "iphone.and.arrow.forward",
-              title: "Handoff to your iPhone and iPad", detail: "The page in front comes up in their app switcher, as Safari's does",
-              more: "And at the end of the Dock on your other Macs. macOS carries the address to devices signed in to your Apple Account with Handoff on, in System Settings › General › AirDrop & Handoff on a Mac. Never a private tab. Pages handed off from your iPhone open here when Search is your default browser.",
-              keys: ["handoff"], words: ["handoff", "continuity", "iphone", "ipad", "devices", "app switcher", "multitasking"]),
         .init(id: "quit.confirm", group: "browser", icon: "power",
               title: "Confirm before quitting", detail: "Ask before ⌘Q or Quit Search closes the browser",
               keys: ["quit.confirm"], words: ["quit", "cmd q"]),
@@ -147,10 +138,10 @@ enum SettingsIndex {
 
         // Themes
         .init(id: "home.theme", group: "themes", icon: "photo.artframe",
-              title: "Theme", detail: "For the blank tab and the window: a wall, stickers, a colour, a gradient or a picture",
+              title: "Theme", detail: "For the blank tab and the window: a colour, a gradient or a picture",
               more: "Off by default. Drawn once and kept, so it costs nothing while you browse, and only the blank tab shows it. A picture you choose is copied inside Search; nothing leaves your Mac.",
-              keys: ["browser.theme", "home.theme", "home.theme.image", "home.tuning", "home.shuffle"],
-              words: ["themes", "wallpaper", "background", "mural", "painting", "scenery", "shuffle", "stickers", "gradient", "colour", "color", "new tab", "image", "arc", "browser colour", "window colour", "tint", "strength", "theme", "home background"],
+              keys: ["browser.theme", "home.theme", "home.theme.image", "home.tuning"],
+              words: ["themes", "wallpaper", "background", "gradient", "colour", "color", "new tab", "image", "arc", "browser colour", "window colour", "tint", "strength", "theme", "home background"],
               kind: .wide),
 
         // Appearance
@@ -171,9 +162,9 @@ enum SettingsIndex {
               more: "Off, it follows Appearance. Chrome's colors, when they're on, follow this too.",
               keys: ["inspector.dark"], words: ["devtools", "inspect", "console", "dark"], parent: "look"),
         .init(id: "tabs.layout", group: "window", icon: "sidebar.left",
-              title: "Tabs", detail: "Across the top of the window, down a side as a column, or as icons only",
+              title: "Tabs", detail: "Down the left or right side, or as icons only",
               more: "Icons only is a narrow column of each tab's icon, the title in a tooltip. Nothing grows under the pointer.",
-              keys: ["sidebar", "sidebar.position", "sidebar.icons"],
+              keys: ["sidebar.position", "sidebar.icons"],
               words: ["sidebar", "vertical tabs", "column", "left", "right", "top", "tab bar", "position",
                       "icons only", "compact", "collapsed", "narrow", "favicons"], kind: .wide),
         .init(id: "sidebar.hides", group: "window", icon: "sidebar.squares.left",
@@ -196,32 +187,9 @@ enum SettingsIndex {
               title: "Keep the card in full screen", detail: "Off, the page goes edge to edge when the window fills the screen",
               keys: ["layout.cardsFullScreen"], words: ["full screen", "fullscreen", "card", "margin", "rounded", "zen", "arc"],
               parent: "layout.cards"),
-        .init(id: "toolbar.left", group: "window", icon: "arrow.left.arrow.right",
-              title: "Back, forward and reload on the left", detail: "Beside the window's buttons, before the tabs",
-              keys: ["toolbar.left"], words: ["toolbar", "buttons", "navigation"], parent: "tabs.layout"),
-        .init(id: "tabs.compact", group: "window", icon: "rectangle.compress.vertical",
-              title: "Shorter tab bar", detail: "Only a few points above and below the tabs, for more of the page",
-              keys: ["tabs.compact"], words: ["compact", "slim", "thin", "height", "padding", "tab bar", "toolbar"],
-              parent: "tabs.layout"),
         .init(id: "address.shown", group: "window", icon: "link",
               title: "Always show the address bar", detail: "The page's full address, to type in",
               keys: ["address.shown"], words: ["address bar", "url", "location", "url bar", "omnibox", "full address"]),
-        .init(id: "address.width", group: "window", icon: "arrow.left.and.right",
-              title: "Address width", detail: "Before the tabs across the top",
-              keys: ["address.width"], words: ["address bar", "url", "width", "wide"], parent: "address.shown"),
-        .init(id: "window.glass", group: "window", icon: "square.on.square.intersection.dashed",
-              title: "Glass", detail: "What is behind the window shows through the tabs and the frame, blurred",
-              more: "As in Arc and Zen. The glass takes the window's colour from Settings › Themes; how see-through it is, and its grain, are here. Not in full screen.",
-              keys: ["window.glass"], words: ["glass", "translucent", "transparent", "blur", "frosted", "vibrancy", "see through", "arc", "zen"]),
-        .init(id: "window.glass.style", group: "window", icon: "drop",
-              title: "Glass style", detail: "Frosted, or the Mac's Liquid Glass",
-              keys: ["window.glass.style"], words: ["liquid glass", "liquid", "frosted", "glass", "tahoe"], parent: "window.glass"),
-        .init(id: "window.glass.clear", group: "window", icon: "circle.lefthalf.filled",
-              title: "Transparency", detail: "From the window's colour on the glass to clear glass",
-              keys: ["window.glass.clear"], words: ["transparency", "tint", "opacity", "glass"], parent: "window.glass"),
-        .init(id: "window.glass.grain", group: "window", icon: "circle.dotted",
-              title: "Grain", detail: "A still noise over the glass",
-              keys: ["window.glass.grain"], words: ["grain", "noise", "texture", "glass"], parent: "window.glass"),
         .init(id: "tabs.liquid", group: "tablook", icon: "drop.halffull",
               title: "Liquid Glass tab", detail: "The tab you're on under a pane of Liquid Glass that glides, stretches and settles",
               more: "It bends the tabs it passes over. Pinned tabs and split pages keep their grey. Under Reduce Motion it goes straight to the tab you pick.",
@@ -328,10 +296,6 @@ enum SettingsIndex {
               title: "Show the address on the tab you're on", detail: "Its site in place of its title; the title comes back under the pointer",
               more: "Look-alike names in other alphabets show as they really are, and plain http says Not secure. Off, the tab you're on still says so for those two.",
               keys: ["tabs.address"], words: ["url", "domain", "security", "address bar"]),
-        .init(id: "tabs.mirror", group: "tabwindows", icon: "rectangle.on.rectangle",
-              title: "Same tabs in every window", detail: "Each window lists the same open tabs, as it lists the same pins",
-              more: "A tab opened, closed, moved, grouped or renamed in one window is so in the others. Each window shows the page on its own, so the same tab can be open in two windows at once. Private tabs stay in their window, and closing a window leaves its tabs in the others.",
-              keys: ["tabs.mirror"], words: ["mirror", "arc", "sync tabs", "shared tabs", "every window", "all windows", "same tabs", "windows"]),
 
         // Browsing
         .init(id: "search.engine", group: "search", icon: "magnifyingglass",
@@ -419,10 +383,9 @@ enum SettingsIndex {
               keys: ["pins.list"], words: ["arc", "pinned"], parent: "tabs.layout"),
         .init(id: "pins.folders", group: "pins", icon: "folder",
               title: "Folders in pinned rows", detail: "Pinned rows in folders, folders in folders, as in Arc",
-              more: "Right-click a pinned row and choose New Folder, or drag a row onto a folder. A folder folds with a click and holds up to three levels. Bringing Arc over keeps its folders as folders here. New Live Folder… fills one from a site's RSS or Atom feed, kept fresh every half hour.",
+              more: "Right-click a pinned row and choose New Folder, or drag a row onto a folder. A folder folds with a click and holds up to three levels. Bringing Arc over keeps its folders as folders here.",
               keys: ["pins.folders"],
-              words: ["arc", "folder", "folders", "nested", "subfolder", "pinned folder", "pinned tabs", "organise", "organize",
-                      "live folder", "feed", "rss", "atom"],
+              words: ["arc", "folder", "folders", "nested", "subfolder", "pinned folder", "pinned tabs", "organise", "organize"],
               parent: "pins.list"),
         .init(id: "pins.commandNewTab", group: "pins", icon: "command",
               title: "⌘-click on a pin opens a new tab",
@@ -522,17 +485,15 @@ enum SettingsIndex {
               keys: ["launcher.little"], words: ["little arc", "little window", "small window", "quick look", "option command n"], parent: "launcher.on"),
 
         // About
-        .init(id: "about.feedback", group: "updates", icon: "envelope",
+        .init(id: "about.feedback", group: "feedback", icon: "envelope",
               title: "Found something wrong?", detail: "Opens a draft with the version already in it", words: ["bug", "feedback", "report"]),
-        .init(id: "about.notes", group: "updates", icon: "sparkles",
-              title: "What's new", detail: "Every version's notes, newest first", words: ["release notes", "changelog"]),
         .init(id: "bench", group: "developer", icon: "terminal",
               title: "Let a script drive Search", detail: "A local socket for testing; its tabs never take over",
               more: "Its tabs open beside yours with a flask on them. See ./bench.",
               keys: ["bench"], words: ["automation", "script", "developer"]),
         .init(id: "agents", group: "developer", icon: "cursorarrow.rays",
               title: "Let coding agents use Search", detail: "Claude Code or Codex can ask to browse in tabs of its own, while you watch",
-              more: "Each time one connects, the window asks you first, unless you ticked “Always allow” for it — offered only for Claude Code's own `claude`, signed by Anthropic; kept 30 days at most and 7 after its last use, never with your tabs, and asked again after you press Stop; forget it here. Nothing is drawn over the page: the tab it works in wears a small dot, and Stop is on the column's foot (or the tab strip) and in File › Stop Agent (⌃⌥⌘.) until it goes. It works in tabs of its own; your tabs it can read only if you tick “Let it see my open tabs”, and never uses. It never sees passwords, card numbers, one-time codes, private tabs, cookies or Settings, and can't download or choose files. It connects through a file on this Mac only, never the network: claude mcp add search -- /path/to/Search/search-mcp.",
+              more: "Each time one connects, the window asks you first, unless you ticked “Always allow” for it — offered only for Claude Code's own `claude`, signed by Anthropic; kept 30 days at most and 7 after its last use, never with your tabs, and asked again after you press Stop; forget it here. Nothing is drawn over the page: the tab it works in wears a small dot, and Stop is on the sidebar’s foot and in File › Stop Agent (⌃⌥⌘.) until it goes. It works in tabs of its own; your tabs it can read only if you tick “Let it see my open tabs”, and never uses. It never sees passwords, card numbers, one-time codes, private tabs, cookies or Settings, and can't download or choose files. It connects through a file on this Mac only, never the network: claude mcp add search -- /path/to/Search/search-mcp.",
               keys: ["agents"],
               words: ["agent", "ai", "claude", "claude code", "codex", "mcp", "automation", "computer use", "developer"]),
 
@@ -620,16 +581,11 @@ enum SettingsIndex {
         switch item.id {
         case "pages.dusk": return prefs.look != .light
         case "inspector.dark": return prefs.look != .dark
-        case "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
-        case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
-        case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
-        case "address.width": return prefs.addressLine && !prefs.sidebar
-        case "tabs.liquid": return LiquidTab.available && !(prefs.sidebar && prefs.sideIcons)
-        case "window.glass.style": return prefs.glass && GlassStyle.liquidAvailable
-        case "window.glass.clear", "window.glass.grain": return prefs.glass
-        case "pins.folders": return prefs.sidebar && prefs.listsPins
-        case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
-        case "toolbar.left", "tabs.compact": return !prefs.sidebar
+        case "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return !prefs.sideIcons
+        case "layout.cardsFullScreen": return prefs.cards
+        case "tabs.liquid": return LiquidTab.available && !prefs.sideIcons
+        case "pins.folders": return prefs.listsPins
+        case "sidebar.foldIcons": return !prefs.sideHides
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent", "newtab.arc": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
@@ -645,11 +601,8 @@ enum SettingsIndex {
         switch item.id {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "inspector.dark": return "Only while Search isn't set to Dark"
-        case "toolbar.left", "tabs.compact", "address.width": return "Only with the tabs across the top"
         case "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return "Only with titles in the column"
-        case "tabs.liquid": return LiquidTab.available ? "Only with titles in the column, or the tabs across the top" : "Liquid Glass needs macOS 26"
-        case "window.glass.style": return GlassStyle.liquidAvailable ? "Only with Glass on" : "Liquid Glass needs macOS 26"
-        case "window.glass.clear", "window.glass.grain": return "Only with Glass on"
+        case "tabs.liquid": return LiquidTab.available ? "Only with titles in the sidebar" : "Liquid Glass needs macOS 26"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "sidebar.player": return "Only with titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
@@ -665,16 +618,12 @@ enum SettingsIndex {
 
 // MARK: - merged controls
 
-/// Tabs: across the top, a column down either side, or that column as
-/// icons only. Reads and writes `sidebar` and `sidebar.position`, as the
-/// two switches did, and `sidebar.icons`. Icons only keeps the side the
-/// column was on.
+/// The sidebar on either side, with titles or icons only.
 enum TabsLayout: String, CaseIterable, Identifiable {
-    case top, left, right, icons
+    case left, right, icons
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .top: return "Top"
         case .left: return "Left"
         case .right: return "Right"
         case .icons: return "Icons only"
@@ -718,18 +667,14 @@ enum PeekChoice: String, CaseIterable, Identifiable {
 
 extension Preferences {
     var tabsLayout: TabsLayout {
-        get { !sidebar ? .top : sideIcons ? .icons : (sidePosition == .right ? .right : .left) }
+        get { sideIcons ? .icons : (sidePosition == .right ? .right : .left) }
         set {
             switch newValue {
-            case .top:
-                sidebar = false
             case .icons:
                 sideIcons = true
-                sidebar = true
             case .left, .right:
                 sidePosition = newValue == .right ? .right : .left
                 sideIcons = false
-                sidebar = true
             }
         }
     }
@@ -820,7 +765,6 @@ extension SettingsIndex {
             "links.show": prefs.showsLinks,
             "float.flicks": prefs.floatFlicks,
             "arc": prefs.looksLikeArc,
-            "tabs.mirror": prefs.mirrorsTabs,
             "sidebar.slides": prefs.slidesColumn,
             "always": [
                 "splitView": prefs.splitView, "tabs.groups": prefs.usesTabGroups,
@@ -848,9 +792,6 @@ extension SettingsIndex {
         case "pins.keep":
             guard let on = value as? Bool else { return false }
             prefs.pinsKeepSite = on
-        case "tabs.mirror":
-            guard let on = value as? Bool else { return false }
-            prefs.mirrorsTabs = on
         case "pins.folders":
             guard let on = value as? Bool else { return false }
             prefs.pinFolders = on

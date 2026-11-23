@@ -15,33 +15,11 @@ import SwiftUI
 // Escape does. Search's own pages show their own address, and a tab with
 // nothing in it what to type.
 
-enum AddressWidth: String, CaseIterable, Identifiable {
-    case small, medium
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .small: return "Small"
-        case .medium: return "Medium"
-        }
-    }
-
-    var width: CGFloat {
-        switch self {
-        case .small: return 220
-        case .medium: return 340
-        }
-    }
-}
-
 struct AddressLine: View {
     @ObservedObject var browser: Browser
-    /// A tab's height in the column; the row's across the top.
+    /// A tab's height in the sidebar.
     var height: CGFloat = 28
 
-    /// The room after it, before the tabs across the top.
-    static let after: CGFloat = 8
 
     var body: some View {
         // The tab says when its address changes; the browser only which tab.

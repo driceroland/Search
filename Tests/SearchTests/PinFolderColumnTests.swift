@@ -247,7 +247,6 @@ final class PinFolderColumnTests: XCTestCase {
             switch line {
             case .folder(let folder, let depth): "folder \(depth) \(folder.name)"
             case .pin(let tab, let depth): "pin \(depth) \(tab.title)"
-            case .item(let item, _, let depth): "item \(depth) \(item.title)"
             }
         }
     }
@@ -267,13 +266,12 @@ final class PinFolderColumnTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.pinFolders)
+        let previous = (prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.pinFolders)
         restorePreferences = {
-            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.pinFolders) = previous
+            (prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.pinFolders) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
-        browser.prefs.sidebar = true
         browser.prefs.usesTabGroups = false
         browser.prefs.splitView = false
         browser.prefs.listsPins = true

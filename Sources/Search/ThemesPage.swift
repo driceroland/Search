@@ -35,32 +35,12 @@ struct ThemesPage: View {
             case .off:
                 Text("The blank tab stays plain.")
                     .font(.system(size: 12)).foregroundStyle(Palette.muted)
-            case .wall:
-                grid(HomeTheme.walls.map { theme in
-                    card(theme.title, on: prefs.homeTheme == theme, preview: preview(theme)) { prefs.homeTheme = theme }
-                })
-            case .stickers:
-                grid(StickerPack.allCases.map { pack in
-                    var t = prefs.homeTuning
-                    t.pack = pack
-                    return card(pack.title, on: prefs.homeTheme == .stickers && prefs.homeTuning.pack == pack,
-                                preview: preview(.stickers, t)) {
-                        prefs.homeTuning.pack = pack
-                        prefs.homeTheme = .stickers
-                    }
-                })
             case .solid:
                 solid
             case .gradient:
                 gradient
             case .image:
                 image
-            }
-
-            if family == .wall || family == .stickers {
-                Toggle("Shuffle: a different one each day", isOn: $prefs.homeShuffle)
-                    .toggleStyle(.checkbox)
-                    .font(.system(size: 12))
             }
 
             if family != .off && (family != .image || HomeBackground.load(prefs.homeThemeImage) != nil) {
@@ -92,7 +72,7 @@ struct ThemesPage: View {
 
     /// The theme colours the whole window too: the tabs, the bars and the
     /// ground around the page take the background's colours. A solid or a
-    /// gradient gives its own; a wall, stickers or a picture the colours at
+    /// gradient gives its own; an image gives the colours at
     /// its top and its bottom.
     private func follow() {
         var next = prefs.browserTheme
@@ -109,12 +89,6 @@ struct ThemesPage: View {
         case .gradient: return ThemeGradient(colours: [tuning.gradientA, tuning.gradientB], angle: tuning.angle, grain: grain)
         case .custom:
             return HomeBackground.load(image).flatMap { ends(of: $0) }
-                .map { ThemeGradient(colours: $0, angle: 180, grain: grain) }
-        default:
-            var full = tuning
-            full.intensity = 1
-            return HomeRender.image(theme, full, size: CGSize(width: 64, height: 40), dark: false, scale: 1, calm: false)
-                .flatMap { ends(of: $0) }
                 .map { ThemeGradient(colours: $0, angle: 180, grain: grain) }
         }
     }
@@ -154,15 +128,13 @@ struct ThemesPage: View {
     /// renderer, so it changes when a theme is picked or a slider let go.
     private var mock: some View {
         let size = CGSize(width: 480, height: 300)
-        let side = prefs.sidebar
         let right = prefs.sidePosition == .right
         return ZStack {
             Palette.ground
             ThemeWash(look: prefs.browserTheme.look)
                 .environment(\.washStrength, prefs.browserTheme.strength)
             if prefs.homeTheme != .off {
-                HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage,
-                               shuffle: prefs.homeShuffle)
+                HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage)
             }
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.ground)
@@ -170,7 +142,7 @@ struct ThemesPage: View {
                 .overlay(Text("Search or enter address")
                     .font(.system(size: 11)).foregroundStyle(Palette.muted))
                 .frame(width: 220, height: 30)
-            tabs(side: side, right: right)
+            tabs(right: right)
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -179,29 +151,17 @@ struct ThemesPage: View {
     }
 
     @ViewBuilder
-    private func tabs(side: Bool, right: Bool) -> some View {
+    private func tabs(right: Bool) -> some View {
         let bar = RoundedRectangle(cornerRadius: 3, style: .continuous).fill(Palette.muted.opacity(0.35))
-        if side {
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(0..<4, id: \.self) { _ in bar.frame(height: 8) }
-                Spacer()
-            }
-            .padding(10)
-            .frame(width: 70)
-            .frame(maxHeight: .infinity)
-            .background(Palette.ground.opacity(0.55))
-            .frame(maxWidth: .infinity, alignment: right ? .trailing : .leading)
-        } else {
-            HStack(spacing: 6) {
-                ForEach(0..<4, id: \.self) { _ in bar.frame(width: 56, height: 10) }
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .frame(maxWidth: .infinity)
-            .background(Palette.ground.opacity(0.55))
-            .frame(maxHeight: .infinity, alignment: .top)
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(0..<4, id: \.self) { _ in bar.frame(height: 8) }
+            Spacer()
         }
+        .padding(10)
+        .frame(width: 70)
+        .frame(maxHeight: .infinity)
+        .background(Palette.ground.opacity(0.55))
+        .frame(maxWidth: .infinity, alignment: right ? .trailing : .leading)
     }
 
     // MARK: - choosing
@@ -341,16 +301,6 @@ struct ThemesPage: View {
         VStack(alignment: .leading, spacing: 8) {
             ThemeSlider(title: "Intensity", value: prefs.homeTuning.intensity * 100, range: 0...100, unit: "%") {
                 prefs.homeTuning.intensity = $0 / 100
-            }
-            if prefs.homeTheme == .stickers {
-                ThemeSlider(title: "Density", value: prefs.homeTuning.density * 100, range: 0...100, unit: "%") {
-                    prefs.homeTuning.density = $0 / 100
-                }
-            }
-            if prefs.homeTheme == .stickers {
-                ThemeSlider(title: "Scale", value: prefs.homeTuning.scale * 100, range: 0...100, unit: "%") {
-                    prefs.homeTuning.scale = $0 / 100
-                }
             }
         }
     }

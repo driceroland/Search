@@ -8,7 +8,6 @@ import XCTest
 @MainActor
 final class PlayerTests: XCTestCase {
     private var browser: Browser!
-    private var sidebar = false
 
     override class func setUp() {
         TestWorld.enter()
@@ -18,15 +17,12 @@ final class PlayerTests: XCTestCase {
     override func setUp() {
         _ = NSApplication.shared
         browser = Browser(record: WindowRecord())
-        sidebar = browser.prefs.sidebar
-        browser.prefs.sidebar = true
         browser.prefs.showsPlayer = true
     }
 
     override func tearDown() {
         browser.closeAll()
         browser.prefs.showsPlayer = false
-        browser.prefs.sidebar = sidebar
         browser = nil
     }
 
@@ -71,7 +67,7 @@ final class PlayerTests: XCTestCase {
         XCTAssertTrue(browser.player === a, "Playing again: back")
     }
 
-    func testOnlyWithTheSwitchAndTheColumn() {
+    func testOnlyWithTheSwitch() {
         let a = tab("https://a.example"), b = tab("https://b.example")
         browser.activeID = b.id
         a.noisy = true
@@ -79,9 +75,6 @@ final class PlayerTests: XCTestCase {
         browser.prefs.showsPlayer = false
         XCTAssertNil(browser.player, "The switch off")
         browser.prefs.showsPlayer = true
-        browser.prefs.sidebar = false
-        XCTAssertNil(browser.player, "The tabs across the top")
-        browser.prefs.sidebar = true
         XCTAssertTrue(browser.player === a)
         browser.close(a)
         XCTAssertNil(browser.player, "A closed tab has nothing to show")

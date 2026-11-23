@@ -338,10 +338,9 @@ def case_slice2(t):
     t.ok("the keys going to the other page focus it", st["activeID"] == a, st["activeID"])
     sp("focus", id=b)
     # narrow window: focused page alone, pair kept
-    cmd({"do": "ui", "sidebar": True}); cmd({"do": "resize", "width": 700, "height": 700, "steps": 1}); time.sleep(1); st = sp("state")
+    cmd({"do": "resize", "width": 700, "height": 700, "steps": 1}); time.sleep(1); st = sp("state")
     t.ok("too narrow: the focused page alone", list(frames(st).keys()) == [b] and len(st["splits"]) == 1, (st["paneFrames"], st["splits"]))
     cmd({"do": "resize", "width": 1180, "height": 780, "steps": 1}); time.sleep(1); st = sp("state")
-    cmd({"do": "ui", "sidebar": False}); time.sleep(1)
     t.ok("room again: both back", set(frames(st).keys()) == {a, b}, st["paneFrames"])
     # the stage isn't rebuilt: tab switches keep the same slots
     st = sp("select", id=c); time.sleep(0.4); st = sp("state")

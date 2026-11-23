@@ -94,68 +94,9 @@ enum SidebarPosition: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Where the tabs go when the settings have no line for it. Down the side,
-/// as Arc has them, for a Search opened for the first time (Drice, 17 Nov
-/// 2026); across the top before that. Nobody already using Search sees the
-/// tabs move with an update: `settle` writes the old place down for them,
-/// once, before the setting is first read.
-enum SidebarDefault {
-    /// Set at the first launch of a build that knows the new default, fresh
-    /// install or not, so `settle` looks only once: a fresh install's second
-    /// launch has settings and a session too, and must not be taken for one
-    /// from before.
-    static let settledKey = "sidebar.settled"
-
-    /// The column, except in a test world: the hidden suites were written
-    /// against tabs across the top and set `sidebar` when they want the
-    /// column.
-    static func fresh(testing: Bool) -> Bool { !testing }
-
-    /// Lines only a Search that has run before leaves behind: the welcome
-    /// walked through, a choice of what tabs wear (written by every build
-    /// before the welcome existed), and the window's frame AppKit keeps.
-    static let traces = ["welcomed", "glyph", "NSWindow Frame search"]
-
-    /// One time only. A Search that ran before this build, with no line for
-    /// where its tabs go, had them across the top: that is written down, so
-    /// the new default never reaches it. `ranBefore` is whether a session
-    /// or windows file is already in the folder.
-    static func settle(_ store: UserDefaults, testing: Bool, ranBefore: Bool) {
-        guard !store.bool(forKey: settledKey) else { return }
-        store.set(true, forKey: settledKey)
-        guard fresh(testing: testing),
-              store.object(forKey: "sidebar") == nil,
-              store.object(forKey: "manner") == nil
-        else { return }
-        if ranBefore || traces.contains(where: { store.object(forKey: $0) != nil }) {
-            store.set(false, forKey: "sidebar")
-        }
-    }
-
-    /// Whether this folder holds what a Search that has run leaves there.
-    static func ranBefore(in folder: URL) -> Bool {
-        ["session.json", "windows.json", "pins.json"].contains {
-            FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
-        }
-    }
-}
-
 @MainActor
 final class Preferences: ObservableObject {
     private let store = Store.settings
-
-    /// Back, forward and reload before the tabs rather than after them, with
-    /// the tabs across the top. Off unless asked for.
-    @Published var navigationLeft: Bool {
-        didSet { store.set(navigationLeft, forKey: "toolbar.left") }
-    }
-
-    /// The tab strip only a few points taller than its tabs, where it is
-    /// otherwise a toolbar's height (Metrics.strip). With the tabs across the
-    /// top; off unless asked for.
-    @Published var compactStrip: Bool {
-        didSet { store.set(compactStrip, forKey: "tabs.compact") }
-    }
 
     /// A local socket a script can drive the browser through, in tabs of its
     /// own. Off unless asked for — in Settings, which is also what leaves
@@ -199,13 +140,9 @@ final class Preferences: ObservableObject {
     @Published var homeTheme: HomeTheme {
         didSet { store.set(homeTheme.rawValue, forKey: "home.theme") }
     }
-    /// The sliders and colours behind it: intensity, density, scale, pack.
+    /// The sliders and colours behind it: intensity and colours.
     @Published var homeTuning: HomeTuning {
         didSet { store.set(homeTuning.text, forKey: "home.tuning") }
-    }
-    /// A different wall or sticker pack each day, from the chosen family.
-    @Published var homeShuffle: Bool {
-        didSet { store.set(homeShuffle, forKey: "home.shuffle") }
     }
     /// Where the chosen picture's copy lives, for the image theme.
     @Published var homeThemeImage: String? {
@@ -213,10 +150,6 @@ final class Preferences: ObservableObject {
             if let homeThemeImage { store.set(homeThemeImage, forKey: "home.theme.image") }
             else { store.removeObject(forKey: "home.theme.image") }
         }
-    }
-    /// Titles down a side instead of across the top.
-    @Published var sidebar: Bool {
-        didSet { store.set(sidebar, forKey: "sidebar") }
     }
     /// The side panel's width, as you last left it (see SidePanel.swift).
     @Published var sidePanelWidth: CGFloat {
@@ -268,7 +201,7 @@ final class Preferences: ObservableObject {
     /// Whether ⌘S does that as things are set: with the tabs down a side,
     /// and not with the column kept folded, where ⌘S is what brings it out
     /// to stay (see Fold.swift).
-    var shrinks: Bool { sidebar && foldsToIcons && !sideHides }
+    var shrinks: Bool { foldsToIcons && !sideHides }
     /// Pulled narrower than Metrics.narrowLine, the column becomes a strip
     /// of the sites' marks with its buttons, and pulled back out it has its
     /// titles again: under that width the rows' titles, the lights' row and
@@ -284,10 +217,10 @@ final class Preferences: ObservableObject {
     }
     /// The strip it narrows to: the column of icons, without back, forward
     /// and reload, its buttons where Buttons at the top puts them.
-    var narrowStrip: Bool { sidebar && !sideIcons && narrowsToIcons && narrowed }
+    var narrowStrip: Bool { !sideIcons && narrowsToIcons && narrowed }
     /// Whether the column is showing as icons now: down a side, and asked
     /// for, or pulled narrow enough to become the strip.
-    var iconColumn: Bool { sidebar && sideIcons || narrowStrip }
+    var iconColumn: Bool { sideIcons || narrowStrip }
     /// The column's width as drawn: fixed with icons only, pulled by its
     /// edge otherwise (the width pulled is kept for when titles come back),
     /// and never under the line while narrowing to the strip is on.
@@ -322,35 +255,10 @@ final class Preferences: ObservableObject {
     @Published var addressLine: Bool {
         didSet { store.set(addressLine, forKey: "address.shown") }
     }
-    /// How wide it is before the tabs across the top.
-    @Published var addressWidth: AddressWidth {
-        didSet { store.set(addressWidth.rawValue, forKey: "address.width") }
-    }
-    /// The ground the card and the column sit on as glass: what is behind
-    /// the window shows through, blurred (see Glass.swift). Off unless
-    /// turned on.
-    @Published var glass: Bool {
-        didSet { store.set(glass, forKey: "window.glass") }
-    }
-    /// How much grain lies over it, nought to one (GlassGround.mostGrain).
-    @Published var glassGrain: Double {
-        didSet { store.set(glassGrain, forKey: "window.glass.grain") }
-    }
-    /// How see-through the glass is: nought, as much of the window's colour
-    /// as glass takes (GlassGround.mostTint); one, the glass alone, frosted,
-    /// with no colour and no dimming over what shows through. The blur
-    /// itself is always there. Chosen in Settings.
-    @Published var glassClear: Double {
-        didSet { store.set(glassClear, forKey: "window.glass.clear") }
-    }
     /// The tab you are on under a pane of Liquid Glass that glides from tab
     /// to tab (see LiquidTab.swift). Off unless turned on; macOS 26 on.
     @Published var liquidTabs: Bool {
         didSet { store.set(liquidTabs, forKey: "tabs.liquid") }
-    }
-    /// Frosted, the Mac's blur since Big Sur, or Liquid Glass, from macOS 26.
-    @Published var glassStyle: GlassStyle {
-        didSet { store.set(glassStyle.rawValue, forKey: "window.glass.style") }
     }
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
@@ -478,12 +386,6 @@ final class Preferences: ObservableObject {
     /// fresh tab to mean nothing at all.
     @Published var swipeBackCloses: Bool {
         didSet { store.set(swipeBackCloses, forKey: "tabs.swipeBackCloses") }
-    }
-    /// Every window lists the same open tabs, as
-    /// it lists the same pins: opened, closed, moved, grouped or renamed in
-    /// one, so in the others (see Twins.swift). Off unless asked for.
-    @Published var mirrorsTabs: Bool {
-        didSet { store.set(mirrorsTabs, forKey: "tabs.mirror") }
     }
     /// Each launch starts with a fresh window: the pins stay, last time's
     /// other tabs don't come back (see Session.startFresh). Off unless
@@ -920,7 +822,7 @@ final class Preferences: ObservableObject {
     @Published var pinNumberGoesBack = true
     /// Whether the pinned rows are drawn as rows: asked for, and with the
     /// tabs down the side. Across the top every pin is a square.
-    var showsPinRows: Bool { listsPins && sidebar }
+    var showsPinRows: Bool { listsPins }
     /// Whether the pinned rows are drawn in their folders.
     var showsPinFolders: Bool { pinFolders && showsPinRows }
     /// The AI add-on: summaries of the page and questions about it (see
@@ -968,12 +870,6 @@ final class Preferences: ObservableObject {
     /// adds a command, so there is no switch. Still a property, for the
     /// code that asks and the tests that turn it off; never written.
     @Published var switcherKeys = true
-    /// The page in front offered to your iPhone, iPad and other Macs
-    /// through Handoff (see Handoff.swift). Off unless asked for: its
-    /// address leaves this Mac, if only for your own devices.
-    @Published var handoff: Bool {
-        didSet { store.set(handoff, forKey: "handoff") }
-    }
     /// "settings", "new tab" and the like, typed alone in the address field,
     /// reach that part of the app instead of asking a search engine for the
     /// word; part of one is offered (see AddressCommands.swift). Off unless
@@ -1025,8 +921,6 @@ final class Preferences: ObservableObject {
 
     init() {
         Preferences.settleLittleLinks(in: store)
-        navigationLeft = store.bool(forKey: "toolbar.left")
-        compactStrip = store.bool(forKey: "tabs.compact")
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
         // The Mac's own unless asked otherwise — a Mac in dark mode expects
@@ -1047,10 +941,10 @@ final class Preferences: ObservableObject {
         }
         let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .system
         look = chosen
+        Preferences.migrateHomeTheme(in: store)
         browserTheme = BrowserTheme.read(store.string(forKey: "browser.theme")) ?? BrowserTheme()
-        homeTheme = store.string(forKey: "home.theme").flatMap(HomeTheme.stored) ?? .off
+        homeTheme = store.string(forKey: "home.theme").flatMap(HomeTheme.init(rawValue:)) ?? .off
         homeThemeImage = store.string(forKey: "home.theme.image")
-        homeShuffle = store.bool(forKey: "home.shuffle")
         homeTuning = HomeTuning.read(store.string(forKey: "home.tuning")) ?? HomeTuning()
         // Before the first window, and not deferred: the window that is about
         // to be made should be made in the right appearance. Through `shared`
@@ -1059,10 +953,7 @@ final class Preferences: ObservableObject {
         NSApplication.shared.appearance = chosen.appearance
         sidePanelWidth = min(max(CGFloat(store.object(forKey: "sidepanel.width") as? Double ?? 380),
                                  Preferences.sidePanelWidths.lowerBound), Preferences.sidePanelWidths.upperBound)
-        SidebarDefault.settle(store, testing: Store.testing, ranBefore: SidebarDefault.ranBefore(in: Store.folder))
-        sidebar = store.object(forKey: "sidebar") as? Bool
-            ?? store.string(forKey: "manner").map { $0 == "side" }
-            ?? SidebarDefault.fresh(testing: Store.testing)
+        Preferences.migrateSidebarLayout(in: store)
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
         slidesColumn = store.bool(forKey: Motion.slidesKey)
@@ -1078,11 +969,6 @@ final class Preferences: ObservableObject {
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
         cardsInFullScreen = store.bool(forKey: "layout.cardsFullScreen")
         addressLine = store.bool(forKey: "address.shown")
-        addressWidth = store.string(forKey: "address.width").flatMap(AddressWidth.init) ?? .small
-        glass = store.bool(forKey: "window.glass")
-        glassGrain = (store.object(forKey: "window.glass.grain") as? Double).map { min(1, max(0, $0)) } ?? 0.2
-        glassClear = (store.object(forKey: "window.glass.clear") as? Double).map { min(1, max(0, $0)) } ?? 0.5
-        glassStyle = store.string(forKey: "window.glass.style").flatMap(GlassStyle.init) ?? .frosted
         liquidTabs = store.bool(forKey: "tabs.liquid")
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
@@ -1108,7 +994,6 @@ final class Preferences: ObservableObject {
         switcherLeavesOutPins = store.bool(forKey: "tabs.switcherLeavesOutPins")
         frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
         swipeBackCloses = store.bool(forKey: "tabs.swipeBackCloses")
-        mirrorsTabs = store.bool(forKey: "tabs.mirror")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
         confirmsQuit = store.bool(forKey: Preferences.confirmQuitKey)
@@ -1167,7 +1052,6 @@ final class Preferences: ObservableObject {
         aiProvider = store.string(forKey: "ai.provider").flatMap(AIProvider.init(rawValue:))
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
         commandBar = store.bool(forKey: "commandbar")
-        handoff = store.bool(forKey: "handoff")
         floatingNewTab = store.bool(forKey: "newtab.floating")
         launcher = store.bool(forKey: "launcher.on")
         launcherLittle = store.bool(forKey: "launcher.little")
@@ -1278,6 +1162,36 @@ final class Preferences: ObservableObject {
         fileWatch = watch
     }
 
+    private static func migrateSidebarLayout(in store: UserDefaults) {
+        let sidebar = store.object(forKey: "sidebar") as? Bool
+        let manner = store.string(forKey: "manner")
+        guard sidebar == false || (sidebar == nil && manner != nil && manner != "side") else { return }
+        store.set(SidebarPosition.left.rawValue, forKey: "sidebar.position")
+        store.set(false, forKey: "sidebar.icons")
+        store.removeObject(forKey: "manner")
+        store.removeObject(forKey: "sidebar")
+    }
+
+    private static func migrateHomeTheme(in store: UserDefaults) {
+        guard let name = store.string(forKey: "home.theme"),
+              HomeTheme(rawValue: name) == nil,
+              ["openRoad", "desertHighway", "coastalCliffs", "mountainLake", "riceTerraces",
+               "northernLights", "saturnRise", "moonscape", "cityAtNight", "monsoonForest", "stickers"].contains(name)
+        else { return }
+
+        if let gradient = BrowserTheme.read(store.string(forKey: "browser.theme"))?.gradient,
+           gradient.usable, let first = gradient.colours.first, let last = gradient.colours.last {
+            var tuning = HomeTuning.read(store.string(forKey: "home.tuning")) ?? HomeTuning()
+            tuning.gradientA = first
+            tuning.gradientB = last
+            tuning.angle = gradient.angle
+            store.set(tuning.text, forKey: "home.tuning")
+            store.set(HomeTheme.gradient.rawValue, forKey: "home.theme")
+        } else {
+            store.set(HomeTheme.off.rawValue, forKey: "home.theme")
+        }
+    }
+
     /// The settings that only change how the tabs, the sidebar and the
     /// window look and sit, read again as init reads them, and set only
     /// where that differs, through their own didSet: what the switch does
@@ -1294,16 +1208,12 @@ final class Preferences: ObservableObject {
     /// bool as launch reads them: any line, or none, is off, and that is
     /// written back.
     func reread() {
+        Preferences.migrateHomeTheme(in: store)
         take(\.look, "look", store.string(forKey: "look").flatMap(Look.init), or: .system)
         take(\.browserTheme, "browser.theme", BrowserTheme.read(store.string(forKey: "browser.theme")), or: BrowserTheme())
-        take(\.homeTheme, "home.theme", store.string(forKey: "home.theme").flatMap(HomeTheme.stored), or: .off)
+        take(\.homeTheme, "home.theme", store.string(forKey: "home.theme").flatMap(HomeTheme.init(rawValue:)), or: .off)
         take(\.homeThemeImage, store.string(forKey: "home.theme.image"))
-        take(\.homeShuffle, store.bool(forKey: "home.shuffle"))
         take(\.homeTuning, "home.tuning", HomeTuning.read(store.string(forKey: "home.tuning")), or: HomeTuning())
-        take(\.navigationLeft, store.bool(forKey: "toolbar.left"))
-        take(\.compactStrip, store.bool(forKey: "tabs.compact"))
-        take(\.sidebar, "sidebar", store.object(forKey: "sidebar") as? Bool,
-             or: store.string(forKey: "manner").map { $0 == "side" } ?? SidebarDefault.fresh(testing: Store.testing))
         take(\.sidePosition, "sidebar.position", store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init),
              or: .left)
         take(\.sideHides, store.bool(forKey: "sidebar.hides"))
@@ -1321,11 +1231,6 @@ final class Preferences: ObservableObject {
         take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)
         take(\.cardsInFullScreen, store.bool(forKey: "layout.cardsFullScreen"))
         take(\.addressLine, store.bool(forKey: "address.shown"))
-        take(\.addressWidth, "address.width", store.string(forKey: "address.width").flatMap(AddressWidth.init), or: .small)
-        take(\.glass, store.bool(forKey: "window.glass"))
-        take(\.glassGrain, "window.glass.grain", (store.object(forKey: "window.glass.grain") as? Double).map { min(1, max(0, $0)) }, or: 0.2)
-        take(\.glassClear, "window.glass.clear", (store.object(forKey: "window.glass.clear") as? Double).map { min(1, max(0, $0)) }, or: 0.5)
-        take(\.glassStyle, "window.glass.style", store.string(forKey: "window.glass.style").flatMap(GlassStyle.init), or: .frosted)
         take(\.liquidTabs, store.bool(forKey: "tabs.liquid"))
         take(\.bounces, store.bool(forKey: "pages.bounce"))
         Swipe.bounces = bounces

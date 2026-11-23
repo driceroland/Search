@@ -82,9 +82,8 @@ def after(st, opener):
     return out
 
 
-def run(t, sidebar):
-    where = "column" if sidebar else "across the top"
-    sv.setup(sidebar=sidebar, **{"tabs.groups": True, "splitView": True})
+def run(t):
+    sv.setup(**{"tabs.groups": True, "splitView": True})
     sv.launch()
     try:
         x = sv.page("x")
@@ -94,14 +93,11 @@ def run(t, sidebar):
 
         click(s, "l1"); click(s, "l2"); click(s, "l3")
         st = state()
-        t.ok(f"{where}: three ⌘-clicks go after their page, in click order",
+        t.ok("Sidebar: three ⌘-clicks go after their page, in click order",
              after(st, s) == ["/opened-1", "/opened-2", "/opened-3"], paths(st))
-        t.ok(f"{where}: the page stays in front, the tabs either side untouched",
+        t.ok("Sidebar: the page stays in front, the tabs either side untouched",
              st["activeID"] == s and paths(st)[paths(st).index("/links") - 1] == "/x" and paths(st)[-1] == "/y",
              (st["activeID"], paths(st)))
-        if not sidebar:
-            return
-
         click(s, "l4", button="middle")
         t.ok("a middle-click carries on the run", after(state(), s)[-1] == "/opened-4", paths())
         r = sv.cmd({"do": "linkmenu", "id": s, "x": 60, "y": 270, "pick": "Open Link in New Tab"})
@@ -179,8 +175,7 @@ def run_top(t):
 def main():
     t = sv.T()
     try:
-        run(t, sidebar=True)
-        run(t, sidebar=False)
+        run(t)
         run_top(t)
     finally:
         t.done()

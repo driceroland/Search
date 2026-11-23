@@ -148,15 +148,7 @@ struct WelcomePanel: View {
 
     private var hold: some View {
         VStack(alignment: .leading, spacing: 22) {
-            heading("Two ways to hold it.", "Titles down the side, or across the top. The grey slides to the tab you pick either way, and you can change your mind with ⇧⌘S.")
-            HStack(spacing: 12) {
-                Way(title: "Sidebar", sidebar: true, glyph: prefs.glyph, chosen: prefs.sidebar) {
-                    withAnimation(Motion.glide) { prefs.sidebar = true }
-                }
-                Way(title: "Tab strip", sidebar: false, glyph: prefs.glyph, chosen: !prefs.sidebar) {
-                    withAnimation(Motion.glide) { prefs.sidebar = false }
-                }
-            }
+            heading("Tabs in the sidebar.", "Choose what appears next to each tab title.")
             HStack(spacing: 12) {
                 Text("Tabs wear")
                     .font(.system(size: 13))
@@ -201,12 +193,12 @@ struct WelcomePanel: View {
                     .padding(.top, 6)
                 Key("⌘T", "A new tab. Type a place, or words to search.")
                 Key("⌘K", "Every open tab, by name.")
-                Key("⌘,", "Settings, including passwords and updates. ⌘F there finds any setting.")
+                Key("⌘,", "Settings. ⌘F there finds any setting.")
                 Key("⌥⌘N", "Split a page in two, ⌥-click a tab to put it beside the page, or drag a tab onto a page; ⌃⌘← and ⌃⌘→ go from one page to the other, and ⌥⌘N again puts them apart.")
                 Key("⌘O", "Links from other apps open in a small window; ⌘O keeps one as a tab. Settings › Browsing.")
                 Key("⌘L", "Suggestions from your search engine as you type — off until you turn them on in Settings › Browsing.")
                 Key("⌘", "Held, it can show each tab's number for ⌘1–9. Settings › Tabs.")
-                Key("⌘,", "A painted wall behind the blank tab, if you want one — Settings › Appearance › Theme. Off until you choose.")
+                Key("⌘,", "A background for the blank tab, if you want one — Settings › Appearance › Theme. Off until you choose.")
                 Key("⌘1", "Pressed again on its pin, back to where you were.")
                 Key("⇧⌘P", "Float a video in Search's window, or in macOS's picture in picture. Settings › Browsing.")
                 Key("⌃-click", "Claude or ChatGPT in a side panel beside the page: right-click a tab › Open in Side Panel, or View › Side Panel.")
@@ -359,102 +351,6 @@ struct WelcomePanel: View {
                 Spacer()
                 Switch(on: $on)
             }
-        }
-    }
-
-    /// One of the two ways, as a small drawing of the window.
-    private struct Way: View {
-        let title: String
-        let sidebar: Bool
-        let glyph: Glyph
-        let chosen: Bool
-        let pick: () -> Void
-        @State private var hovering = false
-
-        var body: some View {
-            Button(action: pick) {
-                VStack(alignment: .leading, spacing: 10) {
-                    ZStack(alignment: .topLeading) {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.ground)
-                        if sidebar {
-                            HStack(spacing: 0) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack(spacing: 3) { ForEach(0..<3, id: \.self) { _ in Circle().fill(Palette.faint).frame(width: 5, height: 5) } }
-                                        .padding(.bottom, 4)
-                                    ForEach(0..<4, id: \.self) { i in
-                                        HStack(spacing: 3) {
-                                            Wear(glyph: glyph, tab: i)
-                                            RoundedRectangle(cornerRadius: 3).fill(i == 0 ? Palette.wash : Palette.hover).frame(height: 8)
-                                        }
-                                    }
-                                }
-                                .padding(8)
-                                .frame(width: 62)
-                                Rectangle().fill(Palette.hairline).frame(width: 1)
-                                Spacer()
-                            }
-                        } else {
-                            HStack(spacing: 3) {
-                                HStack(spacing: 3) { ForEach(0..<3, id: \.self) { _ in Circle().fill(Palette.faint).frame(width: 5, height: 5) } }
-                                    .padding(.trailing, 6)
-                                ForEach(0..<4, id: \.self) { i in
-                                    HStack(spacing: 3) {
-                                        Wear(glyph: glyph, tab: i)
-                                        RoundedRectangle(cornerRadius: 3).fill(i == 0 ? Palette.wash : Palette.hover).frame(width: 24, height: 8)
-                                    }
-                                    .padding(.trailing, 3)
-                                }
-                            }
-                            .padding(8)
-                        }
-                    }
-                    .frame(height: 110)
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
-                    Text(title)
-                        .font(.system(size: 13, weight: chosen ? .medium : .regular))
-                        .foregroundStyle(chosen ? Palette.ink : Palette.muted)
-                }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(chosen ? Palette.wash : (hovering ? Palette.hover : .clear))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(chosen ? Palette.ink.opacity(0.35) : Palette.hairline, lineWidth: 1)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering = $0 }
-            .animation(Motion.quick, value: hovering)
-            .animation(Motion.settle, value: chosen)
-        }
-    }
-
-    /// What a tab wears in the two small pictures, as Tabs wear has it: a
-    /// letter in a faint square, as Mark draws one, or a patch of colour
-    /// where a site's own icon would be. Seen before it is chosen: letters
-    /// were taken for icons that hadn't loaded (#1271).
-    private struct Wear: View {
-        let glyph: Glyph
-        let tab: Int
-
-        private static let letters = ["G", "M", "Y", "W"]
-        private static let tints: [NSColor] = [.systemRed, .systemBlue, .systemGreen, .systemOrange]
-
-        var body: some View {
-            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                .fill(glyph == .icons ? Color(nsColor: Wear.tints[tab]).opacity(0.7) : Palette.ink.opacity(0.06))
-                .frame(width: 10, height: 10)
-                .overlay {
-                    if glyph == .letters {
-                        Text(Wear.letters[tab])
-                            .font(.system(size: 6.5, weight: .medium))
-                            .foregroundStyle(Palette.muted)
-                    }
-                }
-                .animation(Motion.quick, value: glyph)
         }
     }
 

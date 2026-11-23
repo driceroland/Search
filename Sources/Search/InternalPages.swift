@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 // Search's own pages — Settings, History, Downloads, Bookmarks,
-// Bring Things Over and the release notes — each in a tab of its own, as
+// and Bring Things Over — each in a tab of its own, as
 // chrome://settings is in Chrome, rather than a card over the page. A tab
 // is something you can leave open beside your work, come back to with ⌃Tab,
 // put beside a page in Split View, and close with ⌘W like any other.
@@ -17,7 +17,6 @@ struct InternalPage: Equatable {
     enum Kind: String, CaseIterable {
         case settings, history, downloads, bookmarks, archive
         case importing = "import"
-        case notes = "release-notes"
     }
 
     var kind: Kind
@@ -59,7 +58,6 @@ struct InternalPage: Equatable {
         case .bookmarks: return "Bookmarks"
         case .archive: return "Archived Tabs"
         case .importing: return "Bring Things Over"
-        case .notes: return "What's New"
         }
     }
 
@@ -71,7 +69,6 @@ struct InternalPage: Equatable {
         case .bookmarks: return "book"
         case .archive: return "archivebox"
         case .importing: return "square.and.arrow.down"
-        case .notes: return "sparkles"
         }
     }
 
@@ -166,8 +163,6 @@ struct InternalPageView: View {
             ArchivePanel(browser: browser, archive: browser.archive)
         case .importing:
             ImportPanel(browser: browser)
-        case .notes:
-            ReleaseNotesPanel { browser.putAway(.notes) }
         }
     }
 }

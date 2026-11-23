@@ -164,7 +164,7 @@ enum Metrics {
     /// to a few points above and below the 28-point tabs: a strip, not a
     /// toolbar. The column keeps the full band, as its first row shares it.
     @MainActor static var strip: CGFloat {
-        Shared.prefs.compactStrip && !Shared.prefs.sidebar ? 36 : 52
+        52
     }
     /// With the tabs down the side the page is a card: this far from the
     /// window's edges (and from the column, folded away), and its corners

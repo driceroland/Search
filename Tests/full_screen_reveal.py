@@ -36,7 +36,7 @@ def column(ys):
 def main():
     t = sv.T()
     try:
-        sv.setup(sidebar=False, **{"bookmarks.bar": True})
+        sv.setup(**{"bookmarks.bar": True, "layout.cards": False})
         os.makedirs(sv.SUPPORT, exist_ok=True)
         json.dump(TREE, open(f"{sv.SUPPORT}/bookmarks.json", "w"))
         sv.launch()
@@ -50,7 +50,7 @@ def main():
         down = column(ys)
         def first(col, kind):
             return next((y for y, v in zip(ys, col) if v == kind), None)
-        t.ok("revealed: the tabs start 60 points lower", first(before, "Strip") == 4 and first(down, "Strip") == 60,
+        t.ok("revealed: the title bar starts 60 points lower", first(before, "Strip") == 4 and first(down, "Strip") == 60,
              (first(before, "Strip"), first(down, "Strip")))
         t.ok("revealed: the page starts 60 points lower", abs(first(down, "StageView") - first(before, "StageView") - 60) <= 4,
              (first(before, "StageView"), first(down, "StageView")))

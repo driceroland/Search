@@ -63,7 +63,7 @@ enum AddressCommand: Equatable {
         case .bookmarks: return "bookmarks.show"
         case .history: return "history.show"
         case .downloads: return "history.downloads"
-        case .toggleSidebar: return "view.sidebar"
+        case .toggleSidebar: return "view.fold"
         case .menu(let id): return id
         case .page: return nil
         }
@@ -89,7 +89,7 @@ enum AddressCommand: Equatable {
         case .bookmarks: browser.bookmarking = true
         case .history: browser.recalling = true
         case .downloads: browser.showDownloads()
-        case .toggleSidebar: browser.toggleSidebar()
+        case .toggleSidebar: browser.toggleFold()
         case .menu(let id): Command.named(id)?.run(browser)
         case .page(let page):
             browser.settingsPage = page

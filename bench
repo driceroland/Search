@@ -50,11 +50,10 @@
     ./bench capture-stop ID            stop what an extension is recording, as the pill's Stop does
     ./bench sidepanel [eval JS|touch|close]  the side panel: what is in it and where; test run: JS in its page, a click, or close it
     ./bench ext-remove ID
-    ./bench strip PATH [WIDTH]         the row of tabs across the top, drawn off screen to a PNG
     ./bench column PATH [HEIGHT]       the column of tabs, drawn off screen to a PNG
     ./bench consent [grant|revoke]     test run: the mark Settings' bench switch leaves in the keychain, in this
                                        world's own account — whether it is there, before and after
-    ./bench fold PATH [WIDTH]          test run: the folded strip or column out over the page (ui folded on,
+    ./bench fold PATH [WIDTH]          test run: the folded sidebar out over the page (ui folded on,
                                        ui peek on), drawn off screen over red — red shows where the page would
     ./bench sitesearch [state|tab|delete|esc|go|learn PAGE DESCRIPTION|forget]
                                        test run only: search a site from the address field
@@ -69,7 +68,7 @@
                                        and whether a drag from there would move the window;
                                        double: test run, a double-click there (start the probe hidden)
     ./bench place ID INDEX             put a tab at another place in the row
-    ./bench pinfolder [on|off|drawn|pin ID|new NAME [ID] [in FOLDER]|move ID FOLDER|none [before|after ID2]|live URL|refresh NAME
+    ./bench pinfolder [on|off|drawn|pin ID|new NAME [ID] [in FOLDER]|move ID FOLDER|none [before|after ID2]
                       |fold NAME|open NAME|rename NAME TO|nest NAME PARENT|none|delete NAME]
                                        test run: folders in pinned rows — the setting (on: rows too), a tab pinned
                                        as a row, a folder (holding a pin, or inside one), a pin moved, folded,
@@ -121,8 +120,6 @@
                                        any command aims it at the Nth window
     ./bench towindow ID N|new|drop X Y test run: a tab to the Nth window, a new one (Move to Window), or let
                                        go at screen point X Y as a drag out of the row
-    ./bench news PATH [notes] | on     test run: the card after an update, or every version's notes, to a
-                                       PNG; on: the card in the window
     ./bench quit                       test run: quit the app as ⌘Q does
     ./bench middle ID X Y              test run: the middle button clicked at X Y of a tab's page
     ./bench pin ID [off|home]          test run: pin a tab, unpin it, or double-click it (home)
@@ -148,7 +145,7 @@
                                        leaves it, and how far it swings on the way
     ./bench ui KEY VALUE               settings/welcome/history/downloads/bookmarks/hidden on|off,
                                        import on|off|extensions|BROWSER,
-                                       look light|dark|system, sidebar on|off, side left|right, spaces on|off, sharedpins on|off, swipepages on|off, confirm on|off, hides on|off,
+                                       look light|dark|system, side left|right, spaces on|off, sharedpins on|off, swipepages on|off, confirm on|off, hides on|off,
                                        folded on|off, peek on|off, peeklink keep|close, pages120 never|onPower|always,
                                        cards on|off (the page as a card), fullscreen on|off (test run: the
                                        window's full screen as the chrome sees it, the window staying put),
@@ -325,10 +322,6 @@ def main(argv):
         if len(args) not in (2, 3): sys.exit("usage: bench resize WIDTH HEIGHT [STEPS]")
         request["width"], request["height"] = float(args[0]), float(args[1])
         if len(args) == 3: request["steps"] = int(args[2])
-    elif verb == "strip":
-        if not 1 <= len(args) <= 2: sys.exit("usage: bench strip PATH [WIDTH]")
-        request["path"] = os.path.abspath(args[0])
-        if len(args) == 2: request["width"] = float(args[1])
     elif verb == "consent":
         if len(args) > 1 or (args and args[0] not in ("grant", "revoke")): sys.exit("usage: bench consent [grant|revoke]")
         if args: request["action"] = args[0]
@@ -432,8 +425,7 @@ def main(argv):
         elif args: sys.exit("usage: bench group [ID new [NAME] | ID NAME | ID none | fold NAME | close NAME]")
     elif verb == "pinfolder":
         usage = ("usage: bench pinfolder [on|off|drawn|pin ID|new NAME [ID] [in FOLDER]|move ID FOLDER|none [before|after ID2]"
-                 "|fold NAME|open NAME|rename NAME TO|nest NAME PARENT|none|delete NAME"
-                 "|live URL [in FOLDER]|refresh NAME|openitem NAME TITLE]")
+                 "|fold NAME|open NAME|rename NAME TO|nest NAME PARENT|none|delete NAME]")
         if not args: request["action"] = "state"
         elif args[0] in ("on", "off", "drawn", "state") and len(args) == 1: request["action"] = args[0]
         elif args[0] == "pin" and len(args) == 2: request["action"], request["id"] = "pin", args[1]
@@ -451,13 +443,6 @@ def main(argv):
         elif args[0] in ("fold", "open", "delete") and len(args) == 2: request["action"], request["name"] = args[0], args[1]
         elif args[0] == "rename" and len(args) == 3: request["action"], request["name"], request["to"] = "rename", args[1], args[2]
         elif args[0] == "nest" and len(args) == 3: request["action"], request["name"], request["parent"] = "nest", args[1], args[2]
-        elif args[0] == "live" and len(args) in (2, 4):
-            request["action"], request["url"] = "live", args[1]
-            if len(args) == 4:
-                if args[2] != "in": sys.exit(usage)
-                request["in"] = args[3]
-        elif args[0] == "refresh" and len(args) == 2: request["action"], request["name"] = "refresh", args[1]
-        elif args[0] == "openitem" and len(args) == 3: request["action"], request["name"], request["title"] = "openitem", args[1], args[2]
         else: sys.exit(usage)
     elif verb == "popups":
         if not args: sys.exit("usage: bench popups ID [open N|allow] | sites | remove SITE")
@@ -510,12 +495,6 @@ def main(argv):
     elif verb == "keyeq":
         if len(args) < 2 or any(a != "shift" for a in args[2:]): sys.exit("usage: bench keyeq CHARS CODE [shift]")
         request["chars"], request["code"], request["mods"] = args[0], int(args[1]), args[2:]
-    elif verb == "news":
-        if not args or (args[0] != "on" and len(args) > 2): sys.exit("usage: bench news PATH [notes] | news on")
-        if args[0] == "on": request["on"] = True
-        else:
-            request["path"] = os.path.abspath(args[0])
-            request["notes"] = args[1:] == ["notes"]
     elif verb == "towindow":
         if len(args) not in (2, 4) or (len(args) == 4 and args[1] != "drop"): sys.exit("usage: bench towindow ID N|new|drop X Y")
         request["id"] = args[0]

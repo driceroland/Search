@@ -182,13 +182,12 @@ final class TabGroupDragOutTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.sideIcons)
+        let previous = (prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.sideIcons)
         restorePreferences = {
-            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.sideIcons) = previous
+            (prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.sideIcons) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
-        browser.prefs.sidebar = true
         browser.prefs.usesTabGroups = true
         browser.prefs.splitView = true
         browser.prefs.listsPins = false

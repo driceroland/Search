@@ -217,8 +217,6 @@ final class Browser: NSObject, ObservableObject {
     }
     /// The first-launch walk-through, over everything. Also from the menu.
     @Published var welcoming = false
-    /// What's new, once after an update (see WhatsNew.swift).
-    @Published var newsShowing = false
 
     // MARK: - bookmarks
 
@@ -341,11 +339,6 @@ final class Browser: NSObject, ObservableObject {
     /// The sheet opened from Settings › Extensions: only the extensions
     /// ticked, on a browser that has some. Read once as it opens.
     var bringingExtensions = false
-
-    /// ⇧⌘S. The same tabs, down the left or across the top.
-    func toggleSidebar() {
-        withAnimation(Motion.glide) { prefs.sidebar.toggle() }
-    }
 
     func searchURL(for text: String) -> URL? {
         Engine.url(for: text, template: prefs.engine.template(custom: prefs.customEngine))
@@ -1914,10 +1907,9 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Whether the tab is drawn with its title, where Rename can be typed:
-    /// a row of the column, or a tab across the top. Not a pinned square,
+    /// a row of the column. Not a pinned square,
     /// nor any tab in the column of icons.
     func renamesInPlace(_ tab: Tab) -> Bool {
-        guard prefs.sidebar else { return true }
         if prefs.iconColumn { return false }
         return tab.pin == nil || (tab.listed && prefs.showsPinRows)
     }
@@ -2199,7 +2191,7 @@ final class Browser: NSObject, ObservableObject {
     /// filling the screen is the window's to add (see ContentView.cards).
     /// Settings › Appearance › Window › Keep the card in full screen, off
     /// unless turned on, keeps it there too, as Arc and Zen do (#1152).
-    var asCards: Bool { prefs.sidebar && prefs.cards && (!fullScreen || prefs.cardsInFullScreen) }
+    var asCards: Bool { prefs.cards && (!fullScreen || prefs.cardsInFullScreen) }
     /// The extension a popup window was opened for (windows.create with
     /// type "popup"), or nil for a browser window. Such a window is small,
     /// the page under a thin line with its site; it is never saved, never
@@ -2213,10 +2205,6 @@ final class Browser: NSObject, ObservableObject {
     /// Whether its rows are the session files' — the oldest window's — or
     /// its own line in windows.json.
     private(set) var usesFiles = false
-    /// Whether it has taken in the open tabs every window lists, and says
-    /// its own to the others (see Twins.swift); and whether it is about to.
-    var twinsJoined = false
-    var twinsDue = false
     /// The first browser does what is done once for the app.
     private static var booted = false
 
@@ -2248,9 +2236,6 @@ final class Browser: NSObject, ObservableObject {
                 announce("“Let coding agents use Search” was turned on outside Settings, and stays off")
             }
             welcoming = !prefs.welcomed
-            newsShowing = WhatsNew.due(prefs: prefs, welcoming: welcoming)
-            // With your other Macs, if that is on (see Sync.swift).
-            Sync.shared.start()
             // An icon that arrives is looked for again by every tab showing
             // that site, in every window, not only the one that asked for it:
             // each puts on its own page's, or its nearest neighbour's.
@@ -2267,7 +2252,7 @@ final class Browser: NSObject, ObservableObject {
             }
         }
         // Asked to stay out of the way: it starts that way (see Fold.swift).
-        folded = prefs.sidebar && prefs.sideHides
+        folded = prefs.sideHides
         // Otherwise as it was left: folded with ⌘S when the window was last
         // open, it is folded again (idea 738). The first window's line is
         // the first in windows.json; another's, or a new one's, is its record.
@@ -2287,14 +2272,6 @@ final class Browser: NSObject, ObservableObject {
             .sink { [weak self] note in
                 guard let self, !isPopup, (note.object as? Browser) !== self else { return }
                 pinsChanged()
-            }
-            .store(in: &bag)
-
-        // And, with Same tabs in every window, the open tabs (Twins.swift).
-        NotificationCenter.default.publisher(for: Twins.changed)
-            .sink { [weak self] note in
-                guard let self, (note.object as? Browser) !== self else { return }
-                twinsChanged()
             }
             .store(in: &bag)
 
@@ -2325,10 +2302,6 @@ final class Browser: NSObject, ObservableObject {
         // or restored tabs.
         guard !websitePopup else { return }
         restoreSession()
-        // The open tabs every window lists, a turn from now: by then a
-        // window made for an extension's pop-up is known to be one, and has
-        // none of them (see joinTwins).
-        if prefs.mirrorsTabs { DispatchQueue.main.async { [weak self] in self?.joinTwins() } }
     }
 
     /// The floating video's buttons answer the window whose video it is:
@@ -2384,14 +2357,13 @@ final class Browser: NSObject, ObservableObject {
     /// are every window's (see Pins.swift): a new window has them too,
     /// before an empty tab.
     func restoreSession() {
-        let saved = twinned(readRow())
+        let saved = readRow()
         tabGroups = (saved.groups ?? []).filter { group in
             saved.tabs.contains { $0.groupID == group.id }
         }
         let restored = restoreRow(saved, groups: tabGroups)
         splits = restored.splits
         tabs += restored.tabs
-        twinsSoon()
         // No tab in front (a fresh start, see Session.startFresh): an empty
         // one beside the pins.
         let front = saved.tabs.isEmpty || saved.active < 0 ? nil
@@ -2443,17 +2415,6 @@ final class Browser: NSObject, ObservableObject {
             .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.armSwipeCloseEverywhere() }
-            .store(in: &bag)
-        // Same tabs in every window, switched: on, every window's open tabs
-        // come together, nothing lost; off, each window keeps what it has.
-        // Received on the next turn, once the setting has changed.
-        prefs.$mirrorsTabs
-            .dropFirst()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] on in
-                guard let self, !isPopup, !retired else { return }
-                if on { joinTwins() } else { leaveTwins() }
-            }
             .store(in: &bag)
         // Peek stays with its tab turned off: a peek hidden behind another
         // tab goes at once, as that tab would have put it away. Left, it
@@ -2670,7 +2631,6 @@ final class Browser: NSObject, ObservableObject {
         // The pins as they are here, for the other windows (see Pins.swift).
         Pins.set(pinDefs(tabs), from: self)
         writeRow(currentRow(), now: now)
-        twinsSoon()
     }
 
     /// Tabs lifted into small windows, not back in the row. A quit would
@@ -3104,9 +3064,6 @@ final class Browser: NSObject, ObservableObject {
                 // Asked for only when the window goes: reading it for every
                 // tab at every save would be work for nothing.
                 keepsake: keeping ? tab.keepsake.map(Keepsake.init) : nil,
-                // Only with Same tabs in every window on: off, the file is
-                // what it always was.
-                twinID: prefs.mirrorsTabs && twinnable(tab) ? tab.twinID : nil,
                 lifted: liftedIDs.contains(tab.id) ? tab.id : nil
             ))
         }
@@ -3152,8 +3109,6 @@ final class Browser: NSObject, ObservableObject {
     func writeSessionSoon() { rememberSession() }
 
     private func rememberSession() {
-        // The other windows hear at once; the file waits a moment.
-        twinsSoon()
         guard !remembering else { return }
         remembering = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
@@ -3809,9 +3764,6 @@ final class Browser: NSObject, ObservableObject {
         if floating == tab.id { land() }
         if pictured == tab.id { unpicture() }
         if floatPrevious { leaving() }
-        // Asleep here and read in another window since: it wakes where that
-        // window is (see Twins.swift).
-        catchUp(tab)
         activeID = tab.id
         tab.touch()
         // A tab brought back from last time, or waking from ⌘W while pinned,
@@ -3852,7 +3804,6 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         if peekInFront { closePeek() }
-        else if closePanel() { return }
         else if !pickedTabs.isEmpty { closePickedTabs() }
         else if let tab = active { closeTab(tab) }
     }
@@ -3915,16 +3866,6 @@ final class Browser: NSObject, ObservableObject {
     /// ⇧⌘W: the whole window, its tabs with it, as the red button closes it.
     func closeWindow() {
         window?.performClose(nil)
-    }
-
-    /// The panel over the page put away, if one is up — for ⌘W and Escape
-    /// both. Whether there was one.
-    func closePanel() -> Bool {
-        // Settings, History and the rest are tabs now (InternalPages.swift):
-        // ⌘W closes them as it closes any tab, and Escape leaves them be.
-        if newsShowing { newsShowing = false }
-        else { return false }
-        return true
     }
 
     /// ⌘W, or the cross on the tab. Closing the last one leaves a blank tab
@@ -4416,12 +4357,8 @@ final class Browser: NSObject, ObservableObject {
               target != nil || tabs.count > 1 || !tab.isBlank
         else { return }
         let destination = target ?? Browser(record: WindowRecord())
-        // With Same tabs in every window, it is there already: that window
-        // goes to it, and this one keeps it (see Twins.swift).
-        if !showTwin(tab, in: destination) {
-            detach(tab)
-            destination.receive(tab)
-        }
+        detach(tab)
+        destination.receive(tab)
         if target == nil {
             // Dragged out: the new window where the tab was let go, its row
             // under the hand.
@@ -5458,6 +5395,8 @@ final class Browser: NSObject, ObservableObject {
             // An empty page is never written; the first builds of Split View
             // on main wrote one for an empty half.
             guard let saved = URL(string: entry.url), entry.url != "about:blank" else { continue }
+            // A release-notes tab from an older version no longer has a page.
+            if saved.scheme?.lowercased() == InternalPage.scheme, saved.host()?.lowercased() == "release-notes" { continue }
             // A tab still in its small window: written so a quit keeps it,
             // not made a second time while it is open.
             if let lifted = entry.lifted, LittleWindow.holding(lifted) != nil { continue }
@@ -5476,7 +5415,6 @@ final class Browser: NSObject, ObservableObject {
             tab.muted = entry.muted
             tab.pin = entry.pin
             tab.pinID = entry.pin == nil ? nil : entry.pinID
-            tab.twinID = entry.pin == nil ? entry.twinID : nil
             tab.listed = entry.pin != nil && entry.listed == true
             tab.home = home
             tab.groupID = entry.pin == nil && groups.contains(where: { $0.id == entry.groupID })
@@ -6004,13 +5942,6 @@ final class Browser: NSObject, ObservableObject {
         tab.$muted
             .dropFirst()
             .sink { [weak self] _ in self?.rememberSession() }
-            .store(in: &bag)
-
-        // Named or grouped here: so in the other windows, with Same tabs in
-        // every window on (Twins.swift). Nothing otherwise.
-        tab.$name.dropFirst().map { _ in () }
-            .merge(with: tab.$groupID.dropFirst().map { _ in () })
-            .sink { [weak self] in self?.twinsSoon() }
             .store(in: &bag)
 
         tab.$title

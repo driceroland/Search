@@ -87,24 +87,6 @@ final class DragStripDoubleClickTests: XCTestCase {
         XCTAssertFalse(window.isZoomed, "window stays restored after double-clicking the top")
     }
 
-    func testDoubleClickInEmptyTabRowOpensNewTabWithoutZooming() async throws {
-        var opened = 0
-        let (window, _) = makeWindow(reserved: 250, trailing: 80) { opened += 1 }
-        sendDoubleClick(at: NSPoint(x: 400, y: window.frame.height - 20), in: window)
-
-        XCTAssertEqual(opened, 1, "empty tab row opens a new tab on double-click")
-        XCTAssertEqual(window.zoomCalls, 0, "empty tab row double-click must not also zoom the window")
-    }
-
-    func testDoubleClickAboveReservedTabsZoomsWithoutOpeningNewTab() async throws {
-        var opened = 0
-        let (window, _) = makeWindow(reserved: 300, trailing: 80, band: TabBar.band) { opened += 1 }
-        sendDoubleClick(at: NSPoint(x: 150, y: window.frame.height - 6), in: window)
-
-        XCTAssertEqual(opened, 0, "margin above tabs is title bar, not empty tab row")
-        XCTAssertEqual(window.zoomCalls, 1, "margin above tabs zooms once")
-    }
-
     func testDoubleClickBelowNativeTitlebarRectZoomsOnce() async throws {
         let (window, _) = makeWindow(reserved: 0, trailing: 0, onDoubleClick: nil)
         sendDoubleClick(at: NSPoint(x: 400, y: window.frame.height - 42), in: window)

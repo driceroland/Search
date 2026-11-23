@@ -174,15 +174,14 @@ final class PinStuckTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins,
+        let previous = (prefs.usesTabGroups, prefs.splitView, prefs.listsPins,
                         prefs.glyph)
         restorePreferences = {
-            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins,
+            (prefs.usesTabGroups, prefs.splitView, prefs.listsPins,
              prefs.glyph) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
-        browser.prefs.sidebar = true
         browser.prefs.usesTabGroups = false
         browser.prefs.splitView = false
         browser.prefs.listsPins = false

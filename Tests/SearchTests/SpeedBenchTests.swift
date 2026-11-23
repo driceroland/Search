@@ -333,7 +333,6 @@ final class SpeedBenchTests: XCTestCase {
         NSApp.setActivationPolicy(.prohibited)
         let browser = Browser(record: record)
         browsers.append(browser)
-        browser.prefs.sidebar = true
         browser.prefs.usesTabGroups = false
         browser.prefs.splitView = false
         for i in 0..<count {

@@ -12,7 +12,7 @@ import Security
 
 /// Whether the AI add-on is in this build at all. Held back from 1.0.5
 /// (8 Oct 2026): with it off, none of it shows or runs — no Settings page, no
-/// menu items or shortcuts, no line on the welcome or What's New cards — and
+/// menu items or shortcuts, no line on the welcome screen — and
 /// a setting left on by a test build reads as off. The code stays; this is
 /// the one line that brings it back.
 enum AI {

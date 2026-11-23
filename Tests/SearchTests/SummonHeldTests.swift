@@ -43,7 +43,6 @@ final class SummonHeldTests: XCTestCase {
         _ = NSApplication.shared
         let browser = Browser(record: WindowRecord())
         browser.welcoming = false
-        browser.newsShowing = false
         for path in ["a", "b"] {
             browser.newTab()
             try XCTUnwrap(browser.active).go(to: URL(string: "http://127.0.0.1:9/\(path)")!)
