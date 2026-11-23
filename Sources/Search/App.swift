@@ -25,6 +25,15 @@ struct SearchApp: App {
     private var browser: Browser { front.browser ?? SceneSlot.shared.browser }
 
     init() {
+        // AppKit's guess at password fields (#1458): every time a native
+        // field takes the keyboard (the address field, ⌘L, ⌘T…), it walks
+        // the window's key views back from it, and through SwiftUI that is
+        // a walk over every view in the window — the column with all its
+        // tabs and folders. On a full window it held the main thread at
+        // 100% for tens of seconds. Search fills its own passwords in
+        // pages; its own fields aren't sign-in forms. Registered, so kept
+        // in memory only: a `defaults write` still wins.
+        UserDefaults.standard.register(defaults: ["NSAutoFillHeuristicsEnabled": false])
         // Settings › General › Start with a fresh window: the files are cut
         // down before any window reads its row from them.
         if Store.settings.bool(forKey: Preferences.freshKey) {
