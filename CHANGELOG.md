@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Changed
+
+- Settings › Browsing › Links › Go to a tab that has the page now works without small windows too: a link from another app to a page you already have open switches to that tab instead of opening a new one.
+
 ### Fixed
 
 - With two profiles or more, the profile item in a space's right-click menu is called Switch to Profile, where it said "Profile: Personal". It switches the window to that profile (the ticked one is the window's) and never moved the space, but read like a setting of the space, so choosing Work looked like moving the space there and losing it. (reported by email, idea 983)

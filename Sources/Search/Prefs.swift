@@ -852,10 +852,12 @@ final class Preferences: ObservableObject {
     @Published var webmail: Webmail {
         didSet { store.set(webmail.rawValue, forKey: "mail.webmail") }
     }
-    /// With those small windows on: a link to a page already open in a tab
-    /// goes to that tab instead (see Links.little). Off unless asked for.
-    @Published var littleFindsTabs: Bool {
-        didSet { store.set(littleFindsTabs, forKey: "links.little.tabs") }
+    /// A link from another app to a page already open in a tab goes to that
+    /// tab instead of a new tab or a small window (see Links.little). Off
+    /// unless asked for. The key is from when it worked only with small
+    /// windows on, kept so a switch already turned on stays on.
+    @Published var linksFindTabs: Bool {
+        didSet { store.set(linksFindTabs, forKey: "links.little.tabs") }
     }
     /// Links to chosen sites open in their space (see SpaceRoutes.swift).
     /// Off unless asked for, and only with spaces on.
@@ -1424,7 +1426,7 @@ final class Preferences: ObservableObject {
         readsTwins = store.bool(forKey: "reader.twins")
         readerFollowsLook = store.bool(forKey: "reader.follows")
         littleLinks = store.bool(forKey: Preferences.littleKey)
-        littleFindsTabs = store.bool(forKey: "links.little.tabs")
+        linksFindTabs = store.bool(forKey: "links.little.tabs")
         webmail = store.string(forKey: "mail.webmail").flatMap(Webmail.init(rawValue:)) ?? .none
         sendsLinksToSpaces = store.bool(forKey: SpaceRoutes.key)
         spaceButtons = store.bool(forKey: Preferences.spaceButtonsKey)
