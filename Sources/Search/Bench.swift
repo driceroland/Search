@@ -340,6 +340,16 @@ final class Bench {
         }
 
         switch verb {
+        case "fillswindow":
+            // A page's full screen in the window itself (WindowFullScreen):
+            // which tabs fill it, whether the window is in macOS full
+            // screen, and how often it was asked to change. "pretend": the
+            // window's full screen only pretended from here on, never taken
+            // into a Space. Test runs only.
+            guard Store.testing else { answer(["error": "fillswindow is for test runs"]); return }
+            if let full = request["pretend"] as? Bool { WindowFullScreen.shared.pretend(full) }
+            answer(WindowFullScreen.shared.state(of: browser))
+
         case "layouts":
             // Test runs only: every frame the pages on screen take, looked at
             // every few milliseconds and after each pass of the run loop, for

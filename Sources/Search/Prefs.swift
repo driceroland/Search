@@ -984,6 +984,13 @@ final class Preferences: ObservableObject {
     @Published var keepsWindow: Bool {
         didSet { store.set(keepsWindow, forKey: "fullscreen.keepsWindow") }
     }
+    /// A page's full screen in the window itself, which goes into macOS
+    /// full screen with it, rather than in a window and a
+    /// Space of WebKit's (see WindowFullScreen.swift). Off unless asked for.
+    /// Pages up take it at once (see Browser's watch on it).
+    @Published var fullScreenInWindow: Bool {
+        didSet { store.set(fullScreenInWindow, forKey: "fullscreen.inWindow") }
+    }
     /// A newer build is fetched, checked and put in place on its own, as it
     /// always was. Off, Search still looks every hour and says so, and waits
     /// for Install in Settings (see Updater.installsOnItsOwn).
@@ -1389,6 +1396,7 @@ final class Preferences: ObservableObject {
         floatStyle = store.string(forKey: "float.style").flatMap(FloatStyle.init(rawValue:)) ?? .search
         escapeTwice = store.bool(forKey: "fullscreen.escapeTwice")
         keepsWindow = store.bool(forKey: "fullscreen.keepsWindow")
+        fullScreenInWindow = store.bool(forKey: "fullscreen.inWindow")
         waitsForPlay = store.bool(forKey: Preferences.waitsKey)
         translateTarget = store.string(forKey: "translate.target") ?? ""
         translateAlways = Set(store.stringArray(forKey: PageTranslator.alwaysKey) ?? [])

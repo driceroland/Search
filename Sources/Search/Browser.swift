@@ -3456,6 +3456,23 @@ final class Browser: NSObject, ObservableObject {
         // Your card read ahead, so the first box you click has it.
         if prefs.fillsContacts { Task { await MeCard.shared.reload() } }
 
+        // Every tab's next page, and the page each is showing now (see
+        // WindowFullScreen.swift). After the change, which arm reads.
+        prefs.$fullScreenInWindow
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] on in
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    let all = self.tabs + self.parkedTabs
+                    for tab in all {
+                        tab.arm(hiding: self.curtain.css(on: self.curtain.host(of: tab.address)))
+                    }
+                    WindowFullScreen.shared.setting(on, for: all)
+                }
+            }
+            .store(in: &bag)
+
         // Every tab's next page, and the page each is showing now (see AutoScroll.swift).
         prefs.$autoScroll
             .dropFirst()

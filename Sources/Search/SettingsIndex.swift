@@ -421,6 +421,10 @@ enum SettingsIndex {
         .init(id: "fullscreen.keepsWindow", group: "video", icon: "macwindow",
               title: "Keep the window in use during full screen", detail: "Its tabs stay in reach on its own desktop while a video plays on another",
               keys: ["fullscreen.keepsWindow"], words: ["full screen", "desktop", "space", "video"]),
+        .init(id: "fullscreen.inWindow", group: "video", icon: "arrow.up.left.and.arrow.down.right",
+              title: "Full screen in the window", detail: "A video fills the window, which goes full screen itself. No new desktop for it",
+              more: "If the window is full screen already, the video just fills it. A player embedded in a page that was already open follows once that page is reloaded.",
+              keys: ["fullscreen.inWindow"], words: ["full screen", "fullscreen", "desktop", "space", "video"]),
         .init(id: "translate.target", group: "pages", icon: "translate",
               title: "Translation language", detail: "Pages are translated on this Mac",
               keys: ["translate.target"], words: ["translate", "language"]),
@@ -755,6 +759,8 @@ enum SettingsIndex {
         case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
+        // A video in the window never has a desktop of its own to keep it from.
+        case "fullscreen.keepsWindow": return !prefs.fullScreenInWindow
         case "address.width": return prefs.addressLine && !prefs.sidebar
         case "tabs.liquid": return LiquidTab.available && !(prefs.sidebar && prefs.sideIcons)
         case "window.glass.style": return prefs.glass && GlassStyle.liquidAvailable
@@ -1008,6 +1014,9 @@ extension SettingsIndex {
         case "links.peek":
             guard let choice = (value as? String).flatMap(PeekChoice.init) else { return false }
             prefs.peekChoice = choice
+        case "fullscreen.inWindow":
+            guard let on = value as? Bool else { return false }
+            prefs.fullScreenInWindow = on
         case "arc.setup":
             prefs.setUpLikeArc()
         default:

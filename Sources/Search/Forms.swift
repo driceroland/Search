@@ -82,7 +82,12 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
                 // WebKit started to give the page back is stale.
                 let on = body["on"] as? Bool ?? false
                 if on, tab?.built?.fullscreenState == .exitingFullscreen { break }
+                // Full screen in the window: Search's world can't see the
+                // page's element, and would say it is out.
+                if WindowFullScreen.shared.fills(tab?.built) { break }
                 if tab?.immersed != on { tab?.immersed = on }
+            case "fillsWindow":
+                if let tab { WindowFullScreen.shared.page(tab, fills: body["on"] as? Bool ?? false) }
             default:
                 break
             }
