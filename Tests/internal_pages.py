@@ -94,6 +94,26 @@ def case_blank_and_private(t):
     t.ok("…and the private tab is still there, still private", any(x["id"] == shy and x["shy"] and x["blank"] for x in tabs()))
 
 
+def case_settings_type_to_search(t):
+    """typing on Settings starts a search, including the first letter"""
+    sv.setup(); sv.launch()
+    press(COMMA, ",", "cmd")
+    press(125, "\uf701")
+    probe = sv.cmd({"do": "probe"})
+    t.ok("Down leaves the search unfocused", "TextView" not in probe["responder"], probe["responder"])
+    press(13, "W", "shift")
+    caret = sv.cmd({"do": "caret"})
+    t.ok("the first letter opens the search and is kept", caret.get("text") == "W", caret)
+    press(34, "i")
+    caret = sv.cmd({"do": "caret"})
+    t.ok("the next letter goes to the same search", caret.get("text") == "Wi", caret)
+    press(37, "l", "cmd")
+    press(0, "a")
+    probe = sv.cmd({"do": "probe"})
+    t.ok("typing in the address field stays there", probe["responderIsAddress"] and probe["fieldText"].startswith("a"),
+         probe["fieldText"])
+
+
 def case_back_forward(t):
     """from one page to another and back, and onto the web and back"""
     sv.setup(); sv.launch()
@@ -157,6 +177,9 @@ def case_split(t):
     x = st()
     t.ok("⌘, from the page beside it: Settings' pane gets the keys, no second tab",
          x["activeID"] == s and len(of("settings")) == 1 and x["splits"], (x["activeID"], s))
+    press(13, "w")
+    caret = sv.cmd({"do": "caret"})
+    t.ok("typing searches Settings in the focused split pane", caret.get("text") == "w", caret)
     press(W, "w", "cmd")
     x = st()
     t.ok("⌘W closes Settings out of the pair; the page stays", s not in [y["id"] for y in x["tabs"]] and a in [y["id"] for y in x["tabs"]], x["tabs"])
@@ -164,7 +187,8 @@ def case_split(t):
 
 def main():
     t = sv.T()
-    for case in [case_open_focus, case_blank_and_private, case_back_forward, case_restore, case_split]:
+    for case in [case_open_focus, case_blank_and_private, case_settings_type_to_search,
+                 case_back_forward, case_restore, case_split]:
         print(f"— {case.__doc__}")
         try:
             case(t)

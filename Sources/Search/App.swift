@@ -1824,7 +1824,7 @@ struct ContentView: View {
             return true
         }
 
-        guard flags.contains(.command) else { return false }
+        guard flags.contains(.command) else { return typeInSettings(event) }
         let shifted = flags.contains(.shift)
 
         if flags.contains(.option), !shifted, !flags.contains(.control),
@@ -1998,6 +1998,24 @@ struct ContentView: View {
             if event.keyCode == 124 { browser.forward(); return true }
             return false
         }
+        return true
+    }
+
+    private func typeInSettings(_ event: NSEvent) -> Bool {
+        guard canSwitchTabs(event), let tab = browser.active, tab.page?.kind == .settings,
+              !browser.fieldShowing, !browser.snapping,
+              !(event.window?.firstResponder is NSTextView),
+              !event.modifierFlags.contains(.control),
+              let text = event.characters, text.contains(where: { !$0.isWhitespace }),
+              text.unicodeScalars.allSatisfy({
+                  // AppKit encodes navigation and function keys in this range.
+                  $0.properties.generalCategory != .control && !(0xF700...0xF8FF).contains($0.value)
+              })
+        else { return false }
+        if let panel = SidePanelPages.shared.web(in: browser), let responder = event.window?.firstResponder as? NSView,
+           responder === panel || responder.isDescendant(of: panel) { return false }
+
+        browser.settingsFind.send(text)
         return true
     }
 }
