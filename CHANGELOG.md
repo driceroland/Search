@@ -47,6 +47,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- The extensions list opens from the puzzle button in the screen's corner again (window filling the screen, column on the left, or the button at the far right of the tab bar): moved to keep its arrow clear of the corner, the point it hung from had left the button altogether and the list closed at once. It now moves no further than the button's edge. ([#1460](https://github.com/driceroland/Search/issues/1460))
 - With the column hidden until the pointer reaches the edge, dragging the column's edge no longer sends it sliding away halfway: it stays out for the whole drag, into the icons and back out included. Thanks [@Komo4ekoI](https://github.com/Komo4ekoI) for finding the cause. ([#1462](https://github.com/driceroland/Search/issues/1462))
 - The room off screen where a coding agent's tabs are laid out no longer shows as a grey rectangle on the desktop after a display is unplugged: it goes back off every screen whenever the screens change, and never takes a click. ([#1421](https://github.com/driceroland/Search/issues/1421))
 - A coding agent's click (and the bench's tap) lands where it aims on a zoomed page: the page's CSS pixels were taken as the view's points, so at 125% a click fell a quarter short, above most links, while still saying it had clicked. ([#1464](https://github.com/driceroland/Search/issues/1464))

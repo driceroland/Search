@@ -11,6 +11,18 @@ final class PopoverSideTests: XCTestCase {
         NSRect(x: x - 13, y: y - 13, width: 26, height: 26)
     }
 
+    /// #1460: the puzzle in the screen's corner, 23 points from the edge to
+    /// its middle, was moved 29 along and SwiftUI's popover, hung wholly off
+    /// it, never opened. Kept on the button, at most to its edge.
+    func testASwiftUIPopoversMoveStaysOnItsButton() {
+        let corner = PopoverSide.placement(of: button(23, 600), in: screen, beside: false)
+        XCTAssertEqual(corner.move.dx, clear - 23, "the arrow would stand clear")
+        let kept = PopoverSide.kept(corner.move, on: CGSize(width: 26, height: 26))
+        XCTAssertEqual(kept, CGVector(dx: 13, dy: 0))
+        XCTAssertTrue(NSRect(x: 0, y: 0, width: 26, height: 26).intersects(NSRect(x: kept.dx, y: 0, width: 26, height: 26)))
+        XCTAssertEqual(PopoverSide.kept(CGVector(dx: -5, dy: 40), on: CGSize(width: 26, height: 26)), CGVector(dx: -5, dy: 13))
+    }
+
     func testAnArrowClearOfTheScreensEdgesStaysWhereItIs() {
         XCTAssertEqual(PopoverSide.shift(400, low: 0, high: 1400), 0)
         XCTAssertEqual(PopoverSide.shift(clear, low: 0, high: 1400), 0, "exactly clear")
