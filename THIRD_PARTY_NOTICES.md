@@ -48,6 +48,49 @@ From G. M. Machado, M. M. Oliveira and L. A. F. Fernandes, "A
 Physiologically-based Model for Simulation of Color Vision Deficiency",
 IEEE TVCG 15(6), 2009, at full severity.
 
+
+## Developer Tools Full (Sources/DevToolsFull)
+
+Full carries Lite's Lighthouse, Recorder and device toolbar, the same
+sources (Sources/DevToolsShared), under the notices above.
+
+### Chromium DevTools
+
+Copyright The Chromium Authors. BSD 3-Clause License (text below).
+https://chromium.googlesource.com/devtools/devtools-frontend
+
+Ported to Swift and JavaScript for WebKit's inspector protocol, from
+front_end/:
+
+- the Styles pane's inline editors: the colour picker and its colour
+  conversions (core/common/Color.ts), the cubic-bezier editor and its
+  presets (ui/legacy/components/inline_editor/BezierEditor.ts,
+  AnimationTimingModel.ts), the shadow editor (CSSShadowEditor.ts), the
+  angle editor (CSSAngle.ts) and the font editor (FontEditor.ts);
+- the Network filter box's parser (models/text_utils/TextUtils.ts
+  FilterParser) and the Copy as cURL / fetch / Node.js writers
+  (panels/network/NetworkLogView.ts);
+- the element path and selectors (panels/elements/DOMPath.ts), Toggle
+  class and Store as global (core/sdk/PageFunctions.ts), the element state
+  pane (ElementStatePaneWidget.ts) and the Computed pane's groups
+  (PropertyNameCategories.ts);
+- the device and emulation settings' names and values
+  (models/emulation/EmulatedDevices.ts, EmulationModel.ts settings);
+- the Console's settings, sidebar, live expressions and context menu
+  wording (panels/console/ConsoleView.ts, ConsoleSidebar.ts,
+  ConsolePinPane.ts), and the command menu's command names and keys
+  (ui/legacy/ActionRegistration.ts and each panel's module.ts).
+
+Changes: rewritten for WebKit and Search; nothing of Chromium's code is
+included as is.
+
+### Lighthouse (Performance insights)
+
+Copyright Google LLC. Apache License 2.0 (text below). The Performance
+panel's insights use Lighthouse's cache-lifetime rules
+(core/audits/byte-efficiency/uses-long-cache-ttl.js and
+core/lib/cache-headers.js) and image-format savings ratios, in Swift.
+
 ---
 
 ### Apache License 2.0 (Lighthouse)

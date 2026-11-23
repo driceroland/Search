@@ -40,7 +40,7 @@ struct DevToolsDock: View {
 
 // MARK: - Lighthouse
 
-private struct LighthousePanel: View {
+struct LighthousePanel: View {
     @ObservedObject var model: LighthouseModel
 
     var body: some View {
@@ -226,7 +226,7 @@ private struct AuditRow: View {
 
 // MARK: - Recorder
 
-private struct RecorderPanel: View {
+struct RecorderPanel: View {
     @ObservedObject var recorder: RecorderModel
 
     var body: some View {

@@ -21,6 +21,13 @@ import WebKit
 extension Browser {
     /// ⌥⌘I: the inspector, or put away if it is up.
     func toggleInspector() {
+        if DevToolsPackages.shared.take("devtools", in: self) { return }
+        toggleWebInspector()
+    }
+
+    /// Web Inspector itself, even with a developer tools package that
+    /// inspects taking ⌥⌘I (View › Web Inspector).
+    func toggleWebInspector() {
         guard let inspector = inspector() else { return }
         if asks(inspector, "isVisible") {
             send(inspector, "close")
@@ -32,6 +39,11 @@ extension Browser {
 
     /// ⌥⌘J: the inspector, at its console.
     func showConsole() {
+        if DevToolsPackages.shared.take("console", in: self) { return }
+        showWebConsole()
+    }
+
+    func showWebConsole() {
         guard let inspector = inspector() else { return }
         send(inspector, "showConsole")
         watch(inspector, tries: 12)
@@ -40,6 +52,11 @@ extension Browser {
     /// ⌥⌘C: the inspector, and the next click on the page picks what it
     /// shows. Again, and the picking stops.
     func inspectElement() {
+        if DevToolsPackages.shared.take("pick", in: self) { return }
+        inspectWebElement()
+    }
+
+    func inspectWebElement() {
         guard let inspector = inspector() else { return }
         if !asks(inspector, "isVisible") { send(inspector, "show") }
         send(inspector, "toggleElementSelection")
@@ -66,6 +83,8 @@ extension Browser {
     /// no page to look at.
     private func inspector() -> NSObject? {
         guard let tab = active, tab.isWeb else { return nil }
+        // One inspector a page: a package's on this tab steps aside.
+        DevToolsPackages.yieldInspector(tab.web)
         return inspector(of: tab.web)
     }
 

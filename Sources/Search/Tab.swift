@@ -2627,6 +2627,7 @@ final class PageView: WKWebView {
         // View menu. Handed on, and then the coat, if one was asked for.
         if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierInspectElement" }) {
             inspectItem = (item.target, item.action)
+            inspectPoint = convert(event.locationInWindow, from: nil)
             item.target = self
             item.action = #selector(inspectFromPage(_:))
         }
@@ -2682,8 +2683,13 @@ final class PageView: WKWebView {
 
     /// WebKit's Inspect Element, handed on so the inspector's coat follows.
     private var inspectItem: (target: AnyObject?, action: Selector?) = (nil, nil)
+    /// Where the menu was opened, for a developer tools package that
+    /// inspects (DevToolsPackages.inspect).
+    private var inspectPoint: NSPoint?
 
     @objc private func inspectFromPage(_ item: NSMenuItem) {
+        if let point = inspectPoint, let browser, DevToolsPackages.inspect(at: point, in: self, browser: browser) { return }
+        DevToolsPackages.yieldInspector(self)
         guard let action = inspectItem.action else { return }
         NSApp.sendAction(action, to: inspectItem.target, from: item)
         browser?.dressInspector(of: self)

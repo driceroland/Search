@@ -126,6 +126,13 @@ final class DevToolsPackages: ObservableObject {
         set {
             objectWillChange.send()
             Store.settings.set(newValue, forKey: "devtools.primary")
+            // The other package's tools put away: one package around the
+            // page and on the keys at a time.
+            let views = tabs.values.compactMap { $0.tab?.built }
+            for (id, plugin) in loaded where id != primary?.offer.id {
+                for web in views where plugin.isOpen(webView: web) { plugin.close(webView: web) }
+            }
+            for browser in Browsers.all { browser.objectWillChange.send() }
         }
     }
 
@@ -345,6 +352,43 @@ final class DevToolsPackages: ObservableObject {
             || shared.bridges.values.contains { $0.awake.contains(ObjectIdentifier(web)) }
     }
 
+    /// Search's inspector keys a package that inspects takes while it is the
+    /// one View › Developer uses: its menu item id, and Search's command for
+    /// the key. Read from package.json: nothing is loaded for a menu.
+    static let inspectorKeys = ["devtools": "view.inspector", "console": "view.console", "pick": "view.inspect"]
+
+    var takenKeys: [String: String] {
+        guard let package = primary, usable(package.offer.id) else { return [:] }
+        return Self.inspectorKeys.filter { id, _ in package.offer.menu.contains { $0.id == id } }
+    }
+
+    /// ⌥⌘I, ⌥⌘J or ⌥⌘C, for the package that takes it: true if it did.
+    func take(_ item: String, in browser: Browser) -> Bool {
+        guard takenKeys[item] != nil else { return false }
+        open(item, in: browser)
+        return true
+    }
+
+    /// Inspect Element from a page's menu: the package that inspects, if it
+    /// takes the keys, shows that element; otherwise Web Inspector does.
+    static func inspect(at point: NSPoint, in web: WKWebView, browser: Browser) -> Bool {
+        let packages = shared
+        guard packages.takenKeys["devtools"] != nil, let tab = browser.anyTab(for: web), tab.isWeb,
+              let id = packages.primary?.offer.id, let plugin = packages.plugin(id) else { return false }
+        packages.remember(tab, web)
+        return plugin.inspect(at: point, webView: web)
+    }
+
+    /// Web Inspector is about to open on this page: a package inspecting it
+    /// lets go first, since a page has one inspector.
+    static func yieldInspector(_ web: WKWebView) {
+        guard !idle else { return }
+        for (id, plugin) in shared.loaded where shared.installed[id]?.offer.menu.contains(where: { $0.id == "devtools" }) == true
+            || shared.removed[id]?.menu.contains(where: { $0.id == "devtools" }) == true {
+            if plugin.isOpen(webView: web) { plugin.close(webView: web) }
+        }
+    }
+
     static func keyDown(_ event: NSEvent, in browser: Browser) -> Bool {
         guard !idle, let plugin = shared.loadedPrimary, let web = browser.active?.built else { return false }
         return plugin.keyDown(event, webView: web)
@@ -475,6 +519,10 @@ final class DevToolsPackages: ObservableObject {
             states[id] = .idle
         }
         try? FileManager.default.removeItem(at: Self.folder.appendingPathComponent(id, isDirectory: true))
+        // Its settings go too, from memory and from disk.
+        let suite = DevToolsHostBridge.suite(id)
+        bridges[id]?.defaults.removePersistentDomain(forName: suite)
+        UserDefaults().removePersistentDomain(forName: suite)
         if primaryID == id { primaryID = nil }
         rescan()
     }
@@ -516,7 +564,7 @@ final class DevToolsHostBridge: NSObject, SearchDevToolsHost {
             configuration.urlCredentialStorage = nil
             configuration.timeoutIntervalForRequest = 10
             ProxyNetwork.stamp(configuration)
-            return URLSession(configuration: configuration)
+            return URLSession(configuration: configuration, delegate: DevToolsRedirects.shared, delegateQueue: nil)
         }
     }
 
@@ -529,16 +577,24 @@ final class DevToolsHostBridge: NSObject, SearchDevToolsHost {
         _ = Browsers.front?.open(url, foreground: true)
     }
 
-    private func key(_ key: String) -> String { "devtools.\(id).\(key.prefix(60))" }
+    /// A store of the package's own, beside Search's settings and never in
+    /// them; Remove deletes it.
+    lazy var defaults: UserDefaults = UserDefaults(suiteName: Self.suite(id)) ?? UserDefaults()
 
-    func setting(forKey key: String) -> Any? { Store.settings.object(forKey: self.key(key)) }
+    nonisolated static func suite(_ id: String) -> String {
+        let base = Store.testing ? "com.officecommun.search.test.\(Store.world ?? "test")" : (Bundle.main.bundleIdentifier ?? "com.officecommun.search")
+        return "\(base).devtools.\(id)"
+    }
+
+    func setting(forKey key: String) -> Any? { defaults.object(forKey: String(key.prefix(80))) }
 
     func setSetting(_ value: Any?, forKey key: String) {
+        let key = String(key.prefix(80))
         guard let value, PropertyListSerialization.propertyList(value, isValidFor: .binary) else {
-            Store.settings.removeObject(forKey: self.key(key))
+            defaults.removeObject(forKey: key)
             return
         }
-        Store.settings.set(value, forKey: self.key(key))
+        defaults.set(value, forKey: key)
     }
 
     func isPrivate(_ webView: WKWebView) -> Bool {
@@ -550,6 +606,26 @@ final class DevToolsHostBridge: NSObject, SearchDevToolsHost {
     func invalidate() { DevToolsPackages.shared.invalidate() }
 
     private func tab(_ web: WKWebView) -> Tab? { DevToolsPackages.shared.tab(for: web) }
+}
+
+/// A package's own requests (source maps, robots.txt, a local dev server's
+/// devtools.json): a redirect goes on only to http(s), and never carries the
+/// Authorization header across.
+final class DevToolsRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    static let shared = DevToolsRedirects()
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(Self.follow(request))
+    }
+
+    static func follow(_ request: URLRequest) -> URLRequest? {
+        guard let scheme = request.url?.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
+        var request = request
+        request.setValue(nil, forHTTPHeaderField: "Authorization")
+        request.setValue(nil, forHTTPHeaderField: "Cookie")
+        return request
+    }
 }
 
 // MARK: - Around the page
@@ -564,25 +640,45 @@ struct DevToolsStage: ViewModifier {
         if let plugin = packages.loadedPrimary, let web = browser.active?.built {
             let _ = packages.revision
             let size = plugin.viewportSize(webView: web)?.sizeValue
-            HStack(spacing: 0) {
-                VStack(spacing: 0) {
+            let dock = plugin.dockView(webView: web)
+            let placement = dock == nil ? nil : plugin.dockPlacement(webView: web)
+            let edge = placement?["edge"] as? String ?? "right"
+            let length = CGFloat((placement?["size"] as? NSNumber)?.doubleValue ?? 360)
+            GeometryReader { room in
+                let across = edge == "bottom" ? room.size.height : room.size.width
+                // The page keeps a strip it can be dragged back from.
+                let docked = dock == nil ? 0 : min(max(length, 120), max(0, across - 80))
+                let page = VStack(spacing: 0) {
                     if let bar = plugin.barView(webView: web) {
                         Hosted(view: bar).frame(height: 32)
                         Rectangle().fill(Palette.hairline).frame(height: 1)
                     }
-                    GeometryReader { room in
+                    GeometryReader { inner in
                         let zoom = web.pageZoom
-                        let wanted = size.map { CGSize(width: min($0.width * zoom, room.size.width), height: min($0.height * zoom, room.size.height)) }
+                        let wanted = size.map { CGSize(width: min($0.width * zoom, inner.size.width), height: min($0.height * zoom, inner.size.height)) }
                         content
                             .frame(width: wanted?.width, height: wanted?.height)
-                            .frame(width: room.size.width, height: room.size.height)
+                            .frame(width: inner.size.width, height: inner.size.height)
                     }
                     .background(size == nil ? .clear : Palette.frame)
                 }
-                if let dock = plugin.dockView(webView: web) {
-                    Rectangle().fill(Palette.hairline).frame(width: 1)
-                    Hosted(view: dock).frame(width: 360)
+                Group {
+                    if let dock {
+                        let seam = DockSeam(vertical: edge == "bottom", sign: edge == "right" || edge == "bottom" ? -1 : 1,
+                                            length: docked, resizable: placement != nil) { plugin.setDockSize($0, webView: web) }
+                        switch edge {
+                        case "bottom":
+                            VStack(spacing: 0) { page; seam; Hosted(view: dock).frame(height: docked) }
+                        case "left":
+                            HStack(spacing: 0) { Hosted(view: dock).frame(width: docked); seam; page }
+                        default:
+                            HStack(spacing: 0) { page; seam; Hosted(view: dock).frame(width: docked) }
+                        }
+                    } else {
+                        page
+                    }
                 }
+                .frame(width: room.size.width, height: room.size.height)
             }
         } else {
             content
@@ -593,6 +689,45 @@ struct DevToolsStage: ViewModifier {
         let view: NSView
         func makeNSView(context: Context) -> NSView { view }
         func updateNSView(_ nsView: NSView, context: Context) {}
+    }
+
+    /// The line between the page and the panel; a package that places its
+    /// panel can have it dragged, with the sidebar's grip.
+    private struct DockSeam: View {
+        let vertical: Bool
+        /// Which way dragging grows the panel.
+        let sign: CGFloat
+        let length: CGFloat
+        let resizable: Bool
+        let resize: (Double) -> Void
+        @State private var start: CGFloat?
+        @State private var over = false
+
+        var body: some View {
+            Rectangle().fill(Palette.hairline)
+                .frame(width: vertical ? nil : 1, height: vertical ? 1 : nil)
+                .overlay {
+                    if resizable {
+                        Color.clear
+                            .frame(width: vertical ? nil : 9, height: vertical ? 9 : nil)
+                            .overlay { EdgeGrip(lit: over || start != nil).rotationEffect(.degrees(vertical ? 90 : 0)) }
+                            .contentShape(Rectangle())
+                            .onHover { inside in
+                                over = inside
+                                if inside { (vertical ? NSCursor.resizeUpDown : NSCursor.resizeLeftRight).push() } else { NSCursor.pop() }
+                            }
+                            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                                .onChanged { value in
+                                    if start == nil { start = length }
+                                    let moved = vertical ? value.translation.height : value.translation.width
+                                    resize(Double((start ?? length) + sign * moved))
+                                }
+                                .onEnded { _ in start = nil })
+                            .accessibilityLabel("Resize the developer tools")
+                    }
+                }
+                .zIndex(1)
+        }
     }
 }
 

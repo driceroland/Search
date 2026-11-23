@@ -259,18 +259,23 @@ struct SearchApp: App {
                     .shortcut("view.actualSize")
                 Divider()
                 // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
-                Button("Web Inspector") { browser.toggleInspector() }
-                    .shortcut("view.inspector")
-                Button("JavaScript Console") { browser.showConsole() }
-                    .shortcut("view.console")
-                Button("Inspect Element") { browser.inspectElement() }
-                    .shortcut("view.inspect")
+                // A developer tools package that inspects, when it is the one
+                // View › Developer uses, takes these three keys; Web
+                // Inspector stays here without them (DevToolsPackages.swift).
+                let taken = DevToolsPackages.shared.takenKeys
+                Button("Web Inspector") { browser.toggleWebInspector() }
+                    .shortcut(taken["devtools"] == nil ? "view.inspector" : nil)
+                Button("JavaScript Console") { browser.showWebConsole() }
+                    .shortcut(taken["console"] == nil ? "view.console" : nil)
+                Button("Inspect Element") { browser.inspectWebElement() }
+                    .shortcut(taken["pick"] == nil ? "view.inspect" : nil)
                 // Only with a developer tools package installed (Settings ›
                 // About › Developer, see DevToolsPackages.swift).
                 if let package = DevToolsPackages.shared.primary, DevToolsPackages.shared.usable(package.offer.id) {
                     Menu("Developer") {
                         ForEach(package.offer.menu, id: \.self) { item in
                             Button(item.title) { DevToolsPackages.shared.open(item.id, in: browser) }
+                                .shortcut(taken[item.id])
                         }
                     }
                     .disabled(!(browser.active?.isWeb ?? false) || browser.active?.page != nil)
