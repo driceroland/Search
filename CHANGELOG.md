@@ -13,7 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
-- Settings › Appearance › Window › Fade scroll bars when you stop scrolling, off unless you turn it on: pages, and Search's own lists, get the thin scroll bars macOS draws with a trackpad, over the page rather than beside it, that come up as it scrolls and fade out once it stops, even with System Settings › Appearance › Show scroll bars set to Always or a mouse plugged in. Pages already open change at once. `swift test --filter ScrollbarsTests` ([#1490](https://github.com/driceroland/Search/pull/1490))
+- Settings › Appearance › Window › Fade scroll bars when you stop scrolling, off unless you turn it on: pages, and Search's own lists, get the thin scroll bars macOS draws with a trackpad, over the page rather than beside it, that come up as it scrolls and fade out once it stops, even with System Settings › Appearance › Show scroll bars set to Always or a mouse plugged in. Pages already open change at once. ([#1490](https://github.com/driceroland/Search/pull/1490))
 
 ### Held back
 
