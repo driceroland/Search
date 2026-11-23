@@ -251,6 +251,12 @@ enum Vault {
     /// A password is shown only to the person the Mac belongs to. Touch ID,
     /// the watch, or the account password — whatever the Mac itself takes.
     @MainActor static func prove(_ reason: String, _ done: @escaping (Bool) -> Void) {
+        // A test run may stand in for the Mac saying it can't ask (bench
+        // `accounts` "proveError"), to see which of those lets it through.
+        if Store.testing, let code = cannotAsk {
+            done(nothingToProve(NSError(domain: LAErrorDomain, code: code.rawValue)))
+            return
+        }
         // A test run answers as it answers Ask.sure (`ui confirm on|off`).
         if Store.testing, let yes = Ask.testing {
             done(yes)
@@ -259,15 +265,23 @@ enum Vault {
         let context = LAContext()
         var trouble: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &trouble) else {
-            // No way to ask at all — a Mac with no password set. Then there is
-            // nothing to prove.
-            done(true)
+            done(nothingToProve(trouble))
             return
         }
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { ok, _ in
             DispatchQueue.main.async { done(ok) }
         }
     }
+
+    /// When the Mac can't ask at all, only a Mac with no password set has
+    /// nothing to prove. Any other reason it gives refuses: an error is
+    /// never taken for a yes.
+    nonisolated static func nothingToProve(_ trouble: NSError?) -> Bool {
+        trouble?.domain == LAErrorDomain && trouble?.code == LAError.Code.passcodeNotSet.rawValue
+    }
+
+    /// A test run's stand-in for `canEvaluatePolicy` failing with this.
+    @MainActor static var cannotAsk: LAError.Code?
 
     // MARK: - before a fill
 

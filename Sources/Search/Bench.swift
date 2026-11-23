@@ -1,5 +1,6 @@
 import AppKit
 import AuthenticationServices
+import LocalAuthentication
 import SwiftUI
 import WebKit
 
@@ -3195,6 +3196,11 @@ final class Bench {
             guard Store.testing else { answer(["error": "accounts only works on a --test run"]); return }
             if let on = request["prove"] as? Bool { browser.prefs.asksBeforeFilling = on }
             if let age = request["proofAge"] as? Double { age == 0 ? Vault.FillProof.forget() : Vault.FillProof.age(age) }
+            // "proveError": the Mac says it can't ask, for this reason
+            // ("passcodeNotSet", "invalidContext"; "" for the real answer).
+            if let reason = request["proveError"] as? String {
+                Vault.cannotAsk = ["passcodeNotSet": .passcodeNotSet, "invalidContext": .invalidContext][reason]
+            }
             if request["keep"] as? Bool == true { browser.keepOffer() }
             if request["forget"] as? Bool == true {
                 Vault.all().forEach { Vault.forget(host: $0.host, user: $0.user) }

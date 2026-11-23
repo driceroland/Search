@@ -176,12 +176,28 @@ def main():
         acc(prove=False); acc(prove=True)
         t.ok("turning it off and on forgets the yes", acc().get("fresh") is False)
 
+        # The Mac can't ask: with no password set there's nothing to prove;
+        # for any other reason, nothing is filled, whatever the answer.
+        acc(proofAge=0)
+        confirm(True)
+        acc(proveError="invalidContext")
+        r_ = offered(t, base, "can't ask, other reason")
+        acc(pick=0); time.sleep(0.8)
+        r = acc()
+        t.ok("can't ask for another reason: nothing filled, no grace",
+             r.get("proofs") == 7 and box(r_) == "" and not r.get("fresh"), (r, box(r_)))
+        acc(proveError="passcodeNotSet")
+        s_ = offered(t, base, "no password set")
+        acc(pick=0); time.sleep(0.8)
+        t.ok("no password set on the Mac: filled", acc().get("proofs") == 8 and box(s_) == GOOD, box(s_))
+        acc(proveError="", proofAge=0)
+
         # Off again: no question.
         acc(prove=False)
         confirm(False)
         j = offered(t, base, "off again")
         acc(pick=0); time.sleep(0.6)
-        t.ok("off again: filled without asking", acc().get("proofs") == 6 and box(j) == GOOD)
+        t.ok("off again: filled without asking", acc().get("proofs") == 8 and box(j) == GOOD)
     finally:
         try:
             r = acc(forget=True)
