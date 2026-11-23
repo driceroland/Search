@@ -1900,6 +1900,11 @@ private struct PinSquare: View, Equatable {
     /// stretching to chase the width.
     private var scale: CGFloat { min(width, height) }
 
+    /// The square's grey, as `background` paints it: the unread badge's ring.
+    private var squareGround: Color {
+        live ? greys.pinLive : selected ? greys.wash : hovering ? greys.hover : greys.tile
+    }
+
     /// The pin's letter: full ink with High contrast text, otherwise soft
     /// grey until the square is live or under the pointer.
     private var pinLetter: Color {
@@ -1926,6 +1931,10 @@ private struct PinSquare: View, Equatable {
             }
         }
         .frame(width: scale * 16 / 34, height: scale * 16 / 34)
+        // What its page counts as waiting, as a row's title would have said
+        // it: from the icon, not the square (UnreadBadge).
+        .unreadBadge(prefs.showsPinCounts && peek == nil && !lettering && shortcutNumbers[tab.id] == nil ? tab.unread : nil,
+                     icon: scale * 16 / 34, ring: squareGround)
         .frame(width: width, height: height)
         .background {
             Group {
