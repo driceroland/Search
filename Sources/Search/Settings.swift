@@ -676,6 +676,7 @@ struct SettingsPanel: View {
         case "fold.loadingLine": Switch(on: $prefs.showsLoadingLine)
         case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
+        case "bookmarks.iconsOnly": Switch(on: $prefs.bookmarksIconsOnly)
         case "bookmarks.side":
             Switch(on: Binding(
                 get: { prefs.bookmarksInSidebar },

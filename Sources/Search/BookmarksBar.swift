@@ -9,6 +9,12 @@ import SwiftUI
 // Off unless asked for — Settings › Tabs, or Bookmarks › Show Bookmarks Bar
 // — since the page gives up a strip of its height to it. It goes with the
 // tabs when they fold away (⌘S) and when a video takes the screen.
+//
+// Icons only (idea 980), also off unless asked for: every bookmark as its
+// icon alone, its name on hover, as Edge's "Show icons only" and Vivaldi's
+// "Icon only" do, rather than emptying each one's name (idea 334). Folders
+// keep their names: every folder has the same icon, so a row of them would
+// be a row of guesses, where a site's icon tells one from another.
 
 struct BookmarksBar: View {
     @ObservedObject var browser: Browser
@@ -55,7 +61,7 @@ struct BookmarksBar: View {
         Color.clear.overlay(alignment: .leading) {
             HStack(spacing: BookmarksBar.gap) {
                 ForEach(Array(roots.enumerated()), id: \.element.id) { index, node in
-                    Item(node: node) {
+                    Item(node: node, iconsOnly: browser.prefs.bookmarksIconsOnly) {
                         if node.isFolder {
                             BookmarkMenu.shared.popUp(node)
                         } else if let text = node.url, let url = URL(string: text) {
@@ -99,6 +105,9 @@ struct BookmarksBar: View {
         .contextMenu {
             Button("New Folder…") { bookmarks.askNewFolder(in: nil) }
             Divider()
+            Toggle("Show Icons Only", isOn: Binding(
+                get: { browser.prefs.bookmarksIconsOnly },
+                set: { browser.prefs.bookmarksIconsOnly = $0 }))
             Button("Show Bookmarks…") { browser.bookmarking = true }
             Button("Hide Bookmarks Bar") {
                 withAnimation(Motion.glide) { browser.prefs.bookmarksBar = false }
@@ -140,13 +149,28 @@ struct BookmarksBar: View {
     }
 
     /// One on the bar. A bookmark without a name is its icon alone, in a
-    /// square as tall as the others, its address on hover.
+    /// square as tall as the others, its address on hover; with icons only
+    /// (idea 980) every bookmark is, its name on hover.
     struct Item: View {
         let node: Bookmark
+        var iconsOnly = false
         let act: () -> Void
         @State private var hovering = false
 
+        /// Its icon alone: renamed to nothing, or every bookmark with icons
+        /// only. A folder keeps its name.
+        static func bare(_ node: Bookmark, iconsOnly: Bool) -> Bool {
+            node.unnamed || (iconsOnly && !node.isFolder)
+        }
+
+        /// What hovering it says: with icons only its name (or, without one,
+        /// its address); otherwise its address, as before.
+        static func tip(_ node: Bookmark, iconsOnly: Bool) -> String {
+            iconsOnly && !node.isFolder ? node.label : (node.url ?? node.title)
+        }
+
         var body: some View {
+            let bare = Item.bare(node, iconsOnly: iconsOnly)
             HStack(spacing: 6) {
                 if node.isFolder {
                     Image(systemName: "folder")
@@ -155,7 +179,7 @@ struct BookmarksBar: View {
                 } else {
                     Mark(icon: Favicons.shared.cached(for: node.address), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 13)
                 }
-                if !node.unnamed {
+                if !bare {
                     Text(node.title)
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.ink)
@@ -169,14 +193,17 @@ struct BookmarksBar: View {
                         .foregroundStyle(Palette.faint)
                 }
             }
-            .padding(.horizontal, node.unnamed ? 0 : 8)
-            .frame(minWidth: node.unnamed ? 22 : nil)
+            .padding(.horizontal, bare ? 0 : 8)
+            .frame(minWidth: bare ? 22 : nil)
             .frame(height: 22)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? Palette.hover : .clear))
             .contentShape(Rectangle())
             .onTapGesture(perform: act)
             .onHover { hovering = $0 }
-            .help(node.url ?? node.title)
+            .help(Item.tip(node, iconsOnly: iconsOnly))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(node.label)
+            .accessibilityAddTraits(node.isFolder ? .isButton : .isLink)
         }
     }
 }

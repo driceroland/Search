@@ -292,6 +292,11 @@ enum SettingsIndex {
               more: "A row for each bookmark and folder on the bar, before your pinned rows. A folder opens as a menu, as on the bar.",
               keys: ["bookmarks.side"], words: ["favorites bar", "bookmarks toolbar", "sidebar", "column", "folders"],
               parent: "bookmarks.bar"),
+        .init(id: "bookmarks.iconsOnly", group: "tablook", icon: "square.grid.2x2",
+              title: "Show icons only on the bookmarks bar", detail: "Each bookmark as its site's icon, its name on hover",
+              more: "Folders keep their names. A bookmark you renamed to nothing already shows its icon alone.",
+              keys: ["bookmarks.iconsOnly"], words: ["favorites bar", "bookmarks toolbar", "favicons", "compact", "icon only", "names", "titles"],
+              parent: "bookmarks.bar"),
         .init(id: "motion.light", group: "motion", icon: "leaf",
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
@@ -763,6 +768,7 @@ enum SettingsIndex {
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
+        case "bookmarks.iconsOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
         case "spaces.links", "links.ask", "spaces.buttons": return prefs.usesSpaces

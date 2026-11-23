@@ -895,6 +895,12 @@ final class Preferences: ObservableObject {
     /// in the column too (Show Bookmarks Bar still says where it is); with
     /// the tabs across the top it stays above the page, where it always was.
     var sideBookmarks: Bool { sidebar && bookmarksBar && bookmarksInSidebar }
+    /// Every bookmark on the bar above the page as its icon alone, its name
+    /// on hover, as Edge's "Show icons only" and Vivaldi's "Icon only" do
+    /// (idea 980). Folders keep their names. Off unless asked for.
+    @Published var bookmarksIconsOnly: Bool {
+        didSet { store.set(bookmarksIconsOnly, forKey: "bookmarks.iconsOnly") }
+    }
     /// Where a link goes, at the bottom of the page while the pointer is on
     /// it (see StatusLine.swift). On unless turned off.
     @Published var showsLinks: Bool {
@@ -1410,6 +1416,7 @@ final class Preferences: ObservableObject {
         linkChoices = (store.array(forKey: "links.ask.last") ?? []).compactMap(LinkChooser.Choice.init(plist:))
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         bookmarksInSidebar = store.bool(forKey: "bookmarks.side")
+        bookmarksIconsOnly = store.bool(forKey: "bookmarks.iconsOnly")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
         downloadsOpening = store.string(forKey: "downloads.open").flatMap(DownloadsOpening.init(rawValue:)) ?? .tab
         let links = store.object(forKey: "links.show") as? Bool ?? true
@@ -1544,6 +1551,7 @@ final class Preferences: ObservableObject {
         take(\.spacesOnCommand, store.bool(forKey: Preferences.spacesOnCommandKey))
         take(\.bookmarksBar, store.bool(forKey: "bookmarks.bar"))
         take(\.bookmarksInSidebar, store.bool(forKey: "bookmarks.side"))
+        take(\.bookmarksIconsOnly, store.bool(forKey: "bookmarks.iconsOnly"))
         take(\.alwaysShowsDownloads, store.bool(forKey: "downloads.button"))
     }
 

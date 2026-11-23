@@ -2279,9 +2279,12 @@ final class Bench {
             // its top level, which of them its » holds, and that menu, every
             // folder in it opened. "width": the window that wide first (a
             // hidden probe's, on no screen). "pick": the »'s item of that
-            // title chosen, as a click on it would.
+            // title chosen, as a click on it would. "iconsOnly": Settings'
+            // Show icons only switched first; the answer has each one's
+            // tooltip ("tips"). "path": a PNG of the bar as drawn there.
             guard Store.testing else { answer(["error": "bar only works on a --test run — it would size your window"]); return }
             guard let window = browser.window else { answer(["error": "no window"]); return }
+            if let on = request["iconsOnly"] as? Bool { browser.prefs.bookmarksIconsOnly = on }
             if let width = request["width"] as? Double {
                 var frame = window.frame
                 frame.size.width = width
@@ -2313,7 +2316,22 @@ final class Bench {
                         let f = Bench.barFrames[node.id] ?? .zero
                         return [Double(f.minX), Double(f.minY), Double(f.width), Double(f.height)]
                     }
+                    let iconsOnly = browser.prefs.bookmarksIconsOnly
+                    var saved = ""
+                    if let path = request["path"] as? String, let view = window.contentView {
+                        let laid = roots.compactMap { Bench.barFrames[$0.id] }.filter { $0.height > 0 }
+                        let top = (laid.map(\.minY).min() ?? 0) - 4
+                        let strip = NSRect(x: 0, y: view.isFlipped ? top : view.bounds.height - top - BookmarksBar.height,
+                                           width: view.bounds.width, height: BookmarksBar.height)
+                        if let picture = view.bitmapImageRepForCachingDisplay(in: strip) {
+                            view.cacheDisplay(in: strip, to: picture)
+                            if (try? picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))) != nil { saved = path }
+                        }
+                    }
                     answer(["width": Double(window.frame.width), "roots": roots.map(\.label), "frames": frames,
+                            "iconsOnly": iconsOnly, "saved": saved,
+                            "tips": roots.map { BookmarksBar.Item.tip($0, iconsOnly: iconsOnly) },
+                            "bare": roots.map { BookmarksBar.Item.bare($0, iconsOnly: iconsOnly) },
                             "hidden": hidden.map(\.label), "menu": lines(menu.items, 0),
                             "tabsBefore": before, "tabsAfter": browser.tabs.count,
                             "active": browser.active?.address?.absoluteString ?? ""])
