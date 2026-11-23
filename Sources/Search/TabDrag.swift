@@ -380,7 +380,7 @@ final class TabDrag: ObservableObject {
     /// The page under the hand, anywhere on it, that the carried tab could
     /// be split with.
     private func splittablePage(browser: Browser, source: Tab, at point: NSPoint) -> Tab? {
-        guard let window = browser.window else { return nil }
+        guard let window = browser.window, !overTabs(browser: browser, at: point) else { return nil }
         markers = markers.filter { $0.value.view != nil }
         return markers.values.compactMap(\.view).first { view in
             view.kind == .stage && view.browser === browser && view.window === window
@@ -390,6 +390,15 @@ final class TabDrag: ObservableObject {
         }?.tab
     }
 
+    /// The hand over the column or the strip, whatever lies under them.
+    private func overTabs(browser: Browser, at point: NSPoint) -> Bool {
+        guard let window = browser.window else { return false }
+        return markers.values.compactMap(\.view).contains { view in
+            view.kind == .strip && view.browser === browser && view.window === window && !view.isHiddenOrHasHiddenAncestor
+                && window.convertToScreen(view.convert(view.bounds, to: nil)).contains(point)
+        }
+    }
+
     private func match(browser: Browser, source: Tab, at point: NSPoint) -> Drop {
         guard let window = browser.window else { return .outside }
         markers = markers.filter { $0.value.view != nil }
@@ -397,7 +406,11 @@ final class TabDrag: ObservableObject {
             view.browser === browser && view.window === window && !view.isHiddenOrHasHiddenAncestor
                 && window.convertToScreen(view.convert(view.bounds, to: nil)).contains(point)
         }
-        if let stage = candidates.first(where: { view in
+        // The column out over the page (Fold.swift) lies over the page's
+        // edge: a tab carried along it to a new place splits nothing there
+        // (idea 1025). Its strip's marker says the hand is on the column.
+        let overTabs = candidates.contains { $0.kind == .strip }
+        if !overTabs, let stage = candidates.first(where: { view in
             view.kind == .stage && view.tab.map { browser.canJoin(source, beside: $0) } == true
         }), let page = stage.tab {
             let frame = window.convertToScreen(stage.convert(stage.bounds, to: nil))
