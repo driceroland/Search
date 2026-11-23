@@ -3672,21 +3672,43 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
 
     /// Reports at most once a frame, and passively, so a page that scrolls
     /// smoothly without us keeps scrolling smoothly with us.
+    ///
+    /// Read once the frame is drawn rather than in it: asked in the frame,
+    /// scrollY and scrollHeight had WebKit lay out a page that had changed
+    /// since the last one — Netflix's rows coming in as it scrolls — and
+    /// then lay it out again to paint it. Just after, the layout is the one
+    /// just painted, and answers for nothing.
+    ///
+    /// And said only when it moves what the tab shows: the meter goes in
+    /// hundredths and the length in tenths of a screen (Tab.scrolled), so
+    /// a frame that moves neither sends nothing. Every frame of a scroll
+    /// used to wake the window's thread, the one WebKit puts the scrolled
+    /// page on screen with, only for the tab to find nothing had changed.
     static let script = """
     (function () {
-      var waiting = false;
+      var waiting = false, said = null;
       function tell() {
+        waiting = false;
         var root = document.documentElement;
         var y = window.scrollY || root.scrollTop || 0;
-        var ceiling = Math.max(1, (root.scrollHeight || 0) - window.innerHeight);
-        var screens = (root.scrollHeight || 0) / Math.max(1, window.innerHeight);
+        var height = root.scrollHeight || 0, inner = window.innerHeight;
+        var ceiling = Math.max(1, height - inner);
+        var screens = height / Math.max(1, inner);
+        // Rounded as Tab.scrolled rounds them.
+        var now = Math.round(Math.min(1, Math.max(0, y / ceiling)) * 100) + ' ' + Math.round(Math.max(1, screens) * 10);
+        if (now === said) return;
+        said = now;
         window.webkit.messageHandlers.\(name).postMessage({ y: y, max: ceiling, screens: screens });
       }
       window.addEventListener('scroll', function () {
         if (waiting) return;
         waiting = true;
-        requestAnimationFrame(function () { waiting = false; tell(); });
+        requestAnimationFrame(function () { setTimeout(tell, 0); });
       }, { passive: true });
+      // Back from the cache, or gone to an anchor: the tab may have put its
+      // meter back to the top meanwhile (Tab.go), so said again.
+      window.addEventListener('pageshow', function (e) { if (e.persisted) { said = null; tell(); } });
+      window.addEventListener('hashchange', function () { said = null; });
       tell();
     })();
     """

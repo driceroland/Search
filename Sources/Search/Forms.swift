@@ -249,7 +249,9 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // keep their values back for good, even after a "show password"
       // button turns one into a text box.
       var secrets = globalThis.__searchSecrets || (globalThis.__searchSecrets = new WeakSet());
-      function keepSecret(box) { try { if (box) secrets.add(box); } catch (e) {} }
+      // `kept`: anything ever added, for the observer below. A WeakSet has no
+      // size to ask; PageHands marks it the same way.
+      function keepSecret(box) { try { if (box) { secrets.add(box); secrets.kept = true; } } catch (e) {} }
       // A password box, or a text box that says it takes the password (a
       // page that draws its own dots, or a "show password" left on).
       function passwordBox(el) {
@@ -350,18 +352,27 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // same value: the new one is as secret as the one it replaced.
       try {
         new MutationObserver(function (changes) {
+          // Nothing kept secret on this page yet, as on most pages: nothing
+          // that could be swapped for a new box, so the page's own changes go
+          // by unlooked at. Every node they added and took away was searched
+          // for boxes — Netflix's rows coming and going as it scrolls, in
+          // every frame — to find none of them held a secret.
+          if (!secrets.kept) return;
           var gone = [], came = [];
           function inputs(node, into) {
             if (!node || node.nodeType !== 1) return;
             if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') into.push(node);
             if (node.querySelectorAll) Array.prototype.push.apply(into, node.querySelectorAll('input, textarea'));
           }
+          // What went first: what came is only needed if a secret went.
           changes.forEach(function (c) {
             Array.prototype.forEach.call(c.removedNodes, function (n) { inputs(n, gone); });
-            Array.prototype.forEach.call(c.addedNodes, function (n) { inputs(n, came); });
           });
           var held = gone.filter(function (b) { return secrets.has(b) && b.value; }).map(function (b) { return b.value; });
           if (!held.length) return;
+          changes.forEach(function (c) {
+            Array.prototype.forEach.call(c.addedNodes, function (n) { inputs(n, came); });
+          });
           var typed = gone.filter(function (b) { return touched.has(b) && b.value; }).map(function (b) { return b.value; });
           came.forEach(function (b) {
             if (held.indexOf(b.value) >= 0) keepSecret(b);

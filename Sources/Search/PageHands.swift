@@ -86,7 +86,9 @@ enum PageScripts {
       var yes = (el.type || '').toLowerCase() === 'password' ||
         /(^|\s)(cc-|one-time-code|current-password|new-password)/.test(ac) ||
         /pass|pwd|otp|one.?time|2fa|totp|verification.?code|security.?code|cvc|cvv|csc|card.?(number|num|no)|cc.?num|\bpin\b/i.test(said);
-      if (yes) SECRETS.add(el);
+      // `kept` as FormRelay's keepSecret marks it: its observer looks only
+      // once something has been.
+      if (yes) { SECRETS.add(el); SECRETS.kept = true; }
       return yes;
     }
     function editable(el) {

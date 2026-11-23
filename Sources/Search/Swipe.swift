@@ -81,8 +81,18 @@ enum Swipe {
       // and so can one pinched in whose side bounces under the swipe
       // without its place changing.
       var moved = new WeakMap(), at = new WeakMap();
-      function mark(el) {
+      function mark(el, panned) {
         var root = el === document.documentElement, vv = window.visualViewport;
+        // The page scrolled up or down while at its left edge, as nearly
+        // every scroll is: settled without asking anything that makes WebKit
+        // lay the page out. window.scrollX answers 0 without laying out;
+        // the visual viewport and the widths below always lay out first, so
+        // a page that had changed since its last frame — Netflix's rows
+        // coming in — was laid out for every scroll event, then again to be
+        // painted. pageLeft is scrollX plus where the visual viewport sits
+        // in the page, which only moves pinched in, and says so with its own
+        // scroll event (`panned`, below): that one never takes this way out.
+        if (root && !panned && at.get(el) === 0 && window.scrollX === 0) return;
         var x = root ? (vv ? vv.pageLeft : window.scrollX) : el.scrollLeft;
         // A side bouncing past its edge is not moving along: held to it.
         var max = root ? document.documentElement.scrollWidth - (vv ? vv.width : window.innerWidth) : el.scrollWidth - el.clientWidth;
@@ -96,7 +106,7 @@ enum Swipe {
         mark(t === document || t === document.body ? document.documentElement : t);
       }, { passive: true, capture: true });
       if (window.visualViewport) {
-        window.visualViewport.addEventListener('scroll', function () { mark(document.documentElement); }, { passive: true });
+        window.visualViewport.addEventListener('scroll', function () { mark(document.documentElement, true); }, { passive: true });
       }
       // The boxes under the pointer that scroll that way and are at their
       // edge: free only if they were resting there.
