@@ -42,6 +42,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Extensions from the Chrome Web Store update to the version a new install gets: the daily check now asks the store as Chrome's Update button does (installsource=ondemand, with Chrome's os, arch and product details). Asked as a background check, the store answered "no update" for Bitwarden 2026.11.0 from 19 Nov whatever version was named, so Bitwarden stayed at 2026.10.2. (idea 992)
 - A sideways swipe in Google Sheets scrolls the sheet and no longer goes back a page, at column A included: a page that sets overscroll-behavior-x to none or contain on its root is never swiped away from, as in Chrome. Sheets does, and its grid, which scrolls itself, doesn't always claim the scroll. `python3 Tests/swipe_sheets.py` (idea 990)
 - A post opened from a live folder goes among your tabs as a new tab does: with a tab in a group in front, it went into that group, as if it were a link from that page. `python3 Tests/live_folder_post_place.py` (idea 978)
 - A link in an extension's popup meant to open in a new tab now does: Raindrop.io's Sign in did nothing, no tab and no window, because WebKit asked about the link and then never for the new page. It now opens as a tab and the popup closes, as in Chrome. `python3 Tests/extension_popup_link.py` (idea 972)

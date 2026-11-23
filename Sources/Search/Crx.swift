@@ -98,6 +98,57 @@ enum Crx {
         return parts.url!
     }
 
+    /// Asking the store whether there is a newer version, as Chrome asks it
+    /// (extensions/browser/updater: manifest_fetch_data.cc for `x`,
+    /// update_query_params.cc for the rest, the traffic headers from
+    /// extension_downloader.cc), the way Chrome's own "Update" button asks:
+    /// installsource=ondemand, in the foreground. Asked as a background
+    /// check, without it, the store answered `noupdate` for Bitwarden from
+    /// 19 Nov 2026, whatever version was named and from Chrome's own update
+    /// protocol too, while handing 2026.11.0 to every new install (most
+    /// likely a rollout in stages, idea 992). Search has no Update button,
+    /// so it asks as one: an update gets what a new install gets. No ping,
+    /// brand or language: nothing about the person or their use.
+    static func updateCheckRequest(id: String, version: String, base: String = updateBase) -> URLRequest? {
+        guard var parts = URLComponents(string: base) else { return nil }
+        #if arch(arm64)
+        let arch = "arm64", nacl = "arm"
+        #else
+        let arch = "x64", nacl = "x86-64"
+        #endif
+        let query: [(String, String)] = [
+            ("response", "updatecheck"),
+            ("os", "mac"),
+            ("arch", arch),
+            ("os_arch", arch == "arm64" ? "arm64" : "x86_64"),
+            ("nacl_arch", nacl),
+            ("prod", "chromecrx"),
+            ("prodchannel", ""),
+            ("prodversion", chromeVersion),
+            ("acceptformat", "crx3"),
+            ("x", "id=\(id)&v=\(version)&installsource=ondemand&installedby=internal&uc"),
+        ]
+        // x is one parameter holding its own & and =, escaped as Chrome
+        // sends it; URLQueryItem would leave them bare.
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+")
+        parts.percentEncodedQuery = query.map { name, value in
+            name + "=" + (value.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")
+        }.joined(separator: "&")
+        guard let url = parts.url else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 60
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("fg", forHTTPHeaderField: "X-Goog-Update-Interactivity")
+        request.setValue(id, forHTTPHeaderField: "X-Goog-Update-AppId")
+        request.setValue("chromecrx-\(chromeVersion)", forHTTPHeaderField: "X-Goog-Update-Updater")
+        return request
+    }
+
+    /// Where updates are asked about; a test run may point it elsewhere
+    /// (the bench's ext-check), to see a failed check retried.
+    static var updateBase = "https://clients2.google.com/service/update2/crx"
+
     static func fetch(_ id: String) async throws -> Data {
         var request = URLRequest(url: downloadURL(for: id))
         request.timeoutInterval = 60

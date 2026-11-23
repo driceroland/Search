@@ -1411,15 +1411,8 @@ final class Extensions: NSObject, ObservableObject {
         // Permission approval can wait past the next check; its staging folder must stay its own.
         guard updating.insert(item.id).inserted else { return }
         defer { updating.remove(item.id) }
-        var parts = URLComponents(string: "https://clients2.google.com/service/update2/crx")!
-        parts.queryItems = [
-            URLQueryItem(name: "response", value: "updatecheck"),
-            URLQueryItem(name: "prodversion", value: Crx.chromeVersion),
-            URLQueryItem(name: "acceptformat", value: "crx3"),
-            URLQueryItem(name: "x", value: "id=\(item.id)&v=\(item.version)&uc"),
-        ]
-        guard let url = parts.url,
-              let (data, _) = try? await ProxyNetwork.session.data(from: url),
+        guard let request = Crx.updateCheckRequest(id: item.id, version: item.version),
+              let (data, _) = try? await ProxyNetwork.session.data(for: request),
               let xml = String(data: data, encoding: .utf8),
               // The answer is the <updatecheck> element alone: status="ok"
               // with a version when there is a newer one, "noupdate" when
