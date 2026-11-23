@@ -442,9 +442,9 @@ enum SettingsIndex {
 
         // Spaces & Pins
         .init(id: "arc.setup", group: "arc", icon: "wand.and.stars",
-              title: "Set Up Like Arc", detail: "Tabs on the left, spaces, pinned rows and pins that keep their site",
-              more: "Also turns on New tab in a floating field. Undo puts back what you had.",
-              words: ["arc", "the browser company"]),
+              title: "Set Up Like Arc", detail: "Tabs on the left, spaces, pinned rows, and Arc's habits, like closing tabs after 12 hours",
+              more: "Also turns on New tab in a floating field, Float the video on its own, Swipe back closes a tab a link opened, and Peek at a link with a Shift-click. Only what is off changes. Undo puts back what you had.",
+              words: ["arc", "the browser company", "auto archive", "archive", "peek", "picture in picture", "swipe back"]),
         .init(id: "arc.import", group: "arc", icon: "square.and.arrow.down",
               title: "Bring Arc's spaces and pins over", detail: "Your spaces, pinned tabs and folders, read from Arc on this Mac",
               words: ["arc", "import"]),
@@ -907,19 +907,33 @@ extension Preferences {
     /// Set Up Like Arc: what it turns on, and what was there before, so
     /// Undo can put it back.
     struct ArcSetup {
-        var layout: TabsLayout
+        /// The three keys the tabs' layout is made of, so Undo puts back
+        /// the side and icons a top layout kept underneath.
+        var side: (shown: Bool, icons: Bool, position: SidebarPosition)
         var spaces: Bool
         var rows: Bool
         var keep: (home: Bool, peek: Bool)
         var floating: Bool
+        /// Arc's habits, added after 1.0.7: tabs that close themselves,
+        /// the video that floats out, swipe back closing a link's tab, and
+        /// peek. Kept key by key, so Undo puts back the exact choice.
+        var life: TabLife
+        var float: (leave: Bool, away: Bool)
+        var swipeCloses: Bool
+        var peek: (on: Bool, click: PeekClick)
     }
 
     var arcSnapshot: ArcSetup {
-        ArcSetup(layout: tabsLayout, spaces: usesSpaces, rows: listsPins, keep: (pinsGoHome, pinsPeek), floating: floatingNewTab)
+        ArcSetup(side: (sidebar, sideIcons, sidePosition), spaces: usesSpaces, rows: listsPins, keep: (pinsGoHome, pinsPeek), floating: floatingNewTab,
+                 life: tabLife, float: (floatsOnLeave, floatsAway), swipeCloses: swipeBackCloses, peek: (peeksLinks, peekClick))
     }
 
+    /// Any duration, float or click someone chose counts: Set Up only
+    /// turns on what is off, with Arc's own (12 hours, on leaving a tab,
+    /// Shift-click), and leaves a choice already made alone.
     var looksLikeArc: Bool {
         tabsLayout == .left && usesSpaces && listsPins && pinsGoHome && pinsPeek && floatingNewTab
+            && tabLife != .never && floatOwn != .never && swipeBackCloses && peeksLinks
     }
 
     /// Turns Arc's way on and says what changed.
@@ -931,16 +945,63 @@ extension Preferences {
         if !listsPins { listsPins = true; changed.append("pinned rows") }
         if !(pinsGoHome && pinsPeek) { pinsKeepSite = true; changed.append("pins keep their site") }
         if !floatingNewTab { floatingNewTab = true; changed.append("the floating new tab") }
+        if tabLife == .never { tabLife = .halfDay; changed.append("tabs close after 12 hours") }
+        if floatOwn == .never { floatOwn = .tabs; changed.append("the video floats on its own") }
+        if !swipeBackCloses { swipeBackCloses = true; changed.append("swipe back closes a link's tab") }
+        if !peeksLinks { peekChoice = .shift; changed.append("Shift-click peeks at a link") }
         return changed
     }
 
+    /// Only what differs is written back, so a key Set Up never touched
+    /// stays as unwritten as it was.
     func restore(_ before: ArcSetup) {
-        tabsLayout = before.layout
-        usesSpaces = before.spaces
-        listsPins = before.rows
-        pinsGoHome = before.keep.home
-        pinsPeek = before.keep.peek
-        floatingNewTab = before.floating
+        if sidePosition != before.side.position { sidePosition = before.side.position }
+        if sideIcons != before.side.icons { sideIcons = before.side.icons }
+        if sidebar != before.side.shown { sidebar = before.side.shown }
+        if usesSpaces != before.spaces { usesSpaces = before.spaces }
+        if listsPins != before.rows { listsPins = before.rows }
+        if pinsGoHome != before.keep.home { pinsGoHome = before.keep.home }
+        if pinsPeek != before.keep.peek { pinsPeek = before.keep.peek }
+        if floatingNewTab != before.floating { floatingNewTab = before.floating }
+        if tabLife != before.life { tabLife = before.life }
+        if floatsOnLeave != before.float.leave { floatsOnLeave = before.float.leave }
+        if floatsAway != before.float.away { floatsAway = before.float.away }
+        if swipeBackCloses != before.swipeCloses { swipeBackCloses = before.swipeCloses }
+        if peekClick != before.peek.click { peekClick = before.peek.click }
+        if peeksLinks != before.peek.on { peeksLinks = before.peek.on }
+    }
+
+}
+
+/// Set Up Like Arc, wherever it is offered (Settings, the welcome, after
+/// Arc's spaces are brought over): what was there before it, for one Undo
+/// shared by all three.
+@MainActor
+final class LikeArc: ObservableObject {
+    static let shared = LikeArc()
+    @Published private(set) var before: Preferences.ArcSetup?
+
+    /// Sets it up, keeps what was there, and says what changed.
+    @discardableResult
+    func setUp(_ prefs: Preferences) -> [String] {
+        let was = prefs.arcSnapshot
+        let changed = prefs.setUpLikeArc()
+        if !changed.isEmpty { before = was }
+        return changed
+    }
+
+    func undo(_ prefs: Preferences) {
+        guard let before else { return }
+        prefs.restore(before)
+        self.before = nil
+    }
+
+    /// Undo is there while it is still set up like Arc: changed by hand
+    /// since, there is nothing to undo.
+    func undoable(_ prefs: Preferences) -> Bool { before != nil && prefs.looksLikeArc }
+
+    static func said(_ changed: [String]) -> String {
+        changed.isEmpty ? "Already set up like Arc" : "Turned on: " + changed.joined(separator: ", ")
     }
 }
 
@@ -1009,7 +1070,9 @@ extension SettingsIndex {
             guard let choice = (value as? String).flatMap(PeekChoice.init) else { return false }
             prefs.peekChoice = choice
         case "arc.setup":
-            prefs.setUpLikeArc()
+            LikeArc.shared.setUp(prefs)
+        case "arc.undo":
+            LikeArc.shared.undo(prefs)
         default:
             return false
         }

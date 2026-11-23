@@ -51,6 +51,12 @@ struct ImportPanel: View {
     @State private var marksLanded = false
     /// The steps for exporting from Safari, shown when asked.
     @State private var safariSteps = false
+    /// Arc's spaces and pins came over in this import: Set Up Like Arc is
+    /// offered under what came, unless it already is (LikeArc).
+    @State private var arcLanded = false
+    /// What Set Up Like Arc turned on from here, for its line and Undo.
+    @State private var arcSaid: String?
+    @ObservedObject private var likeArc = LikeArc.shared
 
     struct Said: Hashable {
         let ok: Bool
@@ -121,6 +127,10 @@ struct ImportPanel: View {
                         }
                     }
                     .transition(.opacity)
+                }
+                if brought != nil, arcLanded, arcSaid != nil || !browser.prefs.looksLikeArc {
+                    arcOffer
+                        .transition(.opacity)
                 }
                 HStack(spacing: 8) {
                     if brought != nil {
@@ -507,6 +517,8 @@ struct ImportPanel: View {
     private func bring(from source: ImportSource) {
         // This import's own answer, not the one before it in the same sheet.
         marksLanded = false
+        arcLanded = false
+        arcSaid = nil
         let profile = profile(of: source)
         let extensions = wantsExtensions ? fresh(source) : []
         // A kind it has none of isn't read at all: no keychain question for
@@ -570,6 +582,7 @@ struct ImportPanel: View {
         if wantsArc, arcCounts[key(source, profile)] != nil, let sidebar = source.arcSidebar(profile: profile) {
             let (spaces, pins, tabs) = browser.takeArc(sidebar, from: source, profile: profile)
             ImportRecords.note(source.name, spaces: spaces, pinned: pins + tabs)
+            arcLanded = source.sessionRepeatsSpaces
             func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
             said[4] = Said(ok: true, text: spaces + pins + tabs == 0 ? "\(source.name)'s spaces and pins were all here already"
                            : "\(count(spaces, "new space")), \(count(pins, "pin")), \(count(tabs, "pinned tab"))")
@@ -587,6 +600,28 @@ struct ImportPanel: View {
         group.notify(queue: .main) {
             bringing = false
             brought = said.keys.sorted().compactMap { said[$0] }
+        }
+    }
+
+    /// Set Up Like Arc, right after Arc's spaces came: one button, and once
+    /// pressed, what it turned on with Undo.
+    private var arcOffer: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(arcSaid ?? "Tabs on the left, pinned rows, and Arc's habits too?")
+                .font(.system(size: 12.5))
+                .foregroundStyle(arcSaid == nil ? Palette.muted : Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            if arcSaid != nil, likeArc.undoable(browser.prefs) {
+                Pill("Undo") {
+                    withAnimation(Motion.glide) { likeArc.undo(browser.prefs) }
+                    arcSaid = nil
+                }
+            } else if arcSaid == nil {
+                Pill("Set Up Like Arc", filled: true) {
+                    arcSaid = LikeArc.said(withAnimation(Motion.glide) { likeArc.setUp(browser.prefs) })
+                }
+            }
         }
     }
 

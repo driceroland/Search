@@ -156,14 +156,33 @@ def case_merged(t):
     t.ok("Peek: Option-Shift writes on and the click", (read("links.peek"), read("links.peekClick")) == ("1", "optionShift"))
     put("links.peek", "off")
     t.ok("Peek: Off writes links.peek off, keeps the click", (read("links.peek"), read("links.peekClick")) == ("0", "optionShift"))
+    # Set Up Like Arc, from a world that is nothing like it: tabs on top
+    # (the side kept on the right underneath), float and peek off.
+    keys = ["sidebar", "sidebar.position", "sidebar.icons", "spaces", "pins.list", "pins.home", "pins.peek",
+            "newtab.floating", "tabs.close.after", "float.leave", "float.away", "tabs.swipeBackCloses",
+            "links.peek", "links.peekClick"]
+    was = {k: read(k) for k in keys}
+    t.ok("before Set Up it isn't like Arc", not settings()["values"]["arc"], was)
     v = put("arc.setup", True)
     t.ok("Set Up Like Arc: left, spaces, rows, pins, floating new tab",
          v["arc"] and v["tabs.layout"] == "left" and read("spaces") == "1" and read("pins.list") == "1"
          and read("newtab.floating") == "1" and v["pins.keep"], v)
+    t.ok("…and Arc's habits: tabs close after 12 hours, the video floats on leaving a tab, swipe back closes, Shift-click peeks",
+         (read("tabs.close.after"), read("float.leave"), read("float.away"), read("tabs.swipeBackCloses"),
+          read("links.peek"), read("links.peekClick")) == ("12", "1", "0", "1", "1", "shift")
+         and v["float.own"] == "tabs" and v["links.peek"] == "shift", {k: read(k) for k in keys})
+    v = put("arc.undo", True)
+    now = {k: read(k) for k in keys}
+    t.ok("Undo puts every key back as it was", not v["arc"] and v["tabs.layout"] == "top" and v["float.own"] == "never"
+         and v["links.peek"] == "off" and all(now[k] == was[k] or (was[k] is None and now[k] in ("0", None))
+                                                for k in keys), (was, now))
+    t.ok("…the peek click it had included", now["links.peekClick"] == "optionShift", now)
+    v = put("arc.setup", True)
+    t.ok("Set Up again", v["arc"], v)
     # And it survives a relaunch, read back from the keys alone.
     sv.quit(); time.sleep(0.5); sv.launch()
     v = settings()["values"]
-    t.ok("after a relaunch the merged values read back", v["arc"] and v["tabs.sleep"] == "later" and v["float.own"] == "never" and v["links.peek"] == "off", v)
+    t.ok("after a relaunch the merged values read back", v["arc"] and v["tabs.sleep"] == "later" and v["float.own"] == "tabs" and v["links.peek"] == "shift", v)
 
 
 def main():

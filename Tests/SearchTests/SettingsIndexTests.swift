@@ -112,12 +112,17 @@ final class SettingsIndexTests: XCTestCase {
             let prefs = Preferences()
             prefs.pinsKeepSite = false
             let before = prefs.arcSnapshot
+            let layout = prefs.tabsLayout
             XCTAssertFalse(prefs.looksLikeArc)
-            XCTAssertEqual(prefs.setUpLikeArc().count, 5)
+            // The five from 1.0.7, closing tabs after 12 hours and swipe
+            // back closing a link's tab; float and peek are on already.
+            XCTAssertEqual(prefs.setUpLikeArc().count, 7)
             XCTAssertTrue(prefs.looksLikeArc)
             prefs.restore(before)
-            XCTAssertEqual(prefs.tabsLayout, before.layout)
+            XCTAssertEqual(prefs.tabsLayout, layout)
             XCTAssertFalse(prefs.usesSpaces || prefs.listsPins || prefs.pinsKeepSite || prefs.floatingNewTab)
+            XCTAssertEqual(prefs.tabLife, .never)
+            XCTAssertFalse(prefs.swipeBackCloses)
         }
     }
 
