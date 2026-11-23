@@ -1430,7 +1430,7 @@ final class Tab: ObservableObject, Identifiable {
     /// something about: the sign-in fields that were there a moment ago,
     /// when this was offered, are gone by the time it actually runs.
     /// With `onlyOn`, the page checks for itself, when the script runs, that
-    /// it is still that scheme and host: a document that changed after the
+    /// it is still that origin, port and all: a document that changed after the
     /// last check on this side gets nothing.
     func fill(user: String, password: String, onlyOn page: URL? = nil, done: ((Bool) -> Void)? = nil) {
         callForms("fill(user, password)", ["user": user, "password": password], onlyOn: page, done: done)
@@ -1449,17 +1449,17 @@ final class Tab: ObservableObject, Identifiable {
 
     /// One of the page script's calls, its values handed over as arguments,
     /// never written into the source. With a page, the script first checks
-    /// it is still that scheme and host; a page that can't be checked gets
-    /// nothing.
+    /// it is still that origin — scheme, host and port, as `fillContact`
+    /// does; a page that can't be checked gets nothing.
     private func callForms(_ call: String, _ values: [String: Any], onlyOn page: URL?, done: ((Bool) -> Void)?) {
-        var arguments = values.merging(["scheme": "", "host": ""]) { own, _ in own }
+        var origin = ""
         if let page {
-            guard let scheme = page.scheme?.lowercased(), let host = page.host()?.lowercased() else { done?(false); return }
-            arguments["scheme"] = scheme + ":"
-            arguments["host"] = host
+            guard let known = Self.origin(of: page) else { done?(false); return }
+            origin = known
         }
+        let arguments = values.merging(["origin": origin]) { own, _ in own }
         web.callInSearch("""
-            if (scheme && (location.protocol !== scheme || location.hostname.toLowerCase() !== host)) return false;
+            if (origin && location.origin !== origin) return false;
             return !!(window.__officeForms && window.__officeForms.\(call));
             """, arguments: arguments) { done?(($0 as? Bool) ?? false) }
     }

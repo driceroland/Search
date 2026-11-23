@@ -1286,8 +1286,9 @@ final class Browser: NSObject, ObservableObject {
                   ApplePasswords.belongs(found.sites, to: appleHost)
             else { return }
             tab.appleFill = AppleFill(host: appleHost, user: apple.user, password: found.password)
-            // Over https only, on that host (Tab.fill checks both in the page).
-            tab.fill(user: apple.user, password: found.password, onlyOn: URL(string: "https://\(appleHost)/")) { [weak self] worked in
+            // Over https only, on that host (just checked), and in the page
+            // that very origin, port and all (Tab.fill).
+            tab.fill(user: apple.user, password: found.password, onlyOn: tab.pageAddress) { [weak self] worked in
                 if !worked { self?.announce("Couldn't find the sign-in fields anymore") }
             }
         }
@@ -1302,8 +1303,7 @@ final class Browser: NSObject, ObservableObject {
         guard Date().timeIntervalSince(list.shown) > 0.5 else { return }
         suggesting = nil
         guard ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) == appleHost,
-              ApplePasswords.belongs([code.domain], to: appleHost, wide: list.wide),
-              let page = URL(string: "https://\(appleHost)/")
+              ApplePasswords.belongs([code.domain], to: appleHost, wide: list.wide)
         else { return }
         pickedInto = tab.id
         Task { [weak self] in
@@ -1317,7 +1317,8 @@ final class Browser: NSObject, ObservableObject {
             // Touch ID can take a while: the page must still be the one
             // asked for, and in front.
             guard tabs.contains(where: { $0 === tab }), tab.id == activeID,
-                  ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) == appleHost
+                  ApplePasswords.offers(on: tab.pageAddress, privateTab: tab.shy) == appleHost,
+                  let page = tab.pageAddress
             else { return }
             tab.fillCode(value, onlyOn: page) { [weak self] worked in
                 if !worked { self?.announce("Couldn't find the box for the code anymore") }

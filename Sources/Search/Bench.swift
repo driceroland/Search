@@ -3202,6 +3202,14 @@ final class Bench {
                 Vault.cannotAsk = ["passcodeNotSet": .passcodeNotSet, "invalidContext": .invalidContext][reason]
             }
             if request["keep"] as? Bool == true { browser.keepOffer() }
+            // "fillOn": a made-up password ("fillWith") into the tab in front,
+            // for that page only, as a pick hands it over (Tab.fill), and
+            // whether the page took it.
+            if let on = request["fillOn"] as? String, let page = URL(string: on) {
+                guard let tab = browser.active else { answer(["error": "no tab"]); return }
+                tab.fill(user: "", password: request["fillWith"] as? String ?? "", onlyOn: page) { answer(["filled": $0]) }
+                return
+            }
             if request["forget"] as? Bool == true {
                 Vault.all().forEach { Vault.forget(host: $0.host, user: $0.user) }
                 browser.dropOffer()

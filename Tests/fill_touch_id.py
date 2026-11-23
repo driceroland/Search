@@ -34,6 +34,7 @@ import split_view as sv  # noqa: E402
 sv.use("fill-touch-id")
 
 PORT = 8834
+PORT2 = 8835
 GOOD = "FILLTID7"
 
 LOGIN = """<!doctype html><title>login</title>
@@ -119,6 +120,9 @@ def main():
     t = sv.T()
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    # The same host on another port (the origin check of a fill).
+    srv2 = ThreadingHTTPServer(("127.0.0.1", PORT2), H)
+    threading.Thread(target=srv2.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{PORT}"
     try:
         sv.setup(); sv.launch()
@@ -232,12 +236,27 @@ def main():
         t.ok("no password set on the Mac: filled", acc().get("proofs") == 13 and box(s_) == GOOD, box(s_))
         acc(proveError="", proofAge=0)
 
+        # A fill is for its page's origin, port and all: the same host on
+        # another port gets nothing.
+        u = open_login(base)
+        r = acc(fillOn=f"{base.replace(str(PORT), str(PORT2))}/login", fillWith="PORTX")
+        t.ok("another port of the same host: refused", r.get("filled") is False and box(u) == "", (r, box(u)))
+        r = acc(fillOn=f"{base}/login", fillWith="PORTX")
+        t.ok("its own origin: filled", r.get("filled") is True and box(u) == "PORTX", (r, box(u)))
+        v = open_login(f"http://127.0.0.1:{PORT2}")
+        r = acc(fillOn=f"http://127.0.0.1:{PORT}/login", fillWith="PORTX")
+        t.ok("and the other way round: refused", r.get("filled") is False and box(v) == "", (r, box(v)))
+        confirm(True)
+        w = offered(t, f"http://127.0.0.1:{PORT2}", "a kept password on another port")
+        acc(pick=0); time.sleep(0.8)
+        t.ok("a kept password picked on another port still fills its own page", box(w) == GOOD, box(w))
+
         # Off again: no question.
         acc(prove=False)
         confirm(False)
         j = offered(t, base, "off again")
         acc(pick=0); time.sleep(0.6)
-        t.ok("off again: filled without asking", acc().get("proofs") == 13 and box(j) == GOOD)
+        t.ok("off again: filled without asking", acc().get("proofs") == 14 and box(j) == GOOD)
     finally:
         try:
             r = acc(forget=True)
@@ -245,6 +264,7 @@ def main():
         except Exception as e:
             t.ok("this world's logins forgotten", False, e)
         srv.shutdown(); srv.server_close()
+        srv2.shutdown(); srv2.server_close()
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)
 
