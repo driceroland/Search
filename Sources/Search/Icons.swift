@@ -439,12 +439,20 @@ final class Favicons {
         guard !busy.contains(busyKey), changed || !missing.contains(busyKey) else { return }
         busy.insert(busyKey)
 
-        tab.web.evaluateJavaScript(Favicons.probe) { [weak self, weak tab] answer, _ in
+        let shy = tab.shy
+        tab.web.evaluateJavaScript(Favicons.probe) { [weak self] answer, error in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let declared = (answer as? [[String: String]]) ?? []
+                // Navigation can replace the document before WebKit runs the probe.
+                let result = answer as? [String: Any]
+                let documentURL = (result?["url"] as? String).flatMap { URL(string: $0) }
+                guard error != nil || documentURL == url else {
+                    self.busy.remove(busyKey)
+                    return
+                }
+                // A failed probe can still fall back to the requested site's favicon.ico.
+                let declared = (result?["icons"] as? [[String: String]]) ?? []
                 let candidates = Favicons.rank(declared, page: url, dark: dark)
-                let shy = tab?.shy ?? false
                 Task { await self.download(candidates, site: site, page: page, dark: dark, shy: shy) }
             }
         }
@@ -734,7 +742,7 @@ final class Favicons {
           media: (l.getAttribute('media') || '').toLowerCase()
         });
       }
-      return out;
+      return { url: document.URL, icons: out };
     })();
     """
 }

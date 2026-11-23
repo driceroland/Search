@@ -44,6 +44,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A tab that navigates while Search is still looking up its icon no longer files the new site's icon under the site it left, where every tab of that site then wore it. `python3 Tests/kept_icons.py`. Thanks [@guilopeszw](https://github.com/guilopeszw) ([#1453](https://github.com/driceroland/Search/pull/1453), [#1452](https://github.com/driceroland/Search/issues/1452))
 - A saved password or verification code goes into a page only while the page is still on the same scheme, host and port it is filled for, as your card's details already did: another port of the same host gets nothing. `python3 Tests/fill_touch_id.py`
 - A store update check that fails (no network yet after the Mac wakes, the store not answering) is tried again an hour later, then after two, four… hours, never more than a day apart, instead of counting as the day's check: the day was stamped before the check ran, so one failure held back every store extension's updates for 20 hours, uBlock Origin Lite's too. `python3 Tests/extension_store_update.py` (idea 992)
 - Extensions from the Chrome Web Store update to the version a new install gets: the daily check now asks the store as Chrome's Update button does (installsource=ondemand, with Chrome's os, arch and product details). Asked as a background check, the store answered "no update" for Bitwarden 2026.11.0 from 19 Nov whatever version was named, so Bitwarden stayed at 2026.10.2. (idea 992)
