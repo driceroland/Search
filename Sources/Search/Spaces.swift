@@ -984,6 +984,9 @@ struct SpaceButtons: View {
     @ObservedObject var browser: Browser
     /// One above the other, in the column of icons.
     var vertical = false
+    /// Narrower than 26 each, down to 20, where the row has less room than
+    /// that: the column's foot, narrowed (idea 1010).
+    var squeezes = false
 
     /// How many buttons are drawn, for the foot to make room for them.
     /// One space still has its button: it is the way to the menu, and to
@@ -997,7 +1000,8 @@ struct SpaceButtons: View {
             let layout = vertical ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
             layout {
                 ForEach(Array(browser.spaces.enumerated()), id: \.element.id) { index, space in
-                    SpaceButton(browser: browser, space: space, index: index, current: space.id == (browser.spaceHeading ?? browser.spaceID))
+                    SpaceButton(browser: browser, space: space, index: index, current: space.id == (browser.spaceHeading ?? browser.spaceID),
+                                squeezes: squeezes)
                 }
             }
         }
@@ -1009,6 +1013,7 @@ private struct SpaceButton: View {
     let space: Space
     let index: Int
     let current: Bool
+    var squeezes = false
     @State private var hovering = false
 
     var body: some View {
@@ -1022,7 +1027,7 @@ private struct SpaceButton: View {
                 // button didn't read as the one you're in.
                 .foregroundStyle(current ? (space.tint ?? Palette.ink) : hovering ? Palette.ink : Palette.muted)
                 .opacity(current || hovering ? 1 : 0.75)
-                .frame(width: 26, height: 26)
+                .frame(minWidth: squeezes ? 20 : 26, idealWidth: 26, maxWidth: 26, minHeight: 26, maxHeight: 26)
                 .background(
                     // The one on screen on a wash, of its colour if it has one.
                     RoundedRectangle(cornerRadius: 8, style: .continuous)

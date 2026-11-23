@@ -187,6 +187,9 @@ enum Metrics {
     /// first item sits in Safari. A column too narrow for that gives back
     /// what it must (SideBar.lights), down to where it was.
     static let sideLights: CGFloat = 80
+    /// The least of it the fold door may have: its box 3 points clear of
+    /// the zoom button (SideBar.folds).
+    static let sideLightsLeast: CGFloat = 72
     /// The three doors' own width, without the air after them.
     static let helmDoors: CGFloat = 3 * 26 + 2 * 4
     /// The same two, for the doors Settings leaves shown (idea 815): all
