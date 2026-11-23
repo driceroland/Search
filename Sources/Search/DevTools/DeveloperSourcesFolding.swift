@@ -401,13 +401,13 @@ extension SourceTextView {
             return
         }
         let text = string, language = language
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let folds = SourceFolding.folds(text, language: language)
-            await MainActor.run {
-                guard let self, self.foldGeneration == generation else { return }
-                self.foldsByLine = Dictionary(folds.map { ($0.startLine, $0) }, uniquingKeysWith: { first, _ in first })
-                self.gutter?.needsDisplay = true
-            }
+        Task { [weak self] in
+            let folds = await Task.detached(priority: .userInitiated) {
+                SourceFolding.folds(text, language: language)
+            }.value
+            guard let self, self.foldGeneration == generation else { return }
+            self.foldsByLine = Dictionary(folds.map { ($0.startLine, $0) }, uniquingKeysWith: { first, _ in first })
+            self.gutter?.needsDisplay = true
         }
     }
 
