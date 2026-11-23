@@ -438,7 +438,10 @@ struct Fold: View {
                     // it does beside the page's card (see CardEdge), or its
                     // own white where the page is no card.
                     // Away exactly when the lights are, which ride with it.
-                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: onDrag)
+                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: { [pointer, onDrag] width in
+                        pointer.edgeHeld = width != nil
+                        onDrag(width)
+                    })
                         .frame(maxHeight: .infinity, alignment: .top)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
                                              strength: browser.folded && browser.peeking ? 1 : 0,
@@ -607,7 +610,10 @@ struct Fold: View {
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).
             let popup = if #available(macOS 15.4, *) { ExtensionPopup.shared.isUp } else { false }
-            let over = onOwnPanel || popup || holding || overshot || (onWindow && inWindow && distance < reach)
+            // The edge held: the column stays out for the whole drag. Measured
+            // against the width saved before it, or the strip's, the pointer
+            // counted as off the column halfway and it slid away (#1462).
+            let over = onOwnPanel || popup || holding || pointer.edgeHeld || overshot || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
         } else if inWindow, distance < (prefs.sidebar && prefs.sideHides ? Fold.hiddenEdge : Fold.edge),
@@ -868,6 +874,9 @@ private final class Pointer {
     /// The pointer is over the window, or just went off the column's edge from
     /// it and hasn't gone further.
     var crossing = false
+    /// The column's edge is held: its width is the drag's, not yet saved,
+    /// and the pointer can be anywhere along the drag (#1462).
+    var edgeHeld = false
     private var local: Any?
     private var global: Any?
     /// The window's own say on mouse-moved events, given back when the
