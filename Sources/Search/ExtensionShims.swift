@@ -1244,6 +1244,14 @@ enum ExtensionShims {
         const encode = (bytes) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); };
         const decode = (text) => { const s = atob(text), bytes = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i); return bytes; };
         let sequence = 0;
+        // Whether this is the extension's popup page: its fetch then goes
+        // with the cookies of the window the popup was opened from.
+        let popupPage = false;
+        try {
+          const manifest = runtime.getManifest(), action = manifest.action || manifest.browser_action || {};
+          popupPage = !worker && typeof action.default_popup === "string" && !!action.default_popup
+            && root.location.pathname === new URL(action.default_popup, root.location.origin + "/").pathname;
+        } catch (e) {}
         // What may wait unread in a response's stream before it fails.
         const unreadLimit = 64 * 1024 * 1024;
         const fetch = function fetch(input, init) {
@@ -1294,7 +1302,7 @@ enum ExtensionShims {
             }
             const number = ++sequence, id = number + "-" + Math.random().toString(36).slice(2);
             const hello = { fetch: id, url: request.url, method: request.method, headers: [...request.headers], body,
-                            redirect: request.redirect, userAgent: navigator.userAgent, credentials,
+                            redirect: request.redirect, userAgent: navigator.userAgent, credentials, popup: popupPage,
                             headerRules: headerRules.size ? [...headerRules.values()] : undefined, tell: ownTell() };
             return await new Promise((resolve, reject) => {
               let port;

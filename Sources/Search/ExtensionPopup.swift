@@ -38,6 +38,9 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
     /// The popup's web view, while one is up — for the bench.
     var view: WKWebView? { web }
 
+    /// The window this extension's popup was opened from, while it is open.
+    func browser(for id: String) -> Browser? { extensionID == id ? page?.browser : nil }
+
     /// The popup asking for the camera or microphone: asked on the card of
     /// the window in front, named as the extension and remembered for it,
     /// as for any of its pages (see Browser.askedForCapture) — never
