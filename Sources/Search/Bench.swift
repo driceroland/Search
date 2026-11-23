@@ -801,6 +801,92 @@ final class Bench {
             browser.moveToWindow(tab, target)
             answer(["windows": Browsers.all.count])
 
+        case "iphoneask":
+            // The iPhone beta's waitlist places (IPhoneAsk.swift). "state":
+            // what each place would show now. "help": Help › Search for
+            // iPhone…, pressed through the menu. "join EMAIL SPOT": the press
+            // the line's Join makes (OptInForm.send), to SEARCH_OPTIN_URL —
+            // a test run's own server, never the site. "dismiss": Not now.
+            // "reset": as on a new install. "path" (+ "spot", "opened"): the
+            // line or the card drawn off screen to a PNG.
+            guard Store.testing else { answer(["error": "iphoneask only works on a --test run"]); return }
+            let store = Store.settings
+            func state() -> [String: Any] {
+                let help = NSApp.mainMenu?.items.first { $0.title == "Help" }?.submenu
+                if let help { help.delegate?.menuNeedsUpdate?(help) }
+                return ["open": IPhoneAsk.open(store), "newTab": IPhoneAsk.newTabShows(in: browser),
+                        "since": (store.object(forKey: IPhoneAsk.newTabSinceKey) as? Date)?.timeIntervalSince1970 ?? 0,
+                        "dismissed": store.bool(forKey: IPhoneAsk.dismissedKey),
+                        "joined": OptIn.joined(store), "beta": OptIn.askedBeta(store),
+                        "helpMenu": help?.items.filter { !$0.isSeparatorItem && !$0.isHidden }.map(\.title) ?? [],
+                        "card": browser.iphoneAsking]
+            }
+            switch request["action"] as? String ?? "state" {
+            case "help":
+                guard let help = NSApp.mainMenu?.items.first(where: { $0.title == "Help" })?.submenu,
+                      let index = help.items.firstIndex(where: { $0.title == IPhoneAsk.menuTitle }) else {
+                    answer(["error": "no \(IPhoneAsk.menuTitle) in Help"]); return
+                }
+                help.performActionForItem(at: index)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { answer(state()) }
+            case "join":
+                guard let email = request["email"] as? String,
+                      let spot = IPhoneAsk.Spot(rawValue: request["spot"] as? String ?? "") else {
+                    answer(["error": "join needs email and spot (about, help, newTab)"]); return
+                }
+                guard ProcessInfo.processInfo.environment["SEARCH_OPTIN_URL"] != nil else {
+                    answer(["error": "join needs SEARCH_OPTIN_URL: never the real list from a test"]); return
+                }
+                OptIn.send(email: email, list: .iPhoneBeta, source: spot.source) { outcome in
+                    if case .success = outcome { OptIn.remember(.iPhoneBeta, in: store) }
+                    // A turn later, once the menus have been drawn again.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        var now = state()
+                        if case .failure(let failure) = outcome { now["failure"] = failure.line } else { now["sent"] = true }
+                        answer(now)
+                    }
+                }
+            case "dismiss":
+                IPhoneAsk.dismiss(store)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { answer(state()) }
+            case "age":
+                // The first blank tab's line this many days ago.
+                store.set(Date().addingTimeInterval(-86_400 * (request["days"] as? Double ?? 0)), forKey: IPhoneAsk.newTabSinceKey)
+                answer(state())
+            case "reset":
+                for key in [IPhoneAsk.dismissedKey, IPhoneAsk.newTabSinceKey, OptIn.joinedKey, OptIn.betaKey] { store.removeObject(forKey: key) }
+                browser.iphoneAsking = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { answer(state()) }
+            case "picture":
+                guard let path = request["path"] as? String else { answer(["error": "picture needs a path"]); return }
+                let spot = IPhoneAsk.Spot(rawValue: request["spot"] as? String ?? "") ?? .about
+                let opened = request["opened"] as? Bool == true
+                let root: AnyView
+                switch spot {
+                case .about: root = AnyView(AboutView(whatsNew: {}))
+                case .help: root = AnyView(IPhoneAskCard(close: {}).padding(40).background(Palette.ground))
+                case .newTab: root = AnyView(IPhoneAskLine(spot: .newTab, centred: true, opened: opened)
+                    .frame(width: Metrics.fieldWidth).padding(30).background(Palette.ground))
+                }
+                let host = NSHostingView(rootView: root)
+                host.frame = NSRect(origin: .zero, size: host.fittingSize)
+                let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+                window.appearance = NSApp.effectiveAppearance
+                window.contentView = host
+                host.layoutSubtreeIfNeeded()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    guard let picture = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { answer(["error": "nothing drawn"]); return }
+                    host.cacheDisplay(in: host.bounds, to: picture)
+                    do {
+                        try picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                        answer(["saved": path, "size": [Int(host.bounds.width), Int(host.bounds.height)]])
+                    } catch { answer(["error": error.localizedDescription]) }
+                    window.contentView = nil
+                }
+            default:
+                answer(state())
+            }
+
         case "news":
             // The card after an update (see WhatsNew.swift), drawn off screen
             // to a PNG — the newest release's, whatever this build's version —
@@ -813,6 +899,23 @@ final class Bench {
                 answer(["showing": on])
                 return
             }
+            // "again": Search › What's New…, pressed through the menu as a
+            // hand would (idea 968); back come the card's state and the item's.
+            if request["again"] as? Bool == true {
+                guard let app = NSApp.mainMenu?.items.first?.submenu,
+                      let index = app.items.firstIndex(where: { $0.title == "What's New…" }) else {
+                    answer(["error": "no What's New… in the Search menu"]); return
+                }
+                browser.newsShowing = false
+                app.update()
+                let enabled = app.items[index].isEnabled
+                app.performActionForItem(at: index)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    answer(["showing": browser.newsShowing, "enabled": enabled,
+                            "menu": app.items.filter { !$0.isSeparatorItem && !$0.isHidden }.map(\.title)])
+                }
+                return
+            }
             // "rows": the card's switches, in its order, as it would open now.
             if request["rows"] as? Bool == true {
                 let rows = WhatsNew.rows(for: release, prefs: browser.prefs)
@@ -820,7 +923,9 @@ final class Bench {
                 return
             }
             guard let path = request["path"] as? String else { answer(["error": "news needs a path"]); return }
-            let root: AnyView = request["notes"] as? Bool == true
+            let root: AnyView = request["about"] as? Bool == true
+                ? AnyView(AboutView(whatsNew: {}))
+                : request["notes"] as? Bool == true
                 ? AnyView(ReleaseNotesPanel {}.padding(40).background(Palette.ground))
                 : AnyView(WhatsNewCard(release: release, prefs: browser.prefs, close: {}, notes: {}).padding(40).background(Palette.ground))
             let host = NSHostingView(rootView: root)

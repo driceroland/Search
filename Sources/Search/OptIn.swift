@@ -27,6 +27,10 @@ enum OptIn {
         case whatsNew = "app-whats-new"
         case welcome = "app-welcome"
         case settings = "app-settings"
+        // The iPhone beta's quieter places, for now (IPhoneAsk.swift).
+        case about = "app-about"
+        case help = "app-help"
+        case newTab = "app-newtab"
     }
 
     /// Which list a press joins.

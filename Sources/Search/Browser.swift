@@ -219,6 +219,8 @@ final class Browser: NSObject, ObservableObject {
     @Published var welcoming = false
     /// What's new, once after an update (see WhatsNew.swift).
     @Published var newsShowing = false
+    /// Help › Search for iPhone… (see IPhoneAsk.swift).
+    @Published var iphoneAsking = false
 
     // MARK: - bookmarks
 
@@ -5139,6 +5141,7 @@ final class Browser: NSObject, ObservableObject {
         // Settings, History and the rest are tabs now (InternalPages.swift):
         // ⌘W closes them as it closes any tab, and Escape leaves them be.
         if newsShowing { newsShowing = false }
+        else if iphoneAsking { iphoneAsking = false }
         else { return false }
         return true
     }

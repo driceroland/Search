@@ -239,6 +239,14 @@ enum WhatsNew {
         return true
     }
 
+    /// Search › What's New… and the About window's button (idea 968): this
+    /// version's card again, exactly as after an update, switches and all.
+    /// Nothing is marked: the card was already seen once.
+    @MainActor static func showAgain(in browser: Browser) {
+        guard current != nil else { return }
+        browser.newsShowing = true
+    }
+
     // MARK: - every version's notes
 
     /// What a version brought, for Settings › About › What's New…
