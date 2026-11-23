@@ -122,17 +122,17 @@ struct SideBar: View {
 
     /// What is left of the lights' row right of back, forward and reload.
     private var beyondHelm: CGFloat {
-        SideBar.beyondHelm(width, fullScreen: browser.fullScreen && reveal.amount == 0, fold: prefs.foldButton, prefs: prefs)
+        SideBar.beyondHelm(width, fullScreen: browser.fullScreen, fold: prefs.foldButton, prefs: prefs)
     }
     /// The room right of the helm at the width let go at, for the doors up
     /// there: how many pinned extensions show, not changing under the pointer.
     private var upRoom: CGFloat {
-        max(SideBar.beyondHelm(prefs.columnWidth, fullScreen: browser.fullScreen && reveal.amount == 0,
+        max(SideBar.beyondHelm(prefs.columnWidth, fullScreen: browser.fullScreen,
                                fold: prefs.foldButton, prefs: prefs),
             SideFoot.keptWidth(prefs, spaces: SpaceButtons.count(prefs, browser.spaces)))
     }
     private var doorsUp: Bool {
-        SideBar.doorsUp(prefs, width: width, fullScreen: browser.fullScreen && reveal.amount == 0,
+        SideBar.doorsUp(prefs, width: width, fullScreen: browser.fullScreen,
                         spaces: SpaceButtons.count(prefs, browser.spaces))
     }
     /// Where the doors are: up in the lights' row or down at the foot. Not
@@ -182,7 +182,9 @@ struct SideBar: View {
 
     /// `prefs`: back, forward and reload as Settings leaves them (idea 815).
     @MainActor static func beyondHelm(_ width: CGFloat, fullScreen: Bool, fold: Bool = false, prefs: Preferences) -> CGFloat {
-        let lights = fullScreen ? 0 : lightsRoom(width, prefs: prefs)
+        // In full screen the left header must have room for the lights when
+        // they reveal. Budget for them all along so the other doors stay put.
+        let lights = fullScreen && prefs.sidePosition == .right ? 0 : lightsRoom(width, prefs: prefs)
         return width - 20 - lights - foldDoor(fold) - Metrics.helm(prefs)
     }
     /// The door that folds the column away, between the lights and back
@@ -225,7 +227,7 @@ struct SideBar: View {
                     // The doors, when they are up here, at its far end.
                     DragStrip(trailing: doorsTop ? upRoom + 10 : 0, menu: columnMenu)
                 }
-                .frame(height: Metrics.strip)
+                .frame(width: width, height: Metrics.strip)
                 .offset(y: reveal.top)
             }
 
@@ -255,7 +257,9 @@ struct SideBar: View {
                         Helm(browser: browser)
                         Spacer(minLength: 0)
                     }
-                    .frame(height: Metrics.strip)
+                    // The navigation row can be wider than the space between
+                    // the margins. Keep that overflow from shifting the column.
+                    .frame(width: width - 20, height: Metrics.strip)
                     // At the column's far end, fading out as the foot rises,
                     // and back (settleDoors). Laid over the row, the width
                     // let go at, not the one held: sized to the edge as it

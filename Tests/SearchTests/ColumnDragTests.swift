@@ -103,6 +103,58 @@ final class ColumnDragTests: XCTestCase {
         XCTAssertNil(live.last ?? nil, "and the window goes back to the setting")
     }
 
+    func testFullScreenRevealKeepsThePinnedSidebarStillBelowTheHeader() async throws {
+        let browser = makeBrowser()
+        let prefs = browser.prefs
+        let previous = (prefs.foldButton, prefs.sidePosition, prefs.sideIcons, prefs.narrowsToIcons, prefs.doorsUp)
+        let previousHelm = (prefs.hidesBack, prefs.hidesForward, prefs.hidesReload)
+        defer { (prefs.foldButton, prefs.sidePosition, prefs.sideIcons, prefs.narrowsToIcons, prefs.doorsUp) = previous }
+        defer { (prefs.hidesBack, prefs.hidesForward, prefs.hidesReload) = previousHelm }
+        prefs.foldButton = true
+        prefs.sidePosition = .left
+        prefs.sideIcons = false
+        prefs.narrowsToIcons = false
+        (prefs.hidesBack, prefs.hidesForward, prefs.hidesReload) = (false, false, false)
+        browser.fullScreen = true
+        let tab = try XCTUnwrap(browser.active)
+        let pin = tab.pin
+        tab.pin = "P"
+        defer { tab.pin = pin }
+
+        let layouts: [(CGFloat, Bool)] = [(Metrics.sideMin, false), (205, false), (Metrics.side, true), (360, true)]
+        for (width, buttonsAtTop) in layouts {
+            prefs.sideWidth = width
+            prefs.doorsUp = buttonsAtTop
+            let height: CGFloat = 360
+            let window = makeWindow(root: SideBar(browser: browser, prefs: prefs), width: width, height: height)
+            let host = try XCTUnwrap(window.contentView)
+            let headerHeight = Metrics.strip
+            let header = NSRect(x: 0, y: host.isFlipped ? 0 : height - headerHeight, width: width, height: headerHeight)
+            let below = NSRect(x: 0, y: host.isFlipped ? headerHeight : 0, width: width, height: height - headerHeight)
+            func snapshot(_ rect: NSRect) throws -> Data {
+                host.layoutSubtreeIfNeeded()
+                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: rect))
+                host.cacheDisplay(in: rect, to: bitmap)
+                return try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            }
+
+            try await settle()
+            let before = try snapshot(below)
+            let headerBefore = try snapshot(header)
+            for amount: CGFloat in [0.5, 1, 0] {
+                browser.sidebarLightsReveal = SidebarLightsReveal(amount: amount, top: 0)
+                try await settle()
+                XCTAssertEqual(try snapshot(below), before, "Pins, rows and footer at width \(width), reveal \(amount)")
+                if amount > 0 {
+                    XCTAssertNotEqual(try snapshot(header), headerBefore, "The navigation controls make room for the lights")
+                } else {
+                    XCTAssertEqual(try snapshot(header), headerBefore, "The navigation controls return to their starting position")
+                }
+            }
+            window.contentView = nil
+        }
+    }
+
     // MARK: - helpers
 
     private func makeBrowser() -> Browser {
