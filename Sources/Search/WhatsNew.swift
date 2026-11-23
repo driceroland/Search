@@ -55,6 +55,23 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Bookmarks bar in the sidebar", detail: "The bookmarks bar at the top of the sidebar, in every space.",
+               since: "1.0.19", get: { $0.bookmarksInSidebar }, set: { $0.bookmarksInSidebar = $1 }),
+        Toggle(title: "The field in the middle of the window", detail: "⌘T's and ⌘L's field centred on the window and higher up, as in Arc.",
+               since: "1.0.19", get: { $0.fieldOnWindow }, set: { $0.fieldOnWindow = $1 }),
+        Toggle(title: "Smooth scrolling with a mouse wheel", detail: "Each notch glides, as in Chrome. A trackpad is left as it is.",
+               since: "1.0.19", get: { $0.wheelGlides }, set: { $0.wheelGlides = $1 }),
+        Toggle(title: "A loading line with the tabs hidden", detail: "A thin line along the page's top while it loads, with the tabs folded away.",
+               since: "1.0.19", get: { $0.showsLoadingLine }, set: { $0.showsLoadingLine = $1 }),
+        Toggle(title: "Click the tab you're on to edit its address", detail: "Without the site card; Site Information… stays on the right-click.",
+               since: "1.0.19", get: { $0.tabClickAddressOnly }, set: { $0.tabClickAddressOnly = $1 }),
+        Toggle(title: "Touch ID before filling a password", detail: "Touch ID, or your Mac's password, before a saved password goes into a page.",
+               since: "1.0.19", get: { $0.asksBeforeFilling }, set: { $0.asksBeforeFilling = $1 }),
+        Toggle(title: "Icons only on the bookmarks bar", detail: "Each bookmark its site's icon, its name on hover. Folders keep their names.",
+               since: "1.0.19", get: { $0.bookmarksIconsOnly }, set: { $0.bookmarksIconsOnly = $1 }),
+        Toggle(title: "Unread counts on pinned tabs", detail: "WhatsApp's or Discord's count as a badge on its pin.",
+               since: "1.0.19", get: { $0.showsPinCounts }, set: { $0.showsPinCounts = $1 }),
+
         Toggle(title: "Sidebar button", detail: "Beside the window's buttons, it hides the sidebar as ⌘S does.",
                since: "1.0.18", get: { $0.foldButton }, set: { $0.foldButton = $1 }),
         Toggle(title: "Narrow to icons", detail: "Pull the sidebar narrower and it becomes a strip of site icons.",
@@ -182,6 +199,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.19"),
         Release(version: "1.0.18"),
         Release(version: "1.0.17"),
         Release(version: "1.0.16"),
@@ -262,6 +280,40 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.19", date: "23 November 2026",
+            headline: "Your fixes, and more of Arc's ways.",
+            new: [
+                "Set Up Like Arc turns on Arc's newer habits too, and is offered on the welcome and after an Arc import.",
+                "Search › What's New… brings this card back.",
+                "File › Open File…, Paste and Match Style, Open Link in Private Tab, Open Image in Split View and New Tab in Group.",
+                "A » at the end of the bookmarks bar for what doesn't fit, icons only if you like, and a middle-click or ⌘-click on a folder opens all of it.",
+                "Touch ID before a saved password is filled, in Settings › Passwords.",
+                "Unread counts on pinned tabs, and every site's camera, microphone, location and notification choice listed in Settings › Privacy.",
+                "Keys of your own for the next and previous space and for each profile, in Settings › Keyboard & Mouse › Shortcuts.",
+                "Hide back, forward, reload and the buttons under the sidebar, one by one, in Settings › Appearance.",
+                "Safari extensions that came inside your apps, in Settings › Extensions, off until you turn it on.",
+            ],
+            better: [
+                "uBlock Origin Lite blocks from the first second after launch.",
+                "Extensions from the Chrome Web Store get the update a new install would, and a failed check is tried again within the hour.",
+                "Saved passwords are offered in more sign-in pages, and filled more safely.",
+                "Escape in the window's full screen goes to the page, as in Safari.",
+                "With Float the video when you switch apps, the video waits until the window is out of sight.",
+                "Continue Anyway trusts only the certificate you saw.",
+                "Extension managers see your installed extensions (chrome.management).",
+            ],
+            fixed: [
+                "uBlock Origin's popup, Readwise Highlighter, Raindrop.io's sign-in, Zotero Connector and Claude's side panel.",
+                "A sideways swipe in Google Sheets, or a fast scroll, going back a page.",
+                "Two rows of window buttons in split screen, and the full-screen bar taller than Safari's.",
+                "A video left in full screen coming back white, and YouTube opening as a download.",
+                "The Liquid Glass tab hard to see in light mode, and the side panel's white flash.",
+                "A beachball in a window full of tabs when the address field took the keyboard.",
+                "Enhancer for YouTube's buttons showing four times, and the extensions list closing at once in the screen's corner.",
+                "Picture in picture's return button across spaces, a narrowed sidebar's rows, and a tab's renamed title sticking.",
+            ]
+        ),
         Notes(
             version: "1.0.18", date: "22 November 2026",
             headline: "Sync on from the start, news by email, and your fixes.",

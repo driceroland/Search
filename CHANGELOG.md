@@ -11,6 +11,14 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Held back
+
+Not in this version, kept on main for a later one:
+
+- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
+
+## 1.0.19 — 23 November 2026
+
 ### Added
 
 - Next Profile, Previous Profile and Profile 1 to 9 in Settings › Keyboard & Mouse › Shortcuts, with no key until you give them one, and listed only once you have two profiles: the profile after or before the window's, going round from the last to the first, so one key goes back and forth between two, or the Nth in your profiles' order. As File › Profile does, with Profiles in one window on the profile takes the window's place, and otherwise its own window comes forward. `python3 Tests/profile_shortcuts.py` Thanks [@hongmono](https://github.com/hongmono) for asking ([#1437](https://github.com/driceroland/Search/issues/1437))
@@ -105,12 +113,6 @@ in [ROADMAP.md](ROADMAP.md).
 - Settings › Liquid Glass tab: in light mode the glass over the tab you're on has a faint tint and a hairline edge, where it all but vanished on a light column. (idea 843)
 - In full screen, a split screen's half included, the window's buttons no longer show twice, one row under the other, while the other app has the focus. (idea 929)
 - With Float the video when you switch apps on, the video stays in its page while the window is still in view beside the app you went to, and floats once the window is out of sight (covered, minimised or on another Space). It floated at the first click in another app. Search left twice before coming back no longer leaves a watch on, which lifted the video at a later change. `python3 Tests/float_away_sight.py` (idea 470)
-
-### Held back
-
-Not in this version, kept on main for a later one:
-
-- AI on pages, off unless you turn it on in Settings › AI: Summarize Page and Ask About This Page… in the View menu, answered where you choose — a model downloaded to this Mac (Apple Silicon: Qwen3 1.7B, 1.1 GB, checked before every use and run by a small program of Search's own that can't reach the network or your files), Ollama or LM Studio on this Mac, your own key for Anthropic, OpenAI, Google Gemini or OpenRouter, or signing in with your OpenRouter account. The answer comes in a panel beside the page, in plain text, marked as possibly wrong and with where it ran; follow-up questions stay in the panel, and nothing is kept once it closes. Only the page's visible text goes, never a password, a form or another tab; the page's words are given to the model as something to read, not orders, and any web address, email or phone number in the answer that isn't on the page is pointed out. Keys stay in this Mac's keychain and go only to their provider; a provider off this Mac is shown what it will be sent before the first request, and a private tab uses only what runs on this Mac.
 
 ## 1.0.18 — 22 November 2026
 
