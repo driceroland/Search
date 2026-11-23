@@ -85,7 +85,8 @@ enum DeveloperWebAuthnKey {
         case .rs256(let key):
             var error: Unmanaged<CFError>?
             guard let signature = SecKeyCreateSignature(key, .rsaSignatureMessagePKCS1v15SHA256, data as CFData, &error) else {
-                throw error!.takeRetainedValue() as Error
+                if let error { throw error.takeRetainedValue() as Error }
+                throw DeveloperWebAuthn.Failure(name: "UnknownError", message: "The credential could not sign the request.")
             }
             return signature as Data
         }
@@ -335,7 +336,13 @@ enum DeveloperWebAuthn {
             throw Failure(name: "UnknownError", message: "The key couldn't be made.")
         }
         var id = Data(count: 16)
-        id.withUnsafeMutableBytes { _ = SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
+        let randomStatus = id.withUnsafeMutableBytes { bytes -> OSStatus in
+            guard let address = bytes.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, bytes.count, address)
+        }
+        guard randomStatus == errSecSuccess else {
+            throw Failure(name: "UnknownError", message: "The credential ID could not be made.")
+        }
         let resident = authenticator.supportsResidentKeys && (residentKey == "required" || residentKey == "preferred")
         var flags: Flags = [.userPresent, .attested]
         if authenticator.supportsUserVerification && authenticator.userVerified { flags.insert(.userVerified) }

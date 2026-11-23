@@ -1576,14 +1576,14 @@ final class SourceTextView: NSTextView {
 
     /// A whole source line (1-based), wrapped pieces included.
     func lineRect(_ line: Int) -> NSRect? {
-        guard let layoutManager, line >= 1, line <= lineStarts.count else { return nil }
+        guard let layoutManager, let textContainer, line >= 1, line <= lineStarts.count else { return nil }
         let length = (string as NSString).length
         guard length > 0 else { return nil }
         let start = lineStarts[line - 1]
         let end = line < lineStarts.count ? lineStarts[line] : length
         let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: min(start, length - 1), length: max(1, min(end, length) - start)),
                                               actualCharacterRange: nil)
-        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer!)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
         rect.origin.y += textContainerOrigin.y
         rect.origin.x = 0
         rect.size.width = bounds.width
