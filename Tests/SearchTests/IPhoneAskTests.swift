@@ -27,9 +27,11 @@ final class IPhoneAskTests: XCTestCase {
         XCTAssertFalse(IPhoneAsk.onNewTab(store))
     }
 
-    func testAnyJoinEndsIt() {
+    func testOnlyTheIPhoneBetaEndsIt() {
         OptIn.remember(.news(iPhoneBeta: false), in: store)
-        XCTAssertFalse(IPhoneAsk.open(store), "joined the news list from the card")
+        XCTAssertTrue(IPhoneAsk.open(store), "the Mac news list alone: still offered")
+        OptIn.remember(.news(iPhoneBeta: true), in: store)
+        XCTAssertFalse(IPhoneAsk.open(store), "the card with the iPhone box ticked")
         store.removePersistentDomain(forName: suite)
         OptIn.remember(.iPhoneBeta, in: store)
         XCTAssertFalse(IPhoneAsk.open(store), "asked for the beta from any place")

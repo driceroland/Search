@@ -14,9 +14,10 @@ import SwiftUI
 // and a fixed source (app-about, app-help, app-newtab), sent only when the
 // button is pressed. Nothing else is sent, nothing is counted.
 //
-// Gone everywhere for good once an email was given from any place (the
-// news list or the iPhone beta, here or in the card, welcome or Settings),
-// or once "Not now" was pressed in any one of them: one switch for all.
+// Gone everywhere for good once the iPhone beta was asked for from any
+// place (here, Settings, or the card or welcome with the iPhone box
+// ticked), or once "Not now" was pressed in any one of them: one switch
+// for all. Joining the Mac news list alone leaves it offered.
 //
 // To take it out in a later release: `on` to false, or delete this file and
 // the lines that name IPhoneAsk (App.swift, About.swift, Browser.swift,
@@ -52,10 +53,10 @@ enum IPhoneAsk {
         }
     }
 
-    /// Whether any place offers it: until an address was given from any
-    /// place, or "Not now" was pressed in one.
+    /// Whether any place offers it: until the iPhone beta was asked for
+    /// from any place, or "Not now" was pressed in one.
     static func open(_ store: UserDefaults = Store.settings) -> Bool {
-        on && !OptIn.joined(store) && !OptIn.askedBeta(store) && !store.bool(forKey: dismissedKey)
+        on && !OptIn.askedBeta(store) && !store.bool(forKey: dismissedKey)
     }
 
     static func dismiss(_ store: UserDefaults = Store.settings) {
@@ -95,7 +96,6 @@ struct IPhoneAskLine: View {
     /// For pictures: start opened.
     var opened = false
 
-    @AppStorage(OptIn.joinedKey, store: Store.settings) private var joined = false
     @AppStorage(OptIn.betaKey, store: Store.settings) private var beta = false
     @AppStorage(IPhoneAsk.dismissedKey, store: Store.settings) private var dismissed = false
     @State private var asking = false
@@ -104,7 +104,7 @@ struct IPhoneAskLine: View {
     @ObservedObject private var reach = OptIn.Reach.shared
 
     var body: some View {
-        if IPhoneAsk.on && ((!joined && !beta && !dismissed && reach.online) || thanked) {
+        if IPhoneAsk.on && ((!beta && !dismissed && reach.online) || thanked) {
             Group {
                 if asking || opened || thanked {
                     VStack(alignment: centred ? .center : .leading, spacing: 6) {

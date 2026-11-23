@@ -805,7 +805,7 @@ final class Bench {
             // The iPhone beta's waitlist places (IPhoneAsk.swift). "state":
             // what each place would show now. "help": Help › Search for
             // iPhone…, pressed through the menu. "join EMAIL SPOT": the press
-            // the line's Join makes (OptInForm.send), to SEARCH_OPTIN_URL —
+            // the line's Join makes (or, with "news", the card's) (OptInForm.send), to SEARCH_OPTIN_URL —
             // a test run's own server, never the site. "dismiss": Not now.
             // "reset": as on a new install. "path" (+ "spot", "opened"): the
             // line or the card drawn off screen to a PNG.
@@ -837,8 +837,11 @@ final class Bench {
                 guard ProcessInfo.processInfo.environment["SEARCH_OPTIN_URL"] != nil else {
                     answer(["error": "join needs SEARCH_OPTIN_URL: never the real list from a test"]); return
                 }
-                OptIn.send(email: email, list: .iPhoneBeta, source: spot.source) { outcome in
-                    if case .success = outcome { OptIn.remember(.iPhoneBeta, in: store) }
+                // "news": the card's press instead, the Mac list ("ticked": with the iPhone box).
+                let list: OptIn.List = request["news"] as? Bool == true
+                    ? .news(iPhoneBeta: request["ticked"] as? Bool == true) : .iPhoneBeta
+                OptIn.send(email: email, list: list, source: spot.source) { outcome in
+                    if case .success = outcome { OptIn.remember(list, in: store) }
                     // A turn later, once the menus have been drawn again.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         var now = state()

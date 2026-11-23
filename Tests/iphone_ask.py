@@ -105,6 +105,15 @@ try:
         t.ok(f"{spot}: after joining, gone everywhere",
              not s["open"] and not s["newTab"] and "Search for iPhone…" not in s["helpMenu"], s)
 
+    # The Mac news list alone (the card, box unticked): still offered.
+    ask("reset")
+    s = ask("join", email="probe@example.com", spot="about", news=True, ticked=False)
+    t.ok("news list alone: still offered everywhere",
+         s["joined"] and s["open"] and s["newTab"] and "Search for iPhone…" in s["helpMenu"], s)
+    s = ask("join", email="probe@example.com", spot="about", news=True, ticked=True)
+    t.ok("the card with the iPhone box ticked: gone everywhere",
+         not s["open"] and not s["newTab"] and "Search for iPhone…" not in s["helpMenu"], s)
+
     ask("reset")
     POSTS.clear()
     s = ask("dismiss")
