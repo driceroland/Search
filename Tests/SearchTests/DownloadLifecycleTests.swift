@@ -186,23 +186,6 @@ final class DownloadLifecycleTests: XCTestCase {
         XCTAssertTrue(fixture.cookies("/retry.bin").allSatisfy { $0?.contains("download-session=fixture-cookie") == true })
     }
 
-    func testDeletedSpaceTakesItsRunningDownloadWithIt() async throws {
-        let tab = try await openFixturePage()
-        let entry = try await startDownload("/cancel.bin", in: tab)
-        try await waitUntil { entry.completedBytes >= 64 * 1024 && entry.destination != nil }
-        let destination = try XCTUnwrap(entry.destination)
-        let store = try XCTUnwrap(entry.store)
-        let id = entry.id
-
-        browser.forgetDownloads(of: store)
-        try await waitUntil {
-            !browser.fetches.entries.contains { $0.id == id } && browser.downloading.isEmpty
-        }
-
-        XCTAssertNil(entry.store, "a forgotten store is still kept by its row")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
-    }
-
     func testCancelRemovesEntryAndPartialFile() async throws {
         let tab = try await openFixturePage()
         let entry = try await startDownload("/cancel.bin", in: tab)

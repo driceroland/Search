@@ -12,9 +12,10 @@ struct ImportRecord: Codable, Equatable {
     /// Every bookmark and folder an import from it added, still to be found
     /// or not.
     var bookmarkIDs: [UUID] = []
-    /// Arc's spaces made, and its pins and pinned tabs brought (see
-    /// takeArc). Absent in a record from before they were kept.
+    /// Arc's spaces made, in a Search that made them: read, never
+    /// written. Absent in a record from before they were kept.
     var spaces: Int?
+    /// Arc's pins and pinned tabs brought (see takeArc).
     var pinned: Int?
 }
 
@@ -27,14 +28,13 @@ enum ImportRecords {
     /// What an import from `name` just added, on top of what was noted
     /// before.
     static func note(_ name: String, bookmarks ids: [UUID] = [], bookmarks added: Int = 0, places: Int = 0,
-                     spaces: Int = 0, pinned: Int = 0) {
+                     pinned: Int = 0) {
         var records = all
         var record = records[name] ?? ImportRecord(date: Date())
         record.date = Date()
         record.bookmarks += added
         record.places += places
         record.bookmarkIDs += ids
-        if spaces > 0 { record.spaces = (record.spaces ?? 0) + spaces }
         if pinned > 0 { record.pinned = (record.pinned ?? 0) + pinned }
         records[name] = record
         all = records

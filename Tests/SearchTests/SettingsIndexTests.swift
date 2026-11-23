@@ -113,11 +113,11 @@ final class SettingsIndexTests: XCTestCase {
             prefs.pinsKeepSite = false
             let before = prefs.arcSnapshot
             XCTAssertFalse(prefs.looksLikeArc)
-            XCTAssertEqual(prefs.setUpLikeArc().count, 5)
+            XCTAssertEqual(prefs.setUpLikeArc().count, 4)
             XCTAssertTrue(prefs.looksLikeArc)
             prefs.restore(before)
             XCTAssertEqual(prefs.tabsLayout, before.layout)
-            XCTAssertFalse(prefs.usesSpaces || prefs.listsPins || prefs.pinsKeepSite || prefs.floatingNewTab)
+            XCTAssertFalse(prefs.listsPins || prefs.pinsKeepSite || prefs.floatingNewTab)
         }
     }
 

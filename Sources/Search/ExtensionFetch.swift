@@ -124,18 +124,14 @@ enum ExtensionFetch {
 
     /// The store whose cookies go: that of the windows the request can
     /// belong to — the ones whose side panel shows the extension, else every
-    /// window — only when they all share one. One controller serves every
-    /// profile, and a worker or a popup doesn't say which window it is for:
-    /// with windows of different profiles or spaces open, it isn't known
-    /// whose sign-in to send, and nothing is ("pass"). Never a private
-    /// tab's store: panelStore never returns one.
+    /// window — only when they all share one. Never a private tab's store.
     static func store(for context: WKWebExtensionContext) -> WKWebsiteDataStore? {
         let showing = Browsers.all.filter { browser in
             if browser.sidePanelShown, case .page(let id, _, _)? = browser.sidePanel { return id == context.uniqueIdentifier }
             return false
         }
         let candidates = showing.isEmpty ? Browsers.all : showing
-        return only(candidates.map { $0.panelStore($0.spaceID) })
+        return only(candidates.map { _ in Store.websites })
     }
 
     /// The one store, if they are all that one.
@@ -821,7 +817,7 @@ enum ExtensionFetch {
             for (k, v) in HTTPCookie.requestHeaderFields(with: cookies) { request.setValue(v, forHTTPHeaderField: k) }
             ExtensionFetch.note(["native": url.absoluteString, "method": request.httpMethod ?? "GET", "origin": origin,
                                  "extension": context.uniqueIdentifier, "cookies": cookies.map(\.name).sorted(),
-                                 "store": Browsers.all.contains { $0.panelStore($0.spaceID) === store } ? "space" : "other"])
+                                 "store": store === Store.websites ? "space" : "other"])
         }
 
         nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,

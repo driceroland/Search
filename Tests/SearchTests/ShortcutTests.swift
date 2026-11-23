@@ -37,88 +37,6 @@ final class ShortcutTests: XCTestCase {
         XCTAssertEqual(store.tip("Bookmarks", nil), "Bookmarks")
     }
 
-    func testSpaceKeysCanMoveClearResetAndReload() {
-        let store = ShortcutStore()
-        let original = KeyCombo("1", command: false, control: true)
-        let replacement = KeyCombo("1", option: true)
-        XCTAssertEqual(store.customCommand(on: original)?.id, "spaces.1")
-        store.assign(replacement, to: "spaces.1")
-        XCTAssertNil(store.customCommand(on: original))
-        XCTAssertTrue(store.isFreed(original))
-        XCTAssertEqual(ShortcutStore().customCommand(on: replacement)?.id, "spaces.1")
-        store.clear("spaces.1")
-        XCTAssertNil(store.key(for: "spaces.1"))
-        XCTAssertNil(ShortcutStore().key(for: "spaces.1"))
-        store.reset("spaces.1")
-        XCTAssertEqual(store.customCommand(on: original)?.id, "spaces.1")
-        XCTAssertFalse(store.anyChanged)
-    }
-
-    /// ⌘1–⌘9 switch spaces and ⌃1–⌃9 pick tabs once the switch is on, as
-    /// in Arc — only while spaces are on; a space's own key stays yours.
-    func testSpacesOnCommandSwapsTheNumberKeys() {
-        let settings = Store.settings
-        let saved = (settings.object(forKey: "spaces"), settings.object(forKey: Preferences.spacesOnCommandKey))
-        defer {
-            settings.set(saved.0, forKey: "spaces")
-            settings.set(saved.1, forKey: Preferences.spacesOnCommandKey)
-        }
-        let command3 = KeyCombo("3")
-        let control3 = KeyCombo("3", command: false, control: true)
-
-        // Off: as always.
-        settings.set(true, forKey: "spaces")
-        settings.set(false, forKey: Preferences.spacesOnCommandKey)
-        XCTAssertFalse(KeyCombo.spacesOnCommand)
-        XCTAssertTrue(KeyCombo.isReserved(command3))
-        XCTAssertFalse(KeyCombo.isReserved(control3))
-        XCTAssertEqual(ShortcutStore().customCommand(on: control3)?.id, "spaces.3")
-        XCTAssertEqual(KeyCombo.tabNumbers, "⌘1–⌘9")
-        XCTAssertTrue(KeyCombo.holdsTabNumbers(.command))
-        XCTAssertFalse(KeyCombo.holdsTabNumbers(.control))
-
-        // The switch on, spaces off: nothing changes.
-        settings.set(false, forKey: "spaces")
-        settings.set(true, forKey: Preferences.spacesOnCommandKey)
-        XCTAssertFalse(KeyCombo.spacesOnCommand)
-        XCTAssertEqual(ShortcutStore().key(for: "spaces.3"), control3)
-
-        // Both on: swapped.
-        settings.set(true, forKey: "spaces")
-        XCTAssertTrue(KeyCombo.spacesOnCommand)
-        let store = ShortcutStore()
-        XCTAssertEqual(store.key(for: "spaces.3"), command3)
-        XCTAssertEqual(store.customCommand(on: command3)?.id, "spaces.3")
-        XCTAssertNil(store.customCommand(on: control3))
-        XCTAssertTrue(KeyCombo.isReserved(control3))
-        XCTAssertFalse(KeyCombo.isReserved(command3))
-        XCTAssertTrue(control3.isTabNumber)
-        XCTAssertFalse(command3.isTabNumber)
-        XCTAssertEqual(KeyCombo.tabNumber(9), KeyCombo("9", command: false, control: true))
-        XCTAssertEqual(KeyCombo.tabNumbers, "⌃1–⌃9")
-        XCTAssertTrue(KeyCombo.holdsTabNumbers([.control, .shift]))
-        XCTAssertFalse(KeyCombo.holdsTabNumbers(.command))
-        XCTAssertFalse(store.anyChanged, "a swapped default is not a change of yours")
-
-        // Words written for the usual keys say where they are now.
-        XCTAssertEqual(store.relabel("Spaces, switched with ⌃1–⌃9"), "Spaces, switched with ⌘1–⌘9")
-        XCTAssertEqual(store.relabel("Which tab each ⌘1–9 selects"), "Which tab each ⌃1–9 selects")
-
-        // A space's key you moved stays moved, and the default comes back ⌘N.
-        let option3 = KeyCombo("3", option: true)
-        store.assign(option3, to: "spaces.3")
-        XCTAssertEqual(ShortcutStore().key(for: "spaces.3"), option3)
-        XCTAssertEqual(store.relabel("⌃3"), "⌥⌘3")
-        store.reset("spaces.3")
-        XCTAssertEqual(store.key(for: "spaces.3"), command3)
-        XCTAssertFalse(store.anyChanged)
-
-        // Off again: back to ⌃N, with nothing kept.
-        settings.set(false, forKey: Preferences.spacesOnCommandKey)
-        XCTAssertEqual(ShortcutStore().key(for: "spaces.3"), control3)
-        XCTAssertEqual(store.relabel("⌃1–⌃9"), "⌃1–⌃9")
-    }
-
     /// ⌃Tab's switcher on a key of its own, as Arc allows: ⇧ walks back,
     /// its modifiers hold it up, and ⌃Tab can go to another command.
     func testRecentTabsSwitcherCanBeRebound() {
@@ -153,26 +71,6 @@ final class ShortcutTests: XCTestCase {
         XCTAssertEqual(store.key(for: Command.recentTabs), optionE)
         store.resetAll()
         XCTAssertEqual(store.key(for: Command.recentTabs), controlTab)
-    }
-
-    func testConflictsWithSpaceKeysUseExistingReassignmentAndReset() {
-        let store = ShortcutStore()
-        let original = KeyCombo("2", command: false, control: true)
-        XCTAssertFalse(KeyCombo.isReserved(original))
-        XCTAssertTrue(KeyCombo.isReserved(KeyCombo("2")))
-        XCTAssertTrue(KeyCombo.isReserved(KeyCombo("c")))
-        XCTAssertEqual(store.owner(of: original, except: "tabs.next")?.id, "spaces.2")
-        store.assign(original, to: "tabs.next")
-        XCTAssertNil(store.key(for: "spaces.2"))
-        XCTAssertEqual(store.customCommand(on: original)?.id, "tabs.next")
-        XCTAssertEqual(ShortcutStore().customCommand(on: original)?.id, "tabs.next")
-        store.reset("spaces.2")
-        XCTAssertEqual(store.customCommand(on: original)?.id, "spaces.2")
-        XCTAssertNil(store.key(for: "tabs.next"))
-        XCTAssertEqual(ShortcutStore().customCommand(on: original)?.id, "spaces.2")
-        store.resetAll()
-        XCTAssertEqual(store.customCommand(on: original)?.id, "spaces.2")
-        XCTAssertNil(Store.settings.data(forKey: "shortcuts"))
     }
 
     func testSpaceKeysReadPhysicalDigitsOnOtherLayouts() throws {

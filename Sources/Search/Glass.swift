@@ -16,14 +16,13 @@ import SwiftUI
 // show through the page.
 //
 // The layers, bottom up: the Mac's own blur of what is behind the window,
-// the tint and the grain. The tint is the space's own colour or gradient:
+// the tint and the grain. The tint is the window's colour or gradient
+// (Settings › Themes):
 // the wash the column, the strip and the bars lay over a solid ground is
 // far too faint to read on glass, so on glass they leave it out and the
 // glass wears the colour instead, once, under all of them. Transparency
 // takes the colour off, down to the glass alone; the blur is always whole.
-// Transparency and Grain are chosen where the colour is, in the space's
-// Colour… (see SpaceLookPicker), and hold for every space; with spaces off,
-// where there is no Colour…, in Settings under Glass.
+// Transparency and Grain are chosen in Settings under Glass.
 
 extension Browser {
     /// Whether this window is glass right now.
@@ -49,12 +48,12 @@ extension Browser {
     }
 }
 
-/// The glass the card and the column sit on, tinted with the space's
-/// colour or gradient (its menu › Colour…), or the plain ground for a space
+/// The glass the card and the column sit on, tinted with the window's
+/// colour or gradient (Settings › Themes), or the plain ground for a window
 /// with none, as much as Transparency leaves, under the Grain.
 struct GlassGround: View {
     @ObservedObject var prefs: Preferences
-    let look: SpaceLook?
+    let look: ThemeLook?
     @Environment(\.washStrength) private var strength
     @Environment(\.washRoom) private var room
     @Environment(\.colorScheme) private var scheme
@@ -92,13 +91,13 @@ struct GlassGround: View {
 
     /// The colour itself, at its full strength: Transparency says how much
     /// of it lies on the glass.
-    /// Toned as the wash tones it (Subtle, Rich or Vivid), so a space keeps
-    /// the hue it has without glass.
+    /// Toned as the wash tones it (Subtle, Rich or Vivid), so the window
+    /// keeps the hue it has without glass.
     @ViewBuilder private var tint: some View {
         let dark = scheme == .dark
         switch look {
-        case .colour(let colour)? where Spaces.wash(colour, dark: dark) != nil:
-            Spaces.toned(colour, strength, dark: dark)
+        case .colour(let colour)? where Tints.wash(colour, dark: dark) != nil:
+            Tints.toned(colour, strength, dark: dark)
         case .gradient(let gradient)?:
             GeometryReader { geo in
                 let ends = gradient.points(frame: geo.frame(in: .global), room: room)

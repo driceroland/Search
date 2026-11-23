@@ -36,10 +36,27 @@ final class PinFoldersTests: XCTestCase {
     }
 
     func testAPinsFileWithFoldersStillReadsAsPins() throws {
-        let space = UUID()
         let a = def("A", folder: UUID())
-        let data = try XCTUnwrap(Pins.encode(bySpace: [space: [a]], shared: []))
-        XCTAssertEqual(Pins.decode(data)?.bySpace[space], [a])
+        let data = try XCTUnwrap(Pins.encode([a]))
+        XCTAssertEqual(Pins.decode(data), [a])
+    }
+
+    /// pins.json as a Search with several rows left it: the one row's pins,
+    /// after the ones once shown above every row; another row's are passed
+    /// over.
+    func testAnOlderPinsFileReadsItsFirstRowAndItsSharedPins() throws {
+        let own = def("A", folder: nil), shared = def("S", folder: nil), other = def("O", folder: nil)
+        let old = [Session.legacyFirstRow: [own], Pins.sharedKey: [shared], UUID().uuidString: [other]]
+        XCTAssertEqual(Pins.decode(try JSONEncoder().encode(old)), [shared, own])
+    }
+
+    /// pin-folders.json: the one row's, and a list that won't read is none.
+    func testFoldersReadTheirRowAndADamagedListIsNone() throws {
+        let work = folder("Work")
+        let encoded = try XCTUnwrap(PinFolders.encode([work]))
+        XCTAssertEqual(PinFolders.decode(encoded), [work])
+        let bad = try JSONSerialization.data(withJSONObject: [Session.legacyFirstRow: [["name": 3]]])
+        XCTAssertEqual(PinFolders.decode(bad), [])
     }
 
     func testAFolderSavedWithoutItsStateIsOpenAtTheTop() throws {
@@ -47,23 +64,6 @@ final class PinFoldersTests: XCTestCase {
         let json = #"{"id":"\#(id.uuidString)","name":"Work","parent":"not an id"}"#
         let read = try JSONDecoder().decode(PinFolder.self, from: Data(json.utf8))
         XCTAssertEqual(read, PinFolder(id: id, name: "Work", parent: nil, collapsed: false))
-    }
-
-    func testASpaceWhoseFoldersDontReadLosesNoOtherSpace() throws {
-        let good = UUID(), bad = UUID()
-        let work = folder("Work")
-        let encoded = try XCTUnwrap(PinFolders.encode([good: [work]]))
-        var top = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        top[bad.uuidString] = [["name": 3]]
-        top["not a space"] = []
-        let read = PinFolders.decode(try JSONSerialization.data(withJSONObject: top))
-        XCTAssertEqual(read, [good: [work]])
-    }
-
-    func testSharingAPinTakesItOutOfItsFolder() {
-        let a = def("A", folder: UUID())
-        let moved = Pins.share(a.id, own: [a], shared: [])
-        XCTAssertNil(moved.shared.first?.folder)
     }
 
     // MARK: - what is drawn

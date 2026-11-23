@@ -121,18 +121,6 @@ try:
     t.ok("relaunch: the time away is kept, not started again", tab is not None and tab["idle"] >= HOUR / 2, tab)
     sv.quit()
 
-    # Another space's row closes its own tabs, and its file says so.
-    sv.setup(spaces=True); hour(); on(); sv.launch()
-    sv.page("home"); first = sv.sp("state")["spaceID"]
-    sv.sp("space", spaceAction="new", name="Two"); time.sleep(1)
-    y = sv.page("y"); sv.page("z"); two = sv.sp("state")["spaceID"]
-    sv.sp("space", spaceAction="go", spaceID=first); time.sleep(0.8)
-    sv.sp("age", id=y, seconds=2 * HOUR); sv.sp("tidy")
-    saved = [e["url"] for e in sv.session(two)["tabs"]]
-    t.ok("parked: the space's file no longer has it", not any(u.endswith("/y") for u in saved), saved)
-    sv.sp("space", spaceAction="go", spaceID=two); time.sleep(0.8); st = sv.sp("state")
-    t.ok("parked: back in the space, it's gone and the rest is there",
-         at(st, "y") is None and at(st, "z") is not None, urls(st))
 finally:
     t.done(); sv.finish()
 sys.exit(1 if t.failed else 0)

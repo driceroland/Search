@@ -1,6 +1,6 @@
 import Foundation
 
-/// A named section of ordinary tabs in one space's tab layout.
+/// A named section of ordinary tabs in the row.
 /// Its tabs remain ordinary tabs; their own group IDs describe membership.
 struct TabGroup: Codable, Identifiable, Equatable {
     var id: UUID

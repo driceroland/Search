@@ -56,7 +56,7 @@ final class PinSplitTests: XCTestCase {
         XCTAssertEqual(browser.pinnedPair(of: tabs[1])?.id, pair?.id)
         XCTAssertNil(browser.pinnableSplit(tabs[0]), "already pinned")
 
-        let defs = Pins.defs(browser.spaceID)
+        let defs = Pins.defs()
         XCTAssertEqual(defs.count, 2)
         XCTAssertEqual(Set(defs.map(\.pair)), [pair?.id], "both pins name the same pair")
 
@@ -72,7 +72,7 @@ final class PinSplitTests: XCTestCase {
         XCTAssertNil(tabs[0].pin)
         XCTAssertNil(tabs[1].pin)
         XCTAssertEqual(browser.split(for: tabs[0])?.tabs, [tabs[0].id, tabs[1].id])
-        XCTAssertEqual(Pins.defs(browser.spaceID), [])
+        XCTAssertEqual(Pins.defs(), [])
     }
 
     func testTwoPinsPairedTogetherMergeIntoAPinnedSplit() {
@@ -143,7 +143,7 @@ final class PinSplitTests: XCTestCase {
         let tabs = made
         browser.pair(tabs[1], with: tabs[0], onLeft: false)
         browser.pin(tabs[0])
-        let ids = Set(Pins.defs(browser.spaceID).map(\.id))
+        let ids = Set(Pins.defs().map(\.id))
 
         let other = Browser(record: WindowRecord())
         browsers.append(other)
@@ -166,14 +166,13 @@ final class PinSplitTests: XCTestCase {
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
         let prefs = browser.prefs
-        let saved = (prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.sharesPins)
+        let saved = (prefs.usesTabGroups, prefs.splitView, prefs.listsPins)
         restorePreferences = {
-            (prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.sharesPins) = saved
+            (prefs.usesTabGroups, prefs.splitView, prefs.listsPins) = saved
         }
         prefs.usesTabGroups = false
         prefs.splitView = true
         prefs.listsPins = false
-        prefs.sharesPins = false
         for word in ["one", "two", "three", "four"] {
             if browser.tabs.last?.isBlank != true { browser.newTab() }
             browser.tabs.last?.restore(url: URL(string: "https://\(word).example/")!, title: word)

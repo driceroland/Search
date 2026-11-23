@@ -250,7 +250,7 @@ final class SplitManyTests: XCTestCase {
         try withBrowser { browser, t in
             browser.pair(t[2], with: t[1], onLeft: false)
             browser.pair(t[3], with: t[2], onLeft: false)
-            let row = try XCTUnwrap(browser.allRows()[browser.spaceID.uuidString])
+            let row = browser.currentRow()
             XCTAssertEqual(row.splits.count, 1)
             XCTAssertEqual(row.splits.first?.tabs, [1, 2, 3])
             XCTAssertEqual(row.splits.first?.sizes.count, 3)

@@ -14,7 +14,7 @@ struct PinFolderHeading: View {
     let folder: PinFolder
     let depth: Int
     var compact = false
-    /// Not to be pressed: another space's rows passing in a swipe.
+    /// Not to be pressed: a copy drawn for a picture.
     var interactive = true
     /// A pin carried over it would go in.
     var target = false
@@ -157,7 +157,7 @@ struct PinFolderHeading: View {
         Button("Rename Folder") { browser.editingPinFolder = folder.id }
         Button(folder.collapsed ? "Expand Folder" : "Collapse Folder") { browser.togglePinFolder(folder.id) }
         if folder.isLive {
-            Button("Refresh") { LiveFolders.refresh(folder.id, in: browser.spaceID) }
+            Button("Refresh") { LiveFolders.refresh(folder.id) }
         } else {
             Button("New Folder Inside") { browser.newPinFolder(in: folder.id) }
                 .disabled(!PinTree.canMake(in: folder.id, in: folders))

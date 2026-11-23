@@ -38,7 +38,7 @@ BEFORE = {
     "search.suggest": "suggestions", "search.keywords": "site shortcuts", "links.little": "small window",
     "reader.twins": "markdown", "reader.follows": "reading mode", "float.style": "picture in picture",
     "float.leave": "float", "float.away": "switch apps", "media.click": "autoplay",
-    "fullscreen.escapeTwice": "esc", "fullscreen.keepsWindow": "desktop", "pageZoom": "zoom", "pages.120.mode": "120", "spaces": "spaces",
+    "fullscreen.escapeTwice": "esc", "fullscreen.keepsWindow": "desktop", "pageZoom": "zoom", "pages.120.mode": "120",
     "pins.home": "pins", "pins.peek": "pins", "pins.list": "pinned rows", "newtab.floating": "floating",
     "commandbar": "commands", "start.fresh": "fresh window", "sites.keep": "tracking", "notifications.ask": "notifications",
     "links.peek": "peek", "links.peekClick": "peek", "autoscroll": "middle button",
@@ -47,11 +47,11 @@ BEFORE = {
     # Always on now: the find field says so.
     "splitView": "split", "tabs.groups": "groups", "panel.sites": "side panel",
     "translate.pages": "translate", "tabs.keepAwake": "awake", "search.sites": "site from the address",
-    "pins.shared": "every space", "pins.numberBack": "number again", "switcher.keys": "switcher",
+    "pins.numberBack": "number again", "switcher.keys": "switcher",
     "links.show": "where links go", "float.flicks": "flick",
 }
 ALWAYS = {"splitView", "tabs.groups", "panel.sites", "translate.pages", "tabs.keepAwake", "search.sites",
-          "pins.shared", "pins.numberBack", "switcher.keys", "links.show", "float.flicks"}
+          "pins.numberBack", "switcher.keys", "links.show", "float.flicks"}
 
 
 def settings(**f): return sv.cmd({"do": "settings", **f})
@@ -79,7 +79,7 @@ def case_reachable(t):
     t.ok("…in Browsing › Video", any(i["page"] == "browsing" and i["groupTitle"] == "Video" for i in found))
     shown = [i for i in items if not i["findOnly"]]
     t.ok("about a hundred and twenty rows in the sections", 105 <= len(shown) <= 140, len(shown))
-    t.ok("eleven sections, Themes among them (#1318)", len(every["pages"]) == 11 and "themes" in every["pages"], every["pages"])
+    t.ok("nine sections, Pins among them", every["pages"] == ["general", "appearance", "tabs", "browsing", "pins", "privacy", "extensions", "keyboard", "about"], every["pages"])
     # Old addresses land in the new sections.
     sv.cmd({"do": "ui", "show": "search://settings/shortcuts"}); time.sleep(0.6)
     t.ok("search://settings/shortcuts opens Keyboard & Mouse", settings()["settingsPage"] == "keyboard",
@@ -152,8 +152,8 @@ def case_merged(t):
     put("links.peek", "off")
     t.ok("Peek: Off writes links.peek off, keeps the click", (read("links.peek"), read("links.peekClick")) == ("0", "optionShift"))
     v = put("arc.setup", True)
-    t.ok("Set Up Like Arc: left, spaces, rows, pins, floating new tab",
-         v["arc"] and v["tabs.layout"] == "left" and read("spaces") == "1" and read("pins.list") == "1"
+    t.ok("Set Up Like Arc: left, rows, pins, floating new tab",
+         v["arc"] and v["tabs.layout"] == "left" and read("pins.list") == "1"
          and read("newtab.floating") == "1" and v["pins.keep"], v)
     # And it survives a relaunch, read back from the keys alone.
     sv.quit(); time.sleep(0.5); sv.launch()

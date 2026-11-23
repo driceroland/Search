@@ -129,9 +129,7 @@ final class SiteNotifications: NSObject {
     nonisolated func openWindow(_ store: WKWebsiteDataStore, url: URL, origin: WKSecurityOrigin, completionHandler: @escaping (WKWebView?) -> Void) {
         MainActor.assumeIsolated {
             guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), !Store.testing else { return completionHandler(nil) }
-            // A window whose space signs in with the worker's store: the page
-            // it opens must be the same person's, not the front window's.
-            let fits = Browsers.all.filter { !$0.isPopup && Spaces.store(for: $0.spaceID) === store }
+            let fits = Browsers.all.filter { !$0.isPopup }
             guard let browser = fits.first(where: { $0 === Browsers.front && $0.isOpen }) ?? fits.last(where: \.isOpen) ?? fits.first
             else { return completionHandler(nil) }
             let tab = browser.open(url, foreground: true)
@@ -232,10 +230,9 @@ final class SiteNotifications: NSObject {
                 return Browser.origin(scheme, host, url.port ?? 0) == origin
             }.map { (browser, $0) }
         }
-        // Failing the store, a tab of the same profile: never one of another
-        // profile, signed in as someone else (see Profiles.swift). The sender
+        // Failing the store, a tab signed in the same way. The sender
         // answers to this too: moved since, it may be signed in differently.
-        let sameProfile = { (pair: (Browser, Tab)) in store.map { s in Spaces.stores(of: pair.0.profileID).contains { $0 === s } } ?? true }
+        let sameProfile = { (pair: (Browser, Tab)) in store.map { $0 === Store.websites } ?? true }
         return found.first(where: { $0.1.id == sender && ($0.1.store === store || sameProfile($0)) })
             ?? found.first(where: { $0.1.store === store })
             ?? found.first(where: sameProfile)

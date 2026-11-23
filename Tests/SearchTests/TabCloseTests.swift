@@ -37,7 +37,7 @@ final class TabCloseTests: XCTestCase {
     }
 
     private func tab(_ name: String) -> Tab {
-        let tab = Tab(configuration: Web.configuration(space: browser.spaceID))
+        let tab = Tab(configuration: Web.configuration())
         tab.restore(url: URL(string: "about:blank#\(name)")!, title: name)
         return tab
     }
@@ -120,31 +120,6 @@ final class TabCloseTests: XCTestCase {
         XCTAssertEqual(browser.activeID, c.id)
     }
 
-    func testStaysInItsSpace() {
-        let oldUsesSpaces = browser.prefs.usesSpaces
-        let oldSpaces = browser.spaces
-        defer {
-            browser.prefs.usesSpaces = oldUsesSpaces
-            browser.spaces = oldSpaces
-        }
-        browser.prefs.usesSpaces = true
-        let firstID = browser.spaceID
-        let secondID = UUID()
-        browser.spaces = [Space(id: firstID, name: "First", colour: 0), Space(id: secondID, name: "Second", colour: 1)]
-
-        let (a, _, c) = viewedBAC()
-        browser.switchSpace(to: secondID)
-        let (d, e) = (tab("D"), tab("E"))
-        browser.showRow([d, e], active: d.id)
-        browser.select(e)
-        browser.select(d)
-
-        browser.switchSpace(to: firstID)
-        browser.close(c)
-        XCTAssertEqual(browser.activeID, a.id)
-        XCTAssertEqual(browser.spaceID, firstID)
-    }
-
     /// ⌘Y from a tab in the middle of the row: History opens beside it, and
     /// closing History goes back to that tab, switch or no switch.
     func testOwnPageGoesBackWithSwitchOff() {
@@ -181,7 +156,7 @@ final class TabCloseTests: XCTestCase {
     }
 
     func testTabMovedToAnotherWindowIsNotGoneBackTo() {
-        let other = Browser(record: WindowRecord(space: browser.spaceID))
+        let other = Browser(record: WindowRecord())
         defer { other.closeAll() }
         let (a, b, c) = viewedBAC()
         browser.moveToWindow(a, other)

@@ -175,18 +175,18 @@ struct ImportPanel: View {
     /// the pins and the ones it filed stay tabs in a group of that folder's
     /// name, so that neither the keeping nor the folder is lost.
     private func arcDetail(_ arc: (spaces: Int, pinned: Int), _ source: ImportSource) -> String {
-        let spaces = arc.spaces == 1 ? "1 space" : "\(arc.spaces) spaces"
         let favourites = source.name == "Zen" ? "Essentials" : "favourites"
-        let head = "\(spaces), \(arc.pinned) pinned — each a space here, the \(favourites) as pins"
+        let apart = arc.spaces > 1 ? ", each space's pages in a tab group of its name" : ""
+        let head = "\(arc.pinned) pinned — the \(favourites) as pins\(apart)"
         if browser.prefs.listsPins && browser.prefs.pinFolders {
             return head + ", its pinned pages as rows under them, in its folders as folders of rows"
         }
         return browser.prefs.listsPins
             ? head + ", its pinned pages as rows under them, and the ones it filed in a folder as tabs in a group of that name"
-            : head + ", its pinned tabs asleep in it"
+            : head + ", its pinned tabs asleep at the end of the row"
     }
 
-    /// Whether Arc's own spaces are coming over: they hold its tabs, which
+    /// Whether Arc's pinned tabs are coming over: its spaces hold them, which
     /// its session file holds again, so its open tabs then stay behind.
     /// Zen's open tabs leave its pins out, so both can come.
     private func takesArc(_ source: ImportSource) -> Bool {
@@ -201,15 +201,15 @@ struct ImportPanel: View {
     /// What the open tabs side of the import will do.
     private func tabsDetail(_ preview: ImportSource.Preview?, _ source: ImportSource) -> String {
         guard let session = preview?.session, session.tabs > 0 else { return "None open in \(source.name)" }
-        if takesArc(source) { return "They come with Arc's spaces; turn those off to bring its open tabs instead" }
+        if takesArc(source) { return "They come with Arc's pinned tabs; turn those off to bring its open tabs instead" }
         func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
         let tabs = session.found > session.tabs
             ? "The first \(session.tabs.formatted()) of \(session.found.formatted()) tabs" : count(session.tabs, "tab")
         let groups = session.groups.isEmpty ? "" : " in \(count(session.groups.count, "group"))"
         if case .mozilla(let mozilla) = source, mozilla.keepsSpaces {
-            return "\(tabs)\(groups) — asleep at the end of this space; its pinned tabs come with its spaces"
+            return "\(tabs)\(groups) — asleep at the end of the row; its pinned tabs come with them below"
         }
-        return "\(tabs)\(groups) — asleep at the end of this space, pinned tabs as pins"
+        return "\(tabs)\(groups) — asleep at the end of the row, pinned tabs as pins"
     }
 
     /// Safari, and browsers on this Mac with nothing where their data should
@@ -350,11 +350,11 @@ struct ImportPanel: View {
                     option($wantsTabs, none: !bringsTabs(source))
                 }
             }
-            // Arc's own, or Zen's: its spaces, what is pinned in them, its
+            // Arc's own, or Zen's: what is pinned in its spaces, its
             // favourites or Essentials.
             if let arc = arcCounts[key(source, profile(of: source))], arc.spaces + arc.pinned > 0 {
                 Rule()
-                Line("Spaces and pinned tabs", arcDetail(arc, source)) {
+                Line("Pinned tabs", arcDetail(arc, source)) {
                     Switch(on: $wantsArc)
                 }
                 // Pinned pages only keep their shape as pinned rows, and
@@ -365,7 +365,7 @@ struct ImportPanel: View {
                 if wantsArc, arc.pinned > 0, !browser.prefs.listsPins {
                     Rule()
                     Line("Keep them as pinned rows",
-                         "As in \(source.name): each pinned page a row with its name, under your pins. Turned on, it stays in Settings › Spaces & Pins › Pinned rows"
+                         "As in \(source.name): each pinned page a row with its name, under your pins. Turned on, it stays in Settings › Pins › Pinned rows"
                          + (browser.prefs.sidebar ? "" : "; rows show with the tabs down the side")) {
                         Pill("Turn on pinned rows") {
                             withAnimation(Motion.glide) { browser.prefs.listsPins = true }
@@ -377,7 +377,7 @@ struct ImportPanel: View {
                 if wantsArc, arc.pinned > 0, browser.prefs.listsPins, !browser.prefs.pinFolders {
                     Rule()
                     Line("Keep its folders as folders",
-                         "As in \(source.name): each folder of pinned pages a folder of rows, nested as it was, rather than a tab group. Turned on, it stays in Settings › Spaces & Pins › Folders in pinned rows") {
+                         "As in \(source.name): each folder of pinned pages a folder of rows, nested as it was, rather than a tab group. Turned on, it stays in Settings › Pins › Folders in pinned rows") {
                         Pill("Turn on folders") {
                             withAnimation(Motion.glide) { browser.prefs.pinFolders = true }
                         }
@@ -526,11 +526,11 @@ struct ImportPanel: View {
             said[3] = Said(ok: true, text: extensions.count == 1 ? "1 extension to confirm" : "\(extensions.count) extensions to confirm")
         }
         if wantsArc, arcCounts[key(source, profile)] != nil, let sidebar = source.arcSidebar(profile: profile) {
-            let (spaces, pins, tabs) = browser.takeArc(sidebar, from: source, profile: profile)
-            ImportRecords.note(source.name, spaces: spaces, pinned: pins + tabs)
+            let (pins, tabs) = browser.takeArc(sidebar, from: source, profile: profile)
+            ImportRecords.note(source.name, pinned: pins + tabs)
             func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
-            said[4] = Said(ok: true, text: spaces + pins + tabs == 0 ? "\(source.name)'s spaces and pins were all here already"
-                           : "\(count(spaces, "new space")), \(count(pins, "pin")), \(count(tabs, "pinned tab"))")
+            said[4] = Said(ok: true, text: pins + tabs == 0 ? "\(source.name)'s pins were all here already"
+                           : "\(count(pins, "pin")), \(count(tabs, "pinned tab"))")
         }
         // From what was read when the sheet counted, not read again here.
         if wantsTabs, bringsTabs(source), let session = preview?.session {

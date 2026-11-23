@@ -1,15 +1,15 @@
 import Foundation
 
 // Folders among the pinned rows, as in Arc's pinned list: a folder holds
-// pinned rows and other folders, folds and opens, and is the space's own.
-// Only rows go in one (a square never does, nor a pin every space shows),
-// and only while Settings › Spaces & Pins › Pinned rows and Folders in pinned rows are both on
+// pinned rows and other folders, and folds and opens.
+// Only rows go in one (a square never does),
+// and only while Settings › Pins › Pinned rows and Folders in pinned rows are both on
 // are they drawn; turned off, the rows come back flat, and their folders
 // wait for the switch, as tab groups do.
 //
 // Which folder a pin is in is the pin's own (PinDef.folder, in pins.json);
 // the folders themselves, their names, which one holds which and whether
-// they are folded, are kept in pin-folders.json, by space. pins.json stays
+// they are folded, are kept in pin-folders.json. pins.json stays
 // what an older version can read: one that rewrites it drops the folder of
 // each pin and keeps the pins.
 //
@@ -382,71 +382,58 @@ enum PinTree {
     }
 }
 
-/// pin-folders.json: each space's folders, shared by every window as the
-/// pins are (see Pins.swift), and passed on with Pins.changed.
+/// pin-folders.json: the folders among the pinned rows, shared by every
+/// window as the pins are (see Pins.swift), and passed on with
+/// Pins.changed. Kept under the key the one row has always had there.
 @MainActor
 enum PinFolders {
-    private(set) static var bySpace: [UUID: [PinFolder]] = [:]
+    private static var list: [PinFolder] = []
     private static var loaded = false
 
     private static var file: URL { Store.file("pin-folders.json") }
 
-    static func folders(_ space: UUID) -> [PinFolder] {
+    static func folders() -> [PinFolder] {
         load()
-        return bySpace[space] ?? []
+        return list
     }
 
     static func load() {
         guard !loaded else { return }
         loaded = true
-        if let data = try? Data(contentsOf: file) { bySpace = decode(data) }
+        if let data = try? Data(contentsOf: file) { list = decode(data) }
     }
 
-    /// A space's folders as they now are, kept and passed to the other
-    /// windows when they changed. `always`: passed on even unchanged, for
-    /// a live folder whose fetch failed, to say so in its tooltip.
-    static func set(_ space: UUID, _ folders: [PinFolder], from browser: Browser?, always: Bool = false) {
+    /// The folders as they now are, kept and passed to the other windows
+    /// when they changed. `always`: passed on even unchanged, for a live
+    /// folder whose fetch failed, to say so in its tooltip.
+    static func set(_ folders: [PinFolder], from browser: Browser?, always: Bool = false) {
         load()
         let folders = PinTree.sanitized(folders)
-        if (bySpace[space] ?? []) != folders {
-            bySpace[space] = folders.isEmpty ? nil : folders
+        if list != folders {
+            list = folders
             save()
         } else if !always {
             return
         }
-        NotificationCenter.default.post(name: Pins.changed, object: browser, userInfo: ["space": space])
-    }
-
-    /// A space deleted: its folders go with it.
-    static func forget(_ space: UUID) {
-        load()
-        guard bySpace.removeValue(forKey: space) != nil else { return }
-        save()
+        NotificationCenter.default.post(name: Pins.changed, object: browser)
     }
 
     private static func save() {
-        let all = bySpace
-        Disk.write(file) { encode(all) }
+        let list = list
+        Disk.write(file) { encode(list) }
     }
 
-    /// Leniently: a space whose list won't read is a space with no folders,
-    /// never a file that loses every other space's.
-    nonisolated static func decode(_ data: Data) -> [UUID: [PinFolder]] {
-        guard let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
-        var out: [UUID: [PinFolder]] = [:]
-        for (key, value) in top {
-            guard let space = UUID(uuidString: key),
-                  let raw = try? JSONSerialization.data(withJSONObject: value),
-                  let folders = try? JSONDecoder().decode([PinFolder].self, from: raw), !folders.isEmpty
-            else { continue }
-            out[space] = folders
-        }
-        return out
+    /// Leniently: a list that won't read is no folders.
+    nonisolated static func decode(_ data: Data) -> [PinFolder] {
+        guard let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let value = top[Session.legacyFirstRow],
+              let raw = try? JSONSerialization.data(withJSONObject: value),
+              let folders = try? JSONDecoder().decode([PinFolder].self, from: raw)
+        else { return [] }
+        return folders
     }
 
-    nonisolated static func encode(_ bySpace: [UUID: [PinFolder]]) -> Data? {
-        var out: [String: [PinFolder]] = [:]
-        for (space, folders) in bySpace where !folders.isEmpty { out[space.uuidString] = folders }
-        return try? JSONEncoder().encode(out)
+    nonisolated static func encode(_ folders: [PinFolder]) -> Data? {
+        try? JSONEncoder().encode(folders.isEmpty ? [:] : [Session.legacyFirstRow: folders])
     }
 }

@@ -187,7 +187,7 @@ for sig in (signal.SIGTERM, signal.SIGHUP):
 try:
     make_identities()
     subprocess.run(["security", "list-keychains", "-d", "user", "-s", *original, KEYCHAIN], check=True)
-    sv.setup(spaces=True)
+    sv.setup()
     sv.launch()
     home = sv.page("home"); sv.sp("select", id=home); time.sleep(0.4)
 
@@ -272,13 +272,6 @@ try:
     st = cc()
     t.ok("a page's image from a site asking is asked about too", len(st["asked"]) == 6 and f"localhost:{e}" in st["chosen"], st)
     holder.shutdown()
-
-    # Another space signed in apart: what was chosen in the first isn't
-    # sent from it without asking.
-    serve(a)
-    sv.cmd({"do": "space", "action": "new", "name": "Apart", "fresh": True}); time.sleep(1)
-    apart = open_tab(site)
-    t.ok("a space signed in apart is asked again", loads(apart) and len(cc()["asked"]) == 7, cc())
 finally:
     try:
         sv.finish()

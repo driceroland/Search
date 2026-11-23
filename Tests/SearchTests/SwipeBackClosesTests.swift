@@ -41,7 +41,7 @@ final class SwipeBackClosesTests: XCTestCase {
     }
 
     private func tab(_ name: String, from opener: Tab? = nil) -> Tab {
-        let tab = Tab(configuration: Web.configuration(space: browser.spaceID))
+        let tab = Tab(configuration: Web.configuration())
         tab.opener = opener?.id
         tab.restore(url: URL(string: "about:blank#\(name)")!, title: name)
         return tab

@@ -51,7 +51,7 @@ final class WebsitePopupTests: XCTestCase {
             let notifications = popup.prefs.siteNotifications
             popup.prefs.siteNotifications = true
             defer { popup.prefs.siteNotifications = notifications }
-            let configuration = Web.configuration(space: popup.spaceID)
+            let configuration = Web.configuration()
             let relay = CaptureRelay(browser: popup)
             configuration.userContentController.add(relay, name: "fixtureCapture")
             let tab = Tab(configuration: configuration)
@@ -75,16 +75,16 @@ final class WebsitePopupTests: XCTestCase {
         XCTAssertTrue(popup.isPopup)
         XCTAssertNil(popup.extensionPopup)
         XCTAssertTrue(popup.tabs.isEmpty, "a popup must not construct a blank page or restore pins")
-        XCTAssertTrue(popup.parkedTabs.isEmpty, "a popup must not warm other Spaces")
-        let oldPins = Pins.defs(popup.spaceID)
+        let oldPins = Pins.defs()
         let pins = [PinDef(id: UUID(), letter: "P", home: "https://pin.invalid", title: "Pin", name: nil)]
-        Pins.set(popup.spaceID, pins, from: popup)
-        defer { Pins.set(popup.spaceID, oldPins, from: popup) }
-        let before = popup.record.rows
+        Pins.set(pins, from: popup)
+        defer { Pins.set(oldPins, from: popup) }
+        let before = popup.record.row
         popup.writeSession(now: true)
-        popup.pinsChanged(in: popup.spaceID)
-        XCTAssertEqual(Pins.defs(popup.spaceID), pins, "opening a popup must not erase a Space's pins")
-        XCTAssertEqual(popup.record.rows.count, before.count)
+        popup.pinsChanged()
+        XCTAssertEqual(Pins.defs(), pins, "opening a popup must not erase the pins")
+        XCTAssertNil(before)
+        XCTAssertNil(popup.record.row)
         XCTAssertTrue(popup.tabs.isEmpty, "pin changes must not add hidden tabs")
         Browsers.register(popup)
         XCTAssertFalse(Browsers.saved.contains { $0 === popup })

@@ -55,7 +55,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     /// What was typed when the field was put away without going anywhere,
     /// for the next time, as ⌘T keeps its words.
     private var draft = ""
-    /// The window whose profile answers what is typed, and that Return goes
+    /// The window that answers what is typed, and that Return goes
     /// to: the one in front when the key was pressed.
     private weak var target: Browser?
     private var panel: LauncherPanel?
@@ -323,8 +323,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         ending = places.ending
     }
 
-    /// Pages open in the windows of the profile the field was raised for,
-    /// each window's space on screen as ⌘K lists them, the window in front
+    /// Pages open in the windows, as ⌘K lists them, the window in front
     /// first. Never a private tab, nor one a script opened. Three at most.
     private func openTabs(matching typed: String, for target: Browser) -> [Suggestion] {
         var found: [Suggestion] = []
@@ -351,11 +350,10 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         return nil
     }
 
-    /// The windows of the profile the field was raised for, the one in
-    /// front first.
+    /// The windows, the one the field was raised for first.
     private func windows(for target: Browser) -> [Browser] {
         ([target] + Browsers.all.reversed().filter { $0 !== target })
-            .filter { $0.isOpen && !$0.isPopup && $0.profileID == target.profileID }
+            .filter { $0.isOpen && !$0.isPopup }
     }
 
     // MARK: - going there
@@ -446,8 +444,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
 }
 
 /// Takes the keys without bringing Search in front of the app it is over:
-/// the field's, and the one that asks which space a link from another app
-/// opens in (LinkChooserPanel.swift). Borderless windows refuse to become
+/// the field's. Borderless windows refuse to become
 /// key by default.
 final class LauncherPanel: NSPanel {
     /// Room around what it holds for its shadow, which the panel doesn't draw.

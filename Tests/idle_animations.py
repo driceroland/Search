@@ -8,15 +8,10 @@ lists every Core Animation animation in the window's layers, and whether it
 is shown.
 
 The ring of the tab loading turns for as long as the page takes, and the
-window is drawn again at every frame while it does. Since 1.0.16 the
-column also keeps a copy of every space's rows out of sight, for a swipe
-between spaces to move (#1213); left shown, the copy's ring turned too,
-under the page, and so did anything else that moves in a row. So:
+window is drawn again at every frame while it does. So:
 
-- with a page loading, exactly one ring turns where it is seen, with
-  spaces off and with two spaces;
-- once it has loaded, nothing turns for ever;
-- a swipe between spaces still brings the other space in.
+- with a page loading, exactly one ring turns where it is seen;
+- once it has loaded, nothing turns for ever.
 """
 import json
 import os
@@ -30,7 +25,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
 
 sv.use("idle-animations")
-SECOND = "5E4C0000-0000-4000-8000-0000000000D2"
 release = threading.Event()
 
 
@@ -57,16 +51,10 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = f"http://127.0.0.1:{srv.server_port}"
 
 
-def world(spaces):
+def world():
     os.makedirs(sv.SUPPORT, exist_ok=True)
     tabs = [{"url": f"{BASE}/one-{i}", "title": f"One {i}"} for i in range(4)]
     json.dump({"tabs": tabs, "active": 0}, open(f"{sv.SUPPORT}/session.json", "w"))
-    if spaces:
-        json.dump([{"id": sv.FIRST_SPACE.upper(), "name": "One", "colour": 0, "sharesSignIns": True},
-                   {"id": SECOND, "name": "Two", "colour": 0, "sharesSignIns": True}],
-                  open(f"{sv.SUPPORT}/spaces.json", "w"))
-        two = [{"url": f"{BASE}/two-{i}", "title": f"Two {i}"} for i in range(4)]
-        json.dump({"tabs": two, "active": 0}, open(f"{sv.SUPPORT}/session-{SECOND}.json", "w"))
 
 
 def turning():
@@ -74,11 +62,11 @@ def turning():
     return found["shownForever"], found["animations"]
 
 
-def run(t, spaces):
-    name = "two spaces" if spaces else "spaces off"
+def run(t):
+    name = "the column"
     release.clear()
-    sv.setup(sidebar=True, spaces=spaces)
-    world(spaces)
+    sv.setup(sidebar=True)
+    world()
     sv.launch()
     try:
         sv.cmd({"do": "resize", "width": 1200, "height": 800, "steps": 1})
@@ -93,12 +81,6 @@ def run(t, spaces):
         time.sleep(1.5)
         shown, found = turning()
         t.ok(f"{name}: loaded, nothing turns for ever ({shown})", shown == 0, found)
-        if spaces:
-            # The rows kept for a swipe still bring the other space in.
-            before = sv.cmd({"do": "swipetime", "dx": -260, "steps": 12})
-            t.ok("a swipe still brings the other space in", before.get("landed") is True, before)
-            shown, found = turning()
-            t.ok(f"after the swipe, nothing turns for ever ({shown})", shown == 0, found)
     finally:
         release.set()
         sv.quit()
@@ -107,8 +89,7 @@ def run(t, spaces):
 if __name__ == "__main__":
     t = sv.T()
     try:
-        run(t, spaces=False)
-        run(t, spaces=True)
+        run(t)
     finally:
         sv.finish()
         t.done()

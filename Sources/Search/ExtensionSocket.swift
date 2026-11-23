@@ -32,7 +32,7 @@ enum ExtensionSocket {
     }
 
     /// Nothing kept between sockets: no cookies, no cache, no saved
-    /// sign-ins. One session serves every extension and profile.
+    /// sign-ins. One session serves every extension.
     static var configuration: URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = false

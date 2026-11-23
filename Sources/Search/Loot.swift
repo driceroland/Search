@@ -35,10 +35,8 @@ struct Keep: Codable, Identifiable, Equatable {
 }
 
 extension Shared {
-    /// History cleared or a profile deleted: where files came from goes too,
-    /// from the list and from what is still coming in. No Keep says which
-    /// profile it is from, so this is every profile's, as Clear History's
-    /// icons are.
+    /// History cleared: where files came from goes too, from the list and
+    /// from what is still coming in.
     @MainActor static func forgetDownloadAddresses() {
         loot.forgetAddresses()
         fetches.entries.forEach { $0.addressForgotten = true }

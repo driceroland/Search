@@ -131,16 +131,8 @@ struct KeyCombo: Codable, Hashable {
         return combo.isTabNumber
     }
 
-    /// ⌘1–⌘9 switch spaces and ⌃1–⌃9 pick tabs, the two swapped as in Arc
-    /// (Settings › Spaces & Pins). Only while spaces are on: without them
-    /// ⌘1–⌘9 are the tabs', as always. Read from the settings each time, so
-    /// the switch, the bench and `defaults write` all count at once.
-    static var spacesOnCommand: Bool {
-        Store.settings.bool(forKey: "spaces") && Store.settings.bool(forKey: Preferences.spacesOnCommandKey)
-    }
-
-    /// What is held with the top row to pick a tab: ⌘, or ⌃ with spaces on ⌘.
-    static var tabNumberModifier: NSEvent.ModifierFlags { spacesOnCommand ? .control : .command }
+    /// What is held with the top row to pick a tab: ⌘.
+    static var tabNumberModifier: NSEvent.ModifierFlags { .command }
 
     /// Whether the tabs' numbers should show: their modifier held, alone
     /// or with others, as ⌘ always was.
@@ -148,12 +140,12 @@ struct KeyCombo: Codable, Hashable {
         flags.contains(tabNumberModifier)
     }
 
-    /// The tab numbers as menus write them: "⌘1–⌘9", or "⌃1–⌃9".
-    static var tabNumbers: String { spacesOnCommand ? "⌃1–⌃9" : "⌘1–⌘9" }
+    /// The tab numbers as menus write them.
+    static var tabNumbers: String { "⌘1–⌘9" }
 
-    /// The key that picks the Nth tab: ⌘N, or ⌃N with spaces on ⌘.
+    /// The key that picks the Nth tab: ⌘N.
     static func tabNumber(_ number: Int) -> KeyCombo {
-        KeyCombo(String(number), command: !spacesOnCommand, control: spacesOnCommand)
+        KeyCombo(String(number))
     }
 
     /// One of the keys that pick a tab by its place, kept for that.
@@ -174,13 +166,13 @@ struct KeyCombo: Codable, Hashable {
 /// A menu command, and the key it has unless you give it another.
 struct Command: Identifiable {
     enum Section: String, CaseIterable {
-        case app = "Search", file = "File", edit = "Edit", view = "View", tabs = "Tabs", spaces = "Spaces", bookmarks = "Bookmarks", history = "History"
+        case app = "Search", file = "File", edit = "Edit", view = "View", tabs = "Tabs", bookmarks = "Bookmarks", history = "History"
     }
 
     let id: String
     let title: String
     let section: Section
-    /// The key as the menus first had it, before ⌘1–⌘9 went to the spaces.
+    /// The key as the menus have it unless you give it another.
     let baseKey: KeyCombo?
     let run: @MainActor (Browser) -> Void
 
@@ -192,14 +184,8 @@ struct Command: Identifiable {
         self.run = run
     }
 
-    /// Its key unless you give it another: a space's ⌃N is ⌘N while
-    /// ⌘1–⌘9 switch spaces (KeyCombo.spacesOnCommand).
-    var defaultKey: KeyCombo? {
-        guard section == .spaces, KeyCombo.spacesOnCommand, var key = baseKey, key.control else { return baseKey }
-        key.control = false
-        key.command = true
-        return key
-    }
+    /// Its key unless you give it another.
+    var defaultKey: KeyCombo? { baseKey }
 
     static func named(_ id: String) -> Command? { byID[id] }
     private static let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
@@ -336,12 +322,7 @@ struct Command: Identifiable {
         Command("history.archive", "Archived Tabs…", .history, nil) { $0.archiving = true },
         Command("history.clearData", "Clear Browsing Data…", .history, KeyCombo("delete", shift: true)) { $0.clearBrowsingData() },
         Command("history.clear", "Clear History", .history, nil) { $0.clearHistory() },
-    ] + (1...9).map { number in
-        Command("spaces.\(number)", "Space \(number)", .spaces,
-                KeyCombo(String(number), command: false, control: true)) { browser in
-            browser.switchSpace(index: number - 1)
-        }
-    }
+    ]
 }
 
 /// What you've changed, on top of the defaults: a new key, or none. One for
@@ -390,17 +371,11 @@ final class ShortcutStore: ObservableObject {
     /// Whole keys only, so ⇧⌘S is never read as ⌘S; a key taken away
     /// altogether is left as written.
     func relabel(_ text: String) -> String {
-        let swapped = KeyCombo.spacesOnCommand
-        guard !changed.isEmpty || swapped, text.contains(where: { "⌃⌥⇧⌘".contains($0) }) else { return text }
+        guard !changed.isEmpty, text.contains(where: { "⌃⌥⇧⌘".contains($0) }) else { return text }
         var moved: [String: String] = [:]
-        // As written, a space is on ⌃N and a tab on ⌘N; with the two
-        // swapped, each says where it is now.
-        for command in Command.all where changed[command.id] != nil || (swapped && command.section == .spaces) {
+        for command in Command.all where changed[command.id] != nil {
             guard let was = command.baseKey?.display, let now = key(for: command.id)?.display, now != was else { continue }
             moved[was] = now
-        }
-        if swapped {
-            for number in 1...9 { moved[KeyCombo(String(number)).display] = KeyCombo.tabNumber(number).display }
         }
         guard !moved.isEmpty else { return text }
         let whole = NSRange(text.startIndex..., in: text)
@@ -440,9 +415,9 @@ final class ShortcutStore: ObservableObject {
     }
     var anyChanged: Bool { !changed.isEmpty }
 
-    /// Changed commands, and Space keys which have no menu to handle their defaults.
+    /// Changed commands.
     func customCommand(on combo: KeyCombo) -> Command? {
-        Command.all.first { (changed[$0.id] != nil || $0.section == .spaces) && key(for: $0.id) == combo }
+        Command.all.first { changed[$0.id] != nil && key(for: $0.id) == combo }
     }
 
     /// A key an extension may not have: one of the Mac's, or one of

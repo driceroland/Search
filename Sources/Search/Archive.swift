@@ -9,12 +9,11 @@ import SwiftUI
 // closed overnight went past them, and History has each page among
 // everything else. Here they stay together, newest first, for thirty days
 // or the last five hundred: History › Archived Tabs… lists them, with a
-// search, and a click opens one again in the space on screen.
+// search, and a click opens one again in the window.
 //
 // Only what Search closed: a tab you closed yourself is one you meant to.
-// Never a private tab, which nothing keeps. Each profile has its own, as it
-// has its own history: a window lists only its profile's, and deleting a
-// profile, or clearing its history, empties it. With tabs never closing,
+// Never a private tab, which nothing keeps. Clearing the history empties
+// it too. With tabs never closing,
 // nothing is added and the menu doesn't offer it.
 
 /// One tab Search closed, as the archive keeps it.
@@ -40,44 +39,21 @@ final class Archive: ObservableObject {
     nonisolated static let lasts: TimeInterval = 30 * 86_400
 
     let file: URL
-    /// Its profile deleted: nothing more is written.
-    private var retired = false
-
     init(file name: String) {
         file = Store.file(name)
         let saved = (try? Data(contentsOf: file)).flatMap { try? Archive.decoder.decode([Archived].self, from: $0) }
         tabs = Archive.trimmed(saved ?? [], now: Date())
     }
 
-    // MARK: - each profile's
+    // MARK: - the one
 
-    private static var made: [UUID: Archive] = [:]
-
-    /// archive.json for Personal, one of its own for each other profile, as
-    /// history is (see Profiles.history).
-    static func fileName(of profile: UUID) -> String {
-        profile == Profile.personalID ? "archive.json" : "archive-\(profile.uuidString).json"
-    }
-
-    static func of(_ profile: UUID) -> Archive {
-        if let archive = made[profile] { return archive }
-        let archive = Archive(file: fileName(of: profile))
-        made[profile] = archive
-        return archive
-    }
-
-    /// A profile deleted: its archive emptied and its file gone, opened
-    /// this run or not.
-    static func forget(profile: UUID) {
-        made.removeValue(forKey: profile)?.retired = true
-        Disk.remove(Store.file(fileName(of: profile)))
-    }
+    static let shared = Archive(file: "archive.json")
 
     // MARK: - changing it
 
     /// A tab Search just closed. A page already here moves to the top.
     func add(_ url: URL, title: String, at closed: Date = Date()) {
-        guard !retired, let url = History.kept(url) else { return }
+        guard let url = History.kept(url) else { return }
         var list = tabs.filter { $0.url != url }
         list.insert(Archived(url: url, title: title, closed: closed), at: 0)
         tabs = Archive.trimmed(list, now: Date())
@@ -114,7 +90,6 @@ final class Archive: ObservableObject {
     }
 
     private func save() {
-        guard !retired else { return }
         let snapshot = tabs
         Disk.write(file) { try? Archive.encoder.encode(snapshot) }
     }
@@ -133,8 +108,7 @@ final class Archive: ObservableObject {
 }
 
 extension Browser {
-    /// This window's profile's.
-    var archive: Archive { Archive.of(profileID) }
+    var archive: Archive { Archive.shared }
 
     /// Closing one by itself (Closing.swift): into the archive first. Its
     /// address as the tab knows it, asleep or not; Search's own pages are
@@ -145,7 +119,7 @@ extension Browser {
         archive.add(url, title: tab.title)
     }
 
-    /// From the list: a tab of its own in the space on screen, in front,
+    /// From the list: a tab of its own in the window, in front,
     /// and out of the archive.
     func reopen(_ archived: Archived) {
         archive.remove(archived.id)
@@ -302,7 +276,7 @@ struct ArchivePanel: View {
             .onTapGesture(perform: go)
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
-            .help("Open again in this space")
+            .help("Open again")
         }
     }
 }

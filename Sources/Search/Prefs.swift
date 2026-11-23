@@ -190,8 +190,8 @@ final class Preferences: ObservableObject {
             look.apply()
         }
     }
-    /// The colour or gradient of the whole browser (Settings › Themes), under
-    /// any space's own. None unless chosen.
+    /// The colour or gradient of the whole browser (Settings › Themes).
+    /// None unless chosen.
     @Published var browserTheme: BrowserTheme {
         didSet { store.set(browserTheme.text, forKey: "browser.theme") }
     }
@@ -240,7 +240,7 @@ final class Preferences: ObservableObject {
     @Published var slidesColumn: Bool {
         didSet { store.set(slidesColumn, forKey: Motion.slidesKey) }
     }
-    /// The foot's doors — spaces, extensions, bookmarks, downloads — up in
+    /// The foot's doors — extensions, bookmarks, downloads — up in
     /// the lights' row, right of back, forward and reload, and no foot.
     /// Only where they fit; a column too narrow keeps them at the bottom.
     /// Off unless asked for.
@@ -336,11 +336,10 @@ final class Preferences: ObservableObject {
     @Published var glassGrain: Double {
         didSet { store.set(glassGrain, forKey: "window.glass.grain") }
     }
-    /// How see-through the glass is: nought, as much of the space's colour
+    /// How see-through the glass is: nought, as much of the window's colour
     /// as glass takes (GlassGround.mostTint); one, the glass alone, frosted,
     /// with no colour and no dimming over what shows through. The blur
-    /// itself is always there. Chosen in the space's Colour…
-    /// (SpaceLookPicker), or in Settings with spaces off.
+    /// itself is always there. Chosen in Settings.
     @Published var glassClear: Double {
         didSet { store.set(glassClear, forKey: "window.glass.clear") }
     }
@@ -480,7 +479,7 @@ final class Preferences: ObservableObject {
     @Published var swipeBackCloses: Bool {
         didSet { store.set(swipeBackCloses, forKey: "tabs.swipeBackCloses") }
     }
-    /// Every window of a profile lists the same open tabs in each space, as
+    /// Every window lists the same open tabs, as
     /// it lists the same pins: opened, closed, moved, grouped or renamed in
     /// one, so in the others (see Twins.swift). Off unless asked for.
     @Published var mirrorsTabs: Bool {
@@ -778,33 +777,6 @@ final class Preferences: ObservableObject {
     @Published var littleFindsTabs: Bool {
         didSet { store.set(littleFindsTabs, forKey: "links.little.tabs") }
     }
-    /// Links to chosen sites open in their space (see SpaceRoutes.swift).
-    /// Off unless asked for, and only with spaces on.
-    @Published var sendsLinksToSpaces: Bool {
-        didSet { store.set(sendsLinksToSpaces, forKey: SpaceRoutes.key) }
-    }
-    /// Every space as a button of its own beside the bookmarks, centred at
-    /// the column's foot, in place of the one dot and its menu (see
-    /// SpaceButtons). Off unless asked for, and only with spaces on.
-    @Published var spaceButtons: Bool {
-        didSet { store.set(spaceButtons, forKey: Preferences.spaceButtonsKey) }
-    }
-    nonisolated static let spaceButtonsKey = "spaces.buttons"
-    /// Whether the space buttons stand in for the dot: asked for, with spaces on.
-    var showsSpaceButtons: Bool { spaceButtons && usesSpaces }
-    /// Which site goes to which space, for that.
-    @Published var spaceRoutes: [SpaceRoute] {
-        didSet { store.set(spaceRoutes.map(\.plist), forKey: SpaceRoutes.rulesKey) }
-    }
-    /// With links from other apps: ask which space each opens in, before it
-    /// loads (see LinkChooser.swift). Off unless asked for.
-    @Published var asksSpaceForLinks: Bool {
-        didSet { store.set(asksSpaceForLinks, forKey: "links.ask") }
-    }
-    /// Where each site went last, newest first, for that panel to pick first.
-    @Published var linkChoices: [LinkChooser.Choice] {
-        didSet { store.set(linkChoices.map(\.plist), forKey: "links.ask.last") }
-    }
     /// The downloads button always in the chrome, not only while something
     /// downloads (see Fetching.swift). Off unless asked for.
     @Published var alwaysShowsDownloads: Bool {
@@ -909,26 +881,6 @@ final class Preferences: ObservableObject {
     @Published var keepsWindow: Bool {
         didSet { store.set(keepsWindow, forKey: "fullscreen.keepsWindow") }
     }
-    /// Separate sets of tabs, each with its own sign-ins (see Spaces.swift).
-    /// Off unless asked for.
-    @Published var usesSpaces: Bool {
-        didSet { store.set(usesSpaces, forKey: "spaces") }
-    }
-    /// ⌘1–⌘9 switch spaces and ⌃1–⌃9 pick tabs, as in Arc: the two swapped,
-    /// while spaces are on (KeyCombo.spacesOnCommand). Off unless asked for.
-    @Published var spacesOnCommand: Bool {
-        didSet { store.set(spacesOnCommand, forKey: Preferences.spacesOnCommandKey) }
-    }
-    static let spacesOnCommandKey = "spaces.commandNumbers"
-    /// Profiles in one window (see OneWindow.swift): a space of another
-    /// profile, chosen, brings that profile's window into this one's place.
-    /// Off unless asked for; turned off, the windows tucked away come out.
-    @Published var profilesInOneWindow: Bool {
-        didSet {
-            store.set(profilesInOneWindow, forKey: "profiles.oneWindow")
-            if oldValue, !profilesInOneWindow { Browsers.unmerge() }
-        }
-    }
     /// Named, collapsible sections in the sidebar.
     /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
     /// adds a command, so there is no switch. Still a property, for the
@@ -971,15 +923,6 @@ final class Preferences: ObservableObject {
     var showsPinRows: Bool { listsPins && sidebar }
     /// Whether the pinned rows are drawn in their folders.
     var showsPinFolders: Bool { pinFolders && showsPinRows }
-    /// Pins every space shows above its own, as Arc's favourites sit above
-    /// every space (see Pins.shared).
-    /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
-    /// adds a command, so there is no switch. Still a property, for the
-    /// code that asks and the tests that turn it off; never written.
-    @Published var sharesPins = true
-    /// Whether the shared pins are in the rows: asked for, and with Spaces
-    /// on. Off, they wait in pins.json for the switch to come back.
-    var showsSharedPins: Bool { sharesPins && usesSpaces }
     /// The AI add-on: summaries of the page and questions about it (see
     /// AIAssist). Off unless asked for; nothing is sent until you ask.
     @Published var ai: Bool {
@@ -1183,7 +1126,7 @@ final class Preferences: ObservableObject {
         keepsSignIns = keeps
         // Before the first page is loaded into the store.
         Store.keepsSignIns = keeps
-        Spaces.everyStore.forEach(Store.followCookies)
+        Store.followCookies(Store.websites)
         let signals = store.object(forKey: "privacy.gpc") as? Bool ?? true
         sendsPrivacySignal = signals
         PrivacySignal.on = signals
@@ -1209,9 +1152,6 @@ final class Preferences: ObservableObject {
         // Anyone who already has a session was here before the welcome
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
-        usesSpaces = store.bool(forKey: "spaces")
-        spacesOnCommand = store.bool(forKey: Preferences.spacesOnCommandKey)
-        profilesInOneWindow = store.bool(forKey: "profiles.oneWindow")
         listsPins = store.bool(forKey: "pins.list")
         pinFolders = store.bool(forKey: "pins.folders")
         pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
@@ -1265,11 +1205,6 @@ final class Preferences: ObservableObject {
         littleLinks = store.bool(forKey: Preferences.littleKey)
         littleFindsTabs = store.bool(forKey: "links.little.tabs")
         webmail = store.string(forKey: "mail.webmail").flatMap(Webmail.init(rawValue:)) ?? .none
-        sendsLinksToSpaces = store.bool(forKey: SpaceRoutes.key)
-        spaceButtons = store.bool(forKey: Preferences.spaceButtonsKey)
-        spaceRoutes = (store.array(forKey: SpaceRoutes.rulesKey) ?? []).compactMap(SpaceRoute.init(plist:))
-        asksSpaceForLinks = store.bool(forKey: "links.ask")
-        linkChoices = (store.array(forKey: "links.ask.last") ?? []).compactMap(LinkChooser.Choice.init(plist:))
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
         downloadsOpening = store.string(forKey: "downloads.open").flatMap(DownloadsOpening.init(rawValue:)) ?? .tab
@@ -1398,7 +1333,6 @@ final class Preferences: ObservableObject {
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
         take(\.instantMotion, store.bool(forKey: Motion.instantKey))
         take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))
-        take(\.spacesOnCommand, store.bool(forKey: Preferences.spacesOnCommandKey))
         take(\.bookmarksBar, store.bool(forKey: "bookmarks.bar"))
         take(\.alwaysShowsDownloads, store.bool(forKey: "downloads.button"))
     }
@@ -1437,7 +1371,7 @@ final class Preferences: ObservableObject {
     /// NSSpellChecker at each keystroke, which reads this from the app's
     /// own defaults before the Mac's global ones, and never caches it. So
     /// writing it here is absolute and takes effect at the next key, in
-    /// every page, open or to come, in every profile (idea 842).
+    /// every page, open or to come (idea 842).
     static func tellWebKit(inlinePredictions: Bool) {
         UserDefaults.standard.set(inlinePredictions, forKey: inlinePredictionsKey)
     }

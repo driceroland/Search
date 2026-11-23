@@ -86,7 +86,7 @@ def until(check, seconds=5):
         time.sleep(0.1)
     return False
 def front_url(): return next((x["url"] for x in sv.cmd({"do": "tabs"})["tabs"] if x["active"]), "")
-def kept_rows(): return [u for r in records()[1:] for shape in r.get("rows", {}).values() for u in json.dumps(shape).split('"') if u.startswith(sv.BASE)]
+def kept_rows(): return [u for r in records()[1:] for u in json.dumps(r.get("row", {})).split('"') if u.startswith(sv.BASE)]
 
 
 def launch_with(link):
@@ -296,64 +296,9 @@ try:
     t.ok("the same link again brings that small window, not a second",
          st["littles"] == [elsewhere] and st["fronted"] == elsewhere, st)
 
-    # A tab lifted from a space that is then only on disk: closing its small
-    # window takes that tab's entry out of the space's file, and not a tab
-    # with the same address left in the row there (Browser.dropLifted).
-    def entries(space): return [e for e in sv.session(space)["tabs"] if e["url"].startswith(sv.BASE)]
-    def twins(space): return [e for e in entries(space) if e["url"] == twin]
-    sv.setup(**{"spaces": True, "links.little": True}); sv.launch()
-    sv.cmd({"do": "space", "action": "new", "name": "Two"}); time.sleep(0.5)
-    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
-    two = next(x["id"] for x in sv.cmd({"do": "space"})["spaces"] if x["name"] == "Two")
-    twin = f"{sv.BASE}/twin"
-    first = real(twin)
-    second = real(twin)
-    real(f"{sv.BASE}/third"); time.sleep(1.5)
-    sv.cmd({"do": "select", "id": first}); time.sleep(0.3)
-    sv.cmd({"do": "little", "what": "lift", "id": second}); time.sleep(0.5)
-    t.ok("lifted: the space's file has both twins, one marked as lifted",
-         len(twins(two)) == 2 and sum(1 for e in twins(two) if e.get("lifted")) == 1, entries(two))
-    sv.cmd({"do": "ui", "spaces": False}); time.sleep(1)
-    t.ok("spaces off: that space is only on disk now", sv.cmd({"do": "space"})["parked"] == [], sv.cmd({"do": "space"}))
-    little("close"); time.sleep(0.8)
-    left = twins(two)
-    t.ok("closing the small window takes out the lifted twin only",
-         len(left) == 1 and not left[0].get("lifted"), entries(two))
-    t.ok("the rest of that space's row is as it was", [e["url"] for e in entries(two)] == [twin, f"{sv.BASE}/third"], entries(two))
-
-    # Kept from another space: Open in Search puts it in the row on screen,
-    # and the space it came from forgets it, so a relaunch doesn't bring it
-    # back in both.
-    sv.cmd({"do": "ui", "spaces": True}); time.sleep(0.5)
-    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
-    lone = f"{sv.BASE}/lone"
-    lifted = real(lone); time.sleep(1.5)
-    sv.cmd({"do": "little", "what": "lift", "id": lifted}); time.sleep(0.5)
-    sv.cmd({"do": "space", "action": "go", "index": 1}); time.sleep(0.8)
-    t.ok("parked: the space it came from still writes it down",
-         any(e["url"] == lone and e.get("lifted") for e in entries(two)), entries(two))
-    little("keep"); time.sleep(0.8)
-    row = [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]]
-    t.ok("kept: in the row of the space on screen", lone in row, row)
-    t.ok("and out of the file of the space it came from", all(e["url"] != lone for e in entries(two)), entries(two))
-
-    # Lifted from a space that is then loaded from disk again: the row
-    # doesn't make a second tab of it while it is in its small window.
-    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
-    dup = f"{sv.BASE}/once"
-    once = real(dup); time.sleep(1.2)
-    sv.cmd({"do": "little", "what": "lift", "id": once}); time.sleep(0.5)
-    sv.cmd({"do": "ui", "spaces": False}); time.sleep(0.8)
-    sv.cmd({"do": "ui", "spaces": True}); time.sleep(0.5)
-    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(1)
-    row = [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]]
-    t.ok("its space loaded again: not in the row while it is out", dup not in row, row)
-    little("keep"); time.sleep(0.8)
-    row = [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]]
-    t.ok("kept: in the row once", row.count(dup) == 1, row)
-
     # A lifted tab is yours: Escape is the page's, and closed it comes back
     # with ⇧⌘T.
+    sv.setup(**{"links.little": True}); sv.launch()
     gone = f"{sv.BASE}/reopened"
     lifted = real(gone); time.sleep(1.2)
     sv.cmd({"do": "little", "what": "lift", "id": lifted}); time.sleep(0.5)
@@ -366,13 +311,11 @@ try:
          sv.cmd({"do": "tabs"}))
 
     # A quit with a tab lifted: the relaunch has it in its row again.
-    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
     back = real(f"{sv.BASE}/comeback"); time.sleep(1.5)
     sv.cmd({"do": "little", "what": "lift", "id": back}); time.sleep(0.5)
     sv.quit(); sv.launch()
-    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(1)
     row = [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]]
-    t.ok("quit with a tab lifted: back in its space's row after a relaunch",
+    t.ok("quit with a tab lifted: back in its row after a relaunch",
          f"{sv.BASE}/comeback" in row and little("look")["littles"] == [], row)
 
     # After a relaunch a tab in the background only waits to wake: lifted,
@@ -430,20 +373,6 @@ try:
          (records(), sv.session()))
     sv.quit(); sv.launch()
     t.ok("after a quit, it is in the window that stayed", any(orphan in w["tabs"] for w in windows()["windows"]), windows()["windows"])
-
-    # Its space deleted while it is out: a quit writes it into the space on
-    # screen, not into a space that is gone.
-    sv.setup(**{"spaces": True}); sv.launch()
-    sv.cmd({"do": "space", "action": "new", "name": "Gone"}); time.sleep(0.5)
-    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
-    stray = f"{sv.BASE}/stray"
-    lifted = real(stray); time.sleep(1.2)
-    sv.cmd({"do": "little", "what": "lift", "id": lifted}); time.sleep(0.5)
-    sv.cmd({"do": "space", "action": "delete"}); time.sleep(1)
-    t.ok("its space deleted: the small window stays", little("look")["littles"] == [stray], little("look")["littles"])
-    sv.quit(); sv.launch()
-    t.ok("after a quit, it is in the space on screen", stray in [x.get("url") for x in sv.cmd({"do": "tabs"})["tabs"]],
-         sv.cmd({"do": "tabs"})["tabs"])
 
     # Back moved to ⌘← in Settings › Shortcuts: while you type in a small
     # window, ⌘← moves the caret to the start of the line, and the window

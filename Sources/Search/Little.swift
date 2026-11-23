@@ -12,7 +12,7 @@ import SwiftUI
 //
 // The page is a tab of its own, as a peek is (see Peek.swift), only in a
 // window of its own: Open in Search moves it into the browser's row, where
-// the space on screen is, loaded as it is and nothing loaded twice.
+// the row is, loaded as it is and nothing loaded twice.
 //
 // It comes alone. The browser's window stays where it was — closed, in the
 // Dock, behind another app — until Open in Search asks for it (see
@@ -26,14 +26,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     let tab: Tab
     /// Taken out of the row, rather than opened for a link. A quit puts it back.
     private(set) var lifted = false
-    /// The space it was lifted from: a quit writes it back there, not into
-    /// whatever space is on screen then.
-    private(set) var liftedSpace: UUID?
     /// The browser it was opened for: the planet for ⌃Tab when no window is in front.
     private weak var browser: Browser?
-    /// The space chosen for its page (see Links.open), whose sign-ins it
-    /// loaded with; nil for the space of the window it was opened for.
-    let chosenSpace: UUID?
     private let window: NSWindow
     private var kept = false
     /// Placed a step down from another one, not where anybody put it: the
@@ -48,24 +42,23 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// A link from another app, in a small window in front of it.
     /// `front: false` makes it without showing it — for the bench, which
     /// must never put a window on screen.
-    static func show(_ url: URL, for browser: Browser, front: Bool = true, space: UUID? = nil) {
-        let tab = Tab(configuration: Web.configuration(space: space ?? browser.spaceID))
+    static func show(_ url: URL, for browser: Browser, front: Bool = true) {
+        let tab = Tab(configuration: Web.configuration())
         browser.prepare(tab)
         tab.go(to: url)
-        show(tab, for: browser, front: front, space: space)
+        show(tab, for: browser, front: front)
     }
 
     /// A page already made for it: a new window a small window's page asked
     /// for (see Browser's createWebViewWith), which WebKit loads itself, or
     /// a tab lifted out of the row (`lifted`).
-    static func show(_ tab: Tab, for browser: Browser, front: Bool = true, lifted: Bool = false, space: UUID? = nil) {
+    static func show(_ tab: Tab, for browser: Browser, front: Bool = true, lifted: Bool = false) {
         // Not in the row until kept: extensions are told of it here, as of a
         // peek (see Extensions.openedAside). A tab lifted from the row is
         // told once the row has let it go (Extensions.follow), not twice.
         if #available(macOS 15.4, *), !lifted { Extensions.shared.openedAside(tab) }
-        let little = LittleWindow(tab: tab, browser: browser, space: space)
+        let little = LittleWindow(tab: tab, browser: browser)
         little.lifted = lifted
-        little.liftedSpace = lifted ? browser.spaceID : nil
         // A tab from the row has its own history: back from its first page
         // goes nowhere, as in the row, rather than closing the window.
         if lifted { tab.leave = nil }
@@ -109,26 +102,16 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// Tabs lifted out of this window's row. A quit writes them back into
     /// it (see Browser.writeSession); a link from another app is not one
     /// of them, and goes when its window does.
-    static func parked(beside browser: Browser, space: UUID) -> [Tab] {
-        open.filter { $0.browser === browser && $0.space(in: browser) == space }.map(\.tab)
+    static func parked(beside browser: Browser) -> [Tab] {
+        open.filter { $0.browser === browser && $0.lifted }.map(\.tab)
     }
 
-    /// The space a lifted tab is written into: the one it came from, or the
-    /// one on screen once that space has been deleted.
-    private func space(in browser: Browser) -> UUID? {
-        guard lifted, let liftedSpace else { return nil }
-        return browser.spaces.contains { $0.id == liftedSpace } ? liftedSpace : browser.spaceID
-    }
-
-    /// The browser window a tab was lifted from is closing, with another of
-    /// its profile still open: that one keeps the tab now, so a quit still
-    /// writes it down, and ⇧⌘T after closing it still finds a row.
+    /// The browser window a tab was lifted from is closing, with another
+    /// still open: that one keeps the tab now, so a quit still writes it
+    /// down, and ⇧⌘T after closing it still finds a row.
     static func rehome(from leaving: Browser, to heir: Browser) {
         for little in open where little.browser === leaving {
             little.browser = heir
-            if let space = little.liftedSpace, !heir.spaces.contains(where: { $0.id == space }) {
-                little.liftedSpace = heir.spaceID
-            }
         }
     }
 
@@ -203,10 +186,9 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         ) { _ in MainActor.assumeIsolated { switcher.cancel() } })
     }
 
-    private init(tab: Tab, browser: Browser, space: UUID?) {
+    private init(tab: Tab, browser: Browser) {
         self.tab = tab
         self.browser = browser
-        self.chosenSpace = space
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
             styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
@@ -427,38 +409,19 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// Into the browser's row, after the tab on screen (never among the
     /// pins), and in front; the small window goes. The one time a link in
     /// a small window brings the browser's window: the window in front, or
-    /// one brought back for it, or the one showing the space chosen for it.
-    /// With no window for that space, it isn't kept (see askAgain).
+    /// one brought back for it.
     func keep() {
-        guard let browser = destination() else { return askAgain() }
+        let browser = Browsers.ensureWindow()
         kept = true
         // In the row, back from the first page goes nowhere, as any tab's.
         tab.leave = nil
-        // As a tab moved from another window is: this window's delegate,
-        // and this window's space, with its sign-ins.
+        // As a tab moved from another window is: this window's delegate.
         browser.receive(tab)
         window.close()
         guard let front = browser.window else { return }
         // Put away in the Dock, it stayed there (#95).
         if front.isMiniaturized { front.deminiaturize(nil) }
         front.makeKeyAndOrderFront(nil)
-    }
-
-    /// A page opened in a space chosen for it goes to a window showing that
-    /// space, not the one on screen, so it keeps those sign-ins. Nil once
-    /// that space is gone, and while spaces are off.
-    private func destination() -> Browser? {
-        guard let chosenSpace else { return Browsers.ensureWindow() }
-        return Browsers.window(showing: chosenSpace)
-    }
-
-    /// Its space gone, the page goes nowhere else: the panel asks again
-    /// which space it opens in, and the small window goes. With spaces off
-    /// the space is still there, and the small window stays as it is.
-    private func askAgain() {
-        guard let chosenSpace, Spaces.known[chosenSpace] == nil, let url = tab.address else { return }
-        LinkChooserPanel.shared.ask(url, sender: nil)
-        window.close()
     }
 
     /// Stepping away puts the switcher away, and makes this the one ⌃Tab
@@ -510,16 +473,16 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         if LittleWindow.switcher.home == tab.id { LittleWindow.switcher.cancel() }
         tab.leave = nil
         let owner = browser
-        let from = owner.flatMap { self.space(in: $0) }
+        let wasLifted = lifted
         // Out of the list before the session is written, so a closed one
         // isn't put back into the row.
         LittleWindow.open.removeAll { $0 === self }
         // Closed, a lifted tab is a tab closed: ⇧⌘T brings it back.
         if lifted, !kept { owner?.rememberLifted(tab) }
         if !kept { tab.close() }
-        // Kept, it is in the row on screen, maybe another space's: the one
-        // it came from still forgets it, or a relaunch would bring it twice.
-        if let from { owner?.dropLifted(tab, from: from) }
+        // Kept, it is in the row on screen: the row is written again
+        // without its mark, or a relaunch would bring it twice.
+        if wasLifted { owner?.dropLifted(tab) }
     }
 }
 

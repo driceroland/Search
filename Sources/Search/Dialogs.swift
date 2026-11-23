@@ -109,14 +109,14 @@ extension Browser {
     // MARK: - alert, confirm, prompt
 
     /// A page's question goes over its own page only. One from a tab in the
-    /// background — or in another space — waits until you go to that tab, as
+    /// background waits until you go to that tab, as
     /// in Safari and Chrome: over the tab in front, a prompt() asking for a
     /// password would pass for that page's. A tab closed first gets the
     /// answer a dismissed dialog gives. A peek hidden behind another tab
     /// (see peekInFront) waits the same way, until it is in front again.
     @discardableResult
     func ask(from webView: WKWebView, show: @escaping () -> Void, drop: @escaping () -> Void) -> HeldQuestion? {
-        let known = tabs + parkedTabs + [peekTab].compactMap { $0 }
+        let known = tabs + [peekTab].compactMap { $0 }
         // Questions from tabs that have gone some other way than close(_:).
         for id in heldDialogs.keys where !known.contains(where: { $0.id == id }) {
             heldDialogs.removeValue(forKey: id)?.forEach { $0.dismiss() }
@@ -465,5 +465,81 @@ enum Dialogs {
         let parts = host.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 4, parts.allSatisfy({ UInt8($0) != nil }) else { return false }
         return parts[0] == "127"
+    }
+}
+
+/// A few questions asked as sheets on the window: a name, a yes or no,
+/// something to say.
+@MainActor
+enum Ask {
+    /// A test run's answer to `sure`, in place of a sheet that a probe
+    /// started hidden can't show (`ui confirm on|off`). Never set otherwise.
+    @MainActor static var testing: Bool?
+
+    /// `empty`: an empty name is an answer too (a bookmark's, see
+    /// Bookmarks.askRename); otherwise it is taken as no answer.
+    static func name(_ title: String, detail: String? = nil, placeholder: String, initial: String = "", confirm: String, empty: Bool = false, then: @escaping (String) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = title
+        if let detail { alert.informativeText = detail }
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = placeholder
+        field.stringValue = initial
+        alert.accessoryView = field
+        alert.addButton(withTitle: confirm)
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        show(alert) { ok in
+            let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if ok, empty || !name.isEmpty { then(name) }
+        }
+    }
+
+    /// Something to say, with nothing to answer but OK.
+    static func tell(_ title: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.addButton(withTitle: "OK")
+        show(alert) { _ in }
+    }
+
+    /// `returnCancels`: Return is Cancel's, for a yes that can't be undone.
+    static func sure(_ title: String, detail: String, confirm: String, returnCancels: Bool = false, then: @escaping () -> Void) {
+        if Store.testing, let yes = testing {
+            if yes { then() }
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        let yes = alert.addButton(withTitle: confirm)
+        yes.hasDestructiveAction = true
+        let no = alert.addButton(withTitle: "Cancel")
+        guard returnCancels else {
+            show(alert) { ok in if ok { then() } }
+            return
+        }
+        yes.keyEquivalent = ""
+        no.keyEquivalent = "\r"
+        // A button holds one key, and Cancel gave up Esc for Return: Esc is
+        // caught here for it while the question is up.
+        let escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.window === alert.window, event.keyCode == 53 else { return event }
+            no.performClick(nil)
+            return nil
+        }
+        show(alert) { ok in
+            if let escape { NSEvent.removeMonitor(escape) }
+            if ok { then() }
+        }
+    }
+
+    private static func show(_ alert: NSAlert, _ done: @escaping (Bool) -> Void) {
+        guard let window = Links.window else {
+            done(alert.runModal() == .alertFirstButtonReturn)
+            return
+        }
+        alert.beginSheetModal(for: window) { done($0 == .alertFirstButtonReturn) }
     }
 }

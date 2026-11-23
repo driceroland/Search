@@ -1,8 +1,8 @@
 import Foundation
 
 // Folders among the pinned rows, as the column and the menus use them (see
-// PinFolders.swift for what they are and where they are kept). Only rows of
-// this space's own go in one; the row's order on disk is the order drawn.
+// PinFolders.swift for what they are and where they are kept). Only rows go
+// in one; the row's order on disk is the order drawn.
 
 /// One line of the pinned rows as the column draws it.
 enum PinRowLine: Identifiable {
@@ -30,8 +30,13 @@ enum PinRowLine: Identifiable {
 }
 
 extension Browser {
-    /// This space's pin folders.
-    var pinFolders: [PinFolder] { PinFolders.folders(spaceID) }
+    /// The pin folders.
+    var pinFolders: [PinFolder] { PinFolders.folders() }
+
+    /// The tabs the column draws loose, out of any group (SideBar.looseTabs).
+    var looseRow: [Tab] {
+        displayedTabs.filter { $0.pin == nil && (!prefs.usesTabGroups || group(of: $0) == nil) }
+    }
 
     /// Whether the pinned rows are drawn in folders now: the switch on, the
     /// rows shown, and a folder to draw. With none, the rows are drawn as
@@ -46,7 +51,7 @@ extension Browser {
     /// `showing`: the tab in front, drawn even inside a folded folder.
     static func pinRowLines(_ rows: [Tab], folders: [PinFolder], showing: Tab.ID?) -> [PinRowLine] {
         let byID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        return PinTree.lines(pins: rows.map { ($0.id, $0.everywhere ? nil : $0.pinFolder) },
+        return PinTree.lines(pins: rows.map { ($0.id, $0.pinFolder) },
                              folders: folders, showing: showing)
             .compactMap { line -> PinRowLine? in
                 switch line {
@@ -58,16 +63,14 @@ extension Browser {
     }
 
     /// A row's pins with the rows in the order their folders draw them:
-    /// the squares as they are, the rows every space shows first (see
-    /// keepBlocks), then this space's own in folder order, then the rest.
+    /// the squares as they are, then the rows in folder order, then the rest.
     static func arrangedPins(_ row: [Tab], folders: [PinFolder]) -> [Tab] {
         let pinned = row.filter { $0.pin != nil && !$0.shy }
         let loose = row.filter { $0.pin == nil || $0.shy }
         let rows = pinned.filter(\.listed)
-        let own = rows.filter { !$0.everywhere }
-        let byID = Dictionary(own.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let ordered = PinTree.orderedIDs(own.map { ($0.id, $0.pinFolder) }, folders: folders).compactMap { byID[$0] }
-        return pinned.filter { !$0.listed } + rows.filter(\.everywhere) + ordered + loose
+        let byID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let ordered = PinTree.orderedIDs(rows.map { ($0.id, $0.pinFolder) }, folders: folders).compactMap { byID[$0] }
+        return pinned.filter { !$0.listed } + ordered + loose
     }
 
     /// The row put in folder order, when it isn't.
@@ -79,14 +82,14 @@ extension Browser {
 
     private func savePinFolders(_ folders: [PinFolder]) {
         objectWillChange.send()
-        PinFolders.set(spaceID, folders, from: self)
+        PinFolders.set(folders, from: self)
     }
 
-    /// Whether a pin can go in a folder: a row of this space's own.
+    /// Whether a pin can go in a folder: a row.
     func takesFolder(_ tab: Tab) -> Bool {
         // A split pinned whole stays at the top of the rows: a folder's
         // lines hold one page each.
-        tab.pin != nil && tab.listed && !tab.everywhere && !tab.shy && pinnedPair(of: tab) == nil
+        tab.pin != nil && tab.listed && !tab.shy && pinnedPair(of: tab) == nil
     }
 
     /// New Folder: inside `parent`, or beside `tab` in the folder it is in,

@@ -330,12 +330,11 @@ final class ImportFileTests: XCTestCase {
     }
 
     @MainActor
-    func testArcImportKeepsSpacesFoldersPinsAndImportRecordCounts() throws {
+    func testArcImportBringsPinsAndEachSpacesPagesIntoTheRow() throws {
         let browser = makeImportTestBrowser()
         let previousRecords = Store.settings.data(forKey: "import.records")
-        let previousUsesSpaces = browser.prefs.usesSpaces
         let previousUsesTabGroups = browser.prefs.usesTabGroups
-        let previousSpaces = browser.spaces
+        let previousPins = Pins.defs()
         let suffix = UUID().uuidString
         let workName = "Arc Engineering \(suffix)"
         let personalName = "Arc Personal \(suffix)"
@@ -343,24 +342,8 @@ final class ImportFileTests: XCTestCase {
         let oldArcFolderExisted = FileManager.default.fileExists(atPath: oldArcFolder.path)
         let oldArcFile = try? Data(contentsOf: Arc.file)
         try FileManager.default.createDirectory(at: oldArcFolder, withIntermediateDirectories: true)
-        let previousProfiles = Set(Profiles.shared.list.map(\.id))
-        let previousHome = browser.homeSpaceID
         defer {
-            // Arc's spaces replace this window's untouched home (deleted as
-            // Delete does, the next space made the home): put back, or the
-            // profiles list, shared by every test, keeps the moved home.
-            Profiles.shared.rehome(browser.profileID, to: previousHome)
-            for space in Spaces.read() where space.name == workName || space.name == personalName {
-                Pins.forget(space.id)
-                Session.erase(space: space.id)
-            }
-            // The profile Arc's second one became, and everything in it.
-            for profile in Profiles.shared.list where !previousProfiles.contains(profile.id) {
-                Profiles.shared.delete(profile.id)
-            }
-            browser.spaces = previousSpaces
-            Spaces.write(previousSpaces, profile: browser.profileID)
-            browser.prefs.usesSpaces = previousUsesSpaces
+            Pins.set(previousPins, from: browser)
             browser.prefs.usesTabGroups = previousUsesTabGroups
             if let oldArcFile { try? oldArcFile.write(to: Arc.file, options: .atomic) }
             else {
@@ -376,7 +359,6 @@ final class ImportFileTests: XCTestCase {
             name: "Arc", folder: "Arc/User Data", app: "Arc.app"))
         let sidebar = try makeArcSidebarFixture(workName: workName, personalName: personalName)
         try sidebar.write(to: Arc.file, options: .atomic)
-        browser.prefs.usesSpaces = false
         browser.prefs.usesTabGroups = true
 
         let imported = try XCTUnwrap(source.arcSidebar(profile: nil))
@@ -392,43 +374,23 @@ final class ImportFileTests: XCTestCase {
         }
 
         let result = browser.takeArc(imported)
-        ImportRecords.note(source.name, spaces: result.spaces, pinned: result.pins + result.tabs)
-        XCTAssertEqual(result.spaces, 2)
-        XCTAssertEqual(result.pins, 2, "each space gets the favourites from its own profile")
+        ImportRecords.note(source.name, pinned: result.pins + result.tabs)
+        XCTAssertEqual(result.pins, 2, "every profile's favourites become pins")
         XCTAssertEqual(result.tabs, 3, "pinned tabs from nested folders are restored asleep")
 
         let again = browser.takeArc(imported)
-        XCTAssertEqual(again.spaces, 0)
         XCTAssertEqual(again.pins, 0)
         XCTAssertEqual(again.tabs, 0)
 
-        // Arc's first profile's space is this window's profile's; its
-        // second profile ("Profile 1") is a Search profile of its own, with
-        // that space in it, signed in with the profile's own cookies.
-        let work = try XCTUnwrap(browser.spaces.first { $0.name == workName })
-        // The window's home had nothing in it: Arc's spaces take its place
-        // rather than sit beside a "Personal" nobody uses.
-        XCTAssertFalse(browser.spaces.contains { $0.id == previousHome }, "an untouched home is replaced by Arc's spaces")
-        XCTAssertEqual(browser.homeSpaceID, work.id)
-        XCTAssertNil(browser.spaces.first { $0.name == personalName }, "another profile's space never shows in this window")
-        let personal = try XCTUnwrap(Spaces.read().first { $0.name == personalName })
-        XCTAssertEqual(work.sharesSignIns, true)
-        XCTAssertEqual(work.profileID, browser.profileID)
-        XCTAssertEqual(personal.sharesSignIns, true)
-        XCTAssertNotEqual(personal.profileID, browser.profileID)
-        XCTAssertEqual(Profiles.shared.profile(personal.profileID).name, "Profile 1")
-        XCTAssertEqual(Profiles.shared.profile(personal.profileID).home, personal.id)
-        XCTAssertEqual(Pins.defs(work.id).map(\.home), ["https://favorite-work.example/"])
-        XCTAssertEqual(Pins.defs(personal.id).map(\.home), ["https://favorite-personal.example/"])
-        // The window is in that space now: its pin is open beside the tabs.
-        let workSession = browser.readRow(work.id)
-        let workTabs = workSession.tabs.filter { $0.pin == nil }
-        XCTAssertEqual(workTabs.map(\.url), ["https://work-one.example/", "https://work-two.example/"])
-        let research = try XCTUnwrap(workSession.groups?.first { $0.name == "Research" })
-        XCTAssertEqual(workTabs.map(\.groupID), [research.id, research.id])
-        XCTAssertEqual(Session.read(space: personal.id).tabs.map(\.url), ["https://personal.example/"])
+        XCTAssertEqual(Set(Pins.defs().map(\.home)).intersection(["https://favorite-work.example/", "https://favorite-personal.example/"]).count, 2)
+        // Each of Arc's spaces comes in as a tab group of its name, so its
+        // pages stay together in the one row.
+        let row = browser.readRow()
+        let work = try XCTUnwrap(row.groups?.first { $0.name == workName })
+        let personal = try XCTUnwrap(row.groups?.first { $0.name == personalName })
+        XCTAssertEqual(row.tabs.filter { $0.groupID == work.id }.map(\.url), ["https://work-one.example/", "https://work-two.example/"])
+        XCTAssertEqual(row.tabs.filter { $0.groupID == personal.id }.map(\.url), ["https://personal.example/"])
         let record = try XCTUnwrap(ImportRecords.of(source.name))
-        XCTAssertEqual(record.spaces, 2)
         XCTAssertEqual(record.pinned, 5)
     }
 

@@ -111,17 +111,6 @@ final class HistoryLoadingTests: XCTestCase {
         XCTAssertEqual(saved.compactMap { $0["url"] as? String }, [early.absoluteString])
     }
 
-    func testRetirementDuringLoadingNeverRestoresTheFile() throws {
-        let (name, file) = try fixture()
-        let history = History(file: name)
-        history.record(try XCTUnwrap(URL(string: "https://early.example/")), title: "Early")
-        history.retire()
-        history.flush()
-        Disk.drain()
-        XCTAssertTrue(history.everything().isEmpty)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
-    }
-
     func testCorruptFileIsQuarantinedBeforeEarlyVisitIsWritten() throws {
         let (name, file) = try fixture()
         let prefix = file.deletingPathExtension().lastPathComponent + ".unreadable-"

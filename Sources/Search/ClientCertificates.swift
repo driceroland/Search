@@ -81,9 +81,9 @@ final class CertificateAsk {
 
 enum ClientCertificates {
     /// The identity chosen for each site, this launch only, never for a
-    /// private tab's. Keyed by the space's sign-ins (its website data store)
-    /// as well as host and port: a space signed in apart from the others
-    /// isn't answered for with what was chosen in another.
+    /// private tab's. Keyed by the sign-ins (the website data store) as well
+    /// as host and port: a private tab isn't answered for with what was
+    /// chosen in a tab.
     @MainActor static var chosen: [String: SecIdentity] = [:]
     /// A private tab's choices: its own, for its own pages and what they
     /// load, never another tab's, and gone when it closes.
@@ -158,7 +158,7 @@ enum ClientCertificates {
             }
         }
         // Never kept by the network layer: what is remembered is kept here,
-        // per space and site (a private tab: per tab), where an agent's never looks.
+        // per store and site (a private tab: per tab), where an agent's never looks.
         return URLCredential(identity: identity, certificates: between.isEmpty ? nil : between, persistence: .none)
     }
 

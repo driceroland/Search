@@ -413,7 +413,7 @@ def case_slice4(t):
 def case_slice5a(t):
     """with the rest"""
     def order(st): return [x["id"] for x in st["tabs"]]
-    setup(splitView=True, spaces=True); launch()
+    setup(splitView=True); launch()
     m = page("mail"); a = page("apple-apple"); b = page("apple-apple-apple"); x = page("x")
     cmd({"do": "pin", "id": m})
     # ⌥⌘N on a pin: a copy of its page and an empty page; the pin stays
@@ -438,14 +438,6 @@ def case_slice5a(t):
     st = sp("focus", id=b); time.sleep(1.2); st = sp("state")
     t.ok("focus moves: find stays open with its words", st["finding"] and st["needle"] == "apple", (st["finding"], st["needle"]))
     t.ok("…and looks in the other page", st["findStatus"].endswith("of 3"), st["findStatus"])
-    # moving a page to another space leaves its partner in front
-    first = sp("state")["spaceID"]
-    sp("space", spaceAction="new", name="Two"); time.sleep(1)
-    other = [k for k in sp("rows")["rows"].keys() if k != first][0]
-    sp("space", spaceAction="go", spaceID=first); time.sleep(1)
-    sp("focus", id=b)
-    st = sp("moveSpace", id=b, spaceID=other); time.sleep(0.8); st = sp("state")
-    t.ok("a page moved to another Space: its partner is in front", st["activeID"] == a and b not in order(st), (st["activeID"], order(st)))
 
 
 def case_slice5b(t):

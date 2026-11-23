@@ -772,7 +772,7 @@ enum ExtensionShims {
         return new Map((all || []).map((w) => [w.id, { left: w.left, top: w.top, width: w.width, height: w.height }]));
       };
       // The tab's address too: two windows can have one frame (a window
-      // made over another, profiles in one window), and the tab at that
+      // made over another), and the tab at that
       // place tells them apart.
       const placeOf = (t, known) => ({ i: t.index, w: known.get(t.windowId), u: t.url || t.pendingUrl || "" });
       const event = () => {
@@ -4129,7 +4129,7 @@ enum ExtensionShims {
         }
         for (const name of ["get", "getAll", "getCurrent", "getLastFocused", "create"]) mendResult(chrome.windows, name);
         // A new window in Chrome holds only the tabs it was made with. Here
-        // it holds the space's pins too, and they come first in its row, so
+        // it holds the pins too, and they come first in its row, so
         // the tabs it was made with are put first in the answer, their
         // indexes left true: an extension takes tabs[0] for the one it made
         // (Claude in Chrome groups it, and a pin can't be grouped, #872).
@@ -6442,9 +6442,7 @@ enum ExtensionShims {
             "webSQL": [WKWebsiteDataTypeWebSQLDatabases], "fileSystems": [WKWebsiteDataTypeFileSystem],
         ]
         for (key, on) in what where on { types.formUnion(map[key] ?? []) }
-        // The window's profile's sites: its spaces' stores, never another
-        // profile's (see Profiles.swift).
-        let stores = Spaces.stores(of: browser.profileID)
+        let stores = [Store.websites]
         for store in stores where !types.isEmpty {
             if let origins {
                 let records = await store.dataRecords(ofTypes: types)
@@ -6578,8 +6576,8 @@ enum ExtensionAuth {
             waiting[id]?.finish(.failure(Declined()))
             let tab = browser.open(url, foreground: true)
             waiting[id] = (tab.id, { result in continuation.resume(with: result) })
-            // Closing the tab is saying no. Moved to another window, or to
-            // a space not on screen, it is still there.
+            // Closing the tab is saying no. Moved to another window, it is
+            // still there.
             watches[id]?.invalidate()
             let started = Date()
             watches[id] = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
@@ -6609,8 +6607,8 @@ enum ExtensionAuth {
     ///
     /// What it allows, no more than a tab opened behind would (which any
     /// extension may do, with no permission): an extension with "identity"
-    /// has an http(s) page load out of sight, with the cookies of the space
-    /// in front, for at most a minute. It learns only the address it is sent
+    /// has an http(s) page load out of sight, with the browser's cookies,
+    /// for at most a minute. It learns only the address it is sent
     /// to on its own chromiumapp.org, never the page. The page gets no other
     /// extension, no popup, dialog, download or app launch, and no other
     /// scheme. One flow per extension at a time; a new one ends the last.
@@ -6656,10 +6654,10 @@ enum ExtensionAuth {
 
         func start(_ url: URL, limit: TimeInterval) {
             let config = WKWebViewConfiguration()
-            // The front space's sign-ins, as the tab an interactive flow
-            // opens would have; no extension's scripts, and the same user
-            // agent as every other view (see Web.userAgentName).
-            config.websiteDataStore = Spaces.store(for: Spaces.current)
+            // The browser's sign-ins, as the tab an interactive flow opens
+            // would have; no extension's scripts, and the same user agent as
+            // every other view (see Web.userAgentName).
+            config.websiteDataStore = Store.websites
             config.processPool = Web.pool
             config.applicationNameForUserAgent = Web.userAgentName
             config.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -6834,7 +6832,7 @@ enum ExtensionAuth {
 
     private static func exists(_ id: Tab.ID) -> Bool {
         Browsers.all.contains { browser in
-            browser.tabs.contains { $0.id == id } || browser.parked.values.contains { $0.tabs.contains { $0.id == id } }
+            browser.tabs.contains { $0.id == id }
         }
     }
 

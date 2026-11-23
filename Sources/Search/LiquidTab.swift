@@ -24,8 +24,7 @@ import SwiftUI
 // by an animation: what they have is a speed, and the speed shows. The
 // glass stretches a little along the way it goes, overshoots a little, and
 // settles. Standing still, it stays on its tab as the rows scroll; caught
-// mid-glide by a scroll, it carries on to where its tab now is. To another
-// space it doesn't travel: it is there, as the grey is (LivePill.id). With
+// mid-glide by a scroll, it carries on to where its tab now is. With
 // Reduce Motion on it doesn't move at all. The clock runs only while it
 // moves, from the screen the window is on.
 
@@ -56,9 +55,8 @@ struct LiveLensMark {
     let anchor: Anchor<CGRect>
 }
 
-/// Every live ground in a row of tabs, the one on screen among them. A
-/// space swiped in brings its own live tab along for a moment; the lens
-/// keeps to the window's (LiveLens.active).
+/// Every live ground in a row of tabs, the one on screen among them; the
+/// lens keeps to the window's (LiveLens.active).
 struct LiveLensKey: PreferenceKey {
     static let defaultValue: [LiveLensMark] = []
     static func reduce(value: inout [LiveLensMark], nextValue: () -> [LiveLensMark]) {
@@ -72,12 +70,12 @@ extension View {
     func liveLens(_ browser: Browser, motion: LensMotion) -> some View {
         backgroundPreferenceValue(LiveLensKey.self) { marks in
             if !marks.isEmpty {
-                LiveLens(marks: marks, active: browser.activeID, space: browser.spaceID, motion: motion)
+                LiveLens(marks: marks, active: browser.activeID, motion: motion)
             }
         }
         .overlayPreferenceValue(LiveLensKey.self) { marks in
             if !marks.isEmpty {
-                LiveLens(marks: marks, active: browser.activeID, space: browser.spaceID, motion: motion, over: true)
+                LiveLens(marks: marks, active: browser.activeID, motion: motion, over: true)
             }
         }
     }
@@ -86,9 +84,8 @@ extension View {
 /// A pane, laid under the rows or over them.
 private struct LiveLens: View {
     let marks: [LiveLensMark]
-    /// The window's live tab, and its space.
+    /// The window's live tab.
     let active: AnyHashable?
-    let space: AnyHashable
     /// The row's spring, which both panes follow.
     @ObservedObject var motion: LensMotion
     /// Over the rows: there only while the glass moves. The pane under them
@@ -98,21 +95,20 @@ private struct LiveLens: View {
     private struct Aim: Equatable {
         let rect: CGRect
         let tab: AnyHashable
-        let space: AnyHashable
     }
 
     var body: some View {
         GeometryReader { geo in
             if let mark = marks.first(where: { $0.tab == active }) ?? marks.first,
                !over || motion.moving > 0 {
-                let aim = Aim(rect: geo[mark.anchor], tab: mark.tab, space: space)
+                let aim = Aim(rect: geo[mark.anchor], tab: mark.tab)
                 LiquidPane(cornerRadius: 9, motion: over ? nil : motion)
                     .frame(width: max(0, motion.frame.width), height: max(0, motion.frame.height))
                     .scaleEffect(x: motion.stretch.width, y: motion.stretch.height)
                     .position(x: motion.frame.midX, y: motion.frame.midY)
                     .opacity(motion.frame == .zero ? 0 : (over ? motion.moving : 1))
-                    .onAppear { if !over { motion.aim(aim.rect, tab: aim.tab, space: aim.space) } }
-                    .onChange(of: aim) { _, now in if !over { motion.aim(now.rect, tab: now.tab, space: now.space) } }
+                    .onAppear { if !over { motion.aim(aim.rect, tab: aim.tab) } }
+                    .onChange(of: aim) { _, now in if !over { motion.aim(now.rect, tab: now.tab) } }
             }
         }
         .clipped()
@@ -135,7 +131,6 @@ final class LensMotion: NSObject, ObservableObject {
     weak var view: NSView?
 
     private var tab: AnyHashable?
-    private var space: AnyHashable?
     /// midX, midY, width, height: where it is, where it is going, how fast.
     private var at = [Double](repeating: 0, count: 4)
     private var to = [Double](repeating: 0, count: 4)
@@ -150,15 +145,14 @@ final class LensMotion: NSObject, ObservableObject {
     private static let pull = 320.0
     private static let damping = 27.0
 
-    func aim(_ rect: CGRect, tab: AnyHashable, space: AnyHashable) {
+    func aim(_ rect: CGRect, tab: AnyHashable) {
         let target = [Double(rect.midX), Double(rect.midY), Double(rect.width), Double(rect.height)]
-        let glides = self.tab != nil && self.space == space && !Motion.reduced
+        let glides = self.tab != nil && !Motion.reduced
             && (link != nil || self.tab != tab)
         self.tab = tab
-        self.space = space
         to = target
         // The first time, the same tab carried by a scroll or a resize while
-        // the glass stands still, another space, or anything at all under
+        // the glass stands still, or anything at all under
         // Reduce Motion: it is simply there.
         guard glides else {
             link?.invalidate()

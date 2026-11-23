@@ -20,11 +20,8 @@ struct SplitStage: View {
     @State private var hovered: Tab.ID?
 
     var body: some View {
-        // The page of a space on its way in, already (Browser.pageAhead).
-        let ahead = browser.pageAhead
-        let split = ahead == nil ? browser.activeSplit : nil
-        let shown: [Tab] = ahead.map { [$0] }
-            ?? split.map { pair in pair.tabs.compactMap { id in browser.tabs.first { $0.id == id } } }
+        let split = browser.activeSplit
+        let shown: [Tab] = split.map { pair in pair.tabs.compactMap { id in browser.tabs.first { $0.id == id } } }
             ?? browser.active.map { [$0] } ?? []
         // The stage alone says how big it is; what is drawn over each page
         // follows the frames it reports and has no say. Laid out beside the
@@ -34,7 +31,7 @@ struct SplitStage: View {
         // content, too wide, was centred in it — the column cut off at the
         // left and the pages past the right edge, for good.
         PaneStageView(
-            tabs: shown, split: split, focused: ahead?.id ?? browser.activeID,
+            tabs: shown, split: split, focused: browser.activeID,
             commit: { id, sizes in browser.setSplitSizes(id, sizes) },
             focus: { tab in browser.focusPane(tab) },
             frames: { frames = $0 },

@@ -64,7 +64,7 @@ enum Store {
     @MainActor static var keepsSignIns = false {
         didSet {
             guard keepsSignIns != oldValue else { return }
-            Spaces.everyStore.forEach(followSignIns)
+            followSignIns(websites)
         }
     }
 

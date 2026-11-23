@@ -163,23 +163,6 @@ def main():
         t.ok("a crashing page is made again at most twice a minute", r.get("reloads") == 2 and r.get("gaveUp") is True, r)
         sv.quit()
 
-        # Another space, one that starts afresh: the site comes again,
-        # signed in as that space is.
-        sv.setup(sidebar=True, spaces=True, **{"panel.sites": True})
-        sv.launch()
-        sv.page("a")
-        panel("site", url=f"{sv.BASE}/panel")
-        wait(lambda: panel()["title"] == "panel")
-        first = panel()["content"]
-        peval("document.cookie = 'space=one; path=/'; 1")
-        sv.cmd({"do": "space", "action": "new", "name": "Fresh", "fresh": True}); time.sleep(1.2)
-        st = panel()
-        t.ok("another space: still up, now in that space", st["shown"] and st["content"].get("space") != first["space"]
-             and st["content"]["sameStore"] is True, (first, st["content"]))
-        wait(lambda: panel()["title"] == "panel")
-        t.ok("another space: signed in as it is (none of the first space's cookies)",
-             "space=one" not in (peval("document.cookie") or ""), peval("document.cookie"))
-        sv.quit()
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)

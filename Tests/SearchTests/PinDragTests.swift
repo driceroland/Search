@@ -78,19 +78,6 @@ final class PinDragTests: XCTestCase {
         XCTAssertEqual(PinDrop.gridSlot(CGPoint(x: 300, y: 60), cells: cells), 2)
     }
 
-    func testPinSlotKeepsSharedPinsAhead() {
-        let browser = makeBrowser(count: 4)
-        let t = browser.tabs
-        browser.pin(t[0]); browser.pin(t[1])
-        t[0].everywhere = true
-        browser.prefs.usesSpaces = true
-        browser.prefs.sharesPins = true
-        XCTAssertEqual(browser.pinSlot(t[2], listed: false, proposed: 0), 1, "after the one every space shows")
-        XCTAssertEqual(browser.pinSlot(t[2], listed: false, proposed: 9), 2)
-        browser.prefs.sharesPins = false
-        XCTAssertEqual(browser.pinSlot(t[2], listed: false, proposed: 0), 0)
-    }
-
     // MARK: - the model, as the drop calls it
 
     func testDroppedOnThePinsPinsInPlaceAndKeepsThePage() {
@@ -303,11 +290,9 @@ final class PinDragTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins,
-                        prefs.usesSpaces, prefs.sharesPins)
+        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins)
         restorePreferences = {
-            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins,
-             prefs.usesSpaces, prefs.sharesPins) = previous
+            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
@@ -315,7 +300,6 @@ final class PinDragTests: XCTestCase {
         browser.prefs.usesTabGroups = false
         browser.prefs.splitView = false
         browser.prefs.listsPins = rows
-        browser.prefs.sharesPins = false
         for word in ["one", "two", "three", "four", "five", "six"].prefix(count) {
             if browser.tabs.last?.isBlank == false { browser.newTab() }
             browser.tabs.last?.restore(url: URL(string: "about:blank#\(word)")!, title: word)

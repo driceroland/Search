@@ -292,7 +292,7 @@ def main():
         print("  refused cookies:", refused)
         t.ok("a response may not set another domain's cookies", refused == ["x", "y"], refused)
         print("  trace:", json.dumps(natives[:4]))
-        t.ok("it went natively, from the extension's origin, with the window's space store",
+        t.ok("it went natively, from the extension's origin, with the browser's store",
              any(x["native"].endswith("/api/bootstrap") and "lax" in x["cookies"] and x["store"] == "space"
                  and x["origin"].endswith("://" + ext["id"]) for x in natives), natives)
         t.ok("the extension page runs (chrome.storage answers)",

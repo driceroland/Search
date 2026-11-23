@@ -14,7 +14,6 @@ struct ShortcutsPage: View {
 
     /// By name, or by key as the menus write it: "tab" and "⌘T" both find New Tab.
     private func shown(_ command: Command) -> Bool {
-        if command.section == .spaces, !prefs.usesSpaces { return false }
         if Command.ai.contains(command.id), !browser.prefs.ai { return false }
         if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
         if Command.archive.contains(command.id), prefs.tabLife == .never { return false }
@@ -28,8 +27,7 @@ struct ShortcutsPage: View {
     }
 
     /// The keys that pick a tab by its place: not a menu command, and not
-    /// yours to move one by one, but listed so they can be found, with the
-    /// switch that hands ⌘1–⌘9 to the spaces.
+    /// yours to move one by one, but listed so they can be found.
     private var numbersShown: Bool {
         let words = hunt.trimmingCharacters(in: .whitespaces)
         guard !words.isEmpty else { return true }
@@ -39,14 +37,7 @@ struct ShortcutsPage: View {
             || (1...9).contains { KeyCombo.tabNumber($0).display.localizedCaseInsensitiveContains(key) }
     }
 
-    private var numbersNote: String {
-        if prefs.usesSpaces && prefs.spacesOnCommand {
-            return "The ninth is the last. ⌘1–⌘9 switch spaces: Settings › Spaces & Pins"
-        }
-        return prefs.usesSpaces
-            ? "The ninth is the last. To switch spaces with them instead: Settings › Spaces & Pins"
-            : "The ninth is the last. With spaces on, they can switch spaces instead"
-    }
+    private var numbersNote: String { "The ninth is the last" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -142,7 +133,7 @@ private struct FixedKey: View {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .strokeBorder(Palette.hairline, lineWidth: 1)
             )
-            .help("Set in Settings › Spaces & Pins")
+            .help("Can’t be changed")
     }
 }
 
@@ -215,10 +206,8 @@ private struct KeyBox: View {
         }
         guard let combo = KeyCombo(event: event) else { return }
         guard combo.isUsable else { return say("Add ⌘, ⌥ or ⌃") }
-        // ⌘1–⌘9 (or ⌃1–⌃9) pick tabs: the whole set moves, with its switch.
-        guard !combo.isTabNumber else {
-            return say(browser.prefs.usesSpaces ? "Picks a tab — see Spaces & Pins" : "Picks a tab")
-        }
+        // ⌘1–⌘9 pick tabs.
+        guard !combo.isTabNumber else { return say("Picks a tab") }
         guard !KeyCombo.isReserved(combo) else { return say("Can’t be changed") }
         // The switcher stays up while its key's ⌃, ⌥ or ⌘ is held, and
         // takes the tab picked when it is let go of: a key needs one.

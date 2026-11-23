@@ -130,10 +130,6 @@ final class ZenImportTests: XCTestCase {
         XCTAssertEqual(sidebar.favoritesByProfile["Default"]?.count, 2)
 
         let work = sidebar.spaces[0]
-        XCTAssertEqual(work.emoji, "💼")
-        XCTAssertEqual(work.symbol, "briefcase")
-        XCTAssertEqual(work.colour, 1, "the primary dot is blue")
-        XCTAssertEqual(work.gradient?.colours, ["#4285F4", "#F0A03C"])
         XCTAssertEqual(work.profile, "Default")
         // Docs first; then Research, where its first page stood, holding
         // Papers (two pages), Notes, and the split view's page; then the
@@ -156,13 +152,9 @@ final class ZenImportTests: XCTestCase {
         XCTAssertEqual(Arc.count(work.pinned), 6, "the live folder's page and the open tab stay behind")
 
         let weekend = sidebar.spaces[1]
-        XCTAssertEqual(weekend.symbol, "gamecontroller")
-        XCTAssertEqual(weekend.colour, 4, "red")
-        XCTAssertNil(weekend.gradient, "one colour is a colour, not a gradient")
         XCTAssertEqual(weekend.pinned.count, 1, "no script, no glance")
 
         XCTAssertEqual(sidebar.spaces[2].pinned.count, 0)
-        XCTAssertEqual(sidebar.spaces[2].symbol, "briefcase")
         XCTAssertEqual(sidebar.pinnedCount, 7)
     }
 
@@ -214,8 +206,6 @@ final class ZenImportTests: XCTestCase {
 
         let sidebar = try XCTUnwrap(Zen.fromPlaces(file))
         XCTAssertEqual(sidebar.spaces.map(\.name), ["Home", "Studies"], "in Zen's order, by position")
-        XCTAssertEqual(sidebar.spaces[1].symbol, "graduationcap")
-        XCTAssertEqual(sidebar.spaces[1].colour, 2, "green")
         XCTAssertEqual(sidebar.favorites.map(\.title), ["Mail"])
         XCTAssertEqual(sidebar.spaces[0].pinned, [.item(.init(title: "Recipes", url: URL(string: "https://recipes.example/")!))])
         guard case .folder(let courses) = sidebar.spaces[1].pinned.first else { return XCTFail("no Courses folder") }
@@ -241,20 +231,10 @@ final class ZenImportTests: XCTestCase {
         try Self.mozlz4(json: store).write(to: profile.appendingPathComponent("sessionstore.jsonlz4"))
         let sidebar = try XCTUnwrap(Zen.sidebar(inProfile: profile))
         XCTAssertEqual(sidebar.spaces.map(\.name), ["Code"])
-        XCTAssertEqual(sidebar.spaces[0].symbol, "chevron.left.forwardslash.chevron.right")
         XCTAssertEqual(Arc.count(sidebar.spaces[0].pinned), 1)
         XCTAssertEqual(sidebar.favorites.map(\.title), ["Chat"], "\"true\", as older Zen wrote it, is an Essential")
     }
 
     // MARK: - colours
 
-    func testZenColoursFindTheNearestSpaceColour() {
-        XCTAssertEqual(Zen.nearest((0.26, 0.52, 0.96)), 1)
-        XCTAssertEqual(Zen.nearest((0.5, 0.5, 0.5)), 0, "a grey is no colour")
-        XCTAssertEqual(Zen.nearest((0.95, 0.85, 0.2)), 3, "yellow is nearest orange")
-        XCTAssertEqual(Zen.nearest((0.6, 0.3, 0.9)), 5)
-        XCTAssertNil(Zen.rgb([300, 1, 2]))
-        XCTAssertNil(Zen.rgb("#12"))
-        XCTAssertEqual(Zen.rgb("rgb(255, 0, 0)").map(Zen.hex), "#FF0000")
-    }
 }

@@ -29,11 +29,12 @@ final class FollowFileTests: XCTestCase {
             // Look and layout settings added since, each read again as it was
             // added: the column's slide, buttons at the top, the card in full
             // screen, the address bar and its width, the glass window and the
-            // Liquid Glass tab, the bounce, and ⌘1–⌘9 for spaces.
+            // Liquid Glass tab, and the bounce.
             "slidesColumn", "doorsUp", "cardsInFullScreen", "addressLine", "addressWidth", "glass", "glassGrain",
-            "glassClear", "glassStyle", "liquidTabs", "bounces", "spacesOnCommand",
-            // Themes: the empty tab's background is part of the look.
-            "homeTheme", "homeThemeImage", "homeTuning", "homeShuffle",
+            "glassClear", "glassStyle", "liquidTabs", "bounces",
+            // Themes: the empty tab's background and the browser's colour are
+            // part of the look.
+            "browserTheme", "homeTheme", "homeThemeImage", "homeTuning", "homeShuffle",
             // The column narrowed to icons, and the sidebar button beside the
             // window's buttons (#1360, #1351).
             "narrowed", "narrowsToIcons", "foldButton",

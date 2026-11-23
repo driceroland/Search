@@ -68,21 +68,15 @@ final class Bookmarks {
     /// button, which fills in on a page that is kept.
     private var kept: Set<String> = []
 
-    /// Its file: bookmarks.json for Personal, one of its own for each other
-    /// profile (see Profiles.swift).
+    /// Its file: bookmarks.json, or another for a test.
     private let fileName: String
-    /// Its profile deleted: nothing more is written.
-    private var retired = false
+
+    /// The one the browser keeps.
+    static let shared = Bookmarks()
 
     init(file: String = "bookmarks.json") {
         fileName = file
         load()
-    }
-
-    /// Its profile deleted: its file removed, and nothing written again.
-    func retire() {
-        retired = true
-        Disk.remove(file)
     }
 
     var isEmpty: Bool { roots.isEmpty }
@@ -243,8 +237,8 @@ final class Bookmarks {
     }
 
     /// The folder last picked on a bookmark's card (BookmarkCard): the
-    /// next page bookmarked goes there too, as in Safari and Chrome. One
-    /// for each profile, as its bookmarks are. Nil for the top level, and
+    /// next page bookmarked goes there too, as in Safari and Chrome. Nil for
+    /// the top level, and
     /// once that folder is gone.
     var lastFolder: Bookmark.ID? {
         get {
@@ -257,7 +251,7 @@ final class Bookmarks {
         }
     }
 
-    /// Named after its file, which is the profile's.
+    /// Named after its file.
     private var lastFolderKey: String { "bookmarks.lastFolder." + fileName }
 
     /// Filed in `folder` (the top level for nil) from its card, and the
@@ -659,8 +653,7 @@ final class Bookmarks {
         }
     }
 
-    /// A name of your own for a bookmark or a folder, asked for the way a
-    /// space's is: the page's title is what a bookmark starts with, and a
+    /// A name of your own for a bookmark or a folder: the page's title is what a bookmark starts with, and a
     /// folder brought in from another browser is called after it. The name
     /// it has arrives in the field. An empty one changes nothing for a
     /// folder; a bookmark left without one is its icon alone on the bar.
@@ -728,7 +721,6 @@ final class Bookmarks {
     }
 
     private func save() {
-        guard !retired else { return }
         let snapshot = roots
         // One after another, the newest last (see Disk).
         Disk.write(file) { try? JSONEncoder().encode(snapshot) }
@@ -1681,7 +1673,7 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
 
     private var menu: NSMenu? { NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu }
 
-    /// The window in front's: its profile's bookmarks (see Profiles.swift).
+    /// The window in front's.
     private var shown: Browser? { Browsers.front.flatMap { !$0.isPopup ? $0 : nil } ?? browser }
 
     private func wrap(_ menu: NSMenu? = nil) {

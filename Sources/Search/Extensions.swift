@@ -188,7 +188,7 @@ final class Extensions: NSObject, ObservableObject {
             ? .init(identifier: Store.probeStore(2))
             : .default()
         configuration.defaultWebsiteDataStore = Store.websites
-        // Taken straight from Store, not through Profiles.store, so the proxy
+        // Taken straight from Store, not through Web.configuration, so the proxy
         // is put on it here: an extension's pages would otherwise fetch
         // directly until the first ordinary tab was made (Proxy.swift).
         BrowserProxy.shared.attach(Store.websites)
@@ -368,8 +368,7 @@ final class Extensions: NSObject, ObservableObject {
     /// for the window (screenFrame(for:): the window's own screen), not the
     /// first one: with the window on another display the two differ, and
     /// no tab was found. It is turned back here, give or take two points.
-    /// Two windows with one frame (one made over another, or profiles in
-    /// one window) are told apart by the tab's address at that place, when
+    /// Two windows with one frame (one made over another) are told apart by the tab's address at that place, when
     /// the extension gave it (#872); still two, it is neither.
     func tab(windowFrame frame: CGRect, index: Int, address: String? = nil, for context: WKWebExtensionContext) -> Tab? {
         let match = Browsers.all.filter { browser in
@@ -1754,7 +1753,7 @@ final class Extensions: NSObject, ObservableObject {
     /// every window had each window's puzzle hold its own popover to it: a
     /// click in the list closed the others' as a click outside them, and
     /// that, through the flag, the list clicked in, before its row or pin
-    /// had done anything. With a window per profile, every click.
+    /// had done anything.
     @Published var menuOwner: ObjectIdentifier?
     /// Whether a list is open, in any window; set on, the window in front's.
     var menuOpen: Bool {
@@ -1949,12 +1948,11 @@ extension Extensions: WKWebExtensionControllerDelegate {
     }
 
     /// windows.create: a window of its own, with the pages asked for and
-    /// the tabs it was asked to take (`tabId`, macOS 27), in the space of
-    /// the window in front, or of the tab it takes (see Windows.swift). A
+    /// the tabs it was asked to take (`tabId`, macOS 27) (see Windows.swift). A
     /// popup-type window is a window like the others here.
     func webExtensionController(_ controller: WKWebExtensionController, openNewWindowUsing configuration: WKWebExtension.WindowConfiguration, for extensionContext: WKWebExtensionContext) async throws -> (any WKWebExtensionWindow)? {
         // A private window isn't something an extension can have here: made
-        // as a normal one, its pages would land in the normal space's store
+        // as a normal one, its pages would land in the normal store
         // and History while the extension believed them private. Refused,
         // as Chrome refuses when incognito isn't allowed (Security).
         if configuration.shouldBePrivate {
@@ -1963,14 +1961,14 @@ extension Extensions: WKWebExtensionControllerDelegate {
         for url in configuration.tabURLs { try Extensions.mayOpen(url) }
         // Tabs to move in, each as moveToWindow takes one: in a window's
         // row, not a pin (pins are in every window already), not a script's
-        // bench tab, and all of one profile. Refused whole rather than
+        // bench tab. Refused whole rather than
         // leaving the extension a window without the tab it asked for.
         var moving: [(tab: Tab, from: Browser)] = []
         for asked in configuration.tabs {
             guard let tab = (asked as? ExtensionTab)?.tab, seen(tab, for: extensionContext), let from = browser(of: tab) else {
                 throw NSError(domain: "Search", code: 1, userInfo: [NSLocalizedDescriptionKey: "No tab with that id."])
             }
-            guard tab.pin == nil, !tab.bench, moving.first.map({ $0.from.profileID == from.profileID }) ?? true else {
+            guard tab.pin == nil, !tab.bench else {
                 throw NSError(domain: "Search", code: 4, userInfo: [NSLocalizedDescriptionKey: "That tab can't be moved to another window."])
             }
             moving.append((tab, from))
@@ -1993,8 +1991,7 @@ extension Extensions: WKWebExtensionControllerDelegate {
                 }
             }
         }
-        // In the moved tab's space, so its profile's sign-ins come with it.
-        let fresh = Browser(record: WindowRecord(space: moving.first?.from.spaceID ?? browser?.spaceID ?? Space.firstID))
+        let fresh = Browser(record: WindowRecord())
         // A popup, as a password manager's vault or a sign-in opens: a small
         // window of the page, not another browser window.
         if popup {

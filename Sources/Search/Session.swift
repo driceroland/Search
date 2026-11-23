@@ -65,14 +65,14 @@ enum Session {
         var focused: Int?
     }
 
-    /// The first space's is the session there always was; each other space
-    /// keeps its own beside it.
-    private static func file(_ space: UUID) -> URL {
-        Store.file(space == Space.firstID ? "session.json" : "session-\(space.uuidString).json")
-    }
+    private static var file: URL { Store.file("session.json") }
+
+    /// The key the one row had in files written when a window kept several
+    /// (windows.json's rows, pins.json): read once, for what was there.
+    static let legacyFirstRow = "00000000-0000-0000-0000-000000000001"
 
     /// Settings › General › Start with a fresh window, at launch, before any
-    /// window reads its row: each space's file keeps what you said to keep,
+    /// window reads its row: the file keeps what you said to keep,
     /// as tabs that close themselves count it (see Closing.swift) — its
     /// pins, their letters, names, homes, whole; the tabs in its groups,
     /// with the groups (Arc's folders come in as groups, and a folder is
@@ -80,13 +80,11 @@ enum Session {
     /// A Split View pair stays only when both its pages do. No tab is marked
     /// as in front, so the window opens on an empty tab beside the pins (see
     /// Browser.restoreSession).
-    static func startFresh(spaces: [UUID]) {
-        for space in spaces {
-            let shape = read(space: space)
-            let left = fresh(shape)
-            guard left.tabs.count != shape.tabs.count || shape.active >= 0 else { continue }
-            write(now: true, space: space, left)
-        }
+    static func startFresh() {
+        let shape = read()
+        let left = fresh(shape)
+        guard left.tabs.count != shape.tabs.count || shape.active >= 0 else { return }
+        write(now: true, left)
     }
 
     /// A row as a fresh start leaves it (see startFresh).
@@ -113,13 +111,7 @@ enum Session {
         return Shape(tabs: tabs, active: -1, groups: keptGroups.isEmpty ? nil : keptGroups, splits: splits)
     }
 
-    static func erase(space: UUID) {
-        guard space != Space.firstID else { return }
-        try? FileManager.default.removeItem(at: file(space))
-    }
-
-    static func read(space: UUID = Space.firstID) -> Shape {
-        let file = file(space)
+    static func read() -> Shape {
         guard let data = try? Data(contentsOf: file) else { return Shape(tabs: [], active: 0) }
         guard let shape = try? JSONDecoder().decode(Shape.self, from: data) else {
             // A file that's there but won't decode is not the same as no
@@ -134,9 +126,9 @@ enum Session {
     /// `now` writes on the calling thread. Quitting doesn't wait for a
     /// background queue, and a session handed to one on the way out is a
     /// session that may never reach the disk.
-    static func write(now: Bool = false, space: UUID = Space.firstID, _ shape: Shape) {
+    static func write(now: Bool = false, _ shape: Shape) {
         // One after another, the newest last (see Disk).
-        Disk.write(file(space), now: now) { try? JSONEncoder().encode(shape) }
+        Disk.write(file, now: now) { try? JSONEncoder().encode(shape) }
     }
 }
 

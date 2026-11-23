@@ -13,10 +13,9 @@ final class HistoryQuitTests: XCTestCase {
     }
 
     func testAVisitJustBeforeQuittingIsWritten() throws {
-        let profile = UUID()
-        let file = Store.file("history-\(profile.uuidString).json")
+        let file = Store.file("history.json")
         defer { try? FileManager.default.removeItem(at: file) }
-        let history = Profiles.history(profile)
+        let history = History.shared
 
         history.record(try XCTUnwrap(URL(string: "https://example.com/")), title: "Last page")
         // What applicationWillTerminate runs, well inside the 1.5 s pause.

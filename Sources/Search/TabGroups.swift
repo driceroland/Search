@@ -98,11 +98,7 @@ struct GroupHeading: View {
     @State private var hovering = false
     @State private var dropping = false
     @FocusState private var focused: Bool
-    /// Drawn in the map of every space's rows, not the column: renamed only
-    /// in the column, or a second field takes the keys (see SideRow's editing).
-    @Environment(\.inSpaceMap) private var inMap
-
-    private var editing: Bool { !inMap && browser.editingGroupID == group.id }
+    private var editing: Bool { browser.editingGroupID == group.id }
 
     /// Soft grey by default; full ink with Settings › Appearance › Tabs ›
     /// High contrast text, as a tab's title is.
@@ -281,19 +277,6 @@ private struct GroupHeadingShared: ViewModifier {
                 Button("Rename Group") { browser.editingGroupID = group.id }
                 Button(group.collapsed ? "Expand Group" : "Collapse Group") { browser.toggleTabGroup(group.id) }
                 Button("Colour…") { choosingColour = true }
-                // The whole group into another space, still a group there: Arc's
-                // folders came in wherever Arc had them.
-                if browser.prefs.usesSpaces, browser.spaces.count > 1 {
-                    Menu("Move Group to Space") {
-                        ForEach(browser.spaces.filter { $0.id != browser.spaceID }) { space in
-                            Button {
-                                browser.move(group: group.id, toSpace: space.id)
-                            } label: {
-                                Label(space.name, systemImage: space.symbol)
-                            }
-                        }
-                    }
-                }
                 Divider()
                 Button("Ungroup Tabs") { browser.removeTabGroup(group.id) }
                 Button("Close Group") { browser.closeTabGroup(group.id) }
@@ -301,7 +284,7 @@ private struct GroupHeadingShared: ViewModifier {
             .popover(isPresented: $choosingColour,
                      hangingFrom: horizontal ? .bottom : (browser.prefs.sidePosition == .right ? .leading : .trailing)) {
                 let index = group.colour ?? 0
-                ColourSwatches(selected: Spaces.colours.indices.contains(index) ? index : 0) {
+                ColourSwatches(selected: Tints.colours.indices.contains(index) ? index : 0) {
                     browser.setTabGroupColour(group.id, to: $0)
                 }
                 .padding(16)
@@ -333,8 +316,8 @@ struct GroupBand: View {
     static let height: CGFloat = 28
 
     private var fill: Color {
-        if let colour = group.colour, let opacity = Spaces.wash(colour, dark: scheme == .dark) {
-            return Spaces.colours[colour].opacity(opacity)
+        if let colour = group.colour, let opacity = Tints.wash(colour, dark: scheme == .dark) {
+            return Tints.colours[colour].opacity(opacity)
         }
         return greys.tile
     }

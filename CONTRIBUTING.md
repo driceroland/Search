@@ -9,7 +9,7 @@ For anything beyond a small fix, open an issue first describing what you want to
 ## New features: off until someone turns them on
 
 Search stays small by default. Anything new that changes how the browser
-looks or behaves — spaces, groups, a visible address bar, a new panel — is:
+looks or behaves — pins, groups, a visible address bar, a new panel — is:
 
 - **minimal**: the smallest version that does the job, in the app's own quiet style;
 - **optional, and off by default**: someone who never asks for it never sees it;

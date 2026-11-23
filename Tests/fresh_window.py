@@ -22,15 +22,10 @@ sv.use("fresh-window")
 t = sv.T()
 def urls(st): return [x["url"] for x in st["tabs"]]
 try:
-    sv.setup(splitView=True, spaces=True, **{"tabs.groups": True}); sv.launch()
+    sv.setup(splitView=True, **{"tabs.groups": True}); sv.launch()
     m = sv.page("mail"); a = sv.page("a"); b = sv.page("b"); c = sv.page("c")
     sv.cmd({"do": "pin", "id": m})
     sv.sp("pair", id=b, **{"with": a}, side="right"); sv.sp("group", id=c)
-    first = sv.sp("state")["spaceID"]
-    sv.sp("space", spaceAction="new", name="Two"); time.sleep(1)
-    n = sv.page("notes"); x = sv.page("x"); sv.cmd({"do": "pin", "id": n})
-    two = sv.sp("state")["spaceID"]
-    sv.sp("space", spaceAction="go", spaceID=first); time.sleep(0.8)
     sv.sp("save"); pins_before = json.load(open(f"{sv.SUPPORT}/pins.json"))
     sv.quit()
     subprocess.run(["defaults", "write", sv.SUITE, "start.fresh", "-bool", "true"])
@@ -46,13 +41,6 @@ try:
     t.ok("fresh: the pair of loose tabs is gone", st["splits"] == [], st["splits"])
     pins_after = json.load(open(f"{sv.SUPPORT}/pins.json"))
     t.ok("fresh: the pins file untouched (letters, homes, ids)", pins_after == pins_before)
-    sv.sp("space", spaceAction="go", spaceID=two); time.sleep(1); st = sv.sp("state")
-    t.ok("fresh: another space keeps its pin, not its tabs", f"{sv.BASE}/notes" in urls(st) and not any(u.endswith("/x") for u in urls(st)), urls(st))
-    # Gone to, it opens on an empty tab beside its pin, as the first space
-    # did at launch — not on the pin (the rows of the other spaces are made
-    # ahead of time, and those put their first tab in front).
-    front = [x for x in st["tabs"] if x["id"] == st["activeID"]]
-    t.ok("fresh: another space opens on an empty tab, not its pin", front and front[0]["blank"], (front, urls(st)))
     sv.quit()
     subprocess.run(["defaults", "write", sv.SUITE, "start.fresh", "-bool", "false"])
     sv.launch(); sv.page("d"); sv.sp("save"); sv.quit(); sv.launch()

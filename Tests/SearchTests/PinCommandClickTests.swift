@@ -38,7 +38,7 @@ final class PinCommandClickTests: XCTestCase {
             tab.listed = listed
             return tab
         }
-        let tab = Tab(configuration: Web.configuration(space: browser.spaceID))
+        let tab = Tab(configuration: Web.configuration())
         tab.setAddressOptimistically(current ?? home)
         tab.pin = "E"
         tab.pinID = UUID()
@@ -104,7 +104,7 @@ final class PinCommandClickTests: XCTestCase {
 
     func testCommandClickWanderedPinFromAnotherTabKeepsCurrentActiveTab() {
         let tab = pin(home: home, current: article)
-        let other = Tab(configuration: Web.configuration(space: browser.spaceID))
+        let other = Tab(configuration: Web.configuration())
         other.setAddressOptimistically(URL(string: "https://other.example/")!)
         browser.prepare(other)
         browser.insert(other, at: browser.tabs.count)
@@ -157,7 +157,7 @@ final class PinCommandClickTests: XCTestCase {
 
     func testExtendTabSelectionRespectsPinCommandOpensTabSetting() {
         let tab = pin(home: home, current: article)
-        let other = Tab(configuration: Web.configuration(space: browser.spaceID))
+        let other = Tab(configuration: Web.configuration())
         other.setAddressOptimistically(URL(string: "https://other.example/")!)
         browser.prepare(other)
         browser.insert(other, at: browser.tabs.count)
