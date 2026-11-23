@@ -115,9 +115,11 @@ extension Browser {
     }
 
     /// A post picked: its page in a new tab in front, as a bookmark opened
-    /// in a new tab. The folder's line stays a line, not a pin.
+    /// in a new tab. The folder's line stays a line, not a pin. It came
+    /// from no page, so it goes among the tabs as ⌘T's does (`loose`):
+    /// with a grouped tab in front it went into that group (idea 978).
     func openFeedItem(_ item: FeedItem) {
-        open(item.link, foreground: true, from: active)
+        open(item.link, foreground: true, from: active, loose: true)
     }
 }
 
