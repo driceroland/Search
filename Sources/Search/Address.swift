@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 // What you type has to be a place. There is no search here, so this either
 // hands back a URL or hands back nothing — and nothing is worth saying out
@@ -9,6 +9,26 @@ enum Address {
     /// mailto:, a custom app link — is somebody else's job and gets refused
     /// here rather than opening a blank tab.
     private static let ours: Set<String> = ["http", "https", "file", "about", "data", InternalPage.scheme]
+
+    /// An address typed for another app, as Safari takes vnc://, ssh:// or
+    /// slack:// from its field: written with a scheme the window can't show,
+    /// that some app on this Mac other than Search opens. Typed by hand, so
+    /// it goes to that app without a question; nothing a page asks for
+    /// comes this way (see Browser.handOff). Nil for anything else, which
+    /// then goes on as before: a search for what was typed.
+    static func otherApp(from typed: String, opener: (URL) -> URL? = { NSWorkspace.shared.urlForApplication(toOpen: $0) }) -> URL? {
+        let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !text.contains(" "), let split = text.range(of: "://") else { return nil }
+        let scheme = text[..<split.lowerBound].lowercased()
+        guard !ours.contains(scheme), !["javascript", "blob", "search"].contains(scheme),
+              scheme.first?.isLetter == true,
+              scheme.allSatisfy({ $0.isLetter || $0.isNumber || "+-.".contains($0) }),
+              let url = URL(string: text), url.scheme?.lowercased() == scheme,
+              let app = opener(url),
+              Bundle(url: app)?.bundleIdentifier != Bundle.main.bundleIdentifier
+        else { return nil }
+        return url
+    }
 
     /// Only committed navigation checks the disk; suggestions and dropped text never do.
     static func file(from typed: String) -> URL? {

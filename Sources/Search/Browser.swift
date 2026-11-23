@@ -8376,6 +8376,15 @@ final class Browser: NSObject, ObservableObject {
             return
         }
 
+        // vnc://, ssh://, an app's own link: typed for the app that opens
+        // it, as Safari does (#1473), not searched for.
+        if picked == nil, ending == nil, siteChip == nil, let url = Address.otherApp(from: typed) {
+            if Store.testing { Browser.handedOff.append("\(url.scheme ?? ""): typed") } else { NSWorkspace.shared.open(url) }
+            editing = false
+            typed = ""
+            return
+        }
+
         let target: URL?
         if let picked, offers.indices.contains(picked) {
             target = offers[picked].url
