@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With Settings › Spaces & Pins › The field in the middle of the window on, ⌘T's floating field and ⌘L's field over a page have the keys again: typing did nothing until the field was clicked. The page's pane made a field of its own a moment after the window's, which took the keys and went away with them. `python3 Tests/field_window_keys.py` (reported by email, idea 1033)
 - With two profiles or more, the profile item in a space's right-click menu is called Switch to Profile, where it said "Profile: Personal". It switches the window to that profile (the ticked one is the window's) and never moved the space, but read like a setting of the space, so choosing Work looked like moving the space there and losing it. (reported by email, idea 983)
 
 ### Held back
