@@ -875,6 +875,11 @@ final class Preferences: ObservableObject {
     @Published var spaceRoutes: [SpaceRoute] {
         didSet { store.set(spaceRoutes.map(\.plist), forKey: SpaceRoutes.rulesKey) }
     }
+    /// The space a link from another app opens in when no rule names its
+    /// site. Nil, as before, for the current space.
+    @Published var spaceForOtherLinks: UUID? {
+        didSet { store.set(spaceForOtherLinks?.uuidString, forKey: SpaceRoutes.otherKey) }
+    }
     /// With links from other apps: ask which space each opens in, before it
     /// loads (see LinkChooser.swift). Off unless asked for.
     @Published var asksSpaceForLinks: Bool {
@@ -1429,6 +1434,7 @@ final class Preferences: ObservableObject {
         sendsLinksToSpaces = store.bool(forKey: SpaceRoutes.key)
         spaceButtons = store.bool(forKey: Preferences.spaceButtonsKey)
         spaceRoutes = (store.array(forKey: SpaceRoutes.rulesKey) ?? []).compactMap(SpaceRoute.init(plist:))
+        spaceForOtherLinks = store.string(forKey: SpaceRoutes.otherKey).flatMap(UUID.init)
         asksSpaceForLinks = store.bool(forKey: "links.ask")
         linkChoices = (store.array(forKey: "links.ask.last") ?? []).compactMap(LinkChooser.Choice.init(plist:))
         bookmarksBar = store.bool(forKey: "bookmarks.bar")

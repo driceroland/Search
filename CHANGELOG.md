@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Settings › Spaces & Pins › Send links to a space › Everything else, Current space unless you change it: pick a space, and links from other apps that match none of your sites open there, with its sign-ins, as Arc's Air Traffic Control does. A site's own rule still wins. Links a page opens in a new tab, small windows and Ask which space for links from other apps work as before. If the space is deleted, links open in the current space again. `swift test --filter SpaceRoutesTests`
+
 ### Held back
 
 Not in this version, kept on main for a later one:
