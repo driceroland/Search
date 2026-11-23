@@ -295,37 +295,46 @@ enum Vault {
     ///
     /// One yes holds for `grace`, Chrome's minute, so a sign-in that wants
     /// its password again a moment later, or a second tab of the same site,
-    /// isn't asked twice; it ends early when the screens sleep or lock, or
-    /// the session switches away. Every fill of a kept password goes through
+    /// isn't asked twice: for that site alone (its registrable domain), and
+    /// for private tabs or ordinary ones, whichever it was said in, never
+    /// both. It ends early when the screens sleep or lock, or the session
+    /// switches away. Every fill of a kept password goes through
     /// `Browser.choose(_: Kept)`, by click, by Return or by a test's pick,
     /// and that is where it asks: nothing is ever filled on page load.
     @MainActor enum FillProof {
         static let grace: TimeInterval = 60
-        /// When the owner last said yes, if within `grace`.
-        private static var provenAt: Date?
+        /// When the owner last said yes, by site (`key`).
+        private static var provenAt: [String: Date] = [:]
         /// A question is up: a second pick meanwhile fills nothing.
         private(set) static var asking = false
         /// How many times a fill asked, for a test run's bench `accounts`.
         private(set) static var asked = 0
         private static var watching = false
 
-        static func fresh(at now: Date = Date()) -> Bool {
-            guard let provenAt else { return false }
-            let age = now.timeIntervalSince(provenAt)
-            return age >= 0 && age < grace
+        /// What a yes covers: the site's registrable domain, in private
+        /// tabs or in ordinary ones.
+        static func key(_ host: String, shy: Bool) -> String {
+            (shy ? "private " : "") + Vault.registrable(host)
         }
 
-        /// `done(true)` once proven, or still within the grace; `false` for
-        /// a cancel, a failure, or a question already up.
-        static func ask(_ host: String, _ done: @escaping (Bool) -> Void) {
-            if fresh() { done(true); return }
+        /// Whether a yes for this site still holds; with no site, whether
+        /// any does (a test run's bench `accounts`).
+        static func fresh(_ host: String? = nil, shy: Bool = false, at now: Date = Date()) -> Bool {
+            let times = host.map { [provenAt[key($0, shy: shy)]].compactMap { $0 } } ?? Array(provenAt.values)
+            return times.contains { now.timeIntervalSince($0) >= 0 && now.timeIntervalSince($0) < grace }
+        }
+
+        /// `done(true)` once proven, or still within the grace for this site;
+        /// `false` for a cancel, a failure, or a question already up.
+        static func ask(_ host: String, shy: Bool, _ done: @escaping (Bool) -> Void) {
+            if fresh(host, shy: shy) { done(true); return }
             guard !asking else { done(false); return }
             watch()
             asking = true
             if Store.testing { asked += 1 }
             let answered: (Bool) -> Void = { ok in
                 asking = false
-                if ok { provenAt = Date() }
+                if ok { provenAt[key(host, shy: shy)] = Date() }
                 done(ok)
             }
             // A test run never puts the Mac's own question on the screen: it
@@ -335,12 +344,12 @@ enum Vault {
         }
 
         /// The yes is spent: the next fill asks again.
-        static func forget() { provenAt = nil }
+        static func forget() { provenAt = [:] }
 
         /// A test run's, to look at the grace's end without waiting for it.
         static func age(_ seconds: TimeInterval) {
             guard Store.testing else { return }
-            provenAt = Date().addingTimeInterval(-seconds)
+            for site in provenAt.keys { provenAt[site] = Date().addingTimeInterval(-seconds) }
         }
 
         private static func watch() {

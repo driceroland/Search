@@ -82,8 +82,12 @@ class H(BaseHTTPRequestHandler):
 def acc(**f): return sv.cmd({"do": "accounts", **f})
 
 
-def open_login(base):
-    tab = sv.sp("open", url=f"{base}/login")["resultID"]
+def open_login(base, private=False):
+    if private:
+        tab = sv.cmd({"do": "open", "url": f"{base}/login", "private": True})["id"]
+        sv.cmd({"do": "select", "id": tab})
+    else:
+        tab = sv.sp("open", url=f"{base}/login")["resultID"]
     sv.sp("select", id=tab); time.sleep(1.2)
     return tab
 
@@ -103,8 +107,8 @@ def confirm(yes): sv.cmd({"do": "ui", "confirm": yes})
 def box(tab): return sv.ev(tab, "document.getElementById('code').value")
 
 
-def offered(t, base, name):
-    tab = open_login(base)
+def offered(t, base, name, private=False):
+    tab = open_login(base, private)
     r = acc()
     t.ok(name + ": the list hangs from the box", r.get("shown") and r.get("rows") == [{"login": ""}], r)
     time.sleep(0.6)
@@ -176,6 +180,42 @@ def main():
         acc(prove=False); acc(prove=True)
         t.ok("turning it off and on forgets the yes", acc().get("fresh") is False)
 
+        # A yes is for its own site: one for 127.0.0.1 doesn't cover
+        # localhost, a site of its own (made-up code kept there too).
+        other = f"http://localhost:{PORT}"
+        k = open_login(other)
+        send(k, GOOD)
+        t.ok("a made-up code kept for a second site", acc(keep=True).get("kept") == 2)
+        confirm(True)
+        l = offered(t, base, "site A yes")
+        acc(pick=0); time.sleep(0.8)
+        t.ok("site A: asked, filled", acc().get("proofs") == 7 and box(l) == GOOD, box(l))
+        confirm(False)
+        m = offered(t, other, "site B")
+        acc(pick=0); time.sleep(0.8)
+        t.ok("site A's yes doesn't cover site B: asked, the cancel fills nothing",
+             acc().get("proofs") == 8 and box(m) == "", box(m))
+        n = offered(t, base, "site A again")
+        acc(pick=0); time.sleep(0.8)
+        t.ok("site A's yes still holds on site A", acc().get("proofs") == 8 and box(n) == GOOD, box(n))
+
+        # Private tabs and ordinary ones each need their own yes.
+        o = offered(t, base, "private, after a yes in an ordinary tab", private=True)
+        acc(pick=0); time.sleep(0.8)
+        t.ok("an ordinary tab's yes doesn't cover a private one", acc().get("proofs") == 9 and box(o) == "", box(o))
+        acc(proofAge=0)
+        confirm(True)
+        p_ = offered(t, base, "private yes", private=True)
+        acc(pick=0); time.sleep(0.8)
+        t.ok("private: asked, filled", acc().get("proofs") == 10 and box(p_) == GOOD, box(p_))
+        confirm(False)
+        # A tab opened from a private one is private too: from an ordinary one.
+        for shy in (o, p_): sv.cmd({"do": "close", "id": shy})
+        sv.sp("select", id=n)
+        q = offered(t, base, "ordinary, after a yes in a private tab")
+        acc(pick=0); time.sleep(0.8)
+        t.ok("a private tab's yes doesn't cover an ordinary one", acc().get("proofs") == 11 and box(q) == "", box(q))
+
         # The Mac can't ask: with no password set there's nothing to prove;
         # for any other reason, nothing is filled, whatever the answer.
         acc(proofAge=0)
@@ -185,11 +225,11 @@ def main():
         acc(pick=0); time.sleep(0.8)
         r = acc()
         t.ok("can't ask for another reason: nothing filled, no grace",
-             r.get("proofs") == 7 and box(r_) == "" and not r.get("fresh"), (r, box(r_)))
+             r.get("proofs") == 12 and box(r_) == "" and not r.get("fresh"), (r, box(r_)))
         acc(proveError="passcodeNotSet")
         s_ = offered(t, base, "no password set")
         acc(pick=0); time.sleep(0.8)
-        t.ok("no password set on the Mac: filled", acc().get("proofs") == 8 and box(s_) == GOOD, box(s_))
+        t.ok("no password set on the Mac: filled", acc().get("proofs") == 13 and box(s_) == GOOD, box(s_))
         acc(proveError="", proofAge=0)
 
         # Off again: no question.
@@ -197,7 +237,7 @@ def main():
         confirm(False)
         j = offered(t, base, "off again")
         acc(pick=0); time.sleep(0.6)
-        t.ok("off again: filled without asking", acc().get("proofs") == 8 and box(j) == GOOD)
+        t.ok("off again: filled without asking", acc().get("proofs") == 13 and box(j) == GOOD)
     finally:
         try:
             r = acc(forget=True)

@@ -1455,7 +1455,7 @@ final class Browser: NSObject, ObservableObject {
             fill(login, into: tab, host: list.host, clear: list.clear)
             return
         }
-        Vault.FillProof.ask(list.host) { [weak self, weak tab] ok in
+        Vault.FillProof.ask(list.host, shy: tab.shy) { [weak self, weak tab] ok in
             guard ok, let self, let tab else { return }
             self.fill(login, into: tab, host: list.host, clear: list.clear)
         }
