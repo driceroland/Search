@@ -11,7 +11,7 @@ import AppKit
 // Fetched when made, a little after launch, every half hour while Search
 // runs, and on Refresh in the folder's menu. Each fetch is a plain request
 // on a session of its own that keeps nothing: no cookies sent or taken, no
-// sign-in of any space, no cache, and it gives up past a timeout or 2 MB.
+// sign-in, no cache, and it gives up past a timeout or 2 MB.
 // One that fails keeps the posts the folder had; its heading says so in its
 // tooltip and nothing else.
 //

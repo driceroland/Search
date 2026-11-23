@@ -14,7 +14,7 @@ struct PinFolderHeading: View {
     let folder: PinFolder
     let depth: Int
     var compact = false
-    /// Not to be pressed: another space's rows passing in a swipe.
+    /// Not to be pressed: a copy drawn for a picture.
     var interactive = true
     /// A pin carried over it would go in.
     var target = false

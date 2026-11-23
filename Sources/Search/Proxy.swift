@@ -262,9 +262,8 @@ final class BrowserProxy: ObservableObject {
     private let keep: (String) throws -> Void
     private let forget: () -> Void
     /// Every store the proxy has been put on, weakly: a private tab's store
-    /// is nobody else's and must not be kept alive past the tab, and a
-    /// space's store is held by Spaces. Spaces.everyStore is not enough on
-    /// its own, since a private tab's is left out of it on purpose.
+    /// is nobody else's and must not be kept alive past the tab; the
+    /// browser's own is held by Store.
     private let stores = NSHashTable<WKWebsiteDataStore>.weakObjects()
     private static let key = "network.proxy"
 

@@ -465,8 +465,7 @@ struct SideBar: View {
                     // and the foot, rather than running under the lights at one
                     // end and the foot at the other. While it fits it stays a
                     // plain stack, and the space under it is still the
-                    // window's to be dragged by. Inside the page: the swipe
-                    // between spaces moves the page, scroll and all.
+                    // window's to be dragged by.
                     //
                     // One or the other, from the room measured beside what
                     // the rows add up to, rather than both kept for
@@ -685,8 +684,8 @@ struct SideBar: View {
     /// The line between what is kept and what comes and goes, with the
     /// pinned rows on: over the tabs Clear would close, or under rows with
     /// nothing below them yet. Not with the rows off, nor with nothing on
-    /// either side of it: nothing kept above it either — no pin of this
-    /// space, square or row, and no group — until the first is pinned
+    /// either side of it: nothing kept above it either — no pin, square or
+    /// row, and no group — until the first is pinned
     /// (idea 444), as the row across the top has it (TabBar.showsPinLine).
     /// `loose`: the tabs under it that hold a page. Over nothing but the
     /// empty tab a window starts with, it was a line with nothing to keep
@@ -695,7 +694,7 @@ struct SideBar: View {
         prefs.showsPinRows && kept > 0 && listed + loose > 0
     }
 
-    /// What stands above the line in this space: its pins and its groups.
+    /// What stands above the line: the pins and the groups.
     private var keptCount: Int {
         browser.squarePins.count + browser.listedPins.count + (prefs.usesTabGroups ? browser.tabGroups.count : 0)
     }
@@ -1613,9 +1612,6 @@ private struct SideRow: View, Equatable {
         self.pill = pill
         self.close = close
         self.interactive = interactive
-        // Only the column's own row: the map of every space's rows (SideBar.pages)
-        // holds this space's rows too, and a second field there took the keys
-        // from this one, which ended the edit as soon as it began.
         editing = interactive && browser.editingTab == tab.id
         selected = browser.selectedTabIDs.contains(tab.id)
         pickedAmongOthers = browser.isPickedAmongOthers(tab)

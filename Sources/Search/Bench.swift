@@ -1014,7 +1014,7 @@ final class Bench {
                 "history": browser.recalling,
                 "downloads": browser.hoarding,
                 // History › Archived Tabs…: up or not, and what it holds
-                // for this window's profile, newest first.
+                // newest first.
                 "archive": browser.archiving,
                 "archived": browser.archive.tabs.map { ["url": $0.url.absoluteString, "title": $0.title] },
                 "bookmarks": browser.bookmarking,
@@ -3011,8 +3011,7 @@ final class Bench {
                 browser.closeTabGroup(group.id)
             } else if let all = request["all"] as? String {
                 // Fold All Groups / Unfold All Groups, from the View menu's
-                // item or the space's menu ("via": "view" or "space"), or
-                // straight; nothing is shown.
+                // item ("via": "view"), or straight; nothing is shown.
                 let title = all == "fold" ? "Fold All Groups" : "Unfold All Groups"
                 switch request["via"] as? String {
                 case "view":
@@ -4250,7 +4249,7 @@ final class Bench {
 
         case "column":
             // The column of tabs, drawn off screen at its width, with what the
-            // browser has now — the rows, the card for a new space, the dots.
+            // browser has now — the pins and the rows.
             guard Store.testing else { answer(["error": "column only works on a --test run — it would picture your tabs"]); return }
             guard let path = request["path"] as? String else { answer(["error": "column needs a path"]); return }
             let height = request["height"] as? Double ?? 600
@@ -4361,8 +4360,8 @@ final class Bench {
             if request["opentab"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab) }
             if request["finishedit"] as? Bool == true { browser.finishTabEdit() }
             if #available(macOS 15.4, *), let on = request["extensions"] as? Bool { Extensions.shared.menuOpen = on }
-            // Settings › Privacy › Clear › Cache, answered once every store
-            // of the profile has let go of it.
+            // Settings › Privacy › Clear › Cache, answered once the store has
+            // let go of it.
             if request["clearcache"] as? Bool == true {
                 browser.clearCache { answer(["ok": true]) }
                 return

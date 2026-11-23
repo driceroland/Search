@@ -2,7 +2,7 @@ import AppKit
 import CloudKit
 import Combine
 
-// Sync with iCloud: the same open tabs, pins, spaces, bookmarks and a few
+// Sync with iCloud: the same open tabs, pins, bookmarks and a few
 // settings on this Mac, Search on the iPhone, and other Macs, through the
 // person's own iCloud. Off until turned on (Settings › General › Sync with
 // iCloud). The rules are SYNC.md in the Search-iOS repository, followed to
@@ -11,8 +11,9 @@ import Combine
 //   - CloudKit container iCloud.com.officecommun.search, the private
 //     database, one zone "Search", one record type "Item". CKSyncEngine.
 //   - A record's name says what it holds: device.<uuid> (one device's open
-//     tabs), pins.<space>, pinfolders.<space> (the folders a space's pinned
-//     rows are in, see PinFolders.swift), spaces, bookmarks, settings. A
+//     tabs), pins.<row>, pinfolders.<row> (the folders the pinned rows are
+//     in, see PinFolders.swift), bookmarks, settings; and spaces, which this
+//     Mac passes through. A
 //     record name a build doesn't know is kept and never applied, so a
 //     Search from before pinfolders (1.0.16 and older) and the iPhone pass
 //     it over and leave it be. Its JSON goes in
@@ -45,7 +46,7 @@ import Combine
 // CloudKit (creating a CKContainer there would end the app). Test runs
 // (SEARCH_PROBE) never do either.
 
-// MARK: - the shapes SYNC.md adds to the Mac's own (PinDef, Bookmark, Space)
+// MARK: - the shapes SYNC.md adds to the Mac's own (PinDef, Bookmark)
 
 /// One device's open tabs, as the other devices see them.
 struct DeviceTabs: Codable, Equatable {
@@ -608,8 +609,8 @@ final class ICloudSync: ObservableObject {
             return
         }
         guard self.engine === engine else { return }
-        // What came, merged with what is here: spaces first, so pins have
-        // their space.
+        // What came, merged with what is here: the folders first, so pins
+        // land in theirs.
         let keys = ledger.values.keys.sorted { order($0) < order($1) }
         for key in keys { apply(key, joining: true) }
         ledger.joined = true

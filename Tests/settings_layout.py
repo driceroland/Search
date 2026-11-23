@@ -47,11 +47,11 @@ BEFORE = {
     # Always on now: the find field says so.
     "splitView": "split", "tabs.groups": "groups", "panel.sites": "side panel",
     "translate.pages": "translate", "tabs.keepAwake": "awake", "search.sites": "site from the address",
-    "pins.shared": "every space", "pins.numberBack": "number again", "switcher.keys": "switcher",
+    "pins.numberBack": "number again", "switcher.keys": "switcher",
     "links.show": "where links go", "float.flicks": "flick",
 }
 ALWAYS = {"splitView", "tabs.groups", "panel.sites", "translate.pages", "tabs.keepAwake", "search.sites",
-          "pins.shared", "pins.numberBack", "switcher.keys", "links.show", "float.flicks"}
+          "pins.numberBack", "switcher.keys", "links.show", "float.flicks"}
 
 
 def settings(**f): return sv.cmd({"do": "settings", **f})

@@ -24,8 +24,7 @@ import SwiftUI
 // by an animation: what they have is a speed, and the speed shows. The
 // glass stretches a little along the way it goes, overshoots a little, and
 // settles. Standing still, it stays on its tab as the rows scroll; caught
-// mid-glide by a scroll, it carries on to where its tab now is. To another
-// space it doesn't travel: it is there, as the grey is (LivePill.id). With
+// mid-glide by a scroll, it carries on to where its tab now is. With
 // Reduce Motion on it doesn't move at all. The clock runs only while it
 // moves, from the screen the window is on.
 

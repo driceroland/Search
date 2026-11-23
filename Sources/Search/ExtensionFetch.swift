@@ -124,11 +124,7 @@ enum ExtensionFetch {
 
     /// The store whose cookies go: that of the windows the request can
     /// belong to — the ones whose side panel shows the extension, else every
-    /// window — only when they all share one. One controller serves every
-    /// profile, and a worker or a popup doesn't say which window it is for:
-    /// with windows of different profiles or spaces open, it isn't known
-    /// whose sign-in to send, and nothing is ("pass"). Never a private
-    /// tab's store: panelStore never returns one.
+    /// window — only when they all share one. Never a private tab's store.
     static func store(for context: WKWebExtensionContext) -> WKWebsiteDataStore? {
         let showing = Browsers.all.filter { browser in
             if browser.sidePanelShown, case .page(let id, _, _)? = browser.sidePanel { return id == context.uniqueIdentifier }

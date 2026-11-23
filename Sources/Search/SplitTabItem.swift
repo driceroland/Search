@@ -192,7 +192,7 @@ private struct SplitTabHalf: View {
     private var hovering: Bool { hovered == tab.id }
     private var title: String { tab.label.isEmpty ? "New Tab" : tab.label }
     private var playing: Bool { !tab.loading && (tab.noisy || tab.muted) }
-    /// Never in a copy that takes no clicks (the map of every space's rows):
+    /// Never in a copy that takes no clicks:
     /// a second field there takes the keys and ends the edit (see SideRow).
     private var editing: Bool { interactive && browser.editingTab == tab.id }
     /// Where the page is, said on the half you're on (Settings › Tabs › Show

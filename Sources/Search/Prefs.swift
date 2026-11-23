@@ -1371,7 +1371,7 @@ final class Preferences: ObservableObject {
     /// NSSpellChecker at each keystroke, which reads this from the app's
     /// own defaults before the Mac's global ones, and never caches it. So
     /// writing it here is absolute and takes effect at the next key, in
-    /// every page, open or to come, in every profile (idea 842).
+    /// every page, open or to come (idea 842).
     static func tellWebKit(inlinePredictions: Bool) {
         UserDefaults.standard.set(inlinePredictions, forKey: inlinePredictionsKey)
     }

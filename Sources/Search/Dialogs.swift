@@ -109,7 +109,7 @@ extension Browser {
     // MARK: - alert, confirm, prompt
 
     /// A page's question goes over its own page only. One from a tab in the
-    /// background — or in another space — waits until you go to that tab, as
+    /// background waits until you go to that tab, as
     /// in Safari and Chrome: over the tab in front, a prompt() asking for a
     /// password would pass for that page's. A tab closed first gets the
     /// answer a dismissed dialog gives. A peek hidden behind another tab

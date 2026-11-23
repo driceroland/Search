@@ -686,8 +686,8 @@ final class PaneStage: NSView {
     /// replacing another is handled here. Everything else is left to SwiftUI.
     func show(now tab: Tab, fading: Bool = false) {
         guard window != nil, tabs.count == 1, split == nil, immersedID == nil, page(tab) != nil else { return }
-        // Another space's page: the one going fades into it, as the rows
-        // slide, rather than giving way to it in a single frame.
+        // Another page brought ahead: the one going fades into it, rather
+        // than giving way to it in a single frame.
         if fading, !Motion.reduced, tabs.first !== tab, let layer {
             let fade = CATransition()
             fade.type = .fade

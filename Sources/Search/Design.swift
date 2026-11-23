@@ -74,7 +74,7 @@ struct Greys {
     let washOnTile: Color
     let hoverOnTile: Color
     /// The quiet ink of a tab's title that isn't live, the same way: on
-    /// the plain ground Palette.muted exactly, on a space's Rich or Vivid
+    /// the plain ground Palette.muted exactly, on the window's Rich or Vivid
     /// colour as far from it as Palette.muted is from the plain ground,
     /// where the opaque grey lost a third of its contrast.
     let muted: Color
@@ -85,7 +85,7 @@ struct Greys {
     // Black in a light window, white in a dark one, at the strength that
     // lands on the same grey as Palette's over the ground they lie on (the
     // white, or the frame beside the card). On that ground nothing changes;
-    // on a space's colour or gradient they take its tint, where an opaque
+    // on the window's colour or gradient they take its tint, where an opaque
     // grey sat on it as a grey patch (Drice, 18 Nov 2026).
     static let white = Greys(wash: shade(0.063, 0.073), hover: shade(0.035, 0.045),
                              tile: shade(0.063, 0.073).opacity(0.55), pinLive: shade(0.10, 0.112),

@@ -2,12 +2,10 @@ import AppKit
 import XCTest
 @testable import Search
 
-/// A space's gradient (ThemeGradient.swift): kept beside its colour, read
-/// from lists that never had one, mixed in OKLab, held to the wash's
-/// lightness so the chrome stays as legible as with a colour, and synced
-/// as an item a Search from before gradients carries along untouched.
+/// The window's gradient (WindowTheme.swift): mixed in OKLab and held to
+/// the wash's lightness so the chrome stays as legible as with a colour.
 @MainActor
-final class SpaceGradientTests: XCTestCase {
+final class ThemeGradientTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()
         super.setUp()
@@ -273,8 +271,8 @@ final class SpaceGradientTests: XCTestCase {
     // MARK: - the window
 
     func testFoundInSettings() {
-        XCTAssertTrue(SettingsIndex.find("gradient").contains { $0.id == "note.spaceGradient" })
-        XCTAssertTrue(SettingsIndex.find("space colour").contains { $0.id == "note.spaceGradient" })
+        XCTAssertTrue(SettingsIndex.find("gradient").contains { $0.id == "home.theme" })
+        XCTAssertTrue(SettingsIndex.find("window colour").contains { $0.id == "home.theme" })
     }
 
     // MARK: - sync

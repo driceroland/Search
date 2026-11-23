@@ -37,23 +37,6 @@ final class ShortcutTests: XCTestCase {
         XCTAssertEqual(store.tip("Bookmarks", nil), "Bookmarks")
     }
 
-    func testSpaceKeysCanMoveClearResetAndReload() {
-        let store = ShortcutStore()
-        let original = KeyCombo("1", command: false, control: true)
-        let replacement = KeyCombo("1", option: true)
-        XCTAssertEqual(store.customCommand(on: original)?.id, "spaces.1")
-        store.assign(replacement, to: "spaces.1")
-        XCTAssertNil(store.customCommand(on: original))
-        XCTAssertTrue(store.isFreed(original))
-        XCTAssertEqual(ShortcutStore().customCommand(on: replacement)?.id, "spaces.1")
-        store.clear("spaces.1")
-        XCTAssertNil(store.key(for: "spaces.1"))
-        XCTAssertNil(ShortcutStore().key(for: "spaces.1"))
-        store.reset("spaces.1")
-        XCTAssertEqual(store.customCommand(on: original)?.id, "spaces.1")
-        XCTAssertFalse(store.anyChanged)
-    }
-
     /// ⌃Tab's switcher on a key of its own, as Arc allows: ⇧ walks back,
     /// its modifiers hold it up, and ⌃Tab can go to another command.
     func testRecentTabsSwitcherCanBeRebound() {
@@ -88,26 +71,6 @@ final class ShortcutTests: XCTestCase {
         XCTAssertEqual(store.key(for: Command.recentTabs), optionE)
         store.resetAll()
         XCTAssertEqual(store.key(for: Command.recentTabs), controlTab)
-    }
-
-    func testConflictsWithSpaceKeysUseExistingReassignmentAndReset() {
-        let store = ShortcutStore()
-        let original = KeyCombo("2", command: false, control: true)
-        XCTAssertFalse(KeyCombo.isReserved(original))
-        XCTAssertTrue(KeyCombo.isReserved(KeyCombo("2")))
-        XCTAssertTrue(KeyCombo.isReserved(KeyCombo("c")))
-        XCTAssertEqual(store.owner(of: original, except: "tabs.next")?.id, "spaces.2")
-        store.assign(original, to: "tabs.next")
-        XCTAssertNil(store.key(for: "spaces.2"))
-        XCTAssertEqual(store.customCommand(on: original)?.id, "tabs.next")
-        XCTAssertEqual(ShortcutStore().customCommand(on: original)?.id, "tabs.next")
-        store.reset("spaces.2")
-        XCTAssertEqual(store.customCommand(on: original)?.id, "spaces.2")
-        XCTAssertNil(store.key(for: "tabs.next"))
-        XCTAssertEqual(ShortcutStore().customCommand(on: original)?.id, "spaces.2")
-        store.resetAll()
-        XCTAssertEqual(store.customCommand(on: original)?.id, "spaces.2")
-        XCTAssertNil(Store.settings.data(forKey: "shortcuts"))
     }
 
     func testSpaceKeysReadPhysicalDigitsOnOtherLayouts() throws {

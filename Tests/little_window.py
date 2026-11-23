@@ -86,7 +86,7 @@ def until(check, seconds=5):
         time.sleep(0.1)
     return False
 def front_url(): return next((x["url"] for x in sv.cmd({"do": "tabs"})["tabs"] if x["active"]), "")
-def kept_rows(): return [u for r in records()[1:] for shape in r.get("rows", {}).values() for u in json.dumps(shape).split('"') if u.startswith(sv.BASE)]
+def kept_rows(): return [u for r in records()[1:] for u in json.dumps(r.get("row", {})).split('"') if u.startswith(sv.BASE)]
 
 
 def launch_with(link):
@@ -298,6 +298,7 @@ try:
 
     # A lifted tab is yours: Escape is the page's, and closed it comes back
     # with ⇧⌘T.
+    sv.setup(**{"links.little": True}); sv.launch()
     gone = f"{sv.BASE}/reopened"
     lifted = real(gone); time.sleep(1.2)
     sv.cmd({"do": "little", "what": "lift", "id": lifted}); time.sleep(0.5)

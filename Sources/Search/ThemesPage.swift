@@ -93,7 +93,7 @@ struct ThemesPage: View {
     /// The theme colours the whole window too: the tabs, the bars and the
     /// ground around the page take the background's colours. A solid or a
     /// gradient gives its own; a wall, stickers or a picture the colours at
-    /// its top and its bottom. A space with a colour of its own keeps it.
+    /// its top and its bottom.
     private func follow() {
         var next = prefs.browserTheme
         next.colour = 0

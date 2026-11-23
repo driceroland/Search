@@ -190,8 +190,8 @@ struct IconTile: View {
             Bench.rowDisappeared(tab.id)
             IconTiles.gone(tab.id, tile: me)
         }
-        // Another space's tab come into this tile (Browser.rowKey): the
-        // tile is the same, where it is too, and now stands for that tab.
+        // Another tab come into this tile: the tile is the same, where it
+        // is too, and now stands for that tab.
         .onChange(of: tab.id) { was, now in
             guard interactive else { return }
             let frame = IconTiles.frame(of: me)
@@ -303,7 +303,7 @@ struct IconPair: View {
         .onDisappear {
             if interactive && Store.testing, let first, let last, IconTiles.pairs[first] == last { IconTiles.pairs[first] = nil }
         }
-        // Another space's pair come into this place (Browser.rowKey).
+        // Another pair come into this place.
         .onChange(of: [first, last]) { was, now in
             guard interactive && Store.testing else { return }
             if let a = was[0], let b = was[1], IconTiles.pairs[a] == b { IconTiles.pairs[a] = nil }

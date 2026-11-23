@@ -2,10 +2,10 @@ import AppKit
 import XCTest
 @testable import Search
 
-/// A space's colour washes the chrome behind the tabs; a space without one
-/// leaves it exactly as it was.
+/// The window's colour washes the chrome behind the tabs; without one the
+/// chrome is exactly as it was.
 @MainActor
-final class SpaceWashTests: XCTestCase {
+final class ThemeWashTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()
         super.setUp()

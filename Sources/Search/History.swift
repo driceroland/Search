@@ -21,7 +21,7 @@ struct Suggestion: Identifiable, Equatable {
         case open
         /// Somewhere you have actually been.
         case visited
-        /// One of your bookmarks, the window's profile's.
+        /// One of your bookmarks.
         case bookmark
         /// One of the well-known addresses the field knows from the start.
         case known

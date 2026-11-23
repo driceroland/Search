@@ -27,8 +27,7 @@ struct ShortcutsPage: View {
     }
 
     /// The keys that pick a tab by its place: not a menu command, and not
-    /// yours to move one by one, but listed so they can be found, with the
-    /// switch that hands ⌘1–⌘9 to the spaces.
+    /// yours to move one by one, but listed so they can be found.
     private var numbersShown: Bool {
         let words = hunt.trimmingCharacters(in: .whitespaces)
         guard !words.isEmpty else { return true }
