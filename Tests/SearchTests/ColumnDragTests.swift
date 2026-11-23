@@ -117,6 +117,8 @@ final class ColumnDragTests: XCTestCase {
         (prefs.hidesBack, prefs.hidesForward, prefs.hidesReload) = (false, false, false)
         browser.fullScreen = true
         let tab = try XCTUnwrap(browser.active)
+        let savedPins = Pins.defs(browser.spaceID)
+        defer { Pins.set(browser.spaceID, savedPins, from: browser) }
         let pin = tab.pin
         tab.pin = "P"
         defer { tab.pin = pin }
