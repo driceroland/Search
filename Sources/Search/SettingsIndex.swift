@@ -500,6 +500,12 @@ enum SettingsIndex {
               words: ["arc", "folder", "folders", "nested", "subfolder", "pinned folder", "pinned tabs", "organise", "organize",
                       "live folder", "feed", "rss", "atom"],
               parent: "pins.list"),
+        .init(id: "pins.threeAcross", group: "pins", icon: "square.grid.3x2",
+              title: "Three pins to a row", detail: "Pinned squares go three across at most, not four",
+              more: "As Zen's Essentials do: four pins make two rows of two, and twelve make four rows of three. Off, a row takes up to four.",
+              keys: ["pins.threeAcross"],
+              words: ["pinned tabs", "squares", "grid", "columns", "per row", "3 across", "2x2", "zen", "essentials", "wider"],
+              parent: "tabs.layout"),
         .init(id: "pins.commandNewTab", group: "pins", icon: "command",
               title: "⌘-click on a pin opens a new tab",
               detail: "Opens a tab at the pin's site, or moves a wandered page to loose tabs",
@@ -753,7 +759,7 @@ enum SettingsIndex {
         case "pages.dusk": return prefs.look != .light
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
-        case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
+        case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list", "pins.threeAcross": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
         case "address.width": return prefs.addressLine && !prefs.sidebar
         case "tabs.liquid": return LiquidTab.available && !(prefs.sidebar && prefs.sideIcons)

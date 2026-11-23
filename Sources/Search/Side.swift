@@ -1045,6 +1045,9 @@ struct SideBar: View {
     /// and three, nine three, three and three, ten four, three and three.
     /// Up to three stay the one row of three places they always were, with
     /// a place or two empty rather than a lonely button the column's width.
+    /// With three to a row asked for (Preferences.pinsThreeAcross), `most`
+    /// is three: four are two and two, seven three, two and two, twelve
+    /// four rows of three.
     static func pinRows(_ count: Int, most: Int) -> [Int] {
         guard count > 0 else { return [] }
         let most = max(1, most)
@@ -1063,7 +1066,7 @@ struct SideBar: View {
         let room = width - 20
         let gap = SideBar.pinGap
         let fits = Int((room + gap) / (SideBar.square + gap))
-        let rows = SideBar.pinRows(count, most: min(4, max(1, fits)))
+        let rows = SideBar.pinRows(count, most: min(prefs.pinsAcross, max(1, fits)))
         // A row of fewer than three keeps three places.
         let slots = rows.map { rows.count == 1 ? max($0, min(3, fits)) : $0 }
         let widths = slots.map { max(20, (room - CGFloat($0 - 1) * gap) / CGFloat($0)) }

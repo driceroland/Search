@@ -832,6 +832,11 @@ struct SettingsPanel: View {
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
         case "pins.folders": Switch(on: $prefs.pinFolders)
+        case "pins.threeAcross":
+            Switch(on: Binding(
+                get: { prefs.pinsThreeAcross },
+                set: { on in withAnimation(Motion.glide) { prefs.pinsThreeAcross = on } }
+            ))
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
         case "field.window": Switch(on: $prefs.fieldOnWindow)

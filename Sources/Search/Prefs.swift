@@ -1039,6 +1039,14 @@ final class Preferences: ObservableObject {
     @Published var pinsGoHome: Bool {
         didSet { store.set(pinsGoHome, forKey: "pins.home") }
     }
+    /// The pinned squares go three to a row at most, not four, as Zen's
+    /// Essentials do: four pins are two rows of two, twelve four rows of
+    /// three (#1149, #1367). Off unless asked for.
+    @Published var pinsThreeAcross: Bool {
+        didSet { store.set(pinsThreeAcross, forKey: "pins.threeAcross") }
+    }
+    /// The most squares one row of the pins takes (see SideBar.pinRows).
+    var pinsAcross: Int { pinsThreeAcross ? 3 : 4 }
     /// ⌘-click on a pin opens a new tab at its address (or moves a wandered
     /// pin into the loose tabs), as in Arc. Off, ⌘-click adds the pin to the
     /// tab selection.
@@ -1351,6 +1359,7 @@ final class Preferences: ObservableObject {
         listsPins = store.bool(forKey: "pins.list")
         pinFolders = store.bool(forKey: "pins.folders")
         pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
+        pinsThreeAcross = store.bool(forKey: "pins.threeAcross")
         // "Pins keep their site" is one switch over two keys (see
         // SettingsIndex): on when either was on, on by default when neither
         // was ever touched (Drice, 24 Oct 2026), off when one was turned
@@ -1515,6 +1524,7 @@ final class Preferences: ObservableObject {
         take(\.sideHides, store.bool(forKey: "sidebar.hides"))
         take(\.slidesColumn, store.bool(forKey: Motion.slidesKey))
         take(\.roomyTabs, store.bool(forKey: "sidebar.roomy"))
+        take(\.pinsThreeAcross, store.bool(forKey: "pins.threeAcross"))
         take(\.doorsUp, store.bool(forKey: "sidebar.doorsUp"))
         take(\.foldButton, store.bool(forKey: "sidebar.foldButton"))
         take(\.sideIcons, store.bool(forKey: "sidebar.icons"))
