@@ -37,10 +37,10 @@ final class PinFolderColumnTests: XCTestCase {
         // WebsitePopupTests) failed on it.
         for window in windows { window.contentView = nil; window.close() }
         for browser in browsers {
-            PinFolders.set(browser.spaceID, [], from: nil)
+            PinFolders.set([], from: nil)
             for tab in browser.tabs where tab.pin != nil { browser.unpin(tab) }
             browser.closeAll()
-            Session.write(now: true, space: browser.spaceID, Session.Shape(tabs: [], active: 0))
+            Session.write(now: true, Session.Shape(tabs: [], active: 0))
         }
         made.removeAll()
         restorePreferences?()
@@ -65,7 +65,7 @@ final class PinFolderColumnTests: XCTestCase {
         XCTAssertEqual(described(browser), ["folder 0 Work", "folder 1 Docs", "pin 2 four", "pin 1 two", "pin 0 one", "pin 0 three"])
         XCTAssertEqual(browser.listedPins.map(\.title), ["four", "two", "one", "three"])
         // pins.json has it too, in the same order, each with its folder.
-        let saved = Pins.defs(browser.spaceID).filter { $0.listed == true }
+        let saved = Pins.defs().filter { $0.listed == true }
         XCTAssertEqual(saved.map(\.title), ["four", "two", "one", "three"])
         XCTAssertEqual(saved.map(\.folder), [docs, work, nil, nil])
 
@@ -237,7 +237,7 @@ final class PinFolderColumnTests: XCTestCase {
         XCTAssertFalse(browser.showsPinFolderRows)
         // Kept for the switch, as tab groups are.
         XCTAssertEqual(two.pinFolder, work)
-        XCTAssertEqual(Pins.defs(browser.spaceID).first { $0.id == two.pinID }?.folder, work)
+        XCTAssertEqual(Pins.defs().first { $0.id == two.pinID }?.folder, work)
     }
 
     // MARK: - helpers
@@ -267,11 +267,9 @@ final class PinFolderColumnTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.pinFolders,
-                        prefs.usesSpaces, prefs.sharesPins)
+        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.pinFolders)
         restorePreferences = {
-            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.pinFolders,
-             prefs.usesSpaces, prefs.sharesPins) = previous
+            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.pinFolders) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
@@ -280,7 +278,6 @@ final class PinFolderColumnTests: XCTestCase {
         browser.prefs.splitView = false
         browser.prefs.listsPins = true
         browser.prefs.pinFolders = true
-        browser.prefs.sharesPins = false
         for word in ["one", "two", "three", "four"] {
             if browser.tabs.last?.isBlank == false { browser.newTab() }
             browser.tabs.last?.restore(url: URL(string: "https://\(word).example/")!, title: word)

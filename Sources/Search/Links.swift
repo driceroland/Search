@@ -144,8 +144,7 @@ final class Links: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // SwiftUI opens its window at launch, a link's launch included, and
         // asks nobody first (applicationShouldOpenUntitledFile isn't
-        // consulted). A launch made for a small window came to read it alone,
-        // and one made for the panel that asks which space, to choose one
+        // consulted). A launch made for a small window came to read it alone
         // (see little), so the browser's windows are put away as they come:
         // here, before the first is drawn, once more a turn later, and as
         // each is dressed. Open, with their tabs, and written down as they
@@ -155,7 +154,6 @@ final class Links: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 Browsers.putAway()
                 Links.launched = true
-                LinkChooserPanel.shared.launched()
             }
         }
         // What an import left in the temporary folder when Search stopped
@@ -189,8 +187,7 @@ final class Links: NSObject, NSApplicationDelegate {
         Links.take(url, sender: sender?.localizedName, pid: sender?.processIdentifier)
     }
 
-    /// The app a link was clicked in, for the panel that asks which space it
-    /// opens in: its name, and where Esc goes back to. Nil when the event
+    /// The app a link was clicked in: its name, and where Esc goes back to. Nil when the event
     /// doesn't say.
     private static func sender(of event: NSAppleEventDescriptor) -> NSRunningApplication? {
         guard let pid = event.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value, pid > 0
@@ -309,17 +306,12 @@ final class Links: NSObject, NSApplicationDelegate {
         guard let first = early.first else { return }
         onceShown { [weak browser] in
             guard let browser else { return }
-            (browser.routed(first) ?? browser).arrive(first)
+            browser.arrive(first)
             comeForward()
             for (n, url) in early.dropFirst().enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15 * Double(n + 1)) { [weak browser] in
                     guard let browser else { return }
-                    // One a rule sends to a space opens there, in front.
-                    if let routed = browser.routed(url) {
-                        routed.open(url, foreground: true)
-                    } else {
-                        browser.open(url, foreground: false, atEnd: true, mayWait: true)
-                    }
+                    browser.open(url, foreground: false, atEnd: true, mayWait: true)
                 }
             }
         }
@@ -328,36 +320,14 @@ final class Links: NSObject, NSApplicationDelegate {
     /// An address from outside the window — a link from another app, or what
     /// was typed into the address field raised from one (Launcher.swift) —
     /// into the window in front, or one brought back for it: it lands where
-    /// you are, not in the first window. Or the window, in its space, a rule
-    /// of Settings › Spaces & Pins › Send links to a space sends it to (see
-    /// SpaceRoutes.swift). The window it went to, which is left for the
-    /// caller to bring the app forward to.
+    /// you are, not in the first window. The window it went to, which is
+    /// left for the caller to bring the app forward to.
     @MainActor
     @discardableResult
     static func land(_ url: URL) -> Browser {
-        let front = Browsers.ensureWindow()
-        let browser = front.routed(url) ?? front
+        let browser = Browsers.ensureWindow()
         arrive(url, in: browser)
         return browser
-    }
-
-    /// A link in the space chosen for it (see LinkChooser), with that
-    /// space's sign-ins from its first request: in a small window, or a tab
-    /// of a window showing that space. False when the space is gone or no
-    /// window can show it: it opens nowhere else.
-    @MainActor
-    static func open(_ url: URL, in space: UUID, little: Bool) -> Bool {
-        if little {
-            guard let profile = Spaces.known[space]?.profileID else { return false }
-            let front = Browsers.frontBrowser
-            let browser = front.profileID == profile ? front : Browsers.outOfSight(profile: profile)
-            LittleWindow.show(url, for: browser, space: space)
-            return true
-        }
-        guard let browser = Browsers.window(showing: space) else { return false }
-        arrive(url, in: browser)
-        comeForward()
-        return true
     }
 
     /// In a tab of `browser`, with its window in front.
@@ -452,35 +422,14 @@ final class Links: NSObject, NSApplicationDelegate {
     /// launch this link made. It went through `deliver`, which brings a
     /// window back first, so the browser came up behind the small window
     /// every time. Open in Search is what brings it now.
-    ///
-    /// Or, for whoever turned on asking which space (see
-    /// LinkChooserPanel.swift), nowhere yet: the panel asks first, and the
-    /// window stays where it is unless a tab is chosen there.
+
     @MainActor
     private static func little(_ url: URL, sender: String?, pid: pid_t?) -> Bool {
         let prefs = Shared.prefs
-        // A site sent to a space opens there, with that space's sign-ins.
-        if SpaceRoutes.space(for: url) != nil { return false }
         if prefs.littleLinks, prefs.littleFindsTabs, goToOpen(url) { return true }
-        if asksSpace(for: url) {
-            keepWindowsAway()
-            LinkChooserPanel.shared.ask(url, sender: sender, pid: pid)
-            return true
-        }
         guard prefs.littleLinks else { return false }
         openLittle(url)
         return true
-    }
-
-    /// Which space a web address opens in, asked before anything loads, for
-    /// whoever turned that on: while there is more than one space, in all
-    /// the profiles, to choose from. With one, the link goes as it always did.
-    @MainActor
-    private static func asksSpace(for url: URL) -> Bool {
-        let prefs = Shared.prefs
-        // The count last: it reads every profile's spaces from disk.
-        return prefs.asksSpaceForLinks && prefs.usesSpaces && ["http", "https"].contains(url.scheme?.lowercased() ?? "")
-            && LinkChooserPanel.allRows.count > 1
     }
 
     /// A small window for `url`, and the browser's windows left where they
@@ -489,7 +438,7 @@ final class Links: NSObject, NSApplicationDelegate {
     @MainActor
     static func openLittle(_ url: URL, for asked: Browser? = nil) {
         keepWindowsAway()
-        // The space and sign-ins of the window in front, on screen or not.
+        // The window in front, on screen or not.
         let browser = asked.flatMap { !$0.isPopup ? $0 : nil } ?? Browsers.frontBrowser
         LittleWindow.show(url, for: browser)
     }
@@ -508,8 +457,8 @@ final class Links: NSObject, NSApplicationDelegate {
 
     /// The page already open, for whoever asked for that in Settings: a
     /// small window that has it comes forward, or a tab that has it, in its
-    /// window, the window in front looked in first. Only each window's
-    /// space on screen, as the address field's open pages are. False when
+    /// window, the window in front looked in first, as the address field's
+    /// open pages are. False when
     /// none has it.
     @MainActor
     private static func goToOpen(_ url: URL) -> Bool {

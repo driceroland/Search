@@ -38,7 +38,7 @@ BEFORE = {
     "search.suggest": "suggestions", "search.keywords": "site shortcuts", "links.little": "small window",
     "reader.twins": "markdown", "reader.follows": "reading mode", "float.style": "picture in picture",
     "float.leave": "float", "float.away": "switch apps", "media.click": "autoplay",
-    "fullscreen.escapeTwice": "esc", "fullscreen.keepsWindow": "desktop", "pageZoom": "zoom", "pages.120.mode": "120", "spaces": "spaces",
+    "fullscreen.escapeTwice": "esc", "fullscreen.keepsWindow": "desktop", "pageZoom": "zoom", "pages.120.mode": "120",
     "pins.home": "pins", "pins.peek": "pins", "pins.list": "pinned rows", "newtab.floating": "floating",
     "commandbar": "commands", "start.fresh": "fresh window", "sites.keep": "tracking", "notifications.ask": "notifications",
     "links.peek": "peek", "links.peekClick": "peek", "autoscroll": "middle button",
@@ -152,8 +152,8 @@ def case_merged(t):
     put("links.peek", "off")
     t.ok("Peek: Off writes links.peek off, keeps the click", (read("links.peek"), read("links.peekClick")) == ("0", "optionShift"))
     v = put("arc.setup", True)
-    t.ok("Set Up Like Arc: left, spaces, rows, pins, floating new tab",
-         v["arc"] and v["tabs.layout"] == "left" and read("spaces") == "1" and read("pins.list") == "1"
+    t.ok("Set Up Like Arc: left, rows, pins, floating new tab",
+         v["arc"] and v["tabs.layout"] == "left" and read("pins.list") == "1"
          and read("newtab.floating") == "1" and v["pins.keep"], v)
     # And it survives a relaunch, read back from the keys alone.
     sv.quit(); time.sleep(0.5); sv.launch()

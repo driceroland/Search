@@ -30,7 +30,6 @@ def name_of(st): return {x["id"]: x["url"].rsplit("/", 1)[-1] for x in st["tabs"
 def names(st, ids): m = name_of(st); return [m[i] for i in ids]
 def pins(st): return names(st, st["pins"])
 def rows(st): return names(st, st["listed"])
-def shared(st): return names(st, st["everywhere"])
 def loose(st): return [x["url"].rsplit("/", 1)[-1] for x in st["tabs"] if x["id"] not in st["pins"] and not x["blank"]]
 def tab_of(st, name): return next(x["id"] for x in st["tabs"] if x["url"].endswith("/" + name))
 def web(st, id): return next(x["web"] for x in st["tabs"] if x["id"] == id)
@@ -124,22 +123,6 @@ try:
     pin(b, at=0); st = state()
     t.ok("groups: a grouped tab onto the grid leaves its group", pins(st) == ["b", "c"] and st["groupIDs"][0] == "", (pins(st), st["groupIDs"]))
 
-    # Pins in every space: a drop makes the space's own pin, after the
-    # shared ones; a shared pin dragged out leaves every space, as Unpin.
-    sv.quit()
-    sv.setup(sidebar=True, spaces=True, **{"pins.shared": True}); sv.launch()
-    m = sv.page("mail"); n = sv.page("notes"); x = sv.page("x")
-    pin(m); pin(m, everywhere=True); time.sleep(0.5)
-    pin(n, at=0); st = state()
-    t.ok("shared: dropped first, it lands after the shared pin", pins(st) == ["mail", "notes"] and shared(st) == ["mail"], (pins(st), shared(st)))
-    t.ok("shared: it is this space's own", "notes" not in shared(st), shared(st))
-    sv.cmd({"do": "space", "action": "new", "name": "Two"}); time.sleep(1)
-    st = state(); t.ok("shared: the other space has only the shared one", pins(st) == ["mail"], pins(st))
-    sv.cmd({"do": "space", "action": "go", "index": 1}); time.sleep(0.8)
-    pin(tab_of(state(), "mail"), off=True, at=0); time.sleep(0.5)
-    st = state(); t.ok("shared: dragged out, a tab here", "mail" in loose(st) and pins(st) == ["notes"], (pins(st), loose(st)))
-    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
-    st = state(); t.ok("shared: and gone from the other space", pins(st) == [], pins(st))
 finally:
     t.done(); sv.finish()
 sys.exit(1 if t.failed else 0)

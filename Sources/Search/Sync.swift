@@ -24,26 +24,17 @@ import SystemConfiguration
 //
 // In the folder, "Search Sync/<scope>/<device>.json": one file per Mac per
 // scope, written only by that Mac, so two Macs never write the same file.
-// The scopes: "app" for the settings below, and "profile-<id>" for each
-// profile's spaces, pins and bookmarks — a profile's never mixes with
-// another's. Each file is the whole merged view as that Mac last had it,
+// The scopes: "app" for the settings below, and "profile-<id>" for the
+// pins and bookmarks, under the id they have always had. Each file is the whole merged view as that Mac last had it,
 // item by item with stamps and tombstones (see SyncMerge.swift for the
 // rules and the format).
 //
-// What syncs: spaces (name, colour or gradient, icon, order, and whether a
-// space has sign-ins of its own — never the sign-ins themselves, its cookies,
-// tabs or downloads folder), pins (each space's and the ones every space shows,
-// their letter, name, page and order, and the folder among the pinned rows
-// each is in), each space's pin folders (name, which one holds which, a live
+// What syncs: pins (their letter, name, page and order, and the folder
+// among the pinned rows each is in), the pin folders (name, which one holds which, a live
 // folder's feed; whether one is folded and a live folder's posts stay on
 // each Mac), bookmarks, and the settings listed in SyncSettings. What never does: history, passwords, cookies and site data,
 // open tabs that aren't pinned, tab groups (they hold open tabs), private
 // windows, extensions, the downloads folder, window sizes.
-//
-// Profiles: Personal is the same profile on every Mac. Another profile syncs
-// with the profile of the same id on another Mac; one made separately on each
-// Mac has a different id and stays apart (making them across Macs is still
-// to come).
 //
 // A pass runs a moment after anything synced changes here, when a file in
 // the folder changes, every half minute, and when Search comes forward. It
@@ -65,7 +56,6 @@ enum SyncSettings {
         coded("search.custom", \.customEngine),
         coded("search.suggest", \.engineSuggests),
         coded("search.keywords", \.keywords),
-        coded("spaces", \.usesSpaces),
         coded("pins.list", \.listsPins),
         coded("pins.home", \.pinsGoHome),
         raw("tabs.close.after", \.tabLife),
@@ -79,7 +69,7 @@ enum SyncSettings {
 
     /// Their keys, readable anywhere (SyncItems.understood).
     static let known: Set<String> = [
-        "look", "glyph", "search.engine", "search.custom", "search.suggest", "search.keywords", "spaces",
+        "look", "glyph", "search.engine", "search.custom", "search.suggest", "search.keywords",
         "pins.list", "pins.home", "tabs.close.after", "tabs.newPlace", "tabs.shortcuts",
         "privacy.clickIDs", "privacy.gpc", "bookmarks.bar", "quit.confirm",
     ]
@@ -203,7 +193,7 @@ final class Sync: ObservableObject {
 
     private func begin() {
         let poke: (Notification) -> Void = { [weak self] _ in self?.schedule() }
-        for name in [Spaces.changed, Pins.changed, Bookmarks.saved, NSApplication.didBecomeActiveNotification] {
+        for name in [Pins.changed, Bookmarks.saved, NSApplication.didBecomeActiveNotification] {
             NotificationCenter.default.publisher(for: name).sink(receiveValue: poke).store(in: &bag)
         }
         Shared.prefs.objectWillChange.sink { [weak self] in self?.schedule() }.store(in: &bag)
@@ -236,9 +226,10 @@ final class Sync: ObservableObject {
 
     private var root: URL? { folder?.appendingPathComponent(Sync.inside, isDirectory: true) }
 
-    private var scopes: [String] { ["app"] + Profiles.shared.list.map { Sync.scope($0.id) } }
+    private var scopes: [String] { ["app", Sync.browserScope] }
 
-    nonisolated static func scope(_ profile: UUID) -> String { "profile-" + profile.uuidString }
+    /// The pins' and bookmarks' scope, by the id it has always had.
+    nonisolated static let browserScope = "profile-00000000-0000-0000-0000-0000000000A1"
 
     /// What this Mac last agreed with the folder, per scope: in Search's own
     /// folder, never in the shared one.
@@ -264,11 +255,9 @@ final class Sync: ObservableObject {
         seen.formUnion(run(scope: "app", in: root, current: { _ in SyncSettings.items(prefs) }, apply: { live in
             SyncSettings.apply(live, to: prefs)
         }))
-        for profile in Profiles.shared.list {
-            seen.formUnion(run(scope: Sync.scope(profile.id), in: root,
-                               current: { Sync.items(of: profile.id, base: $0) },
-                               apply: { Sync.apply($0, to: profile) }))
-        }
+        seen.formUnion(run(scope: Sync.browserScope, in: root,
+                           current: { Sync.items(base: $0) },
+                           apply: { Sync.apply($0) }))
         others = seen.sorted()
         if problem == nil { lastSynced = Date() }
     }
@@ -352,67 +341,24 @@ final class Sync: ObservableObject {
         (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? "Mac"
     }
 
-    // MARK: - a profile's things
+    // MARK: - the browser's things
 
-    /// A profile's spaces, pins and bookmarks as items.
-    static func items(of profile: UUID, base: [String: String]) -> [String: String] {
-        let spaces = Spaces.read(profile: profile)
-        var bySpace: [UUID: [PinDef]] = [:]
-        var folders: [UUID: [PinFolder]] = [:]
-        for space in spaces {
-            let defs = Pins.defs(space.id)
-            if !defs.isEmpty { bySpace[space.id] = defs }
-            let kept = PinFolders.folders(space.id)
-            if !kept.isEmpty { folders[space.id] = kept }
-        }
-        var out = SyncItems.spaces(spaces, base: base)
-        out.merge(SyncItems.pins(bySpace: bySpace, shared: Pins.shared(profile), base: base)) { a, _ in a }
-        out.merge(SyncItems.pinFolders(folders)) { a, _ in a }
-        out.merge(SyncItems.bookmarks(Profiles.bookmarks(profile).roots)) { a, _ in a }
+    /// The pins, their folders and the bookmarks as items.
+    static func items(base: [String: String]) -> [String: String] {
+        var out = SyncItems.pins(Pins.defs(), base: base)
+        out.merge(SyncItems.pinFolders(PinFolders.folders())) { a, _ in a }
+        out.merge(SyncItems.bookmarks(Bookmarks.shared.roots)) { a, _ in a }
         return out
     }
 
-    /// The merged items made so: spaces first, so pins have their space;
-    /// then each space's folders, so pins land in theirs at once.
-    static func apply(_ live: [String: String], to profile: Profile) {
-        let id = profile.id
-        let home = profile.home
-        let local = Spaces.read(profile: id)
-        let spaces = SyncItems.applySpaces(live, to: local, profile: id, home: home)
-        for gone in local where !spaces.contains(where: { $0.id == gone.id }) {
-            removeSpace(gone, profile: id)
-        }
-        if spaces != Spaces.read(profile: id) {
-            // The order is the one merged, wherever the home is in it.
-            Store.settings.set(true, forKey: "spaces.orderKept")
-            Spaces.write(spaces, profile: id)
-        }
-
-        for space in spaces {
-            let local = PinFolders.folders(space.id)
-            let folders = PinTree.sanitized(SyncItems.applyPinFolders(live, space: space.id, local: local))
-            if folders != local { PinFolders.set(space.id, folders, from: nil) }
-        }
-
-        var localPins: [UUID: [PinDef]] = [:]
-        for space in spaces { localPins[space.id] = Pins.defs(space.id) }
-        let pins = SyncItems.applyPins(live, spaces: spaces.map(\.id), local: localPins, localShared: Pins.shared(id))
-        Pins.adopt(pins.bySpace, in: spaces.map(\.id), shared: pins.shared, profile: id)
-
-        Profiles.bookmarks(id).adopt(SyncItems.applyBookmarks(live))
-    }
-
-    /// A space deleted on another Mac: as Delete Space does here — its tabs,
-    /// its pins, and, for one with sign-ins of its own, those too.
-    private static func removeSpace(_ space: Space, profile: UUID) {
-        if let window = Browsers.all.first(where: { $0.profileID == profile && !$0.isPopup && $0.spaces.contains { $0.id == space.id } }) {
-            window.deleteSpace(space.id)
-            return
-        }
-        Spaces.write(Spaces.read(profile: profile).filter { $0.id != space.id }, profile: profile)
-        Session.erase(space: space.id)
-        Pins.forget(space.id)
-        if space.sharesSignIns != true { Spaces.erase(space.id) }
+    /// The merged items made so: the folders first, so pins land in theirs
+    /// at once.
+    static func apply(_ live: [String: String]) {
+        let local = PinFolders.folders()
+        let folders = PinTree.sanitized(SyncItems.applyPinFolders(live, local: local))
+        if folders != local { PinFolders.set(folders, from: nil) }
+        Pins.adopt(SyncItems.applyPins(live, local: Pins.defs()))
+        Bookmarks.shared.adopt(SyncItems.applyBookmarks(live))
     }
 
     // MARK: - for Settings

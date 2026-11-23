@@ -163,20 +163,6 @@ def main():
         _, s = typed("quarterly taxes")
         t.ok("private: bookmarks offered", ("bookmark", "https://example.org/x/a1") in places(s), s["offers"])
         t.ok("private: nothing written", saved() == before, (before, saved()))
-
-        # Another profile's window offers none of this profile's.
-        c({"do": "profile", "action": "new", "name": "Other"})
-        c({"do": "profile", "action": "window", "name": "Other"})
-        time.sleep(1.5)
-        shown = [w for w in c({"do": "windows"})["windows"] if w["shown"]]
-        t.ok("no window on screen", not shown, shown)
-        if shown:
-            sv.quit()
-            sys.exit("a window reached the screen: stopped")
-        c({"do": "split", "action": "open", "url": f"{SITE}/other"}, 2)
-        time.sleep(1.0)
-        _, s = typed("quarterly taxes", 2)
-        t.ok("another profile: none of these bookmarks", not any(k == "bookmark" for k, _ in places(s)), s["offers"])
     finally:
         t.done()
         sv.finish()

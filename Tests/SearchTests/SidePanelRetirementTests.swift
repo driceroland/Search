@@ -42,12 +42,12 @@ final class SidePanelRetirementTests: XCTestCase {
             other.window = nil
         }
         browser.receive(first)
-        pages.loadSite(url, space: browser.spaceID, in: browser)
+        pages.loadSite(url, in: browser)
         browser.sidePanel = content
         browser.sidePanelShown = true
         pages.bind(content, to: first.id, in: browser)
         pages.bind(content, to: second.id, in: browser)
-        pages.loadSite(url, space: other.spaceID, in: other)
+        pages.loadSite(url, in: other)
         pages.bind(content, to: second.id, in: other)
         XCTAssertTrue(browser.sidePanelHeld, "a panel held back beside a private tab is still kept")
         XCTAssertNotNil(pages.web(in: browser))
@@ -78,8 +78,8 @@ final class SidePanelRetirementTests: XCTestCase {
             browser.window = nil
         }
         let url = try XCTUnwrap(URL(string: "about:blank"))
-        pages.loadSite(url, space: browser.spaceID, in: browser)
-        browser.sidePanel = .site(url: url, space: browser.spaceID)
+        pages.loadSite(url, in: browser)
+        browser.sidePanel = .site(url: url)
         browser.sidePanelShown = true
         let web = try XCTUnwrap(pages.web(in: browser))
 

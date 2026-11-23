@@ -68,7 +68,7 @@ def u(path):
 def main():
     t = sv.T()
     try:
-        sv.setup(spaces=True); sv.launch()
+        sv.setup(); sv.launch()
         sv.page("a")
         sv.cmd({"do": "windows", "action": "new"}); time.sleep(1.5)
         sv.sp("open", url=u("b"), window=2); time.sleep(1)

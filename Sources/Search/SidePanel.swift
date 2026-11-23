@@ -16,8 +16,8 @@ import Combine
 //
 // Or a website (idea 365), for whoever turns on Settings › General ›
 // Websites in the side panel: Claude or ChatGPT kept beside the page
-// without an extension. It is an ordinary page of the window's space, signed
-// in where that space's tabs are, never a private tab's; its address is on
+// without an extension. It is an ordinary page, signed in where the tabs
+// are, never a private tab's; its address is on
 // the panel's own line, since it stays beside every tab. Links it opens in
 // a new window go to a tab.
 //
@@ -29,8 +29,8 @@ enum SidePanelContent: Equatable {
     /// extension named one (setOptions with a tabId) — it goes with that tab,
     /// hidden on the others and back on it, as in Chrome. Nil: the window's.
     case page(extensionID: String, url: URL, tab: Tab.ID?)
-    /// A website, in the space the window was in when it opened.
-    case site(url: URL, space: UUID)
+    /// A website.
+    case site(url: URL)
     /// Downloads, for whoever chose it in Settings › Downloads › Open
     /// Downloads: the same list as its tab, beside every page.
     case downloads
@@ -114,8 +114,7 @@ extension Browser {
         open(url, foreground: true)
     }
 
-    /// A website in this window's side panel, signed in as this space's tabs
-    /// are (Settings › General › Websites in the side panel). The same site
+    /// A website in this window's side panel, signed in as the tabs are (Settings › General › Websites in the side panel). The same site
     /// again closes it, as a second press on an extension's button does.
     @discardableResult
     func showSiteInPanel(_ url: URL) -> Bool {
@@ -125,8 +124,8 @@ extension Browser {
             return true
         }
         if case .page(_, _, let tab?) = sidePanel { SidePanelPages.shared.unbind(tab, in: self) }
-        SidePanelPages.shared.loadSite(url, space: spaceID, in: self)
-        sidePanel = .site(url: url, space: spaceID)
+        SidePanelPages.shared.loadSite(url, in: self)
+        sidePanel = .site(url: url)
         sidePanelShown = true
         prefs.panelSite = url.absoluteString
         return true
@@ -139,13 +138,6 @@ extension Browser {
         if sidePanelShown { return closeSidePanel() }
         let last = URL(string: prefs.panelSite).flatMap { PanelSites.allowed($0) ? $0 : nil }
         showSiteInPanel(last ?? PanelSites.offered[0].url)
-    }
-
-    /// The store this window's tabs use in `space`: that space's, inside the
-    /// window's profile (Spaces.store), or the profile's own for a space it
-    /// doesn't list. Never another profile's, whatever Spaces.current is.
-    func panelStore(_ space: UUID) -> WKWebsiteDataStore {
-        spaces.contains(where: { $0.id == space }) ? Spaces.store(for: space) : Profiles.store(profileID)
     }
 
     /// Downloads in the side panel; again, and it goes. Whatever page was
@@ -164,7 +156,7 @@ extension Browser {
     }
 
     /// The tab's page into the side panel, from the tab's menu. Not a
-    /// private tab's: the panel is signed in as the space is.
+    /// private tab's: the panel is signed in as the tabs are.
     func openInSidePanel(_ tab: Tab) {
         guard !tab.shy, let url = tab.address else { return }
         showSiteInPanel(url)
@@ -172,19 +164,10 @@ extension Browser {
 
     /// The site in the panel, as a tab of its own, and the panel closed.
     func sitePanelToTab() {
-        guard case .site(let first, _) = sidePanel else { return }
+        guard case .site(let first) = sidePanel else { return }
         let url = SidePanelPages.shared.siteArrived(in: self) ?? first
         closeSidePanel()
         open(url, foreground: true)
-    }
-
-    /// The window went to another space: the site comes again, signed in as
-    /// that space is.
-    func sitePanelFollowsSpace() {
-        guard case .site(let first, let space) = sidePanel, space != spaceID else { return }
-        let url = SidePanelPages.shared.siteArrived(in: self) ?? first
-        SidePanelPages.shared.loadSite(url, space: spaceID, in: self)
-        sidePanel = .site(url: url, space: spaceID)
     }
 
     /// Closed: an extension's page is let go, as Chrome does.
@@ -281,7 +264,7 @@ final class SidePanelPages: NSObject {
     func web(in browser: Browser) -> WKWebView? { pages[ObjectIdentifier(browser)]?.web }
 
     /// A website's page that arrived (committed) in this window's panel: what
-    /// its line names, what goes to a tab and what follows a space switch.
+    /// its line names and what goes to a tab.
     /// Not where it is only on its way to.
     func siteArrived(in browser: Browser) -> URL? {
         (pages[ObjectIdentifier(browser)]?.delegate as? SitePanelDelegate)?.arrived
@@ -326,14 +309,12 @@ final class SidePanelPages: NSObject {
         return true
     }
 
-    /// A website, in a page made as a tab's is in `space` (Web.configuration):
+    /// A website, in a page made as a tab's is (Web.configuration):
     /// its store, its user agent, extensions where tabs have them. Never a
     /// private tab's store. No window opens from it without a click.
-    func loadSite(_ url: URL, space: UUID, in browser: Browser) {
+    func loadSite(_ url: URL, in browser: Browser) {
         drop(in: browser)
-        // The window's profile's store for that space: signed in where
-        // this window's tabs are, never another profile's.
-        let configuration = Web.configuration(space: space, store: browser.panelStore(space))
+        let configuration = Web.configuration()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 380, height: 600), configuration: configuration)
         let delegate = SitePanelDelegate(browser: browser)

@@ -24,13 +24,6 @@ final class NoisyRehomeTests: XCTestCase {
         return tab
     }
 
-    func testMovedToSpaceWithItsOwnSignInsGoesQuiet() {
-        let tab = playing()
-        tab.rehome(in: UUID())
-        XCTAssertNil(tab.built)
-        XCTAssertFalse(tab.noisy)
-    }
-
     func testPutDownPinGoesQuiet() {
         let tab = playing()
         tab.rest()

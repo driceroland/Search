@@ -21,6 +21,6 @@ struct TabShortcutNumber: View {
             .foregroundStyle(Palette.ink.opacity(0.65))
             .frame(width: 15, height: 15)
             .allowsHitTesting(false)
-            .accessibilityLabel("\(KeyCombo.spacesOnCommand ? "Control" : "Command") \(number)")
+            .accessibilityLabel("Command \(number)")
     }
 }

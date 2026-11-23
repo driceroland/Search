@@ -249,8 +249,8 @@ final class SyncTests: XCTestCase {
 
     func testEveryBookmarkVanishingAtOnceIsNotDeletedEverywhere() {
         let tree = (0..<6).map { Bookmark.site("Site \($0)", URL(string: "https://s\($0).example/")!) }
-        let a = mac("A", SyncItems.bookmarks(tree), scope: Sync.scope(Profile.personalID))
-        let b = mac("B", scope: Sync.scope(Profile.personalID))
+        let a = mac("A", SyncItems.bookmarks(tree), scope: Sync.browserScope)
+        let b = mac("B", scope: Sync.browserScope)
         settle([a, b], from: 1000)
         // A's bookmarks file didn't read: the list is empty.
         a.items = [:]
@@ -263,89 +263,6 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(SyncItems.applyBookmarks(b.items).map(\.id), tree.dropFirst().map(\.id))
     }
 
-    func testEachProfileIsItsOwnFolder() {
-        let work = UUID(), home = UUID()
-        let aWork = mac("A", ["x": "work"], scope: Sync.scope(work))
-        let aHome = mac("A", ["x": "home"], scope: Sync.scope(home))
-        let bWork = mac("B", scope: Sync.scope(work))
-        let bHome = mac("B", scope: Sync.scope(home))
-        settle([aWork, aHome, bWork, bHome], from: 1000)
-        XCTAssertEqual(bWork.items, ["x": "work"])
-        XCTAssertEqual(bHome.items, ["x": "home"])
-        XCTAssertNotEqual(Sync.scope(work), Sync.scope(home))
-    }
-
-    // MARK: - spaces
-
-    private func space(_ name: String, id: UUID = UUID(), colour: Int = 0, icon: String? = nil, shares: Bool? = true) -> Space {
-        Space(id: id, name: name, colour: colour, icon: icon, sharesSignIns: shares, downloads: nil, profile: nil)
-    }
-
-    func testSpacesGoAndComeBackTheSame() {
-        let list = [Space.first(), space("Work", colour: 2, icon: "briefcase"), space("Play", shares: false)]
-        let items = SyncItems.spaces(list)
-        let back = SyncItems.applySpaces(items, to: [], profile: Profile.personalID, home: Space.firstID)
-        XCTAssertEqual(back.map(\.id), list.map(\.id))
-        XCTAssertEqual(SyncItems.spaces(back), items)
-        XCTAssertEqual(back[2].sharesSignIns, false)
-    }
-
-    /// The order of a list is one item: the later list wins, and a space
-    /// it doesn't name — made meanwhile on the other Mac — is kept, last.
-    func testAReorderOnOneMacAndANewSpaceOnTheOtherBothStay() {
-        let work = space("Work"), play = space("Play")
-        let start = [Space.first(), work, play]
-        let a = mac("A", SyncItems.spaces(start), scope: Sync.scope(Profile.personalID))
-        let b = mac("B", scope: Sync.scope(Profile.personalID))
-        settle([a, b], from: 1000)
-        var bList = SyncItems.applySpaces(b.items, to: [], profile: Profile.personalID, home: Space.firstID)
-        let new = space("New")
-        bList.append(new)
-        b.items = SyncItems.spaces(bList)
-        b.pass(at: 2000)
-        // A reorders a moment later, without having seen the new space.
-        a.items = SyncItems.spaces([play, Space.first(), work])
-        a.pass(at: 2001)
-        settle([a, b], from: 2002)
-        let final = SyncItems.applySpaces(a.items, to: [], profile: Profile.personalID, home: Space.firstID)
-        XCTAssertEqual(final.map(\.name), ["Play", "Personal", "Work", "New"])
-        XCTAssertEqual(SyncItems.applySpaces(b.items, to: bList, profile: Profile.personalID, home: Space.firstID).map(\.id), final.map(\.id))
-    }
-
-    func testASpaceDeletedElsewhereGoesButTheHomeNeverDoes() {
-        let work = space("Work")
-        let local = [Space.first(), work]
-        var items = SyncItems.spaces(local)
-        items[SyncItems.spaceKey(work.id)] = nil
-        items[SyncItems.spaceKey(Space.firstID)] = nil
-        let after = SyncItems.applySpaces(items, to: local, profile: Profile.personalID, home: Space.firstID)
-        XCTAssertEqual(after.map(\.id), [Space.firstID])
-    }
-
-    func testWhatIsOnlyThisMacsStaysAndSignInsNeverChangeOnASpaceThatExists() {
-        var mine = space("Work", shares: false)
-        mine.downloads = "/Users/me/Work"
-        var theirs = mine
-        theirs.name = "Studio"
-        theirs.sharesSignIns = true
-        theirs.downloads = "/Users/them/Elsewhere"
-        let after = SyncItems.applySpaces(SyncItems.spaces([Space.first(), theirs]), to: [Space.first(), mine],
-                                          profile: Profile.personalID, home: Space.firstID)
-        XCTAssertEqual(after[1].name, "Studio")
-        XCTAssertEqual(after[1].downloads, "/Users/me/Work")
-        XCTAssertEqual(after[1].sharesSignIns, false)
-        // And this Mac doesn't then argue: its items say what was agreed.
-        let agreed = SyncItems.spaces([Space.first(), theirs])
-        XCTAssertEqual(SyncItems.spaces(after, base: agreed), agreed)
-    }
-
-    func testASpaceOfAnotherProfileIsMadeInThatProfile() {
-        let profile = UUID()
-        let home = space("Clients")
-        let made = SyncItems.applySpaces(SyncItems.spaces([home]), to: [], profile: profile, home: home.id)
-        XCTAssertEqual(made.first?.profile, profile)
-    }
-
     // MARK: - pins
 
     private func pin(_ letter: String, _ home: String, title: String = "Title", listed: Bool? = nil) -> PinDef {
@@ -353,58 +270,43 @@ final class SyncTests: XCTestCase {
     }
 
     func testPinsGoAndComeBackTheSame() {
-        let s = UUID()
         let own = [pin("M", "https://mail.example/"), pin("C", "https://cal.example/", listed: true)]
-        let shared = [pin("N", "https://notes.example/")]
-        let items = SyncItems.pins(bySpace: [s: own], shared: shared, base: [:])
-        let back = SyncItems.applyPins(items, spaces: [s], local: [:], localShared: [])
-        XCTAssertEqual(back.bySpace[s], own)
-        XCTAssertEqual(back.shared, shared)
+        let items = SyncItems.pins(own, base: [:])
+        XCTAssertEqual(SyncItems.applyPins(items, local: []), own)
+    }
+
+    /// What a Search with several rows wrote of the others is carried
+    /// along, never applied and never deleted for the other Macs.
+    func testOtherRowsItemsRideAlong() {
+        let other = UUID().uuidString
+        XCTAssertFalse(SyncItems.understood("pin:\(other):\(UUID().uuidString)", #"{"letter":"M","home":"h"}"#))
+        XCTAssertFalse(SyncItems.understood("order:pins:\(other)", "[]"))
+        XCTAssertFalse(SyncItems.understood("pin:shared:\(UUID().uuidString)", #"{"letter":"M","home":"h"}"#))
+        XCTAssertFalse(SyncItems.understood("space:\(other)", #"{"name":"Work","colour":0}"#))
+        XCTAssertTrue(SyncItems.understood(SyncItems.pinOrder, "[]"))
     }
 
     func testAPinsPageTitleNeverCountsAsAnEdit() {
-        let s = UUID()
         var mail = pin("M", "https://mail.example/", title: "Inbox (3)")
-        let agreed = SyncItems.pins(bySpace: [s: [mail]], shared: [], base: [:])
+        let agreed = SyncItems.pins([mail], base: [:])
         mail.title = "Inbox (4)"
-        XCTAssertEqual(SyncItems.pins(bySpace: [s: [mail]], shared: [], base: agreed), agreed)
-    }
-
-    func testAPinSharedOnOneMacAndEditedOnAnotherIsShownOnce() {
-        let s = UUID()
-        var mail = pin("M", "https://mail.example/")
-        var items = SyncItems.pins(bySpace: [s: [mail]], shared: [mail], base: [:])
-        mail.letter = "E"
-        items.merge(SyncItems.pins(bySpace: [s: [mail]], shared: [], base: [:])) { _, new in new }
-        let back = SyncItems.applyPins(items, spaces: [s], local: [:], localShared: [])
-        XCTAssertEqual(back.shared.map(\.id), [mail.id])
-        XCTAssertNil(back.bySpace[s])
-    }
-
-    func testPinsOfSpacesNotAskedForAreLeftAlone() {
-        let mine = UUID(), another = UUID()
-        let items = SyncItems.pins(bySpace: [mine: [pin("A", "https://a.example/")], another: [pin("B", "https://b.example/")]],
-                                   shared: [], base: [:])
-        let back = SyncItems.applyPins(items, spaces: [mine], local: [:], localShared: [])
-        XCTAssertEqual(Array(back.bySpace.keys), [mine])
+        XCTAssertEqual(SyncItems.pins([mail], base: agreed), agreed)
     }
 
     // MARK: - pin folders
 
-    /// One Mac's pinned rows in one space, synced as the app does: its
+    /// One Mac's pinned rows, synced as the app does: its
     /// items made from what it has, a pass, and what the pass says applied.
     /// `old`: a Search from before pin folders synced (1.0.16), which
     /// neither reads nor writes them and drops each pin's folder.
     final class Rows {
         let mac: Mac
-        let space: UUID
         let old: Bool
         var pins: [PinDef] = []
         var folders: [PinFolder] = []
 
-        init(_ mac: Mac, space: UUID, old: Bool = false) {
+        init(_ mac: Mac, old: Bool = false) {
             self.mac = mac
-            self.space = space
             self.old = old
         }
 
@@ -414,13 +316,13 @@ final class SyncTests: XCTestCase {
 
         func pass(at now: Double) {
             let defs = old ? pins.map { pin -> PinDef in var pin = pin; pin.folder = nil; return pin } : pins
-            var items = SyncItems.pins(bySpace: defs.isEmpty ? [:] : [space: defs], shared: [], base: mac.items)
-            if !old { items.merge(SyncItems.pinFolders(folders.isEmpty ? [:] : [space: folders])) { a, _ in a } }
+            var items = SyncItems.pins(defs, base: mac.items)
+            if !old { items.merge(SyncItems.pinFolders(folders)) { a, _ in a } }
             mac.items = items
             mac.pass(at: now, understood: old ? Rows.before : SyncItems.understood)
             let live = mac.items
-            if !old { folders = PinTree.sanitized(SyncItems.applyPinFolders(live, space: space, local: folders)) }
-            pins = SyncItems.applyPins(live, spaces: [space], local: [space: pins], localShared: []).bySpace[space] ?? []
+            if !old { folders = PinTree.sanitized(SyncItems.applyPinFolders(live, local: folders)) }
+            pins = SyncItems.applyPins(live, local: pins)
             if old { pins = pins.map { var pin = $0; pin.folder = nil; return pin } }
         }
     }
@@ -436,31 +338,30 @@ final class SyncTests: XCTestCase {
     }
 
     private func twoMacs(old: Bool = false) -> (Rows, Rows, Rows?) {
-        let s = UUID(), scope = Sync.scope(Profile.personalID)
-        let a = Rows(mac("A", scope: scope), space: s), b = Rows(mac("B", scope: scope), space: s)
-        return (a, b, old ? Rows(mac("O", scope: scope), space: s, old: true) : nil)
+        let scope = Sync.browserScope
+        let a = Rows(mac("A", scope: scope)), b = Rows(mac("B", scope: scope))
+        return (a, b, old ? Rows(mac("O", scope: scope), old: true) : nil)
     }
 
     func testPinFoldersGoAndComeBackTheSame() {
-        let s = UUID()
         let feed = URL(string: "https://blog.example/feed")!
         let work = PinFolder(id: UUID(), name: "Work")
         let inner = PinFolder(id: UUID(), name: "Inner", parent: work.id)
         let live = PinFolder(id: UUID(), name: "Blog", feed: feed)
         var mail = pin("M", "https://mail.example/", listed: true)
         mail.folder = inner.id
-        var items = SyncItems.pins(bySpace: [s: [mail]], shared: [], base: [:])
-        items.merge(SyncItems.pinFolders([s: [work, inner, live]])) { a, _ in a }
-        XCTAssertEqual(SyncItems.applyPinFolders(items, space: s, local: []), [work, inner, live])
-        XCTAssertEqual(SyncItems.applyPins(items, spaces: [s], local: [:], localShared: []).bySpace[s], [mail])
+        var items = SyncItems.pins([mail], base: [:])
+        items.merge(SyncItems.pinFolders([work, inner, live])) { a, _ in a }
+        XCTAssertEqual(SyncItems.applyPinFolders(items, local: []), [work, inner, live])
+        XCTAssertEqual(SyncItems.applyPins(items, local: []), [mail])
         // Folded here, and a live folder's posts here, stay as they are.
         var folded = work
         folded.collapsed = true
         var fetched = live
         fetched.items = [FeedItem(id: UUID(), title: "Post", link: URL(string: "https://blog.example/1")!)]
-        XCTAssertEqual(SyncItems.applyPinFolders(items, space: s, local: [folded, fetched]), [folded, inner, fetched])
+        XCTAssertEqual(SyncItems.applyPinFolders(items, local: [folded, fetched]), [folded, inner, fetched])
         // Neither is in what goes.
-        XCTAssertEqual(SyncItems.pinFolders([s: [folded, inner, fetched]]), SyncItems.pinFolders([s: [work, inner, live]]))
+        XCTAssertEqual(SyncItems.pinFolders([folded, inner, fetched]), SyncItems.pinFolders([work, inner, live]))
         // Every item is one this build reads, so can be deleted.
         for (key, text) in items { XCTAssertTrue(SyncItems.understood(key, text), key) }
     }
@@ -534,37 +435,36 @@ final class SyncTests: XCTestCase {
         XCTAssertEqual(b.folders.map(\.id), [work.id])
         // It carried the folder items along without deleting one.
         XCTAssertEqual(old.mac.base?[SyncItems.inFolderKey(mail.id)]?.v, SyncMerge.text(work.id.uuidString))
-        XCTAssertNotNil(old.mac.base?[SyncItems.pinFolderKey(b.space, work.id)]?.v)
+        XCTAssertNotNil(old.mac.base?[SyncItems.pinFolderKey(work.id)]?.v)
         // And a pin's item as 1.0.16 wrote it still reads.
         XCTAssertNotNil(SyncMerge.value(SyncedPin.self, #"{"home":"https://mail.example/","letter":"M"}"#))
     }
 
     func testAPinThatComesBeforeItsFolderKeepsItAndFilesItselfWhenItComes() {
-        let s = UUID()
         let work = PinFolder(id: UUID(), name: "Work")
         var mail = pin("M", "https://mail.example/", listed: true)
         mail.folder = work.id
-        let pinsOnly = SyncItems.pins(bySpace: [s: [mail]], shared: [], base: [:])
-        let here = SyncItems.applyPins(pinsOnly, spaces: [s], local: [:], localShared: []).bySpace[s] ?? []
+        let pinsOnly = SyncItems.pins([mail], base: [:])
+        let here = SyncItems.applyPins(pinsOnly, local: [])
         XCTAssertEqual(here.first?.folder, work.id)
-        let none = SyncItems.applyPinFolders(pinsOnly, space: s, local: [])
+        let none = SyncItems.applyPinFolders(pinsOnly, local: [])
         XCTAssertEqual(PinTree.lines(pins: here.map { ($0.id, $0.folder) }, folders: none), [.pin(mail.id, depth: 0)])
         // The pin, made from these, keeps saying so: no edit goes back.
-        XCTAssertEqual(SyncItems.pins(bySpace: [s: here], shared: [], base: pinsOnly), pinsOnly)
+        XCTAssertEqual(SyncItems.pins(here, base: pinsOnly), pinsOnly)
         var all = pinsOnly
-        all.merge(SyncItems.pinFolders([s: [work]])) { a, _ in a }
-        let folders = SyncItems.applyPinFolders(all, space: s, local: none)
+        all.merge(SyncItems.pinFolders([work])) { a, _ in a }
+        let folders = SyncItems.applyPinFolders(all, local: none)
         XCTAssertEqual(PinTree.lines(pins: here.map { ($0.id, $0.folder) }, folders: folders),
                        [.folder(work, depth: 0), .pin(mail.id, depth: 1)])
     }
 
     func testAFolderItemThisBuildCantReadLeavesThePinWhereItIs() {
-        let s = UUID(), work = UUID()
+        let work = UUID()
         var mail = pin("M", "https://mail.example/")
         mail.folder = work
-        var items = SyncItems.pins(bySpace: [s: [mail]], shared: [], base: [:])
+        var items = SyncItems.pins([mail], base: [:])
         items[SyncItems.inFolderKey(mail.id)] = #"{"future":true}"#
-        XCTAssertEqual(SyncItems.applyPins(items, spaces: [s], local: [s: [mail]], localShared: []).bySpace[s]?.first?.folder, work)
+        XCTAssertEqual(SyncItems.applyPins(items, local: [mail]).first?.folder, work)
         XCTAssertFalse(SyncItems.understood(SyncItems.inFolderKey(mail.id), #"{"future":true}"#))
     }
 
@@ -599,8 +499,8 @@ final class SyncTests: XCTestCase {
     func testABookmarkAddedToAFolderDeletedElsewhereIsKept() {
         let docs = Bookmark.site("Docs", URL(string: "https://docs.example/")!)
         let folderNode = Bookmark.folder("Work", [docs])
-        let a = mac("A", SyncItems.bookmarks([folderNode]), scope: Sync.scope(Profile.personalID))
-        let b = mac("B", scope: Sync.scope(Profile.personalID))
+        let a = mac("A", SyncItems.bookmarks([folderNode]), scope: Sync.browserScope)
+        let b = mac("B", scope: Sync.browserScope)
         settle([a, b], from: 1000)
         // A deletes the folder; B, not knowing, files a new bookmark in it.
         a.items = SyncItems.bookmarks([])

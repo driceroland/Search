@@ -5,7 +5,7 @@ import AppKit
 // hand. It holds the feed's latest posts, each a line that opens its page in
 // a new tab as a bookmark would; never a pin, never carried in or out.
 //
-// Only where pin folders are (Settings › Spaces & Pins › Folders in pinned
+// Only where pin folders are (Settings › Pins › Folders in pinned
 // rows, with Pinned rows): with the switch off nothing is fetched.
 //
 // Fetched when made, a little after launch, every half hour while Search
@@ -39,26 +39,23 @@ enum LiveFolders {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { refreshAll() }
     }
 
-    /// Every live folder of every space, while the switch is on.
+    /// Every live folder, while the switch is on.
     static func refreshAll() {
         guard Shared.prefs.showsPinFolders else { return }
-        PinFolders.load()
-        for (space, folders) in PinFolders.bySpace {
-            for folder in folders where folder.isLive { refresh(folder.id, in: space) }
-        }
+        for folder in PinFolders.folders() where folder.isLive { refresh(folder.id) }
     }
 
     static func isFetching(_ id: UUID) -> Bool { fetching.contains(id) }
 
-    static func refresh(_ id: UUID, in space: UUID) {
-        guard let feed = PinFolders.folders(space).first(where: { $0.id == id })?.feed,
+    static func refresh(_ id: UUID) {
+        guard let feed = PinFolders.folders().first(where: { $0.id == id })?.feed,
               fetching.insert(id).inserted else { return }
         Task {
             let result = await Feed.load(feed)
             fetching.remove(id)
             // The folder as it is now, renamed or moved meanwhile: only its
             // posts change.
-            var folders = PinFolders.folders(space)
+            var folders = PinFolders.folders()
             guard let index = folders.firstIndex(where: { $0.id == id }) else { return }
             switch result {
             case .success(let read):
@@ -67,7 +64,7 @@ enum LiveFolders {
             case .failure:
                 failed.insert(id)
             }
-            PinFolders.set(space, folders, from: nil, always: true)
+            PinFolders.set(folders, from: nil, always: true)
         }
     }
 
@@ -110,7 +107,7 @@ extension Browser {
                              feed: read.feed, items: read.items)
         folders.append(made)
         objectWillChange.send()
-        PinFolders.set(spaceID, folders, from: self)
+        PinFolders.set(folders, from: self)
         return made.id
     }
 

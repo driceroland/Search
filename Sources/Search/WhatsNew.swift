@@ -48,9 +48,6 @@ enum WhatsNew {
                since: "1.0.17", get: { $0.swipeBackCloses }, set: { $0.swipeBackCloses = $1 }),
         Toggle(title: "Home bookmarks on a new tab", detail: "The sites of your bookmark folder called Home, as tiles.",
                since: "1.0.17", get: { $0.homeGrid }, set: { $0.homeGrid = $1 }),
-        Toggle(title: "One button per space", detail: "Every space beside the bookmarks, one click away.",
-               since: "1.0.17", get: { $0.spaceButtons }, set: { $0.spaceButtons = $1 },
-               shown: { $0.usesSpaces }),
         Toggle(title: "Try HTTPS first", detail: "An http:// page loads over HTTPS where the site has it.",
                since: "1.0.17", get: { $0.triesHTTPSFirst }, set: { $0.triesHTTPSFirst = $1 }),
 
@@ -62,16 +59,11 @@ enum WhatsNew {
                since: "1.0.16", get: { $0.glass }, set: { $0.glass = $1 }),
         Toggle(title: "Buttons at the top", detail: "The column's bottom buttons beside back, forward and reload.",
                since: "1.0.16", get: { $0.doorsUp }, set: { $0.doorsUp = $1 }),
-        Toggle(title: "Ask which space a link opens in", detail: "For links from other apps.",
-               since: "1.0.16", get: { $0.asksSpaceForLinks }, set: { $0.asksSpaceForLinks = $1 }),
         Toggle(title: "Dim sleeping tabs", detail: "A tab put to sleep fades until you come back to it.",
                since: "1.0.16", get: { $0.dimsSleepingTabs }, set: { $0.dimsSleepingTabs = $1 }),
         Toggle(title: "High contrast tab text", detail: "Tab titles in full black or white.",
                since: "1.0.16", get: { $0.highContrastText }, set: { $0.highContrastText = $1 }),
 
-        Toggle(title: "⌘1–⌘9 switch spaces", detail: "As in Arc: the tabs move to ⌃1–⌃9.",
-               since: "1.0.15", get: { $0.spacesOnCommand }, set: { $0.spacesOnCommand = $1 },
-               shown: { $0.usesSpaces }),
         Toggle(title: "Same tabs in every window", detail: "Every window lists the same open tabs, as Arc's sidebar does.",
                since: "1.0.15", get: { $0.mirrorsTabs }, set: { $0.mirrorsTabs = $1 }),
         Toggle(title: "⌥-click a link opens it in Split View", detail: "Beside the page you're reading.",
@@ -96,13 +88,6 @@ enum WhatsNew {
         Toggle(title: "Folders in pinned rows", detail: "Pinned rows in folders that fold, as in Arc.",
                since: "1.0.13", get: { $0.pinFolders }, set: { $0.pinFolders = $1 },
                shown: { $0.listsPins }),
-
-        Toggle(title: "Send links to a space", detail: "Links to the sites you choose open in their space, with its sign-ins, as in Arc.",
-               since: "1.0.11", get: { $0.sendsLinksToSpaces }, set: { $0.sendsLinksToSpaces = $1 },
-               shown: { $0.usesSpaces }),
-
-        Toggle(title: "Profiles in one window", detail: "A space of another profile opens in the same window, with that profile's sign-ins, as in Arc.",
-               since: "1.0.9", get: { $0.profilesInOneWindow }, set: { $0.profilesInOneWindow = $1 }),
 
         Toggle(title: "Close goes back", detail: "Closing the tab you're on takes you to the one you were on before it, as ⌃Tab would.",
                since: "1.0.8", get: { $0.closeGoesBack }, set: { $0.closeGoesBack = $1 }),
@@ -141,8 +126,6 @@ enum WhatsNew {
         Toggle(title: "Always show the downloads button", detail: "Your downloads one click away, beside the other buttons.",
                since: "1.0.4", get: { $0.alwaysShowsDownloads }, set: { $0.alwaysShowsDownloads = $1 }),
 
-        Toggle(title: "Spaces", detail: "Separate sets of tabs, each with its own sign-ins. ⌃1–⌃9 to switch.",
-               since: "1.0.1", get: { $0.usesSpaces }, set: { $0.usesSpaces = $1 }),
         Toggle(title: "A sidebar that hides", detail: "The page takes the whole window; the tabs come out at the edge.",
                since: "1.0.1", get: { $0.sidebar && $0.sideHides },
                set: { prefs, on in
@@ -229,7 +212,7 @@ enum WhatsNew {
                 "Coming from Zen brings its spaces, pins and folders, and open tabs come over from Firefox and Zen.",
                 "Eleven more browsers to come from, and Safari directly when macOS allows it.",
                 "Themes for the blank tab, your Home bookmarks as tiles, and ⌘T finding your open tabs. Settings › Themes and Settings › Tabs.",
-                "A split pinned as a split, one button per space, and Try HTTPS first. Settings › Spaces & Pins and Settings › Privacy.",
+                "A split pinned as a split, one button per space, and Try HTTPS first. Settings › Pins and Settings › Privacy.",
             ],
             better: [
                 "⌘S slides the column smoothly again, as in 1.0.15.",
@@ -250,7 +233,7 @@ enum WhatsNew {
                 "Sync with iCloud: open tabs, pins, spaces and bookmarks with Search on iPhone, in public beta. Settings › General.",
                 "Handoff of the page in front to your iPhone and iPad. Settings › General.",
                 "The address bar always in sight, a glass window, and buttons at the top. Settings › Appearance.",
-                "Choose the space a link from another app opens in. Settings › Spaces & Pins.",
+                "Choose the space a link from another app opens in. Settings › Pins.",
             ],
             better: [
                 "Switching spaces is about three times quicker with many tabs.",
@@ -270,7 +253,7 @@ enum WhatsNew {
             new: [
                 "A gradient or a stronger colour for a space. The space's menu › Colour….",
                 "The same tabs in every window. Settings › Tabs.",
-                "⌘1–⌘9 switch spaces, as in Arc. Settings › Spaces & Pins.",
+                "⌘1–⌘9 switch spaces, as in Arc. Settings › Pins.",
                 "Email links open in Gmail, Outlook.com, Fastmail or Proton Mail. Settings › General.",
                 "Choose where each extension runs: all sites, some, or on click. Settings › Extensions.",
                 "Claude Code or Codex can browse in tabs of their own while you watch. Settings › About › Developer.",
@@ -294,7 +277,7 @@ enum WhatsNew {
                 "Live folders: a folder in the pinned rows that fills itself from a feed. Right-click a pinned row › New Live Folder….",
                 "Your own CSS for a site, as Arc's Boosts. Turn it on in Settings › Browsing.",
                 "Keep the page as a card in full screen. Settings › Appearance › Window.",
-                "⌘-click on a pin opens a new tab, as in Arc. Settings › Spaces & Pins.",
+                "⌘-click on a pin opens a new tab, as in Arc. Settings › Pins.",
             ],
             better: [
                 "A space with a colour gives the window a faint wash of it.",
@@ -310,7 +293,7 @@ enum WhatsNew {
             headline: "Folders in pinned rows, Split View with four pages, sync between your Macs, and your fixes.",
             new: [
                 "Sync your spaces, pins, bookmarks and a few settings between your Macs, through a folder they share. Settings › General.",
-                "Folders in pinned rows, as in Arc. Settings › Spaces & Pins.",
+                "Folders in pinned rows, as in Arc. Settings › Pins.",
                 "Capture… in the View menu: a picture of part of a page, or all of it.",
                 "Commands in the address field, as Arc's Command Bar.",
                 "History › Archived Tabs: the tabs Search closed by itself, for 30 days.",
@@ -349,7 +332,7 @@ enum WhatsNew {
             version: "1.0.11", date: "9 November 2026",
             headline: "Send links to a space, a proxy for the whole browser, a quicker window with many tabs, and your fixes.",
             new: [
-                "Send links to a space, as in Arc: the sites you choose open in their space, in Settings › Spaces & Pins or a tab's right-click menu.",
+                "Send links to a space, as in Arc: the sites you choose open in their space, in Settings › Pins or a tab's right-click menu.",
                 "An HTTP or SOCKS5 proxy for the whole browser, in Settings › Privacy.",
                 "Bring Things Over can bring the tabs Helium, Chrome or another Chromium browser has open, with their groups.",
                 "⌥-click a tab to put it beside the page in Split View.",
@@ -404,7 +387,7 @@ enum WhatsNew {
             version: "1.0.9", date: "4 November 2026",
             headline: "Claude in the side panel, profiles in one window, and your fixes.",
             new: [
-                "Profiles in one window, as in Arc, if you turn it on in Settings › Spaces & Pins.",
+                "Profiles in one window, as in Arc, if you turn it on in Settings › Pins.",
                 "Downloads can open floating by its button, or in the side panel.",
                 "Delete in a pin's right-click menu.",
             ],

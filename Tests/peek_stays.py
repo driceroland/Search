@@ -122,7 +122,7 @@ try:
     t.ok("off: its tab moved to another window, the peek goes", not peeked(probe()), probe()["peekFrom"])
 
     # On: the peek waits for its tab.
-    sv.setup(**{"links.peek.stays": True, "spaces": True}); sv.launch()
+    sv.setup(**{"links.peek.stays": True}); sv.launch()
     under, other = two_tabs_and_a_peek()
     select(other)
     st = probe()
@@ -150,13 +150,6 @@ try:
     select(other)
     sv.cmd({"do": "close", "id": under}); time.sleep(0.4)
     t.ok("on: closing its tab puts the hidden peek away", not peeked(probe()), probe()["peekFrom"])
-
-    # Another space: no peek left running out of sight.
-    sv.cmd({"do": "peek", "url": f"{sv.BASE}/peeked"})
-    until(lambda: probe()["peekShown"])
-    sv.cmd({"do": "space", "action": "new", "name": "Two"}); time.sleep(0.5)
-    sv.cmd({"do": "space", "action": "go", "index": 2}); time.sleep(0.8)
-    t.ok("on: another space puts the peek away", not peeked(probe()), probe()["peekFrom"])
 
     # Split View: either page of the pair is on screen, so the peek stays.
     left, right = pair_and_a_peek()

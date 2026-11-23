@@ -8,7 +8,7 @@ import Foundation
 // tabs are done the same way: each window holds its own tab for each, its
 // own page in its own view, and only what makes the tab that tab is shared —
 // which one it is (its twin id), its page, its title, the name you gave it,
-// its group, its place in the row — per space. Opened, closed, moved,
+// its group, its place in the row. Opened, closed, moved,
 // grouped or renamed in one window, so in the others.
 //
 // A page can only be on screen in one window, and with a view of each
@@ -33,7 +33,7 @@ import Foundation
 // own pages; never a pop-up window's; never synced to other Macs (Sync.swift
 // keeps open tabs out).
 
-/// An open tab as every window of its profile lists it.
+/// An open tab as every window lists it.
 struct TwinDef: Equatable {
     var id: UUID
     var url: String
@@ -44,45 +44,44 @@ struct TwinDef: Equatable {
 
 @MainActor
 enum Twins {
-    /// Each space's open tabs, in their order, as a window last said them.
-    private static var rows: [UUID: [TwinDef]] = [:]
-    /// The groups holding them, by space.
-    private static var groupsBy: [UUID: [TabGroup]] = [:]
+    /// The open tabs, in their order, as a window last said them; nil
+    /// until one has.
+    private static var list: [TwinDef]?
+    /// The groups holding them.
+    private static var groupList: [TabGroup] = []
     /// Every twin a window has said this run (see plan).
     private(set) static var known: Set<UUID> = []
     /// Whether the rows here are this run's since the switch last came on.
     private static var live = false
 
-    /// A space's open tabs changed in one window; the others follow.
+    /// The open tabs changed in one window; the others follow.
     static let changed = Notification.Name("SearchTwinsChanged")
 
-    static func row(_ space: UUID) -> [TwinDef]? { rows[space] }
-    static func groups(_ space: UUID) -> [TabGroup] { groupsBy[space] ?? [] }
+    static func row() -> [TwinDef]? { list }
+    static func groups() -> [TabGroup] { groupList }
 
     /// The switch on, or the first window of a launch with it on: what was
     /// said before it went off is nothing to go by.
     static func turnedOn() {
         guard !live else { return }
         live = true
-        rows = [:]
-        groupsBy = [:]
+        list = nil
+        groupList = []
         known = []
     }
 
     static func turnedOff() { live = false }
 
-    /// A window's row for a space as it now is, passed to the other windows
-    /// when it differs from what was there. Only the groups that hold one
-    /// of its tabs, each open: folding a group is each window's own. A group
-    /// the window didn't give (a space in memory whose groups it hasn't
-    /// read) stays as it was here.
-    static func set(_ space: UUID, _ defs: [TwinDef], groups: [TabGroup], from browser: Browser?) {
+    /// A window's row as it now is, passed to the other windows when it
+    /// differs from what was there. Only the groups that hold one of its
+    /// tabs, each open: folding a group is each window's own.
+    static func set(_ defs: [TwinDef], groups: [TabGroup], from browser: Browser?) {
         known.formUnion(defs.map(\.id))
-        let shared = sharedGroups(defs, given: groups, before: groupsBy[space] ?? [])
-        guard rows[space] != defs || groupsBy[space] != shared else { return }
-        rows[space] = defs
-        groupsBy[space] = shared
-        NotificationCenter.default.post(name: changed, object: browser, userInfo: ["space": space])
+        let shared = sharedGroups(defs, given: groups, before: groupList)
+        guard list != defs || groupList != shared else { return }
+        list = defs
+        groupList = shared
+        NotificationCenter.default.post(name: changed, object: browser)
     }
 
     /// The groups that hold a twin, in the order given, each open; one
@@ -245,18 +244,12 @@ extension Browser {
         }
     }
 
-    /// This window's rows as they are, for the other windows: the space on
-    /// screen and every space in memory. Not before the window has taken
-    /// the twins in (joinTwins): a new window's empty row would close every
-    /// other window's tabs.
+    /// This window's row as it is, for the other windows. Not before the
+    /// window has taken the twins in (joinTwins): a new window's empty row
+    /// would close every other window's tabs.
     func publishTwins() {
         guard mirrors, twinsJoined else { return }
-        Twins.set(spaceID, twinDefs(tabs), groups: tabGroups, from: self)
-        for (space, row) in parked {
-            // Never the file read again here: a group it doesn't name stays
-            // as the twins have it (see Twins.set).
-            Twins.set(space, twinDefs(row.tabs), groups: row.groups ?? [], from: self)
-        }
+        Twins.set(twinDefs(tabs), groups: tabGroups, from: self)
     }
 
     /// Once this turn of the run loop is over, so that a change made in
@@ -272,15 +265,13 @@ extension Browser {
     }
 
     /// The window takes the twins in: a turn after it is made, once it is
-    /// known for a pop-up or not, or as the switch comes on. Every row it
-    /// holds follows them; then it says its own, which adds the tabs only
-    /// it had.
+    /// known for a pop-up or not, or as the switch comes on. Its row
+    /// follows them; then it says its own, which adds the tabs only it had.
     func joinTwins() {
         guard mirrors else { return }
         Twins.turnedOn()
         twinsJoined = true
-        twinsChanged(in: spaceID)
-        for space in Array(parked.keys) { twinsChanged(in: space) }
+        twinsChanged()
         publishTwins()
     }
 
@@ -291,59 +282,42 @@ extension Browser {
     }
 
     /// A row read from its file, as the twins have it (see Twins.apply).
-    func twinned(_ shape: Session.Shape, space: UUID) -> Session.Shape {
-        guard mirrors, twinsJoined, let defs = Twins.row(space) else { return shape }
-        return Twins.apply(shape, twins: defs, groups: Twins.groups(space), known: Twins.known)
+    func twinned(_ shape: Session.Shape) -> Session.Shape {
+        guard mirrors, twinsJoined, let defs = Twins.row() else { return shape }
+        return Twins.apply(shape, twins: defs, groups: Twins.groups(), known: Twins.known)
     }
 
-    /// Another window changed a space's open tabs: this window's row there
-    /// follows, the one on screen or one in memory. A tab closed there is
-    /// closed here, quietly — ⇧⌘T is the other window's — and one opened
-    /// there is here asleep, at its page.
-    func twinsChanged(in space: UUID) {
-        guard mirrors, let defs = Twins.row(space) else { return }
-        if space == spaceID {
-            let old = tabs
-            let done = twinRow(tabs, space: space, twins: defs, groups: tabGroups, visible: visibleTabIDs)
-            guard done.changed else { return }
-            for tab in done.gone { letGoOfTwin(tab) }
-            if tabGroups != done.groups { tabGroups = done.groups }
-            showRow(done.row, active: activeID, splits: splits.filter { Browser.holds($0, in: done.row) })
-            if !tabs.contains(where: { $0.id == activeID }) {
-                let at = old.firstIndex { $0.id == activeID } ?? old.count
-                let stays: (Tab) -> Bool = { tab in tab.pin == nil && self.tabs.contains { $0 === tab } }
-                let next = old[min(at + 1, old.count)...].first(where: stays) ?? old[..<min(at, old.count)].last(where: stays)
-                if let next {
-                    select(next, floatPrevious: false)
-                } else {
-                    activeID = nil
-                    frontBlank()
-                }
+    /// Another window changed the open tabs: this window's row follows. A
+    /// tab closed there is closed here, quietly — ⇧⌘T is the other
+    /// window's — and one opened there is here asleep, at its page.
+    func twinsChanged() {
+        guard mirrors, let defs = Twins.row() else { return }
+        let old = tabs
+        let done = twinRow(tabs, twins: defs, groups: tabGroups, visible: visibleTabIDs)
+        guard done.changed else { return }
+        for tab in done.gone { letGoOfTwin(tab) }
+        if tabGroups != done.groups { tabGroups = done.groups }
+        showRow(done.row, active: activeID, splits: splits.filter { Browser.holds($0, in: done.row) })
+        if !tabs.contains(where: { $0.id == activeID }) {
+            let at = old.firstIndex { $0.id == activeID } ?? old.count
+            let stays: (Tab) -> Bool = { tab in tab.pin == nil && self.tabs.contains { $0 === tab } }
+            let next = old[min(at + 1, old.count)...].first(where: stays) ?? old[..<min(at, old.count)].last(where: stays)
+            if let next {
+                select(next, floatPrevious: false)
+            } else {
+                activeID = nil
+                frontBlank()
             }
-            for tab in done.gone { tab.close() }
-            writeRow(spaceID, session(tabs, active: activeID, groups: tabGroups, splits: splits), now: false)
-            if done.fresh { twinsSoon() }
-        } else if var row = parked[space] {
-            let ours = row.groups ?? readRow(space).groups ?? []
-            let done = twinRow(row.tabs, space: space, twins: defs, groups: ours, visible: [])
-            guard done.changed else { return }
-            row.tabs = done.row
-            row.groups = done.groups
-            row.splits = row.splits.filter { Browser.holds($0, in: row.tabs) }
-            if let active = row.active, !row.tabs.contains(where: { $0.id == active }) {
-                row.active = row.tabs.first { $0.pin == nil }?.id ?? row.tabs.first?.id
-            }
-            for tab in done.gone { tab.close() }
-            parked[space] = row
-            writeSession(now: false, space: space, row: row)
-            if done.fresh { twinsSoon() }
         }
+        for tab in done.gone { tab.close() }
+        writeRow(session(tabs, active: activeID, groups: tabGroups, splits: splits), now: false)
+        if done.fresh { twinsSoon() }
     }
 
     /// A row of this window's tabs as the twins have it: its pins, then its
     /// open tabs in their order (see Twins.plan), each following its twin.
     /// `fresh`: it holds tabs the twins don't have yet, to be said.
-    private func twinRow(_ row: [Tab], space: UUID, twins defs: [TwinDef], groups ours: [TabGroup],
+    private func twinRow(_ row: [Tab], twins defs: [TwinDef], groups ours: [TabGroup],
                          visible: Set<Tab.ID>) -> (row: [Tab], gone: [Tab], groups: [TabGroup], changed: Bool, fresh: Bool) {
         let pinned = row.filter { $0.pin != nil }
         let loose = row.filter { $0.pin == nil }
@@ -366,19 +340,19 @@ extension Browser {
                 }
                 out.append(tab)
             case .made(let at):
-                out.append(makeTwin(defs[at], space: space))
+                out.append(makeTwin(defs[at]))
                 changed = true
             }
         }
         if !out.elementsEqual(row, by: { $0 === $1 }) { changed = true }
-        let groups = Twins.merge(Twins.groups(space), into: ours, holding: local)
+        let groups = Twins.merge(Twins.groups(), into: ours, holding: local)
         if groups != ours { changed = true }
         return (out, plan.gone.map { loose[$0] }, groups, changed, fresh)
     }
 
     /// This window's tab for a twin, made asleep at its page.
-    private func makeTwin(_ def: TwinDef, space: UUID) -> Tab {
-        let tab = Tab(configuration: Web.configuration(space: space))
+    private func makeTwin(_ def: TwinDef) -> Tab {
+        let tab = Tab(configuration: Web.configuration())
         prepare(tab)
         tab.restore(url: URL(string: def.url) ?? URL(string: "about:blank")!, title: def.title, name: def.name)
         tab.twinID = def.id
@@ -433,8 +407,8 @@ extension Browser {
 
     /// Every other window's tab for a twin.
     func twins(of id: UUID) -> [(browser: Browser, tab: Tab)] {
-        Browsers.all.filter { $0 !== self && $0.profileID == profileID && !$0.isPopup && !$0.retired }
-            .flatMap { browser in (browser.tabs + browser.parkedTabs).filter { $0.twinID == id }.map { (browser, $0) } }
+        Browsers.all.filter { $0 !== self && !$0.isPopup && !$0.retired }
+            .flatMap { browser in (browser.tabs).filter { $0.twinID == id }.map { (browser, $0) } }
     }
 
     /// A tab asleep here, picked: when another window has looked at its
@@ -468,16 +442,15 @@ extension Browser {
     }
 
     /// Move to Window with every window listing the tab: it is there
-    /// already, so that window goes to its own tab for it, in the same
-    /// space, and this one keeps it. False for a tab the windows don't
+    /// already, so that window goes to its own tab for it, and this one
+    /// keeps it. False for a tab the windows don't
     /// share, which moves as it always did.
     func showTwin(_ tab: Tab, in destination: Browser) -> Bool {
         guard mirrors, twinsJoined, twinnable(tab), destination.prefs.mirrorsTabs else { return false }
         publishTwins()
         guard let id = tab.twinID else { return false }
         if !destination.twinsJoined { destination.joinTwins() }
-        if destination.spaceID != spaceID { destination.enter(spaceID) }
-        destination.twinsChanged(in: spaceID)
+        destination.twinsChanged()
         guard let twin = destination.tabs.first(where: { $0.twinID == id }) else { return false }
         destination.select(twin, floatPrevious: false)
         return true

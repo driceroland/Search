@@ -4,7 +4,7 @@ import Foundation
 // handful of words that mean "go here in the app" rather than "go here on
 // the web". Only the whole word runs on Return, so a search that starts
 // with one still searches; part of a word is just offered lower in the
-// list. Off by default (Settings › Spaces & Pins ›
+// list. Off by default (Settings › Pins ›
 // Opening and starting › Address bar commands): nobody typing "settings" into a browser
 // expects the app to open its own panel instead of asking Google.
 //
@@ -18,7 +18,6 @@ enum AddressCommand: Equatable {
     case settings
     case newTab
     case newPrivateTab
-    case newSpace
     case bookmarks
     case history
     case downloads
@@ -30,7 +29,7 @@ enum AddressCommand: Equatable {
 
     /// The words, which run on Return when typed whole.
     static let allCases: [AddressCommand] = [
-        .settings, .newTab, .newPrivateTab, .newSpace, .bookmarks, .history, .downloads, .toggleSidebar,
+        .settings, .newTab, .newPrivateTab, .bookmarks, .history, .downloads, .toggleSidebar,
     ]
 
     /// What you'd type to reach it. The first is what the list shows.
@@ -39,7 +38,6 @@ enum AddressCommand: Equatable {
         case .settings: return ["settings", "preferences"]
         case .newTab: return ["new tab"]
         case .newPrivateTab: return ["new private tab", "private tab"]
-        case .newSpace: return ["new space"]
         case .bookmarks: return ["bookmarks"]
         case .history: return ["history"]
         case .downloads: return ["downloads"]
@@ -67,7 +65,7 @@ enum AddressCommand: Equatable {
         case .downloads: return "history.downloads"
         case .toggleSidebar: return "view.sidebar"
         case .menu(let id): return id
-        case .newSpace, .page: return nil
+        case .page: return nil
         }
     }
 
@@ -77,7 +75,6 @@ enum AddressCommand: Equatable {
     /// Some only mean something once the feature behind them is even on.
     func available(in browser: Browser) -> Bool {
         switch self {
-        case .newSpace: return browser.prefs.usesSpaces
         case .menu(let id): return Self.offers(id, in: browser)
         case .page(let page): return page != .ai || AI.shipped
         default: return true
@@ -89,7 +86,6 @@ enum AddressCommand: Equatable {
         case .settings: browser.tuning = true
         case .newTab: browser.newTab()
         case .newPrivateTab: browser.newShyTab()
-        case .newSpace: browser.askForSpace()
         case .bookmarks: browser.bookmarking = true
         case .history: browser.recalling = true
         case .downloads: browser.showDownloads()
@@ -150,7 +146,6 @@ enum AddressCommand: Equatable {
     private static func offers(_ id: String, in browser: Browser) -> Bool {
         guard let command = Command.named(id), !unoffered.contains(id) else { return false }
         let prefs = browser.prefs
-        if command.section == .spaces, !prefs.usesSpaces { return false }
         if Command.split.contains(id) {
             guard prefs.splitView else { return false }
             if id != "tabs.split", browser.activeSplit == nil { return false }

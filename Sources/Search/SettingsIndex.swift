@@ -79,10 +79,9 @@ enum SettingsIndex {
         .init(id: "video", page: .browsing, title: "Video", icon: "play.rectangle"),
         .init(id: "pages", page: .browsing, title: "Pages", icon: "doc.richtext"),
 
-        .init(id: "arc", page: .spaces, title: "Coming from Arc?", icon: "arrow.down.forward.square"),
-        .init(id: "spaces", page: .spaces, title: "Spaces and profiles", icon: "rectangle.3.group"),
-        .init(id: "pins", page: .spaces, title: "Pins", icon: "pin"),
-        .init(id: "opening", page: .spaces, title: "Opening and starting", icon: "command"),
+        .init(id: "arc", page: .pins, title: "Coming from Arc?", icon: "arrow.down.forward.square"),
+        .init(id: "pins", page: .pins, title: "Pins", icon: "pin"),
+        .init(id: "opening", page: .pins, title: "Opening and starting", icon: "command"),
 
         .init(id: "forms", page: .passwords, title: "Filling in forms", icon: "character.cursor.ibeam"),
 
@@ -124,16 +123,16 @@ enum SettingsIndex {
               more: "From another browser on this Mac, or from a file it exported. Nothing leaves your Mac.",
               words: ["import", "chrome", "safari", "arc", "migrate"]),
         .init(id: "sync", group: "browser", icon: "arrow.triangle.2.circlepath",
-              title: "Sync with your other Macs", detail: "Spaces, pins, bookmarks and settings, through a folder you choose",
+              title: "Sync with your other Macs", detail: "Pins, bookmarks and settings, through a folder you choose",
               more: "Choose a folder your Macs share, in iCloud Drive or Dropbox for example, and turn this on with the same folder in Search on each Mac. Each profile syncs on its own. Never your history, passwords, cookies, sign-ins or open tabs. No account and no server: only small files in that folder.",
               keys: ["sync.folder"], words: ["sync", "icloud", "dropbox", "other mac", "devices", "mac"]),
         .init(id: "handoff", group: "browser", icon: "iphone.and.arrow.forward",
               title: "Handoff to your iPhone and iPad", detail: "The page in front comes up in their app switcher, as Safari's does",
-              more: "And at the end of the Dock on your other Macs. macOS carries the address to devices signed in to your Apple Account with Handoff on, in System Settings › General › AirDrop & Handoff on a Mac. Never a private tab or a space signed out of the others. Pages handed off from your iPhone open here when Search is your default browser.",
+              more: "And at the end of the Dock on your other Macs. macOS carries the address to devices signed in to your Apple Account with Handoff on, in System Settings › General › AirDrop & Handoff on a Mac. Never a private tab. Pages handed off from your iPhone open here when Search is your default browser.",
               keys: ["handoff"], words: ["handoff", "continuity", "iphone", "ipad", "devices", "app switcher", "multitasking"]),
         .init(id: "icloud", group: "browser", icon: "icloud",
-              title: "Sync with iCloud", detail: "Open tabs, pins, spaces, bookmarks and a few settings, with your iPhone",
-              more: "Through your own iCloud, end to end encrypted: Search on your iPhone and your other Macs see this Mac's open tabs (under History and in the address field, as Tabs on Your Other Devices) and share its pins, spaces, bookmarks, search engine and look. Private tabs never go, nor your history, passwords, cookies or sign-ins. Nothing leaves this Mac until you turn it on. Not together with Sync with your other Macs.",
+              title: "Sync with iCloud", detail: "Open tabs, pins, bookmarks and a few settings, with your iPhone",
+              more: "Through your own iCloud, end to end encrypted: Search on your iPhone and your other Macs see this Mac's open tabs (under History and in the address field, as Tabs on Your Other Devices) and share its pins, bookmarks, search engine and look. Private tabs never go, nor your history, passwords, cookies or sign-ins. Nothing leaves this Mac until you turn it on. Not together with Sync with your other Macs.",
               keys: ["icloud.sync"], words: ["sync", "icloud", "iphone", "ios", "cloudkit", "other devices", "devices", "icloud tabs", "tabs on other devices", "handoff"]),
         .init(id: "icloud.erase", group: "browser", icon: "trash",
               title: "Delete Search's data from iCloud", detail: "For every device. What is on each one stays, and sync turns off here",
@@ -220,13 +219,13 @@ enum SettingsIndex {
               keys: ["address.width"], words: ["address bar", "url", "width", "wide"], parent: "address.shown"),
         .init(id: "window.glass", group: "window", icon: "square.on.square.intersection.dashed",
               title: "Glass", detail: "What is behind the window shows through the tabs and the frame, blurred",
-              more: "As in Arc and Zen. The glass takes the space's colour; how see-through it is, and its grain, are in the space's menu › Colour…. Not in full screen.",
+              more: "As in Arc and Zen. The glass takes the window's colour from Settings › Themes; how see-through it is, and its grain, are here. Not in full screen.",
               keys: ["window.glass"], words: ["glass", "translucent", "transparent", "blur", "frosted", "vibrancy", "see through", "arc", "zen"]),
         .init(id: "window.glass.style", group: "window", icon: "drop",
               title: "Glass style", detail: "Frosted, or the Mac's Liquid Glass",
               keys: ["window.glass.style"], words: ["liquid glass", "liquid", "frosted", "glass", "tahoe"], parent: "window.glass"),
         .init(id: "window.glass.clear", group: "window", icon: "circle.lefthalf.filled",
-              title: "Transparency", detail: "From the space's colour on the glass to clear glass",
+              title: "Transparency", detail: "From the window's colour on the glass to clear glass",
               keys: ["window.glass.clear"], words: ["transparency", "tint", "opacity", "glass"], parent: "window.glass"),
         .init(id: "window.glass.grain", group: "window", icon: "circle.dotted",
               title: "Grain", detail: "A still noise over the glass",
@@ -244,7 +243,7 @@ enum SettingsIndex {
               keys: ["sidebar.foldButton"], words: ["hide sidebar", "collapse", "toggle", "fold", "traffic lights", "safari", "arc"], parent: "tabs.layout"),
         .init(id: "sidebar.narrowIcons", group: "tablook", icon: "rectangle.leftthird.inset.filled",
               title: "Narrow to icons", detail: "Pulled narrower than 200 points, the sidebar becomes a strip of site icons and its buttons",
-              more: "The strip keeps the space's colour and shows letters or icons as the tabs do. Back, forward and reload stay on their keys. Pull its edge back out, or press ⌘S, for titles again.",
+              more: "The strip keeps the window's colour and shows letters or icons as the tabs do. Back, forward and reload stay on their keys. Pull its edge back out, or press ⌘S, for titles again.",
               keys: ["sidebar.narrowIcons"], words: ["collapse", "collapsed", "compact", "narrow", "thin", "strip", "icons only", "auto"], parent: "tabs.layout"),
         .init(id: "sidebar.player", group: "tablook", icon: "play.circle",
               title: "What's playing in other tabs", detail: "At the foot of the sidebar, to pause it, play it again or go to it",
@@ -271,7 +270,7 @@ enum SettingsIndex {
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
               keys: [Motion.lightKey], words: ["battery", "animations", "motion"]),
         .init(id: "motion.instant", group: "motion", icon: "bolt",
-              title: "Reduce animations", detail: "Switching tabs, spaces and panels happens at once, without sliding or fading",
+              title: "Reduce animations", detail: "Switching tabs and panels happens at once, without sliding or fading",
               more: "For Search alone, whatever Reduce Motion in System Settings says. The tab ⌘1–⌘9 picks is lit at once, and the page shows at once.",
               keys: [Motion.instantKey], words: ["animations", "motion", "instant", "faster", "reduce motion", "transitions"]),
 
@@ -289,7 +288,7 @@ enum SettingsIndex {
               keys: ["tabs.newAfterLast"], words: ["last tab"]),
         .init(id: "tabs.closeGoesBack", group: "newtabs", icon: "arrow.uturn.backward",
               title: "Closing a tab goes back to the one before", detail: "Otherwise you land on the tab beside it",
-              more: "The tab you viewed last in this space, as ⌃Tab would take you. The other half of a Split View stays first.",
+              more: "The tab you viewed last, as ⌃Tab would take you. The other half of a Split View stays first.",
               keys: ["tabs.closeGoesBack"], words: ["close", "previous tab", "recent"]),
         .init(id: "tabs.swipeBackCloses", group: "newtabs", icon: "xmark.circle",
               title: "Swipe back closes a tab a link opened", detail: "Back to the tab you were on, as Safari and Arc do",
@@ -338,7 +337,7 @@ enum SettingsIndex {
               more: "Look-alike names in other alphabets show as they really are, and plain http says Not secure. Off, the tab you're on still says so for those two.",
               keys: ["tabs.address"], words: ["url", "domain", "security", "address bar"]),
         .init(id: "tabs.mirror", group: "tabwindows", icon: "rectangle.on.rectangle",
-              title: "Same tabs in every window", detail: "Each window lists the same open tabs in a space, as it lists the same pins",
+              title: "Same tabs in every window", detail: "Each window lists the same open tabs, as it lists the same pins",
               more: "A tab opened, closed, moved, grouped or renamed in one window is so in the others. Each window shows the page on its own, so the same tab can be open in two windows at once. Private tabs stay in their window, and closing a window leaves its tabs in the others.",
               keys: ["tabs.mirror"], words: ["mirror", "arc", "sync tabs", "shared tabs", "every window", "all windows", "same tabs", "windows"]),
 
@@ -410,51 +409,14 @@ enum SettingsIndex {
               more: "Animations and scrolling in pages at up to 120 frames a second, instead of 60 as in Safari.",
               keys: ["pages.120.mode", "pages.120"], words: ["promotion", "frame rate", "fps", "smooth", "120"]),
 
-        // Spaces & Pins
+        // Pins
         .init(id: "arc.setup", group: "arc", icon: "wand.and.stars",
-              title: "Set Up Like Arc", detail: "Tabs on the left, spaces, pinned rows and pins that keep their site",
+              title: "Set Up Like Arc", detail: "Tabs on the left, pinned rows and pins that keep their site",
               more: "Also turns on New tab in a floating field. Undo puts back what you had.",
               words: ["arc", "the browser company"]),
         .init(id: "arc.import", group: "arc", icon: "square.and.arrow.down",
-              title: "Bring Arc's spaces and pins over", detail: "Your spaces, pinned tabs and folders, read from Arc on this Mac",
+              title: "Bring Arc's pins over", detail: "Your favourites, pinned tabs and folders, read from Arc on this Mac",
               words: ["arc", "import"]),
-        .init(id: "spaces", group: "spaces", icon: "square.stack.3d.up",
-              title: "Spaces", detail: "Separate sets of tabs, switched with ⌃1–⌃9 or a swipe",
-              more: "Each space can be signed in where the others are or start afresh. Mission Control's own Control-1 to Control-9, if you turned them on, take those keys first.",
-              keys: ["spaces"], words: ["workspaces", "profiles"]),
-        .init(id: "spaces.commandNumbers", group: "spaces", icon: "command",
-              title: "⌘1–⌘9 switch spaces", detail: "Tabs move to ⌃1–⌃9, as in Arc",
-              more: "The two sets of keys swap places. A space's key you changed in Keyboard & Mouse › Shortcuts stays as you set it. Mission Control's own Control-1 to Control-9, if you turned them on, take those keys first.",
-              keys: [Preferences.spacesOnCommandKey],
-              words: ["arc", "cmd", "command", "control", "ctrl", "spaces", "numbers", "digits", "shortcut", "keys", "⌘1", "⌃1", "switch spaces", "swap"],
-              parent: "spaces"),
-        .init(id: "spaces.buttons", group: "spaces", icon: "square.grid.3x1.below.line.grid.1x2",
-              title: "One button per space", detail: "Every space beside the bookmarks, one click away",
-              more: "In place of the space's single icon and its menu. A click on the space you are in opens that menu. At the foot of the column the buttons are centred.",
-              keys: [Preferences.spaceButtonsKey],
-              words: ["arc", "spaces", "buttons", "icons", "switcher", "dot", "footer", "bottom"],
-              parent: "spaces"),
-        .init(id: "profiles", group: "spaces", icon: "person.2",
-              title: "Profiles", detail: "Spaces with their own sign-ins, history and bookmarks",
-              more: "In windows of their own, unless Profiles in one window is on. Extensions, passwords and settings are shared.",
-              words: ["profile", "accounts", "work", "personal"]),
-        .init(id: "profiles.oneWindow", group: "spaces", icon: "macwindow",
-              title: "Profiles in one window", detail: "Every profile's spaces in one window, switched in place",
-              more: "Choosing a space of another profile brings that profile's window into this one's place, so each keeps its own sign-ins. Closing it closes them all.",
-              keys: ["profiles.oneWindow"], words: ["arc", "profiles", "single window", "merge"], parent: "profiles"),
-        .init(id: "spaces.links", group: "spaces", icon: "arrow.triangle.branch",
-              title: "Send links to a space", detail: "Links to sites you choose open in their space, with its sign-ins",
-              more: "Links from other apps, and links a page in another space opens in a new tab. A site includes its subdomains. Typed addresses, links followed in their own tab and private tabs stay where they are. Right-click a tab to send its site to the space it is in.",
-              keys: [SpaceRoutes.key, SpaceRoutes.rulesKey],
-              words: ["arc", "air traffic control", "route", "routing", "rules", "domain", "site", "open in space", "default space", "links from other apps"],
-              parent: "spaces"),
-        .init(id: "links.ask", group: "spaces", icon: "questionmark.square.dashed",
-              title: "Ask which space for links from other apps",
-              detail: "Choose the space a link from another app opens in, before it loads",
-              more: "A small panel lists every space: a number key opens the link in that space, and Return in the marked one. With Send links to a space on, Always saves a rule for its site.",
-              keys: ["links.ask", "links.ask.last"],
-              words: ["choose space", "which space", "links from other apps", "panel", "ask"],
-              parent: "spaces"),
         .init(id: "pins.keep", group: "pins", icon: "pin.circle",
               title: "Pins keep their site", detail: "Links elsewhere open over the pin, and ⌘W takes it back home",
               more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at.",
@@ -613,12 +575,6 @@ enum SettingsIndex {
         .init(id: "note.sitesearch", group: "search", icon: "arrow.right.to.line.compact",
               title: "Search a site from the address field", detail: "Always there: type red, then Tab, and search Reddit",
               keys: ["search.sites"], words: ["tab to search", "site search"], kind: .note, findOnly: true),
-        .init(id: "note.spaceGradient", group: "spaces", icon: "paintpalette",
-              title: "A space's colour or gradient", detail: "Always there with Spaces: the space's menu › Colour…, one colour or a gradient",
-              keys: ["spaces.gradient"], words: ["gradient", "theme", "colour", "color", "tint", "grain", "arc"], kind: .note, findOnly: true),
-        .init(id: "note.sharedpins", group: "pins", icon: "pin",
-              title: "Pins in every space", detail: "Always there with Spaces: right-click a pin › Keep in Every Space",
-              keys: ["pins.shared"], words: ["favorites", "shared pins"], kind: .note, findOnly: true),
         .init(id: "note.pinback", group: "pins", icon: "arrow.uturn.backward",
               title: "A pin's number again goes back", detail: "Always there: press a pin's ⌘ number again to go back",
               keys: ["pins.numberBack"], words: ["cmd 1", "toggle"], kind: .note, findOnly: true),
@@ -678,13 +634,10 @@ enum SettingsIndex {
         case "address.width": return prefs.addressLine && !prefs.sidebar
         case "tabs.liquid": return LiquidTab.available && !(prefs.sidebar && prefs.sideIcons)
         case "window.glass.style": return prefs.glass && GlassStyle.liquidAvailable
-        // With spaces on they are in the space's Colour…, beside its colour.
-        case "window.glass.clear", "window.glass.grain": return prefs.glass && !prefs.usesSpaces
+        case "window.glass.clear", "window.glass.grain": return prefs.glass
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
-        case "profiles.oneWindow": return Profiles.shared.several
-        case "spaces.links", "links.ask", "spaces.buttons": return prefs.usesSpaces
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent", "newtab.arc": return prefs.floatingNewTab
         case "links.little.tabs": return prefs.littleLinks
@@ -705,11 +658,9 @@ enum SettingsIndex {
         case "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return "Only with titles in the column"
         case "tabs.liquid": return LiquidTab.available ? "Only with titles in the column, or the tabs across the top" : "Liquid Glass needs macOS 26"
         case "window.glass.style": return GlassStyle.liquidAvailable ? "Only with Glass on" : "Liquid Glass needs macOS 26"
-        case "window.glass.clear", "window.glass.grain": return "With spaces on, in the space's menu › Colour…"
+        case "window.glass.clear", "window.glass.grain": return "Only with Glass on"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "icloud.erase": return "Only while Sync with iCloud is on"
-        case "profiles.oneWindow": return "Only with more than one profile"
-        case "spaces.links", "links.ask", "spaces.buttons": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent", "newtab.arc": return "Only with the new tab in a floating field"
@@ -826,18 +777,17 @@ extension Preferences {
     /// Undo can put it back.
     struct ArcSetup {
         var layout: TabsLayout
-        var spaces: Bool
         var rows: Bool
         var keep: (home: Bool, peek: Bool)
         var floating: Bool
     }
 
     var arcSnapshot: ArcSetup {
-        ArcSetup(layout: tabsLayout, spaces: usesSpaces, rows: listsPins, keep: (pinsGoHome, pinsPeek), floating: floatingNewTab)
+        ArcSetup(layout: tabsLayout, rows: listsPins, keep: (pinsGoHome, pinsPeek), floating: floatingNewTab)
     }
 
     var looksLikeArc: Bool {
-        tabsLayout == .left && usesSpaces && listsPins && pinsGoHome && pinsPeek && floatingNewTab
+        tabsLayout == .left && listsPins && pinsGoHome && pinsPeek && floatingNewTab
     }
 
     /// Turns Arc's way on and says what changed.
@@ -845,7 +795,6 @@ extension Preferences {
     func setUpLikeArc() -> [String] {
         var changed: [String] = []
         if tabsLayout != .left { tabsLayout = .left; changed.append("tabs on the left") }
-        if !usesSpaces { usesSpaces = true; changed.append("Spaces") }
         if !listsPins { listsPins = true; changed.append("pinned rows") }
         if !(pinsGoHome && pinsPeek) { pinsKeepSite = true; changed.append("pins keep their site") }
         if !floatingNewTab { floatingNewTab = true; changed.append("the floating new tab") }
@@ -854,7 +803,6 @@ extension Preferences {
 
     func restore(_ before: ArcSetup) {
         tabsLayout = before.layout
-        usesSpaces = before.spaces
         listsPins = before.rows
         pinsGoHome = before.keep.home
         pinsPeek = before.keep.peek
@@ -882,14 +830,13 @@ extension SettingsIndex {
             "links.show": prefs.showsLinks,
             "float.flicks": prefs.floatFlicks,
             "arc": prefs.looksLikeArc,
-            "profiles.oneWindow": prefs.profilesInOneWindow,
             "tabs.mirror": prefs.mirrorsTabs,
             "sidebar.slides": prefs.slidesColumn,
             "always": [
                 "splitView": prefs.splitView, "tabs.groups": prefs.usesTabGroups,
                 "panel.sites": prefs.sitesInPanel, "translate": PageTranslator.enabled,
                 "tabs.keepAwake": prefs.keepsSitesAwake, "search.sites": prefs.searchesSites,
-                "pins.shared": prefs.sharesPins, "pins.numberBack": prefs.pinNumberGoesBack,
+                "pins.numberBack": prefs.pinNumberGoesBack,
                 "switcher.keys": prefs.switcherKeys,
             ],
         ]
@@ -920,9 +867,6 @@ extension SettingsIndex {
         case "sidebar.slides":
             guard let on = value as? Bool else { return false }
             prefs.slidesColumn = on
-        case "profiles.oneWindow":
-            guard let on = value as? Bool else { return false }
-            prefs.profilesInOneWindow = on
         case "links.peek":
             guard let choice = (value as? String).flatMap(PeekChoice.init) else { return false }
             prefs.peekChoice = choice

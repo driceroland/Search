@@ -140,26 +140,6 @@ def held_then_elsewhere(t):
     sv.quit()
 
 
-def parked(t):
-    """Asked from a tab whose space was left a moment after the click: held
-    for it, not shown over the other space, asked when you're back."""
-    _, top = start("/top?later", spaces=True)
-    sv.cmd({"do": "space", "action": "new", "name": "Other"}); time.sleep(1)
-    sv.cmd({"do": "space", "action": "go", "index": 1}); time.sleep(0.8)
-    sv.cmd({"do": "select", "id": top}); time.sleep(0.5)
-    sv.cmd({"do": "tap", "id": top, "selector": "#f"})
-    sv.cmd({"do": "space", "action": "go", "index": 2})
-    time.sleep(2)
-    t.ok("parked: the tab is in the space left", top not in sv.order(sv.sp("state")), sv.order(sv.sp("state")))
-    t.ok("parked: not asked over the other space", asking() == "", asking())
-    sv.cmd({"do": "space", "action": "go", "index": 1})
-    asked = wait_asking(4)
-    t.ok("parked: asked over its own page when its space is back", asked == "localhost cookies", asked)
-    time.sleep(0.7)
-    if asked: sv.cmd({"do": "answer", "with": "no"})
-    sv.quit()
-
-
 def main():
     t = sv.T()
     try:
@@ -172,7 +152,6 @@ def main():
         t.ok("refused: the request settles as refused, no cookies", after and after["step"] == "refused" and not after["has"]
              and "firstparty" not in after.get("cookie", ""), after)
         held_then_elsewhere(t)
-        parked(t)
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)

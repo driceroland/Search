@@ -6442,9 +6442,7 @@ enum ExtensionShims {
             "webSQL": [WKWebsiteDataTypeWebSQLDatabases], "fileSystems": [WKWebsiteDataTypeFileSystem],
         ]
         for (key, on) in what where on { types.formUnion(map[key] ?? []) }
-        // The window's profile's sites: its spaces' stores, never another
-        // profile's (see Profiles.swift).
-        let stores = Spaces.stores(of: browser.profileID)
+        let stores = [Store.websites]
         for store in stores where !types.isEmpty {
             if let origins {
                 let records = await store.dataRecords(ofTypes: types)
@@ -6656,10 +6654,10 @@ enum ExtensionAuth {
 
         func start(_ url: URL, limit: TimeInterval) {
             let config = WKWebViewConfiguration()
-            // The front space's sign-ins, as the tab an interactive flow
-            // opens would have; no extension's scripts, and the same user
-            // agent as every other view (see Web.userAgentName).
-            config.websiteDataStore = Spaces.store(for: Spaces.current)
+            // The browser's sign-ins, as the tab an interactive flow opens
+            // would have; no extension's scripts, and the same user agent as
+            // every other view (see Web.userAgentName).
+            config.websiteDataStore = Store.websites
             config.processPool = Web.pool
             config.applicationNameForUserAgent = Web.userAgentName
             config.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -6834,7 +6832,7 @@ enum ExtensionAuth {
 
     private static func exists(_ id: Tab.ID) -> Bool {
         Browsers.all.contains { browser in
-            browser.tabs.contains { $0.id == id } || browser.parked.values.contains { $0.tabs.contains { $0.id == id } }
+            browser.tabs.contains { $0.id == id }
         }
     }
 

@@ -28,8 +28,7 @@ try:
     (folder / "manifest.json").write_text(json.dumps({
         "manifest_version": 3, "name": "Pin Swap", "version": "1.0", "options_page": "options.html"}))
     (folder / "options.html").write_text("<!doctype html><title>options</title><p>options")
-    # Pins every space shows need spaces on (Preferences.showsSharedPins).
-    sv.setup(spaces=True, **{"pins.shared": True}); sv.launch()
+    sv.setup(); sv.launch()
     sv.cmd({"do": "ext-folder", "path": str(folder), "yes": True})
     base = ext = ""
     for _ in range(100):
@@ -37,23 +36,20 @@ try:
         if loaded: base, ext = loaded[0]["base"], loaded[0]["id"]; break
         time.sleep(0.2)
     t.ok("the extension loads", base, base)
-    space = sv.sp("state")["spaceID"]
     # The bench's `go` takes only a website, so the pin starts on the
     # extension's page and the swap is to the web and back.
     home = base.rstrip("/") + "/options.html"
     m = sv.cmd({"do": "ext-page", "id": ext, "path": "options.html"})["id"]; time.sleep(1)
-    sv.cmd({"do": "pin", "id": m})
-    sv.cmd({"do": "pin", "id": m, "everywhere": True}); sv.sp("save")
-    before = pins()["shared"]
-    t.ok("pinned at the extension's page, in every space", [p["home"] for p in before] == [home], before)
+    sv.cmd({"do": "pin", "id": m}); sv.sp("save")
+    before = pins()[sv.FIRST_SPACE]
+    t.ok("pinned at the extension's page", [p["home"] for p in before] == [home], before)
 
     def same(when):
         st = sv.sp("state"); tab = [x for x in st["tabs"] if x["id"] in st["pins"]]
         sv.sp("save"); after = pins()
-        t.ok(f"{when}: the same pin id and home", [(p["id"], p["home"]) for p in after["shared"]]
+        t.ok(f"{when}: the same pin id and home", [(p["id"], p["home"]) for p in after[sv.FIRST_SPACE]]
              == [(before[0]["id"], home)], after)
-        t.ok(f"{when}: still in every space", [x["id"] for x in tab] == st["everywhere"]
-             and not after.get(space), (st["everywhere"], after.get(space)))
+        t.ok(f"{when}: still one pin", len(tab) == 1, tab)
         return tab
 
     sv.cmd({"do": "go", "id": m, "url": f"{sv.BASE}/web"}); time.sleep(1.5)

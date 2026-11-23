@@ -253,7 +253,7 @@ final class RowCarryTests: XCTestCase {
         try await settle()
         TabDrag.testPointer = NSPoint(x: window.frame.midX, y: window.frame.midY)
         defer { TabDrag.testPointer = nil }
-        let x = Metrics.lights + (browser.prefs.usesSpaces ? SpaceDot.width + Metrics.tabGap : 0) + Metrics.pinWidth / 2
+        let x = Metrics.lights + Metrics.pinWidth / 2
         try await send(.leftMouseDown, at: NSPoint(x: x, y: Metrics.strip / 2), in: window)
         for y in stride(from: Metrics.strip / 2 - 6, through: -40, by: -6) {
             try await send(.leftMouseDragged, at: NSPoint(x: x, y: y), in: window)

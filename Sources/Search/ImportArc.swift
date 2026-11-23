@@ -22,20 +22,12 @@ struct ArcSidebar: Equatable {
     indirect enum Node: Equatable { case item(Item), folder(Folder) }
     struct Space: Equatable {
         var name: String
-        /// Arc's own, kept for the day it is wanted as it was.
-        var emoji: String?
-        /// One of Spaces.icons, from Arc.symbol(emoji:arcIcon:name:).
-        var symbol: String
         /// The Chromium profile folder the space signs in with: "Default",
         /// or another's ("Profile 1"), which is a space with sign-ins of
         /// its own.
         var profile: String
         /// In Arc's order, folders kept as folders.
         var pinned: [Node]
-        /// One of Spaces.colours, and a gradient over it, for a browser
-        /// that keeps one (Zen's space themes); Arc's spaces come without.
-        var colour = 0
-        var gradient: SpaceGradient? = nil
     }
     /// The icons at the top, shared by every space of their profile.
     var favorites: [Item]
@@ -52,26 +44,6 @@ enum Arc {
     /// made-up one from its own folder.
     static var file: URL {
         Chromium.base.appendingPathComponent("Arc/StorableSidebar.json")
-    }
-
-    /// The names Arc shows for its profiles, by folder ("Profile 1" →
-    /// "Raycast"), from Chromium's Local State: only the names, nothing
-    /// else read from it. Empty when it can't be read.
-    static func profileNames() -> [String: String] {
-        let state = Chromium.base.appendingPathComponent("Arc/User Data/Local State")
-        guard let size = (try? FileManager.default.attributesOfItem(atPath: state.path))?[.size] as? NSNumber,
-              size.intValue <= 16 << 20,
-              let data = try? Data(contentsOf: state),
-              let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let cache = (top["profile"] as? [String: Any])?["info_cache"] as? [String: Any]
-        else { return [:] }
-        var names: [String: String] = [:]
-        for (folder, info) in cache {
-            guard let name = (info as? [String: Any])?["name"] as? String else { continue }
-            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { names[folder] = String(trimmed.prefix(60)) }
-        }
-        return names
     }
 
     /// Arc's sidebar for one profile ("Default", "Profile 1"), or for every
@@ -132,12 +104,9 @@ enum Arc {
             let profile = profileName(space["profile"])
             guard inProfile(profile) else { continue }
             let name = named(space["title"] as? String) ?? "Space"
-            let iconType = (space["customInfo"] as? [String: Any])?["iconType"] as? [String: Any]
-            let emoji = iconType?["emoji_v2"] as? String
-            let arcIcon = iconType?["icon"] as? String
             let pinned = container("pinned", in: space["newContainerIDs"] as? [Any])
                 ?? container("pinned", in: space["containerIDs"] as? [Any])
-            spaces.append(.init(name: name, emoji: emoji, symbol: symbol(emoji: emoji, arcIcon: arcIcon, name: name), profile: profile,
+            spaces.append(.init(name: name, profile: profile,
                                 pinned: pinned.map { nodes(under: $0, depth: 0) } ?? []))
         }
 
@@ -200,116 +169,6 @@ enum Arc {
             }
         }
     }
-
-    // MARK: - the space's picture
-
-    /// Arc's emoji as the nearest of Search's space pictures (Spaces.icons),
-    /// then the space's name, then a briefcase. The one table for both.
-    static func symbol(emoji: String?, arcIcon: String? = nil, zenIcon: String? = nil, name: String) -> String {
-        // One of Arc's own icons, {"icon": "bulb"}, in place of an emoji,
-        // or one of Zen's, by the name of its picture ("game-controller").
-        if let arcIcon, let symbol = byArcIcon[arcIcon.lowercased()] { return symbol }
-        if let zenIcon, let symbol = byZenIcon[zenIcon.lowercased()] { return symbol }
-        if let emoji {
-            // The same emoji with or without the mark asking for its
-            // coloured form (U+FE0F), which Arc writes on some.
-            let bare = String(String.UnicodeScalarView(emoji.unicodeScalars.filter { $0.value != 0xFE0F }))
-            for (symbol, emojis) in byEmoji where emojis.contains(bare) { return symbol }
-        }
-        // Whole words, or the start of one for the longer keys: "ai" is a
-        // word here, not the middle of "maison".
-        let words = name.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
-        for (symbol, keys) in byWord
-        where keys.contains(where: { key in words.contains { $0 == key || (key.count >= 4 && $0.hasPrefix(key)) } }) {
-            return symbol
-        }
-        return "briefcase"
-    }
-
-    /// Arc's built-in space icons, by the name its sidebar file gives them
-    /// (#832). Those not here fall back to the space's name.
-    private static let byArcIcon: [String: String] = [
-        "construction": "chevron.left.forwardslash.chevron.right",
-        "people": "heart",
-        "star": "sparkles",
-        "bulb": "lightbulb",
-        "leaf": "leaf",
-        "pizza": "cup.and.saucer",
-    ]
-
-    /// Zen's space icons, by the name of the picture it draws
-    /// (chrome://browser/skin/zen-icons/selectable/<name>.svg).
-    private static let byZenIcon: [String: String] = {
-        var out: [String: String] = [:]
-        let groups: [(String, [String])] = [
-            ("airplane", ["airplane", "globe", "globe-1", "map", "location", "navigate", "planet"]),
-            ("dumbbell", ["american-football", "baseball", "weight"]),
-            ("cart", ["basket", "card", "wallet", "coins", "logo-usd", "shirt", "present"]),
-            ("house", ["bed"]),
-            ("book", ["book", "bookmark", "page", "logo-rss"]),
-            ("briefcase", ["briefcase", "inbox", "mail", "stats-chart", "time", "call", "chat"]),
-            ("paintpalette", ["brush", "palette", "shapes"]),
-            ("camera", ["image"]),
-            ("chevron.left.forwardslash.chevron.right", ["bug", "code", "logo-github", "extension-puzzle", "build", "construct"]),
-            ("terminal", ["terminal"]),
-            ("cup.and.saucer", ["cafe", "cutlery", "fast-food", "pizza", "egg", "ice-cream"]),
-            ("gamecontroller", ["game-controller"]),
-            ("heart", ["heart", "people"]),
-            ("leaf", ["leaf", "water", "paw", "fish"]),
-            ("lightbulb", ["lightning", "flame"]),
-            ("brain.head.profile", ["flask", "nuclear"]),
-            ("graduationcap", ["school"]),
-            ("music.note", ["music", "volume-high"]),
-            ("film", ["video", "ticket"]),
-            ("sparkles", ["star", "star-1", "tada", "rocket"]),
-            ("beach.umbrella", ["sun"]),
-        ]
-        for (symbol, names) in groups { for name in names { out[name] = symbol } }
-        return out
-    }()
-
-    private static let byEmoji: [(String, [String])] = [
-        ("briefcase", ["💼", "👔", "📊", "📈", "🗂"]),
-        ("building.2", ["🏢", "🏛", "🏙"]),
-        ("house", ["🏠", "🏡", "🛋"]),
-        ("desktopcomputer", ["🖥"]),
-        ("laptopcomputer", ["💻"]),
-        ("terminal", ["⌨", "🧑‍💻", "👨‍💻", "👩‍💻"]),
-        ("chevron.left.forwardslash.chevron.right", ["🧑‍🔧", "🛠", "🔧", "⚙"]),
-        ("sparkles", ["✨", "🤖", "🪄", "⭐", "🌟"]),
-        ("brain.head.profile", ["🧠"]),
-        ("lightbulb", ["💡"]),
-        ("gamecontroller", ["🎮", "🕹", "👾"]),
-        ("beach.umbrella", ["🏖", "🌴", "⛱", "🏝"]),
-        ("cup.and.saucer", ["☕", "🍵", "🫖"]),
-        ("music.note", ["🎵", "🎶", "🎧", "🎸", "🎹"]),
-        ("film", ["🎬", "🍿", "📺", "🎥"]),
-        ("paintpalette", ["🎨", "🖌", "🖍", "✏"]),
-        ("camera", ["📷", "📸"]),
-        ("book", ["📚", "📖", "📕", "📘", "📰"]),
-        ("graduationcap", ["🎓", "🏫", "✍"]),
-        ("cart", ["🛒", "🛍", "💸", "💰", "💳"]),
-        ("airplane", ["✈", "🧳", "🌍", "🌎", "🌏", "🗺"]),
-        ("dumbbell", ["🏋", "💪", "🏃", "⚽", "🏀"]),
-        ("leaf", ["🌿", "🌱", "🍃", "🦋", "🌸", "🌳"]),
-        ("heart", ["❤", "💖", "💕", "🥰", "😍"]),
-    ]
-
-    private static let byWord: [(String, [String])] = [
-        ("briefcase", ["work", "job", "office", "boulot", "travail", "client"]),
-        ("house", ["home", "perso", "personal", "maison", "family", "famille"]),
-        ("chevron.left.forwardslash.chevron.right", ["code", "dev", "github", "eng"]),
-        ("sparkles", ["ai", "gpt", "claude", "llm"]),
-        ("graduationcap", ["school", "study", "studies", "course", "cours", "uni", "école"]),
-        ("book", ["read", "lecture", "news", "research"]),
-        ("paintpalette", ["design", "art", "creative", "figma"]),
-        ("music.note", ["music", "musique"]),
-        ("gamecontroller", ["game", "gaming", "jeu"]),
-        ("cart", ["shop", "achat", "money", "finance"]),
-        ("airplane", ["travel", "trip", "voyage"]),
-        ("dumbbell", ["sport", "gym", "fitness"]),
-        ("film", ["film", "movie", "video", "watch"]),
-    ]
 }
 
 extension ImportSource {

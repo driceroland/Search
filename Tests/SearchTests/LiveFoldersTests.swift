@@ -158,10 +158,9 @@ final class LiveFoldersTests: XCTestCase {
     }
 
     func testALiveFolderRoundTripsAndAPlainOneIsWrittenAsBefore() throws {
-        let space = UUID()
         let live = liveFolder(), plain = PinFolder(id: UUID(), name: "Work")
-        let data = try XCTUnwrap(PinFolders.encode([space: [live, plain]]))
-        XCTAssertEqual(PinFolders.decode(data), [space: [live, plain]])
+        let data = try XCTUnwrap(PinFolders.encode([live, plain]))
+        XCTAssertEqual(PinFolders.decode(data), [live, plain])
         let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(plain)) as? [String: Any]).keys
         XCTAssertFalse(keys.contains("feed"))
         XCTAssertFalse(keys.contains("items"))

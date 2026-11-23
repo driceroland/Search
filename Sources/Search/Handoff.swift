@@ -6,7 +6,7 @@ import SwiftUI
 // Dock) and opens there in the browser. macOS carries it between devices
 // signed in to the same Apple Account; Search itself sends nothing anywhere.
 // Off unless asked for, since the address does leave this Mac, and never for
-// a private tab, a space signed out of the others, or a page that isn't on
+// a private tab, or a page that isn't on
 // the web.
 //
 // The activity hangs on the window: AppKit makes the main window's current
@@ -49,13 +49,12 @@ struct Handoff: View {
     }
 
     /// The page actually on screen, if it may be offered: a web address, in
-    /// a tab that keeps something and shares it with the profile. Never a
-    /// private tab — one opened from a private one has its store without
-    /// being marked shy, so the store is asked too — and never a space signed
-    /// out of the others, whose pages stay out of everything else.
+    /// a tab that keeps something. Never a private tab — one opened from a
+    /// private one has its store without being marked shy, so the store is
+    /// asked too.
     static func address(of tab: Tab) -> URL? {
         let store = tab.store
-        guard !tab.shy, store.isPersistent, Spaces.owner(of: store) == nil,
+        guard !tab.shy, store.isPersistent,
               let url = tab.committed, web(url)
         else { return nil }
         return url

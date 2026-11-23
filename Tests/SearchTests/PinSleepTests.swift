@@ -26,7 +26,6 @@ final class PinSleepTests: XCTestCase {
 
     override func tearDown() {
         Store.settings.removeObject(forKey: notifying)
-        browser.parked = [:]
         browser.closeAll()
         browser = nil
     }
@@ -43,26 +42,22 @@ final class PinSleepTests: XCTestCase {
         return tab
     }
 
-    private func park(_ tabs: [Tab]) {
-        browser.parked[UUID()] = Parked(tabs: tabs, active: nil)
-    }
-
-    func testPinInTheSpaceOnScreenStaysAwake() {
+    func testPinInTheWindowOnScreenStaysAwake() {
         let here = pin(site)
         browser.prepare(here)
         browser.insert(here, at: browser.tabs.count)
         XCTAssertEqual(browser.awake(because: here), "pinned")
     }
 
-    func testPinInAnotherSpaceMaySleep() {
+    func testPinInAClosedWindowMaySleep() {
         let away = pin(site)
-        park([away])
-        XCTAssertNil(browser.awake(because: away), "Nothing should keep a parked pin awake")
+        browser.shut = true
+        XCTAssertNil(browser.awake(because: away), "Nothing should keep a pin of a closed window awake")
     }
 
     func testPinWhoseSiteMayNotifyStaysAwake() {
         let away = pin(site + "/inbox")
-        park([away])
+        browser.shut = true
         Store.settings.set(true, forKey: notifying)
         XCTAssertTrue(browser.mayNotify(away))
         XCTAssertNotNil(browser.awake(because: away))
@@ -78,28 +73,11 @@ final class PinSleepTests: XCTestCase {
     func testAnotherSitesPermissionDoesNotCount() {
         Store.settings.set(true, forKey: notifying)
         let other = pin("https://elsewhere.example")
-        park([other])
+        browser.shut = true
         XCTAssertNil(browser.awake(because: other))
         let port = pin("https://pinned.example:8443")
-        park([port])
+        browser.shut = true
         XCTAssertNil(browser.awake(because: port), "Another port is another origin")
     }
 
-    func testParkedPinStillKeptAwakeByWhatItIsDoing() {
-        let away = pin(site)
-        away.noisy = true
-        park([away])
-        XCTAssertEqual(browser.awake(because: away), "playing sound")
-    }
-
-    func testAParkedPinGoesToSleep() async throws {
-        let away = pin(site)
-        _ = away.web
-        park([away])
-        let said = await withCheckedContinuation { continuation in
-            browser.sleep(away) { continuation.resume(returning: $0) }
-        }
-        XCTAssertEqual(said, "asleep")
-        XCTAssertTrue(away.asleep)
-    }
 }

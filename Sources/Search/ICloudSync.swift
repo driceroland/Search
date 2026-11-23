@@ -27,11 +27,12 @@ import Combine
 //   - Search's zone deleted (Delete Search's data from iCloud, anywhere):
 //     sync turns off here and says why; nothing is put back.
 //
-// Only the Personal profile syncs: its spaces, each space's own pins, its
-// bookmarks; the pins every space shows (Settings › Spaces & Pins) stay on
-// this Mac. Open tabs go up as one list, every window's of every space,
-// never a private tab, never a pinned one (pins travel as pins). History,
-// passwords, cookies and site data never sync.
+// The pins, their folders and the bookmarks sync, under the record keys
+// the one row has always had (pins.<id>, pinfolders.<id>, with
+// Session.legacyFirstRow). Open tabs go up as one list, every window's,
+// never a private tab, never a pinned one (pins travel as pins). A "spaces"
+// record another device writes is kept and passed through, never applied.
+// History, passwords, cookies and site data never sync.
 //
 // The folder sync (Sync.swift, "Sync with your other Macs") is the other way
 // to do part of this. The two are never on together: each switch is off
@@ -150,7 +151,7 @@ enum ICloudMerge {
 
     /// What a record holds, for passing through what this Mac doesn't know.
     enum Shape {
-        case device, pins, folders, bookmarks, spaces, settings
+        case device, pins, folders, bookmarks, settings
     }
 
     /// The fields each shape's Mac type writes: its own, which it sets or
@@ -161,7 +162,6 @@ enum ICloudMerge {
         .pins: ["id", "letter", "home", "title", "name", "listed", "folder", "pair"],
         .folders: ["id", "name", "parent", "feed"],
         .bookmarks: ["id", "title", "url", "children"],
-        .spaces: ["id", "name", "colour", "icon", "sharesSignIns", "downloads", "profile", "gradient", "strength"],
         .settings: ["engine", "custom", "look"],
     ]
 
@@ -174,7 +174,7 @@ enum ICloudMerge {
 
     /// This Mac's value as it goes up: its own fields as it has them, laid
     /// over the last version written or read, so fields it doesn't know
-    /// stay as they were. A pin, a bookmark or a space is matched by id;
+    /// stay as they were. A pin or a bookmark is matched by id;
     /// a bookmark wherever it now is in the tree.
     static func outgoing<T: Encodable>(_ value: T, over last: Data?, shape: Shape) -> Data? {
         guard let data = encode(value) else { return nil }
@@ -203,7 +203,7 @@ enum ICloudMerge {
         switch shape {
         case .settings:
             merged = keep(mine as? [String: Any] ?? [:], before as? [String: Any])
-        case .pins, .folders, .spaces, .bookmarks:
+        case .pins, .folders, .bookmarks:
             let old = byID(before)
             func each(_ nodes: [[String: Any]]) -> [[String: Any]] {
                 nodes.map { node in
@@ -262,15 +262,11 @@ enum ICloudMerge {
         return theirs + missing(ours)
     }
 
-    /// Joining: iCloud's spaces, then ours it doesn't have.
-    static func union(spaces theirs: [Space], _ ours: [Space]) -> [Space] {
-        theirs + ours.filter { mine in !theirs.contains { $0.id == mine.id } }
-    }
-
     // MARK: pin folders
 
-    /// The record of a space's pin folders: pinfolders.<space>.
-    static func foldersKey(_ space: UUID) -> String { "pinfolders." + space.uuidString }
+    /// The one row's records: its pins, and its pin folders.
+    static let pinsKey = "pins." + Session.legacyFirstRow
+    static let foldersKey = "pinfolders." + Session.legacyFirstRow
 
     /// A pin folder as it goes up: what it is and where, never how this
     /// Mac shows it. Whether it is folded stays on each Mac, as a tab
@@ -301,35 +297,6 @@ enum ICloudMerge {
             return folder
         }
         if joining { out += local.filter { mine in !theirs.contains { $0.id == mine.id } } }
-        return out
-    }
-
-    /// A space as it goes up: nothing only this Mac's (its downloads folder)
-    /// and no profile (only Personal's go).
-    static func forCloud(_ space: Space) -> Space {
-        var space = space
-        space.downloads = nil
-        space.profile = nil
-        return space
-    }
-
-    /// The spaces iCloud has, made this Mac's: each one's downloads folder,
-    /// and whether it has sign-ins of its own (fixed once it is made: a
-    /// store can't change under its open tabs), kept from here; the first
-    /// space never taken away.
-    static func adopt(spaces theirs: [Space], local: [Space]) -> [Space] {
-        var out = theirs.map { space -> Space in
-            var space = forCloud(space)
-            if let mine = local.first(where: { $0.id == space.id }) {
-                space.downloads = mine.downloads
-                space.sharesSignIns = mine.sharesSignIns
-            }
-            return space
-        }
-        // Unless it was deleted here, and Personal's home is another space.
-        if !out.contains(where: \.isFirst), Spaces.home(of: Profile.personalID) == Space.firstID {
-            out.insert(local.first(where: \.isFirst) ?? Space.first(), at: 0)
-        }
         return out
     }
 
@@ -384,17 +351,13 @@ protocol ICloudEngine: AnyObject {
 protocol ICloudLocal: AnyObject {
     var deviceName: String { get }
     func openTabs() -> [DeviceTabs.Page]
-    func spaces() -> [Space]
-    /// `removing`: spaces here and not in `spaces` are deleted, as Delete
-    /// Space does.
-    func adopt(spaces: [Space], removing: Bool)
-    func pins(_ space: UUID) -> [PinDef]
-    func adopt(pins: [PinDef], space: UUID)
-    /// A space's pin folders (PinFolders.swift), kept whether or not this
-    /// Mac draws them: with Folders in pinned rows off they wait for the
+    func pins() -> [PinDef]
+    func adopt(pins: [PinDef])
+    /// The pin folders (PinFolders.swift), kept whether or not this Mac
+    /// draws them: with Folders in pinned rows off they wait for the
     /// switch, as the folders this Mac made itself do.
-    func pinFolders(_ space: UUID) -> [PinFolder]
-    func adopt(pinFolders: [PinFolder], space: UUID)
+    func pinFolders() -> [PinFolder]
+    func adopt(pinFolders: [PinFolder])
     func bookmarks() -> [Bookmark]
     func adopt(bookmarks: [Bookmark])
     func settings() -> SharedSettings
@@ -560,7 +523,7 @@ final class ICloudSync: ObservableObject {
     private func begin() {
         engine = makeEngine(self, ledger.state)
         let poke: (Notification) -> Void = { [weak self] _ in self?.schedule() }
-        for name in [Spaces.changed, Pins.changed, Bookmarks.saved] {
+        for name in [Pins.changed, Bookmarks.saved] {
             NotificationCenter.default.publisher(for: name).sink(receiveValue: poke).store(in: &bag)
         }
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
@@ -657,10 +620,9 @@ final class ICloudSync: ObservableObject {
         publish()
     }
 
-    /// Spaces first, so pins have their space; then the folders, so pins
-    /// land in theirs at once.
+    /// The folders first, so pins land in theirs at once.
     private func order(_ key: String) -> Int {
-        key == "spaces" ? 0 : key.hasPrefix("pinfolders.") ? 1 : key.hasPrefix("pins.") ? 2 : 3
+        key.hasPrefix("pinfolders.") ? 1 : key.hasPrefix("pins.") ? 2 : 3
     }
 
     /// A ledger kept by a Search from before pinfolders records (1.0.16):
@@ -693,20 +655,17 @@ final class ICloudSync: ObservableObject {
            ledger.offer(ledger.deviceKey, data, now: now) {
             due.append(ledger.deviceKey)
         }
-        let spaces = local.spaces()
         func put<T: Encodable>(_ key: String, _ value: T, _ shape: ICloudMerge.Shape) {
             if let data = ICloudMerge.outgoing(value, over: ledger.values[key], shape: shape),
                ledger.offer(key, data, now: now) { due.append(key) }
         }
-        put("spaces", spaces.map(ICloudMerge.forCloud), .spaces)
-        for space in spaces {
-            // The folders before the pins, as they are applied. A space
-            // that never had one writes no record for it.
-            let folders = local.pinFolders(space.id)
-            let key = ICloudMerge.foldersKey(space.id)
-            if !folders.isEmpty || ledger.values[key] != nil { put(key, folders.map(ICloudMerge.forCloud), .folders) }
-            put("pins." + space.id.uuidString, local.pins(space.id), .pins)
+        // The folders before the pins, as they are applied. Never having
+        // had one, no record is written for them.
+        let folders = local.pinFolders()
+        if !folders.isEmpty || ledger.values[ICloudMerge.foldersKey] != nil {
+            put(ICloudMerge.foldersKey, folders.map(ICloudMerge.forCloud), .folders)
         }
+        put(ICloudMerge.pinsKey, local.pins(), .pins)
         put("bookmarks", local.bookmarks(), .bookmarks)
         put("settings", local.settings(), .settings)
         guard !due.isEmpty else { return }
@@ -753,8 +712,6 @@ final class ICloudSync: ObservableObject {
             readable = ICloudMerge.decode([PinDef].self, data) != nil
         } else if key.hasPrefix("pinfolders.") {
             readable = ICloudMerge.decode([PinFolder].self, data) != nil
-        } else if key == "spaces" {
-            readable = ICloudMerge.decode([Space].self, data) != nil
         } else if key == "bookmarks" {
             readable = ICloudMerge.decode([Bookmark].self, data) != nil
         } else if key == "settings" {
@@ -774,33 +731,20 @@ final class ICloudSync: ObservableObject {
             let id = String(key.dropFirst("device.".count))
             guard id != ledger.device, let tabs = ICloudMerge.decode(DeviceTabs.self, data) else { return }
             others[id] = tabs
-        } else if key.hasPrefix("pins."), let space = UUID(uuidString: String(key.dropFirst("pins.".count))) {
-            guard local.spaces().contains(where: { $0.id == space }),
-                  var defs = ICloudMerge.decode([PinDef].self, data) else { return }
-            let mine = local.pins(space)
+        } else if key == ICloudMerge.pinsKey {
+            guard var defs = ICloudMerge.decode([PinDef].self, data) else { return }
+            let mine = local.pins()
             defs = ICloudMerge.carryRows(defs, raw: came, local: mine)
             if joining { defs = ICloudMerge.union(pins: defs, mine) }
             // A pin keeps its folder's id even while that folder isn't
             // here yet (its record still to come, or never): it is drawn
             // at the top of the rows until the folder comes, then in it.
-            if defs != mine { local.adopt(pins: defs, space: space) }
-        } else if key.hasPrefix("pinfolders."), let space = UUID(uuidString: String(key.dropFirst("pinfolders.".count))) {
-            guard local.spaces().contains(where: { $0.id == space }),
-                  let theirs = ICloudMerge.decode([PinFolder].self, data) else { return }
-            let mine = local.pinFolders(space)
+            if defs != mine { local.adopt(pins: defs) }
+        } else if key == ICloudMerge.foldersKey {
+            guard let theirs = ICloudMerge.decode([PinFolder].self, data) else { return }
+            let mine = local.pinFolders()
             let folders = ICloudMerge.adopt(folders: theirs, local: mine, joining: joining)
-            if folders != mine { local.adopt(pinFolders: folders, space: space) }
-        } else if key == "spaces" {
-            guard let theirs = ICloudMerge.decode([Space].self, data) else { return }
-            let before = local.spaces()
-            let list = ICloudMerge.adopt(spaces: joining ? ICloudMerge.union(spaces: theirs, before) : theirs, local: before)
-            if list != before { local.adopt(spaces: list, removing: !joining) }
-            // Folders and pins that came before their space did.
-            for space in list where !before.contains(where: { $0.id == space.id }) {
-                for key in [ICloudMerge.foldersKey(space.id), "pins." + space.id.uuidString] where ledger.values[key] != nil {
-                    apply(key, joining: joining)
-                }
-            }
+            if folders != mine { local.adopt(pinFolders: folders) }
         } else if key == "bookmarks" {
             guard var roots = ICloudMerge.decode([Bookmark].self, data) else { return }
             let mine = local.bookmarks()
@@ -1001,63 +945,33 @@ final class ICloudSync: ObservableObject {
 
 // MARK: - this Mac
 
-/// The Personal profile's spaces, pins and bookmarks, the shared settings,
-/// and every ordinary window's open tabs.
+/// The pins and bookmarks, the shared settings, and every ordinary
+/// window's open tabs.
 @MainActor
 final class MacSide: ICloudLocal {
     var deviceName: String { Sync.macName }
 
     func openTabs() -> [DeviceTabs.Page] {
-        let windows = Browsers.all.filter { $0.profileID == Profile.personalID && !$0.isPopup }
+        let windows = Browsers.all.filter { !$0.isPopup }
         return ICloudMerge.pages(windows.flatMap { browser in
-            (browser.tabs + browser.parkedTabs).filter { !$0.bench }.map { tab in
+            browser.tabs.filter { !$0.bench }.map { tab in
                 (url: tab.address, title: tab.title, shy: tab.shy, pinned: tab.pin != nil)
             }
         })
     }
 
-    func spaces() -> [Space] { Spaces.read(profile: Profile.personalID) }
+    func pins() -> [PinDef] { Pins.defs() }
 
-    func adopt(spaces list: [Space], removing: Bool) {
-        let before = spaces()
-        if removing {
-            for gone in before where !gone.isFirst && !list.contains(where: { $0.id == gone.id }) {
-                remove(gone)
-            }
-        }
-        // The order is iCloud's, wherever the home is in it.
-        Store.settings.set(true, forKey: "spaces.orderKept")
-        Spaces.write(list, profile: Profile.personalID)
-    }
+    func adopt(pins defs: [PinDef]) { Pins.adopt(defs) }
 
-    /// A space deleted on another Mac: as Delete Space does here (and as
-    /// the folder sync does, Sync.removeSpace).
-    private func remove(_ space: Space) {
-        let profile = Profile.personalID
-        if let window = Browsers.all.first(where: { $0.profileID == profile && !$0.isPopup && $0.spaces.contains { $0.id == space.id } }) {
-            window.deleteSpace(space.id)
-            return
-        }
-        Spaces.write(Spaces.read(profile: profile).filter { $0.id != space.id }, profile: profile)
-        Session.erase(space: space.id)
-        Pins.forget(space.id)
-        if space.sharesSignIns != true { Spaces.erase(space.id) }
-    }
-
-    func pins(_ space: UUID) -> [PinDef] { Pins.defs(space) }
-
-    func adopt(pins defs: [PinDef], space: UUID) {
-        Pins.adopt([space: defs], in: [space], shared: Pins.shared(Profile.personalID), profile: Profile.personalID)
-    }
-
-    func pinFolders(_ space: UUID) -> [PinFolder] { PinFolders.folders(space) }
+    func pinFolders() -> [PinFolder] { PinFolders.folders() }
 
     /// Kept, and every window told, which files its rows in them.
-    func adopt(pinFolders folders: [PinFolder], space: UUID) { PinFolders.set(space, folders, from: nil) }
+    func adopt(pinFolders folders: [PinFolder]) { PinFolders.set(folders, from: nil) }
 
-    func bookmarks() -> [Bookmark] { Profiles.bookmarks(Profile.personalID).roots }
+    func bookmarks() -> [Bookmark] { Bookmarks.shared.roots }
 
-    func adopt(bookmarks roots: [Bookmark]) { Profiles.bookmarks(Profile.personalID).adopt(roots) }
+    func adopt(bookmarks roots: [Bookmark]) { Bookmarks.shared.adopt(roots) }
 
     func settings() -> SharedSettings { ICloudMerge.settings(Shared.prefs) }
 

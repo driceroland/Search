@@ -42,7 +42,7 @@ struct SettingsPanel: View {
     @MainActor static var arcBefore: Preferences.ArcSetup?
 
     enum Page: String, CaseIterable, Identifiable {
-        case general, appearance, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
+        case general, appearance, tabs, browsing, pins, passwords, privacy, ai, extensions, keyboard, about
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -50,7 +50,7 @@ struct SettingsPanel: View {
             case .appearance: return "Appearance"
             case .tabs: return "Tabs"
             case .browsing: return "Browsing"
-            case .spaces: return "Spaces & Pins"
+            case .pins: return "Pins"
             case .passwords: return "Forms"
             case .privacy: return "Privacy"
             case .ai: return "AI"
@@ -65,7 +65,7 @@ struct SettingsPanel: View {
             case .appearance: return "paintbrush"
             case .tabs: return "square.on.square"
             case .browsing: return "globe"
-            case .spaces: return "square.stack"
+            case .pins: return "pin"
             case .passwords: return "character.cursor.ibeam"
             case .privacy: return "hand.raised"
             case .ai: return "sparkles"
@@ -87,7 +87,7 @@ struct SettingsPanel: View {
         }
         /// The rail's three blocks: the browser, your data and tools, About.
         static var blocks: [[Page]] {
-            [[.general, .appearance, .tabs, .browsing, .spaces],
+            [[.general, .appearance, .tabs, .browsing, .pins],
              [.passwords, .privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .keyboard],
              [.about]]
         }
@@ -386,8 +386,7 @@ struct SettingsPanel: View {
 
     private func row(_ item: SettingsItem) -> some View {
         let counts = SettingsIndex.applies(item, prefs)
-        // The switch that swaps ⌘1–⌘9 and ⌃1–⌃9 names both as they were.
-        let relabel: (String) -> String = item.id == "spaces.commandNumbers" ? { $0 } : shortcuts.relabel
+        let relabel: (String) -> String = shortcuts.relabel
         return SettingRow(
             icon: item.icon,
             title: relabel(title(of: item)),
@@ -443,8 +442,6 @@ struct SettingsPanel: View {
 
     private func title(of item: SettingsItem) -> String {
         switch item.id {
-        // ⌃ while it picks the tabs (Settings › Spaces & Pins).
-        case "tabs.shortcuts" where prefs.usesSpaces && prefs.spacesOnCommand: return "Show tab numbers while ⌃ is held"
         default: return item.title
         }
     }
@@ -480,7 +477,7 @@ struct SettingsPanel: View {
         case .appearance: appearanceControl(item.id)
         case .tabs: tabsControl(item.id)
         case .browsing: browsingControl(item.id)
-        case .spaces: spacesControl(item.id)
+        case .pins: pinsControl(item.id)
         case .passwords, .privacy: keptControl(item.id)
         case .keyboard, .about: otherControl(item.id)
         default: EmptyView()
@@ -552,7 +549,7 @@ struct SettingsPanel: View {
             Pill("Delete…") {
                 let alert = NSAlert()
                 alert.messageText = "Delete Search's data from iCloud?"
-                alert.informativeText = "Open tabs, pins, spaces, bookmarks and settings leave iCloud for every device. What is on each device stays. Sync with iCloud turns off here and on your other devices."
+                alert.informativeText = "Open tabs, pins, bookmarks and settings leave iCloud for every device. What is on each device stays. Sync with iCloud turns off here and on your other devices."
                 alert.addButton(withTitle: "Delete")
                 alert.addButton(withTitle: "Cancel")
                 if alert.runModal() == .alertFirstButtonReturn { icloud.erase() }
@@ -755,7 +752,7 @@ struct SettingsPanel: View {
     }
 
     @ViewBuilder
-    private func spacesControl(_ id: String) -> some View {
+    private func pinsControl(_ id: String) -> some View {
         switch id {
         case "arc.setup":
             if let before = arcBefore, prefs.looksLikeArc {
@@ -774,13 +771,6 @@ struct SettingsPanel: View {
             Pill("Bring Over…") { browser.lead(to: InternalPage(.importing, "Arc")) }
                 .disabled(!arcHere)
                 .opacity(arcHere ? 1 : 0.4)
-        case "spaces": Switch(on: $prefs.usesSpaces)
-        case "spaces.commandNumbers": Switch(on: $prefs.spacesOnCommand)
-        case "profiles": Pill("New Profile…") { ProfileMenu.askNew() }
-        case "profiles.oneWindow": Switch(on: $prefs.profilesInOneWindow)
-        case "spaces.links": Switch(on: $prefs.sendsLinksToSpaces)
-        case "spaces.buttons": Switch(on: $prefs.spaceButtons)
-        case "links.ask": Switch(on: $prefs.asksSpaceForLinks)
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
         case "pins.folders": Switch(on: $prefs.pinFolders)
@@ -884,16 +874,6 @@ struct SettingsPanel: View {
             }
         case "agents":
             if !searched, prefs.agents { RememberedAgents() }
-        case "profiles":
-            if !searched {
-                ProfileList(browser: browser)
-                    .under()
-            }
-        case "spaces.links":
-            if !searched, prefs.usesSpaces, prefs.sendsLinksToSpaces {
-                SpaceRouteList(prefs: prefs)
-                    .under()
-            }
         case "pages.120":
             if !searched, PageTranslator.available, !prefs.translateAlways.isEmpty {
                 TranslateLanguageList(prefs: prefs)

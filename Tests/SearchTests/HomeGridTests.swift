@@ -17,7 +17,6 @@ final class HomeGridTests: XCTestCase {
     func testHomeSitesAreTheTopLevelHomeFoldersPages() {
         _ = NSApplication.shared
         let list = Bookmarks(file: "home-grid-test.json")
-        defer { list.retire() }
 
         list.adopt([site("Elsewhere")])
         XCTAssertTrue(list.homeSites.isEmpty, "no Home folder, no grid")

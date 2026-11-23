@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Sync with your other Macs, played by two hidden probes sharing one folder:
-spaces, and pin folders made, renamed, nested, a pin moved in and out, a
+pins, and pin folders made, renamed, nested, a pin moved in and out, a
 folder deleted, and a pin item from an older Search (no folder in it) that
 must not take a pin out of its folder.
 
@@ -32,8 +32,8 @@ t = A.T()
 shared = tempfile.mkdtemp(prefix="search-sync-")
 
 
-def spaces(sv):
-    try: return [s.get("name") for s in json.load(open(f"{sv.SUPPORT}/spaces.json"))]
+def homes(sv):
+    try: return [p.get("home") for p in json.load(open(f"{sv.SUPPORT}/pins.json")).get(FIRST, [])]
     except Exception: return []
 
 
@@ -57,11 +57,10 @@ def wait(cond, within=12):
 try:
     for sv in (A, B):
         sv.setup(sidebar=True)
-        subprocess.run(["defaults", "write", sv.SUITE, "spaces", "-bool", "true"])
         subprocess.run(["defaults", "write", sv.SUITE, "sync.folder", shared])
     A.launch(); B.launch()
 
-    # Pin folders, in the first space on both.
+    # Pin folders, on both.
     pf(A, action="on"); pf(B, action="on")
     a, b = A.page("a"), A.page("b")
     for id in (a, b): pf(A, action="pin", id=id)
@@ -111,19 +110,17 @@ try:
     t.ok("…and on A", wait(lambda: any(n == "Renamed on an older Mac" for n in names(A).values())) and saved(A).get("a") == "Office on B", saved(A))
     (scope / "OLDMAC.json").unlink()
 
-    A.page("c")
-    A.cmd({"do": "space", "action": "new", "name": "From A"})
+    c = A.page("c")
+    A.cmd({"do": "pin", "id": c}); A.sp("save")
+    home = f"{A.BASE}/c"
     t.ok("A writes its file in the shared folder", wait(lambda: any(Path(shared).rglob("*.json"))), list(Path(shared).rglob("*")))
-    t.ok("B gets A's new space", wait(lambda: "From A" in spaces(B)), spaces(B))
-    B.cmd({"do": "space", "action": "new", "name": "From B"})
-    t.ok("A gets B's new space", wait(lambda: "From B" in spaces(A)), spaces(A))
-    t.ok("A keeps its own", "From A" in spaces(A), spaces(A))
+    t.ok("B gets A's new pin", wait(lambda: home in homes(B)), homes(B))
     # A broken file from a third Mac changes nothing.
     some = next(Path(shared).rglob("*.json")).parent
     (some / "BROKEN.json").write_text("{not json")
-    before = sorted(spaces(A))
+    before = sorted(homes(A))
     time.sleep(4)
-    t.ok("a broken file is ignored", sorted(spaces(A)) == before, spaces(A))
+    t.ok("a broken file is ignored", sorted(homes(A)) == before, homes(A))
 finally:
     t.done()
     for sv in (A, B):

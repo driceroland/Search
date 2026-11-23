@@ -102,33 +102,4 @@ final class ArchiveTests: XCTestCase {
         XCTAssertTrue(Archive(file: archive.file.lastPathComponent).tabs.isEmpty)
     }
 
-    func testEachProfileKeepsItsOwn() {
-        let mine = UUID(), theirs = UUID()
-        files += [Archive.fileName(of: mine), Archive.fileName(of: theirs)]
-        defer {
-            Archive.forget(profile: mine)
-            Archive.forget(profile: theirs)
-            Disk.drain()
-        }
-        XCTAssertEqual(Archive.fileName(of: Profile.personalID), "archive.json")
-        XCTAssertNotEqual(Archive.fileName(of: mine), Archive.fileName(of: theirs))
-        XCTAssertTrue(Archive.of(mine) === Archive.of(mine), "one per profile")
-
-        Archive.of(mine).add(site(1), title: "Mine")
-        Archive.of(theirs).add(site(2), title: "Theirs")
-        XCTAssertEqual(Archive.of(mine).tabs.map(\.title), ["Mine"])
-        XCTAssertEqual(Archive.of(theirs).tabs.map(\.title), ["Theirs"])
-
-        // Cleared in one, the other keeps its own.
-        Archive.of(theirs).clear()
-        XCTAssertEqual(Archive.of(mine).tabs.map(\.title), ["Mine"])
-
-        // A profile deleted: its file gone, and nothing of it comes back.
-        Disk.drain()
-        XCTAssertTrue(FileManager.default.fileExists(atPath: Store.file(Archive.fileName(of: mine)).path))
-        Archive.forget(profile: mine)
-        Disk.drain()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: Store.file(Archive.fileName(of: mine)).path))
-        XCTAssertTrue(Archive.of(mine).tabs.isEmpty)
-    }
 }

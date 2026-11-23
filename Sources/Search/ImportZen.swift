@@ -128,7 +128,7 @@ enum Zen {
         for raw in rawSpaces.prefix(200) {
             guard let id = raw["uuid"] as? String, spaces[id] == nil else { continue }
             order.append(id)
-            spaces[id] = space(name: raw["name"] as? String, icon: raw["icon"] as? String, theme: raw["theme"] as? [String: Any])
+            spaces[id] = space(name: raw["name"] as? String)
         }
         guard let first = order.first else { return nil }
 
@@ -243,70 +243,11 @@ enum Zen {
         return false
     }
 
-    // MARK: - a space's look
+    // MARK: - a space
 
-    /// A space with Zen's name, its icon — an emoji, or one of Zen's own
-    /// pictures by its address — and its theme's colours.
-    static func space(name: String?, icon: String?, theme: [String: Any]?) -> ArcSidebar.Space {
-        let name = Arc.named(name) ?? "Space"
-        var emoji: String?
-        var picture: String?
-        if let icon = icon?.trimmingCharacters(in: .whitespacesAndNewlines), !icon.isEmpty {
-            if icon.hasSuffix(".svg") {
-                picture = URL(string: icon)?.deletingPathExtension().lastPathComponent
-            } else if icon.count <= 8 {
-                emoji = icon
-            }
-        }
-        let colours = (theme?["gradientColors"] as? [Any] ?? []).compactMap { $0 as? [String: Any] }
-        // The primary dot first, as Zen leads with it.
-        let ordered = colours.filter { $0["isPrimary"] as? Bool == true } + colours.filter { $0["isPrimary"] as? Bool != true }
-        let rgb = ordered.compactMap { self.rgb($0["c"]) }.prefix(SpaceGradient.most)
-        var space = ArcSidebar.Space(name: name, emoji: emoji, symbol: Arc.symbol(emoji: emoji, zenIcon: picture, name: name),
-                                     profile: "Default", pinned: [])
-        if let lead = rgb.first { space.colour = nearest(lead) }
-        if rgb.count >= 2 {
-            let angle = (theme?["rotation"] as? NSNumber)?.doubleValue
-            space.gradient = SpaceGradient(colours: rgb.map(hex), angle: angle.flatMap { $0.isFinite ? $0 : nil } ?? SpaceGradient.defaultAngle,
-                                           grain: ((theme?["texture"] as? NSNumber)?.doubleValue ?? 0) > 0)
-        }
-        return space
-    }
-
-    /// A colour as Zen keeps a dot's: [r, g, b] out of 255, or a custom one
-    /// as "#rrggbb" or "rgb(r, g, b)".
-    static func rgb(_ value: Any?) -> (r: Double, g: Double, b: Double)? {
-        var parts: [Double] = []
-        if let list = value as? [Any] {
-            parts = list.prefix(3).compactMap { ($0 as? NSNumber)?.doubleValue }
-        } else if let text = (value as? String)?.trimmingCharacters(in: .whitespaces) {
-            if text.hasPrefix("#"), text.count == 7, let n = Int(text.dropFirst(), radix: 16) {
-                parts = [Double(n >> 16 & 255), Double(n >> 8 & 255), Double(n & 255)]
-            } else {
-                parts = text.split { !$0.isNumber && $0 != "." }.prefix(3).compactMap { Double($0) }
-            }
-        }
-        guard parts.count == 3, parts.allSatisfy({ $0.isFinite && $0 >= 0 && $0 <= 255 }) else { return nil }
-        return (parts[0] / 255, parts[1] / 255, parts[2] / 255)
-    }
-
-    static func hex(_ c: (r: Double, g: Double, b: Double)) -> String {
-        String(format: "#%02X%02X%02X", Int((c.r * 255).rounded()), Int((c.g * 255).rounded()), Int((c.b * 255).rounded()))
-    }
-
-    /// The nearest of Spaces.colours by hue, or none for a grey. The hues
-    /// are those of blue, green, orange, red and violet there.
-    static func nearest(_ c: (r: Double, g: Double, b: Double)) -> Int {
-        let high = max(c.r, c.g, c.b), low = min(c.r, c.g, c.b)
-        guard high > 0, (high - low) / high >= 0.2, high - low >= 0.08 else { return 0 }
-        let delta = high - low
-        var hue: Double
-        if high == c.r { hue = (c.g - c.b) / delta } else if high == c.g { hue = 2 + (c.b - c.r) / delta } else { hue = 4 + (c.r - c.g) / delta }
-        hue = (hue * 60).truncatingRemainder(dividingBy: 360)
-        if hue < 0 { hue += 360 }
-        let hues: [(Int, Double)] = [(1, 218), (2, 146), (3, 33), (4, 353), (5, 270)]
-        func distance(_ a: Double) -> Double { let d = abs(a - hue); return min(d, 360 - d) }
-        return hues.min { distance($0.1) < distance($1.1) }?.0 ?? 0
+    /// A space with Zen's name: its pinned pages come in a group of it.
+    static func space(name: String?) -> ArcSidebar.Space {
+        ArcSidebar.Space(name: Arc.named(name) ?? "Space", profile: "Default", pinned: [])
     }
 
     // MARK: - places.sqlite, before window sync
@@ -350,14 +291,7 @@ enum Zen {
         for raw in rawSpaces.prefix(200) {
             guard let id = raw["uuid"] as? String, spaces[id] == nil else { continue }
             order.append(id)
-            var theme: [String: Any]?
-            if let colours = (raw["theme_colors"] as? String).flatMap({ $0.data(using: .utf8) })
-                .flatMap({ try? JSONSerialization.jsonObject(with: $0) }) {
-                theme = ["gradientColors": colours]
-                if let rotation = raw["theme_rotation"] as? Int { theme?["rotation"] = rotation }
-                if let texture = raw["theme_texture"] as? Double { theme?["texture"] = texture }
-            }
-            spaces[id] = space(name: raw["name"] as? String, icon: raw["icon"] as? String, theme: theme)
+            spaces[id] = space(name: raw["name"] as? String)
         }
         guard let first = order.first else { return nil }
 

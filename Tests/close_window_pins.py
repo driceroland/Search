@@ -23,7 +23,7 @@ def windows():
 def main():
     t = sv.T()
     try:
-        sv.setup(spaces=True); sv.launch()
+        sv.setup(); sv.launch()
         a = sv.page("a"); b = sv.page("b"); sv.page("c")
         sv.cmd({"do": "pin", "id": a}); sv.cmd({"do": "pin", "id": b}); time.sleep(0.8)
         t.ok("two pins to start", windows()[0]["pins"] and len(windows()[0]["pins"]) == 2, windows())

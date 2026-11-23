@@ -163,9 +163,9 @@ final class IconColumnTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.sideIcons, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.usesSpaces, prefs.sharesPins)
+        let previous = (prefs.sidebar, prefs.sideIcons, prefs.usesTabGroups, prefs.splitView, prefs.listsPins)
         restorePreferences = {
-            (prefs.sidebar, prefs.sideIcons, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.usesSpaces, prefs.sharesPins) = previous
+            (prefs.sidebar, prefs.sideIcons, prefs.usesTabGroups, prefs.splitView, prefs.listsPins) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
@@ -173,7 +173,6 @@ final class IconColumnTests: XCTestCase {
         browser.prefs.usesTabGroups = false
         browser.prefs.splitView = split
         browser.prefs.listsPins = false
-        browser.prefs.sharesPins = false
         for word in ["one", "two", "three", "four", "five", "six"].prefix(count) {
             if browser.tabs.last?.isBlank == false { browser.newTab() }
             browser.tabs.last?.restore(url: URL(string: "https://example.com/\(word)")!, title: word)

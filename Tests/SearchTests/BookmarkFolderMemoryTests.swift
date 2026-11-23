@@ -65,30 +65,4 @@ final class BookmarkFolderMemoryTests: XCTestCase {
         XCTAssertNil(bookmarks.parent(of: fourth))
     }
 
-    /// Each profile's bookmarks remember their own folder.
-    func testEachProfileRemembersItsOwn() {
-        let tag = UUID().uuidString
-        let a = Bookmarks(file: "bookmarks-a-\(tag).json")
-        let b = Bookmarks(file: "bookmarks-b-\(tag).json")
-        defer {
-            a.lastFolder = nil
-            b.lastFolder = nil
-            a.retire()
-            b.retire()
-        }
-        let work = a.insert(.folder("Work", []), into: nil)
-        let home = b.insert(.folder("Home", []), into: nil)
-        a.lastFolder = work.id
-        XCTAssertEqual(a.lastFolder, work.id)
-        XCTAssertNil(b.lastFolder)
-        b.lastFolder = home.id
-        // Read back from its file, once the write of it on the Disk queue
-        // has landed: behind a slow write of another file, it hadn't yet.
-        Disk.drain()
-        XCTAssertEqual(Bookmarks(file: "bookmarks-a-\(tag).json").lastFolder, work.id, "kept across launches")
-        XCTAssertEqual(b.lastFolder, home.id)
-        // A folder of another profile's is no folder here.
-        b.lastFolder = work.id
-        XCTAssertNil(b.lastFolder)
-    }
 }

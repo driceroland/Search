@@ -75,17 +75,6 @@ final class HandoffTests: XCTestCase {
         XCTAssertNil(Handoff.address(of: tab))
     }
 
-    /// A space signed out of the others keeps its pages to itself: none is
-    /// offered, though its store is kept on disk.
-    func testASignedOutSpaceIsNeverOffered() async {
-        let space = UUID()
-        let tab = BrowserTab(configuration: Web.configuration(space: space))
-        XCTAssertTrue(tab.store.isPersistent)
-        XCTAssertEqual(Spaces.owner(of: tab.store), space)
-        XCTAssertNil(Handoff.address(of: tab))
-        try? await WKWebsiteDataStore.remove(forIdentifier: space)
-    }
-
     /// Off unless turned on.
     func testOffByDefault() {
         XCTAssertFalse(browser.prefs.handoff)

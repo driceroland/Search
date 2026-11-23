@@ -15,10 +15,9 @@ import WebKit
 // were doing: the one on screen, pinned tabs (those are put down by hand,
 // with ⌘W), a tab playing sound, on a call, sending a download, holding its
 // video out in the little window, or holding something typed and not sent.
-// A pin stays awake only in the space on screen: in a space you aren't in it
-// sleeps after the same wait as the tabs beside it, unless its site may send
-// notifications, which a page asleep couldn't (#569). Five spaces of five
-// pins was twenty-five pages that never let go.
+// A pin stays awake while its window is open: with the last window closed
+// it sleeps after the same wait as the tabs beside it, unless its site may
+// send notifications, which a page asleep couldn't (#569).
 //
 // With the last window closed and the app still running, there is nothing
 // on screen to wait for: the tabs the same rules let go sleep at once (see
@@ -119,8 +118,7 @@ extension Browser {
         guard prefs.sleepsTabs else { return }
         let wait = given ?? Browser.sleepAfter
         let now = Date()
-        // The rows of the other spaces too: parked is not the same as used.
-        let idle = (tabs + parkedTabs)
+        let idle = tabs
             .filter { now.timeIntervalSince($0.touched) >= wait && awake(because: $0) == nil }
             .sorted { $0.touched < $1.touched }
         // One after another, not all at once: each is pictured at the screen's
@@ -156,7 +154,7 @@ extension Browser {
     func sleepShut(again: Bool = true) {
         guard prefs.sleepsTabs, shut else { return }
         var loading = false
-        for tab in tabs + parkedTabs {
+        for tab in tabs {
             if awake(because: tab) == "still loading" { loading = true }
             sleep(tab)
         }
@@ -198,11 +196,10 @@ extension Browser {
         }
     }
 
-    /// Why a pin stays awake: always in the space on screen; in one you
-    /// aren't in, or with the last window closed, only while its site may
-    /// send notifications.
+    /// Why a pin stays awake: always while its window is open; with the last
+    /// window closed, only while its site may send notifications.
     private func pinKept(_ tab: Tab) -> String? {
-        guard shut || parked.values.contains(where: { $0.tabs.contains { $0 === tab } }) else { return "pinned" }
+        guard shut else { return "pinned" }
         return mayNotify(tab) ? "pinned, and its site may send notifications" : nil
     }
 
@@ -329,7 +326,7 @@ enum KeptSession {
 
     /// Publish the captured state only if the tab actually goes to sleep.
     static func remember(_ storage: String?, for tab: Tab, in browser: Browser) {
-        let open = Set((browser.tabs + browser.parkedTabs).map(\.id))
+        let open = Set((browser.tabs).map(\.id))
         kept = kept.filter { open.contains($0.key) }
         kept[tab.id] = storage
     }

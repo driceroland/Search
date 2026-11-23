@@ -58,7 +58,7 @@ extension Browser {
         // same sign-ins as the tab it came from rather than the front
         // window's; a private tab's peek is private, with a store of its own.
         let page = Tab(shy: tab.shy,
-                       configuration: tab.shy ? Web.configuration(shy: true) : Web.configuration(space: spaceID))
+                       configuration: tab.shy ? Web.configuration(shy: true) : Web.configuration())
         prepare(page)
         page.go(to: url)
         // Not in the row, so extensions are told of it here (see openedAside).

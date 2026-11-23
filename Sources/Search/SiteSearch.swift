@@ -94,9 +94,8 @@ enum SiteSearch {
     /// one before a learned one, and at a tie the one you go to most. A site
     /// you go to far more often still wins over a shorter name (`visits`:
     /// how often each has been visited, from the window's own history).
-    /// `learnedToo`: the sites learned from visits are Personal's (see
-    /// Profiles.swift); another profile's window is offered the built-in
-    /// ones only, so no profile's field says where another has been.
+    /// `learnedToo`: the sites learned from visits as well as the built-in
+    /// ones.
     static func match(_ typed: String, learnedToo: Bool = true, keywords: [Keyword] = [],
                       visits: ([SearchSite]) -> [String: Int] = { _ in [:] }) -> SearchSite? {
         let word = typed.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")

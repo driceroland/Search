@@ -57,26 +57,22 @@ final class ICloudSyncTests: XCTestCase {
         func close() {}
     }
 
-    /// This Mac: one or two spaces, their pins, bookmarks, three settings,
+    /// This Mac: its pins and their folders, bookmarks, three settings,
     /// open tabs.
     final class FakeMac: ICloudLocal {
         var deviceName = "Test Mac"
         var tabs: [DeviceTabs.Page] = []
-        var spaceList: [Space] = [Space.first()]
-        var pinList: [UUID: [PinDef]] = [:]
-        var folderList: [UUID: [PinFolder]] = [:]
+        var pinList: [PinDef] = []
+        var folderList: [PinFolder] = []
         var marks: [Bookmark] = []
         var shared = SharedSettings(engine: "google", custom: "", look: "system")
         var adopted: [String] = []
-        var removedSpaces = false
 
         func openTabs() -> [DeviceTabs.Page] { tabs }
-        func spaces() -> [Space] { spaceList }
-        func adopt(spaces: [Space], removing: Bool) { spaceList = spaces; removedSpaces = removing; adopted.append("spaces") }
-        func pins(_ space: UUID) -> [PinDef] { pinList[space] ?? [] }
-        func adopt(pins: [PinDef], space: UUID) { pinList[space] = pins; adopted.append("pins") }
-        func pinFolders(_ space: UUID) -> [PinFolder] { folderList[space] ?? [] }
-        func adopt(pinFolders: [PinFolder], space: UUID) { folderList[space] = PinTree.sanitized(pinFolders); adopted.append("folders") }
+        func pins() -> [PinDef] { pinList }
+        func adopt(pins: [PinDef]) { pinList = pins; adopted.append("pins") }
+        func pinFolders() -> [PinFolder] { folderList }
+        func adopt(pinFolders: [PinFolder]) { folderList = PinTree.sanitized(pinFolders); adopted.append("folders") }
         func bookmarks() -> [Bookmark] { marks }
         func adopt(bookmarks: [Bookmark]) { marks = bookmarks; adopted.append("bookmarks") }
         func settings() -> SharedSettings { shared }
@@ -118,7 +114,8 @@ final class ICloudSyncTests: XCTestCase {
     private func json<T: Encodable>(_ value: T) -> Data { ICloudMerge.encode(value)! }
     private func text(_ data: Data?) -> String { data.map { String(decoding: $0, as: UTF8.self) } ?? "nil" }
 
-    private let first = Space.firstID
+    /// The one row's key in the records, as it has always been.
+    private let first = UUID(uuidString: Session.legacyFirstRow)!
     private func pin(_ letter: String, _ home: String, id: UUID = UUID()) -> PinDef {
         PinDef(id: id, letter: letter, home: home, title: letter)
     }
@@ -128,7 +125,6 @@ final class ICloudSyncTests: XCTestCase {
     /// The iPhone's own types (Sources/Sync.swift there), field for field.
     struct PhonePin: Codable, Equatable { var id: UUID; var letter: String; var home: String; var title: String; var name: String? }
     struct PhoneBookmark: Codable, Equatable { var id: UUID; var title: String; var url: String?; var children: [PhoneBookmark]? }
-    struct PhoneSpace: Codable, Equatable { var id: UUID; var name: String; var icon: String? }
 
     func testTheIPhonesJSONReadsHere() throws {
         // As the iPhone writes them: sorted keys, dates as seconds since 2001.
@@ -166,15 +162,9 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertEqual(phone.first?.children?.first?.url, "https://docs.example.com/")
         XCTAssertNil(phone.first?.url)
 
-        var space = Space(id: UUID(), name: "Work", colour: 3, icon: "briefcase")
-        space.downloads = "/Users/someone/Downloads/Work"
-        let up = json([ICloudMerge.forCloud(space)])
-        XCTAssertFalse(text(up).contains("downloads"), "a space's downloads folder is this Mac's")
-        XCTAssertEqual(try JSONDecoder().decode([PhoneSpace].self, from: up), [PhoneSpace(id: space.id, name: "Work", icon: "briefcase")])
-
         let tabs = DeviceTabs(name: "Mac", platform: "macos", at: Date(timeIntervalSinceReferenceDate: 100), tabs: [])
         XCTAssertEqual(text(json(tabs)), #"{"at":100,"name":"Mac","platform":"macos","tabs":[]}"#)
-        XCTAssertEqual(Space.firstID.uuidString, "00000000-0000-0000-0000-000000000001")
+        XCTAssertEqual(ICloudMerge.pinsKey, "pins.00000000-0000-0000-0000-000000000001")
     }
 
     func testOnlyTheThreeSettingsGo() throws {
@@ -200,9 +190,6 @@ final class ICloudSyncTests: XCTestCase {
         ("bookmarks",
          #"[{"id":"B0000000-0000-4000-8000-000000000005","title":"Reading","children":[{"id":"B0000000-0000-4000-8000-000000000006","title":"Example","url":"https://example.com/"}]},"#
          + #"{"id":"B0000000-0000-4000-8000-000000000007","title":"Office Commun","url":"https://officecommun.com/"}]"#),
-        ("spaces",
-         #"[{"id":"00000000-0000-0000-0000-000000000001","name":"Personal","colour":0,"icon":"house"},"#
-         + #"{"id":"5BAC0000-0000-4000-8000-000000000008","name":"Work","colour":3,"icon":"briefcase"}]"#),
         ("settings", #"{"custom":"","engine":"duckduckgo","look":"system"}"#),
     ]
 
@@ -223,8 +210,6 @@ final class ICloudSyncTests: XCTestCase {
                 written = ICloudMerge.outgoing(try JSONDecoder().decode([PinDef].self, from: data), over: nil, shape: .pins)
             case "bookmarks":
                 written = ICloudMerge.outgoing(try JSONDecoder().decode([Bookmark].self, from: data), over: nil, shape: .bookmarks)
-            case "spaces":
-                written = ICloudMerge.outgoing(try JSONDecoder().decode([Space].self, from: data).map(ICloudMerge.forCloud), over: nil, shape: .spaces)
             default:
                 written = ICloudMerge.outgoing(try JSONDecoder().decode(SharedSettings.self, from: data), over: nil, shape: .settings)
             }
@@ -254,11 +239,6 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertEqual(marks[0].children?.first?.url, "https://example.com/")
         XCTAssertEqual(marks[1].url, "https://officecommun.com/")
 
-        let spaces = try JSONDecoder().decode([Space].self, from: get("spaces"))
-        XCTAssertTrue(spaces[0].isFirst)
-        XCTAssertEqual(spaces[1].colour, 3)
-        XCTAssertEqual(spaces[1].icon, "briefcase")
-
         let settings = try JSONDecoder().decode(SharedSettings.self, from: get("settings"))
         XCTAssertEqual(settings, SharedSettings(engine: "duckduckgo", custom: "", look: "system"))
         XCTAssertNotNil(Engine(rawValue: settings.engine!))
@@ -285,10 +265,6 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertEqual(try keys(pin), ICloudMerge.known[.pins])
         let mark = Bookmark(title: "t", url: "u", children: [])
         XCTAssertEqual(try keys(mark), ICloudMerge.known[.bookmarks])
-        var space = Space(id: UUID(), name: "n", colour: 1, icon: "i", sharesSignIns: true, downloads: "/d", profile: UUID())
-        space.gradient = SpaceGradient(colours: ["#000000", "#FFFFFF"])
-        space.strength = .vivid
-        XCTAssertEqual(try keys(space), ICloudMerge.known[.spaces])
         XCTAssertEqual(try keys(SharedSettings(engine: "e", custom: "c", look: "l")), ICloudMerge.known[.settings])
         let folder = ICloudMerge.CloudFolder(id: UUID(), name: "n", parent: UUID(), feed: URL(string: "https://f.example/feed"))
         XCTAssertEqual(try keys(folder), ICloudMerge.known[.folders])
@@ -305,22 +281,22 @@ final class ICloudSyncTests: XCTestCase {
         sync.publish()
         XCTAssertEqual(engine.saved, [], "read and unchanged: nothing goes up, unknown field and all")
         // The Mac renames it: its own field changes, the other rides along.
-        mac.pinList[first]![0].name = "Alpha"
+        mac.pinList[0].name = "Alpha"
         sync.publish()
         XCTAssertEqual(engine.saved, ["pins.\(first.uuidString)"])
         let sent = try XCTUnwrap(object(sync.outgoing("pins.\(first.uuidString)")?.data) as? [[String: Any]])
         XCTAssertEqual(sent.first?["name"] as? String, "Alpha")
         XCTAssertEqual((sent.first?["glow"] as? [String: Any])?["hue"] as? Int, 3)
         // A field the Mac owns, cleared here, is cleared there.
-        mac.pinList[first]![0].name = nil
+        mac.pinList[0].name = nil
         sync.publish()
         let again = try XCTUnwrap(object(sync.outgoing("pins.\(first.uuidString)")?.data) as? [[String: Any]])
         XCTAssertNil(again.first?["name"])
         XCTAssertNotNil(again.first?["glow"])
     }
 
-    func testUnknownFieldsRideAlongInBookmarksSpacesAndSettings() throws {
-        let folder = UUID(), site = UUID(), space = UUID()
+    func testUnknownFieldsRideAlongInBookmarksAndSettings() throws {
+        let folder = UUID(), site = UUID()
         let marks = #"[{"id":"\#(folder.uuidString)","title":"F","colour":"red","children":[{"id":"\#(site.uuidString)","title":"S","url":"https://s.example/","tags":["x"]}]}]"#
         var tree = try JSONDecoder().decode([Bookmark].self, from: Data(marks.utf8))
         tree[0].children![0].title = "Site"
@@ -329,13 +305,6 @@ final class ICloudSyncTests: XCTestCase {
         let child = (outMarks[0]["children"] as? [[String: Any]])?.first
         XCTAssertEqual(child?["title"] as? String, "Site")
         XCTAssertEqual(child?["tags"] as? [String], ["x"])
-
-        let spaces = #"[{"id":"\#(space.uuidString)","name":"W","colour":2,"wallpaper":"dunes"}]"#
-        var list = try JSONDecoder().decode([Space].self, from: Data(spaces.utf8))
-        list[0].name = "Work"
-        let outSpaces = try XCTUnwrap(object(ICloudMerge.outgoing(list, over: ICloudMerge.canonical(Data(spaces.utf8)), shape: .spaces)) as? [[String: Any]])
-        XCTAssertEqual(outSpaces[0]["name"] as? String, "Work")
-        XCTAssertEqual(outSpaces[0]["wallpaper"] as? String, "dunes")
 
         let settings = #"{"engine":"kagi","look":"dark","zoom":1.25}"#
         let outSettings = try XCTUnwrap(object(ICloudMerge.outgoing(SharedSettings(engine: "bing", custom: "", look: "dark"),
@@ -394,7 +363,7 @@ final class ICloudSyncTests: XCTestCase {
 
     func testNothingIsWrittenOverBeforeTheFirstFetch() async {
         let mac = FakeMac(), engine = FakeEngine()
-        mac.pinList[first] = [pin("a", "https://a.example/")]
+        mac.pinList = [pin("a", "https://a.example/")]
         engine.failing = true
         let sync = make(mac, engine)
         sync.turnOn()
@@ -413,7 +382,7 @@ final class ICloudSyncTests: XCTestCase {
         let shared = UUID()
         let theirs = [pin("m", "https://mail.example/", id: shared)]
         // Ours: one new, one the same page under another id, one the same id.
-        mac.pinList[first] = [pin("n", "https://notes.example/"), pin("m", "https://mail.example/"),
+        mac.pinList = [pin("n", "https://notes.example/"), pin("m", "https://mail.example/"),
                               pin("m", "https://mail.example/other", id: shared)]
         let theirMark = Bookmark.site("News", URL(string: "https://news.example/")!)
         mac.marks = [Bookmark.site("Mine", URL(string: "https://mine.example/")!),
@@ -426,7 +395,7 @@ final class ICloudSyncTests: XCTestCase {
                         ("settings", json(SharedSettings(engine: "kagi", custom: "", look: "dark")), at)]
         let sync = await joined(mac, engine)
 
-        XCTAssertEqual(mac.pins(first).map(\.home), ["https://mail.example/", "https://notes.example/"],
+        XCTAssertEqual(mac.pins().map(\.home), ["https://mail.example/", "https://notes.example/"],
                        "iCloud's, then ours not already there by id or by address")
         XCTAssertEqual(mac.marks.map(\.title), ["News", "Mine"], "a folder with nothing new in it doesn't come along")
         XCTAssertEqual(mac.shared.look, "dark", "iCloud's settings win")
@@ -435,22 +404,7 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertTrue(engine.saved.contains("pins.\(first.uuidString)"))
         XCTAssertTrue(engine.saved.contains("bookmarks"))
         XCTAssertFalse(engine.saved.contains("settings"))
-        XCTAssertTrue(engine.saved.contains("spaces"), "nothing in iCloud yet: this Mac's go up")
         XCTAssertTrue(engine.saved.contains(sync.ledger.deviceKey))
-    }
-
-    func testJoiningKeepsOurSpacesAndAddsTheirs() async {
-        let mac = FakeMac(), engine = FakeEngine()
-        let ours = Space(id: UUID(), name: "Ours", colour: 1)
-        mac.spaceList = [Space.first(), ours]
-        let theirs = Space(id: UUID(), name: "Theirs", colour: 2, icon: "book")
-        let theirPins = [pin("r", "https://read.example/")]
-        engine.cloud = [("spaces", json([Space.first(), theirs]), Date()),
-                        ("pins.\(theirs.id.uuidString)", json(theirPins), Date())]
-        _ = await joined(mac, engine)
-        XCTAssertEqual(mac.spaceList.map(\.name), ["Personal", "Theirs", "Ours"])
-        XCTAssertFalse(mac.removedSpaces, "joining takes nothing away")
-        XCTAssertEqual(mac.pins(theirs.id), theirPins, "a new space's pins come with it")
     }
 
     // MARK: - after joining
@@ -488,22 +442,11 @@ final class ICloudSyncTests: XCTestCase {
         let reordered = Data(#"[{"title":"p","letter":"p","id":"\#(phone[0].id.uuidString)","home":"https://phone.example/"}]"#.utf8)
         sync.arrived("pins.\(first.uuidString)", data: reordered, at: Date(), fields: nil)
         sync.arrived("settings", data: json(SharedSettings(engine: "bing", custom: "", look: "dark")), at: Date(), fields: nil)
-        XCTAssertEqual(mac.pins(first), phone)
+        XCTAssertEqual(mac.pins(), phone)
         sync.publish()
         XCTAssertEqual(engine.saved, [], "what was just read is not sent back")
         sync.publish()
         XCTAssertEqual(engine.saved, [])
-    }
-
-    func testAnotherMacDeletingASpaceDeletesItHereButNeverTheFirst() async {
-        let mac = FakeMac(), engine = FakeEngine()
-        let work = Space(id: UUID(), name: "Work", colour: 1)
-        let play = Space(id: UUID(), name: "Play", colour: 2)
-        mac.spaceList = [Space.first(), work, play]
-        let sync = await joined(mac, engine)
-        sync.arrived("spaces", data: json([work]), at: Date(timeIntervalSinceNow: 5), fields: nil)
-        XCTAssertTrue(mac.removedSpaces)
-        XCTAssertEqual(mac.spaceList.map(\.id), [Space.firstID, work.id], "Play goes, the first space stays")
     }
 
     func testRowsAndPinFoldersSurviveAnIPhoneChange() async {
@@ -512,22 +455,22 @@ final class ICloudSyncTests: XCTestCase {
         var row = pin("d", "https://docs.example/")
         row.listed = true
         row.folder = folder
-        mac.pinList[first] = [row]
+        mac.pinList = [row]
         let sync = await joined(mac, engine)
         engine.saved = []
         // The iPhone renames it; its PinDef knows no rows or folders.
         let phone = #"[{"home":"https://docs.example/","id":"\#(row.id.uuidString)","letter":"d","name":"Docs","title":"d"}]"#
         sync.arrived("pins.\(first.uuidString)", data: Data(phone.utf8), at: Date(timeIntervalSinceNow: 5), fields: nil)
-        XCTAssertEqual(mac.pins(first).first?.name, "Docs")
-        XCTAssertEqual(mac.pins(first).first?.listed, true)
-        XCTAssertEqual(mac.pins(first).first?.folder, folder)
+        XCTAssertEqual(mac.pins().first?.name, "Docs")
+        XCTAssertEqual(mac.pins().first?.listed, true)
+        XCTAssertEqual(mac.pins().first?.folder, folder)
         // Another Mac taking it out of its row says so, and that is taken.
-        var mine = mac.pins(first)[0]
+        var mine = mac.pins()[0]
         mine.listed = false
         mine.folder = nil
         sync.arrived("pins.\(first.uuidString)", data: json([mine]), at: Date(timeIntervalSinceNow: 10), fields: nil)
-        XCTAssertEqual(mac.pins(first).first?.listed, false)
-        XCTAssertNil(mac.pins(first).first?.folder)
+        XCTAssertEqual(mac.pins().first?.listed, false)
+        XCTAssertNil(mac.pins().first?.folder)
     }
 
     func testAConflictKeepsTheNewer() async {
@@ -592,7 +535,7 @@ final class ICloudSyncTests: XCTestCase {
         engine.cloud = [("device.PHONE", json(DeviceTabs(name: "iPhone", platform: "ios", at: Date(),
                                                          tabs: [DeviceTabs.Page(url: "https://b.example/", title: "B")])), Date())]
         let sync = await joined(mac, engine)
-        mac.pinList[first] = [pin("p", "https://p.example/")]
+        mac.pinList = [pin("p", "https://p.example/")]
         engine.saved = []
         sync.zoneGone()
         XCTAssertFalse(sync.on)
@@ -605,7 +548,7 @@ final class ICloudSyncTests: XCTestCase {
         sync.publish()
         XCTAssertEqual(engine.saved, [])
         XCTAssertEqual(engine.deleted, [])
-        XCTAssertEqual(mac.pins(first).count, 1, "what is on this Mac stays")
+        XCTAssertEqual(mac.pins().count, 1, "what is on this Mac stays")
         // Turned on again: a device joining, and the line is its own again.
         sync.turnOn()
         XCTAssertTrue(sync.on)
@@ -702,10 +645,10 @@ final class ICloudSyncTests: XCTestCase {
         return def
     }
 
-    private func names(_ mac: FakeMac) -> [String] { mac.pinFolders(first).map(\.name) }
+    private func names(_ mac: FakeMac) -> [String] { mac.pinFolders().map(\.name) }
     private func folderOf(_ mac: FakeMac, _ letter: String) -> String? {
-        guard let id = mac.pins(first).first(where: { $0.letter == letter })?.folder else { return nil }
-        return mac.pinFolders(first).first { $0.id == id }?.name ?? "unknown"
+        guard let id = mac.pins().first(where: { $0.letter == letter })?.folder else { return nil }
+        return mac.pinFolders().first { $0.id == id }?.name ?? "unknown"
     }
 
     /// Two Macs on the same iCloud, both joined, A's folder Work holding pin
@@ -713,8 +656,8 @@ final class ICloudSyncTests: XCTestCase {
     private func twoMacs() async throws -> (a: FakeMac, ea: FakeEngine, sa: ICloudSync, b: FakeMac, eb: FakeEngine, sb: ICloudSync, work: UUID) {
         let a = FakeMac(), ea = FakeEngine(), b = FakeMac(), eb = FakeEngine()
         let work = UUID()
-        a.folderList[first] = [PinFolder(id: work, name: "Work")]
-        a.pinList[first] = [row("w", in: work), row("l", in: nil)]
+        a.folderList = [PinFolder(id: work, name: "Work")]
+        a.pinList = [row("w", in: work), row("l", in: nil)]
         let sa = await joined(a, ea)
         // The other Mac's own settings.
         let other = "\(suite!)-b"
@@ -734,56 +677,56 @@ final class ICloudSyncTests: XCTestCase {
     func testAFolderOfPinsMadeOnOneMacIsAFolderOnTheOther() async throws {
         let m = try await twoMacs()
         XCTAssertEqual(names(m.b), ["Work"], "the folder came")
-        XCTAssertEqual(m.b.pinFolders(first).first?.id, m.work)
+        XCTAssertEqual(m.b.pinFolders().first?.id, m.work)
         XCTAssertEqual(folderOf(m.b, "w"), "Work", "its pin is in it")
         XCTAssertNil(folderOf(m.b, "l"), "the loose pin is loose")
         // The record: what the folder is, never how a Mac shows it.
-        let sent = try XCTUnwrap(object(m.sa.outgoing(ICloudMerge.foldersKey(first))?.data) as? [[String: Any]])
+        let sent = try XCTUnwrap(object(m.sa.outgoing(ICloudMerge.foldersKey)?.data) as? [[String: Any]])
         XCTAssertEqual(Set(sent[0].keys), ["id", "name"])
     }
 
     func testRenamedNestedAndDeletedFoldersFollow() async throws {
         let m = try await twoMacs()
         // Renamed on A.
-        m.a.folderList[first]![0].name = "Office"
+        m.a.folderList[0].name = "Office"
         m.sa.publish()
-        XCTAssertEqual(m.ea.saved, [ICloudMerge.foldersKey(first)], "a rename is the folders record alone")
+        XCTAssertEqual(m.ea.saved, [ICloudMerge.foldersKey], "a rename is the folders record alone")
         try await relay(m.sa, m.ea, to: m.eb)
         XCTAssertEqual(names(m.b), ["Office"])
         // A folder made inside it, a pin moved into that, on A.
         let inner = UUID()
-        m.a.folderList[first]!.append(PinFolder(id: inner, name: "Docs", parent: m.work))
-        m.a.pinList[first]![1].folder = inner
+        m.a.folderList.append(PinFolder(id: inner, name: "Docs", parent: m.work))
+        m.a.pinList[1].folder = inner
         m.sa.publish()
         try await relay(m.sa, m.ea, to: m.eb)
-        XCTAssertEqual(m.b.pinFolders(first).first { $0.id == inner }?.parent, m.work, "nested as on A")
+        XCTAssertEqual(m.b.pinFolders().first { $0.id == inner }?.parent, m.work, "nested as on A")
         XCTAssertEqual(folderOf(m.b, "l"), "Docs", "a pin moved into a folder")
         // Docs taken out to the top.
-        m.a.folderList[first]![1].parent = nil
+        m.a.folderList[1].parent = nil
         m.sa.publish()
         try await relay(m.sa, m.ea, to: m.eb)
-        XCTAssertNil(m.b.pinFolders(first).first { $0.id == inner }?.parent)
+        XCTAssertNil(m.b.pinFolders().first { $0.id == inner }?.parent)
         // A pin moved out of its folder.
-        m.a.pinList[first]![0].folder = nil
+        m.a.pinList[0].folder = nil
         m.sa.publish()
         try await relay(m.sa, m.ea, to: m.eb)
         XCTAssertNil(folderOf(m.b, "w"), "a pin moved out of a folder")
         // Docs deleted on A: what it held goes up to the top, as Delete Folder does.
-        let gone = PinTree.removing(inner, folders: m.a.folderList[first]!, pins: m.a.pinList[first]!)
-        m.a.folderList[first] = gone.folders
-        m.a.pinList[first] = gone.pins
+        let gone = PinTree.removing(inner, folders: m.a.folderList, pins: m.a.pinList)
+        m.a.folderList = gone.folders
+        m.a.pinList = gone.pins
         m.sa.publish()
         try await relay(m.sa, m.ea, to: m.eb)
         XCTAssertEqual(names(m.b), ["Office"])
-        XCTAssertEqual(m.b.pins(first).count, 2, "no pin lost")
+        XCTAssertEqual(m.b.pins().count, 2, "no pin lost")
         XCTAssertNil(folderOf(m.b, "l"))
         // The last folder deleted: the record says none.
-        m.a.folderList[first] = []
+        m.a.folderList = []
         m.sa.publish()
         try await relay(m.sa, m.ea, to: m.eb)
         XCTAssertEqual(names(m.b), [])
         // And B's own change goes the other way.
-        m.b.folderList[first] = [PinFolder(id: UUID(), name: "From B")]
+        m.b.folderList = [PinFolder(id: UUID(), name: "From B")]
         m.sb.publish()
         try await relay(m.sb, m.eb, to: m.ea)
         XCTAssertEqual(names(m.a), ["From B"])
@@ -792,20 +735,20 @@ final class ICloudSyncTests: XCTestCase {
     func testPinsThatComeBeforeTheirFolderWaitForIt() async throws {
         let m = try await twoMacs()
         let later = UUID()
-        m.a.folderList[first]!.append(PinFolder(id: later, name: "Later"))
-        m.a.pinList[first]!.append(row("x", in: later))
+        m.a.folderList.append(PinFolder(id: later, name: "Later"))
+        m.a.pinList.append(row("x", in: later))
         m.sa.publish()
         // The pins first, the folder held back.
         try await relay(m.sa, m.ea, to: m.eb, only: "pins.")
-        XCTAssertEqual(m.b.pins(first).map(\.letter), ["w", "l", "x"], "the pin is here, not lost")
-        XCTAssertEqual(m.b.pins(first).last?.folder, later, "and keeps its folder's id")
+        XCTAssertEqual(m.b.pins().map(\.letter), ["w", "l", "x"], "the pin is here, not lost")
+        XCTAssertEqual(m.b.pins().last?.folder, later, "and keeps its folder's id")
         XCTAssertEqual(folderOf(m.b, "x"), "unknown", "a folder not here yet: drawn at the top")
         // B writes its pins meanwhile: the folder's id goes with them.
-        m.b.pinList[first]![0].name = "Renamed on B"
+        m.b.pinList[0].name = "Renamed on B"
         m.sb.publish()
         let up = try XCTUnwrap(object(m.sb.outgoing("pins.\(first.uuidString)")?.data) as? [[String: Any]])
         XCTAssertEqual(up.last?["folder"] as? String, later.uuidString, "never stripped for a folder B doesn't have")
-        XCTAssertFalse(m.eb.saved.contains(ICloudMerge.foldersKey(first)), "B doesn't write A's folders over")
+        XCTAssertFalse(m.eb.saved.contains(ICloudMerge.foldersKey), "B doesn't write A's folders over")
         // The folder comes: the pin is in it.
         try await relay(m.sa, m.ea, to: m.eb)
         XCTAssertEqual(folderOf(m.b, "x"), "Later")
@@ -814,38 +757,38 @@ final class ICloudSyncTests: XCTestCase {
 
     func testFoldingStaysOnEachMac() async throws {
         let m = try await twoMacs()
-        m.a.folderList[first]![0].collapsed = true
+        m.a.folderList[0].collapsed = true
         m.sa.publish()
         XCTAssertEqual(m.ea.saved, [], "folding a folder sends nothing")
-        m.b.folderList[first]![0].collapsed = true
-        m.a.folderList[first]![0].name = "Renamed"
+        m.b.folderList[0].collapsed = true
+        m.a.folderList[0].name = "Renamed"
         m.sa.publish()
         try await relay(m.sa, m.ea, to: m.eb)
-        XCTAssertEqual(m.b.pinFolders(first).first?.name, "Renamed")
-        XCTAssertEqual(m.b.pinFolders(first).first?.collapsed, true, "B's fold kept through A's rename")
+        XCTAssertEqual(m.b.pinFolders().first?.name, "Renamed")
+        XCTAssertEqual(m.b.pinFolders().first?.collapsed, true, "B's fold kept through A's rename")
     }
 
     func testAMacJoiningWithFoldersOfItsOwnKeepsThem() async throws {
         let mac = FakeMac(), engine = FakeEngine()
         let mine = UUID(), theirs = UUID()
-        mac.folderList[first] = [PinFolder(id: mine, name: "Mine")]
-        mac.pinList[first] = [row("m", in: mine)]
-        engine.cloud = [(ICloudMerge.foldersKey(first), json([ICloudMerge.CloudFolder(id: theirs, name: "Theirs")]), Date()),
+        mac.folderList = [PinFolder(id: mine, name: "Mine")]
+        mac.pinList = [row("m", in: mine)]
+        engine.cloud = [(ICloudMerge.foldersKey, json([ICloudMerge.CloudFolder(id: theirs, name: "Theirs")]), Date()),
                         ("pins.\(first.uuidString)", json([row("t", in: theirs)]), Date())]
         let sync = await joined(mac, engine)
         XCTAssertEqual(names(mac), ["Theirs", "Mine"])
         XCTAssertEqual(folderOf(mac, "t"), "Theirs")
         XCTAssertEqual(folderOf(mac, "m"), "Mine")
-        XCTAssertTrue(engine.saved.contains(ICloudMerge.foldersKey(first)), "the union goes up")
+        XCTAssertTrue(engine.saved.contains(ICloudMerge.foldersKey), "the union goes up")
         _ = sync
     }
 
     func testASpaceWithNoFoldersWritesNoFolderRecord() async {
         let mac = FakeMac(), engine = FakeEngine()
-        mac.pinList[first] = [pin("a", "https://a.example/")]
+        mac.pinList = [pin("a", "https://a.example/")]
         let sync = await joined(mac, engine)
-        XCTAssertFalse(engine.saved.contains(ICloudMerge.foldersKey(first)))
-        XCTAssertNil(sync.outgoing(ICloudMerge.foldersKey(first)))
+        XCTAssertFalse(engine.saved.contains(ICloudMerge.foldersKey))
+        XCTAssertNil(sync.outgoing(ICloudMerge.foldersKey))
     }
 
     /// A Mac still on 1.0.16 kept the pinfolders record it couldn't read
@@ -858,8 +801,8 @@ final class ICloudSyncTests: XCTestCase {
         old.joined = true
         old.folders = nil
         let record = json([ICloudMerge.CloudFolder(id: theirs, name: "From A")])
-        old.values[ICloudMerge.foldersKey(first)] = ICloudMerge.canonical(record)
-        old.at[ICloudMerge.foldersKey(first)] = Date(timeIntervalSinceNow: -60)
+        old.values[ICloudMerge.foldersKey] = ICloudMerge.canonical(record)
+        old.at[ICloudMerge.foldersKey] = Date(timeIntervalSinceNow: -60)
         // As 1.0.16 wrote it: no "folders" key at all.
         var written = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
         XCTAssertNil(written["folders"])
@@ -869,7 +812,7 @@ final class ICloudSyncTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: written).write(to: file)
 
         let mac = FakeMac(), engine = FakeEngine()
-        mac.folderList[first] = [PinFolder(id: mine, name: "Mine")]
+        mac.folderList = [PinFolder(id: mine, name: "Mine")]
         defaults.set(true, forKey: ICloudSync.onKey)
         let sync = ICloudSync(local: mac, defaults: defaults, file: file, available: true) { owner, _ in
             engine.sync = owner
@@ -879,8 +822,8 @@ final class ICloudSyncTests: XCTestCase {
         await until { sync.ledger.folders == true }
         XCTAssertTrue(sync.joined, "an old ledger still reads")
         XCTAssertEqual(names(mac), ["From A", "Mine"])
-        await until { engine.saved.contains(ICloudMerge.foldersKey(first)) }
-        let up = try XCTUnwrap(object(sync.outgoing(ICloudMerge.foldersKey(first))?.data) as? [[String: Any]])
+        await until { engine.saved.contains(ICloudMerge.foldersKey) }
+        let up = try XCTUnwrap(object(sync.outgoing(ICloudMerge.foldersKey)?.data) as? [[String: Any]])
         XCTAssertEqual(up.compactMap { $0["name"] as? String }, ["From A", "Mine"])
         sync.turnOff()
     }

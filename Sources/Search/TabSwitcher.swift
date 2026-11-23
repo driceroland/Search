@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// ⌃Tab: the tabs of the space on screen as pictures, the one you are on
+/// ⌃Tab: the window's tabs as pictures, the one you are on
 /// first and then the ones you last left, latest first: the planet. The
 /// small windows sit beside it as its moons. From a small window it is the
 /// same picture, walked from the moon you are on. One gesture's order stays
@@ -38,8 +38,7 @@ final class TabSwitcher: ObservableObject {
         }
     }
 
-    /// The tabs left, latest first, in every space: going back to a space
-    /// finds its order where it was. Kept only while the switcher is on.
+    /// The tabs left, latest first. Kept only while the switcher is on.
     private var recentIDs: [Tab.ID] = []
     /// The grid's order: the tabs left and the links opened behind the page,
     /// latest first: of a dozen links opened from one page, the newest keep
@@ -160,7 +159,7 @@ final class TabSwitcher: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
-    /// The first ⌃Tab of a gesture takes the space's tabs in that order, the
+    /// The first ⌃Tab of a gesture takes the window's tabs in that order, the
     /// ones never left after them in the row's order, and stops on the one
     /// before this one: a quick press goes back to the last tab, and the
     /// next comes back again. ⇧ starts from the far end, which is the last

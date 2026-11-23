@@ -332,8 +332,8 @@ final class SessionImportTests: XCTestCase {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         let browser = Browser(record: WindowRecord())
-        let pinsBefore = Pins.defs(browser.spaceID)
-        defer { Pins.set(browser.spaceID, pinsBefore, from: browser) }
+        let pinsBefore = Pins.defs()
+        defer { Pins.set(pinsBefore, from: browser) }
 
         let read = SessionImport.read(session(
             frame(id: 0, body: raw(7, 100)),
@@ -360,7 +360,7 @@ final class SessionImportTests: XCTestCase {
         let group = try XCTUnwrap(browser.tabGroups.first { $0.name == "Reading 841" })
         XCTAssertTrue(group.collapsed)
         XCTAssertEqual(added.first { $0.pending?.host() == "grouped-841.example" }?.groupID, group.id)
-        XCTAssertTrue(Pins.defs(browser.spaceID).contains { $0.home == "https://pinned-841.example/" })
+        XCTAssertTrue(Pins.defs().contains { $0.home == "https://pinned-841.example/" })
 
         let again = browser.takeSession(read)
         XCTAssertEqual(again.pins + again.tabs + again.groups, 0, "nothing twice")

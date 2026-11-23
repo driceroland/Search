@@ -86,19 +86,6 @@ final class SpeedBenchTests: XCTestCase {
         _ = window
     }
 
-    /// Two fingers carrying the column to the next space, an event a frame.
-    func testSpaceSwipe() async throws {
-        let browser = makeBrowser(tabs: 60)
-        let window = host(browser)
-        try await settle()
-        let cost = try await measure(browser, steps: 120, label: "swipe") { i in
-            browser.spaceSwipe = -CGFloat(i) * 2
-        }
-        browser.spaceSwipe = 0
-        record("spaceSwipe", cost)
-        _ = window
-    }
-
     /// A sideways swipe on the page, to go back: the disc follows each event.
     func testBackSwipe() async throws {
         let browser = makeBrowser(tabs: 60)
@@ -294,33 +281,6 @@ final class SpeedBenchTests: XCTestCase {
             Disk.drain()
         }
         record("writeBehindBackground", ["ms": median(times)])
-    }
-
-    /// A window opened with five spaces of 30 tabs each: what it costs
-    /// before it can draw.
-    func testOpeningWithSpaces() async throws {
-        let first = makeBrowser(tabs: 30, record: nil)
-        first.prefs.usesSpaces = true
-        let home = first.spaceID
-        for n in 0..<4 {
-            first.addSpace(named: "Space \(n)")
-            for i in 0..<30 {
-                if first.tabs.last?.isBlank == false { first.newTab() }
-                first.tabs.last?.restore(url: URL(string: "https://s\(n)t\(i).example/")!, title: "s\(n) \(i)")
-            }
-        }
-        first.switchSpace(to: home)
-        first.flushSession()
-        Disk.drain()
-        var times: [Double] = []
-        for _ in 0..<5 {
-            let start = CACurrentMediaTime()
-            let opened = Browser(record: nil)
-            times.append((CACurrentMediaTime() - start) * 1000)
-            browsers.append(opened)
-        }
-        first.prefs.usesSpaces = false
-        record("openingWithSpaces", ["ms": median(times)])
     }
 
     // MARK: - helpers

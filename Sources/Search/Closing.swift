@@ -50,14 +50,13 @@ extension Browser {
         return busy(tab)
     }
 
-    /// Every tab left alone past its time, in this space's row and the
-    /// others'. At launch, and then with each look for tabs to sleep.
+    /// Every tab left alone past its time, in this window's row. At launch, and then with each look for tabs to sleep.
     func closeLeftAlone() {
         guard let wait = closeAfter else { return }
         let since = Date().addingTimeInterval(-wait)
-        let due = (tabs + parkedTabs).filter { lastLeft($0) <= since && stays(because: $0) == nil }
+        let due = tabs.filter { lastLeft($0) <= since && stays(because: $0) == nil }
         let going = Set(due.map(\.id))
-        let pairs = splits + parked.values.flatMap(\.splits)
+        let pairs = splits
         var taken = Set<Tab.ID>()
         for tab in due where !taken.contains(tab.id) {
             // A pair is one: both halves due, or neither goes.
@@ -84,28 +83,7 @@ extension Browser {
               together.allSatisfy({ lastLeft($0) <= since && stays(because: $0) == nil }) else { return }
         for tab in together {
             archive(tab)
-            if tabs.contains(where: { $0 === tab }) {
-                close(tab)
-            } else {
-                closeParked(tab)
-            }
+            if tabs.contains(where: { $0 === tab }) { close(tab) }
         }
-    }
-
-    /// A tab of a space not on screen: out of its row, and the row written.
-    /// It isn't offered to ⇧⌘T, which would reopen it in the space on screen
-    /// with that space's sign-ins; History still has it.
-    private func closeParked(_ tab: Tab) {
-        guard let space = parked.first(where: { $0.value.tabs.contains { $0 === tab } })?.key,
-              var row = parked[space] else { return }
-        row.tabs.removeAll { $0 === tab }
-        row.splits = row.splits.filter { Browser.holds($0, in: row.tabs) }
-        if row.active == tab.id {
-            row.active = row.tabs.first { $0.pin == nil }?.id ?? row.tabs.first?.id
-        }
-        tab.close()
-        parked[space] = row
-        // Now: going to that space reads its file when the row is empty.
-        writeSession(now: true, space: space, row: row)
     }
 }

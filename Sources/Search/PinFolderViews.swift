@@ -157,7 +157,7 @@ struct PinFolderHeading: View {
         Button("Rename Folder") { browser.editingPinFolder = folder.id }
         Button(folder.collapsed ? "Expand Folder" : "Collapse Folder") { browser.togglePinFolder(folder.id) }
         if folder.isLive {
-            Button("Refresh") { LiveFolders.refresh(folder.id, in: browser.spaceID) }
+            Button("Refresh") { LiveFolders.refresh(folder.id) }
         } else {
             Button("New Folder Inside") { browser.newPinFolder(in: folder.id) }
                 .disabled(!PinTree.canMake(in: folder.id, in: folders))

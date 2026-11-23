@@ -175,10 +175,10 @@ final class PinStuckTests: XCTestCase {
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
         let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins,
-                        prefs.usesSpaces, prefs.sharesPins, prefs.glyph)
+                        prefs.glyph)
         restorePreferences = {
             (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins,
-             prefs.usesSpaces, prefs.sharesPins, prefs.glyph) = previous
+             prefs.glyph) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
@@ -186,7 +186,6 @@ final class PinStuckTests: XCTestCase {
         browser.prefs.usesTabGroups = false
         browser.prefs.splitView = false
         browser.prefs.listsPins = false
-        browser.prefs.sharesPins = false
         browser.prefs.glyph = .letters
         for word in (0..<count).map({ "t\($0)" }) {
             if browser.tabs.last?.isBlank == false { browser.newTab() }

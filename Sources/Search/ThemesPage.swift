@@ -20,7 +20,7 @@ struct ThemesPage: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Theme")
                 .font(.system(size: 13, weight: .semibold))
-            Text("Paints the blank tab and colours the whole window with it: the tabs, the bars and the ground around the page. A space with a colour of its own keeps it.")
+            Text("Paints the blank tab and colours the whole window with it: the tabs, the bars and the ground around the page.")
                 .font(.system(size: 12)).foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
             mock
@@ -74,7 +74,7 @@ struct ThemesPage: View {
                         .frame(width: 64, alignment: .leading)
                     Picker("", selection: Binding(get: { prefs.browserTheme.strength },
                                                   set: { value in prefs.browserTheme.strength = value })) {
-                        ForEach(SpaceStrength.allCases, id: \.self) { Text($0.name).tag($0) }
+                        ForEach(ThemeStrength.allCases, id: \.self) { Text($0.name).tag($0) }
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
@@ -102,20 +102,20 @@ struct ThemesPage: View {
         if next != prefs.browserTheme { prefs.browserTheme = next }
     }
 
-    static func windowColours(_ theme: HomeTheme, _ tuning: HomeTuning, image: String?, grain: Bool) -> SpaceGradient? {
+    static func windowColours(_ theme: HomeTheme, _ tuning: HomeTuning, image: String?, grain: Bool) -> ThemeGradient? {
         switch theme {
         case .off: return nil
-        case .solid: return SpaceGradient(colours: [tuning.solid, tuning.solid], grain: grain)
-        case .gradient: return SpaceGradient(colours: [tuning.gradientA, tuning.gradientB], angle: tuning.angle, grain: grain)
+        case .solid: return ThemeGradient(colours: [tuning.solid, tuning.solid], grain: grain)
+        case .gradient: return ThemeGradient(colours: [tuning.gradientA, tuning.gradientB], angle: tuning.angle, grain: grain)
         case .custom:
             return HomeBackground.load(image).flatMap { ends(of: $0) }
-                .map { SpaceGradient(colours: $0, angle: 180, grain: grain) }
+                .map { ThemeGradient(colours: $0, angle: 180, grain: grain) }
         default:
             var full = tuning
             full.intensity = 1
             return HomeRender.image(theme, full, size: CGSize(width: 64, height: 40), dark: false, scale: 1, calm: false)
                 .flatMap { ends(of: $0) }
-                .map { SpaceGradient(colours: $0, angle: 180, grain: grain) }
+                .map { ThemeGradient(colours: $0, angle: 180, grain: grain) }
         }
     }
 
@@ -158,7 +158,7 @@ struct ThemesPage: View {
         let right = prefs.sidePosition == .right
         return ZStack {
             Palette.ground
-            SpaceWash(look: prefs.browserTheme.look)
+            ThemeWash(look: prefs.browserTheme.look)
                 .environment(\.washStrength, prefs.browserTheme.strength)
             if prefs.homeTheme != .off {
                 HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage,

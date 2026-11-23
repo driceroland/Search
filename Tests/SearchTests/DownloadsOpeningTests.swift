@@ -68,7 +68,7 @@ final class DownloadsOpeningTests: XCTestCase {
         let browser = Browser(record: WindowRecord())
         browser.prefs.downloadsOpening = .panel
         // Whatever was in the panel makes way.
-        browser.sidePanel = .site(url: URL(string: "https://example.com/")!, space: browser.spaceID)
+        browser.sidePanel = .site(url: URL(string: "https://example.com/")!)
         browser.sidePanelShown = true
         browser.showDownloads()
         XCTAssertEqual(browser.sidePanel, .downloads)

@@ -184,28 +184,18 @@ final class History: ObservableObject {
     private static let knownWeight = log(1.5)
     private var visitedHosts: Set<String> = []
 
-    /// Its file: history.json for Personal, one of its own for each other
-    /// profile (see Profiles.swift).
+    /// Its file: history.json, or another for a test.
     private let fileName: String
-    /// Its profile deleted: nothing more is written.
-    private var retired = false
     private var loading: HistoryLoad?
     private var duringLoad: [(History) -> Void] = []
     private var publishingLoad = false
 
+    /// The one the browser keeps.
+    static let shared = History()
+
     init(file: String = "history.json", read: @escaping @Sendable (URL) -> Data? = { try? Data(contentsOf: $0) }) {
         fileName = file
         load(read: read)
-    }
-
-    /// Its profile deleted: emptied, its file removed, and nothing written again.
-    func retire() {
-        retired = true
-        visits = [:]
-        pageText = [:]
-        weights = [:]
-        visitedHosts = []
-        Disk.remove(file)
     }
 
     /// URL identity ignores fragments, normalizes only the scheme and host,
@@ -424,21 +414,6 @@ final class History: ObservableObject {
     /// `run` once this history is read from its file: now, if it is.
     private func whenLoaded(_ run: @escaping (History) -> Void) {
         if loading != nil { duringLoad.append(run) } else { run(self) }
-    }
-
-    /// Every visit `other` keeps, taken in as an import takes them, once
-    /// both are read (see Spaces.seedHistories).
-    func takeAll(from other: History) {
-        other.whenLoaded { source in
-            let visits = Array(source.visits.values)
-            self.whenLoaded { history in
-                for visit in visits {
-                    guard let url = URL(string: visit.url) else { continue }
-                    history.take(url, title: visit.title, count: visit.count, last: visit.last)
-                }
-                history.settle()
-            }
-        }
     }
 
     /// A page's title usually lands a beat after the page does.
@@ -771,7 +746,6 @@ final class History: ObservableObject {
         guard loading === job else { return }
         let result = job.result()
         loading = nil
-        guard !retired else { duringLoad = []; return }
         if result.corrupt { Store.quarantine(file) }
         publishingLoad = true
         pageText = result.pageText
@@ -835,7 +809,7 @@ final class History: ObservableObject {
     /// times, and never on the main thread.
     private func save() {
         owed = true
-        guard !pausing, !retired else { return }
+        guard !pausing else { return }
         pausing = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.pausing = false
@@ -855,7 +829,6 @@ final class History: ObservableObject {
         guard loading == nil else { return }
         guard owed else { return }
         owed = false
-        guard !retired else { return }
         let date = Date()
         // A cap, so the file can't grow without end. What goes is what has
         // been visited least and longest ago. Memory also keeps its newest

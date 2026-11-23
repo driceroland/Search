@@ -74,8 +74,7 @@ final class MutedTabRestoreTests: XCTestCase {
         ], active: 1)
         let browser = makeBrowser()
         defer { browser.closeAll() }
-        browser.record.rows[browser.spaceID.uuidString] = written
-        let restoredRow = browser.loadRow(browser.spaceID)
+        let restoredRow = browser.restoreRow(written, groups: [])
         let restored = try XCTUnwrap(restoredRow.tabs.first { $0.address?.absoluteString == muted })
         XCTAssertTrue(restored.muted)
         XCTAssertTrue(restored.asleep)
@@ -146,8 +145,7 @@ final class MutedTabRestoreTests: XCTestCase {
         let browser = Browser(record: WindowRecord())
         browser.leaveFiles()
         browser.closeAll()
-        browser.record.rows = [:]
-        browser.parked = [:]
+        browser.record.row = nil
         browser.tabGroups = []
         for number in 1...4 {
             browser.newTab()
@@ -164,8 +162,7 @@ final class MutedTabRestoreTests: XCTestCase {
     }
 
     private func savedShape(_ browser: Browser) throws -> Session.Shape {
-        browser.usesFiles ? Session.read(space: browser.spaceID) : browser.allRows()[browser.spaceID.uuidString]
-            ?? Session.Shape(tabs: [], active: 0)
+        browser.usesFiles ? Session.read() : browser.currentRow()
     }
 
     private func encodedMuted(_ entries: [Session.Entry]) throws -> [Bool] {

@@ -42,7 +42,6 @@ final class HistoryCapTests: XCTestCase {
 
     func testMemoryHoldsNoMoreThanTheCapAndSlackAndNothingForWhatWentOut() {
         let history = fresh()
-        defer { history.retire() }
         // Ten places visited again and again: they outrank every one-off
         // that comes after, however many, so they must still be here.
         let favourites = (0..<10).map(site)
@@ -70,7 +69,6 @@ final class HistoryCapTests: XCTestCase {
 
     func testAPlaceForgottenLeavesNoPrefixBehind() {
         let history = fresh()
-        defer { history.retire() }
         // Deep pages, on one site and on its own: each also credits its
         // front door, and each prefix is a sum of weights that rounding
         // would leave a crumb in if it were only ever added to and taken from.
@@ -96,7 +94,6 @@ final class HistoryCapTests: XCTestCase {
     /// window and the field mid-session, where it had stayed until a restart.
     func testThePageJustOpenedSurvivesTheCut() throws {
         let history = fresh()
-        defer { history.retire() }
         // Exactly the cap and the slack of places each visited three times:
         // every one outranks a first visit.
         for i in 0..<(History.cap + History.slack) {
@@ -122,7 +119,6 @@ final class HistoryCapTests: XCTestCase {
 
     func testWhatIsKeptStillRanksTheWayItDid() {
         let history = fresh()
-        defer { history.retire() }
         // A site nobody has left, and one visited twice: past the cap, with
         // pruning going on around them, the first still comes first.
         for _ in 0..<20 { history.record(URL(string: "https://busy.example/")!, title: "Busy") }

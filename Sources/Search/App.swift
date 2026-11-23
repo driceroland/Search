@@ -12,8 +12,6 @@ struct SearchApp: App {
     /// Your own keys (Settings › Shortcuts): the menus are drawn again when
     /// one changes, and show it.
     @ObservedObject private var shortcuts = ShortcutStore.shared
-    /// Only for the File menu's Profile list, once there is a second one.
-    @ObservedObject private var profiles = Profiles.shared
     /// Only for History's tabs on your other devices (Sync with iCloud).
     @ObservedObject private var icloud = ICloudSync.shared
     /// Links from other apps, and the Dock icon.
@@ -26,7 +24,7 @@ struct SearchApp: App {
         // Settings › General › Start with a fresh window: the files are cut
         // down before any window reads its row from them.
         if Store.settings.bool(forKey: Preferences.freshKey) {
-            Session.startFresh(spaces: Spaces.read().map(\.id))
+            Session.startFresh()
             Browsers.startFresh()
         }
     }
@@ -52,19 +50,6 @@ struct SearchApp: App {
                 // Another window, with tabs of its own (see Windows.swift).
                 Button("New Window") { Browsers.newWindow() }
                     .shortcut("file.newWindow")
-                // The profiles, once there is more than one (see Profiles.swift):
-                // each one's window, brought forward or opened.
-                if profiles.several {
-                    Menu("Profile") {
-                        ForEach(profiles.list) { profile in
-                            Button(profile.id == browser.profileID ? "\(profile.name) ✓" : profile.name) {
-                                Browsers.open(profile: profile.id)
-                            }
-                        }
-                        Divider()
-                        Button("New Profile…") { ProfileMenu.askNew() }
-                    }
-                }
                 Button("New Tab") { browser.launch() }
                     .shortcut("file.newTab")
                 Button("New Blank Tab") { browser.newTab() }
@@ -169,7 +154,7 @@ struct SearchApp: App {
                         Text(glyph.title).tag(glyph)
                     }
                 }
-                // Every group of the space on screen, folded or opened at once.
+                // Every group, folded or opened at once.
                 Button("Fold All Groups") { browser.foldAllGroups(true) }
                     .shortcut("view.foldGroups")
                     .disabled(!browser.canFoldAllGroups)
@@ -541,7 +526,7 @@ struct ContentView: View {
     @State private var immersionRevision = 0
     /// The window's width, for a side panel that leaves the page some room.
     @State private var across: CGFloat = 0
-    /// And its height, for a space's gradient to run across the whole window.
+    /// And its height, for the window's gradient to run across all of it.
     @State private var tall: CGFloat = 0
     /// The column's and the side panel's widths while their edges are held.
     @StateObject private var edges = HeldEdges()
@@ -563,9 +548,9 @@ struct ContentView: View {
                 cards ? Palette.frame : Palette.ground
             }
             // As cards, the column, the bookmarks bar and the gaps around the
-            // page share that ground, so the space's colour washes all of it
+            // page share that ground, so the window's colour washes all of it
             // alike. Edge to edge the column and the strip bring their own.
-            if cards && !browser.glassy { SpaceWash(look: browser.wash) }
+            if cards && !browser.glassy { ThemeWash(look: browser.wash) }
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
@@ -984,7 +969,7 @@ struct ContentView: View {
             .environment(\.tabShortcutNumbers, browser.tabShortcutNumbers)
             // One gradient across the column, the bars and the ground alike.
             .environment(\.washRoom, CGSize(width: across, height: tall))
-            // And as strongly, Subtle, Rich or Vivid, as the space on screen asks.
+            // And as strongly, Subtle, Rich or Vivid, as the theme asks.
             .environment(\.washStrength, browser.washStrength)
             // The live tab as a pane of Liquid Glass, where the Mac has it.
             .environment(\.liquidTabs, browser.prefs.liquidTabs && LiquidTab.available)
@@ -1266,16 +1251,6 @@ struct ContentView: View {
         // Off screen at once, while a link's small window keeps the browser's
         // windows away (see Browsers.keepAway).
         Browsers.putAway()
-        // Tucked behind another profile's window before it had one: SwiftUI's
-        // window, whose browser a relaunch tucks (Browsers.restore runs as
-        // the scene appears, before this) when another profile was on screen
-        // at quit. Nothing could order it out then, so it goes now, as a
-        // tucked window opened by hand never comes in (#1060).
-        if browser.tucked {
-            window.animationBehavior = .none
-            window.isExcludedFromWindowsMenu = true
-            window.orderOut(nil)
-        }
         window.tabbingMode = .disallowed
         // Light or dark is the app's to say (Settings › Appearance); the
         // window only has to be the ground colour that goes with it.
@@ -1364,18 +1339,14 @@ struct ContentView: View {
             // those of windows that aren't a browser's (a panel). A small
             // window's are its own (LittleWindow.watchKeys).
             // The address field raised from another app answers its own keys
-            // (Launcher.swift), as does the panel asking which space a link
-            // opens in (LinkChooserPanel.swift): taken here, Escape would put
+            // (Launcher.swift): taken here, Escape would put
             // away what is up in the window behind it, ⌘W close a tab there,
             // and a key typed while this window's field is on its way be held
             // for it.
             if event.window is LauncherPanel { return event }
             guard mine(event) else { return event }
             guard event.type == .keyDown else {
-                // ⌃ with the tab numbers on it (Settings › Spaces & Pins) is
-                // also the switcher's: its cards are up, not the numbers.
                 let held = browser.prefs.showsTabShortcuts && KeyCombo.holdsTabNumbers(event.modifierFlags)
-                    && !(KeyCombo.spacesOnCommand && browser.tabSwitcher.active)
                 if browser.commandHeld != held { browser.commandHeld = held }
                 // ⌃ let go of switches to the tab the switcher is on — or
                 // whichever its key is held with (Settings › Shortcuts).
@@ -1491,7 +1462,7 @@ struct ContentView: View {
     }
 
     /// A key that goes to another tab or a new one: the switcher's, ⌘T,
-    /// ⌘1 through ⌘9 (⌃1–⌃9 while ⌘1–⌘9 switch spaces).
+    /// ⌘1 through ⌘9.
     private static func movesTab(_ event: NSEvent) -> Bool {
         if ShortcutStore.shared.recentSwitch(event) != nil { return true }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
@@ -1595,7 +1566,7 @@ struct ContentView: View {
         // from them like any other.
         return !browser.welcoming &&
             !browser.reviewing && browser.styling == nil && !browser.bookmarksOpen &&
-            !browser.veiling && !browser.summoning && !browser.makingSpace &&
+            !browser.veiling && !browser.summoning &&
             !browser.peekInFront && browser.editingTab == nil &&
             browser.asking == nil && browser.suggesting == nil
     }
@@ -1614,8 +1585,7 @@ struct ContentView: View {
         // there with or without a browser window. Taken here too, ⌘[ was
         // gone before the page had it.
         if LittleWindow.owning(event.window) != nil { return false }
-        // Nor the address field raised from another app's (Launcher.swift),
-        // or the panel asking which space a link opens in.
+        // Nor the address field raised from another app's (Launcher.swift).
         if event.window is LauncherPanel { return false }
         // A popup window: ⌘W closes it, not a tab of the
         // window menus act on. New tabs return to its browser; Escape
@@ -1698,11 +1668,6 @@ struct ContentView: View {
             }
             if browser.peekInFront {
                 browser.closePeek()
-                return true
-            }
-            if browser.makingSpace {
-                browser.cancelSpaceCreation()
-                withAnimation(Motion.glide) { browser.makingSpace = false }
                 return true
             }
             // The same panels in the same order as ⌘W (Browser.closeFront).
@@ -1843,20 +1808,10 @@ struct ContentView: View {
             return browser.submitToShiftEngine()
         }
 
-        // ⌃1–⌃9 pick a tab while ⌘1–⌘9 switch spaces (Settings › Spaces &
-        // Pins), as in Arc: by the key, as ⌘1–⌘9 below, and before any
-        // command a ⌃ digit was given while it was free.
-        if KeyCombo.spacesOnCommand, flags.intersection([.command, .shift, .option, .control]) == .control,
-           let number = ContentView.digits[event.keyCode], number != 0 {
-            browser.select(index: number == 9 ? browser.tabShortcutTargets.count - 1 : number - 1)
-            return true
-        }
-
-        // Space keys have no menu; other commands arrive here when rebound.
-        // A key taken off a command goes back to the page.
-        if ShortcutStore.shared.anyChanged || browser.prefs.usesSpaces, let combo = KeyCombo(event: event) {
+        // Commands arrive here when rebound. A key taken off a command goes
+        // back to the page.
+        if ShortcutStore.shared.anyChanged, let combo = KeyCombo(event: event) {
             if let command = ShortcutStore.shared.customCommand(on: combo) {
-                if command.section == .spaces, !browser.prefs.usesSpaces { return false }
                 if Command.split.contains(command.id), !browser.prefs.splitView { return false }
                 if Command.ai.contains(command.id), !browser.prefs.ai { return false }
                 if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
@@ -1934,9 +1889,6 @@ struct ContentView: View {
         if !shifted, let number = ContentView.digits[event.keyCode] {
             if number == 0 {
                 browser.resetZoom()
-            } else if KeyCombo.spacesOnCommand {
-                // The spaces' (above), unless one was taken off: the page's then.
-                return false
             } else {
                 browser.select(index: number == 9 ? browser.tabShortcutTargets.count - 1 : number - 1)
             }

@@ -33,14 +33,6 @@
             <property name="current tab" code="cTab" type="tab" access="r" description="The tab showing in the window; missing value when it is a private tab.">
                 <cocoa key="scriptCurrentTab"/>
             </property>
-            <!-- Safari has no word for these, so the codes are Search's own:
-                 Apple keeps the all-lowercase ones. -->
-            <property name="space" code="wSpc" type="text" access="r" description="The name of the space the window shows; missing value when its tab in front is private.">
-                <cocoa key="scriptSpace"/>
-            </property>
-            <property name="profile" code="wPrf" type="text" access="r" description="The name of the profile the window is in; missing value when its tab in front is private.">
-                <cocoa key="scriptProfile"/>
-            </property>
         </class>
         <class name="tab" plural="tabs" code="bTab" description="A tab. Private tabs are never listed.">
             <cocoa class="ScriptTab"/>

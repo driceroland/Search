@@ -135,7 +135,7 @@ enum ExtensionFetch {
             return false
         }
         let candidates = showing.isEmpty ? Browsers.all : showing
-        return only(candidates.map { $0.panelStore($0.spaceID) })
+        return only(candidates.map { _ in Store.websites })
     }
 
     /// The one store, if they are all that one.
@@ -821,7 +821,7 @@ enum ExtensionFetch {
             for (k, v) in HTTPCookie.requestHeaderFields(with: cookies) { request.setValue(v, forHTTPHeaderField: k) }
             ExtensionFetch.note(["native": url.absoluteString, "method": request.httpMethod ?? "GET", "origin": origin,
                                  "extension": context.uniqueIdentifier, "cookies": cookies.map(\.name).sorted(),
-                                 "store": Browsers.all.contains { $0.panelStore($0.spaceID) === store } ? "space" : "other"])
+                                 "store": store === Store.websites ? "space" : "other"])
         }
 
         nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,

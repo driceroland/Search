@@ -27,13 +27,12 @@ final class PinCrossTests: XCTestCase {
     }
 
     /// A pin at its home, in the row.
-    private func pin(everywhere: Bool = false) -> Tab {
-        let tab = Tab(configuration: Web.configuration(space: browser.spaceID))
+    private func pin() -> Tab {
+        let tab = Tab(configuration: Web.configuration())
         tab.setAddressOptimistically(home)
         tab.pin = "P"
         tab.pinID = UUID()
         tab.home = home
-        tab.everywhere = everywhere
         browser.prepare(tab)
         browser.insert(tab, at: browser.tabs.count)
         return tab
@@ -60,12 +59,4 @@ final class PinCrossTests: XCTestCase {
         XCTAssertEqual(fresh.home, home)
     }
 
-    func testAPinEverySpaceShowsStaysInEverySpace() throws {
-        let fresh = try cross(pin(everywhere: true))
-        XCTAssertTrue(fresh.everywhere, "A shared pin would be written back as this space's own")
-    }
-
-    func testAPinOnlyHereStaysOnlyHere() throws {
-        XCTAssertFalse(try cross(pin()).everywhere)
-    }
 }
