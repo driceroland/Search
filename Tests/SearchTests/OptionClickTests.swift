@@ -130,19 +130,6 @@ final class OptionClickTests: XCTestCase {
         XCTAssertEqual(browser.activeID, shy.id, "chosen, as a plain click chooses it")
     }
 
-    // MARK: - across the top, and a pin
-
-    func testOptionClickAcrossTheTopPutsTheTabBesideThePage() async throws {
-        let browser = makeBrowser()
-        browser.prefs.sidebar = false
-        let t = browser.tabs
-        browser.select(t[0])
-        let window = makeStrip(browser)
-        try await settle()
-        try await click(pillPoint(2), in: window, option: true)
-        XCTAssertEqual(browser.split(for: t[2])?.tabs, [t[0].id, t[2].id])
-    }
-
     func testOptionClickOnThePinOnScreenStillSplits() async throws {
         let browser = makeBrowser()
         let t = browser.tabs
@@ -164,13 +151,12 @@ final class OptionClickTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins)
+        let previous = (prefs.usesTabGroups, prefs.splitView, prefs.listsPins)
         restorePreferences = {
-            (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins) = previous
+            (prefs.usesTabGroups, prefs.splitView, prefs.listsPins) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
-        browser.prefs.sidebar = true
         browser.prefs.usesTabGroups = false
         browser.prefs.splitView = true
         browser.prefs.listsPins = false
@@ -187,12 +173,6 @@ final class OptionClickTests: XCTestCase {
         return window
     }
 
-    private func makeStrip(_ browser: Browser) -> NSWindow {
-        let window = makeWindow(root: TabBar(browser: browser), width: 900, height: Metrics.strip)
-        browser.window = window
-        return window
-    }
-
     private func makeWindow<V: View>(root: V, width: CGFloat, height: CGFloat) -> NSWindow {
         let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: width, height: height),
                               styleMask: .borderless, backing: .buffered, defer: false)
@@ -202,11 +182,6 @@ final class OptionClickTests: XCTestCase {
         XCTAssertFalse(NSScreen.screens.contains { $0.frame.intersects(window.frame) }, "never on a screen")
         windows.append(window)
         return window
-    }
-
-    /// The middle of a pill in the 900-point strip of four tabs.
-    private func pillPoint(_ index: Int) -> NSPoint {
-        NSPoint(x: 195 + CGFloat(index) * 150, y: Metrics.strip / 2)
     }
 
     private func rowPoint(_ index: Int, in window: NSWindow) -> NSPoint {

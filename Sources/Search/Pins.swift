@@ -58,14 +58,15 @@ enum Pins {
         loaded = true
         if let data = try? Data(contentsOf: file), let saved = decode(data) {
             list = saved
-            return
+        } else {
+            list = Session.read().tabs.compactMap { entry -> PinDef? in
+                guard let letter = entry.pin else { return nil }
+                return PinDef(id: entry.pinID ?? UUID(), letter: letter, home: entry.home ?? entry.url,
+                              title: entry.title, name: entry.name)
+            }
+            save()
         }
-        list = Session.read().tabs.compactMap { entry -> PinDef? in
-            guard let letter = entry.pin else { return nil }
-            return PinDef(id: entry.pinID ?? UUID(), letter: letter, home: entry.home ?? entry.url,
-                          title: entry.title, name: entry.name)
-        }
-        save()
+        migrateFeedPins()
     }
 
     /// A window's pins, as they now are: kept, written, and passed to the
@@ -78,14 +79,21 @@ enum Pins {
         NotificationCenter.default.post(name: changed, object: browser)
     }
 
-    /// Pins as another Mac left them (see Sync.swift), and every window
-    /// told, as when another window changes them.
-    static func adopt(_ defs: [PinDef]) {
-        load()
-        guard list != defs else { return }
-        list = defs
-        save()
-        NotificationCenter.default.post(name: Pins.changed, object: nil)
+    /// Write the pins before retiring the old feed data. The item IDs make
+    /// a restart between the two writes safe.
+    private static func migrateFeedPins() {
+        let folderFile = Store.file("pin-folders.json")
+        guard let data = try? Data(contentsOf: folderFile),
+              let migration = PinFolders.feedMigration(data, pins: list),
+              let pins = encode(migration.pins) else { return }
+        Disk.drain()
+        do {
+            try pins.write(to: file, options: .atomic)
+            list = migration.pins
+            try migration.folders.write(to: folderFile, options: .atomic)
+        } catch {
+            NSLog("Could not finish migrating saved feed items: %@", error.localizedDescription)
+        }
     }
 
     private static func save() {

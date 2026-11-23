@@ -131,18 +131,9 @@ struct SearchApp: App {
                 }
             }
             CommandGroup(replacing: .toolbar) {
-                Toggle("Show Tabs in Sidebar", isOn: Binding(
-                    get: { browser.prefs.sidebar },
-                    set: { _ in browser.toggleSidebar() }
-                ))
-                .shortcut("view.sidebar")
-                // Folded away, not moved (see Fold.swift) — the column, or the
-                // strip across the top.
                 Button(browser.prefs.shrinks && !browser.folded
                        ? (browser.prefs.sideIcons ? "Show Sidebar Titles" : "Show Sidebar as Icons Only")
-                       : browser.prefs.sidebar
-                       ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
-                       : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
+                       : (browser.folded ? "Show Sidebar" : "Hide Sidebar")) { browser.toggleFold() }
                     .shortcut("view.fold")
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
@@ -521,29 +512,17 @@ struct ContentView: View {
             // column sit on (see CardEdge).
             if fullscreenTab != nil {
                 Color.black
-            } else if browser.glassy {
-                GlassGround(prefs: browser.prefs, look: browser.wash)
             } else {
                 cards ? Palette.frame : Palette.ground
             }
             // As cards, the column, the bookmarks bar and the gaps around the
             // page share that ground, so the window's colour washes all of it
-            // alike. Edge to edge the column and the strip bring their own.
-            if cards && !browser.glassy { ThemeWash(look: browser.wash) }
+            // alike. With edge-to-edge pages, the sidebar has its own ground.
+            if cards { ThemeWash(look: browser.wash) }
 
-            // One stage, always. It starts beside the column and under the
-            // strip, not behind them — a page sliding beneath floating chrome
-            // is a browser showing off, and it costs a compositing pass.
-            //
-            // When the strip comes or goes, or the column as the tabs move
-            // between it and the strip or to its other side, the page slides
-            // with it and is resized
-            // once, not on every frame of the slide: laid out again thirty
-            // times a second, the page juddered along its right edge and
-            // overshot the window with the spring (see `room`). ⌘S's slide of
-            // the column is the exception: the page follows the column's
-            // edge, resized on every frame, or what it centres jumped half
-            // the column's width at one end of the slide (Browser.slidePage).
+            // Keep one page stage beside the sidebar. Moving the sidebar
+            // to the other side resizes the page once. While ⌘S slides the
+            // sidebar away, the page follows its edge (Browser.slidePage).
             //
             // With the tabs down the side the page is a card on the window's
             // ground: a gap on the far side and along the bottom here, at the
@@ -567,18 +546,11 @@ struct ContentView: View {
             // The column of tabs is Fold's, in its place beside the page or
             // folded away (see Fold.swift).
 
-            if !browser.prefs.sidebar, !browser.folded, fullscreenTab == nil {
-                TabBar(browser: browser)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            // The bookmarks bar, under the strip or beside the column's top —
-            // there on the window's ground above the page's card, and no wider.
+            // The bookmarks bar sits above the page, beside the sidebar.
             if barShown {
                 BookmarksBar(browser: browser, bookmarks: browser.bookmarks, onFrame: cards)
                     .padding(.leading, sideOnRight ? farGap : chrome.width)
                     .padding(.trailing, sideOnRight ? chrome.width : farGap)
-                    .padding(.top, band)
                     .transition(.opacity)
             }
         }
@@ -587,7 +559,6 @@ struct ContentView: View {
         .background { GeometryReader { geo in Color.clear.onAppear { across = geo.size.width; tall = geo.size.height }
             .onChange(of: geo.size.width) { _, width in across = width }
             .onChange(of: geo.size.height) { _, height in tall = height } } }
-        .animation(Motion.glide, value: browser.prefs.sidebar)
         .animation(Motion.glide, value: browser.prefs.sidePosition)
         .onAppear { if room == nil { room = chrome } }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
@@ -647,13 +618,13 @@ struct ContentView: View {
                 .animation(Motion.quick, value: browser.suggesting)
         } else if browser.prefs.homeTheme != .off {
             HomeBackground(theme: browser.prefs.homeTheme, tuning: browser.prefs.homeTuning,
-                           image: browser.prefs.homeThemeImage, shuffle: browser.prefs.homeShuffle)
+                           image: browser.prefs.homeThemeImage)
         } else {
             Palette.ground
         }
     }
 
-    /// What the column and the strip take from the page right now: animated
+    /// What the sidebar takes from the page right now: animated
     /// as they come and go. With the page as a card, the column folded away
     /// still leaves the card's gap, and so does the top, unless the bookmarks
     /// bar is there.
@@ -663,7 +634,7 @@ struct ContentView: View {
             return CGSize(width: sidebar ? sideWidth : Metrics.cardGap,
                           height: barShown ? bar : Metrics.cardGap)
         }
-        return CGSize(width: sidebar ? sideWidth : 0, height: band + bar)
+        return CGSize(width: sidebar ? sideWidth : 0, height: bar)
     }
 
     /// The column's width folded away: the room ⌘S gives the page before
@@ -726,14 +697,14 @@ struct ContentView: View {
     /// while ⌘S slides the column, the column's own, which is (see
     /// Browser.slidePage).
     private var roomed: CGSize {
-        if browser.pageFollows, browser.prefs.sidebar, edges.side == nil {
+        if browser.pageFollows, edges.side == nil {
             return CGSize(width: chrome.width, height: (room ?? chrome).height)
         }
         return room ?? chrome
     }
 
     private var sideOnRight: Bool {
-        browser.prefs.sidebar && browser.prefs.sidePosition == .right
+        browser.prefs.sidePosition == .right
     }
 
     /// Chrome going away gives the page its room at once, the page sliding
@@ -757,7 +728,7 @@ struct ContentView: View {
         }
         // ⌘S sliding the column: the page follows it (see `roomed`), and
         // has this room once it rests.
-        if browser.pageFollows, browser.prefs.sidebar, new.height == now.height {
+        if browser.pageFollows, new.height == now.height {
             roomTicket += 1
             var still = Transaction()
             still.disablesAnimations = true
@@ -835,29 +806,11 @@ struct ContentView: View {
         }
     }
 
-    /// What still comes over the page. Settings, History, Downloads,
-    /// Bookmarks, Passwords, Bring Things Over and the release notes are
-    /// tabs of their own now (see InternalPages.swift); what is left here
-    /// either comes before there are tabs (Welcome) or comes once by itself
-    /// and goes (What's New).
     @ViewBuilder
     private var panels: some View {
         if browser.welcoming {
             WelcomePanel(browser: browser, prefs: browser.prefs)
                 .ignoresSafeArea()
-        }
-        // What's new, once after an update (see WhatsNew.swift). Every
-        // version's notes are a tab.
-        if browser.newsShowing, let release = WhatsNew.current {
-            sheet {
-                WhatsNewCard(release: release, prefs: browser.prefs, close: { browser.newsShowing = false }, notes: {
-                    browser.newsShowing = false
-                    browser.show(InternalPage(.notes))
-                }, open: { url in
-                    browser.newsShowing = false
-                    _ = browser.open(url, foreground: true)
-                })
-            } close: { browser.newsShowing = false }
         }
         if browser.reviewing {
             // No dimming for this one: the whole point is to keep looking at
@@ -902,20 +855,18 @@ struct ContentView: View {
         )
     }
 
-    /// The window held, dressed and named for the page in front (see
-    /// WindowTitle.swift), which it offers to your other devices too (see
-    /// Handoff.swift).
+    private func paintGround(_ window: NSWindow?) {
+        guard let window else { return }
+        window.isOpaque = true
+        window.backgroundColor = browser.asCards ? Palette.NS.frame : Palette.NS.ground
+    }
+
     private var windowSetup: some View {
         ZStack {
             WindowSetup(ready: setUp)
             if let tab = browser.active {
                 WindowTitle(tab: tab, window: window).id(tab.id)
-                Handoff(tab: tab, prefs: browser.prefs, window: window).id(tab.id)
             }
-        }
-        // With no tab in front, nothing stays offered from the last one.
-        .onChange(of: browser.activeID) { _, id in
-            if id == nil, let window { Handoff.offer(nil, in: window) }
         }
     }
 
@@ -961,17 +912,9 @@ struct ContentView: View {
             .padding(.top, browser.revealInset)
             .ignoresSafeArea()
             .background(windowSetup)
-            .onChange(of: browser.prefs.sidebar) { _, _ in
-                DispatchQueue.main.async { Lights.refresh(window); measureLights() }
-            }
             .onChange(of: browser.asCards) { _, _ in
                 // The ground the page's card sits on, or the page's own.
-                browser.paintGround(window)
-            }
-            .onChange(of: browser.glassy) { _, _ in browser.paintGround(window) }
-            // The lights sit on the strip's middle, which moves with its height.
-            .onChange(of: browser.prefs.compactStrip) { _, _ in
-                DispatchQueue.main.async { Lights.refresh(window); measureLights() }
+                paintGround(window)
             }
             .onChange(of: browser.prefs.sidePosition) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
@@ -1035,7 +978,6 @@ struct ContentView: View {
             }
             .onChange(of: browser.activeID) { _, _ in handBack() }
             .animation(Motion.settle, value: browser.welcoming)
-            .animation(Motion.settle, value: browser.newsShowing)
             .animation(Motion.settle, value: browser.reviewing)
             .animation(Motion.settle, value: browser.styling)
         .onAppear {
@@ -1134,17 +1076,9 @@ struct ContentView: View {
         .transition(.opacity)
     }
 
-    /// True while the tabs are down the left, and not folded away (see Fold.swift).
+    /// True while the sidebar takes room beside the page.
     private var sidebar: Bool {
-        browser.prefs.sidebar && !browser.folded && fullscreenTab == nil
-    }
-
-    /// The column has its own corner for the lights, so the page beside it
-    /// starts at the very top; the strip needs a band.
-    private var band: CGFloat {
-        guard fullscreenTab == nil else { return 0 }
-        // Folded, the strip is out of the window and the page has its height.
-        return browser.prefs.sidebar || browser.folded ? 0 : Metrics.strip
+        !browser.folded && fullscreenTab == nil
     }
 
     /// Either visible pane may give its page to WebKit's fullscreen window.
@@ -1239,7 +1173,7 @@ struct ContentView: View {
         browser.fullScreen = window.styleMask.contains(.fullScreen)
         if reveal == nil { reveal = FullScreenReveal(window: window, browser: browser) }
         if browser.fullScreen { reveal?.entering() }
-        browser.paintGround(window)
+        paintGround(window)
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
@@ -1258,7 +1192,7 @@ struct ContentView: View {
         // its three doors sit on the lights' line.
         let edges = self.edges
         Lights.keep(window, centreX: { window in
-            browser.prefs.sidebar && browser.prefs.sidePosition == .right
+            browser.prefs.sidePosition == .right
                 ? window.frame.width - (edges.side ?? browser.prefs.columnWidth) + Lights.centre.x
                 : Lights.centre.x
         }, vertical: { _ in browser.prefs.iconColumn }) { measureLights() }
@@ -1650,7 +1584,6 @@ struct ContentView: View {
                 return true
             }
             // The same panels in the same order as ⌘W (Browser.closeFront).
-            if browser.closePanel() { return true }
             if browser.suggesting != nil {
                 browser.dropChoice()
                 return true
@@ -1936,10 +1869,7 @@ struct ContentView: View {
             // Held down, ⌘K walks the list a step at a time; letting go of ⌘
             // takes wherever it stopped. Pressed afresh, it puts it away.
             browser.searchTabsKey()
-        case "s" where shifted:
-            browser.toggleSidebar()
         case "s" where !shifted:
-            // The column or the strip, folded away (see Fold.swift).
             browser.toggleFold()
         case "b" where shifted:
             browser.bookmarkCurrent()

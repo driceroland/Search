@@ -41,34 +41,6 @@ def row(y, width):
 def main():
     t = sv.T()
     try:
-        # Tabs along the top.
-        sv.setup(sidebar=False); sv.launch()
-        sv.page("a"); sv.page("b"); sv.page("c"); time.sleep(0.8)
-        probe = sv.cmd({"do": "probe"})
-        width = 1180  # a first window's width
-        lights = probe.get("lights") or []
-        y = lights[0][1] if lights else 20
-        across = row(y, width)
-        held = [p for p in across if not p[2]]
-        free = [p for p in across if p[2]]
-        t.ok("tabs: over a tab in the title bar the window isn't movable (a tab picked up stays a tab, #668)",
-             any(v not in ("Strip", "") and v != "NSButton" for _, v, _, _ in held), held[:6])
-        t.ok("tabs: over the empty run of the strip the window is movable",
-             any(v == "Strip" for _, v, _, _ in free), [p for p in across if p[1] == "Strip"][:4])
-        t.ok("tabs: the strip's own run never holds the window",
-             not any(v == "Strip" for _, v, _, _ in held), [p for p in held if p[1] == "Strip"][:4])
-        tab = next((x for x, v, m, _ in held if v not in ("Strip", "", "NSButton")), None)
-        if tab is not None:
-            v, movable, _ = at(tab, 6)
-            t.ok("tabs: above a tab the window is movable (the row's scroll view took it, #1321)",
-                 movable and v == "Strip", (tab, v, movable))
-        if lights:
-            v, movable, _ = at(lights[2][0] + 6, lights[2][1])
-            t.ok("tabs: over the lights the window is movable (the green button's tiling)", movable, v)
-        v, movable, bar = at(300, 300)
-        t.ok("tabs: over the page the window is movable", movable and not bar, (v, movable, bar))
-        sv.quit()
-
         # The column of tabs.
         sv.setup(sidebar=True); sv.launch()
         sv.page("a"); sv.page("b"); time.sleep(0.8)

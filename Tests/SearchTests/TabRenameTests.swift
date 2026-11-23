@@ -25,20 +25,14 @@ final class TabRenameTests: XCTestCase {
     func testWhereTheNameCanBeTyped() {
         _ = NSApplication.shared
         let prefs = Shared.prefs
-        let before = (prefs.sidebar, prefs.sideIcons, prefs.listsPins)
-        defer { (prefs.sidebar, prefs.sideIcons, prefs.listsPins) = before }
+        let before = (prefs.sideIcons, prefs.listsPins)
+        defer { (prefs.sideIcons, prefs.listsPins) = before }
         let browser = Browser(record: WindowRecord())
         defer { browser.closeAll() }
         let loose = tab(pin: false), pinned = tab(pin: true)
         defer { loose.close(); pinned.close() }
 
-        // Tabs across the top: as before.
-        prefs.sidebar = false
-        XCTAssertTrue(browser.renamesInPlace(loose))
-        XCTAssertTrue(browser.renamesInPlace(pinned))
-
         // The column with titles: a row, but a pin is a square.
-        prefs.sidebar = true
         prefs.sideIcons = false
         prefs.listsPins = false
         XCTAssertTrue(browser.renamesInPlace(loose))

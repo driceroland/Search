@@ -197,17 +197,15 @@ try:
 finally:
     t.done(); sv.finish()
 
-# The switch off, or the tabs across the top: never a player.
+# With the switch off, the player stays hidden.
 t2 = sv.T()
-for prefs, name in (({"sidebar": True, "sidebar.player": False}, "the switch off"),
-                    ({"sidebar": False, "sidebar.player": True}, "the tabs across the top")):
-    try:
-        sv.setup(**prefs)
-        sv.launch()
-        a = sv.page("a"); sounding(a)
-        b = sv.page("b"); select(b)
-        t2.ok(f"{name}: no player", player()["tab"] == "")
-    finally:
-        sv.finish()
+try:
+    sv.setup(**{"sidebar.player": False})
+    sv.launch()
+    a = sv.page("a"); sounding(a)
+    b = sv.page("b"); select(b)
+    t2.ok("the switch off: no player", player()["tab"] == "")
+finally:
+    sv.finish()
 t2.done()
 sys.exit(1 if t.failed or t2.failed else 0)

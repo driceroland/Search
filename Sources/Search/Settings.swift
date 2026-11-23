@@ -18,7 +18,6 @@ struct SettingsPanel: View {
     var found: String? = nil
     @Environment(\.asTab) private var asTab
 
-    @ObservedObject private var sync = Sync.shared
     /// The keys rows name, as Settings › Shortcuts has them now.
     @ObservedObject private var shortcuts = ShortcutStore.shared
     @State private var isDefault = Links.isDefault
@@ -452,7 +451,6 @@ struct SettingsPanel: View {
             return mailHandler.map { "Email links from other apps go to \($0) now" } ?? item.detail
         case "downloads.folder":
             return prefs.downloads.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
-        case "sync": return sync.on ? sync.summary : item.detail
         case "search.engine": return searchDetail
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail
@@ -527,10 +525,6 @@ struct SettingsPanel: View {
             // Coming from another browser, now or any time later: the same
             // page as File › Bring Things Over… and the Welcome's.
             Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
-        case "sync":
-            // On asks for the folder first; cancelled, it stays off.
-            Switch(on: Binding(get: { sync.on }, set: { $0 ? sync.choose() : sync.turnOff() }))
-        case "handoff": Switch(on: $prefs.handoff)
         case "quit.confirm": Switch(on: $prefs.confirmsQuit)
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)
@@ -575,17 +569,6 @@ struct SettingsPanel: View {
                      ))
         case "layout.cardsFullScreen": Switch(on: $prefs.cardsInFullScreen)
         case "address.shown": Switch(on: $prefs.addressLine)
-        case "address.width": Segmented(options: AddressWidth.allCases.map { ($0, $0.title) }, selection: $prefs.addressWidth)
-        case "window.glass": Switch(on: $prefs.glass)
-        case "window.glass.style": Segmented(options: GlassStyle.allCases.map { ($0, $0.title) }, selection: $prefs.glassStyle)
-        case "window.glass.clear": Slider(value: $prefs.glassClear, in: 0...1).controlSize(.small).frame(width: 160)
-        case "window.glass.grain": Slider(value: $prefs.glassGrain, in: 0...1).controlSize(.small).frame(width: 160)
-        case "toolbar.left": Switch(on: $prefs.navigationLeft)
-        case "tabs.compact":
-            Switch(on: Binding(
-                get: { prefs.compactStrip },
-                set: { on in withAnimation(Motion.glide) { prefs.compactStrip = on } }
-            ))
         case "tabs.liquid": Switch(on: $prefs.liquidTabs)
         case "sidebar.player": Switch(on: $prefs.showsPlayer)
         case "sidebar.foldButton": Switch(on: $prefs.foldButton)
@@ -619,8 +602,8 @@ struct SettingsPanel: View {
         case "tabs.newPlace":
             Picker("New tab position", selection: $prefs.newTabPlace) {
                 Text("After current").tag(NewTabPlace.next)
-                Text(prefs.sidebar ? "Top" : "Leftmost").tag(NewTabPlace.top)
-                Text(prefs.sidebar ? "Bottom" : "Rightmost").tag(NewTabPlace.end)
+                Text("Top").tag(NewTabPlace.top)
+                Text("Bottom").tag(NewTabPlace.end)
             }
             .labelsHidden()
             .pickerStyle(.menu)
@@ -633,7 +616,6 @@ struct SettingsPanel: View {
         case "tabs.switcherLeavesOutPins": Switch(on: $prefs.switcherLeavesOutPins)
         case "tabs.frontBeside": Switch(on: $prefs.frontLinksBeside)
         case "tabs.swipeBackCloses": Switch(on: $prefs.swipeBackCloses)
-        case "tabs.mirror": Switch(on: $prefs.mirrorsTabs)
         case "tabs.lazy": Switch(on: $prefs.lazyTabs)
         case "tabs.popupWindows": Switch(on: $prefs.popupWindows)
         case "tabs.sleep":
@@ -818,7 +800,6 @@ struct SettingsPanel: View {
         case "launcher.little": Switch(on: $prefs.launcherLittle)
         case "note.switcher": Always()
         case "about.feedback": Pill("Send Feedback") { Links.writeFeedback() }
-        case "about.notes": Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
         case "bench": Switch(on: $prefs.bench)
         case "agents": Switch(on: $prefs.agents)
         default: EmptyView()
@@ -1213,18 +1194,6 @@ private struct LayoutPicture: View {
         ZStack {
             Palette.wash
             switch layout {
-            case .top:
-                VStack(spacing: 4) {
-                    HStack(spacing: 3) {
-                        lights
-                        Capsule().fill(lit).frame(width: 14, height: 4)
-                        Capsule().fill(tab).frame(width: 14, height: 4)
-                        Capsule().fill(tab).frame(width: 10, height: 4)
-                        Spacer(minLength: 0)
-                    }
-                    page
-                }
-                .padding(5)
             case .left, .right:
                 HStack(spacing: 4) {
                     if layout == .right { page }

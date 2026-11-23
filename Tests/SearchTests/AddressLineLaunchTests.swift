@@ -21,7 +21,6 @@ final class AddressLineLaunchTests: XCTestCase {
         prefs.addressLine = true
         let browser = Browser(record: WindowRecord())
         browser.welcoming = false
-        browser.newsShowing = false
         browser.newTab()
         let tab = try XCTUnwrap(browser.active)
         tab.go(to: URL(string: "about:blank")!)

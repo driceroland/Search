@@ -15,9 +15,6 @@ import Foundation
 //
 // Inside a folder, or at the top of the rows, the folders come first, in
 // their order, then the pins, in theirs.
-//
-// A live folder (LiveFolders.swift) is one filled from a web feed rather
-// than by hand: it holds the feed's latest posts, never a pin or a folder.
 
 struct PinFolder: Codable, Equatable, Identifiable {
     var id: UUID
@@ -25,25 +22,10 @@ struct PinFolder: Codable, Equatable, Identifiable {
     /// The folder that holds this one; nil at the top of the rows.
     var parent: UUID? = nil
     var collapsed: Bool = false
-    /// A live folder's feed. Left out of the file for any other folder; a
-    /// version that doesn't know it reads a live folder as an empty one.
-    var feed: URL? = nil
-    /// A live folder's posts as last fetched, kept so a launch without the
-    /// network still has them.
-    var items: [FeedItem]? = nil
-
-    var isLive: Bool { feed != nil }
-}
-
-/// One post of a live folder's feed: opened as a bookmark is, never a pin.
-struct FeedItem: Codable, Equatable, Identifiable {
-    var id: UUID
-    var title: String
-    var link: URL
 }
 
 extension PinFolder {
-    private enum Keys: String, CodingKey { case id, name, parent, collapsed, feed, items }
+    private enum Keys: String, CodingKey { case id, name, parent, collapsed }
 
     /// Leniently, as TabGroup: a folder saved without its folded state is
     /// an open one, and a parent that doesn't read is the top.
@@ -53,8 +35,6 @@ extension PinFolder {
         name = try c.decode(String.self, forKey: .name)
         parent = try? c.decodeIfPresent(UUID.self, forKey: .parent)
         collapsed = (try? c.decodeIfPresent(Bool.self, forKey: .collapsed)) ?? false
-        feed = try? c.decodeIfPresent(URL.self, forKey: .feed)
-        items = feed == nil ? nil : (try? c.decodeIfPresent([FeedItem].self, forKey: .items)) ?? nil
     }
 }
 
@@ -70,8 +50,6 @@ enum PinTree {
     enum Line: Equatable {
         case folder(PinFolder, depth: Int)
         case pin(UUID, depth: Int)
-        /// A live folder's post.
-        case item(FeedItem, folder: UUID, depth: Int)
     }
 
     /// The folders as they can be trusted: a parent that is gone, or a
@@ -82,9 +60,8 @@ enum PinTree {
         var seen = Set<UUID>()
         out = out.filter { seen.insert($0.id).inserted }
         let ids = Set(out.map(\.id))
-        let live = Set(out.filter(\.isLive).map(\.id))
         for index in out.indices {
-            if let parent = out[index].parent, !ids.contains(parent) || parent == out[index].id || live.contains(parent) {
+            if let parent = out[index].parent, !ids.contains(parent) || parent == out[index].id {
                 out[index].parent = nil
             }
         }
@@ -142,7 +119,6 @@ enum PinTree {
     /// maxDepth and never inside itself.
     static func canMove(_ id: UUID, into parent: UUID?, in folders: [PinFolder]) -> Bool {
         guard let parent else { return true }
-        if isLive(parent, in: folders) { return false }
         if parent == id || ancestors(of: parent, in: folders).contains(id) { return false }
         return depth(of: parent, in: folders) + height(of: id, in: folders) <= maxDepth
     }
@@ -150,14 +126,8 @@ enum PinTree {
     /// Whether a new folder may be made inside `parent`.
     static func canMake(in parent: UUID?, in folders: [PinFolder]) -> Bool {
         guard let parent else { return true }
-        return folders.contains { $0.id == parent } && !isLive(parent, in: folders)
+        return folders.contains { $0.id == parent }
             && depth(of: parent, in: folders) < maxDepth
-    }
-
-    /// Whether a folder is a live one: no pin and no folder goes in it.
-    static func isLive(_ id: UUID?, in folders: [PinFolder]) -> Bool {
-        guard let id else { return false }
-        return folders.contains { $0.id == id && $0.isLive }
     }
 
     /// A folder taken away: what it held, folders and pins, goes up into
@@ -184,19 +154,12 @@ enum PinTree {
     /// folder, as Arc keeps the page you are on in sight.
     static func lines(pins: [(id: UUID, folder: UUID?)], folders: [PinFolder], showing: UUID? = nil) -> [Line] {
         let folders = sanitized(folders)
-        // A pin can't be in a live folder: one that says it is, is at the top.
-        let ids = Set(folders.filter { !$0.isLive }.map(\.id))
+        let ids = Set(folders.map(\.id))
         let home = { (folder: UUID?) -> UUID? in folder.flatMap { ids.contains($0) ? $0 : nil } }
         var out: [Line] = []
         func walk(_ parent: UUID?, depth: Int, folded: Bool) {
             for folder in folders where folder.parent == parent {
                 if !folded { out.append(.folder(folder, depth: depth)) }
-                if folder.isLive {
-                    if !folded && !folder.collapsed {
-                        for item in folder.items ?? [] { out.append(.item(item, folder: folder.id, depth: depth + 1)) }
-                    }
-                    continue
-                }
                 walk(folder.id, depth: depth + 1, folded: folded || folder.collapsed)
             }
             for pin in pins where home(pin.folder) == parent && (!folded || pin.id == showing) {
@@ -256,12 +219,10 @@ enum PinTree {
         guard let hit = lines.first(where: { y >= $0.frame.minY && y <= $0.frame.maxY }) else { return nil }
         switch hit.line {
         case .folder(let folder, _):
-            return folder.isLive ? nil : Place(folder: folder.id)
+            return Place(folder: folder.id)
         case .pin(let id, _):
             guard id != carrying else { return nil }
             return Place(folder: pinFolder[id] ?? nil, anchor: id, after: y > hit.frame.midY)
-        case .item:
-            return nil
         }
     }
 
@@ -303,7 +264,7 @@ enum PinTree {
         switch hit.line {
         case .folder(let folder, _):
             guard !inside(folder.id) else { return nil }
-            if folder.isLive || y < hit.frame.minY + hit.frame.height / 3 {
+            if y < hit.frame.minY + hit.frame.height / 3 {
                 return fits(FolderPlace(parent: folder.parent, before: folder.id))
             }
             return fits(FolderPlace(parent: folder.id))
@@ -311,8 +272,6 @@ enum PinTree {
             let parent = pinFolder[id] ?? nil
             guard !inside(parent) else { return nil }
             return fits(FolderPlace(parent: parent))
-        case .item:
-            return nil
         }
     }
 
@@ -342,7 +301,7 @@ enum PinTree {
             full.insert(id)
             full.formUnion(ancestors(of: id, in: folders))
         }
-        return folders.filter { keeping.contains($0.id) || full.contains($0.id) || $0.isLive }
+        return folders.filter { keeping.contains($0.id) || full.contains($0.id) }
     }
 
     // MARK: - Arc's pinned list
@@ -367,7 +326,7 @@ enum PinTree {
                         continue
                     }
                     let id: UUID
-                    if let same = folders.first(where: { $0.parent == parent && !$0.isLive && $0.name.localizedCaseInsensitiveCompare(inner.title) == .orderedSame }) {
+                    if let same = folders.first(where: { $0.parent == parent && $0.name.localizedCaseInsensitiveCompare(inner.title) == .orderedSame }) {
                         id = same.id
                     } else {
                         id = UUID()
@@ -404,17 +363,14 @@ enum PinFolders {
     }
 
     /// The folders as they now are, kept and passed to the other windows
-    /// when they changed. `always`: passed on even unchanged, for a live
-    /// folder whose fetch failed, to say so in its tooltip.
-    static func set(_ folders: [PinFolder], from browser: Browser?, always: Bool = false) {
+    /// when they changed.
+    static func set(_ folders: [PinFolder], from browser: Browser?) {
+        Pins.load()
         load()
         let folders = PinTree.sanitized(folders)
-        if list != folders {
-            list = folders
-            save()
-        } else if !always {
-            return
-        }
+        guard list != folders else { return }
+        list = folders
+        save()
         NotificationCenter.default.post(name: Pins.changed, object: browser)
     }
 
@@ -435,5 +391,35 @@ enum PinFolders {
 
     nonisolated static func encode(_ folders: [PinFolder]) -> Data? {
         try? JSONEncoder().encode(folders.isEmpty ? [:] : [Session.legacyFirstRow: folders])
+    }
+
+    private struct SavedFeed: Decodable {
+        struct Item: Decodable {
+            let id: UUID
+            let title: String
+            let link: URL
+        }
+
+        let id: UUID
+        let feed: URL?
+        let items: [Item]?
+    }
+
+    /// Retain the last saved posts from former RSS folders as pinned rows.
+    nonisolated static func feedMigration(_ data: Data, pins: [PinDef]) -> (pins: [PinDef], folders: Data)? {
+        guard let saved = try? JSONDecoder().decode([String: [SavedFeed]].self, from: data),
+              let feeds = saved[Session.legacyFirstRow]?.filter({ $0.feed != nil }), !feeds.isEmpty,
+              let folders = encode(decode(data)) else { return nil }
+        var pins = pins
+        var seen = Set(pins.map(\.id))
+        for feed in feeds {
+            for item in feed.items ?? [] where seen.insert(item.id).inserted {
+                let title = item.title.isEmpty ? item.link.host() ?? item.link.absoluteString : item.title
+                pins.append(PinDef(id: item.id, letter: String(title.prefix(1)).uppercased(),
+                                   home: item.link.absoluteString, title: title, name: nil,
+                                   listed: true, folder: feed.id))
+            }
+        }
+        return (pins, folders)
     }
 }

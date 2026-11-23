@@ -115,13 +115,6 @@ try:
     sv.sp("move", id=ids["a"], to=2); st = sv.sp("state")
     t.ok("switch off: squares move as they always did", pins(st) == ["d", "b", "a"], pins(st))
 
-    # With the tabs across the top, too, every pin is a square to carry.
-    st = relaunch(sidebar=False, **{"pins.list": True})
-    ids = {v: k for k, v in by_url(st).items()}
-    pin(ids["a"], listed=True); st = sv.sp("state")
-    sv.sp("move", id=ids["a"], to=0); st = sv.sp("state")
-    t.ok("across the top: a row carried among the squares becomes one", pins(st)[0] == "a" and rows(st) == [], (pins(st), rows(st)))
-
     # More than the twelve closed tabs ⇧⌘T keeps, a pair among them, cleared
     # from a pin: all of it comes back as one step, the pair a pair again.
     st = relaunch(splitView=True)

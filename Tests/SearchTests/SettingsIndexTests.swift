@@ -11,10 +11,11 @@ final class SettingsIndexTests: XCTestCase {
         super.setUp()
     }
 
-    private let touched = ["sidebar", "sidebar.position", "tabs.sleep", SleepPace.key, "float.leave", "float.away",
+    private let touched = ["sidebar", "sidebar.position", "sidebar.icons", "manner", "tabs.sleep", SleepPace.key, "float.leave", "float.away",
                            "pins.home", "pins.peek", "links.peek", "links.peekClick", "pages.120", "pages.120.mode",
                            "swipe.history", "tabs.address", "links.show", "float.flicks", "spaces", "pins.list",
-                           "newtab.floating", "search.shift", "search.shiftCustom"]
+                           "newtab.floating", "search.shift", "search.shiftCustom",
+                           "home.theme", "home.tuning", "browser.theme"]
 
     private func fresh(_ body: () -> Void) {
         let saved = touched.map { ($0, Store.settings.object(forKey: $0)) }
@@ -36,6 +37,36 @@ final class SettingsIndexTests: XCTestCase {
         XCTAssertEqual(SettingsPanel.Page.named("shortcuts"), .keyboard)
         XCTAssertEqual(SettingsPanel.Page.named("downloads"), .general)
         XCTAssertEqual(SettingsPanel.Page.named("privacy"), .privacy)
+    }
+
+    func testFormerTopLayoutUsesTheSidebar() {
+        fresh {
+            Store.settings.set(false, forKey: "sidebar")
+            Store.settings.set("right", forKey: "sidebar.position")
+            Store.settings.set(true, forKey: "sidebar.icons")
+            let prefs = Preferences()
+            XCTAssertEqual(prefs.tabsLayout, .left)
+            XCTAssertNil(TabsLayout(rawValue: "top"))
+            prefs.tabsLayout = .right
+            XCTAssertEqual(Preferences().tabsLayout, .right)
+        }
+    }
+
+    func testFormerWallpaperKeepsItsSavedWindowGradient() {
+        fresh {
+            let gradient = ThemeGradient(colours: ["#88AAFF", "#FF9944"], angle: 180, grain: true)
+            var theme = BrowserTheme()
+            theme.gradient = gradient
+            Store.settings.set(theme.text, forKey: "browser.theme")
+            Store.settings.set("stickers", forKey: "home.theme")
+
+            let prefs = Preferences()
+            XCTAssertEqual(prefs.homeTheme, .gradient)
+            XCTAssertEqual(prefs.homeTuning.gradientA, gradient.colours.first)
+            XCTAssertEqual(prefs.homeTuning.gradientB, gradient.colours.last)
+            XCTAssertEqual(prefs.homeTuning.angle, gradient.angle)
+            XCTAssertEqual(prefs.browserTheme, theme)
+        }
     }
 
     func testDefaultsForUntouchedKeys() {
@@ -81,10 +112,9 @@ final class SettingsIndexTests: XCTestCase {
         fresh {
             let prefs = Preferences()
             prefs.tabsLayout = .right
-            XCTAssertEqual(Store.settings.object(forKey: "sidebar") as? Bool, true)
             XCTAssertEqual(Store.settings.string(forKey: "sidebar.position"), "right")
-            prefs.tabsLayout = .top
-            XCTAssertEqual(Store.settings.object(forKey: "sidebar") as? Bool, false)
+            prefs.tabsLayout = .left
+            XCTAssertEqual(Store.settings.string(forKey: "sidebar.position"), "left")
             prefs.sleepChoice = .never
             XCTAssertEqual(Store.settings.object(forKey: "tabs.sleep") as? Bool, false)
             prefs.sleepChoice = .sooner
@@ -110,6 +140,7 @@ final class SettingsIndexTests: XCTestCase {
     func testSetUpLikeArcAndUndo() {
         fresh {
             let prefs = Preferences()
+            prefs.tabsLayout = .right
             prefs.pinsKeepSite = false
             let before = prefs.arcSnapshot
             XCTAssertFalse(prefs.looksLikeArc)

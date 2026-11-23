@@ -8,8 +8,7 @@ Tabs › The page as a card off, or the window in macOS full screen, and the
 page reaches the window's edges, the column beside it as before 1.0.5.
 Nothing goes full screen here: `ui fullscreen` sets the window's full screen
 as the chrome sees it (Browser.fullScreen), the window staying where it is.
-Checked alone and as a pair in Split View, with the column out and folded,
-and the tabs across the top, which never had a card. Given a folder, a
+Checked alone and as a pair in Split View, with the column out and folded. Given a folder, a
 picture of each state goes there, light and dark; nothing is shown on any
 screen to take them.
 """
@@ -120,12 +119,6 @@ def main():
             ends = max(f[2] for f in pages())
             t.ok(f"{kind}: out of full screen, the pages end inside the window", ends <= w, f"{ends} in {w}")
 
-            ui(sidebar=False)
-            across = pages()
-            ui(cards=False)
-            t.ok(f"{kind}: tabs across the top, the switch changes nothing", pages() == across, f"{across} -> {pages()}")
-            room, _ = edges()
-            t.ok(f"{kind}: tabs across the top, edge to edge on three sides", room[0] == 0 and room[2:] == (0, 0), room)
             sv.quit()
     finally:
         t.done(); sv.finish()

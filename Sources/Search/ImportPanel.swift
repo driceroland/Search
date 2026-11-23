@@ -366,7 +366,7 @@ struct ImportPanel: View {
                     Rule()
                     Line("Keep them as pinned rows",
                          "As in \(source.name): each pinned page a row with its name, under your pins. Turned on, it stays in Settings › Pins › Pinned rows"
-                         + (browser.prefs.sidebar ? "" : "; rows show with the tabs down the side")) {
+                        ) {
                         Pill("Turn on pinned rows") {
                             withAnimation(Motion.glide) { browser.prefs.listsPins = true }
                         }

@@ -8,7 +8,7 @@ with a panel, one whose panel page is missing.
 
 Where the panel sits: with the page as a card, a card of its own on the side
 away from the column, after the same gap; edge to edge (the switch off, the
-window in full screen as the chrome sees it, the tabs across the top) at the
+window in full screen as the chrome sees it) at the
 window's edge with a hairline before it; in Split View the pair shares what
 is left. What the panel may do (Security's checks): no window without a
 gesture, window.open only to what a tab may open, its top frame kept to the
@@ -239,16 +239,6 @@ def main():
             t.ok(f"{kind}: full screen, edge to edge", r == (w - WIDTH, 0, w, h) and max(x[2] for x in pages()) == w - WIDTH - 1, (r, pages()))
             ui(fullscreen=False)
             t.ok(f"{kind}: out of full screen, a card again", box() == (w - GAP - WIDTH, GAP, w - GAP, h - GAP), box())
-
-            # The tabs across the top: at the right edge, under the strip.
-            ui(sidebar=False)
-            r = box()
-            top = min(x[1] for x in pages())
-            t.ok(f"{kind}: tabs across the top, at the right edge under the strip",
-                 r == (w - WIDTH, top, w, h) and top > 0, (r, top))
-            t.ok(f"{kind}: tabs across the top, the page up to its hairline", max(x[2] for x in pages()) == w - WIDTH - 1, pages())
-            picture(f"{tag}across")
-            ui(sidebar=True)
 
             # The column folded away: still on the far side.
             ui(folded=True)

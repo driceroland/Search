@@ -80,7 +80,7 @@ final class NarrowStripTests: XCTestCase {
         XCTAssertFalse(prefs.narrowStrip, "icons only keeps back, forward and reload")
         XCTAssertTrue(prefs.iconColumn)
         prefs.sideIcons = false
-        prefs.sidebar = false
+        prefs.narrowsToIcons = false
         XCTAssertFalse(prefs.narrowStrip)
         XCTAssertFalse(prefs.iconColumn)
     }

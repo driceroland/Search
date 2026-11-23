@@ -148,8 +148,6 @@ def main():
              lambda: sv.cmd({"do": "ui", "hidden": False}), field_up)
         over("Welcome", lambda: sv.cmd({"do": "ui", "welcome": True}),
              lambda: sv.cmd({"do": "ui", "welcome": False}), field_up)
-        over("What's New", lambda: sv.cmd({"do": "news", "on": True}),
-             lambda: sv.cmd({"do": "news", "on": False}), field_up)
         # The Find bar is a pill along the page's top: a finer grid there.
         top = [(x, y) for x in range(40, 1600, 40) for y in range(50, 160, 10)]
         top = [p for p in top if hit(*p) == "PageView"]
@@ -157,7 +155,6 @@ def main():
              lambda: sv.sp("state")["finding"], points=top)
 
         # Split View: the field stands over the focused pane alone.
-        sv.cmd({"do": "ui", "sidebar": False}); time.sleep(0.4)
         sv.sp("enabled", on=True)
         left = sv.page("left"); right = sv.page("right")
         sv.sp("pair", id=right, **{"with": left}, side="right"); sv.sp("select", id=right); time.sleep(1)

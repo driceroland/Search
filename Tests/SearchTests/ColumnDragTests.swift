@@ -110,13 +110,12 @@ final class ColumnDragTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.splitView, prefs.sideWidth, prefs.sideHides, prefs.sidePanelWidth)
+        let previous = (prefs.splitView, prefs.sideWidth, prefs.sideHides, prefs.sidePanelWidth)
         restorePreferences = {
-            (prefs.sidebar, prefs.splitView, prefs.sideWidth, prefs.sideHides, prefs.sidePanelWidth) = previous
+            (prefs.splitView, prefs.sideWidth, prefs.sideHides, prefs.sidePanelWidth) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)
-        browser.prefs.sidebar = true
         browser.prefs.splitView = false
         browser.prefs.sideHides = false
         browser.folded = false

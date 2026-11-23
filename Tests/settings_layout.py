@@ -28,8 +28,8 @@ sv.use("bld-set2")
 BEFORE = {
     "quit.confirm": "quitting", "downloads": "save to", "downloads.ask": "ask where",
     "downloads.button": "downloads button", "look": "dark mode", "pages.dusk": "darken",
-    "sidebar": "sidebar", "sidebar.position": "right", "sidebar.hides": "hide the column",
-    "layout.cards": "card", "toolbar.left": "back forward",
+    "sidebar.position": "right", "sidebar.hides": "hide the column",
+    "layout.cards": "card",
     "glyph": "favicon", "tabs.reading": "how far", "tabs.give": "pressed", "bookmarks.bar": "bookmarks bar",
     "motion.light": "low power", "tabs.newPlace": "new tab position", "tabs.newAfterLast": "last tab",
     "tabs.lazy": "background tabs", "tabs.popupWindows": "pop-ups", "tabs.sleep": "sleep",
@@ -128,15 +128,15 @@ def case_merged(t):
     sv.setup(); sv.launch()
     def put(id, value): return settings(set=id, value=value)["values"]
     v = put("tabs.layout", "right")
-    t.ok("Tabs: Right writes sidebar and its position", (read("sidebar"), read("sidebar.position")) == ("1", "right"), (read("sidebar"), read("sidebar.position")))
+    t.ok("Tabs: Right writes the sidebar position", read("sidebar.position") == "right", read("sidebar.position"))
     v = put("tabs.layout", "icons")
-    t.ok("Tabs: Icons only writes sidebar and sidebar.icons, keeps the side",
-         (read("sidebar"), read("sidebar.icons"), read("sidebar.position")) == ("1", "1", "right") and v["tabs.layout"] == "icons",
-         (read("sidebar"), read("sidebar.icons"), read("sidebar.position"), v["tabs.layout"]))
+    t.ok("Tabs: Icons only keeps the side",
+         (read("sidebar.icons"), read("sidebar.position")) == ("1", "right") and v["tabs.layout"] == "icons",
+         (read("sidebar.icons"), read("sidebar.position"), v["tabs.layout"]))
     v = put("tabs.layout", "right")
     t.ok("Tabs: Right after Icons only turns the icons off", read("sidebar.icons") == "0" and v["tabs.layout"] == "right", read("sidebar.icons"))
-    v = put("tabs.layout", "top")
-    t.ok("Tabs: Top writes sidebar off, keeps the position", read("sidebar") == "0" and v["tabs.layout"] == "top")
+    v = put("tabs.layout", "left")
+    t.ok("Tabs: Left writes the sidebar position", read("sidebar.position") == "left" and v["tabs.layout"] == "left")
     put("tabs.sleep", "never")
     t.ok("Sleep: Never writes tabs.sleep off", read("tabs.sleep") == "0")
     put("tabs.sleep", "later")

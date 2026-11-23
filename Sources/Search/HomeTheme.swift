@@ -4,21 +4,17 @@ import AppKit
 /// A painted background behind the blank tab. Off unless asked for.
 enum HomeTheme: String, CaseIterable, Identifiable {
     case off
-    case openRoad, desertHighway, coastalCliffs, mountainLake, riceTerraces
-    case northernLights, saturnRise, moonscape, cityAtNight, monsoonForest
-    case stickers, solid, gradient, custom
+    case solid, gradient, custom
 
     var id: String { rawValue }
 
     /// The groups the Themes page offers, each with its own presets.
     enum Family: String, CaseIterable, Identifiable {
-        case off, wall, stickers, solid, gradient, image
+        case off, solid, gradient, image
         var id: String { rawValue }
         var title: String {
             switch self {
             case .off: return "Off"
-            case .wall: return "Wall painting"
-            case .stickers: return "Stickers"
             case .solid: return "Solid colour"
             case .gradient: return "Gradient"
             case .image: return "Image"
@@ -28,8 +24,6 @@ enum HomeTheme: String, CaseIterable, Identifiable {
         var first: HomeTheme {
             switch self {
             case .off: return .off
-            case .wall: return .openRoad
-            case .stickers: return .stickers
             case .solid: return .solid
             case .gradient: return .gradient
             case .image: return .custom
@@ -40,9 +34,6 @@ enum HomeTheme: String, CaseIterable, Identifiable {
     var family: Family {
         switch self {
         case .off: return .off
-        case .openRoad, .desertHighway, .coastalCliffs, .mountainLake, .riceTerraces,
-             .northernLights, .saturnRise, .moonscape, .cityAtNight, .monsoonForest: return .wall
-        case .stickers: return .stickers
         case .solid: return .solid
         case .gradient: return .gradient
         case .custom: return .image
@@ -52,30 +43,10 @@ enum HomeTheme: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .off: return "Off"
-        case .openRoad: return "Open Road"
-        case .desertHighway: return "Desert Highway"
-        case .coastalCliffs: return "Coastal Cliffs"
-        case .mountainLake: return "Mountain Lake"
-        case .riceTerraces: return "Rice Terraces"
-        case .northernLights: return "Northern Lights"
-        case .saturnRise: return "Saturn Rise"
-        case .moonscape: return "Moonscape"
-        case .cityAtNight: return "City at Night"
-        case .monsoonForest: return "Monsoon Forest"
-        case .stickers: return "Stickers"
         case .solid: return "Solid colour"
         case .gradient: return "Gradient"
         case .custom: return "Image"
         }
-    }
-
-    /// The ten wall paintings (the first family).
-    static let walls: [HomeTheme] = [.openRoad, .desertHighway, .coastalCliffs, .mountainLake, .riceTerraces,
-                                     .northernLights, .saturnRise, .moonscape, .cityAtNight, .monsoonForest]
-
-    /// Reads a stored name.
-    static func stored(_ name: String) -> HomeTheme? {
-        return HomeTheme(rawValue: name)
     }
 
     /// Where a chosen image is kept: a copy, so moving or deleting the
@@ -122,25 +93,6 @@ enum HomeTheme: String, CaseIterable, Identifiable {
     }
 }
 
-enum StickerPack: String, CaseIterable, Identifiable, Codable {
-    case space, roadTrip, ocean, jungle, streetFood, retroTech, weather, music, wonders, search
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .space: return "Space"
-        case .roadTrip: return "Road Trip"
-        case .ocean: return "Ocean"
-        case .jungle: return "Jungle"
-        case .streetFood: return "Street Food"
-        case .retroTech: return "Retro Tech"
-        case .weather: return "Weather"
-        case .music: return "Music"
-        case .wonders: return "Wonders"
-        case .search: return "Search"
-        }
-    }
-}
-
 enum GradientPreset: String, CaseIterable, Identifiable {
     case dusk, sea, peach, mint, mono
     var id: String { rawValue }
@@ -161,11 +113,6 @@ enum GradientPreset: String, CaseIterable, Identifiable {
 struct HomeTuning: Codable, Equatable, Hashable {
     /// 0...1: how far the theme is blended from the plain ground.
     var intensity = 1.0
-    /// 0...1: how many stickers.
-    var density = 0.5
-    /// 0...1: how big a sticker is.
-    var scale = 0.5
-    var pack = StickerPack.space
     var solid = "#E8DFD0"
     var gradientA = "#E9B8A0"
     var gradientB = "#8E86B8"
@@ -179,9 +126,6 @@ struct HomeTuning: Codable, Equatable, Hashable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = HomeTuning()
         intensity = (try? c.decodeIfPresent(Double.self, forKey: .intensity)) ?? d.intensity
-        density = (try? c.decodeIfPresent(Double.self, forKey: .density)) ?? d.density
-        scale = (try? c.decodeIfPresent(Double.self, forKey: .scale)) ?? d.scale
-        pack = (try? c.decodeIfPresent(StickerPack.self, forKey: .pack)) ?? d.pack
         solid = (try? c.decodeIfPresent(String.self, forKey: .solid)) ?? d.solid
         gradientA = (try? c.decodeIfPresent(String.self, forKey: .gradientA)) ?? d.gradientA
         gradientB = (try? c.decodeIfPresent(String.self, forKey: .gradientB)) ?? d.gradientB
@@ -211,36 +155,6 @@ extension Color {
         guard let c = NSColor(self).usingColorSpace(.sRGB) else { return "#888888" }
         return String(format: "#%02X%02X%02X", Int((c.redComponent * 255).rounded()),
                       Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
-    }
-}
-
-typealias RGB = (Double, Double, Double)
-
-/// Turns a pigment into a colour for the light or dark look. Dark walls are
-/// the same pigments taken down; a night scene is kept brighter there. In
-/// the light look a night scene is only lifted a touch: lifting it toward
-/// grey, as an earlier pass did, washed its colour out to a dull haze.
-struct Pen {
-    var dark: Bool
-    var night = false
-    func callAsFunction(_ c: RGB, _ alpha: Double = 1) -> Color {
-        var c = c
-        if night && !dark { c = (c.0 * 0.9 + 0.08, c.1 * 0.9 + 0.08, c.2 * 0.9 + 0.08) }
-        let k = dark ? (night ? 0.8 : 0.42) : 1
-        return Color(red: c.0 * k, green: c.1 * k, blue: c.2 * k).opacity(alpha)
-    }
-}
-
-/// A small generator with a fixed seed, so a wall is the same wall on every
-/// render: SystemRandomNumberGenerator would give a new one each time.
-struct Seeded: RandomNumberGenerator {
-    var state: UInt64
-    init(_ seed: UInt64) { state = seed == 0 ? 0x9E3779B97F4A7C15 : seed }
-    mutating func next() -> UInt64 {
-        state ^= state << 13
-        state ^= state >> 7
-        state ^= state << 17
-        return state
     }
 }
 
@@ -300,28 +214,11 @@ struct HomeBackground: View {
     /// A thumbnail is drawn at exactly its size and without the calm patch
     /// the address field sits on.
     var thumbnail = false
-    /// A different wall or pack each day; decided here, when the tab is drawn.
-    var shuffle = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.displayScale) private var scale
 
-    /// Today's wall: the chosen one, or with Shuffle the family's pick for
-    /// this date (the day number steps through the family, so no two days
-    /// in a row are the same). A date check, not a timer.
-    private var today: (theme: HomeTheme, tuning: HomeTuning) {
-        guard shuffle, !thumbnail, theme == .stickers || theme.family == .wall else { return (theme, tuning) }
-        let day = Calendar.current.ordinality(of: .day, in: .era, for: Date()) ?? 0
-        if theme == .stickers {
-            var t = tuning
-            t.pack = StickerPack.allCases[day % StickerPack.allCases.count]
-            return (theme, t)
-        }
-        return (HomeTheme.walls[day % HomeTheme.walls.count], tuning)
-    }
-
     var body: some View {
-        let theme = today.theme
-        return GeometryReader { box in
+        GeometryReader { box in
             ZStack {
                 Palette.ground
                 switch theme {
@@ -358,14 +255,13 @@ struct HomeBackground: View {
     /// A preview shows the theme whole and at full strength, so the families
     /// can be told apart; Intensity is for the real background.
     private var shown: HomeTuning {
-        var t = today.tuning
+        var t = tuning
         if thumbnail { t.intensity = 1 }
         return t
     }
 
     /// A preview is painted as a full-size window would be and shrunk to fit
-    /// (so stickers are in proportion, not a cropped corner), at
-    /// exactly as many pixels as it will be shown in.
+    /// at exactly as many pixels as it will be shown in.
     private static let reference: CGFloat = 480
 
     private func drawn(_ box: CGSize) -> CGSize {
@@ -413,37 +309,30 @@ struct HomeBackground: View {
         return (Double((n >> 16) & 255) / 255, Double((n >> 8) & 255) / 255, Double(n & 255) / 255)
     }
 
-    /// A fixed number from a name (FNV-1a), so a wall is the same on every render.
-    static func seed(_ name: String) -> UInt64 {
-        var h: UInt64 = 0xcbf29ce484222325
-        for byte in name.utf8 { h = (h ^ UInt64(byte)) &* 0x100000001b3 }
-        return h
-    }
-
     fileprivate static func paint(_ theme: HomeTheme, _ t: HomeTuning, in context: inout GraphicsContext,
                                   size: CGSize, dark: Bool, ground: Color, calm: Bool) {
         guard size.width > 1, size.height > 1 else { return }
         let m = min(size.width, size.height)
         let whole = CGRect(origin: .zero, size: size)
-        let pen = Pen(dark: dark)
+        func colour(_ hex: String) -> Color {
+            let (red, green, blue) = channels(hex)
+            let brightness = dark ? 0.42 : 1.0
+            return Color(red: red * brightness, green: green * brightness, blue: blue * brightness)
+        }
         switch theme {
-        case .stickers:
-            HomeStickers.paint(context, size: size, t: t, dark: dark)
         case .solid:
-            context.fill(Path(whole), with: .color(pen(channels(t.solid))))
+            context.fill(Path(whole), with: .color(colour(t.solid)))
         case .gradient:
             let a = t.angle * .pi / 180
             let d = CGPoint(x: cos(a), y: sin(a))
             let half = (abs(size.width * d.x) + abs(size.height * d.y)) / 2
             let mid = CGPoint(x: size.width / 2, y: size.height / 2)
             context.fill(Path(whole), with: .linearGradient(
-                Gradient(colors: [pen(channels(t.gradientA)), pen(channels(t.gradientB))]),
+                Gradient(colors: [colour(t.gradientA), colour(t.gradientB)]),
                 startPoint: CGPoint(x: mid.x - d.x * half, y: mid.y - d.y * half),
                 endPoint: CGPoint(x: mid.x + d.x * half, y: mid.y + d.y * half)))
         case .off, .custom:
             break
-        default:
-            HomeWalls.paint(theme, context, size: size, dark: dark)
         }
         // Intensity: the theme blended toward the plain ground.
         if t.intensity < 0.999 {

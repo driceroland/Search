@@ -26,10 +26,6 @@ enum ColumnMenu {
         add("New Tab") { [weak browser] in browser?.launch() }
         if browser.prefs.showsPinFolders, !browser.websitePopup {
             add("New Folder") { [weak browser] in _ = browser?.newPinFolder() }
-            add("New Live Folder…") { [weak browser] in
-                guard let browser else { return }
-                LiveFolders.ask(for: browser, in: nil)
-            }
         }
         if let url = pasted(for: browser) {
             menu.addItem(.separator())

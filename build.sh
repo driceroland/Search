@@ -32,8 +32,6 @@
 #   - a notarytool profile: xcrun notarytool store-credentials "search"
 #     (SEARCH_NOTARY_PROFILE names it; default "search")
 #
-# NOTES.md, next to this script, is what's new: newest release first, one
-# paragraph each; the app shows it under What's New.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -183,10 +181,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>NSAppleScriptEnabled</key><true/>
   <key>OSAScriptingDefinition</key><string>Search.sdef</string>
-  <!-- Handoff of web pages (Handoff.swift): a page picked up from another
-       device opens here when Search is the default browser. -->
-  <key>NSUserActivityTypes</key>
-  <array><string>NSUserActivityTypeBrowsingWeb</string></array>
   <!-- Owning http and https is what sends a link clicked in Mail here.
        Appearing in Desktop & Dock → Default web browser also needs the
        XHTML document type below. -->

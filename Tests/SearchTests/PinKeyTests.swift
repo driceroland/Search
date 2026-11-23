@@ -51,13 +51,12 @@ final class PinKeyTests: XCTestCase {
         NSApp.setActivationPolicy(.prohibited)
         let browser = Browser(record: WindowRecord())
         let prefs = browser.prefs
-        let saved = (prefs.sidebar, prefs.usesTabGroups, prefs.listsPins)
+        let saved = (prefs.usesTabGroups, prefs.listsPins)
         defer {
             for tab in browser.tabs where tab.pin != nil { browser.unpin(tab) }
             browser.closeAll()
-            (prefs.sidebar, prefs.usesTabGroups, prefs.listsPins) = saved
+            (prefs.usesTabGroups, prefs.listsPins) = saved
         }
-        prefs.sidebar = true
         prefs.usesTabGroups = false
         prefs.listsPins = rows
         browser.newTab()

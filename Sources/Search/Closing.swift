@@ -38,7 +38,6 @@ extension Browser {
     /// it. The clock is the caller's business, as with `awake(because:)`.
     func stays(because tab: Tab) -> String? {
         if visibleTabIDs.contains(tab.id) { return "on screen" }
-        if twinOnScreen(tab) { return "on screen in another window" }
         if tab.pin != nil { return "pinned" }
         if tab.name != nil { return "named" }
         if tab.groupID != nil { return "in a group" }
@@ -54,7 +53,7 @@ extension Browser {
     func closeLeftAlone() {
         guard let wait = closeAfter else { return }
         let since = Date().addingTimeInterval(-wait)
-        let due = tabs.filter { lastLeft($0) <= since && stays(because: $0) == nil }
+        let due = tabs.filter { $0.leftSince <= since && stays(because: $0) == nil }
         let going = Set(due.map(\.id))
         let pairs = splits
         var taken = Set<Tab.ID>()
@@ -80,7 +79,7 @@ extension Browser {
             return
         }
         guard closeAfter != nil,
-              together.allSatisfy({ lastLeft($0) <= since && stays(because: $0) == nil }) else { return }
+              together.allSatisfy({ $0.leftSince <= since && stays(because: $0) == nil }) else { return }
         for tab in together {
             archive(tab)
             if tabs.contains(where: { $0 === tab }) { close(tab) }

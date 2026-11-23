@@ -47,7 +47,6 @@ def picture(tag):
         ui(look=look)
         time.sleep(0.4)
         sv.cmd({"do": "column", "path": f"{SHOTS}/{tag}-column-{look}.png", "height": 330})
-        sv.cmd({"do": "strip", "path": f"{SHOTS}/{tag}-strip-{look}.png", "width": 1100})
     ui(look="light")
 
 

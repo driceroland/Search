@@ -735,38 +735,6 @@ final class Bench {
             browser.moveToWindow(tab, target)
             answer(["windows": Browsers.all.count])
 
-        case "news":
-            // The card after an update (see WhatsNew.swift), drawn off screen
-            // to a PNG — the newest release's, whatever this build's version —
-            // or every version's notes; "on" shows the card in the window, and
-            // false puts it away.
-            guard Store.testing else { answer(["error": "news only works on a --test run"]); return }
-            guard let release = WhatsNew.releases.first else { answer(["error": "no release has a card"]); return }
-            if let on = request["on"] as? Bool {
-                browser.newsShowing = on
-                answer(["showing": on])
-                return
-            }
-            guard let path = request["path"] as? String else { answer(["error": "news needs a path"]); return }
-            let root: AnyView = request["notes"] as? Bool == true
-                ? AnyView(ReleaseNotesPanel {}.padding(40).background(Palette.ground))
-                : AnyView(WhatsNewCard(release: release, prefs: browser.prefs, close: {}, notes: {}).padding(40).background(Palette.ground))
-            let host = NSHostingView(rootView: root)
-            host.frame = NSRect(origin: .zero, size: host.fittingSize)
-            let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
-            window.appearance = NSApp.effectiveAppearance
-            window.contentView = host
-            host.layoutSubtreeIfNeeded()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                guard let picture = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { answer(["error": "nothing drawn"]); return }
-                host.cacheDisplay(in: host.bounds, to: picture)
-                do {
-                    try picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
-                    answer(["saved": path, "size": [Int(host.bounds.width), Int(host.bounds.height)]])
-                } catch { answer(["error": error.localizedDescription]) }
-                window.contentView = nil
-            }
-
         case "quit":
             // ⌘Q, on a test run: the app ends the way it does for you, the
             // session and windows.json written on the way out.
@@ -1026,7 +994,6 @@ final class Bench {
                 "suggesting": browser.suggesting != nil,
                 "modal": NSApp.modalWindow.map { "\(type(of: $0)) “\($0.title)”" } ?? "",
                 "look": browser.prefs.look.rawValue,
-                "sidebar": browser.prefs.sidebar,
                 "sidePosition": browser.prefs.sidePosition.rawValue,
                 "sideWidth": Double(browser.prefs.sideWidth),
                 // The column as drawn, and whether it is icons only.
@@ -1109,7 +1076,6 @@ final class Bench {
             out["siteCardFrames"] = SiteCardPanel.geometry(browser)
             // The row across the top: its tabs as laid out, the run shown
             // (narrower only when it scrolls), and whether it scrolls.
-            out["topRun"] = ["tabs": Double(TabBar.laidOut), "run": Double(TabBar.runShown), "scrolls": TabBar.scrolls]
             out["tabEditing"] = browser.editingTab.map { String($0.uuidString.prefix(8)).lowercased() } ?? ""
             // "Press Esc again to leave full screen", up over a page filling
             // the screen (Settings › General › Press Esc twice to leave full
@@ -1236,7 +1202,7 @@ final class Bench {
             // own hover answers, the one left and then the one entered, as
             // AppKit hands them over in one pass. Test runs only.
             guard Store.testing else { answer(["error": "hoversweep is for test runs"]); return }
-            guard let window = browser.window ?? Links.window, browser.prefs.sidebar else {
+            guard let window = browser.window ?? Links.window else {
                 answer(["error": "hoversweep needs the tabs down the side"])
                 return
             }
@@ -2831,9 +2797,8 @@ final class Bench {
             // that swallowed the wheel would show. Positive goes down the
             // list. Nothing is shown or brought forward. Test runs only.
             guard Store.testing else { answer(["error": "columnscroll only works on a --test run"]); return }
-            guard let window = browser.window ?? Links.window, let frame = window.contentView?.superview,
-                  browser.prefs.sidebar
-            else { answer(["error": "columnscroll needs the tabs down the side"]); return }
+            guard let window = browser.window ?? Links.window, let frame = window.contentView?.superview
+            else { answer(["error": "columnscroll needs an open window"]); return }
             let width = Double(browser.prefs.columnWidth), whole = Double(window.frame.width)
             let onRight = browser.prefs.sidePosition == .right
             func scrolls(in view: NSView) -> [NSScrollView] {
@@ -3721,48 +3686,6 @@ final class Bench {
             default: break
             }
 
-        case "strip":
-            // The row of tabs across the top, drawn off screen at a width,
-            // with what the browser has now — for what the row looks like
-            // without a window on anybody's screen.
-            // "appearance": "light" or "dark" rather than the Mac's. With it
-            // come where each group's band was drawn, piece by piece
-            // (GroupBand): the heading or tab under it and the piece itself,
-            // [minX, maxX] in the row, by group.
-            guard let path = request["path"] as? String else { answer(["error": "strip needs a path"]); return }
-            let width = request["width"] as? Double ?? 1100
-            let host = NSHostingView(rootView: TabBar(browser: browser).frame(width: width, height: Metrics.strip).background(Palette.ground)
-                .environment(\.recordsBands, true))
-            host.frame = NSRect(x: 0, y: 0, width: width, height: Double(Metrics.strip))
-            let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
-            switch request["appearance"] as? String {
-            case "dark": window.appearance = NSAppearance(named: .darkAqua)
-            case "light": window.appearance = NSAppearance(named: .aqua)
-            default: window.appearance = NSApp.effectiveAppearance
-            }
-            TabBar.drawnBands = [:]
-            window.contentView = host
-            host.layoutSubtreeIfNeeded()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                guard let picture = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { answer(["error": "nothing drawn"]); return }
-                host.cacheDisplay(in: host.bounds, to: picture)
-                var bands: [String: [[String: Any]]] = [:]
-                for (piece, drawn) in TabBar.drawnBands.sorted(by: { $0.value.band.minX < $1.value.band.minX }) {
-                    let id = String(drawn.group.uuidString.prefix(8)).lowercased()
-                    let name = piece == drawn.group ? "heading" : String(piece.uuidString.prefix(8)).lowercased()
-                    bands[id, default: []].append(["piece": name,
-                                                   "item": [Double(drawn.item.minX), Double(drawn.item.maxX)],
-                                                   "band": [Double(drawn.band.minX), Double(drawn.band.maxX)],
-                                                   "height": Double(drawn.band.height)])
-                }
-                TabBar.drawnBands = [:]
-                do {
-                    try picture.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
-                    answer(["saved": path, "bands": bands])
-                } catch { answer(["error": error.localizedDescription]) }
-                window.contentView = nil
-            }
-
         case "pdf":
             // The page on screen as File › Export as PDF… makes it, without
             // a save panel. A test path only: a real browser never lets the
@@ -3813,7 +3736,7 @@ final class Bench {
             guard let path = request["path"] as? String else { answer(["error": "fold needs a path"]); return }
             guard browser.folded, browser.peeking else { answer(["error": "fold and peek first: ui folded on, ui peek on"]); return }
             let width = request["width"] as? Double ?? 1100
-            let size = NSSize(width: width, height: browser.prefs.sidebar ? 500 : 120)
+            let size = NSSize(width: width, height: 500)
             let host = NSHostingView(rootView: ZStack(alignment: .topLeading) {
                 Color.red
                 Fold(browser: browser, prefs: browser.prefs)
@@ -4008,10 +3931,7 @@ final class Bench {
                     "setting": browser.prefs.pinFolders, "rows": browser.prefs.showsPinRows,
                     "drawsFolders": browser.showsPinFolderRows,
                     "folders": now.map { ["id": $0.id.uuidString, "name": $0.name, "parent": name($0.parent),
-                                          "collapsed": $0.collapsed, "depth": PinTree.depth(of: $0.id, in: now),
-                                          "feed": $0.feed?.absoluteString ?? NSNull(),
-                                          "items": ($0.items ?? []).map { [$0.title, $0.link.absoluteString] },
-                                          "failed": LiveFolders.failed.contains($0.id)] as [String: Any] },
+                                          "collapsed": $0.collapsed, "depth": PinTree.depth(of: $0.id, in: now)] as [String: Any] },
                     // kind, depth, title, folded: what the column draws.
                     "lines": browser.pinRowLines().map(\.described),
                     // The rows in the order the row (and pins.json) keeps them.
@@ -4068,37 +3988,6 @@ final class Bench {
             case "delete":
                 guard let folder = named("name") else { answer(["error": "no folder “\(request["name"] as? String ?? "")”"]); return }
                 browser.deletePinFolder(folder.id)
-            case "live":
-                // New Live Folder… with its address typed (LiveFolders.swift):
-                // fetched, and the folder made from what it said.
-                guard let url = Feed.address(request["url"] as? String ?? "") else { answer(["error": "live needs a url"]); return }
-                let parent = named("in")?.id
-                Task { @MainActor in
-                    switch await Feed.load(url) {
-                    case .success(let read): answer(state(["made": browser.newLiveFolder(read, in: parent).uuidString]))
-                    case .failure(let problem): answer(state(["error": problem.said(url)]))
-                    }
-                }
-                return
-            case "refresh":
-                // Refresh in a live folder's menu; answered once it is back.
-                guard let folder = named("name"), folder.isLive else { answer(["error": "no live folder “\(request["name"] as? String ?? "")”"]); return }
-                LiveFolders.refresh(folder.id)
-                func wait(_ left: Int) {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        if LiveFolders.isFetching(folder.id) && left > 0 { wait(left - 1) } else { answer(state()) }
-                    }
-                }
-                wait(150)
-                return
-            case "openitem":
-                // A live folder's post clicked: its page in a new tab.
-                guard let folder = named("name"), let title = request["title"] as? String,
-                      let item = folder.items?.first(where: { $0.title == title })
-                else { answer(["error": "no post “\(request["title"] as? String ?? "")” in that folder"]); return }
-                browser.openFeedItem(item)
-                answer(state(["opened": item.link.absoluteString, "front": browser.active.map { ["pinned": $0.pin != nil] } ?? NSNull()]))
-                return
             case "drawn":
                 // The column drawn off screen, as `column` draws it, and the
                 // lines it drew read back: kind, depth, title, folded.
@@ -4146,7 +4035,6 @@ final class Bench {
                         switch line {
                         case .folder(let folder, let depth): return (.folder(folder, depth: depth), rect)
                         case .pin(let tab, let depth): return (.pin(tab.id, depth: depth), rect)
-                        case .item(let item, let folder, let depth): return (.item(item, folder: folder, depth: depth), rect)
                         }
                     }
                     var owners: [UUID: UUID?] = [:]
@@ -4170,7 +4058,7 @@ final class Bench {
                 }
                 return
             default:
-                answer(["error": "pinfolder: state|on|off|pin|new|move|fold|open|rename|nest|delete|live|refresh|openitem|drawn|carry"]); return
+                answer(["error": "pinfolder: state|on|off|pin|new|move|fold|open|rename|nest|delete|drawn|carry"]); return
             }
             answer(state())
 
@@ -4238,7 +4126,6 @@ final class Bench {
             if let on = request["dusk"] as? Bool { browser.prefs.darkensPages = on }
             if let on = request["captures"] as? Bool { browser.prefs.capturesPages = on }
             if let zoom = request["pageZoom"] as? Double { browser.prefs.pageZoom = zoom }
-            if let on = request["sidebar"] as? Bool { browser.prefs.sidebar = on }
             // Swipe between pages, standing in for the Mac's own setting.
             if let on = request["swipepages"] as? Bool, Store.testing { Swipe.testing = on }
             // Ask.sure answered without a sheet: yes or no to every question
@@ -4279,9 +4166,6 @@ final class Bench {
                 browser.beginTabEdit(tab)
                 browser.tabDraft = text
             }
-            // Every group heading measured this much narrower than it is
-            // drawn, as another macOS's fonts can make it (TabBar.measures).
-            if let short = request["headingShortfall"] as? Double, Store.testing { GroupHeading.testShortfall = CGFloat(short) }
             // The tab on screen clicked again: its address opened, as typed
             // into nothing yet, the site card under it.
             if request["opentab"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab) }
@@ -5419,7 +5303,7 @@ private final class LayoutRecord {
 extension Bench {
     /// How far the column's rows are scrolled, if they scroll.
     @MainActor static func columnOffset(_ browser: Browser) -> Double? {
-        guard let window = browser.window, let frame = window.contentView?.superview, browser.prefs.sidebar else { return nil }
+        guard let window = browser.window, let frame = window.contentView?.superview else { return nil }
         let width = Double(browser.prefs.columnWidth), whole = Double(window.frame.width)
         let onRight = browser.prefs.sidePosition == .right
         func scrolls(in view: NSView) -> [NSScrollView] {

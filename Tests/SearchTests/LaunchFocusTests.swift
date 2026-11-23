@@ -17,7 +17,6 @@ final class LaunchFocusTests: XCTestCase {
         _ = NSApplication.shared
         let browser = Browser(record: WindowRecord())
         browser.welcoming = false
-        browser.newsShowing = false
         defer { browser.closeAll() }
         browser.newTab()
         let tab = try XCTUnwrap(browser.active)
@@ -44,7 +43,6 @@ final class LaunchFocusTests: XCTestCase {
         _ = NSApplication.shared
         let browser = Browser(record: WindowRecord())
         browser.welcoming = false
-        browser.newsShowing = false
         defer { browser.closeAll() }
         browser.newTab()
         XCTAssertTrue(browser.fieldShowing)

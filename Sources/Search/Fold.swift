@@ -18,8 +18,7 @@ import WebKit
 // Folding lasts as long as you leave it: each window's fold is written
 // down with the window (windows.json) and comes back with it at the next
 // launch and with ⇧⌘T, as Safari and Arc keep a hidden sidebar hidden
-// (idea 738). A new window folds as the one it came from. Switching
-// between the column and the strip still brings the tabs back out.
+// (idea 738). A new window folds as the one it came from.
 //
 // Unless that is the reason: Settings can keep the column folded for good,
 // Arc's way, and then the fold is where it rests, at launch and after every
@@ -40,13 +39,8 @@ import WebKit
 // While a tab's address is being typed into its row, the column stays out:
 // the pointer drifting off it is no reason to take the field away.
 //
-// The strip across the top folds the same way: up out of the window, the
-// page taking the full height, and back down over the page when the pointer
-// rests against the top edge. There the edge is crossed on every trip to the
-// menu bar just above, so the strip always waits for the pointer to settle.
-
 extension Browser {
-    /// ⌘S. The column, or the strip across the top, out of the way, or back.
+    /// ⌘S hides or shows the sidebar.
     func toggleFold() {
         // Asked to keep the tabs in sight: the column goes to icons only and
         // back to its titles, the layout Settings calls Icons only, and is
@@ -83,7 +77,7 @@ extension Browser {
             return
         }
         // The column sliding: the page follows its edge (see slidePage).
-        if prefs.sidebar, !Motion.reduced, !Motion.fadesColumn {
+        if !Motion.reduced, !Motion.fadesColumn {
             slidePage(out: folded) { self.folded.toggle() }
             return
         }
@@ -98,7 +92,7 @@ extension Browser {
         // drawn yet came in from the far edge as a bar of the web view's
         // own ground, black or white with the theme.
         let pages = shownPages
-        if !folded, prefs.sidebar, !Motion.reduced, !pages.isEmpty {
+        if !folded, !Motion.reduced, !pages.isEmpty {
             let ticket = foldTicket
             foldingAway = true
             Browser.drawn(pages, within: 0.12) { [weak self] in
@@ -177,7 +171,7 @@ extension Browser {
     /// time; coming back, it is put in its place, still clear, a turn
     /// before it fades in.
     func moveColumn(out: Bool, _ change: @escaping () -> Void) {
-        guard prefs.sidebar, Motion.fadesColumn else {
+        guard Motion.fadesColumn else {
             withAnimation(Motion.folding(out: out)) { change() }
             return
         }
@@ -347,7 +341,7 @@ extension Browser {
     /// Whether something of the window's lies over `page` at `point`, in the
     /// window's own coordinates: a peek over the page in front (not over its
     /// own), the address field or a panel over it, the Find bar, or the
-    /// folded column or strip out over the page. The page then
+    /// folded column out over the page. The page then
     /// hears nothing of the pointer there (see PageView.underCover).
     func covers(_ page: NSView, at point: NSPoint) -> Bool {
         guard let window, page.window === window else { return false }
@@ -358,8 +352,8 @@ extension Browser {
         if editing, let active, !active.isBlank, active.built === page { return true }
         // What comes over the whole window: the ⌃Tab switcher, the hidden
         // elements' list and a site's style (a click beside either puts it
-        // away), Welcome and What's New.
-        if tabSwitcher.visible || reviewing || styling != nil || welcoming || newsShowing { return true }
+        // away) and Welcome.
+        if tabSwitcher.visible || reviewing || styling != nil || welcoming { return true }
         // The Find bar is a pill over one corner of the page: whatever a
         // click there would land on decides. Asking the window costs far more
         // than the flags above, so only while the bar is open.
@@ -369,7 +363,6 @@ extension Browser {
             return true
         }
         guard folded, peeking, !frontFillsHere, let size = window.contentView?.bounds.size else { return false }
-        if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
         return prefs.sidePosition == .right ? point.x >= size.width - prefs.columnWidth : point.x <= prefs.columnWidth
     }
 }
@@ -423,80 +416,59 @@ struct Fold: View {
             // double-click to fill the screen: only the column's own corner,
             // gone when folded. A band too thin to be in a page's way stands
             // in for the title bar along the whole top; the column lies over
-            // it with its own. The strip across the top, folded away, leaves
-            // the page the top edge too, and the same band: there was nothing
-            // to take hold of until the strip came down. Unfolded, the strip
-            // is its own title bar, and no band lies over its tabs.
-            if prefs.sidebar || folding, !browser.frontFillsHere {
+            // it with its own.
+            if !browser.frontFillsHere {
                 DragStrip()
                     .frame(height: Fold.top)
                     .frame(maxWidth: .infinity)
             }
-            if folding, !prefs.sidebar {
-                // Kept while folded, above the window's top edge, and slid
-                // down and back up, as the column is (see below).
-                //
-                // The row has no ground of its own: in the window it lies on
-                // the window's. Out over the page it brings that ground along,
-                // as the column does, or the page showed through between the
-                // tabs, and the shadow fell from every title and icon rather
-                // than from the row's edge.
-                TabBar(browser: browser)
-                    .modifier(FoldShadow(y: 4, behind: true, strength: browser.peeking ? 1 : 0))
-                    .offset(y: browser.peeking ? 0 : -Metrics.strip)
-                    .allowsHitTesting(browser.peeking)
-            }
             ZStack(alignment: onRight ? .trailing : .leading) {
                 Color.clear.frame(width: 0)
-                if prefs.sidebar {
-                    // The one column, beside the page or folded away: ⌘S
-                    // slides it rather than trading it for another. Two
-                    // columns, one beside the page and one here for the fold,
-                    // had every row built four times over on each ⌘S, 130 to
-                    // 165ms of the main thread with 30 tabs before the slide's
-                    // first frame, against a slide of 150ms (measured
-                    // 2026-11-06, bench foldtime).
-                    //
-                    // Kept while folded, off the window's edge, and slid out
-                    // and back rather than made anew each time. Made anew,
-                    // every row was built again on every peek, about 60ms of
-                    // the main thread before the first frame, so the column
-                    // came out late; and a pointer turning back met a new
-                    // column rather than the one on its way in. It stays in
-                    // accessibility while away: taken out of it as it went
-                    // and put back as it came, its rows had the window's
-                    // whole accessibility tree rebuilt each time, up to
-                    // 120ms of the main thread with the slide waiting.
-                    //
-                    // Its shadow falls from a ground laid under it, as the
-                    // strip's does. Cast by the column itself, it was drawn
-                    // again from every row, icon and title on each frame of
-                    // the slide, the column's full height over: in full
-                    // screen, the whole screen's, and the slide lagged there.
-                    // The column's own ground is opaque, so it is the same
-                    // rectangle either way. It wears the window's ground, as
-                    // it does beside the page's card (see CardEdge), or its
-                    // own white where the page is no card.
-                    // Away exactly when the lights are, which ride with it.
-                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: onDrag)
-                        .frame(maxHeight: .infinity, alignment: .top)
-                        .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
-                                             strength: browser.folded && browser.peeking ? 1 : 0,
-                                             ground: !browser.glassUnder))
-                        // Faded rather than slid under Reduce Motion with
-                        // Slide the column in and out on (Browser.moveColumn).
-                        .animation(Motion.fadesColumn ? .easeInOut(duration: Motion.fade) : nil) { column in
-                            column.opacity(lightsOff && Motion.fadesColumn ? 0 : 1)
-                        }
-                        .offset(x: lightsOff && !browser.fadeHeld ? (onRight ? prefs.columnWidth : -prefs.columnWidth) : 0)
-                        .allowsHitTesting(!lightsOff)
-                        .transition(.move(edge: onRight ? .trailing : .leading))
-                }
+                // The one column, beside the page or folded away: ⌘S
+                // slides it rather than trading it for another. Two
+                // columns, one beside the page and one here for the fold,
+                // had every row built four times over on each ⌘S, 130 to
+                // 165ms of the main thread with 30 tabs before the slide's
+                // first frame, against a slide of 150ms (measured
+                // 2026-11-06, bench foldtime).
+                //
+                // Kept while folded, off the window's edge, and slid out
+                // and back rather than made anew each time. Made anew,
+                // every row was built again on every peek, about 60ms of
+                // the main thread before the first frame, so the column
+                // came out late; and a pointer turning back met a new
+                // column rather than the one on its way in. It stays in
+                // accessibility while away: taken out of it as it went
+                // and put back as it came, its rows had the window's
+                // whole accessibility tree rebuilt each time, up to
+                // 120ms of the main thread with the slide waiting.
+                //
+                // Its shadow falls from a ground laid under it.
+                // Cast by the column itself, it was drawn
+                // again from every row, icon and title on each frame of
+                // the slide, the column's full height over: in full
+                // screen, the whole screen's, and the slide lagged there.
+                // The column's own ground is opaque, so it is the same
+                // rectangle either way. It wears the window's ground, as
+                // it does beside the page's card (see CardEdge), or its
+                // own white where the page is no card.
+                // Away exactly when the lights are, which ride with it.
+                SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: onDrag)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .modifier(FoldShadow(x: onRight ? -4 : 4,
+                                         strength: browser.folded && browser.peeking ? 1 : 0))
+                    // Faded rather than slid under Reduce Motion with
+                    // Slide the column in and out on (Browser.moveColumn).
+                    .animation(Motion.fadesColumn ? .easeInOut(duration: Motion.fade) : nil) { column in
+                        column.opacity(lightsOff && Motion.fadesColumn ? 0 : 1)
+                    }
+                    .offset(x: lightsOff && !browser.fadeHeld ? (onRight ? prefs.columnWidth : -prefs.columnWidth) : 0)
+                    .allowsHitTesting(!lightsOff)
+                    .transition(.move(edge: onRight ? .trailing : .leading))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity,
                    alignment: onRight ? .trailing : .leading)
             // As the page beside it moves (see ContentView).
-            .animation(Motion.glide, value: prefs.sidebar)
             .animation(Motion.glide, value: prefs.sidePosition)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity,
@@ -530,14 +502,6 @@ struct Fold: View {
             resetPending()
             watch()
         }
-        // Back to the strip and then to the column again: the column comes
-        // back as it rests — whole, not folded from a time nobody remembers,
-        // unless Settings says it rests folded.
-        .onChange(of: prefs.sidebar) { _, _ in
-            resetPending()
-            browser.folded = prefs.sidebar && prefs.sideHides
-            browser.peeking = false
-        }
         .onChange(of: prefs.sidePosition) { _, _ in
             resetPending()
             browser.peeking = false
@@ -555,7 +519,6 @@ struct Fold: View {
         }
         .onChange(of: prefs.sideHides) { _, hides in
             resetPending()
-            guard prefs.sidebar else { return }
             browser.peeking = false
             browser.moveColumn(out: !hides) { browser.folded = hides }
         }
@@ -590,7 +553,7 @@ struct Fold: View {
     }
 
     private var onRight: Bool {
-        prefs.sidebar && prefs.sidePosition == .right
+        prefs.sidePosition == .right
     }
 
     private func resetPending() {
@@ -624,12 +587,12 @@ struct Fold: View {
         let inWindow = point.x >= 0 && point.x < size.width && point.y >= 0 && point.y < size.height
         // Distance from the column's edge for the column, from the top for
         // the strip.
-        let distance = prefs.sidebar ? (onRight ? size.width - point.x : point.x) : size.height - point.y
+        let distance = onRight ? size.width - point.x : point.x
         // Just past the column's edge, beside the window rather than above
         // or below it, come off the window to get there, and not on the Dock
         // or the menu bar.
         let past = onRight ? point.x - size.width : -point.x
-        let beside = prefs.sidebar && past > 0 && past < Fold.overshoot
+        let beside = past > 0 && past < Fold.overshoot
             && point.y >= 0 && point.y < size.height
         let overshot = beside && pointer.crossing
             && NSScreen.screens.contains { $0.visibleFrame.contains(screen) }
@@ -642,7 +605,7 @@ struct Fold: View {
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
             let onWindow = top == window.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
-            let reach = prefs.sidebar ? prefs.columnWidth : Metrics.strip
+            let reach = prefs.columnWidth
             // An extension's popup hangs from its button in the column: the
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).
@@ -654,7 +617,7 @@ struct Fold: View {
                   // In full screen, not from the corner where macOS brings
                   // the window's buttons down with the menu bar: the column
                   // came out over them there, on the way to the red one (#241).
-                  !(prefs.sidebar && window.styleMask.contains(.fullScreen) && size.height - point.y < Fold.fullScreenCorner) {
+                  !(window.styleMask.contains(.fullScreen) && size.height - point.y < Fold.fullScreenCorner) {
             // Which window is under the pointer is asked only here, at the
             // edge: another app's window over it doesn't bring the column out.
             guard NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber
@@ -694,7 +657,7 @@ struct Fold: View {
     /// column is folded for good, and always for the strip, whose edge is
     /// the way to the menu bar, and for the pointer just past the edge.
     private func arrive(resting: Bool = false) {
-        guard resting || !prefs.sidebar || prefs.sideHides else { return peek(true) }
+        guard resting || prefs.sideHides else { return peek(true) }
         pass()
         let coming = DispatchWorkItem {
             arriving = nil
@@ -746,11 +709,7 @@ struct Fold: View {
             bar.isHidden = false
             return
         }
-        if prefs.sidebar {
-            Fold.slide(bar, off: lightsOff, by: prefs.columnWidth, right: onRight)
-        } else {
-            Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true)
-        }
+        Fold.slide(bar, off: lightsOff, by: prefs.columnWidth, right: onRight)
     }
 
     /// The window in front's title bar, for the bench.
@@ -774,10 +733,8 @@ struct Fold: View {
     /// column was still sliding in under them, and vanished before it had
     /// gone. So they come in from the chosen edge and go back off it, on the
     /// column's own spring (Motion.fold, in Core Animation's terms) — from
-    /// wherever they are, when the pointer turns back halfway. `up` sends
-    /// the strip's lights off the top edge.
-    static func slide(_ bar: NSView, off: Bool, by width: CGFloat, up: Bool = false,
-                      right: Bool = false) {
+    /// wherever they are, when the pointer turns back halfway.
+    static func slide(_ bar: NSView, off: Bool, by width: CGFloat, right: Bool) {
         slides += 1
         let turn = slides
         guard let layer = bar.layer else {
@@ -785,7 +742,7 @@ struct Fold: View {
             return
         }
         // Faded in place with the column (Browser.moveColumn).
-        if !up, Motion.fadesColumn {
+        if Motion.fadesColumn {
             layer.removeAnimation(forKey: "fold")
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = bar.isHidden ? 0 : (layer.presentation()?.opacity ?? 1)
@@ -814,17 +771,8 @@ struct Fold: View {
             bar.isHidden = off
             return
         }
-        // Up is +y in a superview that isn't flipped, -y in one that is.
-        let path = up ? "transform.translation.y" : "transform.translation.x"
-        let gone: CGFloat = up ? ((bar.superview?.isFlipped ?? false) ? -width : width)
-            : (right ? width : -width)
-        let other = up ? "transform.translation.x" : "transform.translation.y"
-        let moving = layer.animation(forKey: "fold") != nil
-        // A slide still running on the other axis — the layout was switched
-        // halfway — is simply let go.
-        if moving, (layer.animation(forKey: "fold") as? CABasicAnimation)?.keyPath == other {
-            layer.removeAnimation(forKey: "fold")
-        }
+        let path = "transform.translation.x"
+        let gone = right ? width : -width
         let still = layer.animation(forKey: "fold") != nil
         let from = still
             ? (layer.presentation()?.value(forKeyPath: path) as? CGFloat ?? 0)
@@ -876,25 +824,12 @@ struct Fold: View {
 /// stays their size: the window's buttons ride in the column's corner by
 /// exactly that much.
 private struct FoldShadow: ViewModifier {
-    var x: CGFloat = 0
-    var y: CGFloat = 0
-    /// Cast from a ground laid behind: the strip has no ground of its own,
-    /// and a shadow from the row itself fell from every title and icon.
-    /// Combined with the slide, this comes first and the offset second: the
-    /// offset moves only what it wraps, and a ground laid outside it
-    /// stayed where the column or the strip had been, a blank band over the
-    /// page until the slide was over.
-    var behind = false
-    var strength: Double = 1
-    /// Left out where the window's glass is to show through (see Glass.swift).
-    var ground = true
+    let x: CGFloat
+    let strength: Double
 
     func body(content: Content) -> some View {
-        let color = Color.black.opacity(0.14 * strength)
-        if behind {
-            content.background { (ground ? Palette.ground : Color.clear).shadow(color: color, radius: 20, x: x, y: y) }
-        } else {
-            content.shadow(color: color, radius: 20, x: x, y: y)
+        content.background {
+            Palette.ground.shadow(color: .black.opacity(0.14 * strength), radius: 20, x: x)
         }
     }
 }

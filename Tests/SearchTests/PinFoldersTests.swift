@@ -59,6 +59,26 @@ final class PinFoldersTests: XCTestCase {
         XCTAssertEqual(PinFolders.decode(bad), [])
     }
 
+    func testFormerFeedPostsBecomePinnedRowsOnce() throws {
+        let work = folder("Work")
+        let feed = folder("News", in: work.id, collapsed: true)
+        let item = UUID()
+        let saved = [
+            ["id": work.id.uuidString, "name": work.name],
+            ["id": feed.id.uuidString, "name": feed.name, "parent": work.id.uuidString, "collapsed": true,
+             "feed": "https://example.com/rss",
+             "items": [["id": item.uuidString, "title": "Article", "link": "https://example.com/article"]]]
+        ] as [[String: Any]]
+        let data = try JSONSerialization.data(withJSONObject: [Session.legacyFirstRow: saved])
+        let existing = def("W", folder: work.id)
+        let migration = try XCTUnwrap(PinFolders.feedMigration(data, pins: [existing]))
+        XCTAssertEqual(migration.pins, [existing, PinDef(id: item, letter: "A", home: "https://example.com/article",
+                                                         title: "Article", name: nil, listed: true, folder: feed.id)])
+        XCTAssertEqual(PinFolders.decode(migration.folders), [work, feed])
+        XCTAssertEqual(PinFolders.feedMigration(data, pins: migration.pins)?.pins, migration.pins)
+        XCTAssertNil(PinFolders.feedMigration(migration.folders, pins: migration.pins))
+    }
+
     func testAFolderSavedWithoutItsStateIsOpenAtTheTop() throws {
         let id = UUID()
         let json = #"{"id":"\#(id.uuidString)","name":"Work","parent":"not an id"}"#

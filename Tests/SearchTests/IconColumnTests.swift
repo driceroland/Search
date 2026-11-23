@@ -163,9 +163,9 @@ final class IconColumnTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.sideIcons, prefs.usesTabGroups, prefs.splitView, prefs.listsPins)
+        let previous = (prefs.sideIcons, prefs.usesTabGroups, prefs.splitView, prefs.listsPins)
         restorePreferences = {
-            (prefs.sidebar, prefs.sideIcons, prefs.usesTabGroups, prefs.splitView, prefs.listsPins) = previous
+            (prefs.sideIcons, prefs.usesTabGroups, prefs.splitView, prefs.listsPins) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)

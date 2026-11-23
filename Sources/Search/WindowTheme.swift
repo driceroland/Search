@@ -487,26 +487,6 @@ struct ColourSwatches: View {
     }
 }
 
-/// One of the glass's amounts: its name, and under it a plain slider as
-/// wide as there is room for.
-struct GlassSlider: View {
-    let name: String
-    @Binding var value: Double
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(name)
-                .font(.system(size: 12))
-                .foregroundStyle(Palette.ink)
-            Slider(value: $value, in: 0...1)
-                .controlSize(.small)
-                .labelsHidden()
-                .accessibilityLabel(name)
-        }
-    }
-}
-
-
 /// The colours the window and tab groups can wear.
 enum Tints {
     /// A handful, picked to read on the light ground and the dark one

@@ -114,20 +114,14 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
             // that would take it off the button (PopoverSide).
             PopoverSide.show(popover, relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY, pointed: true)
         } else if let content = (targetBrowser?.window ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain && $0.frame.minX > -10_000 }))?.contentView {
-            // No button to hang from — the column or the strip folded away:
-            // where the buttons would be, the column's foot or the strip's
-            // far end. The window's content is SwiftUI's, a flipped view,
-            // whose top is at minY: measured from maxY, "the top right" was
-            // the bottom right, across the window from the column's buttons.
-            // The column's foot is on the side the column is on, and the
-            // popup hangs inward from it.
-            let bounds = content.bounds, flipped = content.isFlipped
+            // With the sidebar folded, hang inward from its usual foot.
+            let bounds = content.bounds
             let prefs = (targetBrowser ?? Extensions.shared.browser)?.prefs
-            let column = prefs?.sidebar == true, right = prefs?.sidePosition == .right
-            let spot = column
-                ? NSRect(x: right ? bounds.maxX - 24 : bounds.minX + 24, y: flipped ? bounds.maxY - 24 : bounds.minY + 24, width: 1, height: 1)
-                : NSRect(x: bounds.maxX - 60, y: flipped ? bounds.minY + 40 : bounds.maxY - 40, width: 1, height: 1)
-            let edge: NSRectEdge = column ? (right ? .minX : .maxX) : (flipped ? .maxY : .minY)
+            let right = prefs?.sidePosition == .right
+            let spot = NSRect(x: right ? bounds.maxX - 24 : bounds.minX + 24,
+                              y: content.isFlipped ? bounds.maxY - 24 : bounds.minY + 24,
+                              width: 1, height: 1)
+            let edge: NSRectEdge = right ? .minX : .maxX
             PopoverSide.show(popover, relativeTo: spot, of: content, preferredEdge: edge)
         }
         // Sized once loaded — or after a moment regardless, for a page that
