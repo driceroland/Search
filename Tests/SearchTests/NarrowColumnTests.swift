@@ -132,6 +132,64 @@ final class NarrowColumnTests: XCTestCase {
         }
     }
 
+    /// A long title runs as near the row's right end as the icon sits from
+    /// its left, ellipsis and all (idea 1032): the row's spacing before a
+    /// Spacer kept it 8 points further in, and its ellipsis further still.
+    func testLongTitleEndsAsNearTheRightAsTheIconStartsOnTheLeft() async throws {
+        _ = NSApplication.shared
+        activationPolicy = NSApp.activationPolicy()
+        NSApp.setActivationPolicy(.prohibited)
+        let prefs = Shared.prefs
+        let previous = (prefs.sidebar, prefs.usesSpaces, prefs.sideWidth, prefs.sideHides, prefs.sidePosition)
+        restorePreferences = {
+            (prefs.sidebar, prefs.usesSpaces, prefs.sideWidth, prefs.sideHides, prefs.sidePosition) = previous
+        }
+        prefs.sidebar = true
+        prefs.sidePosition = .left
+        prefs.sideHides = false
+        prefs.usesSpaces = false
+        prefs.sideWidth = Metrics.side
+
+        let browser = Browser(record: WindowRecord())
+        browsers.append(browser)
+        browser.welcoming = false
+        browser.folded = false
+        browser.tabs.last?.restore(url: URL(string: "about:blank#one")!, title: "A rather long title for a row of the column")
+        let held = Held()
+        let host = NSHostingView(rootView: Column(browser: browser, prefs: prefs, held: held))
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: Metrics.side, height: Self.height),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .aqua)
+        window.contentView = host
+        window.orderFrontRegardless()
+        windows.append(window)
+
+        for width in stride(from: Metrics.side, through: Metrics.sideMin, by: -12) {
+            prefs.sideWidth = width
+            window.setFrame(NSRect(x: -20_000, y: -20_000, width: width, height: Self.height), display: false)
+            try await Task.sleep(for: .milliseconds(400))
+            let shot = try picture(host, width: width)
+            let pill = try XCTUnwrap(shot.span(56), "width \(Int(width)): the tab's row is drawn")
+            // The title's ink: what is far darker than the row's grey.
+            let ground = shot.colour(Int((pill.lowerBound + 3) * shot.scale), 66)
+            var last = -1
+            for y in stride(from: 58.0, through: 74.0, by: 0.5) {
+                for x in Int((pill.lowerBound + 30) * shot.scale)..<Int((pill.upperBound - 1) * shot.scale) {
+                    let c = shot.colour(x, CGFloat(y))
+                    if abs(c.redComponent - ground.redComponent) + abs(c.greenComponent - ground.greenComponent)
+                        + abs(c.blueComponent - ground.blueComponent) > 0.9 { last = max(last, x) }
+                }
+            }
+            XCTAssertGreaterThan(last, 0, "width \(Int(width)): the title is drawn")
+            let trail = pill.upperBound - CGFloat(last + 1) / shot.scale
+            print(String(format: "width %.0f: title ends %.1f from the row's end", width, trail))
+            // The icon sits 10 in; the ellipsis ends within part of a letter of
+            // that (19.5 to 25 before, as the Spacer's spacing held it off).
+            XCTAssertLessThanOrEqual(trail, 10 + 5, "width \(Int(width)): the title runs as near the right as the icon the left")
+        }
+    }
+
     /// Where the zoom button ends, from the column's left edge: the close
     /// button's centre as Lights puts it, and AppKit's own sizes and spacing.
     private func zoomEnd() -> CGFloat {

@@ -2156,8 +2156,12 @@ private struct SideRow: View, Equatable {
                     TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
                                 size: prefs.sideTitle, colour: colour, roomy: true, dim: dim)
                 }
-                Spacer(minLength: 0)
             }
+            // Pushed to the leading edge by its frame, not a Spacer: the
+            // row's spacing before a Spacer kept the title 8 points further
+            // from the right edge than the icon is from the left, and a long
+            // title's ellipsis further still (idea 1032).
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 10)
             .padding(.trailing, status || peeking ? 0 : 10)
             .frame(height: prefs.sideRow)
