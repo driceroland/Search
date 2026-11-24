@@ -631,6 +631,7 @@ struct SettingsPanel: View {
                      ))
         case "layout.cardsFullScreen": Switch(on: $prefs.cardsInFullScreen)
         case "address.shown": Switch(on: $prefs.addressLine)
+        case "scrollbars.fade": Switch(on: $prefs.scrollbarsFade)
         case "address.width": Segmented(options: AddressWidth.allCases.map { ($0, $0.title) }, selection: $prefs.addressWidth)
         case "window.glass": Switch(on: $prefs.glass)
         case "window.glass.style": Segmented(options: GlassStyle.allCases.map { ($0, $0.title) }, selection: $prefs.glassStyle)

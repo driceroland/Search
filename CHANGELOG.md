@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Settings › Appearance › Window › Fade scroll bars when scrolling stops, off unless you turn it on: pages, and Search's own lists, get the thin scroll bars macOS draws with a trackpad, over the page rather than beside it, that come up as it scrolls and fade out once it stops, even with System Settings › Appearance › Show scroll bars set to Always or a mouse plugged in. Pages already open change at once. Thanks [@pasteley](https://github.com/pasteley). ([#1490](https://github.com/driceroland/Search/pull/1490))
 - A finished download can be dragged out of the Downloads list (the tab, the side panel or the card under the button) as its file, with the file's icon under the pointer: onto a page to upload it, as a file from the Finder would be, or into the Finder, Mail or another app. A click still opens it; a download under way, a failed one or one whose file has gone has nothing to drag. `swift test --filter DownloadDragOutTests` ([#920](https://github.com/driceroland/Search/issues/920), [#1388](https://github.com/driceroland/Search/issues/1388), idea 566)
 
 ### Fixed
