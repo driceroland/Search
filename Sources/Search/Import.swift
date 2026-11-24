@@ -201,10 +201,10 @@ enum Chromium {
                 let reason = Self.permissionDenied(failure)
                     ? "macOS hasn't allowed Search to read all of them."
                     : failure.localizedDescription
-                return "Some of \(source.name)'s profiles in \(looked) couldn't be read: \(reason) Choose its data folder in Settings › Bring Things Over to allow access for this session."
+                return "Some of \(source.name)'s profiles in \(looked) couldn't be read: \(reason) Choose its data folder in File › Bring Things Over… to allow access for this session."
             }
             if Self.permissionDenied(failure) {
-                return "macOS hasn't allowed Search to read \(source.name)'s data in \(looked). Choose its data folder in Settings › Bring Things Over to allow access for this session."
+                return "macOS hasn't allowed Search to read \(source.name)'s data in \(looked). Choose its data folder in File › Bring Things Over… to allow access for this session."
             }
             return "Search couldn't read \(source.name)'s data in \(looked): \(failure.localizedDescription)"
         }

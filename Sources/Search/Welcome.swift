@@ -75,7 +75,7 @@ struct WelcomePanel: View {
                 Text("Search")
                     .font(.system(size: 34, weight: .medium))
                     .foregroundStyle(Palette.ink)
-                Text("A browser with nothing in the way. Four megabytes, the engine already in your Mac, and as little around the page as we could manage.")
+                Text("A browser with nothing in the way. Search uses the engine built into your Mac and keeps the interface around the page simple.")
                     .font(.system(size: 14.5))
                     .foregroundStyle(Palette.muted)
                     .multilineTextAlignment(.center)
@@ -87,7 +87,7 @@ struct WelcomePanel: View {
 
     private var bring: some View {
         VStack(alignment: .leading, spacing: 22) {
-            heading("Bring things over.", "Passwords go into your keychain, bookmarks into the menu, and history means the address field already knows where you go. Nothing in the other browser changes.")
+            heading("Bring things over.", "Bookmarks go into the menu, and history means the address field already knows where you go. Nothing in the other browser changes.")
 
             let sources = ImportSource.installed()
             let unreadable = Chromium.unreadable()
@@ -195,10 +195,10 @@ struct WelcomePanel: View {
                 Key("⌘K", "Every open tab, by name.")
                 Key("⌘,", "Settings. ⌘F there finds any setting.")
                 Key("⌥⌘N", "Split a page in two, ⌥-click a tab to put it beside the page, or drag a tab onto a page; ⌃⌘← and ⌃⌘→ go from one page to the other, and ⌥⌘N again puts them apart.")
-                Key("⌘O", "Links from other apps open in a small window; ⌘O keeps one as a tab. Settings › Browsing.")
-                Key("⌘L", "Suggestions from your search engine as you type — off until you turn them on in Settings › Browsing.")
+                Key("⌘O", "Links from other apps can open in a small window; ⌘O keeps one as a tab. Settings › Browsing.")
+                Key("⌘L", "Search engine suggestions are on by default. Turn them off in Settings › Browsing.")
                 Key("⌘", "Held, it can show each tab's number for ⌘1–9. Settings › Tabs.")
-                Key("⌘,", "A background for the blank tab, if you want one — Settings › Appearance › Theme. Off until you choose.")
+                Key("⌘,", "Choose a colour, gradient or image for the window and new tabs in Settings › Appearance › Theme.")
                 Key("⌘1", "Pressed again on its pin, back to where you were.")
                 Key("⇧⌘P", "Float a video in Search's window, or in macOS's picture in picture. Settings › Browsing.")
                 Key("⌃-click", "Claude or ChatGPT in a side panel beside the page: right-click a tab › Open in Side Panel, or View › Side Panel.")

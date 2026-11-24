@@ -1032,7 +1032,10 @@ struct SettingsPanel: View {
                 Text("Search")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Palette.ink)
-                Text("by Paul0k · version \(Updater.version)")
+                Text("Fork by Paul0k · version \(Updater.version)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                Text("Original © 2026 Office Commun")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
             }

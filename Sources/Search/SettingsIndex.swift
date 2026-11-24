@@ -113,7 +113,7 @@ enum SettingsIndex {
               more: "macOS asks you to confirm. Pick another app in Mail › Settings › General › Default email reader to undo it.",
               words: ["email", "mailto", "gmail", "mail", "default email", "handler"], parent: "mail.webmail"),
         .init(id: "general.import", group: "browser",
-              title: "Import browser data", detail: "Bookmarks, history, passwords and extensions from another browser",
+              title: "Import browser data", detail: "Bookmarks, history, tabs and extensions from another browser",
               more: "From another browser on this Mac, or from a file it exported. Nothing leaves your Mac.",
               words: ["bring things over", "import", "chrome", "safari", "arc", "migrate"]),
         .init(id: "quit.confirm", group: "browser",
@@ -477,7 +477,7 @@ enum SettingsIndex {
               keys: ["launcher.key"], words: ["hotkey", "global shortcut", "shift command space"], parent: "launcher.on"),
         .init(id: "launcher.little", group: "anywhere",
               title: "Open in a small window", detail: "Return opens the page in a small window over the app you're in, not in Search's window",
-              more: "As links from other apps can (Settings › General): a small window with the page and Open in Search, to read and close or to keep. A page already open in a tab, picked from the list, still goes to its tab.",
+              more: "As links from other apps can (Settings › Browsing): a small window with the page and Open in Search, to read and close or to keep. A page already open in a tab, picked from the list, still goes to its tab.",
               keys: ["launcher.little"], words: ["little arc", "little window", "small window", "quick look", "option command n"], parent: "launcher.on"),
 
         // About
@@ -596,8 +596,10 @@ enum SettingsIndex {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "inspector.dark": return "Only while Search isn't set to Dark"
         case "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return "Only with titles in the column"
+        case "layout.cardsFullScreen": return "Only when Page layout uses cards"
         case "tabs.liquid": return LiquidTab.available ? "Only with titles in the sidebar" : "Liquid Glass needs macOS 26"
-        case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
+        case "pins.folders": return "Only when Pinned rows is on"
+        case "sidebar.foldIcons": return "Only when Auto-hide sidebar is off"
         case "sidebar.player": return "Only with titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent", "newtab.arc": return "Only with the new tab in a floating field"
@@ -605,7 +607,7 @@ enum SettingsIndex {
         case "mail.default": return "Only with a webmail chosen for email links"
         case "links.peek.stays": return "Only when links or pins open peeks"
         case "launcher.key": return "Only with the address field from any app on"
-        default: return "Only with the tabs down a side"
+        default: return "Only when its parent setting is on"
         }
     }
 }
