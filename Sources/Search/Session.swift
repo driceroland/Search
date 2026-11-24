@@ -63,6 +63,8 @@ enum Session {
         var sizes: [Double]
         /// The page last focused, by its place in `tabs`.
         var focused: Int?
+        /// Sync Scrolling on; absent from files written before it.
+        var sync: Bool?
     }
 
     /// The first space's is the session there always was; each other space

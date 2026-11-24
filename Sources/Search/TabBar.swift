@@ -2011,6 +2011,13 @@ struct TabMenu: View {
                     browser.focusPane(tab)
                     browser.closeSplit()
                 }
+                Divider()
+                Toggle("Sync Scrolling", isOn: Binding(
+                    get: { pair.syncsScroll },
+                    set: { _ in
+                        browser.focusPane(tab)
+                        browser.toggleSyncScroll()
+                    }))
             } else {
                 // Beside the page on screen; on that page itself, an empty
                 // page beside it. On a split with room, one more page in it.

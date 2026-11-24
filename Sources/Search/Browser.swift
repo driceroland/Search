@@ -4287,7 +4287,8 @@ final class Browser: NSObject, ObservableObject {
             let sizes = written.count == pair.tabs.count || pair.sizes.count != pair.tabs.count
                 ? pair.sizes : TabSplit.clamp(written.map { pair.sizes[$0] })
             return Session.Split(tabs: places, axis: pair.axis, sizes: sizes,
-                                 focused: pair.focused.flatMap { indices[$0] })
+                                 focused: pair.focused.flatMap { indices[$0] },
+                                 sync: pair.syncsScroll ? true : nil)
         }
         return .init(tabs: entries, active: active, groups: keptGroups, splits: savedSplits)
     }
@@ -4686,6 +4687,28 @@ final class Browser: NSObject, ObservableObject {
     func evenSplit() {
         guard let pair = activeSplit else { return }
         setSplitSizes(pair.id, TabSplit.even(pair.tabs.count))
+    }
+
+    /// The divider's menu › Sync Scrolling: on, a page of the pair scrolled
+    /// takes the others with it, by as much (see syncScroll).
+    func toggleSyncScroll() {
+        guard let pair = activeSplit, let index = splits.firstIndex(where: { $0.id == pair.id }) else { return }
+        splits[index].syncsScroll.toggle()
+        rememberSession()
+    }
+
+    /// One page of a pair with Sync Scrolling on went down (or up) by `dy`:
+    /// the others go by as much, each as far as it can. Each marks where it
+    /// was put, so its own report of that scroll is known as an echo and
+    /// goes no further (see ScrollRelay.script) — the pages never bounce
+    /// one another.
+    func syncScroll(from tab: Tab, by dy: Double) {
+        guard prefs.splitView, let pair = split(for: tab), pair.syncsScroll, dy.isFinite, dy != 0 else { return }
+        let js = "window.scrollBy({ top: \(dy), left: 0, behavior: 'instant' }); window.__searchSynced = window.scrollY; 0"
+        for id in pair.others(than: tab.id) {
+            guard let web = tabs.first(where: { $0.id == id })?.built else { continue }
+            web.evaluateJavaScript(js, in: nil, in: Web.world) { _ in }
+        }
     }
 
     /// The divider's menu › Close Both. Remembered as one, as Close Tabs
@@ -6982,7 +7005,8 @@ final class Browser: NSObject, ObservableObject {
             guard members.count == saved.tabs.count, members.count <= TabSplit.most,
                   !members.contains(where: { taken.contains($0.id) }) else { continue }
             let pair = TabSplit(tabs: members.map(\.id), axis: saved.axis, sizes: saved.sizes,
-                                focused: saved.focused.flatMap { bySavedIndex[$0]?.id })
+                                focused: saved.focused.flatMap { bySavedIndex[$0]?.id },
+                                syncsScroll: saved.sync ?? false)
             guard Browser.holds(pair, in: row) else { continue }
             restoredSplits.append(pair)
             taken.formUnion(pair.tabs)
@@ -7560,6 +7584,7 @@ final class Browser: NSObject, ObservableObject {
 
         // The line at the bottom doubles as the zoom read-out: it keeps being
         // rewritten while you pinch and fades a moment after you stop.
+        tab.onScrollBy = { [weak self] tab, dy in self?.syncScroll(from: tab, by: dy) }
         tab.onZoom = { [weak self] _, value in
             guard let self else { return }
             let percent = Int((value * 100).rounded())

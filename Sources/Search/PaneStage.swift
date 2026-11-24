@@ -78,7 +78,7 @@ final class PaneStage: NSView {
     var onHover: ((Tab.ID?) -> Void)?
     private var hovered: Tab.ID?
 
-    enum Action { case swap, even, separate, closeBoth }
+    enum Action { case swap, even, separate, closeBoth, syncScroll }
 
     /// Between the pages: room for the divider, and to keep it off the left
     /// page's scroll bar.
@@ -664,6 +664,8 @@ final class PaneStage: NSView {
     fileprivate var pageCount: Int { tabs.count }
 
     fileprivate func act(_ action: Action) { onAction?(action) }
+    /// Whether the pair shown scrolls as one (the divider's menu ticks it).
+    fileprivate var syncsScroll: Bool { split?.syncsScroll ?? false }
 
     // MARK: - a click on a page focuses it
 
@@ -911,6 +913,12 @@ final class PaneDivider: NSView {
             menu.addItem(item)
             if action == .even { menu.addItem(.separator()) }
         }
+        menu.addItem(.separator())
+        let sync = NSMenuItem(title: "Sync Scrolling", action: #selector(chose(_:)), keyEquivalent: "")
+        sync.target = self
+        sync.representedObject = PaneStage.Action.syncScroll
+        sync.state = stage?.syncsScroll == true ? .on : .off
+        menu.addItem(sync)
         return menu
     }
 

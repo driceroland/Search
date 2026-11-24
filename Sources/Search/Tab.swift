@@ -592,6 +592,12 @@ final class Tab: ObservableObject, Identifiable {
     @Published private(set) var zoom: CGFloat = 1
 
     var onZoom: ((Tab, CGFloat) -> Void)?
+    /// The page scrolled by itself or under your hand — never as a page
+    /// beside it in a pair was scrolled (see Browser.syncScroll).
+    var onScrollBy: ((Tab, Double) -> Void)?
+    /// Where the page last said it was scrolled to; nil until this
+    /// document's first report.
+    private var lastScrollY: Double?
     /// The resolved address under the pointer, or nil when it leaves a link.
     var onLink: ((Tab, String?) -> Void)?
     /// The page took the keys (see PageView.onKeys).
@@ -1523,7 +1529,13 @@ final class Tab: ObservableObject, Identifiable {
 
     /// Called from the page, a few dozen times a second at most — the script
     /// already waits for a frame before it says anything.
-    func scrolled(to y: Double, of ceiling: Double, screens: Double? = nil) {
+    func scrolled(to y: Double, of ceiling: Double, screens: Double? = nil,
+                  first: Bool = false, echo: Bool = false) {
+        // A new document's first word is where it starts, not a move; an
+        // echo is a move another page made here.
+        let was = lastScrollY
+        lastScrollY = y
+        if !first, !echo, let was, y != was { onScrollBy?(self, y - was) }
         if let screens { self.screens = (max(1, screens) * 10).rounded() / 10 }
         // In hundredths, and only when that changes. The page reports once a
         // frame while it scrolls — 120 times a second on a 120 Hz screen — and
@@ -2072,6 +2084,7 @@ final class Tab: ObservableObject, Identifiable {
     /// whatever the page left behind — timers, video, sockets.
     func close() {
         onZoom = nil
+        onScrollBy = nil
         onLink = nil
         onPick = nil
         onPickEnd = nil
@@ -3635,7 +3648,9 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
               let ceiling = body["max"] as? Double
         else { return }
         let screens = body["screens"] as? Double
-        MainActor.assumeIsolated { tab?.scrolled(to: y, of: ceiling, screens: screens) }
+        let first = body["first"] as? Bool ?? false
+        let echo = body["echo"] as? Bool ?? false
+        MainActor.assumeIsolated { tab?.scrolled(to: y, of: ceiling, screens: screens, first: first, echo: echo) }
     }
 
     /// Reports at most once a frame, and passively, so a page that scrolls
@@ -3643,19 +3658,27 @@ final class ScrollRelay: NSObject, WKScriptMessageHandler {
     static let script = """
     (function () {
       var waiting = false;
-      function tell() {
+      function tell(first) {
         var root = document.documentElement;
         var y = window.scrollY || root.scrollTop || 0;
         var ceiling = Math.max(1, (root.scrollHeight || 0) - window.innerHeight);
         var screens = (root.scrollHeight || 0) / Math.max(1, window.innerHeight);
-        window.webkit.messageHandlers.\(name).postMessage({ y: y, max: ceiling, screens: screens });
+        // Where Sync Scrolling last put this page (Browser.syncScroll): still
+        // there, this scroll was that, not yours.
+        var mark = window.__searchSynced;
+        window.__searchSynced = null;
+        var echo = mark != null && Math.abs(y - mark) < 1;
+        window.webkit.messageHandlers.\(name).postMessage({ y: y, max: ceiling, screens: screens,
+                                                             first: !!first, echo: echo });
       }
       window.addEventListener('scroll', function () {
         if (waiting) return;
         waiting = true;
-        requestAnimationFrame(function () { waiting = false; tell(); });
+        requestAnimationFrame(function () { waiting = false; tell(false); });
       }, { passive: true });
-      tell();
+      // Back from the back-forward cache, the page starts over where it is.
+      window.addEventListener('pageshow', function (e) { if (e.persisted) tell(true); });
+      tell(true);
     })();
     """
 }

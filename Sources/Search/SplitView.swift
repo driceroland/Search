@@ -44,6 +44,7 @@ struct SplitStage: View {
                 case .even: browser.evenSplit()
                 case .separate: if let tab = browser.active { browser.detachSplit(tab) }
                 case .closeBoth: browser.closeSplit()
+                case .syncScroll: browser.toggleSyncScroll()
                 }
             },
             hover: { hovered = $0 },

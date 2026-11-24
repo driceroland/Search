@@ -5703,6 +5703,7 @@ final class Bench {
             reply()
         case "swap": browser.swapSplit(); reply()
         case "even": browser.evenSplit(); reply()
+        case "syncScroll": browser.toggleSyncScroll(); reply()
         case "closeBoth": browser.closeSplit(); reply()
         case "dismiss": browser.dismiss(); reply()
         case "side":
