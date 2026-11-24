@@ -358,11 +358,12 @@ final class SpaceSwipe {
     /// snaps back without moving (Motion.settle).
     private func carry(_ browser: Browser, to offset: CGFloat, then arrived: @escaping () -> Void) {
         guard !Motion.reduced else { return arrived() }
-        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
-            browser.spaceSwipe = offset
-        } completion: {
-            arrived()
-        }
+        // A frame at a time, as a space is brought (bring). Animated in one
+        // go, the rows were at the end of the way at once: those of the
+        // space on screen, a whole page off, were parked there (SwipeShift),
+        // and slid back across the column to their parking place as they
+        // faded, over the card coming in.
+        SwipeGlide.start(browser, to: offset, speed: letGoSpeed, done: arrived)
     }
 
     /// Where the tabs are: the column, or the bar across the top.
