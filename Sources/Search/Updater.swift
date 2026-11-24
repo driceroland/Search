@@ -283,6 +283,13 @@ final class Updater: ObservableObject {
             : "Search \(release.version) is out — choose Download Update in the Search menu")
     }
 
+    /// A test run's stage, set as told (the bench's `update stage`, and the
+    /// notice's tests): never in the browser people use.
+    func setStageForTest(_ stage: Stage) {
+        guard Store.testing else { return }
+        self.stage = stage
+    }
+
     /// Quit, and come back as the new one. A shell waits for this process
     /// to be gone before asking macOS to open the bundle again — `open` on a
     /// running app only brings it forward. Quitting goes through NSApp so

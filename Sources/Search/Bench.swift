@@ -4724,6 +4724,20 @@ final class Bench {
             switch request["action"] as? String {
             case "check": updater.checkByHand()
             case "disk": updater.openDisk()
+            case "stage":
+                // The notice's stage as told (UpdateNotice): "ready" or
+                // "waiting" with a build, or "none".
+                let build = request["build"] as? Int ?? Updater.build + 1
+                let release = Updater.Release(version: "test \(build)", build: build,
+                                              archive: URL(fileURLWithPath: "/dev/null"), dmg: URL(fileURLWithPath: "/dev/null"),
+                                              sha256: nil, notes: nil, minimumSystemVersion: nil)
+                switch request["to"] as? String {
+                case "ready": updater.setStageForTest(.ready(release))
+                case "waiting": updater.setStageForTest(.waiting(release))
+                case "offered": updater.setStageForTest(.offered(release))
+                case "fetching": updater.setStageForTest(.fetching(release))
+                default: updater.setStageForTest(.none)
+                }
             default: break
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {

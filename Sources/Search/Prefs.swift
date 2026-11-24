@@ -1038,6 +1038,17 @@ final class Preferences: ObservableObject {
             if installsUpdates { Updater.shared.install() }
         }
     }
+    /// "Update ready" at the foot of the column, or a pill at the far end
+    /// of the strip, while a newer build waits (UpdateNotice.swift). On
+    /// unless switched off: it only shows when an update is really there.
+    @Published var showsUpdateReady: Bool {
+        didSet { store.set(showsUpdateReady, forKey: UpdateNotice.key) }
+    }
+    /// The build whose notice was put away (its × or Hide): hidden until a
+    /// newer one is ready. 0 for none.
+    @Published var updateHiddenBuild: Int {
+        didSet { store.set(updateHiddenBuild, forKey: UpdateNotice.hiddenKey) }
+    }
     /// Separate sets of tabs, each with its own sign-ins (see Spaces.swift).
     /// Off unless asked for.
     @Published var usesSpaces: Bool {
@@ -1451,6 +1462,8 @@ final class Preferences: ObservableObject {
         translateTarget = store.string(forKey: "translate.target") ?? ""
         translateAlways = Set(store.stringArray(forKey: PageTranslator.alwaysKey) ?? [])
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
+        showsUpdateReady = store.object(forKey: UpdateNotice.key) as? Bool ?? true
+        updateHiddenBuild = store.integer(forKey: UpdateNotice.hiddenKey)
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")

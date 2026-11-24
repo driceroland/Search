@@ -19,6 +19,7 @@ struct SideBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject private var agents = AgentControl.shared
+    @ObservedObject private var updater = Updater.shared
     @Environment(\.colorScheme) private var colourScheme
     /// On the window's ground, beside the page's card (see CardEdge): the
     /// ground's colour and no edge of its own, the card's edge being the line.
@@ -299,7 +300,8 @@ struct SideBar: View {
                 $0.modifier(EndInset(bottom: footHeight))
             }
             .padding(.bottom, (browser.player == nil ? 0 : rowHeight + SideBar.playerGap)
-                     + (agentHere && !icons ? SideBar.agentRow + SideBar.playerGap : 0))
+                     + (agentHere && !icons ? SideBar.agentRow + SideBar.playerGap : 0)
+                     + (updateHere ? rowHeight + SideBar.playerGap : 0))
 
             VStack(spacing: 0) {
                 Spacer()
@@ -314,6 +316,14 @@ struct SideBar: View {
                 }
                 if let tab = browser.player {
                     PlayerRow(browser: browser, prefs: prefs, tab: tab)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, SideBar.playerGap)
+                        .transition(.opacity)
+                }
+                // A newer Search waiting: "Update ready" and Restart, just
+                // above the doors (UpdateNotice).
+                if updateHere {
+                    UpdateNoticeRow(prefs: prefs)
                         .padding(.horizontal, 10)
                         .padding(.bottom, SideBar.playerGap)
                         .transition(.opacity)
@@ -1637,6 +1647,9 @@ struct SideBar: View {
     private static let playerGap: CGFloat = 4
     /// The agent's quiet line at the column's foot.
     private static let agentRow: CGFloat = 30
+    /// "Update ready" is showing at the foot (UpdateNotice); not in the
+    /// column of icons, where there is no room for its words.
+    private var updateHere: Bool { !icons && UpdateNotice.shown(updater, prefs) != nil }
     /// An agent's pill is showing in this window (AgentControl).
     private var agentHere: Bool { agents.shownIn == ObjectIdentifier(browser) }
 

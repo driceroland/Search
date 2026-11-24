@@ -267,6 +267,8 @@ struct TabBar: View {
                         // A coding agent allowed in this window: its pill and
                         // Stop, here rather than over the page (AgentBanner).
                         AgentStatus(browser: browser, style: .door)
+                        // A newer Search waiting (UpdateNotice).
+                        UpdateNoticePill(prefs: browser.prefs)
                         // Only while a download is running, and a moment after.
                         FetchDoor(browser: browser, fetches: browser.fetches)
                         ExtensionSlot(browser: browser, puzzle: !browser.prefs.hidesExtensionsDoor)
