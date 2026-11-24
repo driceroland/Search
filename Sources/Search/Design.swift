@@ -354,7 +354,7 @@ enum Motion {
     /// Arc's does, rather than on the short springs above. Nil when off.
     /// Read at the moment it moves, as `light` is.
     static func slide(out: Bool) -> TimeInterval? {
-        guard Store.settings.bool(forKey: slidesKey) else { return nil }
+        guard Store.settings.object(forKey: slidesKey) as? Bool ?? true else { return nil }
         return out ? 0.26 : 0.22
     }
 

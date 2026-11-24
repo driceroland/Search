@@ -38,6 +38,7 @@ enum TestWorld {
         precondition(Store.testing && Store.folder.resolvingSymlinksInPath().path
                         .hasPrefix(home.resolvingSymlinksInPath().path + "/"),
                      "the unit tests' world must be in \(home.path), not \(Store.folder.path)")
+        holdOldDefaults()
         MainActor.assumeIsolated {
             // A clean windows.json, and last launch's windows brought back —
             // none — so saving writes the windows open and nothing more.
@@ -45,6 +46,26 @@ enum TestWorld {
             Browsers.restoreOnce()
         }
         XCTestObservationCenter.shared.addTestObserver(Cleanup.shared)
+    }
+
+    /// A new install starts with the window coloured, the address field in
+    /// the column, a floating ⌘T field and more (Prefs.swift). The tests were
+    /// written against the plain look before that, and measure the column's
+    /// rows where they were, so the world keeps the old values written down
+    /// before anything reads them. A test about a default removes its line.
+    private static func holdOldDefaults() {
+        let old: [String: Any] = [
+            "address.shown": false, "tabs.highContrast": false, "sidebar.slides": false,
+            "newtab.floating": false, "commandbar": false, "launcher.on": false,
+            "search.suggest": false, "tabs.close.after": 0,
+            "pages.120.mode": "onPower", "tabs.sleep.pace": "normal",
+            "browser.theme": "{}", "home.theme": "off",
+            // A glyph line also reads as an install from before, which
+            // settles small windows for links off (Prefs.settleLittleLinks):
+            // a new install's value, on, is held with it.
+            "glyph": "letters", "links.little": true,
+        ]
+        for (key, value) in old { Store.settings.set(value, forKey: key) }
     }
 
     /// The world removed once the run is over: its folder, and its settings,

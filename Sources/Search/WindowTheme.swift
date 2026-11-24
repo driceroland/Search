@@ -191,6 +191,13 @@ struct BrowserTheme: Codable, Equatable {
 
     init() {}
 
+    /// What a new install starts with, until a theme is chosen: the whole
+    /// window in one pink, at full strength. `BrowserTheme()` stays "no
+    /// colour", what choosing none writes.
+    static let standard = BrowserTheme.read(
+        ##"{"colour":0,"gradient":{"angle":135,"colours":["#ED7DFF","#ED7DFF"],"grain":false},"strength":"full"}"##
+    ) ?? BrowserTheme()
+
     private enum CodingKeys: String, CodingKey { case colour, gradient, strength }
 
     /// Never fails: what doesn't read is no colour at all.

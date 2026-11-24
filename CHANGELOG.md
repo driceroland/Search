@@ -10,6 +10,7 @@ is what gets posted as the update. What is planned but not done yet lives
 in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
+- A new install starts with the maintainer's own settings: the whole window and new tab in pink, the address field in the column, site icons on tabs, stronger tab text, the sidebar sliding in and out, ⌘T's floating field, commands in the address field, search suggestions, the address field from any app on ⌥⇧^, tabs closing after a day, tabs sleeping after two hours, and pages at 120 Hz never. Light and dark still follow the Mac, and the sidebar still sits on the left at its old width. Settings chosen before stay as they are. The unit tests keep the old values in their own world.
 - The README is rewritten for this fork, with new screenshots; SECURITY.md and CONTRIBUTING.md no longer mention the updater or saved passwords.
 - Settings explains each option when the pointer rests on its row.
 - Settings has a wider sidebar, larger labels and help on hover. The feedback section is removed. Appearance › Theme adds Full window colour, and new tab colours keep their brightness in dark mode.

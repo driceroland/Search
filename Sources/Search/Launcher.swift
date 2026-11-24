@@ -31,6 +31,9 @@ struct LauncherKey: Codable, Equatable {
 
     /// What Settings offers in one click: Spotlight's key, with ⇧.
     static let suggested = LauncherKey(combo: KeyCombo("space", shift: true), code: 49)
+    /// The key a new install starts with: ⌥⇧ and the key left of 1 (^ on a
+    /// German keyboard, ` or § on others).
+    static let standard = LauncherKey(combo: KeyCombo("^", command: false, shift: true, option: true), code: 10)
 }
 
 @MainActor

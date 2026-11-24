@@ -70,9 +70,9 @@ enum SleepPace: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The one chosen, Normal until someone chooses.
+    /// The one chosen, Later until someone chooses.
     nonisolated static var chosen: SleepPace {
-        Store.settings.string(forKey: key).flatMap(SleepPace.init) ?? .normal
+        Store.settings.string(forKey: key).flatMap(SleepPace.init) ?? .later
     }
 }
 
