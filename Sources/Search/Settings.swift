@@ -2,8 +2,7 @@ import SwiftUI
 
 /// Everything there is to set. Sections down the left, under a field that
 /// finds any setting by its words (⌘F); one section at a time on the right,
-/// in titled groups, each a card of rows. A row says what it is with a small
-/// icon and a line of plain words, the rest behind its (i). Every row of a
+/// in titled groups, each a card of rows with help on hover. Every row of a
 /// card stands at the same level, hairlines from edge to edge; a row that
 /// only counts while another is on is only there while it counts. Every
 /// row comes from SettingsIndex, so what the find field finds is exactly
@@ -90,16 +89,12 @@ struct SettingsPanel: View {
         }
     }
 
-    private static let rail: CGFloat = 196
-    private static let column: CGFloat = 600
-    private static let width: CGFloat = 720
+    private static let rail: CGFloat = 246
+    private static let column: CGFloat = 720
+    private static let width: CGFloat = 880
     private static let height: CGFloat = 540
-    /// Where a row's words start, past its icon. What goes under a row's
-    /// words (pictures, lists, fields) starts there too.
-    static let textInset: CGFloat = 52
-    /// A list under a row's words starts this far in, its lines adding
-    /// their own 14 to reach textInset.
-    static let listInset: CGFloat = textInset - 14
+    /// The left edge shared by row labels and their fields.
+    static let textInset: CGFloat = 16
 
     var body: some View {
         Group {
@@ -172,32 +167,33 @@ struct SettingsPanel: View {
 
     private var pages: some View {
         let counts = Dictionary(grouping: hits, by: \.page).mapValues(\.count)
-        return VStack(alignment: .leading, spacing: 2) {
-            Text("Settings")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Palette.ink)
-                .padding(.horizontal, 10)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
-            FindField(text: $query, focus: $finding)
-                .padding(.bottom, 10)
-            ForEach(Array(Page.blocks.enumerated()), id: \.offset) { index, block in
-                if index > 0 {
-                    Rectangle().fill(Palette.hairline).frame(height: 1)
-                        .padding(.horizontal, 10).padding(.vertical, 7)
-                }
-                ForEach(block) { item in
-                    PageRow(page: item, on: !searching && page == item,
-                            count: searching ? counts[item] ?? 0 : nil, chosen: chosen) {
-                        query = ""
-                        page = item
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Settings")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 14)
+                    .padding(.bottom, 10)
+                FindField(text: $query, focus: $finding)
+                    .padding(.bottom, 10)
+                ForEach(Array(Page.blocks.enumerated()), id: \.offset) { index, block in
+                    if index > 0 {
+                        Rectangle().fill(Palette.hairline).frame(height: 1)
+                            .padding(.horizontal, 10).padding(.vertical, 7)
+                    }
+                    ForEach(block) { item in
+                        PageRow(page: item, on: !searching && page == item,
+                                count: searching ? counts[item] ?? 0 : nil, chosen: chosen) {
+                            query = ""
+                            page = item
+                        }
                     }
                 }
             }
-            Spacer(minLength: 0)
+            .padding(12)
         }
         .animation(slide, value: page)
-        .padding(8)
         .frame(width: SettingsPanel.rail, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Palette.wash.opacity(0.45), in: Rectangle())
@@ -232,7 +228,7 @@ struct SettingsPanel: View {
                         .onExitCommand { text = "" }
                         .accessibilityLabel("Find a setting")
                 }
-                .font(.system(size: 12.5))
+                .font(.system(size: 14))
                 if text.isEmpty {
                     Text("⌘F")
                         .font(.system(size: 10.5, design: .rounded))
@@ -247,7 +243,7 @@ struct SettingsPanel: View {
                 }
             }
             .padding(.horizontal, 9)
-            .frame(height: 28)
+            .frame(height: 32)
             .background(Palette.ground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
         }
@@ -266,10 +262,10 @@ struct SettingsPanel: View {
             Button(action: act) {
                 HStack(spacing: 9) {
                     Image(systemName: page.icon)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                         .frame(width: 16)
                     Text(page.title)
-                        .font(.system(size: 13, weight: on ? .medium : .regular))
+                        .font(.system(size: 15, weight: on ? .medium : .regular))
                     Spacer(minLength: 0)
                     if let count, count > 0 {
                         Text("\(count)")
@@ -283,7 +279,7 @@ struct SettingsPanel: View {
                 .foregroundStyle(on ? Palette.ink : (hovering ? Palette.ink.opacity(0.75) : Palette.muted))
                 .opacity(count == 0 ? 0.4 : 1)
                 .padding(.horizontal, 10)
-                .frame(height: 30)
+                .frame(height: 34)
                 .background {
                     if on {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -308,13 +304,8 @@ struct SettingsPanel: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                if !searching {
-                    Image(systemName: page.icon)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Palette.ink)
-                }
-                Text(searching ? "Settings matching “\(query.trimmingCharacters(in: .whitespaces))”" : page.title)
-                    .font(.system(size: 17, weight: .semibold))
+                Text(searching ? "Results for “\(query.trimmingCharacters(in: .whitespaces))”" : page.title)
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(Palette.ink)
                     .lineLimit(1)
                 Spacer()
@@ -334,8 +325,6 @@ struct SettingsPanel: View {
                     }
                     .environment(\.ruleInset, 0)
                     .padding(.bottom, 24)
-                    // Keep the rows narrow, not the scroll view: the empty
-                    // space beside them must receive scrolling too.
                     .padding(.horizontal, 24)
                     .frame(maxWidth: asTab ? SettingsPanel.column : .infinity)
                     .frame(maxWidth: .infinity)
@@ -359,12 +348,12 @@ struct SettingsPanel: View {
             groups(of: page)
         case .keyboard:
             groups(of: page)
-            GroupBlock(title: "Shortcuts", icon: "command") {
+            GroupBlock(title: "Shortcuts") {
                 ShortcutsPage(browser: browser, store: .shared, prefs: prefs)
             }
         case .privacy:
             groups(of: page)
-            GroupBlock(title: "Proxy", icon: "network") {
+            GroupBlock(title: "Proxy") {
                 ProxySettings()
             }
         case .extensions:
@@ -378,7 +367,7 @@ struct SettingsPanel: View {
 
     private func groups(of page: Page) -> some View {
         ForEach(SettingsIndex.groups(of: page)) { group in
-            GroupBlock(title: group.title, icon: group.icon) {
+            GroupBlock(title: group.title) {
                 Card { rows(SettingsIndex.items(in: group.id).filter(shown), searched: false) }
             }
         }
@@ -398,11 +387,15 @@ struct SettingsPanel: View {
     private func row(_ item: SettingsItem) -> some View {
         let counts = SettingsIndex.applies(item, prefs)
         let relabel: (String) -> String = shortcuts.relabel
+        let detail = relabel(counts ? detail(of: item) : SettingsIndex.needs(item))
+        let showDetail = !counts || item.kind == .note || item.id == "downloads.folder"
+            || (item.id == "search.keywords" && draft != nil) || (item.id == "arc.import" && !arcHere)
+        let help = [showDetail ? nil : detail, counts ? item.more.map(relabel) : nil]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
         return SettingRow(
-            icon: item.icon,
-            title: relabel(title(of: item)),
-            detail: relabel(counts ? detail(of: item) : SettingsIndex.needs(item)),
-            more: counts ? item.more.map(relabel) : nil,
+            title: relabel(item.title),
+            detail: showDetail ? detail : "",
+            more: help.isEmpty ? nil : help,
             wide: item.kind == .wide,
             lit: lit == item.id
         ) {
@@ -419,7 +412,7 @@ struct SettingsPanel: View {
     private var results: some View {
         let found = hits
         if found.isEmpty {
-            Card { Nothing("No setting called that. Try other words, like dark, tabs or video") }
+            Card { Nothing("No matching settings") }
         }
         let byGroup = Dictionary(grouping: found, by: \.group)
         ForEach(SettingsIndex.groups.filter { byGroup[$0.id] != nil }) { group in
@@ -432,9 +425,8 @@ struct SettingsPanel: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { withAnimation(Motion.quick) { lit = nil } }
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: group.icon).font(.system(size: 10.5, weight: .medium))
-                        Text("\(group.page.title)  ›  \(group.title)".uppercased())
-                            .font(.system(size: 10.5, weight: .semibold))
+                        Text("\(group.page.title) › \(group.title)")
+                            .font(.system(size: 13, weight: .semibold))
                             .tracking(0.4)
                         Image(systemName: "arrow.right").font(.system(size: 9, weight: .semibold)).opacity(0.6)
                     }
@@ -451,12 +443,6 @@ struct SettingsPanel: View {
 
     // MARK: - words that change
 
-    private func title(of item: SettingsItem) -> String {
-        switch item.id {
-        default: return item.title
-        }
-    }
-
     private func detail(of item: SettingsItem) -> String {
         switch item.id {
         case "general.default":
@@ -470,7 +456,7 @@ struct SettingsPanel: View {
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail
         case "search.keywords": return keywordDetail
-        case "arc.import": return arcHere ? item.detail : "Arc isn't on this Mac. Bring Things Over can read an export"
+        case "arc.import": return arcHere ? item.detail : "Arc isn’t installed. Import an export file in General."
         default: return item.detail
         }
     }
@@ -502,6 +488,7 @@ struct SettingsPanel: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.ink)
                     .frame(width: 24)
+                    .accessibilityLabel("Default browser")
             } else {
                 Pill("Make default", filled: true) {
                     Links.becomeDefault { worked in
@@ -526,6 +513,7 @@ struct SettingsPanel: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.ink)
                     .frame(width: 24)
+                    .accessibilityLabel("Default email app")
             } else {
                 // Only ever from this click: macOS asks to confirm.
                 Pill("Make default", filled: true) {
@@ -539,7 +527,7 @@ struct SettingsPanel: View {
         case "general.import":
             // Coming from another browser, now or any time later: the same
             // page as File › Bring Things Over… and the Welcome's.
-            Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
+            Pill("Import…") { browser.lead(to: InternalPage(.importing)) }
         case "quit.confirm": Switch(on: $prefs.confirmsQuit)
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)
@@ -814,7 +802,6 @@ struct SettingsPanel: View {
         case "launcher.key": LauncherKeyBox(prefs: prefs)
         case "launcher.little": Switch(on: $prefs.launcherLittle)
         case "note.switcher": Always()
-        case "about.feedback": Pill("Send Feedback") { Links.writeFeedback() }
         case "bench": Switch(on: $prefs.bench)
         case "agents": Switch(on: $prefs.agents)
         default: EmptyView()
@@ -840,18 +827,14 @@ struct SettingsPanel: View {
             if !searched { HomePageLine() }
         case "privacy.forget":
             if !searched {
-                Group {
-                    NotificationSites()
-                    PopupSiteList(prefs: prefs)
-                }
-                .under()
+                NotificationSites()
+                PopupSiteList(prefs: prefs)
             }
         case "agents":
             if !searched, prefs.agents { RememberedAgents() }
         case "pages.120":
             if !searched, PageTranslator.available, !prefs.translateAlways.isEmpty {
                 TranslateLanguageList(prefs: prefs)
-                    .under()
             }
         default:
             EmptyView()
@@ -1044,44 +1027,25 @@ struct SettingsPanel: View {
 
 // MARK: - pieces
 
-private extension View {
-    /// A list under a row's words (sites, profiles, languages): its lines
-    /// start where the row's title does, and its hairlines are pulled back
-    /// out to the card's left edge, as every other one in Settings.
-    func under() -> some View {
-        padding(.leading, SettingsPanel.listInset)
-            .environment(\.ruleInset, -SettingsPanel.listInset)
-    }
-}
-
-/// A group of a section: its small heading with an icon, then its card.
-/// No line under the heading: the rows say what they do.
+/// A heading and its settings.
 struct GroupBlock<Content: View>: View {
     let title: String
-    let icon: String
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 10.5, weight: .semibold))
-                Text(title.uppercased())
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .tracking(0.5)
-            }
-            .foregroundStyle(Palette.ink.opacity(0.62))
-            .padding(.leading, 2)
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.ink.opacity(0.72))
+                .padding(.leading, 2)
             content()
         }
     }
 }
 
-/// One setting: its icon in a soft tile, what it is, one line on what it
-/// does (the rest behind the (i)), and its control. A wide control goes
-/// under the words.
+/// A setting's label, current value or status where needed, and its control.
 struct SettingRow<Control: View>: View {
-    let icon: String
+    var icon: String? = nil
     let title: String
     let detail: String
     var more: String? = nil
@@ -1089,62 +1053,38 @@ struct SettingRow<Control: View>: View {
     var lit = false
     @ViewBuilder let control: () -> Control
 
-    @State private var open = false
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Palette.ink.opacity(0.78))
-                    .frame(width: 26, height: 26)
-                    .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 5) {
-                        Text(title)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Palette.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if more != nil {
-                            Button { withAnimation(Motion.quick) { open.toggle() } } label: {
-                                Image(systemName: open ? "info.circle.fill" : "info.circle")
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.muted.opacity(0.8))
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .help(more ?? "")
-                            .accessibilityLabel("More about \(title)")
-                        }
-                    }
+            HStack(spacing: 12) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .accessibilityHidden(true)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 15))
+                        .foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
                     if !detail.isEmpty {
                         Text(detail)
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if open, let more {
-                        Text(more)
-                            .font(.system(size: 11.5))
+                            .font(.system(size: 12))
                             .foregroundStyle(Palette.muted)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 3)
-                            .transition(.opacity)
                     }
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: 0)
                 if !wide { control() }
             }
-            if wide {
-                control()
-                    .padding(.leading, 38)
-            }
+            if wide { control() }
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, SettingsPanel.textInset)
+        .padding(.vertical, 11)
+        .frame(minHeight: 46)
         .background(lit ? Palette.hover : .clear)
+        .contentShape(Rectangle())
+        .help(more ?? "")
     }
 }
 

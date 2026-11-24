@@ -18,11 +18,6 @@ struct ThemesPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Theme")
-                .font(.system(size: 13, weight: .semibold))
-            Text("Paints the blank tab and colours the whole window with it: the tabs, the bars and the ground around the page.")
-                .font(.system(size: 12)).foregroundStyle(Palette.muted)
-                .fixedSize(horizontal: false, vertical: true)
             mock
 
             Picker("", selection: Binding(get: { family }, set: choose)) {
@@ -33,8 +28,7 @@ struct ThemesPage: View {
 
             switch family {
             case .off:
-                Text("The blank tab stays plain.")
-                    .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                EmptyView()
             case .solid:
                 solid
             case .gradient:
@@ -49,17 +43,18 @@ struct ThemesPage: View {
 
             if prefs.browserTheme.look != nil {
                 HStack(spacing: 10) {
-                    Text("Window")
-                        .font(.system(size: 12)).foregroundStyle(Palette.muted)
-                        .frame(width: 64, alignment: .leading)
-                    Picker("", selection: Binding(get: { prefs.browserTheme.strength },
+                    Text("Window colour")
+                        .font(.system(size: 13)).foregroundStyle(Palette.ink)
+                        .frame(width: 118, alignment: .leading)
+                    Picker("Window colour", selection: Binding(get: { prefs.browserTheme.strength },
                                                   set: { value in prefs.browserTheme.strength = value })) {
                         ForEach(ThemeStrength.allCases, id: \.self) { Text($0.name).tag($0) }
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 260)
+                    .frame(maxWidth: 300)
                 }
+                .help("Colour strength for the sidebar, bars and window frame. Full uses the selected colours at 100%.")
             }
         }
         .onAppear(perform: follow)
@@ -127,41 +122,46 @@ struct ThemesPage: View {
     /// the middle, and the chosen theme behind it. It is the blank tab's own
     /// renderer, so it changes when a theme is picked or a slider let go.
     private var mock: some View {
-        let size = CGSize(width: 480, height: 300)
         let right = prefs.sidePosition == .right
-        return ZStack {
-            Palette.ground
+        return ZStack(alignment: right ? .trailing : .leading) {
+            Palette.frame
             ThemeWash(look: prefs.browserTheme.look)
                 .environment(\.washStrength, prefs.browserTheme.strength)
-            if prefs.homeTheme != .off {
+                .environment(\.washRoom, .zero)
+
+            ZStack {
                 HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Palette.ground)
+                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                    .overlay(Text("Search or enter address")
+                        .font(.system(size: 11)).foregroundStyle(Palette.muted).lineLimit(1))
+                    .frame(maxWidth: 220)
+                    .frame(height: 30)
+                    .padding(.horizontal, 12)
             }
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Palette.ground)
-                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
-                .overlay(Text("Search or enter address")
-                    .font(.system(size: 11)).foregroundStyle(Palette.muted))
-                .frame(width: 220, height: 30)
-            tabs(right: right)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .padding(8)
+            .padding(right ? .trailing : .leading, 64)
+
+            tabs
         }
-        .frame(width: size.width, height: size.height)
+        .frame(maxWidth: 480)
+        .frame(height: 240)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
         .accessibilityHidden(true)
     }
 
-    @ViewBuilder
-    private func tabs(right: Bool) -> some View {
-        let bar = RoundedRectangle(cornerRadius: 3, style: .continuous).fill(Palette.muted.opacity(0.35))
-        VStack(alignment: .leading, spacing: 6) {
+    private var tabs: some View {
+        let bar = RoundedRectangle(cornerRadius: 3, style: .continuous).fill(Greys.frame.wash)
+        return VStack(alignment: .leading, spacing: 6) {
             ForEach(0..<4, id: \.self) { _ in bar.frame(height: 8) }
             Spacer()
         }
         .padding(10)
-        .frame(width: 70)
+        .frame(width: 64)
         .frame(maxHeight: .infinity)
-        .background(Palette.ground.opacity(0.55))
-        .frame(maxWidth: .infinity, alignment: right ? .trailing : .leading)
     }
 
     // MARK: - choosing
@@ -288,8 +288,6 @@ struct ThemesPage: View {
                         if prefs.homeTheme == .custom { prefs.homeTheme = .off }
                     }
                 }
-                Text("A copy is kept inside Search.")
-                    .font(.system(size: 11)).foregroundStyle(Palette.muted)
             }
         }
     }
@@ -299,7 +297,7 @@ struct ThemesPage: View {
     @ViewBuilder
     private var sliders: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ThemeSlider(title: "Intensity", value: prefs.homeTuning.intensity * 100, range: 0...100, unit: "%") {
+            ThemeSlider(title: "New tab intensity", value: prefs.homeTuning.intensity * 100, range: 0...100, unit: "%") {
                 prefs.homeTuning.intensity = $0 / 100
             }
         }
@@ -320,13 +318,14 @@ private struct ThemeSlider: View {
         HStack(spacing: 10) {
             Text(title)
                 .font(.system(size: 12)).foregroundStyle(Palette.muted)
-                .frame(width: 64, alignment: .leading)
+                .frame(width: 118, alignment: .leading)
             Slider(value: Binding(get: { held ?? value }, set: { held = $0 }), in: range) { editing in
                 if !editing, let done = held {
                     commit(done)
                     held = nil
                 }
             }
+            .accessibilityLabel(title)
             Text("\(Int((held ?? value).rounded()))\(unit)")
                 .font(.system(size: 11).monospacedDigit()).foregroundStyle(Palette.muted)
                 .frame(width: 40, alignment: .trailing)

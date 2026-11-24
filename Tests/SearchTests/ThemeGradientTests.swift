@@ -158,6 +158,23 @@ final class ThemeGradientTests: XCTestCase {
         }
     }
 
+    func testFullStrengthPreservesSelectedColoursInBothAppearances() throws {
+        var theme = BrowserTheme()
+        theme.strength = .full
+        theme.gradient = ThemeGradient(colours: ["#FF00FF", "#0000FF"])
+        let saved = try XCTUnwrap(BrowserTheme.read(theme.text))
+        XCTAssertEqual(saved.strength, .full)
+        let gradient = try XCTUnwrap(saved.gradient)
+
+        for dark in [false, true] {
+            XCTAssertEqual(saved.strength.opacity(dark: dark), 1)
+            let stops = gradient.stops(strength: saved.strength, dark: dark)
+            XCTAssertEqual(stops.first?.color.hex, "#FF00FF")
+            XCTAssertEqual(stops.last?.color.hex, "#0000FF")
+            XCTAssertEqual(Tints.toned(2, .full, dark: dark), Tints.colours[2])
+        }
+    }
+
     /// Rich and Vivid at their worst: every colour there is, toned and
     /// washed at full strength over the column's ground and the white, in
     /// the light and the dark. The ground stays on its side, so the
