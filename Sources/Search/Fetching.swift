@@ -676,6 +676,7 @@ struct FetchDoor: View {
     /// both copies hear the list being asked for: the hidden one standing the
     /// card beside a button nobody sees put it at the column's top (#1350).
     let live: Bool
+    @Environment(\.greys) private var greys
 
     @State private var hovering = false
     /// Its view, for the card to stand beside. Held, not drawn from.
@@ -751,8 +752,10 @@ struct FetchDoor: View {
                 }
                 .frame(width: 26, height: 26)
                 .background(
+                    // A door's hover (Door), on any ground: an opaque grey
+                    // stood darker than its neighbours' on glass (idea 1034).
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(hovering ? Palette.hover : .clear)
+                        .fill(hovering ? greys.hover : .clear)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
