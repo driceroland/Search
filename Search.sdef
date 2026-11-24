@@ -30,7 +30,7 @@
             <element type="tab" access="r">
                 <cocoa key="scriptTabs"/>
             </element>
-            <property name="current tab" code="cTab" type="tab" access="r" description="The tab showing in the window; missing value when it is a private tab.">
+            <property name="current tab" code="cTab" type="tab" access="rw" description="The tab showing in the window; missing value when it is a private tab.">
                 <cocoa key="scriptCurrentTab"/>
             </property>
             <!-- Safari has no word for these, so the codes are Search's own:

@@ -15,7 +15,7 @@ import AppKit
 @MainActor
 @objc(ScriptTab)
 final class ScriptTab: NSObject {
-    private let tab: Tab
+    fileprivate let tab: Tab
     /// Its place among the tabs a script sees, private ones left out, which
     /// is what `tab N of window …` counts.
     private let index: Int
@@ -64,7 +64,22 @@ extension NSWindow {
 
     /// The tab in front, unless it is private.
     @MainActor @objc var scriptCurrentTab: ScriptTab? {
-        Scripting.front(of: self).map { ScriptTab($0.tab, index: $0.index, in: self) }
+        get {
+            Scripting.front(of: self).map { ScriptTab($0.tab, index: $0.index, in: self) }
+        }
+        
+        set {
+            guard let picked = newValue,
+                  let browser = Browsers.browser(for: self),
+                  Scripting.shown(in: self).contains(where: { $0 === picked.tab })
+                    else {
+                Scripting.refuse("That tab isn't from this window")
+                return
+            }
+            
+            browser.bringForward(picked.tab.id)
+            Links.comeForward(lookedAt: true)
+        }
     }
 
     /// The name of the space the window shows. With spaces off, that is its
@@ -98,5 +113,12 @@ enum Scripting {
               let index = shown(in: window).firstIndex(where: { $0 === active })
         else { return nil }
         return (browser, active, index)
+    }
+    
+    /// Refuse to perform the function because it's not permitted.
+    static func refuse(_ message: String) {
+        guard let command = NSScriptCommand.current() else { return }
+        command.scriptErrorNumber = errAEEventNotPermitted   // -10004
+        command.scriptErrorString = message
     }
 }
