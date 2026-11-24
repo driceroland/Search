@@ -901,6 +901,7 @@ struct ContentView: View {
             .environment(\.washRoom, CGSize(width: across, height: tall))
             // And as strongly, Subtle, Rich or Vivid, as the theme asks.
             .environment(\.washStrength, browser.washStrength)
+            .environment(\.washDarken, browser.washDarken)
             // The live tab as a pane of Liquid Glass, where the Mac has it.
             .environment(\.liquidTabs, browser.prefs.liquidTabs && LiquidTab.available)
             // The field comes on its spring, and goes quickly: once Return

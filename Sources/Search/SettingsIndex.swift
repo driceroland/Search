@@ -137,7 +137,7 @@ enum SettingsIndex {
               title: "Theme", detail: "Choose a colour, gradient or image for the new tab and window.",
               more: "Set the new tab intensity and window colour separately. Images stay on your Mac.",
               keys: ["browser.theme", "home.theme", "home.theme.image", "home.tuning"],
-              words: ["themes", "wallpaper", "background", "gradient", "colour", "color", "new tab", "image", "arc", "browser colour", "window colour", "tint", "strength", "intensity", "full", "theme", "home background"],
+              words: ["themes", "wallpaper", "background", "gradient", "colour", "color", "new tab", "image", "arc", "browser colour", "window colour", "tint", "strength", "intensity", "full", "theme", "home background", "darken", "dark mode", "black"],
               kind: .wide),
 
         // Appearance

@@ -115,7 +115,7 @@ struct Card<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) { content() }
-            .background(Palette.ground)
+            .background(Palette.surface)
             .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)

@@ -158,20 +158,44 @@ final class ThemeGradientTests: XCTestCase {
         }
     }
 
-    func testFullStrengthPreservesSelectedColoursInBothAppearances() throws {
+    func testFullStrengthPreservesLightColoursAndDeepensDark() throws {
         var theme = BrowserTheme()
         theme.strength = .full
-        theme.gradient = ThemeGradient(colours: ["#FF00FF", "#0000FF"])
+        theme.gradient = ThemeGradient(colours: ["#ED7DFF", "#0000FF"])
         let saved = try XCTUnwrap(BrowserTheme.read(theme.text))
         XCTAssertEqual(saved.strength, .full)
         let gradient = try XCTUnwrap(saved.gradient)
 
-        for dark in [false, true] {
-            XCTAssertEqual(saved.strength.opacity(dark: dark), 1)
-            let stops = gradient.stops(strength: saved.strength, dark: dark)
-            XCTAssertEqual(stops.first?.color.hex, "#FF00FF")
-            XCTAssertEqual(stops.last?.color.hex, "#0000FF")
-            XCTAssertEqual(Tints.toned(2, .full, dark: dark), Tints.colours[2])
+        // Light mode draws the selected sRGB colours directly.
+        XCTAssertEqual(saved.strength.opacity(dark: false), 1)
+        let lightStops = gradient.stops(strength: saved.strength, dark: false)
+        XCTAssertEqual(lightStops.first?.color.hex, "#ED7DFF")
+        XCTAssertEqual(lightStops.last?.color.hex, "#0000FF")
+        XCTAssertEqual(Tints.toned(2, .full, dark: false), Tints.colours[2])
+
+        // Dark mode deepens bright colours when darkenInDark is on, and keeps them raw when off.
+        XCTAssertTrue(saved.darkenInDark)
+        XCTAssertEqual(saved.strength.opacity(dark: true), 1)
+        let darkStops = gradient.stops(strength: saved.strength, dark: true, darken: true)
+        let darkPink = try XCTUnwrap(OKLab(hex: try XCTUnwrap(darkStops.first?.color.hex)))
+        XCTAssertLessThan(darkPink.L, 0.25)
+        XCTAssertGreaterThan(darkPink.chroma, 0.05)
+
+        let rawDarkStops = gradient.stops(strength: saved.strength, dark: true, darken: false)
+        XCTAssertEqual(rawDarkStops.first?.color.hex, "#ED7DFF")
+        XCTAssertEqual(Tints.toned(2, .full, dark: true, darken: false), Tints.colours[2])
+
+        var unDarkened = theme
+        unDarkened.darkenInDark = false
+        XCTAssertEqual(BrowserTheme.read(unDarkened.text)?.darkenInDark, false)
+
+        func lin(_ v: Double) -> Double { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        func lum(_ c: (Double, Double, Double)) -> Double { 0.2126 * lin(c.0) + 0.7152 * lin(c.1) + 0.0722 * lin(c.2) }
+        let inkLum = lum((0.93, 0.93, 0.93))
+        for hex in ["#ED7DFF", "#FF00FF", "#FFFFFF", "#F59E33", "#4285F5", "#2B2B2E"] {
+            let toned = try XCTUnwrap(OKLab(hex: hex)).darkFull
+            let ratio = (max(inkLum, lum(toned.srgb)) + 0.05) / (min(inkLum, lum(toned.srgb)) + 0.05)
+            XCTAssertGreaterThan(ratio, 7, "AAA ink contrast in dark mode for \(hex)")
         }
     }
 

@@ -32,6 +32,7 @@ struct AddressLine: View {
         @ObservedObject var browser: Browser
         @ObservedObject var tab: Tab
         let height: CGFloat
+        @Environment(\.colorScheme) private var scheme
         @State private var frame: CGRect = .zero
         @State private var clicks: Any?
         /// The line and its site button, for the site card to hang under.
@@ -66,9 +67,9 @@ struct AddressLine: View {
             .padding(.trailing, browser.editingInline || !tab.isWeb ? 10 : 4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: height)
-            .background(Palette.ground.opacity(0.35), in: shape)
+            .background(scheme == .dark ? Color.white.opacity(0.08) : Palette.ground.opacity(0.35), in: shape)
             .overlay {
-                shape.strokeBorder(Palette.ink.opacity(browser.editingInline ? 0.40 : 0.18), lineWidth: 1)
+                shape.strokeBorder(Palette.ink.opacity(browser.editingInline ? 0.40 : (scheme == .dark ? 0.14 : 0.18)), lineWidth: 1)
                     .allowsHitTesting(false)
             }
             .background(ViewAnchor(box: line))
