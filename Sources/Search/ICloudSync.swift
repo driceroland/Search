@@ -35,7 +35,7 @@ import Combine
 // never a private tab, never a pinned one (pins travel as pins). History,
 // passwords, cookies and site data never sync.
 //
-// The folder sync (Sync.swift, "Sync with your other Macs") is the other way
+// The folder sync (Sync.swift, "Sync Macs through a folder") is the other way
 // to do part of this. The two are never on together: each switch is off
 // limits while the other is on, so they can't take turns undoing each
 // other's changes.
@@ -992,7 +992,7 @@ final class ICloudSync: ObservableObject {
             // A signed build in a test run is a build that could: it says so.
             return Store.testing && ICloudSync.entitled ? "Off in a test run" : "Needs a build of Search signed for iCloud"
         }
-        if folderSyncOn && !on { return "Turn off Sync with your other Macs first" }
+        if folderSyncOn && !on { return "Turn off Sync Macs through a folder first" }
         guard on else { return offReason ?? otherwise }
         switch account {
         case .signedOut: return "Not signed in to iCloud: System Settings › Apple Account"

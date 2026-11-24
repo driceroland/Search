@@ -30,6 +30,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- Settings is easier to find your way in (idea 1094). General has a group of its own, Sync and other devices, with Sync with iCloud, Handoff and the folder sync; Tabs has Closing and switching, with what happens when a tab closes, ⌘Z and the ⌃Tab switcher, taken out of New tabs. The two sync switches now say how they differ: Sync with iCloud is the one with your iPhone and other Macs (open tabs, pins, spaces, bookmarks, a few settings); Sync with your other Macs is now Sync Macs through a folder, the older way, Macs only, through Dropbox or iCloud Drive, for every profile and with no iCloud needed. Each says it is off while the other is on. Pins keep their site and Links from pinned tabs open in a new tab say how they interact. No setting was renamed underneath or taken away. `swift test --filter SettingsIndexTests`, `python3 Tests/settings_layout.py`
 - Settings › Browsing › Links › Go to a tab that has the page now works without small windows too: a link from another app to a page you already have open switches to that tab instead of opening a new one. Thanks [@pasteley](https://github.com/pasteley). ([#1485](https://github.com/driceroland/Search/pull/1485))
 
 ### Fixed

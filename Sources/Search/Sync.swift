@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import SystemConfiguration
 
-// Sync with your other Macs, through a folder you choose.
+// Sync Macs through a folder (once "Sync with your other Macs"): a folder you choose.
 //
 // THE DECISION (17 Nov 2026): a folder, not iCloud's own APIs.
 //   - CloudKit and NSUbiquitousKeyValueStore need an iCloud container and
@@ -20,7 +20,8 @@ import SystemConfiguration
 //   Drive, Dropbox, a shared disk — and whatever moves that folder between
 //   Macs does the rest. No account, no server, nothing of ours in between.
 //
-// Off unless turned on (Settings › General › Sync with your other Macs).
+// Off unless turned on (Settings › General › Sync and other devices ›
+// Sync Macs through a folder; "Sync with your other Macs" until 1.0.20).
 //
 // In the folder, "Search Sync/<scope>/<device>.json": one file per Mac per
 // scope, written only by that Mac, so two Macs never write the same file.
