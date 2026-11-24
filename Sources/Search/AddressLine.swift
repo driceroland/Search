@@ -73,6 +73,7 @@ struct AddressLine: View {
         @State private var line = ViewAnchor.Box()
         @State private var options = ViewAnchor.Box()
         @State private var hovering = false
+        @State private var width: CGFloat = 0
 
         private var url: URL? { tab.page?.url ?? tab.address }
         private var rest: AtRest? { AtRest.of(url) }
@@ -120,10 +121,11 @@ struct AddressLine: View {
             // Across the top nothing cuts it off: it opens where it is.
             .overlay(alignment: .topLeading) {
                 if editing && !inColumn {
-                    AddressCard(browser: browser, height: height)
+                    AddressCard(browser: browser, height: height, width: AddressCard.width(for: width))
                 }
             }
             .animation(.easeOut(duration: 0.15), value: editing)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         }
 
         private func button(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
@@ -141,14 +143,18 @@ struct AddressLine: View {
 }
 
 /// The address bar typed in: the field and its suggestions in one card, as
-/// a command bar is, wider than the column, out over the page as Arc's is.
+/// a command bar is, wider than the line, a third of the column's width out
+/// over the page as Arc's is.
 /// Each row a title over its site (Omnibox.Row, stacked).
 struct AddressCard: View {
     @ObservedObject var browser: Browser
     /// The line's height, which the card's field row is a little taller than.
     let height: CGFloat
+    let width: CGFloat
 
-    static let width: CGFloat = 560
+    /// The card's width for a line this wide: in the column, about a third
+    /// of the column's width past its edge.
+    static func width(for line: CGFloat) -> CGFloat { (line * 1.4).rounded() }
 
     @State private var frame: CGRect = .zero
     @State private var clicks: Any?
@@ -163,9 +169,9 @@ struct AddressCard: View {
             }
             .padding(.horizontal, 14)
             .frame(height: max(height, 28) + 12)
-            Omnibox(browser: browser, over: false, listOnly: Self.width)
+            Omnibox(browser: browser, over: false, listOnly: width)
         }
-        .frame(width: Self.width, alignment: .top)
+        .frame(width: width, alignment: .top)
         .background(Palette.ground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.16), radius: 24, y: 10)

@@ -417,15 +417,16 @@ struct SideBar: View {
         // A fixed width with icons only: nothing to pull. The strip keeps
         // its edge, to be pulled back out to titles.
         .overlay(alignment: innerEdge) { if !icons || strip { edge } }
-        // The address bar typed in opens wider than the column, out over the
-        // page (AddressCard), so it is drawn here, past the clip and over the
+        // The address bar typed in opens wider than the column, partly out
+        // over the page (AddressCard), so it is drawn here, past the clip and over the
         // column's edge, where the line is: from its leading edge, or its trailing one on the right.
         .overlayPreferenceValue(AddressCard.Place.self) { place in
             GeometryReader { geometry in
                 if let place, browser.editingInline {
                     let line = geometry[place]
-                    AddressCard(browser: browser, height: prefs.sideRow)
-                        .offset(x: prefs.sidePosition == .right ? line.maxX - AddressCard.width : line.minX, y: line.minY)
+                    let width = AddressCard.width(for: line.width)
+                    AddressCard(browser: browser, height: prefs.sideRow, width: width)
+                        .offset(x: prefs.sidePosition == .right ? line.maxX - width : line.minX, y: line.minY)
                 }
             }
         }
