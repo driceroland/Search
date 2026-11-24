@@ -327,7 +327,9 @@ extension Browser {
         // Out, or still sliding back in: where it lies.
         func lies() -> Bool {
             if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
-            return right ? point.x >= size.width - prefs.columnWidth : point.x <= prefs.columnWidth
+            // A floating card stands a gap in, its edge to pull just past it.
+            let reach = prefs.columnWidth + (asCards ? Metrics.cardGap + 5 : 0)
+            return right ? point.x >= size.width - reach : point.x <= reach
         }
         if peeking { return lies() }
         guard !press else { return false }
@@ -457,7 +459,8 @@ struct Fold: View {
                     // it does beside the page's card (see CardEdge), or its
                     // own white where the page is no card.
                     // Away exactly when the lights are, which ride with it.
-                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: { [pointer, onDrag] width in
+                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards,
+                            corner: floating ? Metrics.cardRadius : 0, onDrag: { [pointer, onDrag] width in
                         pointer.edgeHeld = width != nil
                         onDrag(width)
                     })
@@ -665,7 +668,9 @@ struct Fold: View {
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
             let onWindow = top == window.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
-            let reach = prefs.sidebar ? prefs.columnWidth + (floating ? Metrics.cardGap : 0) : Metrics.strip
+            // Floating, the column stands a gap in from the edge, and its
+            // edge to pull reaches half its width past it.
+            let reach = prefs.sidebar ? prefs.columnWidth + (floating ? Metrics.cardGap + 5 : 0) : Metrics.strip
             // An extension's popup hangs from its button in the column: the
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).

@@ -24,6 +24,10 @@ struct SideBar: View {
     /// On the window's ground, beside the page's card (see CardEdge): the
     /// ground's colour and no edge of its own, the card's edge being the line.
     var onFrame = false
+    /// Round, folded out over the page as a floating card (see Fold): the
+    /// column's own ground cut to it. Only the ground is cut, not the
+    /// column, whose edge to pull stands just past it.
+    var corner: CGFloat = 0
     /// The greys for that ground, handed down to every row, pin and door.
     private var greys: Greys { onFrame ? .frame : .white }
 
@@ -405,6 +409,7 @@ struct SideBar: View {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         }
         .overlay(alignment: innerEdge) {
             if !onFrame { Rectangle().fill(Palette.hairline).frame(width: 1) }
