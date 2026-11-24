@@ -51,7 +51,7 @@ enum ExtensionShims {
     nonisolated static let stamp = ".search-shim"
     /// Raised when `prepare` changes what it does to a package, so that
     /// extensions prepared before are prepared again.
-    nonisolated private static let preparation = "7"
+    nonisolated private static let preparation = "8"
     nonisolated static let version: String = {
         SHA256.hash(data: Data((script + PasskeyRelay.page + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
@@ -303,21 +303,58 @@ enum ExtensionShims {
                 continue
             }
             guard ["html", "htm"].contains(url.pathExtension.lowercased()),
-                  var html = try? String(contentsOf: url, encoding: .utf8)
+                  let bytes = try? Data(contentsOf: url),
+                  let page = String(data: bytes, encoding: .utf8)
             else { continue }
-            if let chained = chainModules(html, page: url, folder: folder) {
-                html = chained
-                try? html.write(to: url, atomically: true, encoding: .utf8)
-            }
-            guard !html.contains(file) else { continue }
-            let tag = "<script src=\"/\(file)\"></script>"
-            if let head = html.range(of: "<head[^>]*>", options: [.regularExpression, .caseInsensitive]) {
-                html.insert(contentsOf: tag, at: head.upperBound)
-            } else {
-                html = tag + html
-            }
-            try? html.write(to: url, atomically: true, encoding: .utf8)
+            // Reading drops a page's byte order mark; it is written back,
+            // as it is what tells WebKit the page is UTF-8 when nothing
+            // else in it does.
+            var html = page.hasPrefix("\u{FEFF}") || !bytes.starts(with: signature) ? page : "\u{FEFF}" + page
+            if let chained = chainModules(html, page: url, folder: folder) { html = chained }
+            html = withShim(html)
+            let written = Data(html.utf8)
+            guard written != bytes else { continue }
+            try? written.write(to: url, options: .atomic)
         }
+    }
+
+    /// An extension page with the shim's tag as the first thing in its head,
+    /// before any script of its own. A page with no `<head>` tag gets it
+    /// after its doctype and its `<html>` tag, where the parser starts the
+    /// head it leaves out: put in front of the doctype, it left the page in
+    /// quirks mode (compatMode "BackCompat"), and its layout with it. A byte
+    /// order mark, comments and white space before the doctype stay where
+    /// they are. A page an earlier Search put the tag in front of is
+    /// mended, and one already right is returned as it was.
+    nonisolated static func withShim(_ page: String) -> String {
+        let tag = "<script src=\"/\(file)\"></script>"
+        var html = page
+        // Only the tag Search writes is taken off, wherever it was put.
+        if html.contains(tag) { html = html.replacingOccurrences(of: tag, with: "") }
+        // `<head>` with or without attributes, never `<header>`.
+        if let head = html.range(of: #"<head(\s[^>]*)?>"#, options: [.regularExpression, .caseInsensitive]) {
+            html.insert(contentsOf: tag, at: head.upperBound)
+            return html
+        }
+        // What may come before the head: a byte order mark, white space,
+        // comments, the doctype, then the `<html>` tag.
+        var at = html.startIndex
+        if html.hasPrefix("\u{FEFF}") { at = html.index(after: at) }
+        let prolog = [#"\s+"#, #"<!--[\s\S]*?-->"#, #"<!doctype[^>]*>"#]
+        var pastHTML = false
+        while at < html.endIndex {
+            let rest = html[at...]
+            if let found = prolog.lazy.compactMap({ rest.range(of: $0, options: [.regularExpression, .caseInsensitive, .anchored]) }).first {
+                at = found.upperBound
+            } else if !pastHTML, let found = rest.range(of: #"<html(\s[^>]*)?>"#, options: [.regularExpression, .caseInsensitive, .anchored]) {
+                at = found.upperBound
+                pastHTML = true
+            } else {
+                break
+            }
+        }
+        html.insert(contentsOf: tag, at: at)
+        return html
     }
 
     // MARK: - request rules WebKit would misread
