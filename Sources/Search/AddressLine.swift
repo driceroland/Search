@@ -32,7 +32,6 @@ struct AddressLine: View {
         @ObservedObject var browser: Browser
         @ObservedObject var tab: Tab
         let height: CGFloat
-        @Environment(\.greys) private var greys
         @State private var frame: CGRect = .zero
         @State private var clicks: Any?
         /// The line and its site button, for the site card to hang under.
@@ -40,14 +39,15 @@ struct AddressLine: View {
         @State private var options = ViewAnchor.Box()
 
         private var address: String { tab.page?.url.absoluteString ?? tab.address?.absoluteString ?? "" }
+        private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 9, style: .continuous) }
 
         var body: some View {
             HStack(spacing: 6) {
                 if browser.editingInline {
-                    AddressField(browser: browser, size: 12)
+                    AddressField(browser: browser, size: 12, inline: true)
                 } else {
                     Text(address.isEmpty ? "Search or enter address" : address)
-                        .foregroundStyle(address.isEmpty ? Palette.faint : Palette.muted)
+                        .foregroundStyle(address.isEmpty ? Palette.ink.opacity(0.75) : Palette.ink)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 0)
@@ -66,7 +66,11 @@ struct AddressLine: View {
             .padding(.trailing, browser.editingInline || !tab.isWeb ? 10 : 4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: height)
-            .background(greys.hover, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background(Palette.ground.opacity(0.35), in: shape)
+            .overlay {
+                shape.strokeBorder(Palette.ink.opacity(browser.editingInline ? 0.40 : 0.18), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
             .background(ViewAnchor(box: line))
             .contentShape(Rectangle())
             .onTapGesture { if !browser.editing { browser.edit(); browser.inlineEdit = true } }
@@ -110,7 +114,7 @@ struct AddressLine: View {
             Button(action: action) {
                 Image(systemName: symbol)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.muted)
+                    .foregroundStyle(Palette.ink.opacity(0.75))
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
             }

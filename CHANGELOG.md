@@ -36,6 +36,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Pinned tab icons and letters stay at full opacity when Dim sleeping tabs is off. The sidebar address bar has stronger text contrast and a visible outline.
 - Closing a window while another stays open stops that window’s background checks for tabs to put to sleep. `swift test --filter KeepAwakeTests`. Thanks [@shawn-t516](https://github.com/shawn-t516) ([#1356](https://github.com/driceroland/Search/pull/1356))
 - A draft typed into an embedded form keeps its tab awake, including a form hosted by another site. Clearing it lets the tab sleep again. `swift test --filter PageDraftTests`. Thanks [@shawn-t516](https://github.com/shawn-t516) ([#1357](https://github.com/driceroland/Search/pull/1357))
 - The Downloads card stands by the button you clicked when Settings › Appearance › Tabs › Buttons at the top is on and the column is too narrow for them there: it hung from the top of the column instead of beside the downloads button at its foot. `swift test --filter DownloadsAnchorTests`. Thanks [@Xander-AJ](https://github.com/Xander-AJ) ([#1364](https://github.com/driceroland/Search/pull/1364), [#1350](https://github.com/driceroland/Search/issues/1350))
