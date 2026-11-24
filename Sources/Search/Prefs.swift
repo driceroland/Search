@@ -569,6 +569,14 @@ final class Preferences: ObservableObject {
     @Published var tabClickAddressOnly: Bool {
         didSet { store.set(tabClickAddressOnly, forKey: "tabs.clickAddressOnly") }
     }
+    /// With the address bar always shown, a click on the tab you're on
+    /// leaves it as it is, its name in the row: the address is edited in
+    /// the bar, or with ⌘L. Only while that bar is in sight, so the address
+    /// is always one click away (see Browser.clickKeepsTabName). Off unless
+    /// turned on (idea 1076).
+    @Published var tabClickKeepsName: Bool {
+        didSet { store.set(tabClickKeepsName, forKey: "tabs.clickKeepsName") }
+    }
     /// The ad blocker. On unless turned off; there is nothing else to it.
     @Published var shielded: Bool {
         didSet { store.set(shielded, forKey: "shield") }
@@ -1366,6 +1374,7 @@ final class Preferences: ObservableObject {
         // Security's advice); a choice made before stands.
         showsAddress = store.object(forKey: "tabs.address") as? Bool ?? true
         tabClickAddressOnly = store.bool(forKey: "tabs.clickAddressOnly")
+        tabClickKeepsName = store.bool(forKey: "tabs.clickKeepsName")
         shielded = store.object(forKey: "shield") as? Bool ?? true
         let keeps = store.bool(forKey: "sites.keep")
         keepsSignIns = keeps
@@ -1630,6 +1639,7 @@ final class Preferences: ObservableObject {
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
         take(\.tabClickAddressOnly, store.bool(forKey: "tabs.clickAddressOnly"))
+        take(\.tabClickKeepsName, store.bool(forKey: "tabs.clickKeepsName"))
         take(\.instantMotion, store.bool(forKey: Motion.instantKey))
         take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))
         take(\.spacesOnCommand, store.bool(forKey: Preferences.spacesOnCommandKey))

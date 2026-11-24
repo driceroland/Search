@@ -384,6 +384,12 @@ enum SettingsIndex {
               title: "Clicking the tab you're on edits its address only", detail: "Without the site card under it",
               more: "Site Information… in the tab's menu still shows the card.",
               keys: ["tabs.clickAddressOnly"], words: ["site card", "site information", "card", "popover", "click", "url", "edit address", "address bar"]),
+        .init(id: "tabs.clickKeepsName", group: "tabbar", icon: "character.textbox",
+              title: "Clicking the tab you're on keeps its name", detail: "Its address is edited in the address bar above, or with ⌘L",
+              more: "With Always show the address bar on, in Settings › Appearance › Window: a click on the tab you're on leaves its title as it is, so the tabs stay a list of names. Rename is still in the tab's right-click menu, and Site Information… still shows the site card.",
+              keys: ["tabs.clickKeepsName"],
+              words: ["click", "tab name", "title", "keep name", "address bar", "edit address", "url", "sidebar", "rename", "arc"],
+              parent: "address.shown"),
         .init(id: "tabs.mirror", group: "tabwindows", icon: "rectangle.on.rectangle",
               title: "Same tabs in every window", detail: "Each window lists the same open tabs in a space, as it lists the same pins",
               more: "A tab opened, closed, moved, grouped or renamed in one window is so in the others. Each window shows the page on its own, so the same tab can be open in two windows at once. Private tabs stay in their window, and closing a window leaves its tabs in the others.",
@@ -801,6 +807,9 @@ enum SettingsIndex {
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
         case "address.width": return prefs.addressLine && !prefs.sidebar
+        case "tabs.clickKeepsName": return prefs.addressLine && !prefs.iconColumn
+        // A click that edits nothing has no card to leave out.
+        case "tabs.clickAddressOnly": return !(prefs.tabClickKeepsName && prefs.addressLine && !prefs.iconColumn)
         case "tabs.liquid": return LiquidTab.available && !(prefs.sidebar && prefs.sideIcons)
         case "window.glass.style": return prefs.glass && GlassStyle.liquidAvailable
         // With spaces on they are in the space's Colour…, beside its colour.
@@ -835,6 +844,8 @@ enum SettingsIndex {
         case "window.glass.clear", "window.glass.grain": return "With spaces on, in the space's menu › Colour…"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "icloud.erase": return "Only while Sync with iCloud is on"
+        case "tabs.clickKeepsName": return "Only with the address bar always shown, and titles in the column or tabs across the top"
+        case "tabs.clickAddressOnly": return "Has no effect while Clicking the tab you're on keeps its name is on"
         case "profiles.oneWindow": return "Only with more than one profile"
         case "spaces.links", "links.ask", "spaces.buttons": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"

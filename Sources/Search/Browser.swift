@@ -2571,8 +2571,17 @@ final class Browser: NSObject, ObservableObject {
     /// only" on; always for Site Information… (SiteCardPanel.follow).
     private(set) var tabEditCard = true
 
+    /// A click on the tab you're on does nothing: Settings' switch is on and
+    /// the address bar it needs is in sight. Not in the column of icons,
+    /// which has no address bar (Side.swift draws it with the titles).
+    var clickKeepsTabName: Bool { prefs.tabClickKeepsName && prefs.addressLine && !prefs.iconColumn }
+
     /// `card`: nil for a click on the tab, which follows the setting.
     func beginTabEdit(_ tab: Tab, card: Bool? = nil) {
+        // A click, with the address already in sight in its bar: the tab
+        // keeps its name (Settings › Tabs › Clicking the tab you're on keeps
+        // its name). Site Information… and ⌘L still open it.
+        if card == nil, clickKeepsTabName { return }
         // The column of icons has no row to type in: the field over the
         // page, with the address in it, as ⌘L brings it.
         guard let url = tab.shownURL, !prefs.iconColumn else {
