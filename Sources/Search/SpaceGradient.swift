@@ -641,34 +641,37 @@ struct SpaceLookPicker: View {
     // MARK: pieces
 
     /// The space's icon on its look, as large as the eye needs to see which
-    /// it is, and the look's name.
+    /// it is, and the look's name. The look as the window wears it: the
+    /// column's ground under the colour at the space's strength, or the
+    /// glass's tint at its transparency. The colour itself at full, it read
+    /// far brighter than the column turned out, above all in dark mode
+    /// (idea 1040); the dots below still show the hues to pick from.
     private var preview: some View {
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        let none = choice == .none
         return ZStack(alignment: .bottomLeading) {
-            switch choice {
-            case .none: shape.fill(Palette.hover)
-            case .colour(let colour): shape.fill(Spaces.colours[colour])
-            case .preset, .custom:
-                let ends = shownGradient.points(frame: CGRect(x: 0, y: 0, width: 1, height: 1), room: .zero)
-                shape.fill(LinearGradient(stops: shownGradient.stops(), startPoint: ends.start, endPoint: ends.end))
-                    .overlay {
-                        if shownGradient.grain {
-                            Image(nsImage: Grain.tile).resizable(resizingMode: .tile).opacity(0.10).clipShape(shape)
-                        }
-                    }
+            shape.fill(browser.glassy || browser.asCards ? Palette.frame : Palette.ground)
+            if !none {
+                if browser.glassy {
+                    PickerGlassTint(look: space.look, clear: browser.prefs.glassClear)
+                        .clipShape(shape)
+                } else {
+                    SpaceWash(look: space.look)
+                        .clipShape(shape)
+                }
             }
             Image(systemName: space.symbol)
                 .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(choice == .none ? Palette.muted : Color.white)
-                .shadow(color: .black.opacity(choice == .none ? 0 : 0.18), radius: 2, y: 1)
+                .foregroundStyle(none ? Palette.muted : Palette.ink)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Text(space.lookName)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(choice == .none ? Palette.muted : Color.white.opacity(0.92))
-                .shadow(color: .black.opacity(choice == .none ? 0 : 0.18), radius: 2, y: 1)
+                .foregroundStyle(Palette.muted)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 8)
         }
+        .environment(\.washStrength, space.washStrength)
+        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
         .frame(height: 76)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(space.name): \(space.lookName)")
@@ -814,6 +817,31 @@ struct SpaceLookPicker: View {
         guard let lab = OKLab(hex: hex) else { return .gray }
         let (r, g, b) = lab.srgb
         return Color(.sRGB, red: r, green: g, blue: b)
+    }
+}
+
+/// The glass's tint as GlassGround lays it, for the picker's preview: the
+/// colour or gradient, toned at the strength, at what Transparency leaves.
+private struct PickerGlassTint: View {
+    let look: SpaceLook?
+    let clear: Double
+    @Environment(\.washStrength) private var strength
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let dark = scheme == .dark
+        Group {
+            switch look {
+            case .colour(let colour)?:
+                Spaces.toned(colour, strength, dark: dark)
+            case .gradient(let gradient)?:
+                let ends = gradient.points(frame: CGRect(x: 0, y: 0, width: 1, height: 1), room: .zero)
+                LinearGradient(stops: gradient.stops(strength: strength, dark: dark), startPoint: ends.start, endPoint: ends.end)
+            case nil:
+                Color.clear
+            }
+        }
+        .opacity((1 - clear) * GlassGround.mostTint)
     }
 }
 
