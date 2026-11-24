@@ -2764,6 +2764,19 @@ final class Bench {
             func state(_ extra: [String: Any] = [:]) -> [String: Any] {
                 var out: [String: Any] = ["joined": Bench.pair?.sync.joined ?? false,
                                           "records": (Bench.pair?.sync.ledger.values.keys.sorted() ?? [])]
+                // The open tabs as History › Tabs on Your Other Devices lists
+                // them (idea 1112): this Mac's record as it stands in the
+                // ledger, and each other device's, by section: its group's
+                // name (null: in none) and its pages' addresses.
+                func sections(_ tabs: DeviceTabs) -> [[String: Any]] {
+                    tabs.sections.map { ["group": $0.group?.name ?? NSNull(), "colour": $0.group?.colour ?? NSNull(),
+                                         "pages": $0.pages.map(\.url)] }
+                }
+                if let sync = Bench.pair?.sync {
+                    out["mine"] = sync.ledger.values[sync.ledger.deviceKey]
+                        .flatMap { ICloudMerge.decode(DeviceTabs.self, $0) }.map(sections) ?? []
+                    out["others"] = sync.devices.map { ["name": ICloudSync.title($0.tabs), "sections": sections($0.tabs)] }
+                }
                 for (key, value) in extra { out[key] = value }
                 return out
             }
