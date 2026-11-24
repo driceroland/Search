@@ -38,6 +38,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Liquid Glass tab: the glass follows the tab you're on again when the column scrolls. Once the rows grew past the column mid-glide, the glass stayed where it was in the window and tabs scrolled under it. ([#1514](https://github.com/driceroland/Search/issues/1514))
 - The column brought out over the folded page as a floating card has round corners: its own square ground covered them. The edge that widens it still reaches past it. `python3 Tests/fold_card.py`
 - ⌘S with an extension's side panel open: folded away, the panel goes edge to edge with the page, its gap and round corners going with the card's, rather than staying a card pressed against the window's edges. `python3 Tests/side_panel.py`
 - The address field raised by ⌘T or ⌘L keeps the keys once it has come up. On macOS 27 it lost them about a third of a second after opening, as its animation ended (at once with Reduce animations on): the first letters went in and the rest went nowhere until a click in the field, and the text left from last time stayed in it, unselected. SwiftUI moves the field within the window when the animation ends, and macOS 27 ends its editing there and leaves the keys with the window; a field that loses the keys to nothing now takes them back, the caret where it was. `python3 Tests/field_keeps_keys.py` checks it (idea 1099).
