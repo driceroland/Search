@@ -64,9 +64,58 @@ final class PaneStage: NSView {
             needsLayout = true
         }
     }
-    /// The shadow under each page's card, a layer of the stage's own behind
-    /// the page — never the page's, which is cut to its corners.
+    /// The ground under each page's card, a layer of the stage's own behind
+    /// the page — never the page's, which is cut to its corners. It cast a
+    /// soft shadow round the card, which read as a blurred grey ring where
+    /// the white of the page met the window's grey: the card's edge is the
+    /// slot's own hairline, one pixel wide, and nothing soft.
     private var shadows: [CALayer] = []
+
+    /// The window's card as ⌘S moves the column (ContentView's CardClip):
+    /// how much smaller it is than this stage, across and down from the
+    /// top left, and its corners. The pages are laid out once at their new
+    /// size and cut to the card on each frame, so their edges never run
+    /// past the window's.
+    private var cardSize: (() -> CGSize)?
+    private var cardCorner: CGFloat?
+
+    func clip(card: (() -> CGSize)?, corner: CGFloat) {
+        cardSize = card
+        cardCorner = corner
+        // In this pass's layout, once the stage is where this frame has it
+        // (see StageView.clip).
+        needsLayout = true
+    }
+
+    /// Each page cut to the card, and its ground, edge and corners with it.
+    private func applyCard() {
+        guard let corner = cardCorner else { return }
+        let cardShort = cardSize.map { size in
+            let card = size()
+            return CGSize(width: max(0, bounds.width - card.width), height: max(0, bounds.height - card.height))
+        } ?? .zero
+        let card = CGRect(x: 0, y: 0, width: max(0, bounds.width - cardShort.width),
+                          height: max(0, bounds.height - cardShort.height))
+        let whole = cardShort.width < 0.25 && cardShort.height < 0.25
+        let hairline = 1 / max(1, window?.backingScaleFactor ?? 2)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (index, slot) in slots.enumerated() {
+            let seen = slot.frame.intersection(card)
+            let short = seen.isNull ? .zero
+                : CGSize(width: slot.frame.width - seen.width, height: slot.frame.height - seen.height)
+            slot.clip(short: short, corner: corner)
+            // The edge would be cut on the card's far sides: none while
+            // the card is short of the page.
+            slot.layer?.borderWidth = corner > 0 && whole ? hairline : 0
+            if index < shadows.count {
+                let shadow = shadows[index]
+                if !seen.isNull { shadow.frame = seen }
+                shadow.cornerRadius = corner
+            }
+        }
+        CATransaction.commit()
+    }
     var onCommit: ((UUID, [Double]) -> Void)?
     var onFocus: ((Tab) -> Void)?
     /// Where each page is, from the top left, each time that changes — never
@@ -327,8 +376,9 @@ final class PaneStage: NSView {
             let edge = NSColor.labelColor.withAlphaComponent(CardEdge.edge).cgColor
             let ground = Palette.NS.ground.cgColor
             layer?.backgroundColor = card ? NSColor.clear.cgColor : ground
+            let hairline = 1 / max(1, window?.backingScaleFactor ?? 2)
             for slot in slots {
-                slot.layer?.borderWidth = card ? 1 : 0
+                slot.layer?.borderWidth = card ? hairline : 0
                 slot.layer?.borderColor = edge
             }
             for shadow in shadows {
@@ -336,10 +386,6 @@ final class PaneStage: NSView {
                 shadow.backgroundColor = ground
                 shadow.cornerRadius = corner
                 shadow.cornerCurve = .continuous
-                shadow.shadowColor = NSColor.black.cgColor
-                shadow.shadowOpacity = Swift.Float(CardEdge.shadow)
-                shadow.shadowRadius = 6
-                shadow.shadowOffset = CGSize(width: 0, height: 1)
             }
         }
     }
@@ -445,6 +491,7 @@ final class PaneStage: NSView {
             // edge, it read as a stray frame on one page of two (Drice,
             // 18 Nov 2026). The page clicked last is the one they go to.
         }
+        applyCard()
         // A window made too narrow for two takes the other page off, and
         // gives it back once there is room.
         feed()

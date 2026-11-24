@@ -4547,8 +4547,10 @@ final class Bench {
                     return
                 }
                 let size = top.bounds.size
-                // The column's side: the window's first 420 points across.
-                let w = Int(min(size.width, 420) * scale), h = Int(size.height * scale)
+                // The column's side: the window's first 420 points across,
+                // or with "wide" all of it.
+                let across = request["wide"] as? Bool == true ? size.width : min(size.width, 420)
+                let w = Int(across * scale), h = Int(size.height * scale)
                 let shot: [String: Any] = ["t": Int((CACurrentMediaTime() - started) * 1000), "space": browser.space.name]
                 if let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
@@ -4560,6 +4562,9 @@ final class Bench {
                 shots.append(shot)
                 if index == 0 {
                     switch request["action"] as? String {
+                    case "fold": browser.toggleFold()
+                    case "peek": browser.peek(true)
+                    case "unpeek": browser.peek(false)
                     case "space":
                         // Slid in through the map, as on screen.
                         SpaceSwipe.glidesHidden = true
