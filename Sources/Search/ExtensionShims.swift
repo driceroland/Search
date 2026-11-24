@@ -2994,7 +2994,11 @@ enum ExtensionShims {
       define("identity",
         ["launchWebAuthFlow", "getAuthToken", "getProfileUserInfo", "removeCachedAuthToken", "clearAllCachedAuthTokens"],
         ["onSignInChanged"],
-        { getRedirectURL: (path = "") => "https://" + runtime.id + ".chromiumapp.org/" + String(path).replace(/^\//, "") });
+        { getRedirectURL: (path = "") => "https://" + runtime.id + ".chromiumapp.org/" + String(path).replace(/^\//, ""),
+          // Chrome's enum for getProfileUserInfo({ accountStatus }). Fathom
+          // reads AccountStatus.ANY for every request it makes; without it
+          // each one threw before it was sent (idea 1101).
+          AccountStatus: Object.freeze({ SYNC: "SYNC", ANY: "ANY" }) });
 
       // Chrome's settings objects: get, set and clear, and an event.
       const setting = (name) => ({
