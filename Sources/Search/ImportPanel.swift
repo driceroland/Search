@@ -221,7 +221,7 @@ struct ImportPanel: View {
             ? "The first \(session.tabs.formatted()) of \(session.found.formatted()) tabs" : count(session.tabs, "tab")
         let groups = session.groups.isEmpty ? "" : " in \(count(session.groups.count, "group"))"
         if case .mozilla(let mozilla) = source, mozilla.keepsSpaces {
-            return "\(tabs)\(groups) — asleep at the end of this space; its pinned tabs come with its spaces"
+            return "\(tabs)\(groups) — asleep, each in the space of its Zen space's name or else this one; its pinned tabs come with its spaces"
         }
         return "\(tabs)\(groups) — asleep at the end of this space, pinned tabs as pins"
     }

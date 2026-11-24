@@ -4006,7 +4006,8 @@ final class Browser: NSObject, ObservableObject {
 
     /// Another browser's open tabs (see ImportSession.swift, and
     /// MozillaSession for Firefox and Zen), from
-    /// the snapshot read when the sheet counted them, into this space: its
+    /// the snapshot read when the sheet counted them, into this space (a
+    /// Zen tab into the space of its space's name, when there is one): its
     /// pinned tabs as pins, the rest asleep at the end of the row, a grouped
     /// tab in the group of that name, made if missing and folded as it was.
     /// Kept whether or not tab groups are turned on, as takeAsleep keeps
@@ -4031,8 +4032,33 @@ final class Browser: NSObject, ObservableObject {
             Pins.set(spaceID, defs, from: self)
             pinsChanged(in: spaceID)
         }
+        // A tab open in one of Zen's spaces goes to the space here of that
+        // name — the one its spaces import made, or one you already had —
+        // asleep at the end of its row; the rest come into this one
+        // (idea 1116).
+        var elsewhere: [UUID: [SessionImport.Tab]] = [:]
+        var order: [UUID] = []
+        var here: [SessionImport.Tab] = []
+        for page in all where !page.pinned {
+            let name = page.space.flatMap { snapshot.spaceNames[$0] }
+            let target = name.flatMap { name in spaces.first { $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }?.id }
+            if let target, target != spaceID {
+                if elsewhere[target] == nil { order.append(target) }
+                elsewhere[target, default: []].append(page)
+            } else {
+                here.append(page)
+            }
+        }
+        var placed = 0
+        for target in order {
+            let pages = elsewhere[target] ?? []
+            placed += takeAsleep(pages.map { page in
+                (ArcSidebar.Item(title: page.title, url: page.url), page.group.flatMap { snapshot.groups[$0]?.title })
+            }, into: target)
+            brought += pages.map(\.url)
+        }
         var seen = Set(tabs.compactMap { ($0.pending ?? $0.address)?.absoluteString })
-        let new = all.filter { !$0.pinned && seen.insert($0.url.absoluteString).inserted }
+        let new = here.filter { seen.insert($0.url.absoluteString).inserted }
         var groups = tabGroups
         var made: [SessionImport.Token: UUID] = [:]
         func group(_ token: SessionImport.Token?) -> UUID? {
@@ -4063,7 +4089,7 @@ final class Browser: NSObject, ObservableObject {
         }
         brought += new.map(\.url)
         adoptIcons(for: brought, from: source, profile: profile)
-        return (pins, new.count, newGroups)
+        return (pins, new.count + placed, newGroups)
     }
 
     /// The icons for what Arc's side of the import brought in, from Arc's own
