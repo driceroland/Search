@@ -15,6 +15,7 @@ struct ShortcutsPage: View {
     /// By name, or by key as the menus write it: "tab" and "⌘T" both find New Tab.
     private func shown(_ command: Command) -> Bool {
         if command.section == .spaces, !prefs.usesSpaces { return false }
+        if command.section == .profiles, !Profiles.shared.several { return false }
         if Command.ai.contains(command.id), !browser.prefs.ai { return false }
         if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
         if Command.archive.contains(command.id), prefs.tabLife == .never { return false }

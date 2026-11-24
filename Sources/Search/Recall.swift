@@ -63,7 +63,7 @@ struct HistoryPanel: View {
                     // Lazy: only the lines in view are made. Two thousand of
                     // them, each with its icon, took the panel a third of a
                     // second to open, and scrolling redrew them all.
-                    ScrollView(showsIndicators: false) {
+                    ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(lines) { line in
                                 switch line.kind {
@@ -404,7 +404,7 @@ struct DownloadsPanel: View {
         private static var space: String { "downloads.list" }
 
         var body: some View {
-            ScrollView(showsIndicators: false) {
+            ScrollView {
                 content()
                     // Read where it is rather than sent up as a preference:
                     // one from inside the scroll never came out of it here.
@@ -594,9 +594,32 @@ struct DownloadsPanel: View {
             .background(hovering ? Palette.hover : .clear)
             .contentShape(Rectangle())
             .contextMenu { if let address = keep.address { CopyAddress(address: address) } }
+            .modifier(DragOut(keep: keep))
             .onTapGesture { if keep.stillThere { open() } }
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
+        }
+    }
+
+    /// A finished download dragged out of the list as its file, onto a page
+    /// or into another app, with the file's own icon under the pointer. A
+    /// row whose file has gone has nothing to drag. The drag starts only
+    /// once the pointer moves, so a click still opens the file.
+    private struct DragOut: ViewModifier {
+        let keep: Keep
+
+        func body(content: Content) -> some View {
+            if keep.stillThere {
+                content.onDrag {
+                    keep.dragged ?? NSItemProvider()
+                } preview: {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: keep.path))
+                        .resizable()
+                        .frame(width: 32, height: 32)
+                }
+            } else {
+                content
+            }
         }
     }
 

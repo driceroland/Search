@@ -300,8 +300,10 @@ extension Browser {
     /// window's own coordinates: a peek over the page in front (not over its
     /// own), the address field or a panel over it, the Find bar, or the
     /// folded column or strip out over the page. The page then
-    /// hears nothing of the pointer there (see PageView.underCover).
-    func covers(_ page: NSView, at point: NSPoint) -> Bool {
+    /// hears nothing of the pointer there (see PageView.underCover). The
+    /// column's edge while it is away, and the column sliding back in,
+    /// cover the page from the pointer's moves but not from a `press`.
+    func covers(_ page: NSView, at point: NSPoint, press: Bool = false) -> Bool {
         guard let window, page.window === window else { return false }
         if peekInFront, let peek = peekTab, peek.built !== page { return true }
         // The address field raised over the page in front, by ⌘L or by ⌘T's
@@ -320,9 +322,25 @@ extension Browser {
            hit !== page, !hit.isDescendant(of: page) {
             return true
         }
-        guard folded, peeking, !frontFillsHere, let size = window.contentView?.bounds.size else { return false }
-        if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
-        return prefs.sidePosition == .right ? point.x >= size.width - prefs.columnWidth : point.x <= prefs.columnWidth
+        guard folded, !frontFillsHere, let size = window.contentView?.bounds.size else { return false }
+        let right = prefs.sidebar && prefs.sidePosition == .right
+        // Out, or still sliding back in: where it lies.
+        func lies() -> Bool {
+            if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
+            return right ? point.x >= size.width - prefs.columnWidth : point.x <= prefs.columnWidth
+        }
+        if peeking { return lies() }
+        guard !press else { return false }
+        if ProcessInfo.processInfo.systemUptime < columnGoneAt { return lies() }
+        // Away: the edge that brings it out. The pointer waits there for
+        // the column, and a page's own menu along that edge (Gmail's rail
+        // opens on hover) is not to stir for a column on its way (idea
+        // 1048). Not in full screen's corner, which doesn't bring it
+        // (Fold.follow).
+        if !prefs.sidebar { return point.y >= size.height - Fold.edge }
+        if window.styleMask.contains(.fullScreen), size.height - point.y < Fold.fullScreenCorner { return false }
+        let zone = prefs.sideHides ? Fold.hiddenEdge : Fold.edge
+        return right ? point.x >= size.width - zone : point.x < zone
     }
 }
 
@@ -345,10 +363,10 @@ struct Fold: View {
     @State private var pointer = Pointer()
 
     /// How near the edge the pointer has to be.
-    private static let edge: CGFloat = 6
+    static let edge: CGFloat = 6
     /// For a column hidden for good, which waits for the pointer to settle
     /// (see dwell): a wider edge to find, as a hand reaches for it (#1279).
-    private static let hiddenEdge: CGFloat = 10
+    static let hiddenEdge: CGFloat = 10
     /// How far past the window's edge, on the column's side, the pointer
     /// still counts as on it.
     private static let overshoot: CGFloat = 48
@@ -438,7 +456,10 @@ struct Fold: View {
                     // it does beside the page's card (see CardEdge), or its
                     // own white where the page is no card.
                     // Away exactly when the lights are, which ride with it.
-                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: onDrag)
+                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: { [pointer, onDrag] width in
+                        pointer.edgeHeld = width != nil
+                        onDrag(width)
+                    })
                         .frame(maxHeight: .infinity, alignment: .top)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
                                              strength: browser.folded && browser.peeking ? 1 : 0,
@@ -607,7 +628,10 @@ struct Fold: View {
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).
             let popup = if #available(macOS 15.4, *) { ExtensionPopup.shared.isUp } else { false }
-            let over = onOwnPanel || popup || holding || overshot || (onWindow && inWindow && distance < reach)
+            // The edge held: the column stays out for the whole drag. Measured
+            // against the width saved before it, or the strip's, the pointer
+            // counted as off the column halfway and it slid away (#1462).
+            let over = onOwnPanel || popup || holding || pointer.edgeHeld || overshot || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
         } else if inWindow, distance < (prefs.sidebar && prefs.sideHides ? Fold.hiddenEdge : Fold.edge),
@@ -868,6 +892,9 @@ private final class Pointer {
     /// The pointer is over the window, or just went off the column's edge from
     /// it and hasn't gone further.
     var crossing = false
+    /// The column's edge is held: its width is the drag's, not yet saved,
+    /// and the pointer can be anywhere along the drag (#1462).
+    var edgeHeld = false
     private var local: Any?
     private var global: Any?
     /// The window's own say on mouse-moved events, given back when the

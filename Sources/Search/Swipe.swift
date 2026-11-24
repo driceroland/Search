@@ -154,9 +154,20 @@ enum Swipe {
         window.webkit.messageHandlers.officeScroll.postMessage({ side: t ? 'taken' : 'free' });
       }
 
+      // A page that sets overscroll-behavior-x to none or contain on its
+      // root has said a sideways scroll past its edge goes nowhere, Back
+      // included, as Chrome reads it. Google Sheets does: its grid scrolls
+      // in its own frames and doesn't always take the wheel event, so a
+      // swipe at column A, or one its handler let through, went back (idea 990).
+      function rootHolds() {
+        var b = getComputedStyle(document.documentElement).overscrollBehaviorX;
+        return b === 'none' || b === 'contain';
+      }
+
       window.addEventListener('wheel', function (e) {
         if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
         edges = [];
+        if (rootHolds()) return say(true);
         if (taken(e)) return say(true);
         var those = edges;
         // A whiteboard or a map pans with its own wheel handler and nothing

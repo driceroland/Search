@@ -1196,6 +1196,10 @@ final class Tab: ObservableObject, Identifiable {
         if AutoScroll.on {
             add(AutoScroll.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
         }
+        // Every frame: an embedded video takes its keys in its own document.
+        if VideoKeys.on {
+            add(VideoKeys.script, .atDocumentStart, mainFrameOnly: false, in: Web.world)
+        }
         // Every frame: a swipe over an embedded map is the map's, and only the
         // map's own document can say so.
         add(Swipe.watch, .atDocumentStart, mainFrameOnly: false, in: Web.world)
@@ -1431,7 +1435,7 @@ final class Tab: ObservableObject, Identifiable {
     /// something about: the sign-in fields that were there a moment ago,
     /// when this was offered, are gone by the time it actually runs.
     /// With `onlyOn`, the page checks for itself, when the script runs, that
-    /// it is still that scheme and host: a document that changed after the
+    /// it is still that origin, port and all: a document that changed after the
     /// last check on this side gets nothing.
     func fill(user: String, password: String, onlyOn page: URL? = nil, done: ((Bool) -> Void)? = nil) {
         callForms("fill(user, password)", ["user": user, "password": password], onlyOn: page, done: done)
@@ -1450,17 +1454,17 @@ final class Tab: ObservableObject, Identifiable {
 
     /// One of the page script's calls, its values handed over as arguments,
     /// never written into the source. With a page, the script first checks
-    /// it is still that scheme and host; a page that can't be checked gets
-    /// nothing.
+    /// it is still that origin — scheme, host and port, as `fillContact`
+    /// does; a page that can't be checked gets nothing.
     private func callForms(_ call: String, _ values: [String: Any], onlyOn page: URL?, done: ((Bool) -> Void)?) {
-        var arguments = values.merging(["scheme": "", "host": ""]) { own, _ in own }
+        var origin = ""
         if let page {
-            guard let scheme = page.scheme?.lowercased(), let host = page.host()?.lowercased() else { done?(false); return }
-            arguments["scheme"] = scheme + ":"
-            arguments["host"] = host
+            guard let known = Self.origin(of: page) else { done?(false); return }
+            origin = known
         }
+        let arguments = values.merging(["origin": origin]) { own, _ in own }
         web.callInSearch("""
-            if (scheme && (location.protocol !== scheme || location.hostname.toLowerCase() !== host)) return false;
+            if (origin && location.origin !== origin) return false;
             return !!(window.__officeForms && window.__officeForms.\(call));
             """, arguments: arguments) { done?(($0 as? Bool) ?? false) }
     }
@@ -2211,6 +2215,8 @@ final class Tab: ObservableObject, Identifiable {
         }
         (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
+        // A process too busy to hear the view go would outlive it (#1264).
+        Stuck.watch(web)
         // Back and Forward said what the view let go of could do. The next
         // view starts with nothing to go back to, and its observers only hear
         // a change: left as it was, a pin put down showed Back lit, and Back
@@ -2846,7 +2852,7 @@ final class PageView: WKWebView {
         // A press that reaches the page under a peek is a press beside the
         // panel, which puts the peek away (see Peek.swift); under the column
         // it is nobody's.
-        if underCover(event) {
+        if underCover(event, press: true) {
             if let browser, browser.peekInFront, browser.peekTab?.built !== self { browser.closePeek() }
             return
         }
@@ -2904,10 +2910,13 @@ final class PageView: WKWebView {
         return Browsers.all.first { $0.window === window }
     }
 
-    /// Whether the event is under cover, and if so, the page told so.
-    private func underCover(_ event: NSEvent) -> Bool {
+    /// Whether the event is under cover, and if so, the page told so. A
+    /// `press` is under cover only where something lies on the page: the
+    /// column's edge while it is away, and the column sliding back in,
+    /// hold back the pointer's moves alone (Browser.covers).
+    private func underCover(_ event: NSEvent, press: Bool = false) -> Bool {
         guard let window, event.window == nil || event.window === window,
-              browser?.covers(self, at: event.locationInWindow) == true
+              browser?.covers(self, at: event.locationInWindow, press: press) == true
         else {
             covered = false
             return false
@@ -3009,7 +3018,7 @@ final class PageView: WKWebView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        if underCover(event) { return }
+        if underCover(event, press: true) { return }
         super.rightMouseDown(with: event)
     }
 
@@ -3019,7 +3028,7 @@ final class PageView: WKWebView {
     /// drivers settled on regardless, so it's what a mouse's own firmware
     /// is tuned to send.
     override func otherMouseDown(with event: NSEvent) {
-        if underCover(event) { return }
+        if underCover(event, press: true) { return }
         switch event.buttonNumber {
         case 3 where canGoBack: goBack()
         case 4 where canGoForward: goForward()

@@ -319,7 +319,7 @@ struct SettingsPanel: View {
             .frame(maxWidth: .infinity)
 
             ScrollViewReader { reader in
-                ScrollView(showsIndicators: false) {
+                ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         if searching { results } else { section(page) }
                     }
@@ -631,6 +631,7 @@ struct SettingsPanel: View {
                      ))
         case "layout.cardsFullScreen": Switch(on: $prefs.cardsInFullScreen)
         case "address.shown": Switch(on: $prefs.addressLine)
+        case "scrollbars.fade": Switch(on: $prefs.scrollbarsFade)
         case "address.width": Segmented(options: AddressWidth.allCases.map { ($0, $0.title) }, selection: $prefs.addressWidth)
         case "window.glass": Switch(on: $prefs.glass)
         case "window.glass.style": Segmented(options: GlassStyle.allCases.map { ($0, $0.title) }, selection: $prefs.glassStyle)
@@ -673,9 +674,11 @@ struct SettingsPanel: View {
         case "glyph": Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
         case "tabs.highContrast": Switch(on: $prefs.highContrastText)
         case "tabs.reading": Switch(on: $prefs.showsReading)
+        case "tabs.pinCounts": Switch(on: $prefs.showsPinCounts)
         case "fold.loadingLine": Switch(on: $prefs.showsLoadingLine)
         case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
+        case "bookmarks.iconsOnly": Switch(on: $prefs.bookmarksIconsOnly)
         case "bookmarks.side":
             Switch(on: Binding(
                 get: { prefs.bookmarksInSidebar },
@@ -777,7 +780,7 @@ struct SettingsPanel: View {
                 }
             }
         case "links.little": Switch(on: $prefs.littleLinks)
-        case "links.little.tabs": Switch(on: $prefs.littleFindsTabs)
+        case "links.little.tabs": Switch(on: $prefs.linksFindTabs)
         case "reader.twins": Switch(on: $prefs.readsTwins)
         case "reader.follows": Switch(on: $prefs.readerFollowsLook)
         case "float.style": Segmented(options: FloatStyle.allCases.map { ($0, $0.title) }, selection: $prefs.floatStyle)
@@ -786,6 +789,7 @@ struct SettingsPanel: View {
                 .frame(maxWidth: 340)
         case "float.minimize": Switch(on: $prefs.floatMinimizes)
         case "media.click": Switch(on: $prefs.waitsForPlay)
+        case "video.keys": Switch(on: $prefs.videoKeys)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
         case "fullscreen.keepsWindow": Switch(on: $prefs.keepsWindow)
         case "translate.target":
@@ -833,6 +837,7 @@ struct SettingsPanel: View {
         case "pins.list": Switch(on: $prefs.listsPins)
         case "pins.folders": Switch(on: $prefs.pinFolders)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
+        case "pins.linksNewTab": Switch(on: $prefs.pinLinksOpenTabs)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
         case "field.window": Switch(on: $prefs.fieldOnWindow)
         case "newtab.recent": Switch(on: $prefs.recentInNewTab)
@@ -850,6 +855,7 @@ struct SettingsPanel: View {
         case "passwords.open": Pill("Open…") { browser.lead(to: InternalPage(.passwords)) }
         case "passwords.save": Switch(on: $prefs.savesPasswords)
         case "passwords.fill": Switch(on: $prefs.fillsPasswords)
+        case "passwords.fill.prove": Switch(on: $prefs.asksBeforeFilling)
         case "passkeys": Switch(on: $prefs.passkeys)
         case "passwords.apple": Switch(on: $prefs.applePasswords)
         // Turned on, macOS is asked whether Search may read Contacts; a no,
@@ -946,7 +952,7 @@ struct SettingsPanel: View {
         case "privacy.forget":
             if !searched {
                 Group {
-                    NotificationSites()
+                    PermissionSites(browser: browser, prefs: prefs)
                     PopupSiteList(prefs: prefs)
                 }
                 .under()
@@ -1703,21 +1709,102 @@ struct Pill: View {
     }
 }
 
-/// Settings › Privacy: the sites allowed to send notifications, each with a
-/// way to take it back.
-private struct NotificationSites: View {
+/// Settings › Privacy: saved choices, reset one permission at a time.
+private struct PermissionSites: View {
+    let browser: Browser
+    @ObservedObject var prefs: Preferences
     @ObservedObject private var notifications = SiteNotifications.shared
+    @State private var query = ""
+    @FocusState private var searching: Bool
+    @State private var kind: CaptureChoices.Kind?
 
     var body: some View {
-        let sites = SiteNotifications.allowed
-        if !sites.isEmpty {
-            ForEach(sites, id: \.self) { site in
+        let saved = CaptureChoices.saved()
+        let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sites = Dictionary(grouping: saved.filter {
+            (kind == nil || $0.kind == kind) &&
+            (search.isEmpty || $0.origin.localizedCaseInsensitiveContains(search))
+        }, by: \.origin)
+        if !saved.isEmpty {
+            Rule()
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Reset asks again next time. Devices already in use keep running.")
+                    .font(.system(size: 11.5)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Hunt(text: $query, prompt: "Find a site", focus: $searching)
+                        .accessibilityLabel("Find a site")
+                    Picker("Filter by permission", selection: $kind) {
+                        Text("All permissions").tag(Optional<CaptureChoices.Kind>.none)
+                        ForEach(CaptureChoices.listedKinds) { permission in
+                            Text(permission.title).tag(Optional(permission))
+                        }
+                    }
+                    .labelsHidden().fixedSize()
+                    .accessibilityLabel("Filter by permission")
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            if sites.isEmpty { Nothing("No matching sites") }
+            ForEach(sites.keys.sorted(), id: \.self) { origin in
                 Rule()
-                Line(URL(string: site).map(SiteCard.site) ?? site, "Can send notifications") {
-                    Pill("Remove") { SiteNotifications.forget(site) }
+                PermissionSiteRow(origin: origin, entries: sites[origin, default: []],
+                                  notificationsEnabled: prefs.siteNotifications) { entry in
+                    browser.setSitePermission(nil, kind: entry.kind, origin: entry.origin)
                 }
             }
         }
+    }
+}
+
+private struct PermissionSiteRow: View {
+    let origin: String
+    let entries: [CaptureChoices.Saved]
+    let notificationsEnabled: Bool
+    let reset: (CaptureChoices.Saved) -> Void
+    @State private var expanded = false
+    @State private var hovering = false
+
+    var body: some View {
+        let count = entries.count == 1 ? "1 permission" : "\(entries.count) permissions"
+        Button { expanded.toggle() } label: {
+            HStack(spacing: 8) {
+                Text(origin).font(.system(size: 13)).foregroundStyle(Palette.ink)
+                Spacer(minLength: 8)
+                Text(count).font(.system(size: 11.5)).foregroundStyle(Palette.muted)
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.muted)
+            }
+            .padding(.leading, 14 + SettingsPanel.listInset)
+            .padding(.trailing, 14).frame(minHeight: 44)
+            .contentShape(Rectangle())
+            .background(hovering ? Palette.hover : .clear)
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, -SettingsPanel.listInset)
+        .onHover { hovering = $0 }
+        .accessibilityLabel("\(origin), \(count)")
+        .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+
+        if expanded {
+            ForEach(entries) { entry in
+                let action = entry.alternativeSpelling ? "Remove record" : "Reset"
+                Line(entry.kind.title, detail(entry)) {
+                    Pill(action) { reset(entry) }
+                        .accessibilityLabel("\(action): \(entry.kind.title) for \(entry.origin)")
+                }
+            }
+        }
+    }
+
+    private func detail(_ entry: CaptureChoices.Saved) -> String {
+        let status = entry.alternativeSpelling
+            ? "Saved \(entry.choice.title) · May differ from current permission"
+            : entry.choice == .different ? "Different answers; refusal applies" : entry.choice.title
+        if entry.kind == .notifications && !notificationsEnabled {
+            return status + " · Notifications are off"
+        }
+        return status
     }
 }
 

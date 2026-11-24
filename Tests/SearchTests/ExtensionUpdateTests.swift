@@ -48,12 +48,15 @@ final class ExtensionUpdateTests: XCTestCase {
         let extensions = Extensions.shared
         XCTAssertTrue(extensions.installed.isEmpty, "This test must never update real extensions")
         guard extensions.installed.isEmpty else { return }
-        let key = "extensions.checked"
-        let previous = Store.settings.object(forKey: key)
+        let key = Extensions.checkedKey
+        let kept = [key, Extensions.retryKey, Extensions.failuresKey].map { ($0, Store.settings.object(forKey: $0)) }
         defer {
-            if let previous { Store.settings.set(previous, forKey: key) }
-            else { Store.settings.removeObject(forKey: key) }
+            for (name, value) in kept {
+                if let value { Store.settings.set(value, forKey: name) } else { Store.settings.removeObject(forKey: name) }
+            }
         }
+        Store.settings.removeObject(forKey: Extensions.retryKey)
+        Store.settings.removeObject(forKey: Extensions.failuresKey)
         let recent = Date()
         Store.settings.set(recent, forKey: key)
         extensions.checkForUpdates()
@@ -72,6 +75,27 @@ final class ExtensionUpdateTests: XCTestCase {
         timer.fire()
         XCTAssertEqual(Store.settings.object(forKey: key) as? Date, checked)
         XCTAssertTrue(timer.isValid)
+    }
+
+    func testFailedCheckRetriesSoonerThenBacksOffToADay() {
+        XCTAssertEqual(Extensions.retryDelay(failures: 1), 3600)
+        XCTAssertEqual(Extensions.retryDelay(failures: 2), 7200)
+        XCTAssertEqual(Extensions.retryDelay(failures: 3), 4 * 3600)
+        XCTAssertEqual(Extensions.retryDelay(failures: 5), 16 * 3600)
+        XCTAssertEqual(Extensions.retryDelay(failures: 6), Extensions.checkEvery)
+        XCTAssertEqual(Extensions.retryDelay(failures: 40), Extensions.checkEvery)
+
+        let now = Date()
+        // A day after the last check that worked, and not before.
+        XCTAssertTrue(Extensions.updateDue(checked: nil, retry: nil, now: now))
+        XCTAssertFalse(Extensions.updateDue(checked: now.addingTimeInterval(-3600), retry: nil, now: now))
+        XCTAssertTrue(Extensions.updateDue(checked: now.addingTimeInterval(-21 * 3600), retry: nil, now: now))
+        // After a failure the planned retry decides, whatever the last good check:
+        // an hour on, the hourly tick (up to five minutes early against it) runs it.
+        let recent = now.addingTimeInterval(-60)
+        XCTAssertFalse(Extensions.updateDue(checked: recent, retry: now.addingTimeInterval(3600), now: now))
+        XCTAssertTrue(Extensions.updateDue(checked: recent, retry: now.addingTimeInterval(3600), now: now.addingTimeInterval(3600 - 30)))
+        XCTAssertFalse(Extensions.updateDue(checked: .distantPast, retry: now.addingTimeInterval(7200), now: now.addingTimeInterval(3600)))
     }
 
     func testPendingUpdateIsNotStartedTwiceAndFailureAllowsRetry() async {
@@ -98,7 +122,8 @@ final class ExtensionUpdateTests: XCTestCase {
         await extensions.update(item)
         XCTAssertEqual(response.count, 1, "A pending request must not be duplicated")
         response.fail()
-        await first.value
+        let firstAnswered = await first.value
+        XCTAssertFalse(firstAnswered, "A check with no answer is a failure, to be tried again soon")
 
         let retried = expectation(description: "Failed update can be retried")
         response.started = retried

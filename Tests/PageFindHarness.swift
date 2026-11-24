@@ -70,6 +70,18 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         <p id="literal">A "quote" and path\\segment</p>
         <div hidden>ghostword</div><div style="display:none">ghostword</div>
         <div style="visibility:hidden">ghostword</div><span>ghostword</span>
+        <div style="visibility:hidden">hiddenparent <span style="visibility:visible">shownchild</span></div>
+        <p>docu&shy;mentation zero&#8203;width</p>
+        <x-card id="card"><span>slottedword</span><b slot="none">unslottedword</b></x-card>
+        <script>
+        customElements.define("x-card", class extends HTMLElement {
+            constructor() {
+                super();
+                this.attachShadow({ mode: "open" }).innerHTML =
+                    "<div>shadowword one <slot></slot> shadowword two</div>";
+            }
+        });
+        </script>
         <input id="field" value="fieldpivot">
         <textarea id="area">areapivot</textarea>
         <p><i id="mainoriginal">mainoriginal</i> <span id="sharedmain">sharedmark</span></p>
@@ -161,6 +173,15 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
 
         let hidden = await update("ghostword")
         expect(hidden, count: 1, index: 1, "Hidden, display:none, and visibility:hidden text is excluded")
+        let shown = await update("shownchild")
+        expect(shown, count: 1, index: 1, "A child that sets visibility: visible inside a hidden parent is found")
+        let parent = await update("hiddenparent")
+        check(!parent.found && parent.count == 0, "The hidden parent's own text stays excluded")
+        let hyphen = await update("documentation")
+        expect(hyphen, count: 1, index: 1, "A soft hyphen inside a word doesn't stop it matching, as WebKit's find")
+        let zeroWidth = await update("zerowidth")
+        expect(zeroWidth, count: 1, index: 1, "A zero-width space inside a word doesn't stop it matching")
+        await checkShadowTrees()
         let literal = await update(#"A "quote" and path\segment"#)
         expect(literal, count: 1, index: 1, "Quotes and backslashes are passed as literal query text")
         let absent = await update("not-on-this-page")
@@ -173,6 +194,50 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         await checkStaleRequestsAndClear()
         await checkHorizontalHitScrollsIntoView()
         await checkLongHitScrollsIntoView()
+        await checkCutWalkFallsBackToWebKit()
+    }
+
+    /// Text in an open shadow tree, and light text slotted into it, is found
+    /// once each, painted, and kept up to date when the tree changes.
+    private func checkShadowTrees() async {
+        let shadow = await update("shadowword")
+        expect(shadow, count: 2, index: 1, "Text inside an open shadow tree is found")
+        let next = await update("shadowword")
+        expect(next, count: 2, index: 2, "Next moves on inside the shadow tree")
+        let slotted = await update("slottedword")
+        expect(slotted, count: 1, index: 1, "Light text slotted into a shadow tree is found once")
+        let unslotted = await update("unslottedword")
+        check(!unslotted.found && unslotted.count == 0, "Light text no slot takes isn't drawn, so isn't found")
+        _ = await update("shadowword")
+        // Read in Search's world: the page's own view of a highlight Search
+        // changed can lag behind what WebKit paints.
+        let painted = (try? await web.callAsyncJavaScript("""
+            return [CSS.highlights.get('search-find-match')?.size ?? 0,
+                    CSS.highlights.get('search-find-current')?.size ?? 0,
+                    document.querySelector('#card').shadowRoot.adoptedStyleSheets.length]
+            """, arguments: [:], in: nil, contentWorld: Web.world)) as? [Int]
+        check(painted == [2, 1, 1], "Shadow matches are painted, the shadow root given the find's sheet (got \(painted ?? []))")
+        _ = try? await evaluate("document.querySelector('#card').shadowRoot.firstElementChild.append(' shadowword three')")
+        let mutated = await update("shadowword")
+        check(mutated.count == 3, "A change inside the shadow tree is seen before Next (got \(describe(mutated)))")
+    }
+
+    /// Past the walk's element budget, a word in the part not read is left
+    /// to WebKit's own find rather than reported missing.
+    private func checkCutWalkFallsBackToWebKit() async {
+        let rows = String(repeating: "<div><span>row</span></div>", count: 35_000)
+        web.loadHTMLString("<!doctype html><body><p>startword</p>\(rows)<p>pastbudgetword</p></body>",
+                           baseURL: URL(string: "https://find-tests.invalid/big")!)
+        for _ in 0..<200 {
+            if (try? await evaluate("document.readyState === 'complete' && document.body.lastElementChild?.textContent === 'pastbudgetword'")) as? Bool == true { break }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        let early = await update("startword")
+        check(early.found && early.count == 1 && early.more, "A cut walk counts what it read and says more may follow (got \(describe(early)))")
+        let past = await update("pastbudgetword")
+        check(past.found && past.nativeFallback, "A word past the budget is found by WebKit's find (got \(describe(past)))")
+        let absent = await update("nowhereword")
+        check(!absent.found && absent.available, "A word on no part of the page still reports no match")
     }
 
     private func checkFrameAndSelectionRestoration() async {

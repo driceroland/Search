@@ -408,7 +408,13 @@ enum PageHands {
     @discardableResult
     static func click(_ view: WKWebView, at point: [Double], held: NSEvent.ModifierFlags = [], middle: Bool = false) -> Bool {
         guard point.count == 2, let window = view.window else { return false }
-        let local = NSPoint(x: point[0], y: view.isFlipped ? point[1] : view.bounds.height - point[1])
+        // The page measures in its own CSS pixels; zoomed (View › Zoom In,
+        // a site's own zoom, Settings' page zoom) each is that many of the
+        // view's points. Taken as points, a click at 125% landed a quarter
+        // short, above most links (#1464).
+        let zoom = view.pageZoom > 0 ? Double(view.pageZoom) : 1
+        let x = point[0] * zoom, y = point[1] * zoom
+        let local = NSPoint(x: x, y: view.isFlipped ? y : view.bounds.height - y)
         let spot = view.convert(local, to: nil)
         let types: [NSEvent.EventType] = middle ? [.otherMouseDown, .otherMouseUp] : [.leftMouseDown, .leftMouseUp]
         for type in types {
@@ -503,9 +509,29 @@ final class PageRoom {
         window.collectionBehavior = [.transient, .ignoresCycle, .stationary]
         window.level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
         window.hasShadow = false
+        // Clicks reach its pages straight from Search (PageHands.click):
+        // the window itself never takes one, even if it is ever seen.
+        window.ignoresMouseEvents = true
         window.orderBack(nil)
         self.window = window
+        // A screen plugged in or out moves windows that are off every
+        // screen, and pulls them onto the one left: the room showed as a
+        // grey rectangle on the desktop until Search quit (#1421). Put back
+        // far off each time the screens change.
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { PageRoom.shared.putBack() }
+            // And once the window server has settled the new layout.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { PageRoom.shared.putBack() }
+        }
         return window
+    }
+
+    static let far = NSPoint(x: -20000, y: -20000)
+
+    /// The room off every screen again, where it was made.
+    func putBack() {
+        guard let window, window.frame.origin != Self.far else { return }
+        window.setFrameOrigin(Self.far)
     }
 
     /// Only a script's or an agent's tab, and only while it has no window.

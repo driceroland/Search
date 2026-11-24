@@ -18,6 +18,12 @@ import SwiftUI
 // which needs its opener) and anything that isn't http or https stay where
 // they are. So does a link whose rule names a space that has gone: the rule
 // is passed over, and the link opens as it always did.
+//
+// Everything else, if chosen: a web link from another app that no rule
+// names opens in that one space, the way Arc sends everything else to one.
+// Only links from other apps: a page's new-tab links with no rule stay in
+// its space, or every link a page opened would leave it. A small window or
+// the panel asking which space, if on, still comes first for those.
 
 struct SpaceRoute: Equatable, Identifiable {
     /// A host, lowercased, without www.: "notion.so".
@@ -45,6 +51,7 @@ struct SpaceRoute: Equatable, Identifiable {
 enum SpaceRoutes {
     static let key = "spaces.links"
     static let rulesKey = "spaces.links.rules"
+    static let otherKey = "spaces.links.other"
 
     // MARK: - sites
 
@@ -106,6 +113,21 @@ enum SpaceRoutes {
                      spaces: Spaces.known)
     }
 
+    /// The space a link from another app is sent to: its rule's, else the
+    /// one chosen for everything else, if it is a web link and that space
+    /// is still there.
+    static func space(forOutside url: URL, routes: [SpaceRoute], other: UUID?, on: Bool,
+                      spaces: [UUID: Space]) -> Space? {
+        guard on, site(of: url) != nil else { return nil }
+        return space(for: url, routes: routes, on: on, spaces: spaces) ?? other.flatMap { spaces[$0] }
+    }
+
+    @MainActor static func space(forOutside url: URL) -> Space? {
+        let prefs = Shared.prefs
+        return space(forOutside: url, routes: prefs.spaceRoutes, other: prefs.spaceForOtherLinks,
+                     on: prefs.usesSpaces && prefs.sendsLinksToSpaces, spaces: Spaces.known)
+    }
+
     /// One site to one space, in place of any rule the site had.
     @MainActor static func set(_ site: String, to space: UUID) {
         var routes = Shared.prefs.spaceRoutes
@@ -148,10 +170,11 @@ enum SpaceRoutes {
 }
 
 extension Browser {
-    /// For a link from another app: the window a rule sends it to, already
-    /// in its space. Nil to open it as always.
+    /// For a link from another app: the window a rule, or the space for
+    /// everything else, sends it to, already in its space. Nil to open it as
+    /// always.
     func routed(_ url: URL) -> Browser? {
-        guard !isPopup, let space = SpaceRoutes.space(for: url), space.id != spaceID else { return nil }
+        guard !isPopup, let space = SpaceRoutes.space(forOutside: url), space.id != spaceID else { return nil }
         return SpaceRoutes.window(for: space, from: self)
     }
 
@@ -192,7 +215,7 @@ extension Browser {
 }
 
 /// Settings › Spaces & Pins, under Send links to a space: each site and its
-/// space, and a line to add one.
+/// space, a line to add one, and where everything else from other apps goes.
 struct SpaceRouteList: View {
     @ObservedObject var prefs: Preferences
     @ObservedObject private var profiles = Profiles.shared
@@ -230,6 +253,20 @@ struct SpaceRouteList: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
+        Rule()
+        Line("Everything else", "Default space for links that match no site") {
+            // A deleted space shows as Current space, which is where links go then.
+            Picker("Everything else", selection: Binding(
+                get: { prefs.spaceForOtherLinks.flatMap { id in choices.contains { $0.id == id } ? id : nil } },
+                set: { prefs.spaceForOtherLinks = $0 })) {
+                Text("Current space").tag(UUID?.none)
+                Divider()
+                ForEach(choices, id: \.id) { Text($0.name).tag(Optional($0.id)) }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
+        }
     }
 
     private func add() {

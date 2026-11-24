@@ -1442,7 +1442,7 @@ struct BookmarksPanel: View {
                     found
                 } else {
                     ScrollViewReader { scroller in
-                        ScrollView(showsIndicators: false) {
+                        ScrollView {
                             Card {
                                 BookmarkOutline(bookmarks: bookmarks, expanded: $expanded, shown: shown) { url in
                                     browser.pickBookmark(url)
@@ -1494,7 +1494,7 @@ struct BookmarksPanel: View {
         if hits.isEmpty {
             Card { Nothing("Nothing matches.") }
         } else {
-            ScrollView(showsIndicators: false) {
+            ScrollView {
                 Card {
                     ForEach(Array(hits.enumerated()), id: \.element.node.id) { index, hit in
                         if index > 0 { Rule(inset: 40) }

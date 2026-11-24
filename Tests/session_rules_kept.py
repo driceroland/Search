@@ -11,8 +11,9 @@ across four launches of a world of its own (SEARCH_PROBE=session-kept):
        one whose regex the shim splits is kept all the same, listed once;
        a redirect whose regexSubstitution says \\1 isn't split
     2  after a relaunch the session reads as empty, as Chrome's does, while
-       the kept rule still stops requests; given again unchanged, WebKit
-       compiles nothing; taken away, requests go through. A second
+       the kept rule still stops requests; rules taken away before the set
+       is given (AdGuard's start) change nothing kept; given again
+       unchanged, WebKit compiles nothing; taken away, requests go through. A second
        extension, whose worker WebKit never starts at launch, sets one too
     3  not given again, the kept rule goes 30 s after the extension loaded;
        the second extension's goes too, Search starting its worker to take
@@ -195,6 +196,12 @@ def main():
         t.ok("the kept rule stops the ad meanwhile", becomes("blocked"))
         time.sleep(3)
         before = compiled()
+        # AdGuard's start (idea 1030): rules it believes left taken away one
+        # by one, before the set is given. Not the set: nothing kept goes.
+        dnr("await dnr.updateSessionRules({ removeRuleIds: [8] }); await dnr.updateSessionRules({ removeRuleIds: [99] })")
+        time.sleep(3)
+        t.ok("taking rules away before the set is given: WebKit compiled nothing", before[0] is not None and before == compiled(), (before, compiled()))
+        t.ok("…and the kept rule still stops the ad", becomes("blocked"))
         dnr("await dnr.updateSessionRules({ addRules: [%s, %s] })" % (json.dumps(SESSION_RULE), json.dumps(SPLIT_RULE)))
         time.sleep(3)
         after = compiled()

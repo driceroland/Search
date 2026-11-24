@@ -187,6 +187,9 @@ enum Metrics {
     /// first item sits in Safari. A column too narrow for that gives back
     /// what it must (SideBar.lights), down to where it was.
     static let sideLights: CGFloat = 80
+    /// The least of it the fold door may have: its box 3 points clear of
+    /// the zoom button (SideBar.folds).
+    static let sideLightsLeast: CGFloat = 72
     /// The three doors' own width, without the air after them.
     static let helmDoors: CGFloat = 3 * 26 + 2 * 4
     /// The same two, for the doors Settings leaves shown (idea 815): all
@@ -237,6 +240,11 @@ enum Metrics {
     static let pinWidth: CGFloat = 30
     /// The square at the end of the row that opens a new page.
     static let plusWidth: CGFloat = 30
+    /// What a full row of tabs still leaves past the plus to take the window
+    /// by, as Chrome's does: the tabs give way before it. Without it they ran
+    /// up to the buttons at the far end, and the corner the lights sit in was
+    /// all of the row that moved the window.
+    static let tabRowHold: CGFloat = 40
     /// The address field, in both the places it shows up.
     static let fieldWidth: CGFloat = 560
     /// The column of titles down the left, in the way that has one.
@@ -372,6 +380,15 @@ enum Motion {
     /// in Core Animation's terms.
     static func fold(out: Bool) -> (response: Double, damping: Double) {
         out ? (0.14, 0.86) : (0.13, 1)
+    }
+
+    /// How long the folded column takes to slide back in, or fade, and
+    /// is still over the page: the spring's response (Motion.fold) runs a
+    /// little past it.
+    static var columnAway: TimeInterval {
+        if reduced { return 0 }
+        if fadesColumn { return fade }
+        return slide(out: false) ?? 0.2
     }
 
     static func folding(out: Bool) -> Animation? {

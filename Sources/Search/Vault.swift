@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Security
 import LocalAuthentication
 
@@ -250,6 +251,12 @@ enum Vault {
     /// A password is shown only to the person the Mac belongs to. Touch ID,
     /// the watch, or the account password — whatever the Mac itself takes.
     @MainActor static func prove(_ reason: String, _ done: @escaping (Bool) -> Void) {
+        // A test run may stand in for the Mac saying it can't ask (bench
+        // `accounts` "proveError"), to see which of those lets it through.
+        if Store.testing, let code = cannotAsk {
+            done(nothingToProve(NSError(domain: LAErrorDomain, code: code.rawValue)))
+            return
+        }
         // A test run answers as it answers Ask.sure (`ui confirm on|off`).
         if Store.testing, let yes = Ask.testing {
             done(yes)
@@ -258,13 +265,104 @@ enum Vault {
         let context = LAContext()
         var trouble: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &trouble) else {
-            // No way to ask at all — a Mac with no password set. Then there is
-            // nothing to prove.
-            done(true)
+            done(nothingToProve(trouble))
             return
         }
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { ok, _ in
             DispatchQueue.main.async { done(ok) }
+        }
+    }
+
+    /// When the Mac can't ask at all, only a Mac with no password set has
+    /// nothing to prove. Any other reason it gives refuses: an error is
+    /// never taken for a yes.
+    nonisolated static func nothingToProve(_ trouble: NSError?) -> Bool {
+        trouble?.domain == LAErrorDomain && trouble?.code == LAError.Code.passcodeNotSet.rawValue
+    }
+
+    /// A test run's stand-in for `canEvaluatePolicy` failing with this.
+    @MainActor static var cannotAsk: LAError.Code?
+
+    // MARK: - before a fill
+
+    /// Settings › Passwords › Ask for Touch ID before filling (idea 993):
+    /// one of Search's own passwords goes into a page only once the Mac's
+    /// owner has said so — Touch ID, the watch, or the Mac's password where
+    /// there is no Touch ID — as Safari's "Use Touch ID to AutoFill" and
+    /// Chrome's "Use your screen lock when filling passwords" ask. Off unless
+    /// turned on. Apple Passwords' rows and extensions' fills are theirs to
+    /// guard, not this.
+    ///
+    /// One yes holds for `grace`, Chrome's minute, so a sign-in that wants
+    /// its password again a moment later, or a second tab of the same site,
+    /// isn't asked twice: for that site alone (its registrable domain), and
+    /// for private tabs or ordinary ones, whichever it was said in, never
+    /// both. It ends early when the screens sleep or lock, or the session
+    /// switches away. Every fill of a kept password goes through
+    /// `Browser.choose(_: Kept)`, by click, by Return or by a test's pick,
+    /// and that is where it asks: nothing is ever filled on page load.
+    @MainActor enum FillProof {
+        static let grace: TimeInterval = 60
+        /// When the owner last said yes, by site (`key`).
+        private static var provenAt: [String: Date] = [:]
+        /// A question is up: a second pick meanwhile fills nothing.
+        private(set) static var asking = false
+        /// How many times a fill asked, for a test run's bench `accounts`.
+        private(set) static var asked = 0
+        private static var watching = false
+
+        /// What a yes covers: the site's registrable domain, in private
+        /// tabs or in ordinary ones.
+        static func key(_ host: String, shy: Bool) -> String {
+            (shy ? "private " : "") + Vault.registrable(host)
+        }
+
+        /// Whether a yes for this site still holds; with no site, whether
+        /// any does (a test run's bench `accounts`).
+        static func fresh(_ host: String? = nil, shy: Bool = false, at now: Date = Date()) -> Bool {
+            let times = host.map { [provenAt[key($0, shy: shy)]].compactMap { $0 } } ?? Array(provenAt.values)
+            return times.contains { now.timeIntervalSince($0) >= 0 && now.timeIntervalSince($0) < grace }
+        }
+
+        /// `done(true)` once proven, or still within the grace for this site;
+        /// `false` for a cancel, a failure, or a question already up.
+        static func ask(_ host: String, shy: Bool, _ done: @escaping (Bool) -> Void) {
+            if fresh(host, shy: shy) { done(true); return }
+            guard !asking else { done(false); return }
+            watch()
+            asking = true
+            if Store.testing { asked += 1 }
+            let answered: (Bool) -> Void = { ok in
+                asking = false
+                if ok { provenAt[key(host, shy: shy)] = Date() }
+                done(ok)
+            }
+            // A test run never puts the Mac's own question on the screen: it
+            // answers as `ui confirm on|off` says, and no with nothing set.
+            if Store.testing, Ask.testing == nil { answered(false); return }
+            Vault.prove("fill your password for \(host)", answered)
+        }
+
+        /// The yes is spent: the next fill asks again.
+        static func forget() { provenAt = [:] }
+
+        /// A test run's, to look at the grace's end without waiting for it.
+        static func age(_ seconds: TimeInterval) {
+            guard Store.testing else { return }
+            for site in provenAt.keys { provenAt[site] = Date().addingTimeInterval(-seconds) }
+        }
+
+        private static func watch() {
+            guard !watching else { return }
+            watching = true
+            let spend: (Notification) -> Void = { _ in MainActor.assumeIsolated { forget() } }
+            let workspace = NSWorkspace.shared.notificationCenter
+            for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification,
+                         NSWorkspace.sessionDidResignActiveNotification] {
+                workspace.addObserver(forName: name, object: nil, queue: .main, using: spend)
+            }
+            DistributedNotificationCenter.default().addObserver(
+                forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main, using: spend)
         }
     }
 

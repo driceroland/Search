@@ -7,6 +7,22 @@ import SwiftUI
 /// you decide what to restore by looking at it, not by decoding its name.
 struct HiddenPanel: View {
     @ObservedObject var browser: Browser
+    /// The list itself, watched too: a row restored leaves it at once rather
+    /// than when the browser next changes (idea 1064).
+    @ObservedObject private var curtain: Curtain
+
+    init(browser: Browser) {
+        self.browser = browser
+        self.curtain = browser.curtain
+    }
+
+    /// Where the panel opens: the top left when more of what was hidden here
+    /// sat on the right of the page, as noted when it was hidden, so the
+    /// panel isn't over the very thing a row brings back; else the top right.
+    static func leading(for veils: [Veil]) -> Bool {
+        let sides = veils.compactMap { $0.note?.split(separator: " ").last }
+        return sides.filter { $0 == "right" }.count > sides.filter { $0 == "left" }.count
+    }
 
     var body: some View {
         Plate(browser.hereHost ?? "This page", width: 380, close: { browser.reviewing = false }) {
@@ -84,5 +100,55 @@ struct HiddenPanel: View {
             }
             .animation(Motion.quick, value: hovering)
         }
+    }
+}
+
+/// The panel in its place over the page: a top corner (see
+/// HiddenPanel.leading), or wherever it was last dragged in this window.
+/// A drag anywhere on it moves it, kept inside the window.
+struct HiddenPanelPlace: View {
+    @ObservedObject var browser: Browser
+    /// The corner picked as it opened, kept while it is up: restoring rows
+    /// mustn't send it across the window.
+    @State private var opened: Bool
+    @State private var drag: CGSize = .zero
+
+    struct Spot { var leading: Bool; var offset: CGSize }
+
+    private static let width: CGFloat = 380, margin: CGFloat = 14
+
+    init(browser: Browser) {
+        self.browser = browser
+        _opened = State(initialValue: HiddenPanel.leading(for: browser.hereVeils))
+    }
+
+    var body: some View {
+        GeometryReader { room in
+            let spot = browser.hiddenPanelSpot ?? Spot(leading: opened, offset: .zero)
+            HiddenPanel(browser: browser)
+                .gesture(
+                    DragGesture(minimumDistance: 3, coordinateSpace: .global)
+                        .onChanged { drag = $0.translation }
+                        .onEnded { end in
+                            browser.hiddenPanelSpot = Spot(leading: spot.leading,
+                                                           offset: Self.kept(spot, moved: end.translation, in: room.size))
+                            drag = .zero
+                        }
+                )
+                .offset(Self.kept(spot, moved: drag, in: room.size))
+                .padding(.top, Metrics.strip + 8)
+                .padding(spot.leading ? .leading : .trailing, Self.margin)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: spot.leading ? .topLeading : .topTrailing)
+        }
+    }
+
+    /// The offset from its corner, moved, with the panel still in the room:
+    /// across to the other edge at most, and its top never above the strip
+    /// nor lower than a title's height from the bottom.
+    static func kept(_ spot: Spot, moved: CGSize, in room: CGSize) -> CGSize {
+        let across = max(0, room.width - width - 2 * margin)
+        let x = spot.offset.width + moved.width, y = spot.offset.height + moved.height
+        return CGSize(width: spot.leading ? min(max(x, 0), across) : min(max(x, -across), 0),
+                      height: min(max(y, -Metrics.strip), max(0, room.height - Metrics.strip - 8 - 60)))
     }
 }

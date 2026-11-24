@@ -90,4 +90,21 @@ final class FileDestinationTests: XCTestCase {
         try FileManager.default.removeItem(at: file)
         XCTAssertEqual(browser.destination(for: file.path), browser.searchURL(for: file.path))
     }
+    /// #1473: vnc://, ssh:// and other apps' links typed in the field go to
+    /// the app that opens them, not to a search; only with an app to take
+    /// them, and never Search's own schemes or a script.
+    func testAnotherAppsSchemeTypedGoesToThatApp() {
+        let someApp = URL(fileURLWithPath: "/System/Applications/Utilities/Screen Sharing.app")
+        let anApp: (URL) -> URL? = { _ in someApp }
+        XCTAssertEqual(Address.otherApp(from: "vnc://192.168.1.20", opener: anApp)?.absoluteString, "vnc://192.168.1.20")
+        XCTAssertEqual(Address.otherApp(from: " ssh://me@box.local ", opener: anApp)?.absoluteString, "ssh://me@box.local")
+        XCTAssertNil(Address.otherApp(from: "vnc://host", opener: { _ in nil }), "no app takes it: searched, as before")
+        for mine in ["https://example.com", "http://a.b", "file:///tmp", "search://settings", "javascript://x%0Aalert(1)", "about://blank"] {
+            XCTAssertNil(Address.otherApp(from: mine, opener: anApp), mine)
+        }
+        XCTAssertNil(Address.otherApp(from: "vnc host", opener: anApp))
+        XCTAssertNil(Address.otherApp(from: "what is vnc://", opener: anApp))
+        XCTAssertNil(Address.otherApp(from: "1abc://x", opener: anApp))
+        XCTAssertNil(Address.url(from: "vnc://192.168.1.20"), "the window itself still doesn't load it")
+    }
 }

@@ -178,7 +178,7 @@ struct ArchivePanel: View {
                 if listed.isEmpty {
                     Card { Nothing(hunt.isEmpty ? empty : "Nothing matches.") }
                 } else {
-                    ScrollView(showsIndicators: false) {
+                    ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(lines(listed)) { line in
                                 switch line.kind {

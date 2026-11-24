@@ -44,7 +44,10 @@ extension Browser {
             if web.cameraCaptureState == from { web.setCameraCaptureState(to) {} }
             if web.microphoneCaptureState == from { web.setMicrophoneCaptureState(to) {} }
         }
-        if !shown { settleCapture(for: page) }
+        if !shown {
+            settleCapture(for: page)
+            if let web = page.built { cancelDisplay(for: web) }
+        }
         if shown, let held = heldDialogs.removeValue(forKey: page.id) {
             DispatchQueue.main.async { held.forEach { $0.present() } }
         }
@@ -80,6 +83,29 @@ extension Browser {
               let here = page?.host()?.lowercased()
         else { return false }
         return there != here && Vault.registrable(there) != Vault.registrable(here)
+    }
+
+    /// Whether a click from a pin's page at `page` to `url` takes it to
+    /// another page that belongs in a tab of its own, with Links from pinned
+    /// tabs open in a new tab on: a web page, not the same one with another
+    /// #fragment, and not a sign-in, which a site expects in the tab it
+    /// started from (its own /login, accounts.google.com from Gmail).
+    static func leavesPin(_ url: URL, from page: URL?) -> Bool {
+        guard peekable(url), let host = url.host()?.lowercased() else { return false }
+        if let page, var here = URLComponents(url: page, resolvingAgainstBaseURL: false),
+           var there = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            here.fragment = nil
+            there.fragment = nil
+            if here.url == there.url { return false }
+        }
+        let signIn = ["login", "log-in", "log_in", "logon", "signin", "sign-in", "sign_in", "signon",
+                      "logout", "log-out", "signout", "sign-out", "auth", "oauth", "oauth2", "sso", "saml", "authorize"]
+        let first = host.split(separator: ".").first.map(String.init) ?? ""
+        if signIn.contains(first) || ["accounts", "account", "id", "idp"].contains(first) { return false }
+        let parts = url.path.lowercased().split(separator: "/").map(String.init)
+        return !parts.contains { part in
+            signIn.contains(part) || signIn.contains { part.hasPrefix($0 + ".") }
+        }
     }
 
     /// What a pin may open in a peek: a web page, never about:blank, data:,
@@ -130,6 +156,7 @@ extension Browser {
         heldDialogs.removeValue(forKey: page.id)?.forEach { $0.dismiss() }
         dropCertificateAsks(for: page.id)
         settleCapture(for: page)
+        if let web = page.built { cancelDisplay(for: web) }
         page.close()
     }
 

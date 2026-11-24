@@ -272,6 +272,38 @@ final class ScreenPermissionTests: XCTestCase {
         XCTAssertNil(Store.settings.object(forKey: "capture.\(origin)|\(WKMediaCaptureType.cameraAndMicrophone.rawValue)"))
     }
 
+    /// A Meet link from a pinned Calendar or Gmail opens in a peek: the call
+    /// there asked to share the screen and was refused without a card, so
+    /// Meet said to look for a setting that isn't there.
+    func testPeekAsksToShareTheScreen() async throws {
+        let (browser, tab, frame) = try await fixture()
+        defer { browser.closePeek(); browser.closeAll() }
+        let peek = Tab()
+        browser.prepare(peek)
+        browser.peekTab = peek
+        browser.peekFrom = tab.id
+        var replies: [Int] = []
+        browser.askedToShareScreen(peek.web, origin: frame.securityOrigin, frame: frame,
+                                   systemAudio: false) { replies.append($0) }
+        XCTAssertTrue(replies.isEmpty)
+        XCTAssertEqual(browser.asking?.wants, "screen")
+        try await Task.sleep(for: .milliseconds(550))
+        browser.shareWindow()
+        XCTAssertEqual(replies, [0])
+        XCTAssertEqual(Browser.displayAnswered, 2)
+
+        // Put away with its question up: refused, once, and the card goes.
+        var later: [Int] = []
+        browser.askedToShareScreen(peek.web, origin: frame.securityOrigin, frame: frame,
+                                   systemAudio: false) { later.append($0) }
+        XCTAssertEqual(browser.asking?.wants, "screen")
+        browser.closePeek()
+        XCTAssertEqual(later, [0])
+        XCTAssertNil(browser.asking)
+        browser.denyShare()
+        XCTAssertEqual(later, [0])
+    }
+
     func testIndividualPromptsUpdateBothAliasesAndAllowCombinedRequest() async throws {
         let (browser, tab, frame) = try await fixture()
         defer { browser.forgetCaptureChoices(); browser.closeAll() }

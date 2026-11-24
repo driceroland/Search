@@ -174,7 +174,7 @@ struct KeyCombo: Codable, Hashable {
 /// A menu command, and the key it has unless you give it another.
 struct Command: Identifiable {
     enum Section: String, CaseIterable {
-        case app = "Search", file = "File", edit = "Edit", view = "View", tabs = "Tabs", spaces = "Spaces", bookmarks = "Bookmarks", history = "History"
+        case app = "Search", file = "File", edit = "Edit", view = "View", tabs = "Tabs", spaces = "Spaces", profiles = "Profiles", bookmarks = "Bookmarks", history = "History"
     }
 
     let id: String
@@ -348,7 +348,14 @@ struct Command: Identifiable {
         // until you give one in Settings › Shortcuts (idea 761).
         Command("spaces.next", "Next Space", .spaces, nil) { $0.stepSpace(1) },
         Command("spaces.previous", "Previous Space", .spaces, nil) { $0.stepSpace(-1) },
-    ]
+        // No key until you give one, and listed only once there are two
+        // profiles (#1437). Next and Previous go round, so one key goes
+        // back and forth between two profiles.
+        Command("profiles.next", "Next Profile", .profiles, nil) { Profiles.step(1, from: $0) },
+        Command("profiles.previous", "Previous Profile", .profiles, nil) { Profiles.step(-1, from: $0) },
+    ] + (1...9).map { number in
+        Command("profiles.\(number)", "Profile \(number)", .profiles, nil) { Profiles.go(index: number - 1, from: $0) }
+    }
 }
 
 /// What you've changed, on top of the defaults: a new key, or none. One for

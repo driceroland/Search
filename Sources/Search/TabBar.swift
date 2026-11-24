@@ -66,7 +66,8 @@ struct TabBar: View {
                 DragStrip(reserved: lights + dot + leading + (making ? min(540, row.room) : row.run) + Metrics.tabGap + Metrics.plusWidth, trailing: doors + 12,
                           band: making ? nil : TabBar.band, onDoubleClick: browser.newTab)
                 // And the corner the lights sit in, which is title bar too —
-                // the one stretch left to take hold of when tabs fill the row.
+                // with the stretch past the plus a full row still keeps
+                // (Metrics.tabRowHold), where to take hold when tabs fill it.
                 DragStrip()
                     .frame(width: lights)
 
@@ -648,12 +649,13 @@ struct TabBar: View {
     }
 
     /// The strip, less the lights, the helm when it leads, the plus, the
-    /// doors at the far end and the air around them. The doors are measured;
+    /// stretch past it that moves the window (Metrics.tabRowHold), the doors
+    /// at the far end and the air around them. The doors are measured;
     /// until they have been, the helm and the bookmarks stand in for them —
     /// unless the helm leads, when nothing at the far end may be a real zero.
     private func room(in strip: CGFloat) -> CGFloat {
         let far = doors > 0 || browser.prefs.navigationLeft ? doors : Metrics.helm(browser.prefs) + 26
-        return max(0, strip - lights - dot - leading - 12 - Metrics.plusWidth - far - 3 * Metrics.tabGap)
+        return max(0, strip - lights - dot - leading - 12 - Metrics.plusWidth - Metrics.tabRowHold - far - 3 * Metrics.tabGap)
     }
 
     /// What the space's dot takes before the tabs, when there are spaces.
@@ -1014,6 +1016,10 @@ private struct TabPill: View, Equatable {
                     }
                 }
                 .frame(width: 16, height: 16)
+                // What its page counts as waiting (UnreadBadge): a pin shows
+                // no title to say it in.
+                .unreadBadge(prefs.showsPinCounts && !lettering && shortcutNumbers[tab.id] == nil ? tab.unread : nil, icon: 16,
+                             ring: live ? greys.pinLive : selected ? greys.wash : hovering ? greys.hover : greys.tile)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 6)
                 .frame(width: span)
@@ -2335,25 +2341,42 @@ struct CloseClick: NSViewRepresentable {
 /// the middle button and nothing else: to a left click, a drag or a right
 /// click it isn't there, and the tab's own gestures and menu go on as before.
 struct MiddleClick: NSViewRepresentable {
+    /// A ⌘-click (the left button, ⌘ alone held) taken too: a folder of the
+    /// bookmarks bar, opened all at once as Chrome does (idea 959). Every
+    /// other left click goes through to what is under it.
+    var command = false
     let act: () -> Void
 
     func makeNSView(context: Context) -> NSView { Catch() }
 
     func updateNSView(_ view: NSView, context: Context) {
         (view as? Catch)?.act = act
+        (view as? Catch)?.command = command
     }
 
-    private final class Catch: NSView {
+    final class Catch: NSView {
         var act: () -> Void = {}
+        var command = false
         private var pressed = false
+
+        /// Whether it takes this event: the middle button's, or with
+        /// `command` a ⌘-click's.
+        static func takes(_ event: NSEvent?, command: Bool) -> Bool {
+            guard let event else { return false }
+            switch event.type {
+            case .otherMouseDown, .otherMouseUp:
+                return event.buttonNumber == 2
+            case .leftMouseDown, .leftMouseUp:
+                return command && event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command
+            default:
+                return false
+            }
+        }
 
         /// Asked about every event that lands on the tab, the pointer moving
         /// over it included; the one being delivered is the one to judge by.
         override func hitTest(_ point: NSPoint) -> NSView? {
-            guard let event = NSApp.currentEvent,
-                  event.type == .otherMouseDown || event.type == .otherMouseUp,
-                  event.buttonNumber == 2
-            else { return nil }
+            guard Catch.takes(NSApp.currentEvent, command: command) else { return nil }
             return super.hitTest(point)
         }
 
@@ -2368,6 +2391,17 @@ struct MiddleClick: NSViewRepresentable {
             guard pressed else { return }
             pressed = false
             if bounds.contains(convert(event.locationInWindow, from: nil)) { act() }
+        }
+
+        /// A ⌘-click, taken back the same way.
+        override func mouseDown(with event: NSEvent) {
+            guard command else { return super.mouseDown(with: event) }
+            pressed = true
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            guard command else { return super.mouseUp(with: event) }
+            otherMouseUp(with: event)
         }
     }
 }

@@ -51,7 +51,7 @@ enum ExtensionShims {
     nonisolated static let stamp = ".search-shim"
     /// Raised when `prepare` changes what it does to a package, so that
     /// extensions prepared before are prepared again.
-    nonisolated private static let preparation = "7"
+    nonisolated private static let preparation = "8"
     nonisolated static let version: String = {
         SHA256.hash(data: Data((script + PasskeyRelay.page + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
@@ -303,21 +303,58 @@ enum ExtensionShims {
                 continue
             }
             guard ["html", "htm"].contains(url.pathExtension.lowercased()),
-                  var html = try? String(contentsOf: url, encoding: .utf8)
+                  let bytes = try? Data(contentsOf: url),
+                  let page = String(data: bytes, encoding: .utf8)
             else { continue }
-            if let chained = chainModules(html, page: url, folder: folder) {
-                html = chained
-                try? html.write(to: url, atomically: true, encoding: .utf8)
-            }
-            guard !html.contains(file) else { continue }
-            let tag = "<script src=\"/\(file)\"></script>"
-            if let head = html.range(of: "<head[^>]*>", options: [.regularExpression, .caseInsensitive]) {
-                html.insert(contentsOf: tag, at: head.upperBound)
-            } else {
-                html = tag + html
-            }
-            try? html.write(to: url, atomically: true, encoding: .utf8)
+            // Reading drops a page's byte order mark; it is written back,
+            // as it is what tells WebKit the page is UTF-8 when nothing
+            // else in it does.
+            var html = page.hasPrefix("\u{FEFF}") || !bytes.starts(with: signature) ? page : "\u{FEFF}" + page
+            if let chained = chainModules(html, page: url, folder: folder) { html = chained }
+            html = withShim(html)
+            let written = Data(html.utf8)
+            guard written != bytes else { continue }
+            try? written.write(to: url, options: .atomic)
         }
+    }
+
+    /// An extension page with the shim's tag as the first thing in its head,
+    /// before any script of its own. A page with no `<head>` tag gets it
+    /// after its doctype and its `<html>` tag, where the parser starts the
+    /// head it leaves out: put in front of the doctype, it left the page in
+    /// quirks mode (compatMode "BackCompat"), and its layout with it. A byte
+    /// order mark, comments and white space before the doctype stay where
+    /// they are. A page an earlier Search put the tag in front of is
+    /// mended, and one already right is returned as it was.
+    nonisolated static func withShim(_ page: String) -> String {
+        let tag = "<script src=\"/\(file)\"></script>"
+        var html = page
+        // Only the tag Search writes is taken off, wherever it was put.
+        if html.contains(tag) { html = html.replacingOccurrences(of: tag, with: "") }
+        // `<head>` with or without attributes, never `<header>`.
+        if let head = html.range(of: #"<head(\s[^>]*)?>"#, options: [.regularExpression, .caseInsensitive]) {
+            html.insert(contentsOf: tag, at: head.upperBound)
+            return html
+        }
+        // What may come before the head: a byte order mark, white space,
+        // comments, the doctype, then the `<html>` tag.
+        var at = html.startIndex
+        if html.hasPrefix("\u{FEFF}") { at = html.index(after: at) }
+        let prolog = [#"\s+"#, #"<!--[\s\S]*?-->"#, #"<!doctype[^>]*>"#]
+        var pastHTML = false
+        while at < html.endIndex {
+            let rest = html[at...]
+            if let found = prolog.lazy.compactMap({ rest.range(of: $0, options: [.regularExpression, .caseInsensitive, .anchored]) }).first {
+                at = found.upperBound
+            } else if !pastHTML, let found = rest.range(of: #"<html(\s[^>]*)?>"#, options: [.regularExpression, .caseInsensitive, .anchored]) {
+                at = found.upperBound
+                pastHTML = true
+            } else {
+                break
+            }
+        }
+        html.insert(contentsOf: tag, at: at)
+        return html
     }
 
     // MARK: - request rules WebKit would misread
@@ -1244,6 +1281,14 @@ enum ExtensionShims {
         const encode = (bytes) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); };
         const decode = (text) => { const s = atob(text), bytes = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i); return bytes; };
         let sequence = 0;
+        // Whether this is the extension's popup page: its fetch then goes
+        // with the cookies of the window the popup was opened from.
+        let popupPage = false;
+        try {
+          const manifest = runtime.getManifest(), action = manifest.action || manifest.browser_action || {};
+          popupPage = !worker && typeof action.default_popup === "string" && !!action.default_popup
+            && root.location.pathname === new URL(action.default_popup, root.location.origin + "/").pathname;
+        } catch (e) {}
         // What may wait unread in a response's stream before it fails.
         const unreadLimit = 64 * 1024 * 1024;
         const fetch = function fetch(input, init) {
@@ -1294,7 +1339,7 @@ enum ExtensionShims {
             }
             const number = ++sequence, id = number + "-" + Math.random().toString(36).slice(2);
             const hello = { fetch: id, url: request.url, method: request.method, headers: [...request.headers], body,
-                            redirect: request.redirect, userAgent: navigator.userAgent, credentials,
+                            redirect: request.redirect, userAgent: navigator.userAgent, credentials, popup: popupPage,
                             headerRules: headerRules.size ? [...headerRules.values()] : undefined, tell: ownTell() };
             return await new Promise((resolve, reject) => {
               let port;
@@ -4213,6 +4258,15 @@ enum ExtensionShims {
             const removes = Array.isArray(options && options.removeRuleIds) ? options.removeRuleIds : [];
             const { given: settled, spilled } = await session();
             if (spilled) return plainUpdateSession(options);
+            // Only taking rules away, before this launch's set is given: the
+            // extension clearing what it believes is left (AdGuard removes
+            // its stealth rules one by one at each start), when its session
+            // is empty as far as it knows. That isn't the set: what is kept
+            // stays until it comes, or keptGrace runs out. Taken as the set,
+            // it emptied what was kept, and the set given a moment later put
+            // it all back: two full compiles of every rule, ~20 s of CPU
+            // after each launch with AdGuard (idea 1030).
+            if (!settled && !adds.length) return dropPlain(new Set(removes));
             const keeping = adds.filter(keepable), plainAdds = adds.filter((r) => !keepable(r));
             const have = await keptNow();
             // Before this launch's set is given, what is kept is last launch's:
@@ -5764,14 +5818,38 @@ enum ExtensionShims {
         return visible.indices.contains(index) ? visible[index] : nil
     }
 
-    /// Each icon drawn once; the image is held so its identity stays its own.
-    private static var favIcons: [ObjectIdentifier: (icon: NSImage, url: String)] = [:]
-    static func forgetIcons() { favIcons.removeAll() }
+    /// An installed extension as chrome.management describes it (Chrome's
+    /// ExtensionInfo). One turned off in Settings has no context: it is read
+    /// from its folder, as Chrome still lists a disabled one. Its icon is a
+    /// small PNG, Search having no chrome://extension-icon to point at.
+    private static func managementInfo(_ id: String, owner: Extensions) async -> [String: Any] {
+        let item = owner.installed.first { $0.id == id }
+        var found = owner.contexts[id]?.webExtension
+        if found == nil { found = try? await WKWebExtension(resourceBaseURL: Extensions.folder(for: id)) }
+        let manifest = found?.manifest ?? [:]
+        let strings = { (key: String) in (manifest[key] as? [Any] ?? []).compactMap { $0 as? String } }
+        let hosts = strings("host_permissions") + (manifest["manifest_version"] as? Int == 2
+            ? strings("permissions").filter { $0.contains("://") || $0 == "<all_urls>" } : [])
+        var info: [String: Any] = [
+            "id": id, "name": found?.displayName ?? item?.name ?? "", "shortName": found?.displayShortName ?? item?.name ?? "",
+            "version": found?.version ?? item?.version ?? "", "description": found?.displayDescription ?? "",
+            "enabled": item?.enabled ?? true, "type": "extension", "isApp": false,
+            "installType": item?.fromStore == false ? "development" : "normal",
+            "mayDisable": true, "mayEnable": true, "offlineEnabled": manifest["offline_enabled"] as? Bool ?? false,
+            "homepageUrl": manifest["homepage_url"] as? String ?? "",
+            "optionsUrl": owner.contexts[id]?.optionsPageURL?.absoluteString ?? "",
+            "permissions": strings("permissions").filter { !$0.contains("://") && $0 != "<all_urls>" },
+            "hostPermissions": hosts,
+        ]
+        if item?.enabled == false { info["disabledReason"] = "unknown" }
+        if let found, let versionName = found.displayVersion, versionName != found.version { info["versionName"] = versionName }
+        if let icon = found?.icon(for: CGSize(width: 48, height: 48)), let url = pngURL(icon, side: 48) {
+            info["icons"] = [["size": 48, "url": url]]
+        }
+        return info
+    }
 
-    private static func favIconURL(_ tab: Tab) -> String? {
-        guard let icon = tab.icon ?? Favicons.shared.cached(for: tab.address, shy: tab.shy) else { return nil }
-        if let known = favIcons[ObjectIdentifier(icon)] { return known.url }
-        let side = 32
+    private static func pngURL(_ icon: NSImage, side: Int) -> String? {
         guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
                                             samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
                                             bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
@@ -5779,8 +5857,17 @@ enum ExtensionShims {
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
         icon.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
         NSGraphicsContext.restoreGraphicsState()
-        guard let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
-        let url = "data:image/png;base64," + png.base64EncodedString()
+        return bitmap.representation(using: .png, properties: [:]).map { "data:image/png;base64," + $0.base64EncodedString() }
+    }
+
+    /// Each icon drawn once; the image is held so its identity stays its own.
+    private static var favIcons: [ObjectIdentifier: (icon: NSImage, url: String)] = [:]
+    static func forgetIcons() { favIcons.removeAll() }
+
+    private static func favIconURL(_ tab: Tab) -> String? {
+        guard let icon = tab.icon ?? Favicons.shared.cached(for: tab.address, shy: tab.shy) else { return nil }
+        if let known = favIcons[ObjectIdentifier(icon)] { return known.url }
+        guard let url = pngURL(icon, side: 32) else { return nil }
         if favIcons.count > 500 { favIcons.removeAll() }
         favIcons[ObjectIdentifier(icon)] = (icon, url)
         return url
@@ -6101,15 +6188,26 @@ enum ExtensionShims {
         case _ where api.hasPrefix("fontSettings.set") || api.hasPrefix("fontSettings.clear"):
             return nil
 
-        // MARK: management — only itself
-        case "management.getSelf", "management.get":
-            let found = context.webExtension
-            return ["id": id, "name": found.displayName ?? "", "shortName": found.displayShortName ?? "",
-                    "version": found.version ?? "", "description": found.displayDescription ?? "",
-                    "enabled": true, "type": "extension", "installType": owner.installed.first { $0.id == id }?.fromStore == false ? "development" : "normal",
-                    "mayDisable": true, "offlineEnabled": true, "isApp": false, "hostPermissions": [], "permissions": []]
+        // MARK: management — itself for anyone; the others, as in Chrome,
+        // only with "management" (#1431)
+        case "management.getSelf":
+            return await managementInfo(id, owner: owner)
+        case "management.get":
+            let asked = first as? String ?? id
+            guard asked == id || allowed(id, context: context).contains("management") else {
+                throw Unsupported(what: "The extension never asked for \u{201C}management\u{201D}")
+            }
+            guard owner.installed.contains(where: { $0.id == asked }) else {
+                throw Unsupported(what: "Failed to find extension with id \(asked).")
+            }
+            return await managementInfo(asked, owner: owner)
         case "management.getAll":
-            return []
+            guard allowed(id, context: context).contains("management") else {
+                throw Unsupported(what: "The extension never asked for \u{201C}management\u{201D}")
+            }
+            var all: [[String: Any]] = []
+            for item in owner.installed { all.append(await managementInfo(item.id, owner: owner)) }
+            return all
         case "management.setEnabled", "management.uninstallSelf":
             throw Unsupported(what: "Extensions are turned on and off in Settings › Extensions")
 

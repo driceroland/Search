@@ -20,6 +20,17 @@ struct Keep: Codable, Identifiable, Equatable {
     var url: URL { URL(fileURLWithPath: path) }
     var stillThere: Bool { FileManager.default.fileExists(atPath: path) }
 
+    /// What the row carries when dragged out of the list (idea 566): the
+    /// file itself, as a Finder file's drag does, so a page takes it as an
+    /// upload and another app as the file. None once it has gone from where
+    /// it was saved.
+    var dragged: NSItemProvider? {
+        guard stillThere else { return nil }
+        let provider = NSItemProvider(object: url as NSURL)
+        provider.suggestedName = name
+        return provider
+    }
+
     /// The address as another app can fetch it. A blob: or data: one means
     /// nothing outside its page, and a data: one is the whole file again. A
     /// password in the address goes in neither the list's file nor the

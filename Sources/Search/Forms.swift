@@ -476,7 +476,22 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // What a box says it takes: a name to sign in with, in a few languages.
       var who = /user|login|log-in|logon|e-?mail|courriel|correo|identifi|account|compte|cuenta|konto|phone|mobile|portable|t[e\\u00e9]l[e\\u00e9]phone|benutzer|nutzer|anmelde|usuario|utente|utilizador|gebruiker|nom d.utilisateur|fiscal|(^|[\\s_\\-])spi($|[\\s_\\-])/;
       function claimsName(el) {
-        return vouched(el) || (el.type || '').toLowerCase() === 'email' || who.test(words(el));
+        return vouched(el) || (el.type || '').toLowerCase() === 'email' || who.test(words(el)) || who.test(caption(el));
+      }
+      // What is written just above or before a box that has no <label>, no
+      // name and no placeholder, as an app's boxes are drawn (a div saying
+      // "Email" over a bare input, idea 1031): the element before it, or
+      // before its wrapper, when that is a few words with no box of its own.
+      function caption(el) {
+        var up = el;
+        for (var i = 0; up && i < 3; i++, up = up.parentElement) {
+          var before = up.previousElementSibling;
+          if (!before) continue;
+          if (before.matches('input, select, textarea, button') || before.querySelector('input, select, textarea, button')) return '';
+          var said = (before.textContent || '').replace(/\\s+/g, ' ').trim();
+          return said.length <= 40 ? said.toLowerCase() : '';
+        }
+        return '';
       }
       // A form, or a page, that is clearly about something else.
       var otherForm = /project|projet|title|titre|descri|comment|message|compose|reply|(?<!e-?mail[\\s_\\-]?)address|adresse|coupon|promo|newsletter|subscri|abonn|checkout|cart|basket|panier|shipping|billing|payment|paiement|search|contact|feedback|survey|invite|share/;

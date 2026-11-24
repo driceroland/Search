@@ -82,8 +82,12 @@ struct Omnibox: View {
         ZStack(alignment: top == nil ? .center : .top) {
             // Keep the container mounted: only the field scales, while the
             // page's cover fades without pulling its edges into view. Not
-            // while the address line has the field (AddressLine.swift).
-            if browser.fieldShowing, !browser.editingInline {
+            // while the address line has the field (AddressLine.swift), nor
+            // over a pane while the window has it (Settings › The field in
+            // the middle of the window): the pane's, made a moment after the
+            // window's, took the keys and went, leaving them to nothing, so
+            // ⌘T's and ⌘L's field had no caret (idea 1033).
+            if browser.fieldShowing, !browser.editingInline, high || !browser.fieldOnWindow {
                 if over {
                     // The page is still there, just out of the way.
                     Rectangle()

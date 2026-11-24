@@ -82,6 +82,14 @@ enum PopoverSide {
         abs(move.dx) > size.width / 2 || abs(move.dy) > size.height / 2
     }
 
+    /// `move` cut down so the arrow still points at the `size` it hangs
+    /// from, at most to its edge: where the arrow can't stand clear of the
+    /// corner without leaving the button, a corner it is.
+    static func kept(_ move: CGVector, on size: CGSize) -> CGVector {
+        CGVector(dx: min(max(move.dx, -size.width / 2), size.width / 2),
+                 dy: min(max(move.dy, -size.height / 2), size.height / 2))
+    }
+
     /// The popover without its arrow, or with it again. NSPopover has no
     /// way of its own to say so: this is AppKit's, asked for by name, and
     /// false where AppKit doesn't have it, the popover left as it was.
@@ -201,9 +209,14 @@ private struct HangingPopover<Popup: View>: ViewModifier {
                 case .above: hang.edge = .top
                 case .under: hang.edge = .bottom
                 }
-                // In screen points, y up; SwiftUI's own are y down.
-                if place.move != .zero {
-                    hang.anchor = .rect(.rect(CGRect(origin: CGPoint(x: place.move.dx, y: -place.move.dy), size: view.bounds.size)))
+                // In screen points, y up; SwiftUI's own are y down. Never
+                // off the view: SwiftUI's popover hung from a rect wholly
+                // outside it shows nothing and lets go of its flag at once
+                // (#1460, the puzzle 26 points wide in the screen's corner,
+                // moved 29).
+                let move = PopoverSide.kept(place.move, on: view.bounds.size)
+                if move != .zero {
+                    hang.anchor = .rect(.rect(CGRect(origin: CGPoint(x: move.dx, y: -move.dy), size: view.bounds.size)))
                 }
             }
             held = hang

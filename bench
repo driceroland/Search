@@ -44,6 +44,7 @@
     ./bench ext-menu PATH              the puzzle button's list, drawn to a PNG
     ./bench ext-shot ID PATH           a picture of its popup while it is open
     ./bench ext-answer yes|no|ask      test run: answer extensions' questions without asking; lists what was asked
+    ./bench ext-check [AGE] [BASE]     test run: the store update check if due (AGE s back in time; BASE asks elsewhere)
     ./bench ext-enable ID on|off       switch an extension on or off
     ./bench ext-private ID on|off      test run: allow one extension in private tabs
     ./bench capture                    extensions' screen recording: ids given, what records, who may, last request
@@ -294,6 +295,10 @@ def main(argv):
     elif verb == "ext-answer":
         if len(args) != 1 or args[0] not in ("yes", "no", "ask"): sys.exit("usage: bench ext-answer yes|no|ask")
         request["answer"] = args[0]
+    elif verb == "ext-check":
+        if len(args) > 2: sys.exit("usage: bench ext-check [AGE] [BASE]")
+        if args: request["age"] = float(args[0])
+        if len(args) > 1: request["base"] = args[1]
     elif verb == "ext-shot":
         if len(args) != 2: sys.exit("usage: bench ext-shot ID PATH")
         request["id"] = args[0]

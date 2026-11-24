@@ -127,11 +127,17 @@ extension ExtensionFetch {
     /// The store whose cookies go: that of the windows the request can
     /// belong to — the ones whose side panel shows the extension, else every
     /// window — only when they all share one. One controller serves every
-    /// profile, and a worker or a popup doesn't say which window it is for:
-    /// with windows of different profiles or spaces open, it isn't known
-    /// whose sign-in to send, and nothing is ("pass"). Never a private
-    /// tab's store: panelStore never returns one.
-    static func store(for context: WKWebExtensionContext) -> WKWebsiteDataStore? {
+    /// profile, and a worker doesn't say which window it is for: with
+    /// windows of different profiles or spaces open, it isn't known whose
+    /// sign-in to send, and nothing is ("pass"). The extension's popup does:
+    /// the window it was opened from, as Chrome sends the popup's profile's
+    /// cookies — with a second window on another space, Monarch's "Connect
+    /// Amazon" found Amazon signed out and did nothing (idea 1045). Never a
+    /// private tab's store: panelStore never returns one.
+    static func store(for context: WKWebExtensionContext, popup: Bool = false) -> WKWebsiteDataStore? {
+        if popup, let browser = ExtensionPopup.shared.browser(for: context.uniqueIdentifier) {
+            return browser.panelStore(browser.spaceID)
+        }
         let showing = Browsers.all.filter { browser in
             if browser.sidePanelShown, case .page(let id, _, _)? = browser.sidePanel { return id == context.uniqueIdentifier }
             return false
@@ -715,6 +721,8 @@ extension ExtensionFetch {
         /// for the extension's own webRequest listeners: "sent", "headers",
         /// or "extra", the Cookie header with them. Nil: nothing.
         private var tell: String?
+        /// Sent from the extension's popup page, which says so (the shim).
+        private var popup = false
         private var redirected = false
         private var stopped = false
         private var ended = false
@@ -761,7 +769,8 @@ extension ExtensionFetch {
             // An app on this Mac is reached without a store: a worker's fetch
             // there comes here for CORS (see the shim), not for cookies, and
             // then goes with none when it isn't known whose to send.
-            let store = ExtensionFetch.store(for: context)
+            popup = message["popup"] as? Bool == true
+            let store = ExtensionFetch.store(for: context, popup: popup)
             guard store != nil || ExtensionFetch.loopback(url) else {
                 ExtensionFetch.note(["pass": address, "extension": context.uniqueIdentifier])
                 return pass()
@@ -853,7 +862,8 @@ extension ExtensionFetch {
             for (k, v) in HTTPCookie.requestHeaderFields(with: cookies) { request.setValue(v, forHTTPHeaderField: k) }
             ExtensionFetch.note(["native": url.absoluteString, "method": request.httpMethod ?? "GET", "origin": origin,
                                  "extension": context.uniqueIdentifier, "cookies": cookies.map(\.name).sorted(),
-                                 "store": Browsers.all.contains { $0.panelStore($0.spaceID) === store } ? "space" : "other"])
+                                 "store": Browsers.all.contains { $0.panelStore($0.spaceID) === store } ? "space" : "other",
+                                 "popup": popup])
         }
 
         nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
