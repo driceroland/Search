@@ -2013,6 +2013,8 @@ final class Bench {
             guard let text = request["text"] as? String, !text.isEmpty else { answer(["error": "field needs some text"]); return }
             let pieces = request["type"] as? Bool == true ? text.map(String.init) : [text]
             if browser.fieldShowing { browser.askFocus() } else { browser.edit() }
+            // "inline": in the address bar, as a click on it opens it.
+            if request["inline"] as? Bool == true { browser.inlineEdit = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 guard let field = Bench.addressField(in: (browser.window ?? Links.window)?.contentView),
                       let editor = field.currentEditor() as? NSTextView

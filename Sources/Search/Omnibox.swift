@@ -59,7 +59,10 @@ struct Omnibox: View {
         Group {
             if let width = listOnly {
                 if browser.fieldShowing, !browser.offers.isEmpty || browser.siteOffer != nil || browser.switcherNote != nil {
-                    list.frame(width: width)
+                    rows(stacked: true)
+                        .padding(6)
+                        .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.horizontal, 10) }
+                        .frame(width: width)
                 }
             } else if fitted {
                 GeometryReader { geometry in
@@ -188,6 +191,21 @@ struct Omnibox: View {
     /// moves the field — and the transition that carried it in and out before
     /// is kept, only anchored to its own top edge.
     private var list: some View {
+        rows(stacked: false)
+        .padding(6)
+        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Palette.hairline, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.07), radius: 20, y: 6)
+        .transition(.scale(scale: 0.98, anchor: .top).combined(with: .opacity))
+    }
+
+    /// The rows alone. Under the address bar (AddressLine.swift) they are the
+    /// lower part of the card the bar opens into, so the bar draws the card;
+    /// `stacked`, each a title over its site, as a narrow column has room for.
+    private func rows(stacked: Bool) -> some View {
         VStack(spacing: 0) {
             if let site = browser.siteOffer {
                 SiteOfferRow(site: site)
@@ -195,7 +213,7 @@ struct Omnibox: View {
                     .onTapGesture { _ = browser.lockSiteOffer() }
             }
             ForEach(Array(browser.offers.enumerated()), id: \.element.id) { index, offer in
-                Row(offer: offer, picked: browser.picked == index)
+                Row(offer: offer, picked: browser.picked == index, stacked: stacked)
                     .contentShape(Rectangle())
                     .onTapGesture { browser.take(offer) }
             }
@@ -208,14 +226,6 @@ struct Omnibox: View {
                     .padding(.vertical, 9)
             }
         }
-        .padding(6)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Palette.hairline, lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.07), radius: 20, y: 6)
-        .transition(.scale(scale: 0.98, anchor: .top).combined(with: .opacity))
     }
 
     /// One row of a list of places, here and under the field in the tab.
@@ -224,10 +234,110 @@ struct Omnibox: View {
         /// Where the arrow keys have walked to. The pointer gets its own,
         /// quieter mark, and changes nothing but the look of the row.
         let picked: Bool
+        /// A title over its site, the site's icon on a tile before them, and
+        /// what Return does at the end of the row it would do it to: the
+        /// rows of a command bar, in a column a few words wide.
+        var stacked = false
 
         @State private var hovering = false
 
         var body: some View {
+            if stacked { stackedBody } else { lineBody }
+        }
+
+        private var isSearch: Bool { offer.kind == .search || offer.kind == .suggested || offer.kind == .searched }
+
+        /// The words the row leads with: a page's title, or the words to search.
+        private var headline: String {
+            if isSearch || offer.kind.isCommand || offer.title.isEmpty { return isSearch ? offer.key : Address.withoutWWW(offer.key) }
+            return offer.title
+        }
+
+        /// Under them: the site, or where the words are sent.
+        private var subline: String? {
+            if offer.kind == .searched { return "Searched before" }
+            if isSearch { return offer.title.isEmpty ? nil : "Search \(offer.title)" }
+            if offer.kind.isCommand || offer.title.isEmpty { return nil }
+            return offer.url.host().map(Address.withoutWWW) ?? Address.withoutWWW(offer.key)
+        }
+
+        private var stackedBody: some View {
+            HStack(spacing: 10) {
+                icon
+                    .frame(width: 14, height: 14)
+                    .frame(width: 24, height: 24)
+                    .background(Palette.wash.opacity(picked ? 0 : 1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(Palette.ground.opacity(picked ? 1 : 0), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(headline)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                    if let subline {
+                        Text(subline)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Palette.muted)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                if picked {
+                    Image(systemName: offer.kind == .open ? "arrow.right" : "return")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Palette.muted)
+                        .help(offer.kind == .open ? "Switch to Tab" : "Open")
+                } else {
+                    marks
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background {
+                if picked {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Palette.wash)
+                } else if hovering {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Palette.hover)
+                }
+            }
+            .onHover { hovering = $0 }
+            .animation(Motion.quick, value: hovering)
+        }
+
+        /// What stands before the words: the site's icon, or what kind of row.
+        @ViewBuilder private var icon: some View {
+            switch offer.kind {
+            case .search, .suggested:
+                if let icon = Favicons.shared.cached(for: offer.url) {
+                    Mark(icon: icon, letter: "", size: 14)
+                } else {
+                    symbol("magnifyingglass")
+                }
+            case .command:
+                symbol("command")
+            case .searched:
+                symbol("clock.arrow.circlepath")
+            default:
+                Mark(icon: Favicons.shared.cached(for: offer.url), letter: letter, size: 14)
+            }
+        }
+
+        /// Kept, on another device, or pinned.
+        @ViewBuilder private var marks: some View {
+            if case .command(let command) = offer.kind, let key = command.key {
+                Text(key)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+            }
+            if offer.kind == .bookmark {
+                symbol("bookmark")
+            } else if offer.kind == .elsewhere {
+                symbol("laptopcomputer.and.iphone")
+            } else if offer.pinned {
+                symbol("pin")
+            }
+        }
+
+        private var lineBody: some View {
             HStack(spacing: 10) {
                 // Every row has the same column before its words, so the
                 // words line up whatever stands in it.

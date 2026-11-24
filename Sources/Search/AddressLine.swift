@@ -71,6 +71,8 @@ struct AddressLine: View {
         @State private var options = ViewAnchor.Box()
 
         @State private var hovering = false
+        /// How tall the suggestions under it are, for the card to take them in.
+        @State private var below: CGFloat = 0
 
         private var url: URL? { tab.page?.url ?? tab.address }
         private var rest: AtRest? { AtRest.of(url) }
@@ -108,17 +110,23 @@ struct AddressLine: View {
             .padding(.trailing, editing || !tab.isWeb ? 10 : 4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: height)
-            .background {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+            // Typed in, it opens into one card with its suggestions, the
+            // field at the top and the rows under it, as a command bar is.
+            .background(alignment: .top) {
+                let open = editing ? below : 0
+                RoundedRectangle(cornerRadius: editing ? 12 : 10, style: .continuous)
                     .fill(editing ? Palette.ground : lit ? greys.wash : greys.hover)
-                    .shadow(color: .black.opacity(editing ? 0.14 : 0), radius: 8, y: 2)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Palette.hairline, lineWidth: editing ? 1 : 0)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: editing ? 12 : 10, style: .continuous)
+                            .strokeBorder(Palette.hairline, lineWidth: editing ? 1 : 0)
+                    }
+                    .shadow(color: .black.opacity(editing ? 0.12 : 0), radius: open > 0 ? 18 : 8, y: open > 0 ? 6 : 2)
+                    .frame(height: height + open)
+                    .frame(height: height, alignment: .top)
             }
             .animation(.easeOut(duration: 0.12), value: lit)
             .animation(.easeOut(duration: 0.15), value: editing)
+            .animation(.easeOut(duration: 0.12), value: below)
             .background(ViewAnchor(box: line))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
@@ -128,11 +136,14 @@ struct AddressLine: View {
             .overlay(alignment: .topLeading) {
                 if editing {
                     Omnibox(browser: browser, over: false, listOnly: frame.width)
-                        .offset(y: height + 4)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { below = $0 }
+                        .offset(y: height)
                 }
             }
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
-            .onChange(of: browser.editingInline, initial: true) { _, on in watch(on) }
+            // Closed, the card forgets how tall it was, so the next opening
+            // starts from the field alone.
+            .onChange(of: browser.editingInline, initial: true) { _, on in watch(on); if !on { below = 0 } }
             .onDisappear { watch(false) }
         }
 
@@ -148,9 +159,7 @@ struct AddressLine: View {
                     guard browser.editingInline, let view = event.window?.contentView else { return }
                     let at = event.locationInWindow
                     let point = CGPoint(x: at.x, y: view.bounds.height - at.y)
-                    // The line, and the room under it its suggestions take:
-                    // a row is about 44 points, the list's edge 12 more.
-                    let below = browser.offers.isEmpty ? 0 : CGFloat(browser.offers.count) * 44 + 16
+                    // The line, and the room under it its suggestions take.
                     let room = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height + below)
                     guard !room.contains(point) else { return }
                     browser.dismiss()
