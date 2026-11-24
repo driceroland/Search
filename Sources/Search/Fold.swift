@@ -566,14 +566,19 @@ struct Fold: View {
         .onChange(of: browser.bookmarksOpen) { _, open in
             if !open, !inside, browser.peeking { peek(false) }
         }
+        // And the address bar, typed in and closed.
+        .onChange(of: browser.editingInline) { _, open in
+            if !open, !inside, browser.peeking, !holding { peek(false) }
+        }
     }
 
     /// A popover opened from a button in the column, still open: the
     /// bookmarks list or the extensions menu. Folding the column would take
     /// it along, so it holds the column out wherever the pointer has gone,
-    /// on the way to a bookmark over the page included (#88).
+    /// on the way to a bookmark over the page included (#88). The address
+    /// bar being typed in is the same: it stays until it is closed.
     private var holding: Bool {
-        if browser.bookmarksOpen { return true }
+        if browser.bookmarksOpen || browser.editingInline { return true }
         if #available(macOS 15.4, *), Extensions.shared.menuOpen { return true }
         return false
     }
