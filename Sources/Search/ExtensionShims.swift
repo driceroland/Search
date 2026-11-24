@@ -4221,6 +4221,15 @@ enum ExtensionShims {
             const removes = Array.isArray(options && options.removeRuleIds) ? options.removeRuleIds : [];
             const { given: settled, spilled } = await session();
             if (spilled) return plainUpdateSession(options);
+            // Only taking rules away, before this launch's set is given: the
+            // extension clearing what it believes is left (AdGuard removes
+            // its stealth rules one by one at each start), when its session
+            // is empty as far as it knows. That isn't the set: what is kept
+            // stays until it comes, or keptGrace runs out. Taken as the set,
+            // it emptied what was kept, and the set given a moment later put
+            // it all back: two full compiles of every rule, ~20 s of CPU
+            // after each launch with AdGuard (idea 1030).
+            if (!settled && !adds.length) return dropPlain(new Set(removes));
             const keeping = adds.filter(keepable), plainAdds = adds.filter((r) => !keepable(r));
             const have = await keptNow();
             // Before this launch's set is given, what is kept is last launch's:
