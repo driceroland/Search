@@ -441,8 +441,11 @@ struct DownloadsPanel: View {
         let retry: () -> Void
         let cancel: () -> Void
 
+        private var received: String {
+            ByteCountFormatter.string(fromByteCount: entry.completedBytes, countStyle: .file)
+        }
+
         private var bytes: String {
-            let received = ByteCountFormatter.string(fromByteCount: entry.completedBytes, countStyle: .file)
             guard entry.totalBytes > 0 else { return received + " downloaded" }
             let total = ByteCountFormatter.string(fromByteCount: entry.totalBytes, countStyle: .file)
             return "\(received) of \(total)"
@@ -456,6 +459,19 @@ struct DownloadsPanel: View {
             case .resuming: return "Resuming…"
             case .failed: return "Failed"
             }
+        }
+
+        private var failed: Bool {
+            if case .failed = entry.state { return true }
+            return false
+        }
+
+        private func status(_ text: String) -> some View {
+            Text(text)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Palette.muted)
+                .monospacedDigit()
+                .lineLimit(1)
         }
 
         private var icon: String {
@@ -491,12 +507,13 @@ struct DownloadsPanel: View {
                                 }
                                 .frame(width: 68, height: 3)
                         }
-                        Text("\(stateLabel) · \(bytes)")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
-                            .monospacedDigit()
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        // A row with three buttons has little room left: say
+                        // less rather than cut the amount out of the middle.
+                        ViewThatFits(in: .horizontal) {
+                            status("\(stateLabel) · \(bytes)")
+                            status("\(stateLabel) · \(received)")
+                            status(stateLabel)
+                        }
                     }
                     if case .failed = entry.state {
                         Text(entry.errorDescription ?? "The download failed.")
@@ -504,10 +521,14 @@ struct DownloadsPanel: View {
                             .foregroundStyle(Palette.muted)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
+                        // Three buttons beside the text left it a few letters
+                        // wide; under the reason they read as its way out.
+                        controls
+                            .padding(.top, 4)
                     }
                 }
-                Spacer(minLength: 4)
-                controls
+                Spacer(minLength: failed ? 0 : 4)
+                if !failed { controls }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
