@@ -1080,7 +1080,10 @@ final class DeveloperDebugger: ObservableObject {
         saveWatches()
     }
 
+    /// Kept for the next time, except from a private tab, whose watches
+    /// last only while its tools are open, as its Console history does.
     private func saveWatches() {
+        guard !DevHost.isPrivate(session?.web) else { return }
         DevDefaults.store.set(watches.map(\.expression), forKey: Self.watchesKey)
     }
 
