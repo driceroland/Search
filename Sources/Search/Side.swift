@@ -79,6 +79,9 @@ struct SideBar: View {
         /// The tab in front and the room when the rows last fitted in a
         /// room measured: the column on screen, a plain stack at its top.
         var fitted: (active: Tab.ID?, height: CGFloat)?
+        /// The tab to scroll to once the scroll that has just come has its
+        /// rows laid out.
+        var arriving: Tab.ID?
     }
 
     /// A tab's line: taller with roomier tabs turned on.
@@ -86,6 +89,7 @@ struct SideBar: View {
     /// The column's width: the setting, or where the edge is while it is held.
     private var width: CGFloat { live ?? prefs.columnWidth }
     private static let gap: CGFloat = 2
+    fileprivate static var railGap: CGFloat { gap }
     private static let groupInset: CGFloat = 4
     private static let square: CGFloat = 34
     private static let pinGap: CGFloat = 4
@@ -562,12 +566,51 @@ struct SideBar: View {
             // park); the rest stand still out of sight, not drawn again at
             // every frame of a slide.
             ForEach(Array(browser.spaces.enumerated()), id: \.element.id) { index, space in
-                mapPage(space.id)
+                // Kept as it is while what it draws from is the same (mapKey):
+                // drawn again with every change in the window, every page's
+                // rows in sight were made again as a space landed.
+                MapPageBox(key: mapKey(space.id)) { mapPage(space.id) }
+                    .equatable()
                     .modifier(SwipeShift(offset: offset, by: CGFloat(browser.mapSlot(index, from: at)) * width,
                                          across: true, park: width))
                     .accessibilityHidden(true)
             }
         }
+    }
+
+    /// All a page of the map draws from: kept as it is while this is the
+    /// same, rather than drawn again with every change in the window.
+    struct MapPageKey: Equatable {
+        var space: UUID
+        var here: Bool
+        var tabs: [ObjectIdentifier]
+        var kinds: [UInt8]
+        var active: Tab.ID?
+        var splits: [TabSplit]
+        var groups: [TabGroup]?
+        var scrolled: CGFloat?
+        var fits: Bool
+        var width: CGFloat
+        var prefs: Int
+        var dark: Bool
+        var folders: [PinFolder]
+        var selected: Set<Tab.ID>
+        var peek: Tab.ID?
+        var marks: Bool
+    }
+
+    private func mapKey(_ space: UUID) -> MapPageKey {
+        let here = space == browser.spaceID
+        let row = here
+            ? Parked(tabs: browser.tabs, active: browser.activeID, splits: browser.splits, groups: browser.tabGroups)
+            : browser.parked[space] ?? Parked(tabs: [], active: nil)
+        return MapPageKey(space: space, here: here, tabs: row.tabs.map(ObjectIdentifier.init),
+                          kinds: row.tabs.map { ($0.pin != nil ? 1 : 0) | ($0.listed ? 2 : 0) | ($0.isBlank ? 4 : 0) },
+                          active: row.active, splits: row.splits, groups: row.groups,
+                          scrolled: here ? browser.mapScroll(fits: fits) : nil, fits: fits, width: width,
+                          prefs: prefs.revision, dark: colourScheme == .dark,
+                          folders: prefs.showsPinFolders ? PinFolders.folders(space) : [],
+                          selected: browser.selectedTabIDs, peek: browser.peekFrom, marks: showsMarks)
     }
 
     /// A space's rows in the map (pages), as the swipe draws them: this
@@ -653,6 +696,14 @@ struct SideBar: View {
                                     rows.onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
                                         room.drawn = $0
                                         refit()
+                                        // The scroll asked for as this one came,
+                                        // once its rows are laid out in it: a loose
+                                        // row's line (ScrollRail) isn't there to be
+                                        // gone to before.
+                                        if let id = room.arriving {
+                                            room.arriving = nil
+                                            scroll(proxy, to: id, anchor: .center)
+                                        }
                                     }
                                     // How far it is scrolled, for its rows
                                     // in the map to be drawn the same (mapPage).
@@ -705,6 +756,7 @@ struct SideBar: View {
                                     // for a frame; the turn later is for when
                                     // this one is dropped.
                                     scroll(proxy, to: browser.activeSplit?.left ?? id, anchor: .center)
+                                    room.arriving = browser.activeSplit?.left ?? id
                                     DispatchQueue.main.async {
                                         scroll(proxy, to: browser.activeSplit?.left ?? id, anchor: .center)
                                     }
@@ -1381,30 +1433,17 @@ struct SideBar: View {
                 // come into these same rows (see Browser.rowKey).
                 let rows = loose.enumerated().map { LooseRow(id: browser.rowKey($0.element), index: $0.offset, tab: $0.element) }
                 VStack(spacing: SideBar.gap) {
-                    ForEach(rows) { row in
-                        let index = row.index, tab = row.tab
-                        if ghost == index, let carried = crossingTab {
-                            RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
-                        }
-                        rowItem(tab, tabs: browser.tabs, splits: browser.splits,
-                                activeID: browser.activeID, interactive: true, pill: pill,
-                                close: { browser.closeTab(tab) })
-                        // Positions here are among the loose rows; the pinned block
-                        // sits in front of them in the real list.
-                        .modifier(Carried(index: index, steps: looseSteps, vertical: true,
-                                          space: "rows", onDropTab: { source, point in drop(source, at: point) },
-                                          groupDestination: { source, point in destination(source, at: point) },
-                                          loose: prefs.usesTabGroups ? looseFrames : nil,
-                                          outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
-                                          cross: { cross(tab, $0, from: .rows) },
-                                          land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
-                            if prefs.usesTabGroups {
-                                browser.move(tab, within: nil, to: $0)
-                            } else {
-                                browser.moveDisplayedTab(tab, to: $0 + browser.pinnedCount)
-                            }
-                        })
-                    }
+                    // Lazy: only the rows in sight are made, and only those
+                    // are told their new tab as a space lands. Made whole, a
+                    // space of 60 loose tabs took about 1 ms a row in the pass
+                    // that takes it, every row out of sight included (idea
+                    // 1051). The scroll finds a row not made yet by its line
+                    // in the rail under them (ScrollRail).
+                    LazyVStack(spacing: SideBar.gap) { looseRows(rows, ghost: ghost, steps: looseSteps) }
+                        .background(alignment: .top) { ScrollRail(keys: rows.map(\.id), steps: looseSteps) }
+                    // Past the last row, out of the lazy stack: in it, the
+                    // empty place still took a gap, and the rows ended 2
+                    // points lower than the map draws them.
                     if let ghost, ghost >= loose.count, let carried = crossingTab {
                         RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
                     }
@@ -1415,6 +1454,34 @@ struct SideBar: View {
         .coordinateSpace(name: "rows")
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.rows = $0 }
         .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
+    }
+
+    @ViewBuilder
+    private func looseRows(_ rows: [LooseRow], ghost: Int?, steps looseSteps: [CGFloat]) -> some View {
+        ForEach(rows) { row in
+            let index = row.index, tab = row.tab
+            if ghost == index, let carried = crossingTab {
+                RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
+            }
+            rowItem(tab, tabs: browser.tabs, splits: browser.splits,
+                    activeID: browser.activeID, interactive: true, pill: pill,
+                    close: { browser.closeTab(tab) })
+            // Positions here are among the loose rows; the pinned block
+            // sits in front of them in the real list.
+            .modifier(Carried(index: index, steps: looseSteps, vertical: true,
+                              space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                              groupDestination: { source, point in destination(source, at: point) },
+                              loose: prefs.usesTabGroups ? looseFrames : nil,
+                              outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
+                              cross: { cross(tab, $0, from: .rows) },
+                              land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
+                if prefs.usesTabGroups {
+                    browser.move(tab, within: nil, to: $0)
+                } else {
+                    browser.moveDisplayedTab(tab, to: $0 + browser.pinnedCount)
+                }
+            })
+        }
     }
 
     private func destination(_ tab: Tab, at point: CGPoint) -> GroupDropTarget? {
@@ -1442,7 +1509,7 @@ struct SideBar: View {
     /// key, not its tab's id (see Browser.rowKey); any other row under its id.
     private func scroll(_ proxy: ScrollViewProxy, to id: Tab.ID, anchor: UnitPoint? = nil) {
         if let tab = looseTabs.first(where: { $0.id == id }) {
-            proxy.scrollTo(browser.rowKey(tab), anchor: anchor)
+            proxy.scrollTo(ScrollRail.Mark(key: browser.rowKey(tab)), anchor: anchor)
         } else {
             proxy.scrollTo(id, anchor: anchor)
         }
@@ -2025,6 +2092,35 @@ private struct PinSquare: View, Equatable {
 
 /// A loose row of the column: the key it is drawn under (Browser.rowKey),
 /// its place among the loose rows and the tab in it.
+/// What it holds, drawn again only when its key changes (SideBar.mapKey).
+struct MapPageBox<Content: View>: View, Equatable {
+    let key: SideBar.MapPageKey
+    @ViewBuilder let content: () -> Content
+    static func == (a: Self, b: Self) -> Bool { a.key == b.key }
+    var body: some View { content() }
+}
+
+/// A plain line for each loose row, where it lies, made whole under the
+/// lazy stack of rows: the scroll goes to a row the stack hasn't made yet by
+/// its line here (SideBar.scroll).
+private struct ScrollRail: View, Equatable {
+    struct Mark: Hashable { let key: Int }
+    let keys: [Int]
+    let steps: [CGFloat]
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(keys.indices), id: \.self) { index in
+                Color.clear
+                    .frame(height: max(0, steps[index] - SideBar.railGap))
+                    .padding(.bottom, SideBar.railGap)
+                    .id(Mark(key: keys[index]))
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct LooseRow: Identifiable {
     let id: Int
     let index: Int

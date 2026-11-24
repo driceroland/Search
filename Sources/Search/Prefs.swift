@@ -1,3 +1,4 @@
+import Combine
 import Security
 import SwiftUI
 import WebKit
@@ -1552,7 +1553,13 @@ final class Preferences: ObservableObject {
         for key in ["mind.model", "mind.effort", "mind.acting", "mind.width", "mind.open"] {
             store.removeObject(forKey: key)
         }
+        counting = objectWillChange.sink { [unowned self] _ in revision &+= 1 }
     }
+
+    /// Bumped on every change of any setting: for a view kept as it is
+    /// until what it draws from changes (SideBar.MapPageKey).
+    private(set) var revision = 0
+    private var counting: AnyCancellable?
 
     /// The folder the settings file is in, watched for as long as the app
     /// runs (see followFile).
