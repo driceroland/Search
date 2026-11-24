@@ -261,7 +261,16 @@ final class DevToolsPackages: ObservableObject {
         }
         let strict = SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckAllArchitectures | kSecCSCheckNestedCode)
         guard let requirement, SecStaticCodeCheckValidity(code, strict, requirement) == errSecSuccess else { throw Refused.signature }
-        guard let api = info[SearchDevToolsAPI.infoKey] as? Int, api == offer.api else { throw Refused.notAPackage }
+        // The API version from the Info.plist the signature just vouched
+        // for, never from the package.json beside it, which anyone who can
+        // write the folder could edit; and the executable it names is the
+        // one hashed above.
+        var signing: CFDictionary?
+        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &signing) == errSecSuccess,
+              let signed = (signing as? [String: Any])?[kSecCodeInfoPList as String] as? [String: Any],
+              signed["CFBundleExecutable"] as? String == name
+        else { throw Refused.signature }
+        guard let api = signed[SearchDevToolsAPI.infoKey] as? Int, api == offer.api else { throw Refused.notAPackage }
         if api > SearchDevToolsAPI.version { throw Refused.searchTooOld }
         if api < SearchDevToolsAPI.version { throw Refused.packageTooOld }
     }
