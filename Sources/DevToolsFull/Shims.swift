@@ -11,7 +11,43 @@ import WebKit
 /// The package's settings: the host's store for it, deleted with the
 /// package. Until the host hands it over, a store kept in memory only.
 enum DevDefaults {
-    nonisolated(unsafe) static var store: UserDefaults = UserDefaults(suiteName: "com.officecommun.search.devtools.unset.\(UUID().uuidString)") ?? UserDefaults()
+    nonisolated(unsafe) static var store: UserDefaults = DevMemoryDefaults()
+}
+
+/// A settings store kept in memory only: every read and write of
+/// UserDefaults a caller can make is answered from a dictionary, so
+/// nothing ever reaches a preferences file or another domain.
+final class DevMemoryDefaults: UserDefaults, @unchecked Sendable {
+    private var values: [String: Any] = [:]
+    private let lock = NSLock()
+
+    init() { super.init(suiteName: nil)! }
+
+    override func object(forKey key: String) -> Any? { lock.withLock { values[key] } }
+    override func set(_ value: Any?, forKey key: String) { lock.withLock { values[key] = value } }
+    override func removeObject(forKey key: String) { lock.withLock { values[key] = nil } }
+    override func set(_ value: Bool, forKey key: String) { set(value as Any, forKey: key) }
+    override func set(_ value: Int, forKey key: String) { set(value as Any, forKey: key) }
+    override func set(_ value: Swift.Float, forKey key: String) { set(value as Any, forKey: key) }
+    override func set(_ value: Double, forKey key: String) { set(value as Any, forKey: key) }
+    override func set(_ url: URL?, forKey key: String) { set(url?.absoluteString as Any?, forKey: key) }
+    override func string(forKey key: String) -> String? { object(forKey: key) as? String }
+    override func array(forKey key: String) -> [Any]? { object(forKey: key) as? [Any] }
+    override func dictionary(forKey key: String) -> [String: Any]? { object(forKey: key) as? [String: Any] }
+    override func data(forKey key: String) -> Data? { object(forKey: key) as? Data }
+    override func stringArray(forKey key: String) -> [String]? { object(forKey: key) as? [String] }
+    override func integer(forKey key: String) -> Int { (object(forKey: key) as? NSNumber)?.intValue ?? 0 }
+    override func float(forKey key: String) -> Swift.Float { (object(forKey: key) as? NSNumber)?.floatValue ?? 0 }
+    override func double(forKey key: String) -> Double { (object(forKey: key) as? NSNumber)?.doubleValue ?? 0 }
+    override func bool(forKey key: String) -> Bool { (object(forKey: key) as? NSNumber)?.boolValue ?? false }
+    override func url(forKey key: String) -> URL? { (object(forKey: key) as? String).flatMap(URL.init(string:)) }
+    override func dictionaryRepresentation() -> [String: Any] { lock.withLock { values } }
+    override func register(defaults registrationDictionary: [String: Any]) {
+        lock.withLock { for (key, value) in registrationDictionary where values[key] == nil { values[key] = value } }
+    }
+    override func synchronize() -> Bool { true }
+    override func removePersistentDomain(forName domainName: String) {}
+    override func setPersistentDomain(_ domain: [String: Any], forName domainName: String) {}
 }
 
 /// Search's colours (Design.swift), the ones the panels use.

@@ -77,6 +77,23 @@ final class DevToolsTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: DevToolsPackages.folder.path))
     }
 
+    // The fallback store a package gets if its suite is ever refused: in
+    // memory, never Search's own settings.
+    func test1bMemoryDefaultsStayInMemory() {
+        let store = DevToolsMemoryDefaults()
+        let key = "devtools.memory.\(UUID().uuidString)"
+        store.set(true, forKey: key)
+        store.set(["a"], forKey: key + ".list")
+        store.set(2.5, forKey: key + ".n")
+        XCTAssertTrue(store.bool(forKey: key))
+        XCTAssertEqual(store.stringArray(forKey: key + ".list"), ["a"])
+        XCTAssertEqual(store.double(forKey: key + ".n"), 2.5)
+        XCTAssertNil(UserDefaults.standard.object(forKey: key), "nothing in the app's own settings")
+        XCTAssertNil(Store.settings.object(forKey: key), "nothing in the world's settings")
+        store.removeObject(forKey: key)
+        XCTAssertFalse(store.bool(forKey: key))
+    }
+
     // MARK: - 2. refused, cleanly
 
     func test2BadPackagesAreRefused() async throws {
