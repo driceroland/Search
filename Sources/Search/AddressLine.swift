@@ -11,8 +11,7 @@ import SwiftUI
 // At rest it says where the page is from, as the tab at rest does
 // (AtRestLine): the site in ink, not the whole address in grey, which read
 // as a text box nobody meant you to touch. It answers the pointer as a
-// button does: a little brighter under it, a little smaller held down, and
-// a button to copy the link beside the site card's.
+// button does: a little brighter under it, a little smaller held down.
 //
 // A click there is ⌘L's editing, in place: the same field, the address in
 // it to type over, and the same suggestions hanging under the line rather
@@ -72,7 +71,6 @@ struct AddressLine: View {
 
         @State private var hovering = false
         @State private var pressed = false
-        @State private var copied = false
 
         private var url: URL? { tab.page?.url ?? tab.address }
         private var rest: AtRest? { AtRest.of(url) }
@@ -96,10 +94,6 @@ struct AddressLine: View {
                     }
                     Spacer(minLength: 0)
                     if tab.isWeb {
-                        if lit {
-                            button(copied ? "checkmark" : "link", help: "Copy Link") { copy() }
-                                .transition(.opacity)
-                        }
                         // The site card (#1240), for a page on the web.
                         button("slider.horizontal.3", help: "Site Settings") {
                             guard let under = line.view, let from = options.view else { return }
@@ -145,13 +139,6 @@ struct AddressLine: View {
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
             .onChange(of: browser.editingInline, initial: true) { _, on in watch(on) }
             .onDisappear { watch(false) }
-        }
-
-        /// The link copied, and the button says so a moment.
-        private func copy() {
-            browser.copyAddress()
-            copied = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
         }
 
         /// While it is being typed in, a click anywhere but the line and its
