@@ -5355,8 +5355,11 @@ final class Bench {
             let height = request["height"] as? Double ?? 600
             let width = Double(browser.prefs.columnWidth)
             AddressLine.benchHovering = request["hovering"] as? Bool ?? false
-            let host = NSHostingView(rootView: SideBar(browser: browser, prefs: browser.prefs).frame(width: width, height: height))
-            host.frame = NSRect(x: 0, y: 0, width: width, height: height)
+            // "width": the picture wider than the column, for what opens past it.
+            let shown = max(width, request["width"] as? Double ?? width)
+            let host = NSHostingView(rootView: SideBar(browser: browser, prefs: browser.prefs).frame(width: width, height: height)
+                .frame(width: shown, height: height, alignment: .leading))
+            host.frame = NSRect(x: 0, y: 0, width: shown, height: height)
             let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.appearance = NSApp.effectiveAppearance
             window.contentView = host

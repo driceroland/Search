@@ -281,7 +281,7 @@ struct SideBar: View {
                     }
                     // The page's address, when it is to be in sight.
                     if prefs.addressLine {
-                        AddressLine(browser: browser, height: prefs.sideRow)
+                        AddressLine(browser: browser, height: prefs.sideRow, inColumn: true)
                             .padding(.bottom, 6)
                             // Its suggestions hang over the rows below.
                             .zIndex(1)
@@ -417,6 +417,18 @@ struct SideBar: View {
         // A fixed width with icons only: nothing to pull. The strip keeps
         // its edge, to be pulled back out to titles.
         .overlay(alignment: innerEdge) { if !icons || strip { edge } }
+        // The address bar typed in opens wider than the column, out over the
+        // page (AddressCard), so it is drawn here, past the clip and over the
+        // column's edge, where the line is: from its leading edge, or its trailing one on the right.
+        .overlayPreferenceValue(AddressCard.Place.self) { place in
+            GeometryReader { geometry in
+                if let place, browser.editingInline {
+                    let line = geometry[place]
+                    AddressCard(browser: browser, height: prefs.sideRow)
+                        .offset(x: prefs.sidePosition == .right ? line.maxX - AddressCard.width : line.minX, y: line.minY)
+                }
+            }
+        }
         .onDrop(of: [.url, .text], isTargeted: $landing) { providers in
             browser.take(providers)
         }
