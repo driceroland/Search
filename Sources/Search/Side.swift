@@ -1472,11 +1472,11 @@ private struct PinSquare: View, Equatable {
     /// stretching to chase the width.
     private var scale: CGFloat { min(width, height) }
 
-    /// The pin's letter: full ink with High contrast text, otherwise soft
-    /// grey until the square is live or under the pointer.
+    private var dim: Bool { prefs.dimsSleepingTabs && tab.asleep && !live && !hovering }
+
     private var pinLetter: Color {
-        if live || prefs.highContrastText { return Palette.ink }
-        return hovering ? Palette.ink.opacity(0.7) : Palette.muted
+        if live || hovering || prefs.highContrastText { return Palette.ink }
+        return Palette.ink.opacity(0.75)
     }
 
     var body: some View {
@@ -1489,12 +1489,14 @@ private struct PinSquare: View, Equatable {
                 // Its page on the way, as a row's ring says.
                 Ring(size: scale * 11 / 34)
             } else if prefs.glyph == .icons, let icon = tab.icon {
-                Mark(icon: icon, letter: tab.pin ?? "", size: scale * 16 / 34, dim: tab.asleep,
+                Mark(icon: icon, letter: tab.pin ?? "", size: scale * 16 / 34, dim: dim,
                      contrast: prefs.highContrastText)
             } else {
                 Text(tab.pin ?? "")
                     .font(.system(size: scale * 12 / 34, weight: .medium))
-                    .foregroundStyle(pinLetter.opacity(tab.asleep ? 0.45 : 1))
+                    .foregroundStyle(pinLetter)
+                    .opacity(dim ? 0.45 : 1)
+                    .animation(Motion.quick, value: dim)
             }
         }
         .frame(width: scale * 16 / 34, height: scale * 16 / 34)

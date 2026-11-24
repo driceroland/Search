@@ -470,13 +470,15 @@ struct AddressField: NSViewRepresentable {
     /// The pane's page, for a field standing on one (see Coordinator.focus).
     var tab: Tab.ID?
     /// Its type, smaller in the address line (AddressLine.swift).
-    var size: CGFloat = 15.5
+    let size: CGFloat
+    let inline: Bool
 
-    init(browser: Browser, tab: Tab.ID? = nil, size: CGFloat = 15.5) {
+    init(browser: Browser, tab: Tab.ID? = nil, size: CGFloat = 15.5, inline: Bool = false) {
         self.browser = browser
         self.typing = browser.typing
         self.tab = tab
         self.size = size
+        self.inline = inline
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
@@ -506,7 +508,7 @@ struct AddressField: NSViewRepresentable {
         // SwiftUI picks its own colour for a placeholder, and on a pale ground
         // that colour was near-white.
         let words = Self.placeholderWords(for: browser)
-        field.placeholderAttributedString = Self.placeholder(words, size: size)
+        field.placeholderAttributedString = placeholder(words)
         field.setAccessibilityLabel(Self.accessibilityName(for: browser))
         context.coordinator.placeheld = words
         return field
@@ -538,12 +540,12 @@ struct AddressField: NSViewRepresentable {
         }
     }
 
-    private static func placeholder(_ words: String, size: CGFloat) -> NSAttributedString {
+    private func placeholder(_ words: String) -> NSAttributedString {
         NSAttributedString(
             string: words,
             attributes: [
                 .font: NSFont.systemFont(ofSize: size),
-                .foregroundColor: NSColor(Palette.ink.opacity(0.3)),
+                .foregroundColor: NSColor(Palette.ink.opacity(inline ? 0.75 : 0.3)),
             ]
         )
     }
@@ -571,7 +573,7 @@ struct AddressField: NSViewRepresentable {
         let words = Self.placeholderWords(for: browser)
         if coordinator.placeheld != words {
             coordinator.placeheld = words
-            field.placeholderAttributedString = Self.placeholder(words, size: size)
+            field.placeholderAttributedString = placeholder(words)
             field.setAccessibilityLabel(Self.accessibilityName(for: browser))
             DispatchQueue.main.async { coordinator.showPlaceholder(in: field) }
         }
