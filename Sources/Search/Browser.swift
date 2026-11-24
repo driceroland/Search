@@ -5307,7 +5307,7 @@ final class Browser: NSObject, ObservableObject {
 
         if tabs.count == 1 {
             if tab.isBlank {
-                NSApp.keyWindow?.performClose(nil)
+                closeEmptyWindow(tab)
             } else {
                 let fresh = Tab(configuration: Web.configuration(space: spaceID))
                 remember(tab, at: 0)
@@ -5342,12 +5342,9 @@ final class Browser: NSObject, ObservableObject {
         if activeID == tab.id, onlyPins || onlyKept {
             if tab.isBlank {
                 if besideGroups {
-                    typed = ""
-                    tab.draft = ""
-                    editing = false
-                    focusRequest += 1
+                    keepEmpty(tab)
                 } else {
-                    NSApp.keyWindow?.performClose(nil)
+                    closeEmptyWindow(tab)
                 }
                 return
             }
@@ -5370,7 +5367,7 @@ final class Browser: NSObject, ObservableObject {
         // A pin still open is gone back to, as before: ⌘T then ⌘W over it.
         if activeID == tab.id, tab.isBlank, !besideGroups,
            !tabs.contains(where: { $0.id != tab.id && ($0.pin == nil || !$0.asleep) }) {
-            NSApp.keyWindow?.performClose(nil)
+            closeEmptyWindow(tab)
             return
         }
 
@@ -5399,6 +5396,22 @@ final class Browser: NSObject, ObservableObject {
             select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
         }
         rememberSession()
+    }
+
+    /// The empty tab left where closing it would close the window: its
+    /// field emptied and given the keyboard, as a new tab's.
+    private func keepEmpty(_ tab: Tab) {
+        typed = ""
+        tab.draft = ""
+        editing = false
+        focusRequest += 1
+    }
+
+    /// Closing the window's last tab, an empty one, closes the window, unless
+    /// Settings › Tabs › Keep the window when its last tab closes is on: then
+    /// the tab stays, as in Arc, and ⇧⌘W is how the window goes (idea 1102).
+    private func closeEmptyWindow(_ tab: Tab) {
+        if prefs.keepWindowAfterLast { keepEmpty(tab) } else { NSApp.keyWindow?.performClose(nil) }
     }
 
     /// Everything but this one. Pinned tabs are put down rather than removed —

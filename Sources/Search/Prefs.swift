@@ -466,6 +466,12 @@ final class Preferences: ObservableObject {
     @Published var newTabAfterLast: Bool {
         didSet { store.set(newTabAfterLast, forKey: "tabs.newAfterLast") }
     }
+    /// ⌘W on the window's last tab, a blank one, leaves it rather than
+    /// closing the window (see Browser.close); ⇧⌘W still closes it. Off
+    /// unless asked for.
+    @Published var keepWindowAfterLast: Bool {
+        didSet { store.set(keepWindowAfterLast, forKey: "tabs.keepWindow") }
+    }
     /// Closing the tab on screen goes back to the one viewed before it
     /// rather than the neighbour (see Browser.close). Off unless asked for.
     @Published var closeGoesBack: Bool {
@@ -1353,6 +1359,7 @@ final class Preferences: ObservableObject {
         showsLoadingLine = store.bool(forKey: "fold.loadingLine")
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
+        keepWindowAfterLast = store.bool(forKey: "tabs.keepWindow")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
         undoReopensTab = store.bool(forKey: "tabs.undoReopens")
         homeGrid = store.bool(forKey: "home.grid")

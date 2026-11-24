@@ -705,6 +705,7 @@ struct SettingsPanel: View {
             .pickerStyle(.menu)
             .fixedSize()
         case "tabs.newAfterLast": Switch(on: $prefs.newTabAfterLast)
+        case "tabs.keepWindow": Switch(on: $prefs.keepWindowAfterLast)
         case "tabs.closeGoesBack": Switch(on: $prefs.closeGoesBack)
         case "home.grid": Switch(on: $prefs.homeGrid)
         case "tabs.undoReopens": Switch(on: $prefs.undoReopensTab)
