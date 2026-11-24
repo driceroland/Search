@@ -5319,6 +5319,17 @@ final class Browser: NSObject, ObservableObject {
             return
         }
 
+        // The new tab left by putting the last pin down (see leave), closed
+        // with nothing beside it but pins already put down: landing on one
+        // woke the pin just put down, and ⌘W went pin, new tab, pin, new tab
+        // for ever (#1480). It closes the window, as the only tab does.
+        // A pin still open is gone back to, as before: ⌘T then ⌘W over it.
+        if activeID == tab.id, tab.isBlank, !besideGroups,
+           !tabs.contains(where: { $0.id != tab.id && ($0.pin == nil || !$0.asleep) }) {
+            NSApp.keyWindow?.performClose(nil)
+            return
+        }
+
         remember(tab, at: index, partner: partner?.id, onLeft: pair?.isBefore(tab.id, partner?.id) ?? false)
         tab.close()
         tabs.remove(at: index)
