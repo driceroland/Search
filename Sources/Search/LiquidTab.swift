@@ -131,8 +131,18 @@ final class LensMotion: NSObject, ObservableObject {
     /// How much it is moving, nought to one: how much of the pane over the
     /// rows shows.
     @Published private(set) var moving = 0.0
-    /// The pane's own view, for a clock from the screen it is on.
-    weak var view: NSView?
+    /// The pane's own view, for a clock from the screen it is on. The
+    /// column builds a new pane when its rows switch between a plain stack
+    /// and a scroll view (a tab opened or closed); a clock from the old one
+    /// never ticks again, so a new pane takes the glide on with its own.
+    weak var view: NSView? {
+        didSet {
+            guard view !== oldValue, link != nil else { return }
+            link?.invalidate()
+            link = nil
+            start()
+        }
+    }
 
     private var tab: AnyHashable?
     private var space: AnyHashable?
@@ -142,6 +152,8 @@ final class LensMotion: NSObject, ObservableObject {
     private var speed = [Double](repeating: 0, count: 4)
     private var link: CADisplayLink?
     private var last: CFTimeInterval = 0
+    /// When the clock last ticked, or was started.
+    private var ticked: CFTimeInterval = 0
 
     /// How hard it is pulled, and how much of its speed it loses: three
     /// quarters of what would stop it without overshooting, so it overshoots
@@ -152,6 +164,14 @@ final class LensMotion: NSObject, ObservableObject {
 
     func aim(_ rect: CGRect, tab: AnyHashable, space: AnyHashable) {
         let target = [Double(rect.midX), Double(rect.midY), Double(rect.width), Double(rect.height)]
+        // A clock that hasn't ticked for half a second (its pane gone, or
+        // out of sight) isn't trusted to finish the glide: the glass froze
+        // partway, off its tab, with the pane over the rows still showing.
+        if link != nil, CACurrentMediaTime() - ticked > 0.5 {
+            link?.invalidate()
+            link = nil
+            self.tab = nil
+        }
         let glides = self.tab != nil && self.space == space && !Motion.reduced
             && (link != nil || self.tab != tab)
         self.tab = tab
@@ -178,6 +198,7 @@ final class LensMotion: NSObject, ObservableObject {
             return
         }
         last = 0
+        ticked = CACurrentMediaTime()
         let link = view.displayLink(target: self, selector: #selector(step(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
@@ -185,6 +206,7 @@ final class LensMotion: NSObject, ObservableObject {
 
     @objc private func step(_ link: CADisplayLink) {
         let now = link.timestamp
+        ticked = CACurrentMediaTime()
         let dt = last == 0 ? 1.0 / 120 : min(1.0 / 30, now - last)
         last = now
         var resting = true
