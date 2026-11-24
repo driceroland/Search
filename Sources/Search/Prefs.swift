@@ -370,6 +370,12 @@ final class Preferences: ObservableObject {
     @Published var customEngine: String {
         didSet { store.set(customEngine, forKey: "search.custom") }
     }
+    /// A custom engine's own suggestions, when it has them: an https address
+    /// with %s where the words go (see EngineSuggest.swift). Empty, and it
+    /// has none, as a custom engine always did.
+    @Published var customSuggest: String {
+        didSet { store.set(customSuggest, forKey: "search.customSuggest") }
+    }
     /// Where Shift-Return in the address field sends the words instead of
     /// the default engine (#848). Nil, as for anyone who never picks one:
     /// Shift-Return is Return, as it always was.
@@ -1311,6 +1317,7 @@ final class Preferences: ObservableObject {
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
+        customSuggest = store.string(forKey: "search.customSuggest") ?? ""
         shiftEngine = store.string(forKey: "search.shift").flatMap(Engine.init)
         shiftCustom = store.string(forKey: "search.shiftCustom") ?? ""
         keywords = store.data(forKey: "search.keywords")

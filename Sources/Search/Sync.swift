@@ -63,6 +63,7 @@ enum SyncSettings {
         raw("glyph", \.glyph),
         raw("search.engine", \.engine),
         coded("search.custom", \.customEngine),
+        coded("search.customSuggest", \.customSuggest),
         coded("search.suggest", \.engineSuggests),
         coded("search.keywords", \.keywords),
         coded("spaces", \.usesSpaces),
@@ -81,7 +82,8 @@ enum SyncSettings {
 
     /// Their keys, readable anywhere (SyncItems.understood).
     static let known: Set<String> = [
-        "look", "glyph", "search.engine", "search.custom", "search.suggest", "search.keywords", "spaces",
+        "look", "glyph", "search.engine", "search.custom", "search.customSuggest", "search.suggest",
+        "search.keywords", "spaces",
         "pins.list", "pins.home", "tabs.close.after", "tabs.newPlace", "tabs.shortcuts", "shield",
         "privacy.clickIDs", "privacy.gpc", "bookmarks.bar", "bookmarks.side", "quit.confirm",
     ]

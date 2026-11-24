@@ -68,6 +68,9 @@ struct SharedSettings: Codable, Equatable {
     var engine: String?
     /// The custom engine's template.
     var custom: String?
+    /// The custom engine's suggestions address: https, with %s where the
+    /// words go. Nil or empty, and it has none, as before.
+    var suggest: String? = nil
     /// Look's raw value.
     var look: String?
 }
@@ -164,7 +167,7 @@ enum ICloudMerge {
         .folders: ["id", "name", "parent", "feed"],
         .bookmarks: ["id", "title", "url", "children"],
         .spaces: ["id", "name", "colour", "icon", "sharesSignIns", "downloads", "profile", "gradient", "strength"],
-        .settings: ["engine", "custom", "look"],
+        .settings: ["engine", "custom", "suggest", "look"],
     ]
 
     /// JSON as both apps compare it: sorted keys, by one writer, so what was
@@ -353,14 +356,16 @@ enum ICloudMerge {
     }
 
     @MainActor static func settings(_ prefs: Preferences) -> SharedSettings {
-        SharedSettings(engine: prefs.engine.rawValue, custom: prefs.customEngine, look: prefs.look.rawValue)
+        SharedSettings(engine: prefs.engine.rawValue, custom: prefs.customEngine,
+                       suggest: prefs.customSuggest, look: prefs.look.rawValue)
     }
 
-    /// iCloud's settings here: only the three, and only values this build
+    /// iCloud's settings here: only the four, and only values this build
     /// knows.
     @MainActor static func apply(_ settings: SharedSettings, to prefs: Preferences) {
         if let raw = settings.engine, let engine = Engine(rawValue: raw), engine != prefs.engine { prefs.engine = engine }
         if let custom = settings.custom, custom != prefs.customEngine { prefs.customEngine = custom }
+        if let suggest = settings.suggest, suggest != prefs.customSuggest { prefs.customSuggest = suggest }
         if let raw = settings.look, let look = Look(rawValue: raw), look != prefs.look { prefs.look = look }
     }
 }

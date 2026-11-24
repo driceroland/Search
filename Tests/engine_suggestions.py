@@ -6,10 +6,10 @@ app starts hidden in a world of its own (bld-sug-<checkout>, see
 split_view.use), is driven through ./bench's socket, and is quit; its world
 is removed afterwards. Nothing here makes, shows or brings forward a window.
 
-No real engine is asked: the test world's `suggest.testURL` points the
-field at a fake engine on this Mac (honoured only in a test run), and the
-custom engine's searches go to the same server. It records every question,
-with the headers it came with.
+No real engine is asked: the custom engine's searches, and the suggestions
+address given to it in Settings, point at a fake engine on this Mac (http on
+loopback is honoured only in a test run). It records every question, with the
+headers it came with.
 """
 import json
 import statistics
@@ -93,8 +93,8 @@ def main():
     t = sv.T()
     try:
         sv.setup()
-        for k, v in [("suggest.testURL", f"{BASE}/sug?q=%s"), ("search.engine", "custom"),
-                     ("search.custom", f"{BASE}/search?q=%s")]:
+        for k, v in [("search.engine", "custom"), ("search.custom", f"{BASE}/search?q=%s"),
+                     ("search.customSuggest", f"{BASE}/sug?q=%s")]:
             subprocess.run(["defaults", "write", sv.SUITE, k, "-string", v])
         sv.launch()
         sv.page("start")
