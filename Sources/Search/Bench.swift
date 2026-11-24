@@ -1515,6 +1515,10 @@ final class Bench {
             }
             walk(0)
 
+        case "paceframes":
+            guard Store.testing else { answer(["error": "paceframes is for test runs"]); return }
+            PaceFrames.run(browser, request, answer)
+
         case "foldframes":
             guard Store.testing else { answer(["error": "foldframes is for test runs"]); return }
             FoldFrames.run(browser, request, answer)
