@@ -285,18 +285,12 @@ enum DeveloperChangesDiff {
             }
             var cancel: [String: Int] = [:]
             for (text, count) in removed { cancel[text] = min(count, added[text] ?? 0) }
-            var cancelDeleted = cancel, cancelInserted = cancel
+            var left: [Kind: [String: Int]] = [.delete: cancel, .insert: cancel]
             var body: [String] = []
             for entry in group.entries {
-                if entry.kind == .delete {
-                    if let left = cancelDeleted[entry.text], left > 0 { cancelDeleted[entry.text] = left - 1; continue }
-                    let line = "  " + commented(entry.text)
-                    if !body.contains(line) { body.append(line) }
-                } else {
-                    if let left = cancelInserted[entry.text], left > 0 { cancelInserted[entry.text] = left - 1; continue }
-                    let line = "  " + (isComment(entry.text) ? entry.text : entry.text + ";")
-                    if !body.contains(line) { body.append(line) }
-                }
+                if let count = left[entry.kind]?[entry.text], count > 0 { left[entry.kind]?[entry.text] = count - 1; continue }
+                let line = "  " + (entry.kind == .delete ? commented(entry.text) : isComment(entry.text) ? entry.text : entry.text + ";")
+                if !body.contains(line) { body.append(line) }
             }
             guard !body.isEmpty || group.opened else { continue }
             blocks.append(([group.selector + " {"] + body + ["}"]).joined(separator: "\n"))
@@ -649,8 +643,7 @@ final class DeveloperChanges: ObservableObject {
         let text = file.css
             ? DeveloperChangesDiff.cssChanges(lines, original: file.original, current: file.current, inline: file.kind == .inline)
             : DeveloperChangesDiff.unified(lines)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        DeveloperToolsSession.copyToPasteboard(text)
     }
 }
 

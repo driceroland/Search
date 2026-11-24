@@ -30,12 +30,9 @@ enum DeveloperAISubject: Equatable {
 
     var label: String {
         switch self {
-        case .element(_, let label): label
-        case .request(_, let label): label
+        case .element(_, let label), .request(_, let label), .traceEvent(_, let label, _),
+             .insight(_, let label, _), .file(_, let label, _): label
         case .console(let line): DeveloperAIContextText.oneLine(line.text, limit: 60)
-        case .traceEvent(_, let label, _): label
-        case .insight(_, let label, _): label
-        case .file(_, let label, _): label
         }
     }
 
@@ -297,9 +294,8 @@ enum DeveloperAIContextText {
     // MARK: Console
 
     static func frame(_ frame: ConsoleCallFrame) -> String {
-        let name = frame.functionName.isEmpty ? "(anonymous)" : frame.functionName
-        guard !frame.url.isEmpty else { return name }
-        return "\(name) @ \(frame.url):\(frame.lineNumber):\(frame.columnNumber)"
+        guard !frame.url.isEmpty else { return frame.name }
+        return "\(frame.name) @ \(frame.url):\(frame.lineNumber):\(frame.columnNumber)"
     }
 
     static func console(_ line: DeveloperToolsSession.ConsoleLine) -> String {
@@ -335,10 +331,8 @@ enum DeveloperAIContextText {
     /// entries it ran inside, and the children that took longest.
     static func traceEvent(_ event: DeveloperPerformanceEvent, in profile: DeveloperPerformanceProfile) -> String {
         var general: [String] = ["Name: " + event.title, "Record type: " + event.type,
-                                 "Category: " + event.category.rawValue]
-        general.append("Start: " + time(event.start) + " into the recording")
-        general.append("Duration: " + time(event.duration))
-        general.append("Self time: " + time(event.selfTime))
+                                 "Category: " + event.category.rawValue, "Start: " + time(event.start) + " into the recording",
+                                 "Duration: " + time(event.duration), "Self time: " + time(event.selfTime)]
         if let detail = event.detail, !detail.isEmpty { general.append("Details: " + oneLine(detail, limit: 300)) }
         for key in traceDataKeys {
             if let value = event.data[key], !value.isEmpty { general.append(key + ": " + oneLine(value, limit: 300)) }
@@ -456,9 +450,7 @@ enum DeveloperAIContextText {
     /// around the caret when the whole file is too long.
     static func file(url: String, language: String, text: String, line: Int?, selection: String?) -> String {
         var general = ["File name: " + SourceTree.fileName(url), "URL: " + oneLine(url, limit: 500),
-                       "Language: " + language]
-        let count = text.components(separatedBy: "\n").count
-        general.append("Lines: \(count)")
+                       "Language: " + language, "Lines: \(text.components(separatedBy: "\n").count)"]
         if let line { general.append("The caret is on line \(line).") }
         var parts = ["The file open in Sources:\n" + general.joined(separator: "\n")]
         if let selection, !selection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -471,14 +463,15 @@ enum DeveloperAIContextText {
 
     // MARK: Prompt
 
-    /// What the model is told once per chat. It only reads; see the note
-    /// at the top of this file.
+    /// What the model is told once per chat.
     static let instructions = """
         You are AI assistance in a web browser's developer tools. You help web developers understand and fix \
         the page they are inspecting. Answer concisely, in short paragraphs or lists, and use Markdown code \
         blocks for code. Base your answer on the context you are given; if it isn't enough, say what to check \
-        next. You can only read the context you are given: you cannot run JavaScript, change the page or see \
-        anything else on it.
+        next. When the context isn't enough, or the user asks about the page's live state, call the \
+        runJavaScript tool with the code; don't write the code in your answer or ask for permission, because \
+        the user approves each script first in the app. Keep scripts short and read-only, ending with the value \
+        you need, unless the user asks you to change the page. Then answer from the result.
         """
 
     /// Characters a chat's model session may read and write before it is

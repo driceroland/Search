@@ -194,27 +194,20 @@ final class DeveloperWebAudioModel: ObservableObject {
     static let handlerName = "perchWebAudio"
     static let hooksScript = DevToolsResources.script("DeveloperWebAudio-hooks.js")
     private static let contextLimit = 64
-    private static let frameLimit = 64
 
     static func source(token: UUID) -> String { "(\(hooksScript))('\(token.uuidString)')" }
 
     private weak var session: DeveloperToolsSession?
-    private weak var observedWeb: WKWebView?
-    private var script: WKUserScript?
+    private var relay = DeveloperScriptRelay(handler: DeveloperWebAudioModel.handlerName)
     /// New for each start, so a capture left in a frame from before is
     /// replaced rather than taken for this one.
     private var token = UUID()
-    private var frames: [String: WKFrameInfo] = [:]
-    private var frameOrder: [String] = []
     private var mainDocument: String?
     /// Which context each node is in.
     private var nodeContexts: [String: String] = [:]
 
     private static var models: [ObjectIdentifier: (session: WeakSession, model: DeveloperWebAudioModel)] = [:]
     struct WeakSession { weak var value: DeveloperToolsSession? }
-    /// One message handler per content controller, shared by the models on
-    /// it: adding a second handler with the same name raises.
-    private static var relays: [ObjectIdentifier: Relay] = [:]
 
     static func model(for session: DeveloperToolsSession) -> DeveloperWebAudioModel {
         for (key, entry) in models where entry.session.value == nil {
@@ -247,72 +240,21 @@ final class DeveloperWebAudioModel: ObservableObject {
             problem = "The inspected page isn’t available."
             return
         }
-        if observedWeb !== web { stop() }
-        guard script == nil else { return }
+        if relay.web !== web { stop() }
+        guard relay.script == nil else { return }
         problem = nil
         token = UUID()
-        let content = web.configuration.userContentController
-        let source = Self.source(token: token)
-        let script = WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
-        self.script = script
-        observedWeb = web
-        Self.relay(for: content).owners[token] = Owner(value: self)
-        content.addUserScript(script)
-        ArmedRiders.add(script, to: content)
+        relay.start(Self.source(token: token), key: token, owner: self, on: web) { [weak self] in self?.receive($0) }
         listening = true
-        // The current document gets the hooks now. Existing subframes get them
-        // at their next navigation, since WKWebView doesn't list their frames.
-        web.evaluateJavaScript(source, in: nil, in: .page, completionHandler: nil)
-    }
-
-    private static func relay(for content: WKUserContentController) -> Relay {
-        let id = ObjectIdentifier(content)
-        if let relay = relays[id], relay.content === content { return relay }
-        let relay = Relay(content)
-        relays[id] = relay
-        content.add(relay, contentWorld: .page, name: handlerName)
-        return relay
     }
 
     func stop() {
-        guard let script else { return }
-        self.script = nil
-        ArmedRiders.remove(script)
-        let token = self.token
-        defer {
-            frames.removeAll()
-            frameOrder.removeAll()
-            mainDocument = nil
-            nodeContexts.removeAll()
-            contexts = []
-            selection = nil
-            observedWeb = nil
-            listening = false
-        }
-        guard let web = observedWeb else { return }
-        let content = web.configuration.userContentController
-        let id = ObjectIdentifier(content)
-        if let relay = Self.relays[id], relay.content === content {
-            relay.owners[token] = nil
-            if relay.owners.values.allSatisfy({ $0.value == nil }) {
-                Self.relays[id] = nil
-                content.removeScriptMessageHandler(forName: Self.handlerName, contentWorld: .page)
-            }
-        }
-        if content.userScripts.contains(where: { $0 === script }) {
-            // WebKit takes user scripts out all at once; the tab's go back.
-            let kept = content.userScripts.filter { $0 !== script }
-            content.removeAllUserScripts()
-            kept.forEach(content.addUserScript)
-        }
-        let cleanup = """
-            { const capture = globalThis[Symbol.for('perch.webAudioCapture')];
-              if (capture?.owns?.('\(token.uuidString)')) capture.stop(); }
-            """
-        web.evaluateJavaScript(cleanup, in: nil, in: .page, completionHandler: nil)
-        for frame in frames.values where !frame.isMainFrame {
-            web.evaluateJavaScript(cleanup, in: frame, in: .page, completionHandler: nil)
-        }
+        guard relay.stop(key: token, symbol: "perch.webAudioCapture") else { return }
+        mainDocument = nil
+        nodeContexts.removeAll()
+        contexts = []
+        selection = nil
+        listening = false
     }
 
     func dismissProblem() { problem = nil }
@@ -320,26 +262,12 @@ final class DeveloperWebAudioModel: ObservableObject {
     // MARK: Reports
 
     private func receive(_ message: WKScriptMessage) {
-        guard script != nil, let web = observedWeb, message.webView === web,
+        guard relay.script != nil, let web = relay.web, message.webView === web,
               let body = message.body as? [String: Any], body["session"] as? String == token.uuidString,
               let frame = body["frame"] as? String, frame.count <= 40,
               let events = body["events"] as? [[String: Any]] else { return }
-        remember(frame, message.frameInfo)
+        relay.remember(frame, message.frameInfo)
         apply(events, frame: frame, isMainFrame: message.frameInfo.isMainFrame)
-    }
-
-    /// The frames to take the hooks out of when DevTools closes, kept by
-    /// document, most recent last. A new page document takes the old one's
-    /// contexts and subframes with it.
-    private func remember(_ frame: String, _ info: WKFrameInfo) {
-        if info.isMainFrame { return }
-        if frames[frame] != nil { frameOrder.removeAll { $0 == frame } }
-        frames[frame] = info
-        frameOrder.append(frame)
-        if frameOrder.count > Self.frameLimit {
-            for id in frameOrder.prefix(frameOrder.count - Self.frameLimit) { frames[id] = nil }
-            frameOrder.removeFirst(frameOrder.count - Self.frameLimit)
-        }
     }
 
     /// One frame's batch of events, in the order the page made them.
@@ -350,8 +278,7 @@ final class DeveloperWebAudioModel: ObservableObject {
             mainDocument = frame
             contexts.removeAll()
             nodeContexts.removeAll()
-            frames.removeAll()
-            frameOrder.removeAll()
+            relay.forgetFrames()
         }
         let prefix = frame + "-"
         func string(_ item: [String: Any], _ key: String) -> String? {
@@ -378,20 +305,17 @@ final class DeveloperWebAudioModel: ObservableObject {
             switch item["kind"] as? String ?? "" {
             case "context":
                 guard let id = ownID(item, "id") else { continue }
-                if let index = contexts.firstIndex(where: { $0.id == id }) {
-                    contexts[index].state = string(item, "state") ?? contexts[index].state
-                    contexts[index].currentTime = double(item, "currentTime")
-                    contexts[index].baseLatency = double(item, "baseLatency")
-                    contexts[index].outputLatency = double(item, "outputLatency")
-                    contexts[index].maxChannelCount = int(item, "maxChannelCount")
-                    if let rate = double(item, "sampleRate") { contexts[index].sampleRate = rate }
-                } else if contexts.count < Self.contextLimit {
+                if !contexts.contains(where: { $0.id == id }), contexts.count < Self.contextLimit {
                     contexts.append(DeveloperWebAudioContext(
-                        id: id, type: string(item, "type") == "offline" ? "offline" : "realtime",
-                        state: string(item, "state") ?? "", sampleRate: double(item, "sampleRate"),
-                        currentTime: double(item, "currentTime"), baseLatency: double(item, "baseLatency"),
-                        outputLatency: double(item, "outputLatency"), maxChannelCount: int(item, "maxChannelCount")))
+                        id: id, type: string(item, "type") == "offline" ? "offline" : "realtime", state: ""))
                 }
+                guard let index = contexts.firstIndex(where: { $0.id == id }) else { continue }
+                contexts[index].state = string(item, "state") ?? contexts[index].state
+                contexts[index].currentTime = double(item, "currentTime")
+                contexts[index].baseLatency = double(item, "baseLatency")
+                contexts[index].outputLatency = double(item, "outputLatency")
+                contexts[index].maxChannelCount = int(item, "maxChannelCount")
+                if let rate = double(item, "sampleRate") { contexts[index].sampleRate = rate }
             case "contextGone":
                 guard let id = ownID(item, "id") else { continue }
                 contexts.removeAll { $0.id == id }
@@ -442,20 +366,5 @@ final class DeveloperWebAudioModel: ObservableObject {
         }
         if contexts != self.contexts { self.contexts = contexts }
         if let selection, !contexts.contains(where: { $0.id == selection }) { self.selection = nil }
-    }
-
-    private struct Owner {
-        weak var value: DeveloperWebAudioModel?
-    }
-
-    private final class Relay: NSObject, WKScriptMessageHandler {
-        weak var content: WKUserContentController?
-        var owners: [UUID: Owner] = [:]
-        init(_ content: WKUserContentController) { self.content = content }
-        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            MainActor.assumeIsolated {
-                for owner in owners.values { owner.value?.receive(message) }
-            }
-        }
     }
 }

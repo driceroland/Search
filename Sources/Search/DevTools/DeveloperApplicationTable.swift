@@ -122,7 +122,7 @@ struct DeveloperApplicationTable<RowMenu: View>: View {
         let widths: [CGFloat] = widths
         let shown: [Row] = shown
         VStack(spacing: 0) {
-            if let problem { problemBar(problem) }
+            if let problem { DeveloperApplicationProblemBar(text: problem) { self.problem = nil } }
             grid(shown, widths: widths)
         }
         .focusable()
@@ -158,21 +158,6 @@ struct DeveloperApplicationTable<RowMenu: View>: View {
         }
     }
 
-    /// What went wrong saving, above the table until dismissed.
-    private func problemBar(_ problem: String) -> some View {
-        HStack {
-            Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
-            Text(problem).textSelection(.enabled).lineLimit(3)
-            Spacer(minLength: 0)
-            Button { self.problem = nil } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain).accessibilityLabel("Dismiss message")
-        }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, DeveloperToolsStyle.gutter)
-        .padding(.vertical, DeveloperToolsStyle.controlSpacing)
-        .overlay(alignment: .bottom) { Divider() }
-    }
-
     private func grid(_ shown: [Row], widths: [CGFloat]) -> some View {
         ScrollView(.horizontal) {
             ScrollViewReader { (scroller: ScrollViewProxy) in
@@ -200,10 +185,7 @@ struct DeveloperApplicationTable<RowMenu: View>: View {
         }
     }
 
-    private var selectedRow: Row? {
-        guard let selection else { return nil }
-        return rows.first { $0.id == selection }
-    }
+    private var selectedRow: Row? { rowFor(selection) }
 
     // MARK: Header
 
@@ -262,11 +244,7 @@ struct DeveloperApplicationTable<RowMenu: View>: View {
 
     private func rowView(_ row: Row, index: Int, widths: [CGFloat]) -> some View {
         let selected = selection == row.id
-        return HStack(spacing: 0) {
-            ForEach(Array(widths.enumerated()), id: \.offset) { column, width in
-                cell(row: row, column: column, width: width)
-            }
-        }
+        return cells(row, widths: widths)
         .background(selected ? DeveloperToolsStyle.selected
                     : index.isMultiple(of: 2) ? DeveloperToolsStyle.raised.opacity(0.25) : .clear)
         .contentShape(Rectangle())
@@ -323,13 +301,17 @@ struct DeveloperApplicationTable<RowMenu: View>: View {
         .overlay(alignment: .trailing) { Rectangle().fill(DeveloperToolsStyle.rule).frame(width: 1) }
     }
 
-    /// The blank row at the end, which a double-click turns into a new entry.
-    private func newRow(widths: [CGFloat]) -> some View {
+    private func cells(_ row: Row?, widths: [CGFloat]) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(widths.enumerated()), id: \.offset) { column, width in
-                cell(row: nil, column: column, width: width)
+                cell(row: row, column: column, width: width)
             }
         }
+    }
+
+    /// The blank row at the end, which a double-click turns into a new entry.
+    private func newRow(widths: [CGFloat]) -> some View {
+        cells(nil, widths: widths)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("New entry")
@@ -403,11 +385,7 @@ struct DeveloperApplicationTable<RowMenu: View>: View {
         if !loadingCell { drafts[current.column] = text }
         let changes = drafts.filter { originals[$0.key] != $0.value }
         let row = rowFor(current.row)
-        edit = nil
-        drafts = [:]
-        originals = [:]
-        loadingCell = false
-        tableFocused = true
+        cancel()
         if current.row != nil, row == nil { return }
         guard !changes.isEmpty, row != nil || changes.values.contains(where: { !$0.isEmpty }) else { return }
         save(row, changes)
@@ -428,5 +406,25 @@ struct DeveloperApplicationTable<RowMenu: View>: View {
             saving = false
             problem = issue
         }
+    }
+}
+
+/// What went wrong, above a table until dismissed.
+struct DeveloperApplicationProblemBar: View {
+    let text: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack {
+            Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
+            Text(text).textSelection(.enabled).lineLimit(3)
+            Spacer(minLength: 0)
+            Button(action: dismiss) { Image(systemName: "xmark") }
+                .buttonStyle(.plain).accessibilityLabel("Dismiss message")
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, DeveloperToolsStyle.gutter)
+        .padding(.vertical, DeveloperToolsStyle.controlSpacing)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }

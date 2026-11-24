@@ -238,14 +238,9 @@ enum DeveloperHeaderOverrides {
         }
         let base = grouped(original)
         let added = grouped(overrides)
-        var result: [Header] = []
-        for key in base.keys {
-            for value in added.values[key] ?? base.values[key] ?? [] { result.append(Header(name: "set-cookie", value: value)) }
-        }
-        for key in added.keys where base.values[key] == nil {
-            for value in added.values[key] ?? [] { result.append(Header(name: "set-cookie", value: value)) }
-        }
-        return result
+        let values = base.keys.flatMap { added.values[$0] ?? base.values[$0] ?? [] }
+            + added.keys.filter { base.values[$0] == nil }.flatMap { added.values[$0] ?? [] }
+        return values.map { Header(name: "set-cookie", value: $0) }
     }
 
     /// Headers as WebKit takes them: one value per name, Set-Cookie values
@@ -257,11 +252,7 @@ enum DeveloperHeaderOverrides {
             let key = header.name.lowercased()
             let name = names[key] ?? header.name
             names[key] = name
-            if let existing = result[name] {
-                result[name] = existing + (key == "set-cookie" ? "\n" : ", ") + header.value
-            } else {
-                result[name] = header.value
-            }
+            result[name] = result[name].map { $0 + (key == "set-cookie" ? "\n" : ", ") + header.value } ?? header.value
         }
         return result
     }

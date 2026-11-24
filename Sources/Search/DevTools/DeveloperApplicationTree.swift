@@ -52,8 +52,7 @@ struct DeveloperApplicationTree: Equatable {
             for child in node.children { if let found = find(child) { return found } }
             return nil
         }
-        if let frame, let node = find(frame), let url = URL(string: node.url) { return url }
-        return nil
+        return frame.flatMap(find).flatMap { URL(string: $0.url) }
     }
 }
 
@@ -166,12 +165,9 @@ struct DeveloperApplicationSidebar: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 title("Application")
-                row(key: "manifest", depth: 0, label: "Manifest", icon: DeveloperApplicationSection.manifest.icon,
-                    target: .init(section: .manifest))
-                row(key: "workers", depth: 0, label: "Service workers", icon: DeveloperApplicationSection.workers.icon,
-                    target: .init(section: .workers))
-                row(key: "storage", depth: 0, label: "Storage", icon: DeveloperApplicationSection.storage.icon,
-                    target: .init(section: .storage))
+                plain(.manifest)
+                plain(.workers)
+                plain(.storage)
                 title("Storage").padding(.top, DeveloperToolsStyle.controlSpacing)
                 originGroup(.local)
                 Group {
@@ -305,10 +301,7 @@ struct DeveloperApplicationSidebar: View {
                         .help(worker.name.isEmpty ? worker.url : worker.name + "\n" + worker.url)
                         .contextMenu {
                             Button("Reveal in Sources panel") { revealWorker(worker) }
-                            Button("Copy link address") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(worker.url, forType: .string)
-                            }
+                            Button("Copy link address") { DeveloperToolsSession.copyToPasteboard(worker.url) }
                             .disabled(worker.url.isEmpty)
                         }
                 }

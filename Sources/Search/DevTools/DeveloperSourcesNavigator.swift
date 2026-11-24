@@ -68,12 +68,25 @@ enum SourceTree {
     }
 
     private static func origins(_ resources: [SourceResource], under parent: String) -> [SourceTreeNode] {
-        let grouped = Dictionary(grouping: resources) { origin(of: $0.url) }
+        origins(resources, under: parent, origin: origin(of:), folders: folders(of:))
+    }
+
+    /// Authored files from source maps, grouped as Chrome groups them under
+    /// the top frame: by their own origin (webpack://app, a host), then
+    /// folders, ./ dropped.
+    static func authored(_ resources: [SourceResource]) -> [SourceTreeNode] {
+        origins(resources, under: "authored", origin: DeveloperSourceMapURL.origin(of:), folders: DeveloperSourceMapURL.folders(of:))
+    }
+
+    /// Origin nodes, each with its files in their folders.
+    private static func origins(_ resources: [SourceResource], under parent: String, origin: (String) -> String,
+                                folders: (String) -> [String]) -> [SourceTreeNode] {
+        let grouped = Dictionary(grouping: resources) { origin($0.url) }
         return grouped.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.map { name in
             let root = Folder()
             for resource in grouped[name]! {
                 var folder = root
-                for component in folders(of: resource.url) {
+                for component in folders(resource.url) {
                     if let next = folder.folders[component] { folder = next } else {
                         let next = Folder()
                         folder.folders[component] = next
@@ -83,29 +96,6 @@ enum SourceTree {
                 folder.files.append(resource)
             }
             let id = parent + "|o:" + name
-            return SourceTreeNode(id: id, name: name, kind: .origin, children: contents(root, id: id))
-        }
-    }
-
-    /// Authored files from source maps, grouped as Chrome groups them under
-    /// the top frame: by their own origin (webpack://app, a host), then
-    /// folders, ./ dropped.
-    static func authored(_ resources: [SourceResource]) -> [SourceTreeNode] {
-        let grouped = Dictionary(grouping: resources) { DeveloperSourceMapURL.origin(of: $0.url) }
-        return grouped.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.map { name in
-            let root = Folder()
-            for resource in grouped[name]! {
-                var folder = root
-                for component in DeveloperSourceMapURL.folders(of: resource.url) {
-                    if let next = folder.folders[component] { folder = next } else {
-                        let next = Folder()
-                        folder.folders[component] = next
-                        folder = next
-                    }
-                }
-                folder.files.append(resource)
-            }
-            let id = "authored|o:" + name
             return SourceTreeNode(id: id, name: name, kind: .origin, children: contents(root, id: id))
         }
     }
@@ -131,8 +121,37 @@ enum SourceTree {
         let groups = self.authored(authored)
         guard !groups.isEmpty else { return nodes }
         if nodes.isEmpty { return groups }
-        nodes[0].children = groups + nodes[0].children
+        // An authored file from the page's own host (src/app.js beside
+        // app.min.js) goes under that host's node, as in Chrome, not a
+        // second node of the same name.
+        var separate: [SourceTreeNode] = []
+        for group in groups {
+            if let index = nodes[0].children.firstIndex(where: { $0.kind == .origin && $0.name == group.name }) {
+                nodes[0].children[index].children = merged(nodes[0].children[index].children, group.children)
+            } else {
+                separate.append(group)
+            }
+        }
+        nodes[0].children = separate + nodes[0].children
         return nodes
+    }
+
+    /// Two folders' contents as one: same-named folders merged, folders
+    /// before files, each by name.
+    private static func merged(_ first: [SourceTreeNode], _ second: [SourceTreeNode]) -> [SourceTreeNode] {
+        var folders = first.filter { $0.kind == .folder }
+        var files = first.filter(\.isFile)
+        for node in second {
+            if node.kind == .folder, let index = folders.firstIndex(where: { $0.name == node.name }) {
+                folders[index].children = merged(folders[index].children, node.children)
+            } else if node.kind == .folder {
+                folders.append(node)
+            } else {
+                files.append(node)
+            }
+        }
+        let byName = { (a: SourceTreeNode, b: SourceTreeNode) in a.name.localizedStandardCompare(b.name) == .orderedAscending }
+        return folders.sorted(by: byName) + files.sorted(by: byName)
     }
 
     private static func folders(of url: String) -> [String] {
@@ -521,15 +540,7 @@ struct DeveloperSourcesNavigator: View {
             Image(systemName: icon(for: node))
                 .foregroundStyle(node.kind == .origin || node.kind == .frame ? Color.secondary : node.isFile ? Color.secondary : DeveloperToolsStyle.tint)
                 .frame(width: 15)
-                .overlay(alignment: .bottomTrailing) {
-                    // Chrome's green dot: served from a workspace folder.
-                    if mapped(node) {
-                        Circle().fill(Color.green).frame(width: 6, height: 6)
-                            .overlay(Circle().stroke(Color(nsColor: .textBackgroundColor), lineWidth: 1))
-                            .offset(x: 1, y: 1)
-                            .accessibilityLabel("Mapped to the workspace")
-                    }
-                }
+                .developerWorkspaceDot(mapped(node))
             Text(node.name).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 0)
         }
@@ -550,8 +561,8 @@ struct DeveloperSourcesNavigator: View {
         .contextMenu {
             if case let .file(resource) = node.kind {
                 Button("Open in new tab") { if let url = URL(string: resource.url) { _ = Browsers.acting.open(url, foreground: true) } }
-                Button("Copy link address") { copy(resource.url) }
-                Button("Copy file name") { copy(SourceTree.fileName(resource.url)) }
+                Button("Copy link address") { DeveloperToolsSession.copyToPasteboard(resource.url) }
+                Button("Copy file name") { DeveloperToolsSession.copyToPasteboard(SourceTree.fileName(resource.url)) }
                 if resource.type != DeveloperSourceMaps.authoredType, resource.type != DeveloperWorker.scriptType,
                    DeveloperLocalOverrides.relativePath(for: resource.url) != nil {
                     Divider()
@@ -576,11 +587,6 @@ struct DeveloperSourcesNavigator: View {
 
     private func allIDs(_ node: SourceTreeNode) -> Set<String> {
         node.isFile ? [] : node.children.reduce(into: [node.id]) { $0.formUnion(allIDs($1)) }
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private var contentScripts: some View {

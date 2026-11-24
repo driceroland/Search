@@ -42,8 +42,7 @@ enum DeveloperIssueKind: String, CaseIterable, Identifiable, Comparable {
 
     var icon: String {
         switch self {
-        case .pageError: "exclamationmark.bubble.fill"
-        case .breakingChange: "exclamationmark.bubble.fill"
+        case .pageError, .breakingChange: "exclamationmark.bubble.fill"
         case .improvement: "text.bubble.fill"
         }
     }
@@ -339,15 +338,7 @@ struct DeveloperAffectedResource: Hashable {
     enum Kind: String, CaseIterable {
         case directive, cookie, request, element, source
 
-        func count(_ count: Int) -> String {
-            switch self {
-            case .directive: count == 1 ? "1 directive" : "\(count) directives"
-            case .cookie: count == 1 ? "1 cookie" : "\(count) cookies"
-            case .request: count == 1 ? "1 request" : "\(count) requests"
-            case .element: count == 1 ? "1 element" : "\(count) elements"
-            case .source: count == 1 ? "1 source" : "\(count) sources"
-            }
-        }
+        func count(_ count: Int) -> String { count == 1 ? "1 \(rawValue)" : "\(count) \(rawValue)s" }
     }
 
     var kind: Kind
@@ -437,16 +428,9 @@ struct DeveloperIssueMessage: Equatable {
     var url: String?
     var line: Int?
     var column: Int?
+}
 
-    init(level: String, text: String, source: String? = nil, url: String? = nil, line: Int? = nil, column: Int? = nil) {
-        self.level = level
-        self.text = text
-        self.source = source
-        self.url = url
-        self.line = line
-        self.column = column
-    }
-
+extension DeveloperIssueMessage {
     init(_ line: DeveloperToolsSession.ConsoleLine) {
         self.init(level: line.level, text: line.text, source: line.details?.source, url: line.url, line: line.line,
                   column: line.details?.column)
@@ -494,17 +478,9 @@ struct DeveloperFormSnapshot: Equatable {
     var aria: [DeveloperAriaElement] = []
     /// The page's `crossOriginIsolated`; nil when the scan couldn't tell.
     var crossOriginIsolated: Bool?
+}
 
-    init(fields: [Field] = [], labels: [Label] = [], ids: Set<String> = [], quirks: Bool = false,
-         aria: [DeveloperAriaElement] = [], crossOriginIsolated: Bool? = nil) {
-        self.fields = fields
-        self.labels = labels
-        self.ids = ids
-        self.quirks = quirks
-        self.aria = aria
-        self.crossOriginIsolated = crossOriginIsolated
-    }
-
+extension DeveloperFormSnapshot {
     init(raw: [String: Any]) {
         func string(_ value: Any?) -> String { value as? String ?? "" }
         func int(_ value: Any?, _ fallback: Int) -> Int { (value as? NSNumber)?.intValue ?? fallback }
@@ -695,13 +671,9 @@ enum DeveloperIssueRules {
         guard let pageURL, pageURL.lowercased().hasPrefix("https:") else { return [] }
         return requests.compactMap { request in
             guard request.url.lowercased().hasPrefix("http:"), let host = URL(string: request.url)?.host()?.lowercased(),
-                  !isLoopback(host) else { return nil }
+                  !DeveloperLighthouseRules.isLocal(host) else { return nil }
             return mixedContentIssue(url: request.url, status: request.failed ? "Blocked" : "Warned", requestID: request.id)
         }
-    }
-
-    private static func isLoopback(_ host: String) -> Bool {
-        host == "localhost" || host.hasSuffix(".localhost") || host == "127.0.0.1" || host == "::1" || host == "[::1]"
     }
 
     // MARK: CORS
@@ -881,8 +853,10 @@ enum DeveloperIssueRules {
             DeveloperAffectedResource(kind: .element, label: label.isEmpty ? "element" : label, detail: detail,
                                       element: index >= 0 ? DeveloperIssueElement(scan: scan, index: index) : nil)
         }
-        func key(_ code: DeveloperIssueCode, _ index: Int, _ label: String) -> String {
-            ["form", code.rawValue, String(index), label].joined(separator: "|")
+        /// One element's issue.
+        func add(_ code: DeveloperIssueCode, _ index: Int, _ label: String, _ detail: String? = nil) {
+            issues.append(DeveloperIssue(code: code, key: ["form", code.rawValue, String(index), label].joined(separator: "|"),
+                                         resources: [element(index, label, detail)]))
         }
         // Duplicate ids within one form.
         var byID: [String: [DeveloperFormSnapshot.Field]] = [:]
@@ -899,46 +873,35 @@ enum DeveloperIssueRules {
         }
         for field in snapshot.fields {
             let labelable = !unlabelled.contains(field.type)
-            if labelable, field.id.isEmpty, field.name.isEmpty {
-                issues.append(DeveloperIssue(code: .formEmptyIdAndName, key: key(.formEmptyIdAndName, field.index, field.label),
-                                             resources: [element(field.index, field.label)]))
-            }
+            if labelable, field.id.isEmpty, field.name.isEmpty { add(.formEmptyIdAndName, field.index, field.label) }
             let ariaIDs = field.ariaLabelledBy.split(whereSeparator: \.isWhitespace).map(String.init)
             let missing = ariaIDs.filter { !snapshot.ids.contains($0) }
             if !missing.isEmpty {
-                issues.append(DeveloperIssue(code: .formAriaLabelledByNonExistingId,
-                                             key: key(.formAriaLabelledByNonExistingId, field.index, field.label),
-                                             resources: [element(field.index, field.label, "aria-labelledby=" + missing.joined(separator: " "))]))
+                add(.formAriaLabelledByNonExistingId, field.index, field.label, "aria-labelledby=" + missing.joined(separator: " "))
             }
             if labelable, field.labels == 0, field.ariaLabel.trimmingCharacters(in: .whitespaces).isEmpty,
                ariaIDs.allSatisfy({ !snapshot.ids.contains($0) }), field.title.isEmpty {
-                issues.append(DeveloperIssue(code: .formInputWithNoLabel, key: key(.formInputWithNoLabel, field.index, field.label),
-                                             resources: [element(field.index, field.label)]))
+                add(.formInputWithNoLabel, field.index, field.label)
             }
             guard !noAutocomplete.contains(field.type) else { continue }
             if let autocomplete = field.autocomplete {
                 if autocomplete.trimmingCharacters(in: .whitespaces).isEmpty {
-                    issues.append(DeveloperIssue(code: .formAutocompleteEmpty, key: key(.formAutocompleteEmpty, field.index, field.label),
-                                                 resources: [element(field.index, field.label, "autocomplete=\"\"")]))
+                    add(.formAutocompleteEmpty, field.index, field.label, "autocomplete=\"\"")
                 }
             } else if field.tag == "input" && (field.type == "password" || field.type == "email")
                         || autocompleteTokens.contains(field.id.lowercased()) || autocompleteTokens.contains(field.name.lowercased()) {
                 let hint = field.type == "password" ? "type=password" : field.type == "email" ? "type=email"
                     : autocompleteTokens.contains(field.id.lowercased()) ? "id=" + field.id : "name=" + field.name
-                issues.append(DeveloperIssue(code: .formAutocompleteMissing, key: key(.formAutocompleteMissing, field.index, field.label),
-                                             resources: [element(field.index, field.label, hint)]))
+                add(.formAutocompleteMissing, field.index, field.label, hint)
             }
         }
         let names = Set(snapshot.fields.map(\.name).filter { !$0.isEmpty })
         for label in snapshot.labels {
             if let forID = label.forID {
                 guard !snapshot.ids.contains(forID) else { continue }
-                let code: DeveloperIssueCode = names.contains(forID) ? .formLabelForName : .formLabelForNonExistingId
-                issues.append(DeveloperIssue(code: code, key: key(code, label.index, label.label),
-                                             resources: [element(label.index, label.label, "for=" + forID)]))
+                add(names.contains(forID) ? .formLabelForName : .formLabelForNonExistingId, label.index, label.label, "for=" + forID)
             } else if !label.hasField {
-                issues.append(DeveloperIssue(code: .formLabelHasNoField, key: key(.formLabelHasNoField, label.index, label.label),
-                                             resources: [element(label.index, label.label)]))
+                add(.formLabelHasNoField, label.index, label.label)
             }
         }
         if snapshot.quirks {
@@ -1083,5 +1046,40 @@ enum DeveloperIssueRules {
         var url = url.trimmingCharacters(in: CharacterSet(charactersIn: "'\"“”‘’ "))
         while let last = url.last, ".,;)".contains(last) { url.removeLast() }
         return url
+    }
+}
+
+/// An issue as Elements underlines it on an element's row: on the
+/// attribute it is about, or (nil) on the tag name.
+struct DeveloperIssueMark: Hashable {
+    var attribute: String?
+    var title: String
+    /// Its row in Issues (DeveloperIssueGroup.id).
+    var group: String
+    var kind: DeveloperIssueKind
+}
+
+extension DeveloperIssueRules {
+    /// The marks of each element the groups affect, in the pane's order.
+    static func marks(_ groups: [DeveloperIssueGroup]) -> [DeveloperIssueElement: [DeveloperIssueMark]] {
+        var marks: [DeveloperIssueElement: [DeveloperIssueMark]] = [:]
+        for group in groups {
+            for resource in group.resources where resource.kind == .element {
+                guard let element = resource.element else { continue }
+                let mark = DeveloperIssueMark(attribute: attribute(group.code, resource.detail), title: group.title,
+                                              group: group.id, kind: group.kind)
+                if marks[element]?.contains(mark) != true { marks[element, default: []].append(mark) }
+            }
+        }
+        return marks
+    }
+
+    /// The attribute an element's detail names ("for=x", "aria-foo",
+    /// "role=\"x\""); nil when it names none, or (a missing autocomplete)
+    /// the problem is an attribute the element lacks.
+    static func attribute(_ code: DeveloperIssueCode, _ detail: String?) -> String? {
+        guard code != .formAutocompleteMissing, let detail else { return nil }
+        let name = detail.prefix { $0 != "=" && $0 != " " }
+        return !name.isEmpty && name.allSatisfy({ $0.isLowercase || $0 == "-" }) ? String(name) : nil
     }
 }

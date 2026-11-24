@@ -23,6 +23,21 @@ enum DeveloperPerformanceMemory {
 }
 
 @MainActor
+/// Chrome's Performance capture settings that WebKit can honour: whether
+/// recordings take JavaScript samples (off cuts the profiler's overhead;
+/// the Main track then has no JS call frames). CPU throttling, advanced
+/// paint instrumentation and CSS selector stats have no WebKit
+/// counterpart and are left out; network throttling is Perch's own,
+/// shared with Network.
+enum DeveloperPerformanceCapture {
+    static let samplesKey = "developerPerformanceDisableJSSamples"
+
+    static var jsSamplesDisabled: Bool {
+        get { Store.settings.bool(forKey: samplesKey) }
+        set { Store.settings.set(newValue, forKey: samplesKey) }
+    }
+}
+
 enum DeveloperPerformanceScreenshots {
     static let key = "developerPerformanceScreenshots"
 

@@ -421,14 +421,10 @@ enum DeveloperJSONOutline {
 
         var expandable: Bool {
             switch content {
-            case .range:
-                return true
-            case .value(.object(let members)):
-                return !members.isEmpty
-            case .value(.array(let items)):
-                return !items.isEmpty
-            case .value:
-                return false
+            case .range: true
+            case .value(.object(let members)): !members.isEmpty
+            case .value(.array(let items)): !items.isEmpty
+            case .value: false
             }
         }
 
@@ -608,12 +604,12 @@ struct DeveloperJSONTree: View {
     @ViewBuilder
     private func menu(_ row: DeveloperJSONOutline.Row) -> some View {
         if let value = row.value {
-            Button("Copy value") { Self.copy(DeveloperJSONOutline.copyValue(value)) }
+            Button("Copy value") { DeveloperToolsSession.copyToPasteboard(DeveloperJSONOutline.copyValue(value)) }
             if !row.path.isEmpty {
-                Button("Copy property path") { Self.copy(DeveloperJSONOutline.propertyPath(row.path)) }
+                Button("Copy property path") { DeveloperToolsSession.copyToPasteboard(DeveloperJSONOutline.propertyPath(row.path)) }
             }
             if value.isContainer {
-                Button("Copy object") { Self.copy(value.pretty()) }
+                Button("Copy object") { DeveloperToolsSession.copyToPasteboard(value.pretty()) }
             }
         }
         if row.expandable {
@@ -673,11 +669,6 @@ struct DeveloperJSONTree: View {
             output += text
         }
         return output
-    }
-
-    static func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 

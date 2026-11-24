@@ -25,6 +25,16 @@ private struct DeveloperFieldSection: View {
             }
         }
     }
+
+    /// The selected row's fields, beneath a table.
+    func pane(maxHeight: CGFloat) -> some View {
+        ScrollView {
+            frame(maxWidth: .infinity, alignment: .leading).padding(DeveloperToolsStyle.gutter)
+        }
+        .frame(maxHeight: maxHeight)
+        .background(DeveloperToolsStyle.chrome)
+        .overlay(alignment: .top) { Divider() }
+    }
 }
 
 // MARK: Back/forward cache
@@ -111,7 +121,7 @@ struct DeveloperBackForwardCacheView: View {
             do {
                 outcome = try await DeveloperApplicationMore.testBackForwardCache(in: session, address: page)
             } catch {
-                problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                problem = error.localizedDescription
             }
         }
     }
@@ -168,14 +178,8 @@ struct DeveloperReportingView: View {
                 }
                 .frame(minHeight: 120)
                 if let id = selection, let report = reports.first(where: { $0.id == id }) {
-                    ScrollView {
-                        DeveloperFieldSection(title: "Body", rows: report.body.isEmpty ? [["Body", "—"]] : report.body)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(DeveloperToolsStyle.gutter)
-                    }
-                    .frame(maxHeight: 160)
-                    .background(DeveloperToolsStyle.chrome)
-                    .overlay(alignment: .top) { Divider() }
+                    DeveloperFieldSection(title: "Body", rows: report.body.isEmpty ? [["Body", "—"]] : report.body)
+                        .pane(maxHeight: 160)
                 }
             }
             if dropped > 0 {
@@ -306,15 +310,9 @@ struct DeveloperNotificationsView: View {
                 }
                 .frame(minHeight: 120)
                 if let id = selection, let event = recorder.events.first(where: { $0.id == id }) {
-                    ScrollView {
-                        DeveloperFieldSection(title: "Event metadata",
-                                              rows: [["Title", event.title.isEmpty ? "—" : event.title]] + event.details)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(DeveloperToolsStyle.gutter)
-                    }
-                    .frame(maxHeight: 180)
-                    .background(DeveloperToolsStyle.chrome)
-                    .overlay(alignment: .top) { Divider() }
+                    DeveloperFieldSection(title: "Event metadata",
+                                          rows: [["Title", event.title.isEmpty ? "—" : event.title]] + event.details)
+                        .pane(maxHeight: 180)
                 }
             }
         }
@@ -548,7 +546,7 @@ struct DeveloperExtensionStorageView: View {
             problem = nil
         } catch {
             areas = []
-            problem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            problem = error.localizedDescription
         }
     }
 
@@ -576,7 +574,7 @@ struct DeveloperExtensionStorageView: View {
             return nil
         } catch {
             serial += 1
-            return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            return error.localizedDescription
         }
     }
 
@@ -596,7 +594,7 @@ struct DeveloperExtensionStorageView: View {
         actionProblem = nil
         Task {
             do { try await work() } catch {
-                actionProblem = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                actionProblem = error.localizedDescription
             }
             selection = nil
             serial += 1

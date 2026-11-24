@@ -29,6 +29,32 @@ final class DeveloperStylesHintsLiveTests: XCTestCase {
         }
     }
 
+    /// Chrome lists an element's user agent rules under its own, marked
+    /// "user agent stylesheet": an h1's display, font-size and margins.
+    func testAnH1ShowsItsUserAgentRule() async throws {
+        try await withElements("""
+            <!doctype html><title>Styles hints fixture</title>
+            <style>h1 { color: red; }</style>
+            <h1 id="title">Title</h1>
+            """) { session in
+            let node = try await find("#title", in: session)
+            session.selectNode(node)
+            try await DeveloperTestSupport.wait("styles", in: "DeveloperStylesHintsLiveTests") {
+                session.matchedStyles.contains { $0.properties.contains { $0.name == "color" } }
+            }
+            try await Task.sleep(for: .milliseconds(300))
+            // WebKit's own sheet writes them as :heading(1) and :heading.
+            let size = try XCTUnwrap(session.matchedStyles.first { $0.origin == "user-agent" && $0.selector == ":heading(1)" },
+                                     "no user agent rule for h1")
+            XCTAssertTrue(size.properties.contains { $0.name == "font-size" })
+            let heading = try XCTUnwrap(session.matchedStyles.first { $0.origin == "user-agent" && $0.selector == ":heading" })
+            XCTAssertTrue(heading.properties.contains { $0.name == "display" })
+            // body's margin as its sheet writes it, as Chrome shows it.
+            let body = try XCTUnwrap(session.matchedStyles.first { $0.origin == "user-agent" && $0.selector == "body" })
+            XCTAssertTrue(body.properties.contains { $0.name == "margin" && $0.value == "8px" })
+        }
+    }
+
     func testARangeInputHasAUserAgentShadowRootWithTheSettingOn() async throws {
         let key = DeveloperElementsSettings.userAgentShadowDOMKey
         let before = UserDefaults.standard.object(forKey: key)

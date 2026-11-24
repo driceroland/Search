@@ -49,15 +49,15 @@ enum DeveloperSessionModels {
     /// The session closed: its models are let go, each told first.
     static func closed(_ session: DeveloperToolsSession) {
         let id = ObjectIdentifier(session)
-        let closing = entries.filter { $0.key.session == id }
-        guard !closing.isEmpty else { return }
-        for key in closing.keys { entries[key] = nil }
-        for entry in closing.values { (entry.model as? any DeveloperSessionModel)?.sessionClosed() }
+        release { $0.key.session == id }
     }
 
     /// Models whose session went away without closing (tests, mostly).
-    private static func pruneGoneSessions() {
-        let gone = entries.filter { $0.value.session == nil }
+    private static func pruneGoneSessions() { release { $0.value.session == nil } }
+
+    /// Lets go of the entries `matching`, telling each model.
+    private static func release(_ matching: ((key: Key, value: Entry)) -> Bool) {
+        let gone = entries.filter(matching)
         guard !gone.isEmpty else { return }
         for key in gone.keys { entries[key] = nil }
         for entry in gone.values { (entry.model as? any DeveloperSessionModel)?.sessionClosed() }

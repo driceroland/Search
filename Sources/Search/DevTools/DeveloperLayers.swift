@@ -11,24 +11,10 @@ import Foundation
 
 /// A rectangle as the protocol sends it, in page coordinates.
 struct DeveloperLayerRect: Equatable {
-    var x: Double
-    var y: Double
-    var width: Double
-    var height: Double
-
-    init(x: Double = 0, y: Double = 0, width: Double = 0, height: Double = 0) {
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
-    }
-
-    init?(raw: Any?) {
-        guard let raw = raw as? [String: Any] else { return nil }
-        let number = DeveloperLayerTree.number
-        self.init(x: number(raw["x"]) ?? 0, y: number(raw["y"]) ?? 0,
-                  width: max(0, number(raw["width"]) ?? 0), height: max(0, number(raw["height"]) ?? 0))
-    }
+    var x: Double = 0
+    var y: Double = 0
+    var width: Double = 0
+    var height: Double = 0
 
     var maxX: Double { x + width }
     var maxY: Double { y + height }
@@ -48,6 +34,15 @@ struct DeveloperLayerRect: Equatable {
 
     private static func integer(_ value: Double) -> String {
         value.isFinite ? String(Int(value.rounded())) : "0"
+    }
+}
+
+extension DeveloperLayerRect {
+    init?(raw: Any?) {
+        guard let raw = raw as? [String: Any] else { return nil }
+        let number = DeveloperLayerTree.number
+        self.init(x: number(raw["x"]) ?? 0, y: number(raw["y"]) ?? 0,
+                  width: max(0, number(raw["width"]) ?? 0), height: max(0, number(raw["height"]) ?? 0))
     }
 }
 
@@ -88,12 +83,7 @@ struct DeveloperLayer: Identifiable, Equatable {
 
     init?(raw: [String: Any], order: Int) {
         let number = DeveloperLayerTree.number
-        let layerID: String
-        switch raw["layerId"] {
-        case let text as String where !text.isEmpty: layerID = text
-        case let value as NSNumber: layerID = value.stringValue
-        default: return nil
-        }
+        guard let layerID = Self.identifier(raw["layerId"]) else { return nil }
         let bounds = DeveloperLayerRect(raw: raw["bounds"]) ?? .init()
         var composited = DeveloperLayerRect(raw: raw["compositedBounds"]) ?? DeveloperLayerRect(width: bounds.width, height: bounds.height)
         composited.x += bounds.x
@@ -105,12 +95,17 @@ struct DeveloperLayer: Identifiable, Equatable {
         isReflection = raw["isReflection"] as? Bool ?? false
         isGeneratedContent = raw["isGeneratedContent"] as? Bool ?? false
         isAnonymous = raw["isAnonymous"] as? Bool ?? false
-        switch raw["pseudoElementId"] {
-        case let text as String where !text.isEmpty: pseudoElementId = text
-        case let value as NSNumber: pseudoElementId = value.stringValue
-        default: break
-        }
+        pseudoElementId = Self.identifier(raw["pseudoElementId"])
         pseudoElement = (raw["pseudoElement"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// An id the protocol sends as a string or a number.
+    private static func identifier(_ value: Any?) -> String? {
+        switch value {
+        case let text as String where !text.isEmpty: text
+        case let value as NSNumber: value.stringValue
+        default: nil
+        }
     }
 
     /// The node's own layer, not one of the extra ones a node can have
@@ -342,18 +337,10 @@ enum DeveloperLayerReasons {
             // A capital after a small letter starts a word, as does the
             // last capital of an acronym followed by a small letter
             // (HTMLThing); digits start one after a letter (transform3D).
-            let startsWord: Bool
-            if let previous {
-                if character.isUppercase {
-                    startsWord = previous.isLowercase || (previous.isUppercase && (next?.isLowercase ?? false))
-                } else if character.isNumber {
-                    startsWord = previous.isLetter
-                } else {
-                    startsWord = false
-                }
-            } else {
-                startsWord = false
-            }
+            let startsWord = previous.map { previous in
+                character.isUppercase ? previous.isLowercase || (previous.isUppercase && (next?.isLowercase ?? false))
+                    : character.isNumber && previous.isLetter
+            } ?? false
             if startsWord {
                 words.append(current)
                 current = ""

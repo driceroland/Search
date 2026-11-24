@@ -30,8 +30,12 @@ struct DeveloperDrawerView: View {
         VStack(spacing: 0) {
             strip
             Divider()
+            // A tool wider than the drawer is cut off at its edge rather
+            // than widening the DevTools column (which pushed every panel
+            // off both sides).
             content(shell.drawerSelection)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
+                .clipped()
         }
         .background(DeveloperToolsStyle.surface)
     }
@@ -89,22 +93,9 @@ struct DeveloperDrawerView: View {
         }
     }
 
-    /// Chrome's ⋮ › More tools: every drawer tool, and the panels closed
-    /// from the main strip.
     private var moreTools: some View {
         Menu {
-            ForEach(DeveloperDrawerTool.offered) { tool in
-                Button { shell.showDrawer(.tool(tool)) } label: { Label(tool.title, systemImage: tool.icon) }
-            }
-            let closed = shell.panels.order.filter { shell.panels.closed.contains($0) }
-            if !closed.isEmpty {
-                Divider()
-                ForEach(closed) { panel in
-                    Button { shell.panels.closed.remove(panel); session.select(panel) } label: {
-                        Label(panel.rawValue, systemImage: panel.icon)
-                    }
-                }
-            }
+            DeveloperMoreToolsItems(session: session, shell: shell)
         } label: {
             Image(systemName: "ellipsis")
                 .rotationEffect(.degrees(90))
@@ -124,7 +115,8 @@ struct DeveloperDrawerView: View {
             // As in Chrome: with the Console panel itself in front, the
             // drawer doesn't show the same console a second time.
             if session.panel == .console {
-                placeholder("The Console is shown in the main panel.")
+                Text("The Console is shown in the main panel.").foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 DeveloperConsoleView(session: session)
             }
@@ -159,9 +151,27 @@ struct DeveloperDrawerView: View {
         case .panel(let shown): panel(shown)
         }
     }
+}
 
-    private func placeholder(_ text: String) -> some View {
-        Text(text).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+/// Chrome's ⋮ › More tools, in the main strip's menu and the drawer's:
+/// every drawer tool, and the panels closed from the main strip.
+struct DeveloperMoreToolsItems: View {
+    let session: DeveloperToolsSession
+    let shell: DeveloperToolsShell
+
+    var body: some View {
+        ForEach(DeveloperDrawerTool.offered) { tool in
+            Button { shell.showDrawer(.tool(tool)) } label: { Label(tool.title, systemImage: tool.icon) }
+        }
+        let closed = shell.panels.order.filter { shell.panels.closed.contains($0) }
+        if !closed.isEmpty {
+            Divider()
+            ForEach(closed) { panel in
+                Button { shell.panels.closed.remove(panel); session.select(panel) } label: {
+                    Label(panel.rawValue, systemImage: panel.icon)
+                }
+            }
+        }
     }
 }
 
@@ -226,6 +236,28 @@ struct DeveloperNetworkConditionsView: View {
                     }
                 }
                 .onAppear { draft = session.userAgentOverride ?? "" }
+                section("Accepted Content-Encodings") {
+                    Toggle("Use browser default", isOn: Binding(
+                        get: { tools.acceptedEncodings == nil },
+                        set: { tools.acceptedEncodings = $0 ? nil : Set(DeveloperNetworkTools.ContentEncoding.allCases) }))
+                        .toggleStyle(.developerCheckbox)
+                    if let accepted = tools.acceptedEncodings {
+                        HStack(spacing: DeveloperToolsStyle.gutter) {
+                            ForEach(DeveloperNetworkTools.ContentEncoding.allCases) { encoding in
+                                Toggle(encoding.rawValue, isOn: Binding(
+                                    get: { accepted.contains(encoding) },
+                                    set: { on in
+                                        var next = tools.acceptedEncodings ?? []
+                                        if on { next.insert(encoding) } else { next.remove(encoding) }
+                                        tools.acceptedEncodings = next
+                                    }))
+                                    .toggleStyle(.developerCheckbox)
+                            }
+                        }
+                        Text("Requests offer only these; the server picks among them.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
             .padding(DeveloperToolsStyle.gutter)
             .frame(maxWidth: .infinity, alignment: .leading)

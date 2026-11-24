@@ -30,3 +30,22 @@ extension View {
             .background(DeveloperToolsStyle.chrome)
     }
 }
+
+/// Runs `tick` every `interval` until cancelled or until `tick` answers
+/// false (its model is gone): the drawer tools' polling of the frontend.
+@MainActor
+func developerPoll(every interval: Duration, _ tick: @escaping @MainActor () async -> Bool) -> Task<Void, Never> {
+    Task {
+        while !Task.isCancelled {
+            guard await tick() else { return }
+            try? await Task.sleep(for: interval)
+        }
+    }
+}
+
+/// A panel's error that is only what to say (Animations, Layers, Recorder).
+struct DeveloperPanelError: LocalizedError, Equatable {
+    let message: String
+    init(_ message: String) { self.message = message }
+    var errorDescription: String? { message }
+}

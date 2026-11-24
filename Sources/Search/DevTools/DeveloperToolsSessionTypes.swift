@@ -245,6 +245,9 @@ extension DeveloperToolsSession {
         var failed: Bool { failure != nil || (status ?? 0) >= 400 }
         var failure: String?
         var cached = false
+        /// Where the request comes in the order requests started, from 1:
+        /// the Request # column.
+        var number: Int?
         /// The connection and certificate WebKit reported with the response,
         /// for the Security panel (DeveloperSecurity.swift).
         var security: DeveloperSecurity.ResponseSecurity?
@@ -252,16 +255,14 @@ extension DeveloperToolsSession {
             guard let started, let ended else { return nil }
             return max(0, (ended - started) * 1_000)
         }
-        var name: String {
-            guard let address = URL(string: url) else { return url }
-            return address.path.isEmpty || address.path == "/" ? address.host() ?? url : address.lastPathComponent
-        }
+        var name: String { Self.shortName(url) ?? url }
 
-        var initiator: String {
-            if let initiatorURL, let address = URL(string: initiatorURL) {
-                return address.path.isEmpty || address.path == "/" ? address.host() ?? initiatorURL : address.lastPathComponent
-            }
-            return initiatorType ?? "—"
+        var initiator: String { initiatorURL.flatMap(Self.shortName) ?? initiatorType ?? "—" }
+
+        /// An address's last path component, or its host at the root.
+        private static func shortName(_ url: String) -> String? {
+            guard let address = URL(string: url) else { return nil }
+            return address.path.isEmpty || address.path == "/" ? address.host() ?? url : address.lastPathComponent
         }
 
         mutating func applyResponse(_ response: [String: Any]?, received at: Double?) {
@@ -311,7 +312,7 @@ extension DeveloperToolsSession {
     struct Timing: Identifiable, Equatable {
         let id = UUID()
         let type: String
-        let start: Double
+        var start: Double
         let end: Double
         var depth = 0
         var data: [String: String] = [:]
@@ -359,6 +360,8 @@ extension DeveloperToolsSession {
             }
         }
 
+        /// The round trip time Chromium's preset stands for, before its
+        /// latency multiplier: what field data is matched against.
         var detail: String {
             switch self {
             case .unrestricted: return "No throttling"

@@ -10,13 +10,7 @@ enum DeveloperBinaryMode: String, CaseIterable, Identifiable {
     var id: Self { self }
 
     /// The format name in "Copy as …".
-    var copyName: String {
-        switch self {
-        case .base64: return "Base64"
-        case .hex: return "Hex"
-        case .utf8: return "UTF-8"
-        }
-    }
+    var copyName: String { self == .hex ? "Hex" : rawValue }
 }
 
 /// Formats a binary response body as Base64, a hex dump or UTF-8 text.

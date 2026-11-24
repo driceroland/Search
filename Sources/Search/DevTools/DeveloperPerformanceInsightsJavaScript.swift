@@ -7,6 +7,10 @@ struct DeveloperPerformanceScript: Equatable {
     let url: String
     var text: String
     var map: DeveloperSourceMap?
+    /// The map's JSON as read, and where from (nil for a data: URL), for a
+    /// trace saved with its scripts (DeveloperPerformanceTrace).
+    var mapText: String? = nil
+    var mapURL: String? = nil
 }
 
 /// Insights over the page's scripts' code, as Chrome DevTools' Duplicated
@@ -14,7 +18,8 @@ struct DeveloperPerformanceScript: Equatable {
 /// ScriptDuplication and Lighthouse's legacy-javascript). Unlike the other
 /// insights they need more than the recording: the scripts' text and source
 /// maps, read from the page once the recording stops
-/// (`scripts(_:profile:)`), so a recording opened from a file has neither.
+/// (`scripts(_:profile:)`), or from a file saved with "Include script
+/// content and source maps".
 extension DeveloperPerformanceInsights {
     typealias Script = DeveloperPerformanceScript
 
@@ -36,7 +41,10 @@ extension DeveloperPerformanceInsights {
         var seen = Set<String>()
         let scripts = contents.filter {
             $0.kind == .script && requested.contains(stripped($0.url)) && seen.insert(stripped($0.url)).inserted
-        }.map { Script(url: $0.url, text: $0.text, map: session.sourceMaps.scriptMap(for: $0.url)) }
+        }.map { content -> Script in
+            let entry = session.sourceMaps.scriptEntry(for: content.url)
+            return Script(url: content.url, text: content.text, map: entry?.map, mapText: entry?.text, mapURL: entry?.mapURL)
+        }
         return scripts.isEmpty ? nil : scripts
     }
 
@@ -99,17 +107,7 @@ extension DeveloperPerformanceInsights {
     /// the line's end and its newline. Nil when the map points outside the
     /// text: it isn't this script's.
     static func generatedSizes(_ map: DeveloperSourceMap, text: String) -> [Int: Int]? {
-        var lines: [Int] = []
-        var length = 0
-        for unit in text.utf16 {
-            if unit == 10 {
-                lines.append(length)
-                length = 0
-            } else {
-                length += 1
-            }
-        }
-        lines.append(length)
+        let lines = text.utf16.split(separator: 10, omittingEmptySubsequences: false).map(\.count)
         var files: [Int: Int] = [:]
         let mappings = map.mappings
         for (index, mapping) in mappings.enumerated() {
@@ -266,9 +264,7 @@ extension DeveloperPerformanceInsights {
                            + "bytes consumed by network activity.",
                        headline: duplication.isEmpty ? "No duplicated JavaScript found"
                            : "Est savings \(DeveloperMetricFormat.bytes(Double(wasted)))",
-                       rows: Array(rows), ranges: involved.prefix(200).compactMap { url in
-                           request(for: url, in: profile).map { $0.start...$0.end }
-                       })
+                       rows: Array(rows), ranges: requestRanges(involved, in: profile))
     }
 
     // MARK: Legacy JavaScript
@@ -314,8 +310,6 @@ extension DeveloperPerformanceInsights {
                            + "older browsers.",
                        headline: findings.isEmpty ? "No legacy JavaScript found"
                            : "Est savings \(DeveloperMetricFormat.bytes(Double(wasted)))",
-                       rows: Array(rows), ranges: findings.prefix(200).compactMap { finding in
-                           request(for: finding.url, in: profile).map { $0.start...$0.end }
-                       })
+                       rows: Array(rows), ranges: requestRanges(findings.map(\.url), in: profile))
     }
 }

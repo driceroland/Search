@@ -93,41 +93,60 @@ struct DeveloperLiveMetrics: Equatable {
     var inpEvent: String?
     var inpTarget: String?
     var interactions = 0
+    /// The live view's Interactions log, as Chrome's: the latest, each at
+    /// its longest event, oldest first.
+    var interactionLog: [Interaction] = []
+    /// And its Layout shifts log.
+    var shiftLog: [Shift] = []
+
+    struct Interaction: Equatable, Hashable {
+        var name: String
+        var target: String?
+        var duration: Double
+        var time: Double
+    }
+
+    struct Shift: Equatable, Hashable {
+        var time: Double
+        var value: Double
+        var elements: [String]
+    }
 
     init() {}
 
     init?(raw: Any?) {
         guard let raw = raw as? [String: Any] else { return nil }
-        func number(_ value: Any?) -> Double? {
-            guard let value = (value as? NSNumber)?.doubleValue, value.isFinite, value >= 0 else { return nil }
-            return value
-        }
-        url = raw["url"] as? String
-        lcpSupported = raw["lcpSupported"] as? Bool ?? false
-        lcp = number(raw["lcp"])
-        lcpElement = raw["lcpElement"] as? String
-        clsEstimated = raw["clsEstimated"] as? Bool ?? false
-        cls = number(raw["cls"])
-        inpSupported = raw["inpSupported"] as? Bool ?? false
-        if let inp = raw["inp"] as? [String: Any] {
-            self.inp = number(inp["value"])
-            inpEvent = inp["name"] as? String
-            inpTarget = inp["target"] as? String
+        func number(_ value: Double?) -> Double? { value.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } }
+        url = raw.string("url")
+        lcpSupported = raw.flag("lcpSupported")
+        lcp = number(raw.double("lcp"))
+        lcpElement = raw.string("lcpElement")
+        clsEstimated = raw.flag("clsEstimated")
+        cls = number(raw.double("cls"))
+        inpSupported = raw.flag("inpSupported")
+        if let inp = raw.object("inp") {
+            self.inp = number(inp.double("value"))
+            inpEvent = inp.string("name")
+            inpTarget = inp.string("target")
         }
         interactions = (raw["interactions"] as? NSNumber)?.intValue ?? 0
+        interactionLog = (raw["interactionLog"] as? [[String: Any]] ?? []).compactMap { item in
+            guard let duration = number(item.double("duration")) else { return nil }
+            return Interaction(name: item.string("name") ?? "", target: item.string("target"), duration: duration,
+                               time: item.double("time") ?? 0)
+        }
+        shiftLog = (raw["shiftLog"] as? [[String: Any]] ?? []).compactMap { item in
+            guard let value = number(item.double("value")) else { return nil }
+            return Shift(time: item.double("time") ?? 0, value: value, elements: item["elements"] as? [String] ?? [])
+        }
     }
 
     func reading(_ vital: DeveloperWebVital) -> Reading {
         switch vital {
-        case .lcp:
-            guard lcpSupported else { return Reading.unavailable }
-            return lcp.map { Reading.value($0) } ?? Reading.waiting
+        case .lcp: lcpSupported ? lcp.map(Reading.value) ?? .waiting : .unavailable
         // Measured from layout-shift entries, or estimated without them.
-        case .cls:
-            return Reading.value(cls ?? 0)
-        case .inp:
-            guard inpSupported else { return Reading.unavailable }
-            return inp.map { Reading.value($0) } ?? Reading.waiting
+        case .cls: .value(cls ?? 0)
+        case .inp: inpSupported ? inp.map(Reading.value) ?? .waiting : .unavailable
         }
     }
 }
@@ -145,7 +164,6 @@ final class DeveloperLiveMetricsModel: ObservableObject {
     static let script = DeveloperLayoutShiftEstimator.compose(DevToolsResources.script("DeveloperPerformance-metrics.js"))
     static let interval: Duration = .seconds(1)
     private static let api = "window[Symbol.for('perch.performance.metrics')]"
-    private static let objectGroup = "perch-performance-metrics"
 
     private weak var session: DeveloperToolsSession?
     private weak var observedWeb: WKWebView?
@@ -224,15 +242,7 @@ final class DeveloperLiveMetricsModel: ObservableObject {
         loading = nil
         if let script = userScript {
             ArmedRiders.remove(script)
-            if let web = observedWeb {
-                let controller = web.configuration.userContentController
-                if controller.userScripts.contains(where: { $0 === script }) {
-                    // WebKit takes user scripts out all at once; the tab's go back.
-                    let others = controller.userScripts.filter { $0 !== script }
-                    controller.removeAllUserScripts()
-                    others.forEach(controller.addUserScript)
-                }
-            }
+            observedWeb?.configuration.userContentController.developerRemove(script)
         }
         userScript = nil
         observedWeb = nil
@@ -256,6 +266,14 @@ final class DeveloperLiveMetricsModel: ObservableObject {
     func stopPolling() {
         poll?.cancel()
         poll = nil
+    }
+
+    /// The logs' Clear: they start again from now; the metrics stay.
+    func clearLogs() {
+        guard let web = session?.web else { return }
+        metrics?.interactionLog = []
+        metrics?.shiftLog = []
+        Task { _ = await Self.call(web, "api.clearLogs()") }
     }
 
     private func tick() async {
@@ -444,29 +462,47 @@ final class DeveloperLiveMetricsModel: ObservableObject {
 
     /// The LCP element in Elements.
     func revealLCP() {
-        reveal("\(Self.api)?.lcpNode() ?? null", missing: "The LCP element is no longer in the page.")
+        reveal("api.lcpNode()", missing: "The LCP element is no longer in the page.")
     }
 
     /// One of a recorded layout shift's moved elements in Elements.
     func revealShiftNode(index: Int, node: Int) {
-        reveal("\(Self.api)?.shiftNode(\(index), \(node)) ?? null",
+        reveal("api.shiftNode(\(index), \(node))",
                missing: "This node is no longer in the page, or the recording came from another page.")
     }
 
     /// Shows the element in the Elements panel, once Elements has read the
-    /// document afresh (as the Media tool's reveal does).
-    private func reveal(_ expression: String, missing: String) {
-        guard let session else { return }
+    /// document afresh (as the Media tool's reveal does). The element is
+    /// found first, in the page's world where the metrics script keeps it,
+    /// as its place in the tree: leaving Performance takes the script out,
+    /// and the inspector's own evaluations don't run in that world.
+    private func reveal(_ call: String, missing: String) {
+        guard let session, let web = session.web else { return }
         session.hideHighlight()
-        let switching = session.panel != .elements
-        let before = session.root
-        session.select(.elements)
         Task {
-            for _ in 0..<40 where switching {
-                guard session.root == before || session.root == nil else { break }
+            // A copy of the script just put back sees the page's buffered
+            // entries a moment later, so the element can take a beat to come.
+            var path: String?
+            for attempt in 0..<20 {
+                path = await Self.call(web, "(() => { const element = \(call); \(Self.pathOf) })()") as? String
+                if path != nil || attempt == 19 { break }
                 try? await Task.sleep(for: .milliseconds(50))
             }
-            guard let node = await Self.node(session, expression) else {
+            let switching = session.panel != .elements
+            let before = session.root
+            session.select(.elements)
+            guard let path else {
+                session.message = missing
+                return
+            }
+            for _ in 0..<60 {
+                if let root = session.root, !switching || root != before { break }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            guard let root = session.root,
+                  let found = try? await session.command("DOM.querySelector", ["nodeId": root, "selector": path],
+                                                         targetID: session.domTargetID),
+                  let node = (found["nodeId"] as? NSNumber)?.intValue, node > 0 else {
                 session.message = missing
                 return
             }
@@ -477,20 +513,17 @@ final class DeveloperLiveMetricsModel: ObservableObject {
         }
     }
 
-    /// The element `expression` gives, evaluated in the page, as an
-    /// inspector node.
-    static func node(_ session: DeveloperToolsSession, _ expression: String) async -> Int? {
-        let target = session.runtimeTargetID
-        guard let reply = try? await session.command("Runtime.evaluate", [
-            "expression": expression, "objectGroup": objectGroup,
-            "doNotPauseOnExceptionsAndMuteConsole": true, "includeCommandLineAPI": false,
-        ], targetID: target), reply["wasThrown"] as? Bool != true,
-            let object = (reply["result"] as? [String: Any])?["objectId"] as? String else { return nil }
-        let node = try? await session.command("DOM.requestNode", ["objectId": object], targetID: session.domTargetID)
-        _ = try? await session.command("Runtime.releaseObject", ["objectId": object], targetID: target)
-        guard let id = (node?["nodeId"] as? NSNumber)?.intValue, id > 0 else { return nil }
-        return id
-    }
+    /// Script body: `element`'s place in the main document as a selector
+    /// (`:root > *:nth-child(2) > *:nth-child(1)`), or null.
+    static let pathOf = """
+        if (!element || element.nodeType !== 1 || !element.isConnected || element.ownerDocument !== document) return null;
+        const steps = [];
+        for (let node = element; node !== document.documentElement; node = node.parentElement) {
+            if (!node || !node.parentElement) return null;
+            steps.unshift("*:nth-child(" + (Array.prototype.indexOf.call(node.parentElement.children, node) + 1) + ")");
+        }
+        return [":root"].concat(steps).join(" > ");
+        """
 }
 
 /// Chrome's local metrics on the Performance panel's landing view: LCP,
@@ -510,6 +543,7 @@ struct DeveloperLiveMetricsView: View {
                 HStack(alignment: .top, spacing: 10) { cards }
                 VStack(alignment: .leading, spacing: 10) { cards }
             }
+            DeveloperLiveLogs(model: model)
         }
         .onAppear { model.startPolling() }
         .onDisappear { model.stopPolling() }
@@ -576,5 +610,81 @@ struct DeveloperLiveMetricsView: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
         }
+    }
+}
+
+/// Under the live metrics, as Chrome's: the page's interactions (event,
+/// element, duration, coloured by INP's thresholds) and layout shifts
+/// (score and the elements that moved), latest first, with Clear.
+struct DeveloperLiveLogs: View {
+    @ObservedObject var model: DeveloperLiveMetricsModel
+    @State private var tab = Tab.interactions
+
+    enum Tab: String, CaseIterable { case interactions = "Interactions", shifts = "Layout shifts" }
+
+    var body: some View {
+        let metrics = model.metrics ?? DeveloperLiveMetrics()
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                ForEach(Tab.allCases, id: \.self) { item in
+                    Button(item.rawValue) { tab = item }
+                        .buttonStyle(.plain)
+                        .fontWeight(tab == item ? .semibold : .regular)
+                        .foregroundStyle(tab == item ? Palette.ink : .secondary)
+                }
+                Spacer(minLength: 0)
+                DeveloperPanelIcon(symbol: "nosign", title: "Clear the current log", action: model.clearLogs)
+            }
+            .font(.system(size: 11))
+            .padding(.vertical, 4)
+            Divider()
+            switch tab {
+            case .interactions:
+                if metrics.interactionLog.isEmpty {
+                    empty("Interact with the page to measure interactions.")
+                }
+                ForEach(Array(metrics.interactionLog.reversed().enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 8) {
+                        Text(item.name).frame(width: 90, alignment: .leading)
+                        Text(item.target ?? "").font(DeveloperToolsStyle.code).foregroundStyle(DeveloperToolsStyle.tint)
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 4)
+                        Text(Self.milliseconds(item.duration)).monospacedDigit()
+                            .foregroundStyle(Self.inpColor(item.duration))
+                    }
+                    .frame(height: DeveloperToolsStyle.rowHeight)
+                }
+            case .shifts:
+                if metrics.shiftLog.isEmpty {
+                    empty("Layout shifts are logged as the page's elements move.")
+                }
+                ForEach(Array(metrics.shiftLog.reversed().enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 8) {
+                        Text(String(format: "%.4f", item.value)).monospacedDigit().frame(width: 60, alignment: .leading)
+                        Text(item.elements.joined(separator: ", ")).font(DeveloperToolsStyle.code)
+                            .foregroundStyle(DeveloperToolsStyle.tint).lineLimit(1).truncationMode(.tail)
+                        Spacer(minLength: 4)
+                        Text(Self.milliseconds(item.time)).monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    .frame(height: DeveloperToolsStyle.rowHeight)
+                }
+            }
+        }
+        .font(.system(size: 11))
+        .frame(maxWidth: 720, alignment: .leading)
+        .accessibilityIdentifier("developer-performance-live-logs")
+    }
+
+    private func empty(_ text: String) -> some View {
+        Text(text).foregroundStyle(.secondary).padding(.vertical, 6)
+    }
+
+    static func milliseconds(_ value: Double) -> String {
+        value >= 1000 ? String(format: "%.2f s", value / 1000) : "\(Int(value.rounded())) ms"
+    }
+
+    /// INP's thresholds: good to 200 ms, poor past 500 ms.
+    static func inpColor(_ duration: Double) -> Color {
+        duration <= 200 ? .green : duration <= 500 ? .orange : .red
     }
 }

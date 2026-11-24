@@ -595,10 +595,7 @@ struct DeveloperOverridesNavigator: View {
             Button("Reveal in Finder") {
                 if let url = overrides.fileURL(file) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             }
-            Button("Copy path") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(overrides.fileURL(file)?.path ?? file.path, forType: .string)
-            }
+            Button("Copy path") { DeveloperToolsSession.copyToPasteboard(overrides.fileURL(file)?.path ?? file.path) }
             Divider()
             Button("Delete") { overrides.delete(file) }
         }

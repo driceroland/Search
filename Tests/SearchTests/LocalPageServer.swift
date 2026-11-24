@@ -13,12 +13,15 @@ final class LocalPageServer {
         var slowly = false
         /// More header lines, each "Name: value", as the response sends them.
         var headers: [String] = []
+        /// Bytes to send in place of `body`, for binary files.
+        var bytes: Data?
     }
 
     private let socket: Int32
     private let source: DispatchSourceRead
     private let lock = NSLock()
     private var asked: [String] = []
+    private var heads: [String: String] = [:]
     private var sentBodies: [String: Int] = [:]
     private var stopped = false
     private let pages: [String: Page]
@@ -71,6 +74,15 @@ final class LocalPageServer {
 
     func url(_ path: String) -> URL {
         URL(string: "http://127.0.0.1:\(port)\(path)")!
+    }
+
+    /// The value of request header `name` the last time `path` was asked for.
+    func header(_ name: String, of path: String) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return heads[path]?.components(separatedBy: "\r\n").dropFirst().first {
+            $0.lowercased().hasPrefix(name.lowercased() + ":")
+        }.map { String($0.dropFirst(name.count + 1)).trimmingCharacters(in: .whitespaces) }
     }
 
     /// Every path asked for, in order.
@@ -126,11 +138,12 @@ final class LocalPageServer {
         let path = URLComponents(string: "http://fixture\(target)")?.path ?? String(target)
         lock.lock()
         asked.append(path)
+        heads[path] = header
         lock.unlock()
 
         let page = pages[path] ?? Page(status: "404 Not Found", type: "text/html",
                                        body: "<!doctype html><title>Not found</title><p>Nothing here</p>")
-        let body = Data(page.body.utf8)
+        let body = page.bytes ?? Data(page.body.utf8)
         let head = "HTTP/1.1 \(page.status)\r\n"
             + "Content-Type: \(page.type)\r\n"
             + (page.withoutLength ? "" : "Content-Length: \(body.count)\r\n")

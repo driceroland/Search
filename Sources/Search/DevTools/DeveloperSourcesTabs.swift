@@ -12,15 +12,8 @@ import WebKit
 /// so switching panels and back finds the same tabs.
 @MainActor
 final class DeveloperSourceTabs: ObservableObject {
-    private static var stores: [ObjectIdentifier: DeveloperSourceTabs] = [:]
-
     static func of(_ session: DeveloperToolsSession) -> DeveloperSourceTabs {
-        let key = ObjectIdentifier(session)
-        if let store = stores[key], store.session === session { return store }
-        stores = stores.filter { $0.value.session != nil }
-        let store = DeveloperSourceTabs(session: session)
-        stores[key] = store
-        return store
+        DeveloperSessionModels.model(for: session, make: DeveloperSourceTabs.init)
     }
 
     private(set) weak var session: DeveloperToolsSession?
@@ -212,9 +205,38 @@ struct DeveloperSourceEditor<Placeholder: View>: View {
             DeveloperSourcePane(session: session, document: document)
                 .id(ObjectIdentifier(document))
         } else {
-            placeholder(session.sourceResource == nil ? "Open a file from the page" : "Loading source")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Group {
+                if session.sourceResource == nil { Self.shortcuts } else { placeholder("Loading source") }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            // A folder dropped here joins the page's workspace, as in Chrome.
+            .dropDestination(for: URL.self) { urls, _ in
+                let page = session.address?.absoluteString
+                guard let origin = page.flatMap(DeveloperWorkspace.origin(of:)) else {
+                    session.message = "Only http and https pages can have a workspace."
+                    return false
+                }
+                let folders = urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+                folders.forEach { workspace.add($0, origin: origin) }
+                return !folders.isEmpty
+            }
         }
+    }
+
+    /// As Chrome's empty editor: the ways to open something.
+    static var shortcuts: some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+            ForEach([("Open file", "⌘ P"), ("Run command", "⇧ ⌘ P")], id: \.0) { name, keys in
+                GridRow {
+                    Text(name).gridColumnAlignment(.trailing)
+                    Text(keys).font(DeveloperToolsStyle.code)
+                }
+            }
+            Text("Drop in a folder to add to workspace").padding(.top, 6).gridCellColumns(2)
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
     }
 
     private func workspaceContent(_ resource: SourceResource) -> String? {

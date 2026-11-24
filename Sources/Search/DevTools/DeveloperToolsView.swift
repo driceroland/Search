@@ -16,6 +16,7 @@ struct DeveloperToolsDock<Page: View>: View {
     @State private var onDivider = false
     /// Device mode and its settings, kept across DevTools sessions and launches.
     @ObservedObject private var deviceMode = DeveloperDeviceMode.shared
+    @State private var touchLink = DeveloperTouchLink()
 
     private var position: DeveloperDockPosition { tools.dockPosition }
 
@@ -37,6 +38,10 @@ struct DeveloperToolsDock<Page: View>: View {
                 }
                     .overlay { if let session { DeveloperPausedOverlay(debugger: session.debugger) } }
                     .offset(x: pageFrame.minX, y: pageFrame.minY)
+                    .onChange(of: DeveloperTouchLink.Key(session: session.map(ObjectIdentifier.init),
+                                                         on: responsive && deviceMode.settings.touch), initial: true) { _, key in
+                        touchLink.update(session, on: key.on)
+                    }
                 if let session {
                     // One container for docked and undocked alike, so moving
                     // between them doesn't read as DevTools going away.
@@ -191,14 +196,10 @@ struct DeveloperDockLayout {
             page = CGRect(x: extent + gap, y: 0, width: stage, height: height)
             divider = CGRect(x: extent, y: 0, width: gap, height: height)
             inspector = CGRect(x: 0, y: 0, width: extent, height: height)
-        case .right:
+        case .right, .window: // .window returned above
             page = CGRect(x: 0, y: 0, width: stage, height: height)
             divider = CGRect(x: stage, y: 0, width: gap, height: height)
             inspector = CGRect(x: stage + gap, y: 0, width: extent, height: height)
-        case .window:
-            page = CGRect(origin: .zero, size: room)
-            divider = nil
-            inspector = nil
         }
     }
 }
@@ -364,10 +365,7 @@ private struct DeveloperToolsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             issueCounters
             DeveloperIssuesBadge(session: session)
-            icon("gearshape", "Settings (F1)") {
-                shell.settingsSection = .preferences
-                shell.settingsShown = true
-            }
+            icon("gearshape", "Settings (F1)") { shell.showSettings(.preferences) }
             customizeMenu
             icon("xmark", "Close Developer Tools") { tools.close() }
         }
@@ -377,7 +375,7 @@ private struct DeveloperToolsView: View {
     }
 
     /// Chrome's ⋮ "Customize and control DevTools": dock side, the drawer,
-    /// More tools, Settings and Shortcuts.
+    /// Search, Focus page, More tools, Settings, Shortcuts and Help.
     private var customizeMenu: some View {
         Menu {
             Picker("Dock side", selection: $tools.dockPosition) {
@@ -389,23 +387,24 @@ private struct DeveloperToolsView: View {
             Button("Run command  ⇧⌘P") { shell.showCommandMenu(">") }
             Button("Open file  ⌘P") { context.perform(.commandMenu("")) }
             Button(shell.drawerOpen ? "Hide console drawer  Esc" : "Show console drawer  Esc") { shell.toggleDrawer() }
-            Menu("More tools") {
-                ForEach(DeveloperDrawerTool.offered) { tool in
-                    Button { shell.showDrawer(.tool(tool)) } label: { Label(tool.title, systemImage: tool.icon) }
-                }
-                let closed = shell.panels.order.filter { shell.panels.closed.contains($0) }
-                if !closed.isEmpty {
-                    Divider()
-                    ForEach(closed) { panel in
-                        Button { shell.panels.closed.remove(panel); session.select(panel) } label: {
-                            Label(panel.rawValue, systemImage: panel.icon)
-                        }
+            Button("Search  ⌥⌘F") { shell.showDrawer(.tool(.search)) }
+            // As Chrome's: the page takes the keyboard, DevTools staying open.
+            Button("Focus page") {
+                if let web = session.web { web.window?.makeKeyAndOrderFront(nil); web.window?.makeFirstResponder(web) }
+            }
+            .disabled(session.web == nil)
+            Menu("More tools") { DeveloperMoreToolsItems(session: session, shell: shell) }
+            Divider()
+            Button("Settings  F1") { shell.showSettings(.preferences) }
+            Button("Shortcuts") { shell.showSettings(.shortcuts) }
+            Menu("Help") {
+                // Search's DevTools follow Chrome's, so its documentation applies.
+                Button("Documentation") {
+                    if let url = URL(string: "https://developer.chrome.com/docs/devtools") {
+                        _ = Browsers.acting.open(url, foreground: true)
                     }
                 }
             }
-            Divider()
-            Button("Settings  F1") { shell.settingsSection = .preferences; shell.settingsShown = true }
-            Button("Shortcuts") { shell.settingsSection = .shortcuts; shell.settingsShown = true }
         } label: {
             Image(systemName: "ellipsis")
                 .rotationEffect(.degrees(90))
@@ -466,7 +465,7 @@ private struct DeveloperToolsView: View {
 
     private func tabButton(_ panel: DeveloperPanel) -> some View {
         let selected = context.currentTab == panel
-        return Button { session.select(panel) } label: { selectedBackground(tabLabel(panel, text: true, selected: selected), selected) }
+        return Button { session.select(panel) } label: { tabLabel(panel, text: true, selected: selected).developerTab(selected: selected) }
             .buttonStyle(.plain)
             .accessibilityLabel(panel.rawValue)
             .accessibilityAddTraits(selected ? .isSelected : [])
@@ -488,10 +487,6 @@ private struct DeveloperToolsView: View {
                     }
                 }
             }
-    }
-
-    private func selectedBackground(_ label: some View, _ selected: Bool) -> some View {
-        label.developerTab(selected: selected)
     }
 
     /// Chrome's » button: the tabs that didn't fit.
@@ -631,37 +626,41 @@ private struct DeveloperToolsView: View {
 
     private var sources: some View {
         VStack(spacing: 0) {
-            toolbar {
-                icon("arrow.clockwise", "Refresh loaded sources", action: session.refresh)
-                search("Filter sources")
-                Divider().frame(height: 14)
-                icon(session.paused ? "play.fill" : "pause.fill", session.paused ? "Resume script execution (F8, ⌘\\)" : "Pause script execution (F8, ⌘\\)", active: session.paused) {
-                    session.debug(session.paused ? "resume" : "pause")
-                }
-                icon("arrow.turn.down.right", "Step over next function call (F10, ⌘')") { session.debug("stepOver") }.disabled(!session.paused)
-                icon("arrow.down.to.line", "Step into next function call (F11, ⌘;)") { session.debug("stepInto") }.disabled(!session.paused)
-                icon("arrow.up.to.line", "Step out of current function (⇧F11, ⇧⌘;)") { session.debug("stepOut") }.disabled(!session.paused)
-                icon("arrow.right.to.line", "Step (F9)") { session.debug("stepNext") }.disabled(!session.paused)
-                DeveloperDeactivateBreakpointsButton(debugger: session.debugger)
-                Spacer()
-                if session.paused { Text("Paused").foregroundStyle(DeveloperToolsStyle.tint) }
-            }
-            GeometryReader { space in
-                if space.size.width >= 640, space.size.width < 900 {
-                    // As Chrome's auto layout at this width: the debugger
-                    // goes under the editor, which keeps a readable width.
-                    HSplitView {
-                        if !shell.sourcesNavigatorHidden {
-                            sourceList.frame(minWidth: 125, idealWidth: 167, maxWidth: 230)
-                        }
-                        VSplitView {
-                            sourceEditor.frame(minWidth: 200, minHeight: 120)
-                            if !shell.sourcesDebuggerHidden {
-                                debuggerSidebar.frame(minHeight: 60, idealHeight: 200)
-                            }
-                        }
+            ScrollView(.horizontal) {
+                HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+                    // Chrome's navigator and debugger toggles (⇧⌘Y, ⇧⌘H).
+                    icon("sidebar.left", shell.sourcesNavigatorHidden ? "Show navigator (⇧⌘Y)" : "Hide navigator (⇧⌘Y)",
+                         active: !shell.sourcesNavigatorHidden) { shell.sourcesNavigatorHidden.toggle() }
+                    icon("arrow.clockwise", "Refresh loaded sources", action: session.refresh)
+                    HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Filter sources", text: $filter)
                     }
-                } else if space.size.width >= 900 {
+                    .developerToolsField()
+                    .frame(minWidth: 90, idealWidth: 155, maxWidth: 210)
+                    Divider().frame(height: 14)
+                    icon(session.paused ? "play.fill" : "pause.fill", session.paused ? "Resume script execution (F8, ⌘\\)" : "Pause script execution (F8, ⌘\\)", active: session.paused) {
+                        session.debug(session.paused ? "resume" : "pause")
+                    }
+                    icon("arrow.turn.down.right", "Step over next function call (F10, ⌘')") { session.debug("stepOver") }.disabled(!session.paused)
+                    icon("arrow.down.to.line", "Step into next function call (F11, ⌘;)") { session.debug("stepInto") }.disabled(!session.paused)
+                    icon("arrow.up.to.line", "Step out of current function (⇧F11, ⇧⌘;)") { session.debug("stepOut") }.disabled(!session.paused)
+                    icon("arrow.right.to.line", "Step (F9)") { session.debug("stepNext") }.disabled(!session.paused)
+                    DeveloperDeactivateBreakpointsButton(debugger: session.debugger)
+                    Spacer()
+                    if session.paused { Text("Paused").foregroundStyle(DeveloperToolsStyle.tint) }
+                    icon("sidebar.right", shell.sourcesDebuggerHidden ? "Show debugger (⇧⌘H)" : "Hide debugger (⇧⌘H)",
+                         active: !shell.sourcesDebuggerHidden) { shell.sourcesDebuggerHidden.toggle() }
+                }
+                .padding(.horizontal, DeveloperToolsStyle.gutter)
+                .frame(height: DeveloperToolsStyle.toolbarHeight)
+            }
+            .scrollIndicators(.never)
+            .background(DeveloperToolsStyle.chrome)
+            Divider()
+            GeometryReader { space in
+                let wide = space.size.width >= 640
+                if space.size.width >= 900 {
                     // ⇧⌘Y and ⇧⌘H put the navigator and the debugger away.
                     HSplitView {
                         if !shell.sourcesNavigatorHidden {
@@ -670,6 +669,23 @@ private struct DeveloperToolsView: View {
                         sourceEditor.frame(minWidth: 200)
                         if !shell.sourcesDebuggerHidden {
                             debuggerSidebar.frame(minWidth: 160, idealWidth: 240, maxWidth: 360)
+                        }
+                    }
+                } else if wide || !shell.sourcesNavigatorHidden {
+                    // As Chrome's auto layout at this width: the debugger
+                    // goes under the navigator and editor, across the full
+                    // width; narrower, the navigator still stays beside the editor.
+                    VSplitView {
+                        HSplitView {
+                            if !shell.sourcesNavigatorHidden {
+                                sourceList.frame(minWidth: wide ? 125 : 110, idealWidth: wide ? 167 : 150,
+                                                 maxWidth: wide ? 230 : 200)
+                            }
+                            sourceEditor.frame(minWidth: wide ? 200 : 160)
+                        }
+                        .frame(minHeight: 120)
+                        if !shell.sourcesDebuggerHidden {
+                            debuggerSidebar.frame(minHeight: 60, idealHeight: wide ? 200 : 170)
                         }
                     }
                 } else {
@@ -713,7 +729,9 @@ private struct DeveloperToolsView: View {
 
     private var sourceEditor: some View {
         // Open-file tabs, each file's kept place, and Search: DeveloperSourcesTabs.swift.
-        DeveloperSourceEditor(session: session) { empty($0) }
+        DeveloperSourceEditor(session: session) { label in
+            Text(label).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     private var debuggerSidebar: some View {
@@ -735,34 +753,6 @@ private struct DeveloperToolsView: View {
         filter.isEmpty || string.localizedCaseInsensitiveContains(filter)
     }
 
-    private func search(_ hint: String) -> some View {
-        HStack(spacing: DeveloperToolsStyle.controlSpacing) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField(hint, text: $filter)
-        }
-        .developerToolsField()
-        .frame(minWidth: 90, idealWidth: 155, maxWidth: 210)
-    }
-
-    private func toolbar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        VStack(spacing: 0) {
-            ScrollView(.horizontal) {
-                HStack(spacing: DeveloperToolsStyle.controlSpacing, content: content)
-                    .padding(.horizontal, DeveloperToolsStyle.gutter)
-                    .frame(height: DeveloperToolsStyle.toolbarHeight)
-            }.scrollIndicators(.never)
-            .background(DeveloperToolsStyle.chrome)
-            Divider()
-        }
-    }
-
-    private func empty(_ label: String, action: (String, () -> Void)? = nil) -> some View {
-        VStack(spacing: 7) {
-            Text(label).foregroundStyle(.secondary)
-            if let (name, perform) = action { Button(name, action: perform) }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
 
     private func icon(_ image: String, _ label: String, active: Bool = false, action: @escaping () -> Void) -> some View {
         DeveloperPanelIcon(symbol: image, title: label, active: active, action: action)
@@ -793,5 +783,23 @@ private struct DeveloperTabDrop: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         dragging = nil
         return true
+    }
+}
+
+/// Which session device mode's touch emulation is on in, so a tab left
+/// behind (or Developer Tools closed) gets its mouse back.
+@MainActor
+final class DeveloperTouchLink {
+    struct Key: Equatable {
+        let session: ObjectIdentifier?
+        let on: Bool
+    }
+
+    private weak var session: DeveloperToolsSession?
+
+    func update(_ next: DeveloperToolsSession?, on: Bool) {
+        if let session, session !== next || !on { session.rendering.setTouch(false, web: session.web) }
+        session = on ? next : nil
+        if on, let next { next.rendering.setTouch(true, web: next.web) }
     }
 }

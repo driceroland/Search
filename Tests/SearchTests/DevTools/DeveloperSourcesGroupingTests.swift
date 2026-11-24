@@ -40,6 +40,16 @@ final class DeveloperSourcesGroupingTests: XCTestCase {
         XCTAssertEqual(Set(files(nodes)), Set((resources + authored).map(\.url)))
     }
 
+    /// Chrome puts https://example.com/src/util.ts under example.com beside
+    /// bundle.js, with one example.com node, and webpack:// on its own.
+    func testAnAuthoredFileFromThePagesHostSharesItsNode() {
+        let top = SourceTree.build(resources, frames: frames, authored: authored)[0]
+        XCTAssertEqual(top.children.map(\.name), ["webpack://", "example.com"])
+        let host = top.children[1]
+        XCTAssertEqual(host.children.map(\.name), ["src", "(index)", "bundle.js"])
+        XCTAssertEqual(files([host.children[0]]), ["https://example.com/src/util.ts"])
+    }
+
     func testEmptyGroupsAreLeftOut() {
         XCTAssertEqual(SourceTree.grouped(resources, frames: frames, authored: []).map(\.name), ["Deployed"])
         XCTAssertEqual(SourceTree.grouped([], frames: [], authored: authored).map(\.name), ["Authored"])

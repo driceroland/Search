@@ -212,8 +212,9 @@ final class DeveloperAIAssistanceTests: XCTestCase {
         XCTAssertTrue(AIText.needsFreshSession(spent: 7_000, next: 2_000))
     }
 
-    func testInstructionsSayTheModelOnlyReads() {
-        XCTAssertTrue(AIText.instructions.contains("cannot run JavaScript"))
+    func testInstructionsSayScriptsNeedApproval() {
+        XCTAssertTrue(AIText.instructions.contains("runJavaScript tool"))
+        XCTAssertTrue(AIText.instructions.contains("the user approves each script first in the app"))
     }
 
     // MARK: Subject
@@ -247,5 +248,25 @@ final class DeveloperAIAssistanceTests: XCTestCase {
         XCTAssertEqual(DeveloperAIAvailability.turnedOff.message,
                        "AI assistance is turned off. You can turn it on in Settings › Preferences.")
         XCTAssertNil(DeveloperAIAvailability.available.message)
+    }
+}
+
+/// AI assistance's run-JavaScript tool: what the model is told of a
+/// script's result, and the approval gate. No model needed.
+@MainActor
+final class DeveloperAIScriptGateTests: XCTestCase {
+    typealias Assistance = DeveloperAIAssistance
+
+    func testOutcomeReadsValuesAsJSONAndExceptionsAsThrown() {
+        XCTAssertEqual(Assistance.outcome(["result": ["type": "number", "value": 42]]).text, "42")
+        XCTAssertEqual(Assistance.outcome(["result": ["type": "object", "value": ["b": 1, "a": "x"]]]).text, #"{"a":"x","b":1}"#)
+        XCTAssertEqual(Assistance.outcome(["result": ["type": "string", "value": "hi"]]).text, #""hi""#)
+        XCTAssertEqual(Assistance.outcome(["result": ["type": "undefined"]]).text, "undefined")
+        XCTAssertEqual(Assistance.outcome(["result": ["type": "object", "subtype": "null", "value": NSNull()]]).text, "null")
+        let thrown = Assistance.outcome(["wasThrown": true, "result": ["type": "object", "description": "ReferenceError: nope is not defined"]])
+        XCTAssertTrue(thrown.threw)
+        XCTAssertEqual(thrown.text, "ReferenceError: nope is not defined")
+        let long = Assistance.outcome(["result": ["type": "string", "value": String(repeating: "a", count: 5_000)]])
+        XCTAssertLessThanOrEqual(long.text.count, Assistance.resultBudget)
     }
 }

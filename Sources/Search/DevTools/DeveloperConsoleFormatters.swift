@@ -345,9 +345,7 @@ extension DeveloperToolsSession {
         consoleStore.customHeaders[key] = .loading
         Task { [weak self] in
             guard let self else { return }
-            let found: ConsoleCustomFormatting.Reply? = await Self.withinTimeout {
-                await self.consoleCustomFormat(object, mode: "header", formatter: 0, config: config, targetID: targetID)
-            }
+            let found = await self.consoleCustomFormat(object, mode: "header", formatter: 0, config: config, targetID: targetID)
             guard self.consoleStore.customHeaders[key] == .loading else { return }
             if let found, let header = ConsoleJsonML.parse(json: found.json) {
                 self.consoleStore.customHeaders[key] = .header(ConsoleCustomPreview(
@@ -365,18 +363,33 @@ extension DeveloperToolsSession {
         guard consoleStore.customBodies[key] == nil, consoleStore.loading.insert("custom:" + key).inserted else { return }
         Task { [weak self] in
             guard let self else { return }
-            let found: ConsoleCustomFormatting.Reply? = await Self.withinTimeout {
-                await self.consoleCustomFormat(preview.object, mode: "body", formatter: preview.formatter,
-                                               config: preview.config, targetID: targetID)
-            }
+            let found = await self.consoleCustomFormat(preview.object, mode: "body", formatter: preview.formatter,
+                                                       config: preview.config, targetID: targetID)
             self.consoleStore.loading.remove("custom:" + key)
             let body = found.flatMap { ConsoleJsonML.parse(json: $0.json) } ?? .text("")
             self.consoleStore.customBodies[key] = ConsoleCustomBody(body: body, objects: found?.objects ?? [:])
         }
     }
 
+    /// The formatters' answer, or nil once they have taken too long; a
+    /// late answer is dropped.
     private func consoleCustomFormat(_ object: ConsoleRemoteObject, mode: String, formatter: Int,
                                      config: ConsoleRemoteObject?, targetID: String?) async
+        -> ConsoleCustomFormatting.Reply? {
+        let box = ConsoleCustomFormattingBox()
+        Task { @MainActor in
+            box.value = await self.callConsoleFormatters(object, mode: mode, formatter: formatter, config: config, targetID: targetID)
+            box.done = true
+        }
+        let deadline = ContinuousClock.now + ConsoleCustomFormatting.timeout
+        while !box.done, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return box.done ? box.value : nil
+    }
+
+    private func callConsoleFormatters(_ object: ConsoleRemoteObject, mode: String, formatter: Int,
+                                       config: ConsoleRemoteObject?, targetID: String?) async
         -> ConsoleCustomFormatting.Reply? {
         guard let id = object.objectId else { return nil }
         let arguments: [[String: Any]] = [["value": mode], ["value": formatter], ConsoleCustomFormatting.argument(config)]
@@ -396,26 +409,11 @@ extension DeveloperToolsSession {
         ], targetID: targetID) else { return nil }
         return ConsoleCustomFormatting.reply(listed["properties"] as? [[String: Any]] ?? [])
     }
-
-    /// The work's answer, or nil once the formatter has taken too long; a
-    /// late answer is dropped.
-    static func withinTimeout<T>(_ work: @escaping @MainActor () async -> T?) async -> T? {
-        let box = ConsoleCustomFormattingBox<T>()
-        Task { @MainActor in
-            box.value = await work()
-            box.done = true
-        }
-        let deadline = ContinuousClock.now + ConsoleCustomFormatting.timeout
-        while !box.done, ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        return box.done ? box.value : nil
-    }
 }
 
-/// What withinTimeout's work answered, once it has.
+/// What the formatters answered, once they have.
 @MainActor
-private final class ConsoleCustomFormattingBox<T> {
+private final class ConsoleCustomFormattingBox {
     var done = false
-    var value: T?
+    var value: ConsoleCustomFormatting.Reply?
 }

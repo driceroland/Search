@@ -9,6 +9,8 @@ struct DeveloperResourcesView: View {
     @ObservedObject private var log: DeveloperResourceLog
     @State private var filter = ""
     @State private var selection: Int?
+    /// The drawer's width: Initiator and Error give way in a narrow one.
+    @State private var width: CGFloat = 900
 
     init(session: DeveloperToolsSession) {
         self.session = session
@@ -30,6 +32,7 @@ struct DeveloperResourcesView: View {
                 .frame(maxWidth: .infinity, minHeight: DeveloperToolsStyle.rowHeight, alignment: .leading)
                 .background(DeveloperToolsStyle.chrome)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .accessibilityIdentifier("developer-resources")
     }
 
@@ -53,11 +56,15 @@ struct DeveloperResourcesView: View {
 
     // MARK: Table
 
-    private enum Column {
+    enum Column {
         static let status: CGFloat = 64
-        static let initiator: CGFloat = 220
         static let bytes: CGFloat = 84
-        static let error: CGFloat = 220
+        /// Initiator and Error each: up to 220, shrinking so URL keeps at
+        /// least 140 of a narrow drawer, down to 60.
+        static func wide(_ width: CGFloat) -> CGFloat {
+            let rest = width - status - bytes - 140 - 6 * DeveloperToolsStyle.gutter
+            return min(220, max(60, rest / 2))
+        }
     }
 
     private var table: some View {
@@ -65,9 +72,9 @@ struct DeveloperResourcesView: View {
             HStack(spacing: DeveloperToolsStyle.gutter) {
                 Text("Status").frame(width: Column.status, alignment: .leading)
                 Text("URL").frame(maxWidth: .infinity, alignment: .leading)
-                Text("Initiator").frame(width: Column.initiator, alignment: .leading)
+                Text("Initiator").frame(width: Column.wide(width), alignment: .leading)
                 Text("Total Bytes").frame(width: Column.bytes, alignment: .trailing)
-                Text("Error").frame(width: Column.error, alignment: .leading)
+                Text("Error").frame(width: Column.wide(width), alignment: .leading)
             }
             .developerColumnTitles()
             Divider()
@@ -78,8 +85,9 @@ struct DeveloperResourcesView: View {
                      : "No resources match the filter.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -104,7 +112,7 @@ struct DeveloperResourcesView: View {
                 .help(record.displayURL)
             Text(record.initiator.isEmpty ? "" : SourceTree.fileName(record.initiator))
                 .truncationMode(.middle)
-                .frame(width: Column.initiator, alignment: .leading)
+                .frame(width: Column.wide(width), alignment: .leading)
                 .help(record.initiator)
             Text(DeveloperResourceFilter.bytesText(record))
                 .monospacedDigit()
@@ -112,7 +120,7 @@ struct DeveloperResourcesView: View {
             Text(record.error ?? "")
                 .foregroundStyle(Color(nsColor: .systemRed))
                 .truncationMode(.tail)
-                .frame(width: Column.error, alignment: .leading)
+                .frame(width: Column.wide(width), alignment: .leading)
                 .help(record.error ?? "")
         }
         .lineLimit(1)
@@ -123,9 +131,9 @@ struct DeveloperResourcesView: View {
         .onTapGesture(count: 2) { open(record) }
         .onTapGesture { selection = record.id }
         .contextMenu {
-            Button("Copy URL") { copy(record.url) }
+            Button("Copy URL") { DeveloperToolsSession.copyToPasteboard(record.url) }
             if !record.initiator.isEmpty {
-                Button("Copy initiator URL") { copy(record.initiator) }
+                Button("Copy initiator URL") { DeveloperToolsSession.copyToPasteboard(record.initiator) }
             }
             Divider()
             Button("Open in Sources panel") { open(record) }
@@ -137,23 +145,13 @@ struct DeveloperResourcesView: View {
     private func status(_ status: DeveloperResourceRecord.Status) -> some View {
         HStack(spacing: 4) {
             switch status {
-            case .success:
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(Color(nsColor: .systemGreen))
-                Text("success")
-            case .failure:
-                Image(systemName: "xmark.octagon.fill").foregroundStyle(Color(nsColor: .systemRed))
-                Text("failure")
-            case .pending:
-                ProgressView().controlSize(.mini)
-                Text("pending")
+            case .success: Image(systemName: "checkmark.circle.fill").foregroundStyle(Color(nsColor: .systemGreen))
+            case .failure: Image(systemName: "xmark.octagon.fill").foregroundStyle(Color(nsColor: .systemRed))
+            case .pending: ProgressView().controlSize(.mini)
             }
+            Text(status.rawValue)
         }
         .font(.system(size: 11))
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 
     /// The file in Sources: an authored file as the map lists it, else the

@@ -28,6 +28,10 @@ struct DeveloperNetworkView: View {
         var headerColumns = Store.settings.stringArray(forKey: Options.headerColumnsKey) ?? [] {
             didSet { Store.settings.set(headerColumns, forKey: Self.headerColumnsKey) }
         }
+        /// Request headers shown as columns, likewise, from Request headers.
+        var requestHeaderColumns = Store.settings.stringArray(forKey: Options.requestHeaderColumnsKey) ?? [] {
+            didSet { Store.settings.set(requestHeaderColumns, forKey: Self.requestHeaderColumnsKey) }
+        }
         /// Headers added through Manage Header Columns…, offered after
         /// Chrome's own in Response Headers.
         var customHeaders = Store.settings.stringArray(forKey: Options.customHeadersKey) ?? [] {
@@ -74,6 +78,7 @@ struct DeveloperNetworkView: View {
 
         private static let columnsKey = "developerTools.network.columns"
         private static let headerColumnsKey = "developerTools.network.headerColumns"
+        private static let requestHeaderColumnsKey = "developerTools.network.requestHeaderColumns"
         private static let customHeadersKey = "developerTools.network.customHeaders"
         private static let widthsKey = "developerTools.network.columnWidths"
         private static let listWidthKey = "developerTools.network.listWidth"
@@ -103,6 +108,22 @@ struct DeveloperNetworkView: View {
             }
         }
 
+        /// The headers Request headers offers: Chrome's, then those recorded.
+        func requestHeaderChoices(seen: [String]) -> [String] {
+            var names = DeveloperNetworkListColumn.requestHeaders
+            for name in requestHeaderColumns + seen where !names.contains(name) { names.append(name) }
+            return names
+        }
+
+        mutating func showRequestHeaderColumn(_ name: String, _ on: Bool) {
+            if on {
+                if !requestHeaderColumns.contains(name) { requestHeaderColumns.append(name) }
+            } else {
+                requestHeaderColumns.removeAll { $0 == name }
+                if sort == .requestHeader(name) { sort = nil }
+            }
+        }
+
         mutating func showHeaderColumn(_ name: String, _ on: Bool) {
             if on {
                 if !headerColumns.contains(name) { headerColumns.append(name) }
@@ -116,8 +137,10 @@ struct DeveloperNetworkView: View {
         mutating func resetColumns() {
             columns = Set(DeveloperNetworkColumn.defaults)
             headerColumns = []
+            requestHeaderColumns = []
             columnWidths = [:]
             if case .header = sort { sort = nil }
+            if case .requestHeader = sort { sort = nil }
             if let sort, case .standard(let column) = sort, !columns.contains(column) { self.sort = nil }
         }
     }
@@ -206,7 +229,7 @@ private struct DeveloperNetworkPanel: View {
                 }
             }
             if options.blockingShown {
-                Rectangle().fill(DeveloperToolsStyle.rule.opacity(0.55)).frame(height: 1)
+                horizontalRule
                 DeveloperNetworkBlockingView(tools: tools, requests: requests) { options.blockingShown = false }
                     .frame(height: 150)
             }
@@ -330,9 +353,6 @@ private struct DeveloperNetworkPanel: View {
         options.selection = nil
         return true
     }
-
-    /// The registrable part of a host, approximated by its last two labels.
-    static func site(_ url: String) -> String { DeveloperNetworkRowsCache.site(url) }
 
     private func visible(_ requests: [DeveloperToolsSession.Request]) -> [DeveloperToolsSession.Request] {
         cache.shown(requests, options: options, extras: tools.extras, extrasRevision: tools.extrasRevision,
@@ -624,7 +644,7 @@ private struct DeveloperNetworkPanel: View {
                 HStack(spacing: DeveloperToolsStyle.gutter) {
                     // Over its neighbours: the filter's suggestions hang below it.
                     filterRow.frame(width: 240 + 160, alignment: .leading).zIndex(1)
-                    Rectangle().fill(DeveloperToolsStyle.rule.opacity(0.55)).frame(width: 1, height: 14)
+                    toolbarRule
                     chips
                 }
             } else {
@@ -812,7 +832,9 @@ private struct DeveloperNetworkPanel: View {
         }
         .background(DeveloperToolsStyle.chrome)
         .overlay(alignment: .bottom) { horizontalRule }
-        .contextMenu { DeveloperNetworkColumnMenu(options: $options) { managingHeaders = true } }
+        .contextMenu {
+            DeveloperNetworkColumnMenu(options: $options, seen: tools.requestHeaderNames) { managingHeaders = true }
+        }
     }
 
     /// What the list says when it has no rows.
@@ -839,6 +861,7 @@ private struct DeveloperNetworkPanel: View {
             .filter { (options.columns.contains($0) || $0 == .name) && $0 != .waterfall }
             .map(DeveloperNetworkListColumn.standard)
         columns += options.headerColumns.map(DeveloperNetworkListColumn.header)
+            + options.requestHeaderColumns.map(DeveloperNetworkListColumn.requestHeader)
         if options.columns.contains(.waterfall) { columns.append(.standard(.waterfall)) }
         func used() -> CGFloat { columns.compactMap(columnWidth).reduce(0, +) + 150 }
         while used() > width,
@@ -883,7 +906,8 @@ private struct DeveloperNetworkPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(column == .standard(.waterfall) ? "Sort by " + options.waterfallSort.rawValue : "Sort by " + column.title)
+        .help(column == .standard(.waterfall) ? "Sort by " + options.waterfallSort.rawValue
+              : "Sort by " + column.title + (column.note.map { "\n" + $0 } ?? ""))
         .accessibilityIdentifier("developer-network-column-\(column.title.lowercased())")
     }
 
@@ -893,25 +917,33 @@ private struct DeveloperNetworkPanel: View {
     private func resizeHandle(_ column: DeveloperNetworkListColumn, next: DeveloperNetworkListColumn) -> some View {
         let target = column.defaultWidth == nil ? next : column
         let sign: CGFloat = column.defaultWidth == nil ? -1 : 1
-        return Color.clear
-            .frame(width: 6)
+        return resizeGrip(target.key, width: 6, start: { columnWidth(target) ?? 0 }) { start, moved in
+            let range = DeveloperNetworkListColumn.widths
+            options.columnWidths[target.key] = min(range.upperBound, max(range.lowerBound, start + sign * moved))
+        }
+        .accessibilityLabel("Resize " + target.title)
+    }
+
+    /// A divider's drag area: `apply` gets the size the drag started from
+    /// and how far it has moved.
+    private func resizeGrip(_ key: String, width: CGFloat, start: @escaping () -> CGFloat,
+                            apply: @escaping (CGFloat, CGFloat) -> Void) -> some View {
+        Color.clear
+            .frame(width: width)
             .contentShape(Rectangle())
             .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in
-                    let start: CGFloat
-                    if let resizing, resizing.key == target.key {
-                        start = resizing.start
+                    let from: CGFloat
+                    if let resizing, resizing.key == key {
+                        from = resizing.start
                     } else {
-                        start = columnWidth(target) ?? 0
-                        resizing = Resize(key: target.key, start: start)
+                        from = start()
+                        resizing = Resize(key: key, start: from)
                     }
-                    let range = DeveloperNetworkListColumn.widths
-                    options.columnWidths[target.key] = min(range.upperBound,
-                                                           max(range.lowerBound, start + sign * value.translation.width))
+                    apply(from, value.translation.width)
                 }
                 .onEnded { _ in resizing = nil })
-            .accessibilityLabel("Resize " + target.title)
     }
 
     /// The names list's width beside a request's tabs: as dragged, else
@@ -926,22 +958,9 @@ private struct DeveloperNetworkPanel: View {
     private func listDivider(_ current: CGFloat, total: CGFloat) -> some View {
         Rectangle().fill(DeveloperToolsStyle.rule.opacity(0.55)).frame(width: 1)
             .overlay {
-                Color.clear
-                    .frame(width: 7)
-                    .contentShape(Rectangle())
-                    .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
-                    .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                        .onChanged { value in
-                            let start: CGFloat
-                            if let resizing, resizing.key == "list" {
-                                start = resizing.start
-                            } else {
-                                start = current
-                                resizing = Resize(key: "list", start: start)
-                            }
-                            options.listWidth = min(max(120, start + value.translation.width), max(120, total - 200))
-                        }
-                        .onEnded { _ in resizing = nil })
+                resizeGrip("list", width: 7, start: { current }) { start, moved in
+                    options.listWidth = min(max(120, start + moved), max(120, total - 200))
+                }
             }
             .zIndex(1)
             .accessibilityLabel("Resize request list")
@@ -1132,7 +1151,7 @@ private struct DeveloperNetworkPanel: View {
     private func cell(_ column: DeveloperNetworkListColumn, row: DeveloperToolsSession.Request,
                       extra: DeveloperNetworkTools.Extra?, timing: DeveloperNetworkTiming, origin: Double) -> some View {
         switch column {
-        case .header:
+        case .header, .requestHeader:
             Text(DeveloperNetworkListColumn.value(column, row, extra)).foregroundStyle(.secondary).truncationMode(.middle)
         case .standard(let standard):
             switch standard {
@@ -1296,15 +1315,16 @@ private struct DeveloperNetworkPanel: View {
                  : "\(Self.byteCount(resources(all))) resources")
             if let finish, finish >= 0 {
                 verticalRule.frame(height: 10)
-                Text("Finish: " + Self.seconds(finish))
+                Text("Finish: " + DeveloperNetworkTimingPopover.seconds(finish))
             }
             if let ready = tools.domContentLoaded, ready >= timing.origin, !all.isEmpty {
                 verticalRule.frame(height: 10)
-                Text("DOMContentLoaded: " + Self.seconds((ready - timing.origin) * 1_000)).foregroundStyle(.blue)
+                Text("DOMContentLoaded: " + DeveloperNetworkTimingPopover.seconds((ready - timing.origin) * 1_000))
+                    .foregroundStyle(.blue)
             }
             if let load = tools.load, load >= timing.origin, !all.isEmpty {
                 verticalRule.frame(height: 10)
-                Text("Load: " + Self.seconds((load - timing.origin) * 1_000)).foregroundStyle(.red)
+                Text("Load: " + DeveloperNetworkTimingPopover.seconds((load - timing.origin) * 1_000)).foregroundStyle(.red)
             }
             Spacer(minLength: 0)
             if session.throttle != .unrestricted || tools.activeProfile != nil {
@@ -1343,12 +1363,6 @@ private struct DeveloperNetworkPanel: View {
 
     static func duration(_ milliseconds: Double) -> String {
         milliseconds.formatted(.number.precision(.fractionLength(milliseconds < 10 && milliseconds > 0 ? 1 : 0))) + " ms"
-    }
-
-    /// As DevTools' summary writes times: milliseconds, then seconds.
-    static func seconds(_ milliseconds: Double) -> String {
-        milliseconds < 1_000 ? "\(Int(milliseconds.rounded())) ms"
-            : (milliseconds / 1_000).formatted(.number.precision(.fractionLength(2))) + " s"
     }
 
     private func icon(_ symbol: String, _ label: String, color: Color = .secondary,
@@ -1471,15 +1485,14 @@ private struct DeveloperNetworkRowMenu: View {
         Button("Clear browser cookies") { tools.clearBrowserCookies() }
         Divider()
         Menu("Copy") {
-            Button("Copy URL") { DeveloperNetworkTools.copy(request.url) }
-            Button("Copy as cURL") { tools.copy(request, as: { DeveloperRequestCopy.curl($0) }) }
-                .disabled(request.url.hasPrefix("blob:"))
-            Button("Copy as PowerShell") { tools.copy(request, as: { DeveloperRequestCopy.powerShell($0) }) }
-                .disabled(request.url.hasPrefix("blob:"))
-            Button("Copy as fetch") { tools.copy(request, as: { DeveloperRequestCopy.fetch($0) }) }
-                .disabled(request.url.hasPrefix("blob:"))
-            Button("Copy as fetch (Node.js)") { tools.copy(request, as: { DeveloperRequestCopy.fetch($0, node: true) }) }
-                .disabled(request.url.hasPrefix("blob:"))
+            Button("Copy URL") { DeveloperToolsSession.copyToPasteboard(request.url) }
+            Group {
+                Button("Copy as cURL") { tools.copy(request, as: { DeveloperRequestCopy.curl($0) }) }
+                Button("Copy as PowerShell") { tools.copy(request, as: { DeveloperRequestCopy.powerShell($0) }) }
+                Button("Copy as fetch") { tools.copy(request, as: { DeveloperRequestCopy.fetch($0) }) }
+                Button("Copy as fetch (Node.js)") { tools.copy(request, as: { DeveloperRequestCopy.fetch($0, node: true) }) }
+            }
+            .disabled(request.url.hasPrefix("blob:"))
             Divider()
             Button("Copy request headers") { tools.copy(request, as: DeveloperRequestCopy.requestHeaders) }
             if request.status != nil {
@@ -1490,27 +1503,17 @@ private struct DeveloperNetworkRowMenu: View {
             }
             Button("Copy stack trace") { tools.copy(request, as: { $0.stack.joined(separator: "\n") }) }
             Divider()
-            Button(filtered ? "Copy all listed URLs" : "Copy all URLs") {
-                DeveloperNetworkTools.copy(rows.filter { !$0.url.hasPrefix("blob:") }.map(\.url).joined(separator: "\n"))
+            Button(all("Copy", "URLs")) {
+                DeveloperToolsSession.copyToPasteboard(rows.filter { !$0.url.hasPrefix("blob:") }.map(\.url).joined(separator: "\n"))
             }
-            Button(filtered ? "Copy all listed as cURL" : "Copy all as cURL") {
-                tools.copyAll(rows, separator: " ;\n") { DeveloperRequestCopy.curl($0) }
-            }
-            Button(filtered ? "Copy all listed as PowerShell" : "Copy all as PowerShell") {
-                tools.copyAll(rows, separator: ";\r\n") { DeveloperRequestCopy.powerShell($0) }
-            }
-            Button(filtered ? "Copy all listed as fetch" : "Copy all as fetch") {
-                tools.copyAll(rows, separator: " ;\n") { DeveloperRequestCopy.fetch($0) }
-            }
-            Button(filtered ? "Copy all listed as fetch (Node.js)" : "Copy all as fetch (Node.js)") {
+            Button(all("Copy", "as cURL")) { tools.copyAll(rows, separator: " ;\n") { DeveloperRequestCopy.curl($0) } }
+            Button(all("Copy", "as PowerShell")) { tools.copyAll(rows, separator: ";\r\n") { DeveloperRequestCopy.powerShell($0) } }
+            Button(all("Copy", "as fetch")) { tools.copyAll(rows, separator: " ;\n") { DeveloperRequestCopy.fetch($0) } }
+            Button(all("Copy", "as fetch (Node.js)")) {
                 tools.copyAll(rows, separator: " ;\n") { DeveloperRequestCopy.fetch($0, node: true) }
             }
-            Button(filtered ? "Copy all listed as HAR (sanitized)" : "Copy all as HAR (sanitized)") {
-                tools.copyHAR(rows, sanitize: true)
-            }
-            Button(filtered ? "Copy all listed as HAR (with sensitive data)" : "Copy all as HAR (with sensitive data)") {
-                tools.copyHAR(rows, sanitize: false)
-            }
+            Button(all("Copy", "as HAR (sanitized)")) { tools.copyHAR(rows, sanitize: true) }
+            Button(all("Copy", "as HAR (with sensitive data)")) { tools.copyHAR(rows, sanitize: false) }
         }
         Divider()
         Menu("Block requests") {
@@ -1541,18 +1544,19 @@ private struct DeveloperNetworkRowMenu: View {
             }
         }
         Menu("Header Options") {
-            DeveloperNetworkColumnMenu(options: $options, manageHeaders: manageHeaders)
+            DeveloperNetworkColumnMenu(options: $options, seen: tools.requestHeaderNames, manageHeaders: manageHeaders)
         }
         Divider()
         let host = session.host
-        Button(filtered ? "Save all listed as HAR (sanitized)…" : "Save all as HAR (sanitized)…") {
-            tools.exportHAR(rows, sanitize: true, host: host)
-        }
-        Button(filtered ? "Save all listed as HAR (with sensitive data)…" : "Save all as HAR (with sensitive data)…") {
-            tools.exportHAR(rows, sanitize: false, host: host)
-        }
+        Button(all("Save", "as HAR (sanitized)…")) { tools.exportHAR(rows, sanitize: true, host: host) }
+        Button(all("Save", "as HAR (with sensitive data)…")) { tools.exportHAR(rows, sanitize: false, host: host) }
         Button("Save as…") { tools.saveResponse(request) }
             .disabled(request.ended == nil || request.failure != nil)
+    }
+
+    /// "Copy all …", or "Copy all listed …" when a filter hides some rows.
+    private func all(_ verb: String, _ rest: String) -> String {
+        verb + (filtered ? " all listed " : " all ") + rest
     }
 
     private static func trimmed(_ text: String) -> String {

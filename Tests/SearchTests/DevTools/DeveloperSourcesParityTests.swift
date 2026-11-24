@@ -248,3 +248,29 @@ final class DeveloperSourcesParityTests: XCTestCase {
         }
     }
 }
+
+final class DeveloperBrowserOwnScriptTests: XCTestCase {
+    /// The browser's user scripts and WebKit's media controls aren't the page's
+    /// or an extension's: no Content scripts entry, no Open file row.
+    func testTheBrowsersOwnScriptsAreNotContentScripts() {
+        XCTAssertTrue(DeveloperToolsSession.isBrowserOwnScript("user-script:13"))
+        XCTAssertTrue(DeveloperToolsSession.isBrowserOwnScript("__InjectedScript_ModernMediaControls.js"))
+        XCTAssertFalse(DeveloperToolsSession.isBrowserOwnScript("webkit-extension://abc/content.js"))
+        XCTAssertFalse(DeveloperToolsSession.isBrowserOwnScript("http://127.0.0.1/app.js"))
+    }
+}
+
+@MainActor
+final class DeveloperResourcesColumnTests: XCTestCase {
+    /// Initiator and Error give way so the row fits a narrow drawer with
+    /// room for the URL, and are Chrome's width in a wide one.
+    func testColumnsFitANarrowDrawer() {
+        typealias Column = DeveloperResourcesView.Column
+        let gutters = 6 * DeveloperToolsStyle.gutter
+        for width: CGFloat in [500, 640] {
+            let fixed = Column.status + Column.bytes + 2 * Column.wide(width) + gutters
+            XCTAssertGreaterThanOrEqual(width - fixed, 140, "at \(width)")
+        }
+        XCTAssertEqual(Column.wide(1_400), 220)
+    }
+}

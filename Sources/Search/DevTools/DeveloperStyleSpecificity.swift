@@ -122,7 +122,8 @@ struct DeveloperStyleSpecificity: Comparable, Hashable {
                     _ = name()
                     total.b += 1
                 case "[":
-                    skipBracket()
+                    index += 1
+                    skip(to: "]")
                     total.b += 1
                 case ":":
                     index += 1
@@ -192,7 +193,7 @@ struct DeveloperStyleSpecificity: Comparable, Hashable {
                 close()
                 return DeveloperStyleSpecificity(b: 1) + (inner.max() ?? .zero)
             default:
-                skipArguments()
+                skip(to: ")")
                 return DeveloperStyleSpecificity(b: 1)
             }
         }
@@ -214,33 +215,16 @@ struct DeveloperStyleSpecificity: Comparable, Hashable {
             if current == ")" { index += 1 }
         }
 
-        /// Past a function's arguments and its closing parenthesis.
-        private mutating func skipArguments() {
+        /// Past a function's arguments and its closing parenthesis (`)`,
+        /// nested ones skipped too), or an attribute selector's `]`.
+        private mutating func skip(to closer: Character) {
             var depth = 1
             while let character = current {
                 switch character {
-                case "(": depth += 1
-                case ")":
+                case "(" where closer == ")": depth += 1
+                case closer:
                     depth -= 1
                     if depth == 0 { index += 1; return }
-                case "\"", "'":
-                    skipString()
-                    continue
-                case "\\":
-                    index += 1
-                default: break
-                }
-                index += 1
-            }
-        }
-
-        private mutating func skipBracket() {
-            index += 1
-            while let character = current {
-                switch character {
-                case "]":
-                    index += 1
-                    return
                 case "\"", "'":
                     skipString()
                     continue

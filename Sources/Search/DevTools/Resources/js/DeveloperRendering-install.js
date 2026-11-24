@@ -1,6 +1,5 @@
 if (!globalThis.perchRendering) {
     let state = null;
-    const preferenceNames = ["PrefersColorScheme", "PrefersReducedMotion", "PrefersContrast"];
     const isDefault = (s) => !s || (!s.paintFlashing && !s.layerBorders && !s.mediaType && !s.colorScheme &&
         !s.reducedMotion && !s.contrast && !s.javaScriptDisabled && !s.imagesDisabled);
     async function applyTo(target, s) {

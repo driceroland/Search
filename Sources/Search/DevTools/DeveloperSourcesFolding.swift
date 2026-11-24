@@ -46,8 +46,8 @@ enum SourceFolding {
         let starts = SourceLexing.lineStarts(text)
         var byLine: [Int: SourceFold] = [:]
         for pair in pairs {
-            let startLine = lineIndex(max(0, pair.start - 1), in: starts)
-            let endLine = lineIndex(pair.end, in: starts)
+            let startLine = SourceLexing.lineIndex(max(0, pair.start - 1), in: starts)
+            let endLine = SourceLexing.lineIndex(pair.end, in: starts)
             guard endLine > startLine else { continue }
             if let kept = byLine[startLine], kept.start <= pair.start { continue }
             var lineEnd = endLine + 1 < starts.count ? starts[endLine + 1] : units.count
@@ -55,15 +55,6 @@ enum SourceFolding {
             byLine[startLine] = SourceFold(startLine: startLine, endLine: endLine, start: pair.start, end: pair.end, lineEnd: lineEnd)
         }
         return byLine.values.sorted { $0.startLine < $1.startLine }
-    }
-
-    static func lineIndex(_ offset: Int, in starts: [Int]) -> Int {
-        var low = 0, high = starts.count - 1
-        while low < high {
-            let mid = (low + high + 1) / 2
-            if starts[mid] <= offset { low = mid } else { high = mid - 1 }
-        }
-        return low
     }
 
     /// Brackets in JavaScript, JSX and JSON, by the lexer: strings,
@@ -78,21 +69,21 @@ enum SourceFolding {
             pairs.append((stack[index].at + 1, offset))
             stack.removeSubrange(index...)
         }
-        let brace = UInt16(UInt8(ascii: "{")), closeBrace = UInt16(UInt8(ascii: "}"))
+        let brace = UInt16(ascii: "{"), closeBrace = UInt16(ascii: "}")
         for lexeme in lexemes {
             switch lexeme.kind {
             case .punctuator where lexeme.end - lexeme.start == 1:
                 let c = u[lexeme.start]
                 switch c {
-                case brace, UInt16(UInt8(ascii: "[")), UInt16(UInt8(ascii: "(")): stack.append((c, lexeme.start))
+                case brace, UInt16(ascii: "["), UInt16(ascii: "("): stack.append((c, lexeme.start))
                 case closeBrace: close(brace, at: lexeme.start)
-                case UInt16(UInt8(ascii: "]")): close(UInt16(UInt8(ascii: "[")), at: lexeme.start)
-                case UInt16(UInt8(ascii: ")")): close(UInt16(UInt8(ascii: "(")), at: lexeme.start)
+                case UInt16(ascii: "]"): close(UInt16(ascii: "["), at: lexeme.start)
+                case UInt16(ascii: ")"): close(UInt16(ascii: "("), at: lexeme.start)
                 default: break
                 }
             case .template:
                 if u[lexeme.start] == closeBrace { close(brace, at: lexeme.start) }
-                if lexeme.end - lexeme.start >= 2, u[lexeme.end - 1] == brace, u[lexeme.end - 2] == UInt16(UInt8(ascii: "$")) {
+                if lexeme.end - lexeme.start >= 2, u[lexeme.end - 1] == brace, u[lexeme.end - 2] == UInt16(ascii: "$") {
                     stack.append((brace, lexeme.end - 1))
                 }
             default: break
@@ -107,23 +98,23 @@ enum SourceFolding {
         var i = start
         while i < end {
             let c = u[i]
-            if c == UInt16(UInt8(ascii: "/")), i + 1 < end, u[i + 1] == UInt16(UInt8(ascii: "*")) {
+            if c == UInt16(ascii: "/"), i + 1 < end, u[i + 1] == UInt16(ascii: "*") {
                 i += 2
-                while i < end, !(u[i] == UInt16(UInt8(ascii: "*")) && i + 1 < end && u[i + 1] == UInt16(UInt8(ascii: "/"))) { i += 1 }
+                while i < end, !(u[i] == UInt16(ascii: "*") && i + 1 < end && u[i + 1] == UInt16(ascii: "/")) { i += 1 }
                 i += 2
                 continue
             }
-            if c == UInt16(UInt8(ascii: "\"")) || c == UInt16(UInt8(ascii: "'")) {
+            if c == UInt16(ascii: "\"") || c == UInt16(ascii: "'") {
                 i += 1
                 while i < end, u[i] != c, !SourceLexing.isNewline(u[i]) {
-                    i += u[i] == UInt16(UInt8(ascii: "\\")) ? 2 : 1
+                    i += u[i] == UInt16(ascii: "\\") ? 2 : 1
                 }
                 i += 1
                 continue
             }
-            if c == UInt16(UInt8(ascii: "{")) {
+            if c == UInt16(ascii: "{") {
                 stack.append(i)
-            } else if c == UInt16(UInt8(ascii: "}")), let open = stack.popLast() {
+            } else if c == UInt16(ascii: "}"), let open = stack.popLast() {
                 pairs.append((open + 1, i))
             }
             i += 1
@@ -145,7 +136,7 @@ enum SourceFolding {
         @inline(__always) func at(_ k: Int) -> UInt16 { k < end ? u[k] : 0 }
         func isNameStart(_ c: UInt16) -> Bool { (c >= 97 && c <= 122) || (c >= 65 && c <= 90) }
         func isNamePart(_ c: UInt16) -> Bool {
-            isNameStart(c) || SourceLexing.isDigit(c) || c == UInt16(UInt8(ascii: "-")) || c == UInt16(UInt8(ascii: ":")) || c == UInt16(UInt8(ascii: "_"))
+            isNameStart(c) || SourceLexing.isDigit(c) || c == UInt16(ascii: "-") || c == UInt16(ascii: ":") || c == UInt16(ascii: "_")
         }
         func name(from k: Int) -> (String, Int) {
             var j = k
@@ -153,71 +144,37 @@ enum SourceFolding {
             let text = String(decoding: u[k..<j], as: UTF16.self).lowercased()
             return (text, j)
         }
-        /// The offset after the `>` that ends a tag, past quoted values.
-        func tagEnd(from k: Int) -> Int {
-            var j = k
-            var quote: UInt16 = 0
-            while j < end {
-                let c = u[j]
-                if quote != 0 {
-                    if c == quote { quote = 0 }
-                } else if c == UInt16(UInt8(ascii: "\"")) || c == UInt16(UInt8(ascii: "'")) {
-                    quote = c
-                } else if c == UInt16(UInt8(ascii: ">")) {
-                    return j + 1
-                }
-                j += 1
-            }
-            return end
-        }
-        /// Where `</name` next starts, any case, or the end.
-        func closing(_ tag: String, from k: Int) -> Int {
-            let needle = Array(("</" + tag).utf16)
-            var j = k
-            while j + needle.count <= end {
-                if u[j] == UInt16(UInt8(ascii: "<")) {
-                    var same = true
-                    for (n, c) in needle.enumerated() where (u[j + n] | (n > 1 ? 0x20 : 0)) != c {
-                        same = false
-                        break
-                    }
-                    if same { return j }
-                }
-                j += 1
-            }
-            return end
-        }
         while i < end {
-            guard u[i] == UInt16(UInt8(ascii: "<")) else { i += 1; continue }
-            if at(i + 1) == UInt16(UInt8(ascii: "!")), at(i + 2) == UInt16(UInt8(ascii: "-")), at(i + 3) == UInt16(UInt8(ascii: "-")) {
+            guard u[i] == UInt16(ascii: "<") else { i += 1; continue }
+            if at(i + 1) == UInt16(ascii: "!"), at(i + 2) == UInt16(ascii: "-"), at(i + 3) == UInt16(ascii: "-") {
                 var j = i + 4
-                while j < end, !(u[j] == UInt16(UInt8(ascii: "-")) && at(j + 1) == UInt16(UInt8(ascii: "-")) && at(j + 2) == UInt16(UInt8(ascii: ">"))) { j += 1 }
+                while j < end, !(u[j] == UInt16(ascii: "-") && at(j + 1) == UInt16(ascii: "-") && at(j + 2) == UInt16(ascii: ">")) { j += 1 }
                 i = min(end, j + 3)
                 continue
             }
-            if at(i + 1) == UInt16(UInt8(ascii: "/")), isNameStart(at(i + 2)) {
+            if at(i + 1) == UInt16(ascii: "/"), isNameStart(at(i + 2)) {
                 let (tag, _) = name(from: i + 2)
                 if let index = stack.lastIndex(where: { $0.name == tag }) {
                     pairs.append((stack[index].at, i))
                     stack.removeSubrange(index...)
                 }
-                i = tagEnd(from: i + 2)
+                i = SourceHighlighter.tagEnd(u, from: i + 2)
                 continue
             }
             guard isNameStart(at(i + 1)) else {
                 // <!DOCTYPE …>, <?xml …?>: nothing to fold.
-                i = at(i + 1) == UInt16(UInt8(ascii: "!")) || at(i + 1) == UInt16(UInt8(ascii: "?")) ? tagEnd(from: i + 1) : i + 1
+                i = at(i + 1) == UInt16(ascii: "!") || at(i + 1) == UInt16(ascii: "?") ? SourceHighlighter.tagEnd(u, from: i + 1) : i + 1
                 continue
             }
             let (tag, after) = name(from: i + 1)
-            let stop = tagEnd(from: after)
-            let selfClosing = stop >= 2 && stop <= end && u[stop - 1] == UInt16(UInt8(ascii: ">")) && u[stop - 2] == UInt16(UInt8(ascii: "/"))
+            let stop = SourceHighlighter.tagEnd(u, from: after)
+            let selfClosing = stop >= 2 && stop <= end && u[stop - 1] == UInt16(ascii: ">") && u[stop - 2] == UInt16(ascii: "/")
             i = stop
             if voidElements.contains(tag) || selfClosing { continue }
             stack.append((tag, stop))
             if tag == "script" || tag == "style" || tag == "textarea" || tag == "title" {
                 // Raw text: no tags inside, but code with its own blocks.
-                let close = closing(tag, from: stop)
+                let close = SourceHighlighter.rawTextEnd(u, from: stop, name: tag)
                 if tag == "script" { bracketPairs(u, stop, close, jsx: false, into: &pairs) }
                 if tag == "style" { cssPairs(u, stop, close, into: &pairs) }
                 i = close
@@ -313,11 +270,7 @@ final class SourceFoldLayout: NSObject, NSLayoutManagerDelegate {
 
     /// The hidden range holding a character, if any.
     func range(containing index: Int) -> NSRange? {
-        var low = 0, high = hidden.count
-        while low < high {
-            let mid = (low + high) / 2
-            if NSMaxRange(hidden[mid]) <= index { low = mid + 1 } else { high = mid }
-        }
+        let low = SourceLexing.firstIndex(hidden.count, past: index) { NSMaxRange(hidden[$0]) }
         guard low < hidden.count, hidden[low].location <= index, index < NSMaxRange(hidden[low]) else { return nil }
         return hidden[low]
     }

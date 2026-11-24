@@ -151,17 +151,7 @@ struct DeveloperApplicationView: View {
                 cacheBreadcrumbs(cache)
             }
             if let actionProblem {
-                HStack {
-                    Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
-                    Text(actionProblem).textSelection(.enabled).lineLimit(3)
-                    Spacer(minLength: 0)
-                    Button { self.actionProblem = nil } label: { Image(systemName: "xmark") }
-                        .buttonStyle(.plain).accessibilityLabel("Dismiss message")
-                }
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, DeveloperToolsStyle.gutter)
-                .padding(.vertical, DeveloperToolsStyle.controlSpacing)
-                .overlay(alignment: .bottom) { Divider() }
+                DeveloperApplicationProblemBar(text: actionProblem) { self.actionProblem = nil }
             }
             if query.section == .backForwardCache {
                 // Shown through the test's own navigation away and back.
@@ -200,18 +190,10 @@ struct DeveloperApplicationView: View {
         VStack(spacing: 0) {
             HStack(spacing: DeveloperToolsStyle.controlSpacing) {
                 sectionMenu
-                Button {
+                actionIcon("arrow.clockwise", "Refresh this section") {
                     filter = ""
                     refresh += 1
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .foregroundStyle(.secondary)
-                        .frame(width: DeveloperToolsStyle.controlHeight, height: DeveloperToolsStyle.controlHeight)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .help("Refresh this section")
-                .accessibilityLabel("Refresh this section")
                 .disabled(loading || page.flatMap(DeveloperApplication.origin) == nil)
                 HStack(spacing: DeveloperToolsStyle.controlSpacing) {
                     Image(systemName: "magnifyingglass")
@@ -316,10 +298,7 @@ struct DeveloperApplicationView: View {
             return ("Delete database", "trash", [container], { resetDrilldown() })
         case .caches:
             guard let container = data.container else { return nil }
-            return ("Delete cache", "trash", [container], {
-                query = DeveloperApplicationQuery(section: .caches)
-                filter = ""
-            })
+            return ("Delete cache", "trash", [container], { resetDrilldown() })
         default: return nil
         }
     }
@@ -355,33 +334,39 @@ struct DeveloperApplicationView: View {
                 try await DeveloperApplication.delete(items, in: session)
                 after()
             } catch {
-                actionProblem = (error as? DeveloperApplication.Issue)?.errorDescription ?? error.localizedDescription
+                actionProblem = error.localizedDescription
             }
         }
     }
 
     private func cacheBreadcrumbs(_ cache: String) -> some View {
-        HStack(spacing: DeveloperToolsStyle.controlSpacing) {
-            Button("Caches") {
-                query = DeveloperApplicationQuery(section: .caches)
-                filter = ""
-            }
-            .buttonStyle(.plain).foregroundStyle(DeveloperToolsStyle.tint)
-            Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(.secondary)
+        barRow {
+            Button("Caches") { resetDrilldown() }
+                .buttonStyle(.plain).foregroundStyle(DeveloperToolsStyle.tint)
+            chevron
             Text(cache).foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
-        .lineLimit(1)
-        .padding(.horizontal, DeveloperToolsStyle.gutter)
-        .frame(height: DeveloperToolsStyle.rowHeight)
-        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(.secondary)
+    }
+
+    /// A one-line bar under the toolbar: breadcrumbs or the pager.
+    private func barRow(@ViewBuilder _ content: () -> some View) -> some View {
+        HStack(spacing: DeveloperToolsStyle.controlSpacing, content: content)
+            .lineLimit(1)
+            .padding(.horizontal, DeveloperToolsStyle.gutter)
+            .frame(height: DeveloperToolsStyle.rowHeight)
+            .overlay(alignment: .bottom) { Divider() }
     }
 
     private func pager(_ data: DeveloperApplicationSnapshot) -> some View {
         let first = data.rows.isEmpty ? data.skip : data.skip + 1
         let last = data.skip + data.rows.count
         let total = data.total.map { " of \($0)" } ?? ""
-        return HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+        return barRow {
             actionIcon("chevron.left", "Show previous page") {
                 query.skip = max(0, query.skip - DeveloperApplicationQuery.pageSize)
             }
@@ -391,9 +376,6 @@ struct DeveloperApplicationView: View {
             Text("Entries \(first)–\(last)\(total)").foregroundStyle(.secondary).monospacedDigit()
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, DeveloperToolsStyle.gutter)
-        .frame(height: DeveloperToolsStyle.rowHeight)
-        .overlay(alignment: .bottom) { Divider() }
     }
 
     private var sectionMenu: some View {
@@ -422,10 +404,10 @@ struct DeveloperApplicationView: View {
     }
 
     private func breadcrumbs(_ database: String) -> some View {
-        HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+        barRow {
             Button("Databases") { resetDrilldown() }
                 .buttonStyle(.plain).foregroundStyle(DeveloperToolsStyle.tint)
-            Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(.secondary)
+            chevron
             Button(database) {
                 query.store = nil
                 query.index = nil
@@ -436,7 +418,7 @@ struct DeveloperApplicationView: View {
             .foregroundStyle(query.store == nil ? .primary : DeveloperToolsStyle.tint)
             .disabled(query.store == nil)
             if let store = query.store {
-                Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(.secondary)
+                chevron
                 Button(store) {
                     query.index = nil
                     query.skip = 0
@@ -445,7 +427,7 @@ struct DeveloperApplicationView: View {
                 .foregroundStyle(query.index == nil ? .secondary : DeveloperToolsStyle.tint)
                 .disabled(query.index == nil)
                 if let index = query.index {
-                    Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(.secondary)
+                    chevron
                     Text(index).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: DeveloperToolsStyle.gutter)
@@ -465,10 +447,6 @@ struct DeveloperApplicationView: View {
             }
             Spacer(minLength: 0)
         }
-        .lineLimit(1)
-        .padding(.horizontal, DeveloperToolsStyle.gutter)
-        .frame(height: DeveloperToolsStyle.rowHeight)
-        .overlay(alignment: .bottom) { Divider() }
     }
 
     private func results(_ data: DeveloperApplicationSnapshot) -> some View {
@@ -602,7 +580,7 @@ struct DeveloperApplicationView: View {
             return nil
         } catch {
             refresh += 1
-            return (error as? DeveloperApplication.Issue)?.errorDescription ?? error.localizedDescription
+            return error.localizedDescription
         }
     }
 

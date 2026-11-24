@@ -12,6 +12,78 @@ import XCTest
 /// the machine.
 @MainActor
 final class DeveloperNewToolsLive2Tests: XCTestCase {
+    // MARK: AI assistance's run-JavaScript tool
+
+    func testAIScriptRunsInThePageOnlyOnceApproved() async throws {
+        let live = try await open([
+            "/": .init(type: "text/html", body: "<!doctype html><title>AI run fixture</title><p id=p>x</p>"),
+            "/next": .init(type: "text/html", body: "<!doctype html><title>Next page</title>"),
+        ], title: "AI run fixture")
+        defer { live.window.close() }
+        let assistance = live.session.aiAssistance
+        defer { assistance.stop() }
+        assistance.beginResponseForTesting()
+
+        func pending() -> DeveloperAIAssistance.Message? {
+            assistance.messages.last { $0.script?.state == .pending }
+        }
+
+        // Declined: shown, never run.
+        let declined = Task { await assistance.requestRun("window.ran = 1; document.title") }
+        try await wait("script card") { pending() != nil }
+        XCTAssertTrue(assistance.awaitingApproval)
+        assistance.decide(try XCTUnwrap(pending()).id, run: false)
+        let declinedAnswer = await declined.value
+        XCTAssertEqual(declinedAnswer, DeveloperAIAssistance.declined)
+        XCTAssertEqual(assistance.messages.last?.script?.state, .declined)
+        let ranAfterDecline = try await page(live.page, "return window.ran ?? null")
+        XCTAssertTrue(ranAfterDecline is NSNull || ranAfterDecline == nil)
+
+        // Approved: runs, with top-level await, its value read back.
+        let approved = Task { await assistance.requestRun("await Promise.resolve(1);\n({title: document.title, text: document.getElementById('p').textContent})") }
+        try await wait("second card") { pending() != nil }
+        assistance.decide(try XCTUnwrap(pending()).id, run: true)
+        let answer = await approved.value
+        XCTAssertEqual(answer, #"Result: {"text":"x","title":"AI run fixture"}"#)
+        XCTAssertEqual(assistance.messages.last?.script?.state, .ran)
+
+        // Thrown: reported as such.
+        let thrown = Task { await assistance.requestRun("nope.nope") }
+        try await wait("third card") { pending() != nil }
+        assistance.decide(try XCTUnwrap(pending()).id, run: true)
+        let thrownAnswer = await thrown.value
+        XCTAssertTrue(thrownAnswer.hasPrefix("The code threw: ReferenceError"), thrownAnswer)
+        XCTAssertEqual(assistance.messages.last?.script?.state, .threw)
+
+        // Stop: what waits is declined.
+        let stopped = Task { await assistance.requestRun("window.ran = 2") }
+        try await wait("fourth card") { pending() != nil }
+        assistance.stop()
+        let stoppedAnswer = await stopped.value
+        XCTAssertEqual(stoppedAnswer, DeveloperAIAssistance.declined)
+        XCTAssertFalse(assistance.awaitingApproval)
+        let ranAfterStop = try await page(live.page, "return window.ran ?? null")
+        XCTAssertTrue(ranAfterStop is NSNull || ranAfterStop == nil)
+        // Stopped, a late call is turned away without a card.
+        let late = await assistance.requestRun("window.ran = 3")
+        XCTAssertEqual(late, DeveloperAIAssistance.declined)
+        XCTAssertNil(pending())
+
+        // Navigation cancels approval for the previous document.
+        assistance.beginResponseForTesting()
+        let navigating = Task { await assistance.requestRun("window.ran = 4") }
+        try await wait("script card before navigation") { pending() != nil }
+        let card = try XCTUnwrap(pending())
+        live.page.load(URLRequest(url: live.server.url("/next")))
+        try await wait("navigation to cancel the card") { live.page.title == "Next page" && !assistance.awaitingApproval }
+        assistance.decide(card.id, run: true)
+        let navigationAnswer = await navigating.value
+        XCTAssertEqual(navigationAnswer, DeveloperAIAssistance.declined)
+        let ranAfterNavigation = try await page(live.page, "return window.ran ?? null")
+        XCTAssertTrue(ranAfterNavigation is NSNull || ranAfterNavigation == nil)
+        await live.finish()
+    }
+
     // MARK: Source maps
 
     // 0-based lines, as the protocol and the map count them.
@@ -98,15 +170,16 @@ final class DeveloperNewToolsLive2Tests: XCTestCase {
             XCTAssertEqual(maps.linked(url: bundleURL, line: 6, column: 1).url, appURL)
             XCTAssertEqual(maps.linked(url: bundleURL, line: 6, column: 1).line, 4)
 
-            // The navigator: top › 127.0.0.1:port › src › app.ts, ahead of the page's own origin.
+            // The navigator: top › 127.0.0.1:port › src › app.ts, in the page's own origin's node, as Chrome.
             let authored = try XCTUnwrap(maps.authoredResources.first)
             let nodes = SourceTree.build(session.resources, frames: session.resourceFrames, authored: maps.authoredResources)
             let origin = "127.0.0.1:\(live.server.port)"
             let top = try XCTUnwrap(nodes.first)
             XCTAssertEqual(top.name, "top")
             XCTAssertEqual(SourceTree.ancestors(of: authored.id, in: nodes),
-                           [top.id, "authored|o:" + origin, "authored|o:" + origin + "/src"])
-            XCTAssertEqual(top.children.first?.id, "authored|o:" + origin)
+                           [top.id, top.id + "|o:" + origin, "authored|o:" + origin + "/src"])
+            XCTAssertEqual(top.children.filter { $0.name == origin }.count, 1)
+            XCTAssertEqual(top.children.first?.id, top.id + "|o:" + origin)
             let folder = try XCTUnwrap(top.children.first?.children.first)
             XCTAssertEqual(folder.name, "src")
             XCTAssertEqual(folder.children.map(\.name), ["app.ts"])
@@ -187,10 +260,10 @@ final class DeveloperNewToolsLive2Tests: XCTestCase {
             await debugger.settled()
         } catch {
             if debugger.pause != nil { debugger.step("resume") }
-            await finish(live)
+            await live.finish()
             throw error
         }
-        await finish(live)
+        await live.finish()
     }
 
     func testInlineDataURLSourceMapOfAScriptAddedLater() async throws {
@@ -288,10 +361,10 @@ final class DeveloperNewToolsLive2Tests: XCTestCase {
             await debugger.settled()
         } catch {
             if debugger.pause != nil { debugger.step("resume") }
-            await finish(live)
+            await live.finish()
             throw error
         }
-        await finish(live)
+        await live.finish()
     }
 
     // MARK: Layers
@@ -354,10 +427,10 @@ final class DeveloperNewToolsLive2Tests: XCTestCase {
             model.stop()
         } catch {
             model.stop()
-            await finish(live)
+            await live.finish()
             throw error
         }
-        await finish(live)
+        await live.finish()
     }
 
     // MARK: CSS overview
@@ -439,14 +512,138 @@ final class DeveloperNewToolsLive2Tests: XCTestCase {
             XCTAssertEqual(unused.elements, [nudged])
             XCTAssertEqual(unused.reason, "The position: static property prevents top from having an effect. Try setting position to something other than static.")
         } catch {
-            await finish(live)
+            await live.finish()
             throw error
         }
         model.clear()
-        await finish(live)
+        await live.finish()
     }
 
     // MARK: Header overrides
+
+    /// Network conditions' Accepted Content-Encodings: requests go out
+    /// offering only the chosen encodings, and back to the browser's own.
+    func testAcceptedContentEncodingsReachTheServer() async throws {
+        let live = try await open([
+            "/": .init(type: "text/html", body: "<!doctype html><title>Encodings fixture</title><p>encodings</p>"),
+            "/data.txt": .init(type: "text/plain", body: "plain body"),
+        ], title: "Encodings fixture")
+        defer { live.window.close() }
+        let tools = live.session.networkTools
+        defer { tools.acceptedEncodings = nil }
+        try await live.run {
+            live.session.select(.network)
+            let fetch = """
+                const response = await fetch("/data.txt", {cache: "no-store"});
+                return await response.text();
+                """
+            _ = try await page(live.page, fetch)
+            let browsers = live.server.header("Accept-Encoding", of: "/data.txt")
+            XCTAssertNotNil(browsers)
+            XCTAssertNotEqual(browsers, "gzip")
+
+            tools.acceptedEncodings = [.gzip]
+            try await wait("the encodings rule", state: { "active \(tools.blockingActive)" }) { tools.blockingActive }
+            let body = try await page(live.page, fetch) as? String
+            XCTAssertEqual(body, "plain body")
+            XCTAssertEqual(live.server.header("Accept-Encoding", of: "/data.txt"), "gzip")
+
+            // Network throttling's latency still holds a request whose encodings are rewritten.
+            live.session.setNetwork(.fast4G)
+            try await wait("Fast 4G") { live.session.throttle == .fast4G }
+            let timed = #"const t = performance.now(); await (await fetch("/data.txt", {cache: "no-store"})).text(); return performance.now() - t;"#
+            let heldValue = try await page(live.page, timed)
+            let held = try XCTUnwrap(heldValue as? Double)
+            XCTAssertGreaterThanOrEqual(held, DeveloperToolsSession.NetworkCondition.fast4G.latency - 5)
+            XCTAssertEqual(live.server.header("Accept-Encoding", of: "/data.txt"), "gzip")
+            live.session.setNetwork(.unrestricted)
+            try await wait("no throttling") { live.session.throttle == .unrestricted }
+
+            tools.acceptedEncodings = []
+            try await Task.sleep(for: .milliseconds(300))
+            _ = try await page(live.page, fetch)
+            XCTAssertEqual(live.server.header("Accept-Encoding", of: "/data.txt"), "identity")
+
+            tools.acceptedEncodings = nil
+            try await wait("the rule taken out", state: { "active \(tools.blockingActive)" }) { !tools.blockingActive }
+            _ = try await page(live.page, fetch)
+            XCTAssertEqual(live.server.header("Accept-Encoding", of: "/data.txt"), browsers)
+        }
+    }
+
+    /// Rendering's Disable WebP image format, as Chrome does it: image
+    /// requests stop offering WebP, and a WebP response fails to decode.
+    func testDisablingWebPDropsItFromAcceptAndFailsWebPImages() async throws {
+        // A 1×1 lossless WebP.
+        let webp = try XCTUnwrap(Data(base64Encoded: "UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA=="))
+        let live = try await open([
+            "/": .init(type: "text/html", body: "<!doctype html><title>WebP fixture</title><p>images</p>"),
+            "/pic.webp": .init(type: "image/webp", body: "", bytes: webp),
+        ], title: "WebP fixture")
+        defer { live.window.close() }
+        let tools = live.session.networkTools
+        defer { tools.disabledImageFormats = [] }
+        var load = 0
+        func image() async throws -> String? {
+            load += 1
+            return try await page(live.page, """
+                return await new Promise((done) => {
+                    const image = new Image();
+                    image.onload = () => done("loaded " + image.naturalWidth);
+                    image.onerror = () => done("failed");
+                    image.src = "/pic.webp?\(load)";
+                });
+                """) as? String
+        }
+        try await live.run {
+            live.session.select(.network)
+            let first = try await image()
+            XCTAssertEqual(first, "loaded 1")
+            let accept = try XCTUnwrap(live.server.header("Accept", of: "/pic.webp"))
+            XCTAssertTrue(accept.contains("image/webp"), accept)
+
+            tools.disabledImageFormats = [.webp]
+            try await wait("the rule", state: { "active \(tools.blockingActive)" }) { tools.blockingActive }
+            try await Task.sleep(for: .milliseconds(300))
+            let disabled = try await image()
+            XCTAssertEqual(disabled, "failed")
+            let without = try XCTUnwrap(live.server.header("Accept", of: "/pic.webp"))
+            XCTAssertFalse(without.contains("image/webp"), without)
+            XCTAssertTrue(without.contains("image/"), without)
+
+            tools.disabledImageFormats = []
+            try await wait("the rule taken out", state: { "active \(tools.blockingActive)" }) { !tools.blockingActive }
+            try await Task.sleep(for: .milliseconds(300))
+            let again = try await image()
+            XCTAssertEqual(again, "loaded 1")
+        }
+    }
+
+    /// Headers › General has the request's referrer policy, as Chrome's
+    /// does, from the request itself rather than only a header.
+    func testRequestsCarryTheirReferrerPolicy() async throws {
+        let live = try await open([
+            "/": .init(type: "text/html", body: "<!doctype html><title>Referrer policy fixture</title><p>policy</p>"),
+            "/data.txt": .init(type: "text/plain", body: "data"),
+        ], title: "Referrer policy fixture")
+        defer { live.window.close() }
+        let session = live.session
+        let dataURL = live.server.url("/data.txt").absoluteString
+        try await live.run {
+            session.select(.network)
+            _ = try await page(live.page, """
+                await fetch("/data.txt", {cache: "no-store", referrerPolicy: "no-referrer"});
+                return true;
+                """)
+            try await wait("the data.txt row", state: { "rows \(session.requests.map(\.url))" }) {
+                session.requests.contains { $0.url == dataURL && $0.ended != nil }
+            }
+            let row = try XCTUnwrap(session.requests.last { $0.url == dataURL })
+            let fetched = await session.requestDetails(row.id)
+            let details = try XCTUnwrap(fetched)
+            XCTAssertEqual(details.referrerPolicy, "no-referrer")
+        }
+    }
 
     func testHeaderOverridesAddAHeaderAndKeepTheBody() async throws {
         let live = try await open([
@@ -476,7 +673,7 @@ final class DeveloperNewToolsLive2Tests: XCTestCase {
             }
             try? FileManager.default.removeItem(at: folder)
         }
-        do {
+        try await live.run {
             let host = DeveloperLocalOverrides.escape("127.0.0.1:\(live.server.port)")
             let place = folder.appendingPathComponent(host, isDirectory: true)
             try FileManager.default.createDirectory(at: place, withIntermediateDirectories: true)
@@ -541,11 +738,7 @@ final class DeveloperNewToolsLive2Tests: XCTestCase {
             XCTAssertTrue(tools.extras[row.id]?.servedWithOverrides == true)
             let document = session.requests.filter { $0.url == live.server.url("/").absoluteString }
             XCTAssertFalse(document.contains { tools.extras[$0.id]?.overridden == true })
-        } catch {
-            await finish(live)
-            throw error
         }
-        await finish(live)
     }
 
     // MARK: Support
@@ -605,52 +798,10 @@ final class DeveloperNewToolsLive2Tests: XCTestCase {
         return "pause \(debugger.pause?.reason ?? "none"), frame \(frame ?? "none"), breakpoints \(breakpoints)"
     }
 
-    private struct Live {
-        let server: LocalPageServer
-        let page: WKWebView
-        let window: NSWindow
-        let tab: Tab
-        let session: DeveloperToolsSession
-    }
+    private typealias Live = DeveloperLivePage
 
-    /// The page in an on-screen borderless window, off to the side (a page
-    /// in no window now and then stops answering the inspector), loaded,
-    /// with a DevTools session attached and ready.
     private func open(_ pages: [String: LocalPageServer.Page], title: String) async throws -> Live {
-        _ = NSApplication.shared
-        let server = try LocalPageServer(pages)
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        Web.inspector(configuration.preferences)
-        let page = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
-        let window = NSWindow(contentRect: CGRect(x: -4_000, y: -4_000, width: 800, height: 600),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = page
-        window.orderFrontRegardless()
-        page.load(URLRequest(url: server.url("/")))
-        do {
-            try await wait("page to load") { page.title == title }
-        } catch {
-            window.close()
-            throw error
-        }
-        let tab = Tab(shy: true)
-        let session = DeveloperToolsSession(tab: tab, web: page, after: nil)
-        watched = session
-        let live = Live(server: server, page: page, window: window, tab: tab, session: session)
-        do {
-            try await wait("inspector") { session.ready }
-        } catch {
-            await finish(live)
-            window.close()
-            throw error
-        }
-        return live
-    }
-
-    private func finish(_ live: Live) async {
-        await DeveloperTestSupport.finish(live.session, page: live.page, keeping: live.tab, live.server)
+        try await Live.open(pages, title: title, opened: { watched = $0 }, wait: { try await wait($0, until: $1) })
     }
 
     private func page(_ page: WKWebView, _ body: String) async throws -> Any? {

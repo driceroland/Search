@@ -67,4 +67,19 @@ final class DeveloperLiveMetricsTests: XCTestCase {
             XCTAssertNil(context.exception, "\(context.exception?.toString() ?? "")")
         }
     }
+
+    /// The live view's Interactions and Layout shifts logs, as the script reports them.
+    func testLogsAreReadFromTheScript() throws {
+        let read = try XCTUnwrap(DeveloperLiveMetrics(raw: [
+            "interactionLog": [["name": "pointerdown", "target": "button#go", "duration": 48, "time": 1_200],
+                               ["name": "keydown", "duration": -1]],
+            "shiftLog": [["time": 900, "value": 0.031, "elements": ["h1#hero", "p"]]],
+        ] as [String: Any]))
+        XCTAssertEqual(read.interactionLog, [.init(name: "pointerdown", target: "button#go", duration: 48, time: 1_200)])
+        XCTAssertEqual(read.shiftLog, [.init(time: 900, value: 0.031, elements: ["h1#hero", "p"])])
+        XCTAssertEqual(DeveloperLiveLogs.milliseconds(48), "48 ms")
+        XCTAssertEqual(DeveloperLiveLogs.milliseconds(1_250), "1.25 s")
+        XCTAssertEqual(DeveloperLiveLogs.inpColor(180), .green)
+        XCTAssertEqual(DeveloperLiveLogs.inpColor(600), .red)
+    }
 }

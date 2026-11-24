@@ -22,11 +22,7 @@ enum DeveloperToolsTheme: String, CaseIterable, Identifiable {
 
     /// Nil follows the window, which follows the browser's own Look.
     var appearance: NSAppearance? {
-        switch self {
-        case .system: return nil
-        case .light: return NSAppearance(named: .aqua)
-        case .dark: return NSAppearance(named: .darkAqua)
-        }
+        colorScheme.flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
     }
 
     var colorScheme: ColorScheme? {

@@ -129,27 +129,17 @@ extension DeveloperPerformanceInsights {
         // A tag whose place couldn't be told (-1) is given the benefit of the doubt.
         let early = found.map { $0.end <= charsetPrescanBytes } ?? false
         let declared = header != nil || early
-        var rows: [Row] = []
-        rows.append(Row(id: 0, label: "Content-Type header", value: header ?? "No charset",
-                        detail: document?.contentType, failing: !declared))
+        var rows = [Row(id: 0, label: "Content-Type header", value: header ?? "No charset",
+                        detail: document?.contentType, failing: !declared)]
         if meta != nil {
-            var detail: String?
-            if let found, found.end > charsetPrescanBytes {
-                detail = "Ends at byte \(found.end.formatted()), past the first \(charsetPrescanBytes.formatted()) bytes"
-            }
+            let detail: String? = found.flatMap { found in found.end > charsetPrescanBytes
+                ? "Ends at byte \(found.end.formatted()), past the first \(charsetPrescanBytes.formatted()) bytes" : nil }
             rows.append(Row(id: 1, label: "<meta charset>", value: found?.charset ?? "Missing", detail: detail,
                             failing: !declared))
         }
-        let headline: String
-        if header != nil {
-            headline = "Declared in the Content-Type header"
-        } else if early {
-            headline = "Declared by <meta charset>"
-        } else if found != nil {
-            headline = "<meta charset> comes too late"
-        } else {
-            headline = "No character set declared"
-        }
+        let headline = header != nil ? "Declared in the Content-Type header"
+            : early ? "Declared by <meta charset>"
+            : found != nil ? "<meta charset> comes too late" : "No character set declared"
         return Insight(kind: .characterSet, title: "Declare a character set", verdict: declared ? .pass : .fail,
                        explanation: "Declare the document's character encoding in the Content-Type response header, "
                            + "or with a <meta charset> tag within the first 1,024 bytes of the HTML. Without it the "

@@ -356,22 +356,13 @@ final class DeveloperShortcutStore: ObservableObject {
             .flatMap { try? JSONDecoder().decode(DeveloperShortcutBindings.self, from: $0) } ?? DeveloperShortcutBindings()
     }
 
-    func set(_ shortcuts: [DeveloperShortcut], for action: DeveloperShortcutAction) {
-        bindings.set(shortcuts, for: action)
-        persist()
-    }
+    func set(_ shortcuts: [DeveloperShortcut], for action: DeveloperShortcutAction) { update { $0.set(shortcuts, for: action) } }
+    func reset(_ action: DeveloperShortcutAction) { update { $0.reset(action) } }
+    func apply(_ preset: DeveloperShortcutPreset) { update { $0.apply(preset) } }
 
-    func reset(_ action: DeveloperShortcutAction) {
-        bindings.reset(action)
-        persist()
-    }
-
-    func apply(_ preset: DeveloperShortcutPreset) {
-        bindings.apply(preset)
-        persist()
-    }
-
-    private func persist() {
+    /// Changes the bindings and saves them.
+    private func update(_ change: (inout DeveloperShortcutBindings) -> Void) {
+        change(&bindings)
         if bindings == DeveloperShortcutBindings() {
             defaults.removeObject(forKey: Self.key)
         } else if let data = try? JSONEncoder().encode(bindings) {
@@ -392,11 +383,9 @@ final class DeveloperShortcutRecorder: ObservableObject {
     private var monitor: Any?
 
     func toggle(_ action: DeveloperShortcutAction, store: DeveloperShortcutStore) {
-        if self.action == action {
-            stop()
-            return
-        }
+        let same = self.action == action
         stop()
+        guard !same else { return }
         self.action = action
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak store] event in
             let keyCode = event.keyCode
@@ -443,11 +432,9 @@ extension DeveloperToolsKeyRouting {
         let flags = flags.intersection(DeveloperShortcut.relevant)
         let routed = action(keyCode: keyCode, key: key, flags: flags, state: state)
         // The open command menu's own keys come first.
-        if let routed {
-            switch routed {
-            case .commandMenuMove, .commandMenuRun, .commandMenuClose: return routed
-            default: break
-            }
+        switch routed {
+        case .commandMenuMove?, .commandMenuRun?, .commandMenuClose?: return routed
+        default: break
         }
         let pressed = DeveloperShortcut(keyCode: keyCode, key: key, flags: flags)
         if pressed.canBeRecorded, let custom = shortcuts.customAction(for: pressed, panel: state.panel),

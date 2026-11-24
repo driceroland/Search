@@ -72,8 +72,8 @@ final class DeveloperProtocolMonitor: ObservableObject {
         let id = nextID
         nextID += 1
         startTimes[id] = CFAbsoluteTimeGetCurrent()
-        append(Entry(id: id, method: method, direction: .sent, target: target, params: Self.json(params),
-                     time: Date()))
+        append(contentsOf: [Entry(id: id, method: method, direction: .sent, target: target, params: Self.json(params),
+                                  time: Date())])
         return id
     }
 
@@ -98,10 +98,6 @@ final class DeveloperProtocolMonitor: ObservableObject {
             nextID += 1
         }
         append(contentsOf: batch)
-    }
-
-    private func append(_ entry: Entry) {
-        append(contentsOf: [entry])
     }
 
     private func append(contentsOf batch: [Entry]) {
@@ -133,14 +129,9 @@ final class DeveloperProtocolMonitor: ObservableObject {
     // MARK: Text
 
     static func json(_ value: Any) -> String {
-        let text: String
-        if JSONSerialization.isValidJSONObject(value),
-           let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed]),
-           let string = String(data: data, encoding: .utf8) {
-            text = string
-        } else {
-            text = String(describing: value)
-        }
+        let data = JSONSerialization.isValidJSONObject(value)
+            ? try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed]) : nil
+        let text = data.flatMap { String(data: $0, encoding: .utf8) } ?? String(describing: value)
         guard text.utf16.count > longestText else { return text }
         return String(text.prefix(longestText)) + "\u{2026}"
     }
@@ -221,6 +212,9 @@ struct DeveloperProtocolMonitorView: View {
     @State private var method = ""
     @State private var parameters = ""
     @State private var target = ""
+    /// The table's width: Timestamp, then Elapsed time, give way in a
+    /// narrow one so Method keeps its room.
+    @State private var tableWidth: CGFloat = 900
 
     init(session: DeveloperToolsSession) {
         self.session = session
@@ -237,6 +231,7 @@ struct DeveloperProtocolMonitorView: View {
             Divider()
             HSplitView {
                 table.frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tableWidth = $0 }
                 if let selection, let entry = monitor.entries.first(where: { $0.id == selection }) {
                     details(entry).frame(minWidth: 220, idealWidth: 320, maxHeight: .infinity)
                 }
@@ -286,11 +281,21 @@ struct DeveloperProtocolMonitorView: View {
         return visible == total ? "\(total) messages" : "\(visible) of \(total) messages"
     }
 
-    private enum Column {
+    enum Column {
         static let direction: CGFloat = 18
         static let target: CGFloat = 90
         static let elapsed: CGFloat = 80
         static let time: CGFloat = 90
+        /// Room Method keeps before a column drops out.
+        static let method: CGFloat = 120
+
+        /// Which of Elapsed time and Timestamp fit a table `width` wide.
+        static func shown(_ width: CGFloat) -> (elapsed: Bool, time: Bool) {
+            let gap = DeveloperToolsStyle.gutter
+            let base = 2 * gap + direction + gap + method + gap + target
+            let elapsedFits = width >= base + gap + elapsed
+            return (elapsedFits, elapsedFits && width >= base + 2 * gap + elapsed + time)
+        }
     }
 
     private var table: some View {
@@ -299,8 +304,12 @@ struct DeveloperProtocolMonitorView: View {
                 Color.clear.frame(width: Column.direction, height: 1)
                 Text("Method").frame(maxWidth: .infinity, alignment: .leading)
                 Text("Target").frame(width: Column.target, alignment: .leading)
-                Text("Elapsed time").frame(width: Column.elapsed, alignment: .trailing)
-                Text("Timestamp").frame(width: Column.time, alignment: .trailing)
+                if Column.shown(tableWidth).elapsed {
+                    Text("Elapsed time").frame(width: Column.elapsed, alignment: .trailing)
+                }
+                if Column.shown(tableWidth).time {
+                    Text("Timestamp").frame(width: Column.time, alignment: .trailing)
+                }
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.secondary)
@@ -341,10 +350,14 @@ struct DeveloperProtocolMonitorView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(entry.target ?? "main").foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 .frame(width: Column.target, alignment: .leading)
-            Text(elapsedText(entry)).foregroundStyle(.secondary).monospacedDigit()
-                .frame(width: Column.elapsed, alignment: .trailing)
-            Text(DeveloperMeasure.clock.string(from: entry.time)).foregroundStyle(.secondary).monospacedDigit()
-                .frame(width: Column.time, alignment: .trailing)
+            if Column.shown(tableWidth).elapsed {
+                Text(elapsedText(entry)).foregroundStyle(.secondary).monospacedDigit()
+                    .frame(width: Column.elapsed, alignment: .trailing)
+            }
+            if Column.shown(tableWidth).time {
+                Text(DeveloperMeasure.clock.string(from: entry.time)).foregroundStyle(.secondary).monospacedDigit()
+                    .frame(width: Column.time, alignment: .trailing)
+            }
         }
         .font(DeveloperToolsStyle.code)
         .padding(.horizontal, DeveloperToolsStyle.gutter)
@@ -353,9 +366,9 @@ struct DeveloperProtocolMonitorView: View {
         .contentShape(Rectangle())
         .onTapGesture { selection = selection == entry.id ? nil : entry.id }
         .contextMenu {
-            Button("Copy method") { DeveloperJSONTree.copy(entry.method) }
-            Button("Copy parameters") { DeveloperJSONTree.copy(entry.params) }
-            if let response = entry.response { Button("Copy response") { DeveloperJSONTree.copy(response) } }
+            Button("Copy method") { DeveloperToolsSession.copyToPasteboard(entry.method) }
+            Button("Copy parameters") { DeveloperToolsSession.copyToPasteboard(entry.params) }
+            if let response = entry.response { Button("Copy response") { DeveloperToolsSession.copyToPasteboard(response) } }
             if entry.direction == .sent {
                 Divider()
                 Button("Edit and resend") {

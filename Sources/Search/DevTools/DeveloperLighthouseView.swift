@@ -116,8 +116,7 @@ private struct DeveloperLighthouseStart: View {
                             ForEach(DeveloperLighthouseMode.allCases) { Text($0.rawValue).tag($0) }
                         }
                         .pickerStyle(.radioGroup).labelsHidden()
-                        Text(model.mode.summary).foregroundStyle(.secondary).frame(maxWidth: 260, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
+                        note(model.mode.summary)
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Device").font(.system(size: 11, weight: .semibold))
@@ -126,8 +125,7 @@ private struct DeveloperLighthouseStart: View {
                         }
                         .pickerStyle(.radioGroup).labelsHidden()
                         .disabled(model.mode != .navigation)
-                        Text(deviceNote).foregroundStyle(.secondary).frame(maxWidth: 260, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
+                        note(deviceNote)
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Throttling").font(.system(size: 11, weight: .semibold))
@@ -136,9 +134,7 @@ private struct DeveloperLighthouseStart: View {
                         }
                         .pickerStyle(.radioGroup).labelsHidden()
                         .disabled(model.mode != .navigation)
-                        Text(model.mode == .navigation ? model.throttling.summary : "Only a Navigation run is throttled.")
-                            .foregroundStyle(.secondary).frame(maxWidth: 260, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
+                        note(model.mode == .navigation ? model.throttling.summary : "Only a Navigation run is throttled.")
                         Toggle("Clear storage", isOn: $model.clearStorage)
                             .toggleStyle(.developerCheckbox)
                             .disabled(model.mode != .navigation)
@@ -172,6 +168,11 @@ private struct DeveloperLighthouseStart: View {
             .padding(DeveloperToolsStyle.gutter + 8)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text).foregroundStyle(.secondary).frame(maxWidth: 260, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var startTitle: String {
@@ -674,15 +675,11 @@ extension DeveloperLighthouseReport {
                 ($0.details?.overallSavingsMs ?? 0) > ($1.details?.overallSavingsMs ?? 0)
             }
             let diagnostics = failing.filter { $0.0.group != "load-opportunities" }.map(\.1) + informative.map(\.1)
-            if !opportunities.isEmpty {
-                let group = DeveloperLighthouseCatalog.groups["load-opportunities"]
-                out.append(Section(id: "opportunities", title: group?.title ?? "Opportunities", description: group?.description,
-                                   audits: opportunities, collapsed: false))
-            }
-            if !diagnostics.isEmpty {
-                let group = DeveloperLighthouseCatalog.groups["diagnostics"]
-                out.append(Section(id: "diagnostics", title: group?.title ?? "Diagnostics", description: group?.description,
-                                   audits: diagnostics, collapsed: false))
+            for (id, key, title, rows) in [("opportunities", "load-opportunities", "Opportunities", opportunities),
+                                           ("diagnostics", "diagnostics", "Diagnostics", diagnostics)] where !rows.isEmpty {
+                let group = DeveloperLighthouseCatalog.groups[key]
+                out.append(Section(id: id, title: group?.title ?? title, description: group?.description,
+                                   audits: rows, collapsed: false))
             }
         } else {
             var order: [String] = []

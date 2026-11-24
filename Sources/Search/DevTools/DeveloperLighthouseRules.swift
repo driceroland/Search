@@ -148,10 +148,11 @@ enum DeveloperLighthouseRules {
     }
 
     static func binary(_ id: String, passed: Bool, details: DeveloperLighthouseDetails? = nil,
-                       displayValue: String? = nil) -> Audit {
+                       displayValue: String? = nil, explanation: String? = nil) -> Audit {
         var audit = base(id, passed: passed)
         audit.details = details
         audit.displayValue = displayValue
+        audit.explanation = explanation
         return audit
     }
 
@@ -194,6 +195,11 @@ enum DeveloperLighthouseRules {
 
     static func kib(_ bytes: Double) -> String {
         Int((bytes / 1024).rounded()).formatted() + " KiB"
+    }
+
+    /// A URL without its fragment.
+    static func withoutFragment(_ url: String) -> String {
+        url.split(separator: "#", maxSplits: 1).first.map(String.init) ?? url
     }
 
     static func ms(_ value: Double) -> String {
@@ -308,8 +314,8 @@ enum DeveloperLighthouseRules {
 
     /// The request for a URL, ignoring its fragment.
     static func request(_ url: String, in requests: [DeveloperLighthouseRequest]) -> DeveloperLighthouseRequest? {
-        let key = url.split(separator: "#", maxSplits: 1).first.map(String.init) ?? url
-        return requests.first { ($0.url.split(separator: "#", maxSplits: 1).first.map(String.init) ?? $0.url) == key }
+        let key = withoutFragment(url)
+        return requests.first { withoutFragment($0.url) == key }
     }
 
     static func bytes(of url: String, _ input: DeveloperLighthouseInput) -> Double? {
@@ -339,6 +345,22 @@ enum DeveloperLighthouseRules {
                                                        savingsMs: savingsMs, savingsBytes: savingsBytes)
         }
         return audit
+    }
+
+    /// A byte-savings opportunity over items of url, totalBytes and
+    /// wastedBytes (and node, with `nodes`), largest savings first unless
+    /// `sorted` is false.
+    static func byteOpportunity(_ id: String, _ items: [[String: Value]], sizeLabel: String = "Transfer Size",
+                                nodes: Bool = false, sorted: Bool = true, _ input: DeveloperLighthouseInput) -> Audit {
+        let total = items.reduce(0.0) { $0 + (number($1["wastedBytes"]) ?? 0) }
+        var items = items
+        if sorted { items.sort { (number($0["wastedBytes"]) ?? 0) > (number($1["wastedBytes"]) ?? 0) } }
+        return opportunity(id, items: items, headings: (nodes ? [Heading(key: "node", label: "", valueType: "node")] : []) + [
+            Heading(key: "url", label: "URL", valueType: "url"),
+            Heading(key: "totalBytes", label: sizeLabel, valueType: "bytes"),
+            Heading(key: "wastedBytes", label: "Est Savings", valueType: "bytes"),
+        ], savingsBytes: total, savingsMs: DeveloperLighthouseScoring.milliseconds(forBytes: total, input.formFactor),
+           input.formFactor)
     }
 
     static func renderBlocking(_ input: DeveloperLighthouseInput) -> Audit {
@@ -393,7 +415,6 @@ enum DeveloperLighthouseRules {
             }
         }
         var items: [[String: Value]] = []
-        var wastedTotal = 0.0
         for src in order {
             guard let entry = best[src], let size = bytes(of: src, input) else { continue }
             let image = entry.image, expected = entry.expected
@@ -402,17 +423,9 @@ enum DeveloperLighthouseRules {
             let wasted = size * (1 - expected / actual)
             // Lighthouse's IGNORE_THRESHOLD_IN_BYTES.
             guard wasted > 4_096 else { continue }
-            wastedTotal += wasted
             items.append(["node": .node(image.node), "url": .url(src), "totalBytes": .bytes(size), "wastedBytes": .bytes(wasted)])
         }
-        items.sort { (number($0["wastedBytes"]) ?? 0) > (number($1["wastedBytes"]) ?? 0) }
-        return opportunity(id, items: items, headings: [
-            Heading(key: "node", label: "", valueType: "node"),
-            Heading(key: "url", label: "URL", valueType: "url"),
-            Heading(key: "totalBytes", label: "Resource Size", valueType: "bytes"),
-            Heading(key: "wastedBytes", label: "Est Savings", valueType: "bytes"),
-        ], savingsBytes: wastedTotal, savingsMs: DeveloperLighthouseScoring.milliseconds(forBytes: wastedTotal, input.formFactor),
-           input.formFactor)
+        return byteOpportunity(id, items, sizeLabel: "Resource Size", nodes: true, input)
     }
 
     static func number(_ value: Value?) -> Double? {
@@ -437,20 +450,13 @@ enum DeveloperLighthouseRules {
         let id = "modern-image-formats"
         guard !input.requests.isEmpty else { return notApplicable(id, "No network requests were recorded.") }
         var items: [[String: Value]] = []
-        var total = 0.0
         var seen = Set<String>()
         for request in input.requests where !request.url.hasPrefix("data:") && seen.insert(request.url).inserted {
             guard let share = modernFormatSavings(mime: request.mimeType), let size = request.transferSize ?? request.resourceSize,
                   size > 8_192 else { continue }
-            let wasted = size * share
-            total += wasted
-            items.append(["url": .url(request.url), "totalBytes": .bytes(size), "wastedBytes": .bytes(wasted)])
+            items.append(["url": .url(request.url), "totalBytes": .bytes(size), "wastedBytes": .bytes(size * share)])
         }
-        return opportunity(id, items: items, headings: [
-            Heading(key: "url", label: "URL", valueType: "url"),
-            Heading(key: "totalBytes", label: "Resource Size", valueType: "bytes"),
-            Heading(key: "wastedBytes", label: "Est Savings", valueType: "bytes"),
-        ], savingsBytes: total, savingsMs: DeveloperLighthouseScoring.milliseconds(forBytes: total, input.formFactor), input.formFactor)
+        return byteOpportunity(id, items, sizeLabel: "Resource Size", sorted: false, input)
     }
 
     static func isText(mime: String) -> Bool {
@@ -464,7 +470,6 @@ enum DeveloperLighthouseRules {
         let id = "uses-text-compression"
         guard !input.requests.isEmpty else { return notApplicable(id, "No network requests were recorded.") }
         var items: [[String: Value]] = []
-        var total = 0.0
         for request in input.requests where !request.cached && request.status != 304 && !request.headers.isEmpty {
             guard isText(mime: request.mimeType), ["http", "https"].contains(request.scheme) else { continue }
             let encoding = request.headers["content-encoding"]?.lowercased().trimmingCharacters(in: .whitespaces) ?? ""
@@ -474,14 +479,9 @@ enum DeveloperLighthouseRules {
             // typically takes text to a third of its size.
             let wasted = size * 0.65
             guard size > 1_400, wasted > 1_400 else { continue }
-            total += wasted
             items.append(["url": .url(request.url), "totalBytes": .bytes(size), "wastedBytes": .bytes(wasted)])
         }
-        return opportunity(id, items: items, headings: [
-            Heading(key: "url", label: "URL", valueType: "url"),
-            Heading(key: "totalBytes", label: "Transfer Size", valueType: "bytes"),
-            Heading(key: "wastedBytes", label: "Est Savings", valueType: "bytes"),
-        ], savingsBytes: total, savingsMs: DeveloperLighthouseScoring.milliseconds(forBytes: total, input.formFactor), input.formFactor)
+        return byteOpportunity(id, items, sorted: false, input)
     }
 
     // MARK: Performance diagnostics
@@ -758,9 +758,7 @@ enum DeveloperLighthouseRules {
             stack.append(color)
             if color.isOpaque { break }
         }
-        var result = DeveloperCSSColor.white
-        for color in stack.reversed() { result = color.over(result) }
-        return result
+        return DeveloperCSSColor.composite(stack)
     }
 
     static func colorContrast(_ page: DeveloperLighthousePage) -> Audit {
@@ -946,9 +944,7 @@ enum DeveloperLighthouseRules {
         } else {
             problem = "Document must contain a doctype"
         }
-        var audit = binary(id, passed: problem == nil)
-        audit.explanation = problem
-        return audit
+        return binary(id, passed: problem == nil, explanation: problem)
     }
 
     static func charset(_ input: DeveloperLighthouseInput) -> Audit {
@@ -970,14 +966,14 @@ enum DeveloperLighthouseRules {
     static func deprecations(_ input: DeveloperLighthouseInput) -> Audit {
         let id = "deprecations"
         guard let issues = input.issues else { return notApplicable(id, "The Issues tool couldn't be read.") }
-        let found = issues.filter(\.deprecation)
-        guard !found.isEmpty else { return binary(id, passed: true) }
-        let count = found.reduce(0) { $0 + $1.count }
+        let deprecated = issues.filter(\.deprecation)
+        guard !deprecated.isEmpty else { return binary(id, passed: true) }
+        let count = deprecated.reduce(0) { $0 + $1.count }
         return binary(id, passed: false, details: DeveloperLighthouseDetails(headings: [
             Heading(key: "value", label: "Deprecation / Warning", valueType: "text"),
             Heading(key: "count", label: "Count", valueType: "numeric"),
-        ], items: found.map { ["value": .text($0.subtitle ?? $0.title), "count": .numeric(Double($0.count))] }),
-        displayValue: count == 1 ? "1 warning found" : "\(count) warnings found")
+        ], items: deprecated.map { ["value": .text($0.subtitle ?? $0.title), "count": .numeric(Double($0.count))] }),
+        displayValue: found(count, "warning"))
     }
 
     static func inspectorIssues(_ input: DeveloperLighthouseInput) -> Audit {
@@ -996,30 +992,25 @@ enum DeveloperLighthouseRules {
 
     static func mainDocument(_ input: DeveloperLighthouseInput) -> DeveloperLighthouseRequest? {
         let documents = input.requests.filter { $0.type.lowercased() == "document" }
-        let final = input.page.url.split(separator: "#", maxSplits: 1).first.map(String.init) ?? input.page.url
+        let final = withoutFragment(input.page.url)
         return documents.last { $0.url == final } ?? documents.first
     }
 
     static func viewport(_ page: DeveloperLighthousePage) -> Audit {
         let id = "viewport"
         guard let content = page.viewport else {
-            var audit = binary(id, passed: false)
-            audit.explanation = "No `<meta name=\"viewport\">` tag found"
-            return audit
+            return binary(id, passed: false, explanation: "No `<meta name=\"viewport\">` tag found")
         }
         let properties = viewportProperties(content)
         let ok = properties["width"] != nil || properties["initial-scale"] != nil
-        var audit = binary(id, passed: ok)
-        if !ok { audit.explanation = "No `width` or `initial-scale` property found" }
-        return audit
+        return binary(id, passed: ok, explanation: ok ? nil : "No `width` or `initial-scale` property found")
     }
 
     static func metaDescription(_ page: DeveloperLighthousePage) -> Audit {
         let id = "meta-description"
         guard let description = page.metaDescription else { return binary(id, passed: false) }
-        var audit = binary(id, passed: !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        if !audit.passed { audit.explanation = "Description text is empty." }
-        return audit
+        let ok = !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return binary(id, passed: ok, explanation: ok ? nil : "Description text is empty.")
     }
 
     static func httpStatus(_ input: DeveloperLighthouseInput) -> Audit {
@@ -1040,17 +1031,15 @@ enum DeveloperLighthouseRules {
 
     static func linkText(_ page: DeveloperLighthousePage) -> Audit {
         let id = "link-text"
-        let pageBase = page.url.split(separator: "#", maxSplits: 1).first.map(String.init) ?? page.url
+        let pageBase = withoutFragment(page.url)
         let checked = page.links.filter { link in
             guard let raw = link.rawHref, link.tag == "a" else { return false }
-            let href = link.href.split(separator: "#", maxSplits: 1).first.map(String.init) ?? link.href
-            return !raw.lowercased().hasPrefix("javascript:") && !raw.hasPrefix("#") && href != pageBase
+            return !raw.lowercased().hasPrefix("javascript:") && !raw.hasPrefix("#") && withoutFragment(link.href) != pageBase
         }
         let failing = checked.filter {
             genericLinkText.contains($0.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 .trimmingCharacters(in: .punctuationCharacters))
         }
-        guard !checked.isEmpty else { return binary(id, passed: true) }
         guard !failing.isEmpty else { return binary(id, passed: true) }
         return binary(id, passed: false, details: DeveloperLighthouseDetails(headings: [
             Heading(key: "href", label: "Link destination", valueType: "url"),
@@ -1137,11 +1126,7 @@ enum DeveloperLighthouseRules {
     static func canonical(_ page: DeveloperLighthousePage) -> Audit {
         let id = "canonical"
         guard !page.canonicals.isEmpty else { return notApplicable(id) }
-        func fail(_ why: String) -> Audit {
-            var audit = binary(id, passed: false)
-            audit.explanation = why
-            return audit
-        }
+        func fail(_ why: String) -> Audit { binary(id, passed: false, explanation: why) }
         let distinct = Array(Set(page.canonicals.map { $0.resolved }))
         if distinct.count > 1 { return fail("Multiple conflicting URLs (\(distinct.sorted().joined(separator: ", ")))") }
         let canonical = page.canonicals[0]

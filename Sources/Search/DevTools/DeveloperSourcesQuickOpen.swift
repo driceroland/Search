@@ -17,7 +17,7 @@ enum SourceOutline {
         return units.withUnsafeBufferPointer { u in
             switch language {
             case .javascript: return javascript(u, 0, u.count)
-            case .css: return css(u)
+            case .css: return cssRange(u, 0, u.count)
             case .html:
                 // The scripts and styles in the page.
                 var symbols: [SourceSymbol] = []
@@ -114,8 +114,6 @@ enum SourceOutline {
         }
         return symbols
     }
-
-    private static func css(_ u: UnsafeBufferPointer<UInt16>) -> [SourceSymbol] { cssRange(u, 0, u.count) }
 
     private static func cssRange(_ u: UnsafeBufferPointer<UInt16>, _ start: Int, _ end: Int) -> [SourceSymbol] {
         var symbols: [SourceSymbol] = []

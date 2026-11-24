@@ -3,7 +3,8 @@ import WebKit
 
 /// Rendering's emulations that WebKit's Page domain doesn't have, done in
 /// the inspected page's own world by DeveloperRendering-page.js: Frame
-/// rendering stats, Layout shift regions, Emulate a focused page, and the
+/// rendering stats, Layout shift regions, Scrolling performance issues,
+/// Highlight ads, Emulate a focused page, and the
 /// media features WebKit can't override (by rewriting the page's media
 /// queries and wrapping matchMedia). All approximations, and labelled so.
 ///
@@ -16,7 +17,17 @@ final class DeveloperRenderingPage {
     struct State: Equatable {
         var frameStats = false
         var layoutShifts = false
+        /// Scrolling performance issues: blocking handlers and fixed backgrounds outlined.
+        var scrollIssues = false
+        /// Highlight ads: frames from ad networks and Shield's ad slots outlined.
+        var highlightAds = false
+        /// Device mode's touch emulation: touch APIs and events from the mouse.
+        var touch = false
+        /// Enable automatic dark mode: the page's colours inverted unless it is dark already.
+        var autoDark = false
         var focused = false
+        /// Disable local fonts: `local()` sources taken out of `@font-face`.
+        var noLocalFonts = false
         /// Media feature to the value it should match, as
         /// "forced-colors": "active".
         var media: [String: String] = [:]
@@ -26,7 +37,10 @@ final class DeveloperRenderingPage {
         /// The state as the script takes it, keys sorted.
         var json: String {
             let object: [String: Any] = ["frameStats": frameStats, "layoutShifts": layoutShifts,
-                                         "focused": focused, "media": media]
+                                         "focused": focused, "media": media, "noLocalFonts": noLocalFonts,
+                                         "scrollIssues": scrollIssues, "autoDark": autoDark,
+                                         "highlightAds": highlightAds, "touch": touch,
+                                         "ads": highlightAds ? ["domains": Shield.adNetworks, "selectors": Shield.adSlots] as Any : NSNull()]
             guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else {
                 return "{}"
             }
@@ -67,14 +81,14 @@ final class DeveloperRenderingPage {
             return
         }
         self.web = web
-        userScript = WKUserScript(source: Self.source(next), injectionTime: .atDocumentStart,
-                                  forMainFrameOnly: true, in: .page)
-        ensure(web)
+        let script = WKUserScript(source: Self.source(next), injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page)
+        userScript = script
+        web.configuration.userContentController.developerArm(script)
         if observation == nil {
             observation = web.observe(\.isLoading, options: [.new]) { [weak self] web, _ in
                 MainActor.assumeIsolated {
-                    guard let self, web === self.web, web.isLoading else { return }
-                    self.ensure(web)
+                    guard let self, web === self.web, web.isLoading, let script = self.userScript else { return }
+                    web.configuration.userContentController.developerArm(script)
                 }
             }
         }
@@ -94,26 +108,10 @@ final class DeveloperRenderingPage {
         }
     }
 
-    private func ensure(_ web: WKWebView) {
-        guard let script = userScript else { return }
-        let controller = web.configuration.userContentController
-        // Kept by Tab.arm at each navigation, as the tab's own scripts are.
-        ArmedRiders.add(script, to: controller)
-        if !controller.userScripts.contains(where: { $0 === script }) { controller.addUserScript(script) }
-    }
-
     private func removeScript() {
         guard let script = userScript else { return }
         ArmedRiders.remove(script)
-        if let web {
-            let controller = web.configuration.userContentController
-            if controller.userScripts.contains(where: { $0 === script }) {
-                // WebKit takes user scripts out all at once; the tab's go back.
-                let others = controller.userScripts.filter { $0 !== script }
-                controller.removeAllUserScripts()
-                others.forEach(controller.addUserScript)
-            }
-        }
+        web?.configuration.userContentController.developerRemove(script)
         userScript = nil
     }
 }

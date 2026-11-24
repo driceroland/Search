@@ -119,15 +119,14 @@ enum DeveloperPerformanceAnimationTrack {
             let length = animation.effect.infinite ? Double.infinity
                 : DeveloperAnimationTimeline.activeDuration(animation.effect) / 1_000
             let end = min(bounds.upperBound, active + length)
-            let kind: String
-            switch animation.kind {
-            case .cssAnimation: kind = "CSS animation"
-            case .cssTransition: kind = "CSS transition"
-            case .script: kind = "Animation"
+            let kind = switch animation.kind {
+            case .cssAnimation: "CSS animation"
+            case .cssTransition: "CSS transition"
+            case .script: "Animation"
             }
             var data = ["kind": kind, "name": animation.title, "state": end < bounds.upperBound ? "done" : "active",
-                        "id": String(animation.id.prefix(200))]
-            data["activeOffset"] = String(max(0, min(end, active) - start) * 1_000)
+                        "id": String(animation.id.prefix(200)),
+                        "activeOffset": String(max(0, min(end, active) - start) * 1_000)]
             if let node = animation.node { data["node"] = String(node) }
             result.append(Timing(type: Self.type, start: start, end: max(start, end), data: data))
         }

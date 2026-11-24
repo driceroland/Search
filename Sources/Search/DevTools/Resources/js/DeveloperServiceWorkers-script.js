@@ -53,10 +53,8 @@ for (const registration of registrations.slice(0, 50)) {
         const worker = registration[role];
         if (worker) workers.push({ role, state: worker.state, scriptURL: String(worker.scriptURL).slice(0, 4096) });
     }
-    let subscribed = false;
-    try { subscribed = !!(await registration.pushManager?.getSubscription()); } catch {}
     rows.push({
-        scope: registration.scope, workers, subscribed,
+        scope: registration.scope, workers,
         controlsPage: !!controller && !!registration.active && controller.scriptURL === registration.active.scriptURL
             && location.href.startsWith(registration.scope),
         updateViaCache: registration.updateViaCache ?? "imports",

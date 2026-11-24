@@ -32,6 +32,8 @@ final class DeveloperPerformanceMonitorModel: ObservableObject {
     private var lastCPU = 0.0
     private var lastHeap = 0.0
     private var trackingAsked = 0.0
+    /// The views showing readings: the monitor, Memory's start page.
+    private var holders = 0
 
     private static var models: [ObjectIdentifier: (session: WeakSession, model: DeveloperPerformanceMonitorModel)] = [:]
     struct WeakSession { weak var value: DeveloperToolsSession? }
@@ -80,6 +82,7 @@ final class DeveloperPerformanceMonitorModel: ObservableObject {
 
     /// While the tool is shown: tracking on, and a reading a second.
     func start() {
+        holders += 1
         guard poll == nil else { return }
         running = true
         poll = Task { [weak self] in
@@ -94,6 +97,10 @@ final class DeveloperPerformanceMonitorModel: ObservableObject {
 
     /// Hidden: the charts pause and WebKit stops tracking.
     func stop() {
+        holders = max(0, holders - 1)
+        // Memory's start page reads the heap too: tracking goes on until
+        // neither is shown.
+        guard holders == 0 else { return }
         poll?.cancel()
         poll = nil
         running = false
@@ -150,35 +157,25 @@ final class DeveloperPerformanceMonitorModel: ObservableObject {
         trackingAsked = now
         trackedTarget = .some(target)
         _ = try? await session.evaluateInFrontend("perchPerformanceMonitor.own(true);")
-        do {
-            _ = try await session.command("CPUProfiler.startTracking")
-            cpuUnavailable = false
-        } catch {
-            cpuUnavailable = true
-        }
-        do {
-            _ = try await session.command("Memory.startTracking")
-            heapUnavailable = false
-        } catch {
-            heapUnavailable = true
-        }
+        cpuUnavailable = (try? await session.command("CPUProfiler.startTracking")) == nil
+        heapUnavailable = (try? await session.command("Memory.startTracking")) == nil
     }
 
     /// The frontend's CPU and heap readings, and the timeline's counts.
     private func apply(_ raw: [String: Any], now: Double) {
-        let frontendNow = (raw["now"] as? NSNumber)?.doubleValue ?? 0
+        let frontendNow = raw.double("now") ?? 0
         func time(_ item: [String: Any]) -> Double {
-            let at = (item["time"] as? NSNumber)?.doubleValue ?? frontendNow
+            let at = item.double("time") ?? frontendNow
             return now - max(0, frontendNow - at) / 1000
         }
         for item in raw["cpu"] as? [[String: Any]] ?? [] {
-            guard let usage = (item["usage"] as? NSNumber)?.doubleValue else { continue }
+            guard let usage = item.double("usage") else { continue }
             let at = time(item)
             history.add(.cpu, max(0, usage), at: at)
             lastCPU = max(lastCPU, at)
         }
         for item in raw["memory"] as? [[String: Any]] ?? [] {
-            guard let size = (item["size"] as? NSNumber)?.doubleValue else { continue }
+            guard let size = item.double("size") else { continue }
             let at = time(item)
             history.add(.jsHeap, max(0, size), at: at)
             lastHeap = max(lastHeap, at)
@@ -187,8 +184,8 @@ final class DeveloperPerformanceMonitorModel: ObservableObject {
         if heapUnavailable { history.add(.jsHeap, nil, at: now) }
         // Only while the Performance panel records does WebKit send timeline records.
         let recording = session?.recordingTimeline == true
-        history.addTimeline(layouts: recording ? (raw["layouts"] as? NSNumber)?.doubleValue : nil,
-                            styles: recording ? (raw["styles"] as? NSNumber)?.doubleValue : nil, at: now)
+        history.addTimeline(layouts: recording ? raw.double("layouts") : nil,
+                            styles: recording ? raw.double("styles") : nil, at: now)
     }
 
     /// The page's counts: nodes, documents, frames. Not while the debugger

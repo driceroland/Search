@@ -10,37 +10,21 @@ import Foundation
 /// the HTML spec gives them (as Chrome's Media panel shows them).
 enum DeveloperMediaState {
     static func readyState(_ value: Int?) -> String {
-        guard let value else { return "—" }
-        return switch value {
-        case 0: "HAVE_NOTHING"
-        case 1: "HAVE_METADATA"
-        case 2: "HAVE_CURRENT_DATA"
-        case 3: "HAVE_FUTURE_DATA"
-        case 4: "HAVE_ENOUGH_DATA"
-        default: "\(value)"
-        }
+        named(value, ["HAVE_NOTHING", "HAVE_METADATA", "HAVE_CURRENT_DATA", "HAVE_FUTURE_DATA", "HAVE_ENOUGH_DATA"])
     }
 
     static func networkState(_ value: Int?) -> String {
-        guard let value else { return "—" }
-        return switch value {
-        case 0: "NETWORK_EMPTY"
-        case 1: "NETWORK_IDLE"
-        case 2: "NETWORK_LOADING"
-        case 3: "NETWORK_NO_SOURCE"
-        default: "\(value)"
-        }
+        named(value, ["NETWORK_EMPTY", "NETWORK_IDLE", "NETWORK_LOADING", "NETWORK_NO_SOURCE"])
     }
 
     static func errorCode(_ code: Int?) -> String {
-        guard let code else { return "—" }
-        return switch code {
-        case 1: "MEDIA_ERR_ABORTED"
-        case 2: "MEDIA_ERR_NETWORK"
-        case 3: "MEDIA_ERR_DECODE"
-        case 4: "MEDIA_ERR_SRC_NOT_SUPPORTED"
-        default: "\(code)"
-        }
+        named(code, ["MEDIA_ERR_ABORTED", "MEDIA_ERR_NETWORK", "MEDIA_ERR_DECODE", "MEDIA_ERR_SRC_NOT_SUPPORTED"], from: 1)
+    }
+
+    /// `names[value - first]`, the number itself past them, or "—" for none.
+    private static func named(_ value: Int?, _ names: [String], from first: Int = 0) -> String {
+        guard let value else { return "—" }
+        return names.indices.contains(value - first) ? names[value - first] : "\(value)"
     }
 
     /// The media events the page script listens for, in Chrome's order.
@@ -70,9 +54,8 @@ struct DeveloperMediaEventLog<Entry: Equatable>: Equatable {
     mutating func append(_ entry: Entry) {
         entries.append(entry)
         if entries.count > capacity {
-            let extra = entries.count - capacity
-            entries.removeFirst(extra)
-            dropped += extra
+            entries.removeFirst()
+            dropped += 1
         }
     }
 
@@ -85,7 +68,6 @@ struct DeveloperMediaEventLog<Entry: Equatable>: Equatable {
         dropped = 0
     }
 
-    var count: Int { entries.count }
     var isEmpty: Bool { entries.isEmpty }
 }
 
@@ -104,19 +86,13 @@ struct DeveloperMediaEvent: Equatable, Identifiable {
 
     var id: Int { seq }
 
-    init(seq: Int, name: String, time: Double, mediaTime: Double? = nil, detail: String? = nil) {
-        self.seq = seq
-        self.name = name
-        self.time = time
-        self.mediaTime = mediaTime
-        self.detail = detail
-    }
-
     init?(_ raw: [String: Any]) {
         guard let seq = (raw["seq"] as? NSNumber)?.intValue, let name = raw["name"] as? String else { return nil }
-        self.init(seq: seq, name: name, time: (raw["time"] as? NSNumber)?.doubleValue ?? 0,
-                  mediaTime: (raw["mediaTime"] as? NSNumber)?.doubleValue,
-                  detail: (raw["detail"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+        self.seq = seq
+        self.name = name
+        time = raw.double("time") ?? 0
+        mediaTime = raw.double("mediaTime")
+        detail = (raw["detail"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

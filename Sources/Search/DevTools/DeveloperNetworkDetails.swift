@@ -12,6 +12,8 @@ struct DeveloperRequestDetails: Equatable {
     var requestHeaders: [Header]
     var responseHeaders: [Header]
     var postData: String?
+    /// The policy the request was sent under (WebKit's Network.Request.referrerPolicy).
+    var referrerPolicy: String?
     var status: Int?
     var statusText: String?
     var mimeType: String?
@@ -48,6 +50,7 @@ struct DeveloperRequestDetails: Equatable {
         requestHeaders = sent.isEmpty ? headers(raw["requestHeaders"]) : sent
         responseHeaders = headers(response?["headers"])
         postData = raw["postData"] as? String
+        referrerPolicy = raw["referrerPolicy"] as? String
         status = response?["status"] as? Int
         statusText = response?["statusText"] as? String
         mimeType = response?["mimeType"] as? String
@@ -73,20 +76,6 @@ struct DeveloperRequestDetails: Equatable {
         let url: String
         let line: Int?
         let column: Int?
-
-        init(function: String, url: String, line: Int?, column: Int?) {
-            self.function = function
-            self.url = url
-            self.line = line
-            self.column = column
-        }
-
-        init(_ raw: [String: Any]) {
-            function = (raw["functionName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "(anonymous)"
-            url = raw["url"] as? String ?? ""
-            line = (raw["lineNumber"] as? Int).map { max(1, $0) }
-            column = (raw["columnNumber"] as? Int).map { max(1, $0) }
-        }
 
         /// A frame inside the browser (fetch, setTimeout), with no source.
         var isNative: Bool { url.isEmpty || url == "[native code]" }
@@ -158,7 +147,7 @@ struct DeveloperRequestDetails: Equatable {
         }
     }
 
-    private func header(_ name: String, in list: [Header]) -> String? {
+    func header(_ name: String, in list: [Header]) -> String? {
         list.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.value
     }
 
@@ -185,6 +174,14 @@ struct DeveloperRequestDetails: Equatable {
     /// in the order the text has them, not sorted.
     static func prettyJSON(_ text: String?) -> String? {
         DeveloperJSONValue.parse(text)?.pretty()
+    }
+}
+
+extension DeveloperRequestDetails.StackFrame {
+    init(_ raw: [String: Any]) {
+        self.init(function: (raw["functionName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "(anonymous)",
+                  url: raw["url"] as? String ?? "", line: (raw["lineNumber"] as? Int).map { max(1, $0) },
+                  column: (raw["columnNumber"] as? Int).map { max(1, $0) })
     }
 }
 
@@ -283,8 +280,10 @@ struct DeveloperRequestDetailsView: View {
             pair("Request Method", request.method)
             statusPair
             if let address = details?.remoteAddress { pair("Remote Address", address) }
-            if let policy = details?.requestHeaders.first(where: { $0.name.caseInsensitiveCompare("referrer-policy") == .orderedSame })?.value
-                ?? details?.responseHeaders.first(where: { $0.name.caseInsensitiveCompare("referrer-policy") == .orderedSame })?.value {
+            // The request's own policy, as Chrome shows it, else a header's.
+            if let details, let policy = details.referrerPolicy
+                ?? details.header("referrer-policy", in: details.requestHeaders)
+                ?? details.header("referrer-policy", in: details.responseHeaders) {
                 pair("Referrer Policy", policy)
             }
         }
@@ -340,32 +339,24 @@ struct DeveloperRequestDetailsView: View {
             }
             .help(overridden ? "Overridden by a .headers file in Local Overrides" : "")
             .contextMenu {
-                Button("Copy value") { DeveloperJSONTree.copy(header.value) }
-                Button("Copy header") { DeveloperJSONTree.copy(header.name + ": " + header.value) }
+                Button("Copy value") { DeveloperToolsSession.copyToPasteboard(header.value) }
+                Button("Copy header") { DeveloperToolsSession.copyToPasteboard(header.name + ": " + header.value) }
             }
     }
 
     /// Status Code, with Chrome's dot: green for success and 304, orange
     /// for other 3xx, red for errors and failures.
     private var statusPair: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DeveloperToolsStyle.gutter) {
-            Text("Status Code:")
-                .fontWeight(.medium)
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 120, maxWidth: 200, alignment: .leading)
+        pair("Status Code") {
             HStack(alignment: .center, spacing: 5) {
                 if let color = statusColor {
                     Circle().fill(color).frame(width: 8, height: 8)
                 }
                 Text(statusLine).textSelection(.enabled)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .font(.system(size: 11))
-        .padding(.horizontal, DeveloperToolsStyle.gutter * 2)
-        .padding(.vertical, 1)
         .contextMenu {
-            Button("Copy value") { DeveloperJSONTree.copy(statusLine) }
+            Button("Copy value") { DeveloperToolsSession.copyToPasteboard(statusLine) }
         }
     }
 
@@ -433,7 +424,7 @@ struct DeveloperRequestDetailsView: View {
                 ForEach(Array(pairs.enumerated()), id: \.offset) { _, item in
                     pair(item.name, item.value)
                         .contextMenu {
-                            Button("Copy value") { DeveloperJSONTree.copy(item.value) }
+                            Button("Copy value") { DeveloperToolsSession.copyToPasteboard(item.value) }
                         }
                 }
             }
@@ -536,7 +527,7 @@ struct DeveloperRequestDetailsView: View {
                 }
             }
         }
-        let chain = initiatorChain
+        let chain = DeveloperNetworkInitiators.chain(for: request, initiator: details?.initiatorURL, in: session.requests)
         if chain.count < 2 && (details?.frames ?? []).isEmpty {
             note("No initiator data")
         } else if chain.count > 1 {
@@ -576,23 +567,6 @@ struct DeveloperRequestDetailsView: View {
         .help("Open \(url):\(line) in Sources")
         .accessibilityIdentifier("developer-initiator-link")
         .onHover { inside in if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
-    }
-
-    /// As Chrome draws it: the requests that led here, this one in bold,
-    /// then the requests it started.
-    private var initiatorChain: [(url: String, depth: Int, current: Bool)] {
-        let all = session.requests
-        var ancestors: [String] = []
-        var next = details?.initiatorURL ?? request.initiatorURL
-        while let url = next, ancestors.count < 10, !ancestors.contains(url), url != request.url {
-            ancestors.insert(url, at: 0)
-            next = all.first { $0.url == url }?.initiatorURL
-        }
-        var chain = ancestors.enumerated().map { (url: $1, depth: $0, current: false) }
-        chain.append((url: request.url, depth: ancestors.count, current: true))
-        let children = all.filter { $0.initiatorURL == request.url && $0.id != request.id }.prefix(100)
-        chain += children.map { (url: $0.url, depth: ancestors.count + 1, current: false) }
-        return chain
     }
 
     @ViewBuilder
@@ -781,14 +755,16 @@ struct DeveloperRequestDetailsView: View {
     }
 
     private func pair(_ name: String, _ value: String) -> some View {
+        pair(name) { Text(value).textSelection(.enabled) }
+    }
+
+    private func pair<Value: View>(_ name: String, @ViewBuilder value: () -> Value) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: DeveloperToolsStyle.gutter) {
             Text(name + ":")
                 .fontWeight(.medium)
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 120, maxWidth: 200, alignment: .leading)
-            Text(value)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            value().frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(.system(size: 11))
         .padding(.horizontal, DeveloperToolsStyle.gutter * 2)

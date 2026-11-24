@@ -138,7 +138,7 @@ struct DeveloperRequestCookie: Identifiable, Equatable {
     var expiresText: String {
         if let maxAge, maxAge != 0 { return Self.duration(seconds: Double(maxAge)) }
         if let expires {
-            if let date = Self.httpDate(expires) { return Self.iso.string(from: date) }
+            if let date = Self.httpDate(expires) { return DeveloperHAR.dates.string(from: date) }
             return expires
         }
         return kind == .request ? "N/A" : "Session"
@@ -151,12 +151,6 @@ struct DeveloperRequestCookie: Identifiable, Equatable {
     static func duration(seconds: Double) -> String {
         DeveloperRequestTimingText.milliseconds(seconds * 1_000)
     }
-
-    private static let iso: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
 
     private static let httpDates: [DateFormatter] = [
         "EEE, dd MMM yyyy HH:mm:ss zzz", "EEE, dd-MMM-yyyy HH:mm:ss zzz", "EEEE, dd-MMM-yy HH:mm:ss zzz",
@@ -172,10 +166,7 @@ struct DeveloperRequestCookie: Identifiable, Equatable {
     /// An HTTP date in any of the forms servers send in Expires.
     static func httpDate(_ text: String) -> Date? {
         let text = text.trimmingCharacters(in: .whitespaces)
-        for formatter in httpDates {
-            if let date = formatter.date(from: text) { return date }
-        }
-        return nil
+        return httpDates.lazy.compactMap { $0.date(from: text) }.first
     }
 }
 
@@ -310,20 +301,15 @@ struct DeveloperCookieTable: View {
     private func menu(_ ids: Set<DeveloperRequestCookie.ID>) -> some View {
         let chosen: [DeveloperRequestCookie] = cookies.filter { ids.contains($0.id) }
         if !chosen.isEmpty {
-            Button("Copy") { copy(chosen.map { $0.name + "=" + $0.value }.joined(separator: "; ")) }
+            Button("Copy") { DeveloperToolsSession.copyToPasteboard(chosen.map { $0.name + "=" + $0.value }.joined(separator: "; ")) }
             if chosen.count == 1, let cookie = chosen.first {
-                Button("Copy value") { copy(cookie.value) }
+                Button("Copy value") { DeveloperToolsSession.copyToPasteboard(cookie.value) }
             }
         }
     }
 
     private func cell(_ text: String) -> some View {
         Text(text).lineLimit(1).truncationMode(.middle).help(text)
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 

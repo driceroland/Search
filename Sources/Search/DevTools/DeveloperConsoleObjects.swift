@@ -15,41 +15,12 @@ struct ConsoleRemoteObject: Equatable, Hashable {
     var size: Int?
     var preview: ConsoleObjectPreview?
 
-    init(type: String, subtype: String? = nil, className: String? = nil, description: String? = nil,
-         value: ConsoleValue? = nil, objectId: String? = nil, size: Int? = nil, preview: ConsoleObjectPreview? = nil) {
-        self.type = type
-        self.subtype = subtype
-        self.className = className
-        self.description = description
-        self.value = value
-        self.objectId = objectId
-        self.size = size
-        self.preview = preview
-    }
-
-    init(_ raw: [String: Any]) {
-        type = raw["type"] as? String ?? "undefined"
-        subtype = raw["subtype"] as? String
-        className = raw["className"] as? String
-        description = raw["description"] as? String
-        value = ConsoleValue(raw["value"])
-        objectId = raw["objectId"] as? String
-        size = raw["size"] as? Int
-        preview = (raw["preview"] as? [String: Any]).map(ConsoleObjectPreview.init)
-    }
-
     /// Objects, functions and arrays that can be opened.
     var expandable: Bool { objectId != nil && (type == "object" || type == "function") && subtype != "null" }
     var isNode: Bool { subtype == "node" }
 
     /// The string a `%s` or a plain top-level argument shows.
-    var plainText: String {
-        switch type {
-        case "string": return value?.string ?? description ?? ""
-        case "undefined": return "undefined"
-        default: return value?.string ?? description ?? ""
-        }
-    }
+    var plainText: String { type == "undefined" ? "undefined" : value?.string ?? description ?? "" }
 
     /// The number a `%d`, `%i` or `%f` substitution reads.
     var number: Double? {
@@ -59,6 +30,19 @@ struct ConsoleRemoteObject: Equatable, Hashable {
         case .bool(let flag): return flag ? 1 : 0
         default: return description.flatMap { Double($0) }
         }
+    }
+}
+
+extension ConsoleRemoteObject {
+    init(_ raw: [String: Any]) {
+        type = raw["type"] as? String ?? "undefined"
+        subtype = raw["subtype"] as? String
+        className = raw["className"] as? String
+        description = raw["description"] as? String
+        value = ConsoleValue(raw["value"])
+        objectId = raw["objectId"] as? String
+        size = raw["size"] as? Int
+        preview = (raw["preview"] as? [String: Any]).map(ConsoleObjectPreview.init)
     }
 }
 
@@ -107,12 +91,14 @@ struct ConsoleObjectPreview: Equatable, Hashable {
     var type: String
     var subtype: String?
     var description: String?
-    var lossless: Bool
-    var overflow: Bool
+    var lossless = true
+    var overflow = false
     var size: Int?
-    var properties: [Property]
-    var entries: [Entry]
+    var properties: [Property] = []
+    var entries: [Entry] = []
+}
 
+extension ConsoleObjectPreview {
     init(_ raw: [String: Any]) {
         type = raw["type"] as? String ?? "object"
         subtype = raw["subtype"] as? String
@@ -131,18 +117,6 @@ struct ConsoleObjectPreview: Equatable, Hashable {
                   value: ($0["value"] as? [String: Any]).map(ConsoleObjectPreview.init))
         }
     }
-
-    init(type: String, subtype: String? = nil, description: String? = nil, lossless: Bool = true, overflow: Bool = false,
-         size: Int? = nil, properties: [Property] = [], entries: [Entry] = []) {
-        self.type = type
-        self.subtype = subtype
-        self.description = description
-        self.lossless = lossless
-        self.overflow = overflow
-        self.size = size
-        self.properties = properties
-        self.entries = entries
-    }
 }
 
 /// One row of an expanded object.
@@ -155,18 +129,9 @@ struct ConsoleProperty: Identifiable, Equatable {
     var isInternal = false
     var wasThrown = false
     var entries: [ConsoleEntry]?
+}
 
-    init(name: String, value: ConsoleRemoteObject? = nil, getter: Bool = false, enumerable: Bool = true,
-         isInternal: Bool = false, wasThrown: Bool = false, entries: [ConsoleEntry]? = nil) {
-        self.name = name
-        self.value = value
-        self.getter = getter
-        self.enumerable = enumerable
-        self.isInternal = isInternal
-        self.wasThrown = wasThrown
-        self.entries = entries
-    }
-
+extension ConsoleProperty {
     init(_ raw: [String: Any]) {
         name = raw["name"] as? String ?? ""
         value = (raw["value"] as? [String: Any]).map(ConsoleRemoteObject.init)
@@ -196,14 +161,11 @@ struct ConsoleCallFrame: Equatable, Hashable {
     /// links as VM<id>.
     var scriptID: String?
 
-    init(functionName: String, url: String, lineNumber: Int, columnNumber: Int, asyncBoundary: Bool = false) {
-        self.functionName = functionName
-        self.url = url
-        self.lineNumber = lineNumber
-        self.columnNumber = columnNumber
-        self.asyncBoundary = asyncBoundary
-    }
+    var name: String { functionName.isEmpty ? "(anonymous)" : functionName }
+    var location: String { ConsoleFormat.location(url, line: lineNumber) }
+}
 
+extension ConsoleCallFrame {
     init(_ raw: [String: Any]) {
         functionName = raw["functionName"] as? String ?? ""
         url = raw["url"] as? String ?? ""
@@ -212,9 +174,6 @@ struct ConsoleCallFrame: Equatable, Hashable {
         asyncBoundary = raw["asyncBoundary"] as? Bool ?? false
         scriptID = raw["scriptId"] as? String
     }
-
-    var name: String { functionName.isEmpty ? "(anonymous)" : functionName }
-    var location: String { ConsoleFormat.location(url, line: lineNumber) }
 }
 
 /// What the event stream carries for a message beyond its text.
@@ -226,18 +185,9 @@ struct ConsoleMessageDetails: Equatable {
     var targetID: String?
     var parameters: [ConsoleRemoteObject] = []
     var stackTrace: [ConsoleCallFrame] = []
+}
 
-    init(source: String? = nil, type: String? = nil, column: Int? = nil, timestamp: Double? = nil, targetID: String? = nil,
-         parameters: [ConsoleRemoteObject] = [], stackTrace: [ConsoleCallFrame] = []) {
-        self.source = source
-        self.type = type
-        self.column = column
-        self.timestamp = timestamp
-        self.targetID = targetID
-        self.parameters = parameters
-        self.stackTrace = stackTrace
-    }
-
+extension ConsoleMessageDetails {
     init(message raw: [String: Any], targetID: String?) {
         source = raw["source"] as? String
         type = raw["type"] as? String
@@ -271,7 +221,9 @@ struct ConsoleStyle: Equatable, Hashable {
 
     static let plain = ConsoleStyle()
     var isPlain: Bool { self == .plain }
+}
 
+extension ConsoleStyle {
     /// Chrome reads a `%c` argument as CSS for a span; this keeps the
     /// properties a native text run can show.
     init(css: String) {
@@ -299,17 +251,18 @@ struct ConsoleStyle: Equatable, Hashable {
             }
         }
     }
-
-    init() {}
 }
 
 struct ConsoleColor: Equatable, Hashable {
     var red: Double
     var green: Double
     var blue: Double
-    var alpha: Double
+    var alpha: Double = 1
 
     var color: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: alpha) }
+}
+
+extension ConsoleColor {
 
     private static let named: [String: (Double, Double, Double)] = [
         "black": (0, 0, 0), "white": (255, 255, 255), "red": (255, 0, 0), "green": (0, 128, 0), "blue": (0, 0, 255),
@@ -328,13 +281,6 @@ struct ConsoleColor: Equatable, Hashable {
         "chocolate": (210, 105, 30), "tan": (210, 180, 140), "khaki": (240, 230, 140), "beige": (245, 245, 220),
         "ivory": (255, 255, 240), "lavender": (230, 230, 250), "turquoise": (64, 224, 208),
     ]
-
-    init(red: Double, green: Double, blue: Double, alpha: Double = 1) {
-        self.red = red
-        self.green = green
-        self.blue = blue
-        self.alpha = alpha
-    }
 
     init?(css raw: String) {
         let value = raw.trimmingCharacters(in: .whitespaces).lowercased()
@@ -552,11 +498,16 @@ enum ConsoleFormat {
             if property.subtype == "array" {
                 return property.value ?? "Array" + ((property.valuePreview?.size).map { "(\($0))" } ?? "")
             }
-            if let nested = property.valuePreview, property.subtype == nil,
-               nested.properties.count <= 3, !nested.properties.isEmpty {
-                return "{" + nested.properties.map { $0.name + ": " + ($0.type == "string" ? "'\($0.value ?? "")'" : $0.value ?? "…") }
-                    .joined(separator: ", ") + (nested.overflow ? ", …" : "") + "}"
+            // One level down Chrome abbreviates, as `(4) [1, {…}, h1, Map(1)]`:
+            // a plain object is {…}, an element its tag, a Map or Set its size.
+            if property.subtype == "node", let value = property.value {
+                return value.trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
             }
+            if ["map", "set", "weakmap", "weakset"].contains(property.subtype ?? ""),
+               let value = property.value, !value.contains("("), let size = property.valuePreview?.size {
+                return value + "(\(size))"
+            }
+            if property.subtype == nil, property.value == nil || property.value == "Object" { return "{…}" }
             return property.value ?? "{…}"
         default: return property.value ?? property.type
         }
@@ -638,12 +589,9 @@ struct ConsoleTable: Equatable {
 struct ConsoleTableCell: Equatable, Hashable {
     var text: String
     var type: String
+}
 
-    init(text: String, type: String) {
-        self.text = text
-        self.type = type
-    }
-
+extension ConsoleTableCell {
     init(_ property: ConsoleObjectPreview.Property) {
         type = property.subtype == "null" ? "null" : property.type
         switch property.type {
@@ -744,15 +692,15 @@ enum ConsoleLayout {
             guard !hiddenByParent, passes(line) else { continue }
             // "Group similar messages": a message like an earlier one adds
             // to that one's count. Off, each repeat gets its own row.
-            if settings.groupSimilar, let key = similarKey(line) {
-                if let index = similar[key] {
-                    let first = output[index]
-                    counts[first.line.id, default: first.count] += line.repeatCount
-                    continue
+            if settings.groupSimilar {
+                if let key = similarKey(line) {
+                    if let index = similar[key] {
+                        let first = output[index]
+                        counts[first.line.id, default: first.count] += line.repeatCount
+                        continue
+                    }
+                    similar[key] = output.count
                 }
-                similar[key] = output.count
-                output.append(ConsoleRow(line: line, depth: stack.count, opensGroup: false, collapsed: false, count: line.repeatCount))
-            } else if settings.groupSimilar {
                 output.append(ConsoleRow(line: line, depth: stack.count, opensGroup: false, collapsed: false, count: line.repeatCount))
             } else {
                 for copy in 0..<max(1, min(line.repeatCount, 500)) {
@@ -1107,6 +1055,20 @@ final class DeveloperConsoleStore: ObservableObject {
         deepExpansion = deepExpansion.filter { $0.key != key && !$0.key.hasPrefix(key + "/") }
     }
 
+    /// The console menu's Expand all and Collapse all: every group, and
+    /// every logged object's top level, opened or closed. `load` asks for
+    /// an opened object's properties.
+    func setAllExpanded(_ expand: Bool, lines: [DeveloperToolsSession.ConsoleLine],
+                        load: (ConsoleRemoteObject, String?) -> Void = { _, _ in }) {
+        toggledGroups = Set(lines.filter { ConsoleLayout.isGroupStart($0) && ($0.details?.type == "startGroupCollapsed") == expand }.map(\.id))
+        guard expand else { expanded = []; deepExpansion = [:]; return }
+        for line in lines {
+            let objects = ConsoleRowContent.objects(line, store: self)
+            guard !objects.isEmpty, expanded.insert(line.id.uuidString).inserted, objects.count == 1 else { continue }
+            load(objects[0], line.details?.targetID)
+        }
+    }
+
     /// Opens or closes a tree from its triangle or its text, as Chrome
     /// does; with ⌥ held, the whole tree below it.
     func toggle(_ key: String, recursively: Bool) {
@@ -1178,16 +1140,18 @@ extension DeveloperToolsSession {
         let gesture = consoleStore.settings.userActivation
         let place = consolePlace()
         let target = place["targetId"] as? String
+        let prepared = DeveloperConsoleSyntax.prepare(expression, paused: place["callFrameId"] != nil)
         Task { [weak self] in
             guard let self else { return }
             do {
                 let token = UUID().uuidString
                 let reply = try await self.bridge("""
-                    const reply = await perchConsole.evaluate(expression, nodes, gesture, null, place);
+                    const reply = await perchConsole.evaluate(expression, nodes, gesture, null, place, awaited);
                     perchInspector.mark?.(token);
                     return reply;
                     """, [
-                    "expression": expression, "nodes": nodes, "gesture": gesture, "place": place, "token": token,
+                    "expression": prepared.expression, "awaited": prepared.awaited, "nodes": nodes, "gesture": gesture,
+                    "place": place, "token": token,
                 ]) as? [String: Any]
                 if reply?["contextReset"] as? Bool == true { self.consoleStore.context = nil }
                 guard let raw = reply?["value"] as? [String: Any] else { return }

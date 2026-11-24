@@ -85,37 +85,28 @@ indirect enum DeveloperRecorderJSON: Equatable {
 
     /// As JSON.stringify(value, null, indent) writes it.
     func stringified(indent: Int = 2) -> String {
-        var out = ""
-        write(into: &out, indent: String(repeating: " ", count: indent), level: 0)
-        return out
+        written(indent: String(repeating: " ", count: indent), level: 0, string: Self.quote, key: Self.quote)
     }
 
-    private func write(into out: inout String, indent: String, level: Int) {
+    /// Laid out as JSON.stringify lays it out, `indent` a level, with
+    /// strings and keys as `string` and `key` write them.
+    func written(indent: String, level: Int, string: (String) -> String, key: (String) -> String) -> String {
         let inner = String(repeating: indent, count: level + 1)
         let outer = String(repeating: indent, count: level)
         switch self {
-        case .null: out += "null"
-        case .bool(let b): out += b ? "true" : "false"
-        case .number(let n): out += Self.format(n)
-        case .string(let s): out += Self.quote(s)
+        case .null: return "null"
+        case .bool(let b): return b ? "true" : "false"
+        case .number(let n): return Self.format(n)
+        case .string(let s): return string(s)
         case .array(let items):
-            guard !items.isEmpty else { out += "[]"; return }
-            out += "[\n"
-            for (index, item) in items.enumerated() {
-                out += inner
-                item.write(into: &out, indent: indent, level: level + 1)
-                out += index == items.count - 1 ? "\n" : ",\n"
-            }
-            out += outer + "]"
+            guard !items.isEmpty else { return "[]" }
+            return "[\n" + items.map { inner + $0.written(indent: indent, level: level + 1, string: string, key: key) }
+                .joined(separator: ",\n") + "\n" + outer + "]"
         case .object(let fields):
-            guard !fields.isEmpty else { out += "{}"; return }
-            out += "{\n"
-            for (index, (key, value)) in fields.enumerated() {
-                out += inner + Self.quote(key) + ": "
-                value.write(into: &out, indent: indent, level: level + 1)
-                out += index == fields.count - 1 ? "\n" : ",\n"
-            }
-            out += outer + "}"
+            guard !fields.isEmpty else { return "{}" }
+            return "{\n" + fields.map { name, value in
+                inner + key(name) + ": " + value.written(indent: indent, level: level + 1, string: string, key: key)
+            }.joined(separator: ",\n") + "\n" + outer + "}"
         }
     }
 
@@ -179,22 +170,6 @@ enum DeveloperRecorderSelectorType: String, CaseIterable, Identifiable, Codable 
 
 /// Selector strings as Chrome writes them, and as Puppeteer reads them.
 enum DeveloperRecorderSelector {
-    /// `aria/Name`, or `aria/Name[role="button"]` when a role is given.
-    static func aria(name: String, role: String? = nil) -> String {
-        guard let role, !role.isEmpty else { return "aria/" + name }
-        return "aria/\(name)[role=\"\(role)\"]"
-    }
-
-    static func text(_ text: String) -> String { "text/" + text }
-
-    /// `xpath//html/body/div` — the prefix, then the expression with its own slashes.
-    static func xpath(_ expression: String) -> String { "xpath/" + expression }
-
-    static func pierce(_ css: String) -> String { "pierce/" + css }
-
-    /// `#id` as an XPath Chrome records: `//*[@id="id"]`.
-    static func xpathForID(_ id: String) -> String { "//*[@id=\"\(id)\"]" }
-
     /// A selector's kind, from its prefix.
     static func kind(of selector: String) -> DeveloperRecorderSelectorType {
         for type in DeveloperRecorderSelectorType.allCases where type != .css && selector.hasPrefix(type.prefix) {
@@ -206,13 +181,6 @@ enum DeveloperRecorderSelector {
     /// A selector without its prefix.
     static func body(of selector: String) -> String {
         String(selector.dropFirst(kind(of: selector).prefix.count))
-    }
-
-    /// The name and role of an ARIA selector's body (`Name[role="button"]`).
-    static func ariaParts(_ body: String) -> (name: String, role: String?) {
-        guard body.hasSuffix("\"]"), let range = body.range(of: "[role=\"", options: .backwards) else { return (body, nil) }
-        let role = String(body[range.upperBound..<body.index(body.endIndex, offsetBy: -2)])
-        return (String(body[..<range.lowerBound]), role)
     }
 
     /// The selectors a step keeps: the kinds chosen, in Chrome's order.
@@ -308,13 +276,9 @@ struct DeveloperRecorderAssertedEvent: Equatable {
         if let title { fields.append(("title", .string(title))) }
         return .object(fields)
     }
+}
 
-    init(type: String = "navigation", url: String? = nil, title: String? = nil) {
-        self.type = type
-        self.url = url
-        self.title = title
-    }
-
+extension DeveloperRecorderAssertedEvent {
     init?(_ json: DeveloperRecorderJSON) {
         guard let type = json["type"]?.string else { return nil }
         self.init(type: type, url: json["url"]?.string, title: json["title"]?.string)
@@ -475,37 +439,26 @@ struct DeveloperRecorderStep: Identifiable, Equatable {
 struct DeveloperRecording: Identifiable, Equatable {
     var id = UUID()
     var title: String
-    var steps: [DeveloperRecorderStep]
+    var steps: [DeveloperRecorderStep] = []
     var selectorAttribute: String?
     var timeout: Double?
     /// Top-level fields beyond Chrome's three.
     var extra: [String: DeveloperRecorderJSON] = [:]
     var selectorTypes: Set<DeveloperRecorderSelectorType> = Set(DeveloperRecorderSelectorType.allCases)
     var created = Date()
+}
 
-    init(id: UUID = UUID(), title: String, steps: [DeveloperRecorderStep] = [], selectorAttribute: String? = nil,
-         timeout: Double? = nil, selectorTypes: Set<DeveloperRecorderSelectorType> = Set(DeveloperRecorderSelectorType.allCases),
-         created: Date = Date()) {
-        self.id = id
-        self.title = title
-        self.steps = steps
-        self.selectorAttribute = selectorAttribute
-        self.timeout = timeout
-        self.selectorTypes = selectorTypes
-        self.created = created
-    }
-
+extension DeveloperRecording {
     /// Chrome's default name for a new recording: "Recording 22/11/2026 at 10:04:31".
     static func defaultTitle(_ date: Date = Date(), locale: Locale = .current) -> String {
-        let day = DateFormatter()
-        day.locale = locale
-        day.dateStyle = .short
-        day.timeStyle = .none
-        let time = DateFormatter()
-        time.locale = locale
-        time.dateStyle = .none
-        time.timeStyle = .medium
-        return "Recording \(day.string(from: date)) at \(time.string(from: date))"
+        func format(_ dateStyle: DateFormatter.Style, _ timeStyle: DateFormatter.Style) -> String {
+            let formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.dateStyle = dateStyle
+            formatter.timeStyle = timeStyle
+            return formatter.string(from: date)
+        }
+        return "Recording \(format(.short, .none)) at \(format(.none, .medium))"
     }
 
     // MARK: Chrome's JSON
@@ -523,12 +476,12 @@ struct DeveloperRecording: Identifiable, Equatable {
     var exportedJSON: String { json.stringified(indent: 2) + "\n" }
 
     init(json: DeveloperRecorderJSON) throws {
-        guard let object = json.object else { throw DeveloperRecorderError("A recording is a JSON object.") }
-        guard let steps = json["steps"]?.array else { throw DeveloperRecorderError("The recording has no steps.") }
+        guard let object = json.object else { throw DeveloperPanelError("A recording is a JSON object.") }
+        guard let steps = json["steps"]?.array else { throw DeveloperPanelError("The recording has no steps.") }
         var parsed: [DeveloperRecorderStep] = []
         for (index, raw) in steps.enumerated() {
             guard let step = DeveloperRecorderStep(json: raw) else {
-                throw DeveloperRecorderError("Step \(index + 1) has no type.")
+                throw DeveloperPanelError("Step \(index + 1) has no type.")
             }
             parsed.append(step)
         }
@@ -571,12 +524,6 @@ struct DeveloperRecording: Identifiable, Equatable {
         }
         self = recording
     }
-}
-
-struct DeveloperRecorderError: LocalizedError, Equatable {
-    let message: String
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
 }
 
 // MARK: Folding what the page reports
@@ -792,22 +739,7 @@ enum DeveloperRecorderExport {
     /// A JSON value as a JavaScript literal, as @puppeteer/replay writes a
     /// step: unquoted keys where they can be, single-quoted strings.
     static func jsLiteral(_ value: DeveloperRecorderJSON, indent: String = "  ", level: Int = 0) -> String {
-        let inner = String(repeating: indent, count: level + 1)
-        let outer = String(repeating: indent, count: level)
-        switch value {
-        case .null: return "null"
-        case .bool(let b): return b ? "true" : "false"
-        case .number(let n): return DeveloperRecorderJSON.format(n)
-        case .string(let s): return jsString(s)
-        case .array(let items):
-            guard !items.isEmpty else { return "[]" }
-            return "[\n" + items.map { inner + jsLiteral($0, indent: indent, level: level + 1) }.joined(separator: ",\n") + "\n" + outer + "]"
-        case .object(let fields):
-            guard !fields.isEmpty else { return "{}" }
-            return "{\n" + fields.map { key, value in
-                inner + jsKey(key) + ": " + jsLiteral(value, indent: indent, level: level + 1)
-            }.joined(separator: ",\n") + "\n" + outer + "}"
-        }
+        value.written(indent: indent, level: level, string: jsString, key: jsKey)
     }
 
     private static func jsKey(_ key: String) -> String {
@@ -885,11 +817,6 @@ enum DeveloperRecorderExport {
         "",
     ]
 
-    /// Whether Lighthouse's user flow treats the step as a navigation.
-    static func isNavigation(_ step: DeveloperRecorderStep) -> Bool {
-        step.kind == .navigate || step.assertsNavigation
-    }
-
     /// Export › Puppeteer (including Lighthouse analysis): the Puppeteer
     /// script run as a Lighthouse user flow, as Chrome writes it. Each
     /// navigation is a navigation of the flow; the steps between are
@@ -917,7 +844,7 @@ enum DeveloperRecorderExport {
                 out += puppeteerStep(step).map { "    " + $0 }
                 continue
             }
-            if isNavigation(step) {
+            if step.kind == .navigate || step.assertsNavigation {
                 if inTimespan {
                     out.append("    await lhFlow.endTimespan();")
                     inTimespan = false
@@ -1001,12 +928,9 @@ enum DeveloperRecorderExport {
             body += locator(["    .fill(\(jsString(step.value ?? "")));"])
         case .hover:
             body += locator(["    .hover();"])
-        case .keyDown:
+        case .keyDown, .keyUp:
             if navigation { body.append("startWaitingForEvents();") }
-            body.append("await targetPage.keyboard.down(\(jsString(step.key ?? "")));")
-        case .keyUp:
-            if navigation { body.append("startWaitingForEvents();") }
-            body.append("await targetPage.keyboard.up(\(jsString(step.key ?? "")));")
+            body.append("await targetPage.keyboard.\(step.kind == .keyDown ? "down" : "up")(\(jsString(step.key ?? "")));")
         case .scroll:
             let x = DeveloperRecorderJSON.format(step.x ?? 0), y = DeveloperRecorderJSON.format(step.y ?? 0)
             if step.selectors.isEmpty {

@@ -154,24 +154,12 @@ final class DeveloperRecorderTests: XCTestCase {
     // MARK: Selectors
 
     func testSelectorStrings() {
-        XCTAssertEqual(DeveloperRecorderSelector.aria(name: "Submit"), "aria/Submit")
-        XCTAssertEqual(DeveloperRecorderSelector.aria(name: "Submit", role: "button"), #"aria/Submit[role="button"]"#)
-        XCTAssertEqual(DeveloperRecorderSelector.text("Sign in"), "text/Sign in")
-        XCTAssertEqual(DeveloperRecorderSelector.pierce("#a"), "pierce/#a")
-        XCTAssertEqual(DeveloperRecorderSelector.xpath(DeveloperRecorderSelector.xpathForID("q")), #"xpath///*[@id="q"]"#)
-        XCTAssertEqual(DeveloperRecorderSelector.xpath("/html/body/div[2]"), "xpath//html/body/div[2]")
-
         XCTAssertEqual(DeveloperRecorderSelector.kind(of: "aria/x"), .aria)
         XCTAssertEqual(DeveloperRecorderSelector.kind(of: "xpath//html"), .xpath)
         XCTAssertEqual(DeveloperRecorderSelector.kind(of: "pierce/div"), .pierce)
         XCTAssertEqual(DeveloperRecorderSelector.kind(of: "text/Hi"), .text)
         XCTAssertEqual(DeveloperRecorderSelector.kind(of: "div > a:nth-child(2)"), .css)
         XCTAssertEqual(DeveloperRecorderSelector.body(of: "xpath//html"), "/html")
-
-        let parts = DeveloperRecorderSelector.ariaParts(#"Save [draft][role="button"]"#)
-        XCTAssertEqual(parts.name, "Save [draft]")
-        XCTAssertEqual(parts.role, "button")
-        XCTAssertNil(DeveloperRecorderSelector.ariaParts("Plain").role)
     }
 
     func testSelectorsAsPuppeteerLocators() {

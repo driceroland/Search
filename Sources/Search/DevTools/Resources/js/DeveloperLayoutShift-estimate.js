@@ -2,9 +2,11 @@
 // Instability algorithm run in the page instead. A function expression,
 // handed to the scripts that use it (DeveloperLighthouse-observe.js and
 // DeveloperPerformance-metrics.js, see DeveloperLayoutShiftEstimator).
-// Each sample takes the boxes of up to 1500 elements in document
-// coordinates (so scrolling isn't a shift); an element whose top-left moved
-// since the last sample is unstable. A sample's score is the impact
+// Each sample takes the layout boxes of up to 1500 elements in document
+// coordinates (so scrolling isn't a shift), from the offset chain, which
+// leaves transforms out as Chrome does (a spinning or sliding element
+// isn't a shift); an element whose top-left moved since the last sample
+// is unstable. A sample's score is the impact
 // fraction (the union of the unstable elements' old and new boxes, in the
 // viewport, over its area, on a 100 × 100 grid) times the distance fraction
 // (the largest move over the viewport's larger side); shifts within 500 ms
@@ -23,6 +25,27 @@
     const later = setTimeout.bind(window);
     const rectOf = Element.prototype.getBoundingClientRect;
     const byTag = Element.prototype.getElementsByTagName;
+    const HTML = window.HTMLElement;
+    const offset = (name) => Object.getOwnPropertyDescriptor(HTML.prototype, name).get;
+    const [offsetLeft, offsetTop, offsetWidth, offsetHeight, offsetParent] =
+        ["offsetLeft", "offsetTop", "offsetWidth", "offsetHeight", "offsetParent"].map(offset);
+    // An element's layout box, transforms left out: document coordinates,
+    // or the viewport's for a fixed element (whose chain ends short of the
+    // body), as that's where it stays put. Other elements (SVG) by their
+    // bounding box.
+    const boxOf = (element, sx, sy) => {
+        if (!(element instanceof HTML)) {
+            const rect = rectOf.call(element);
+            return {x: rect.left + sx, y: rect.top + sy, w: rect.width, h: rect.height, vx: rect.left, vy: rect.top};
+        }
+        let x = 0, y = 0, node = element, last = element;
+        while (node) { x += offsetLeft.call(node); y += offsetTop.call(node); last = node; node = offsetParent.call(node); }
+        // A chain ends at the body, unless it ends at a fixed element.
+        const fixed = last !== document.body && last !== document.documentElement;
+        return fixed
+            ? {x, y, w: offsetWidth.call(element), h: offsetHeight.call(element), vx: x, vy: y}
+            : {x, y, w: offsetWidth.call(element), h: offsetHeight.call(element), vx: x - sx, vy: y - sy};
+    };
     const listen = EventTarget.prototype.addEventListener;
     const unlisten = EventTarget.prototype.removeEventListener;
     const previous = new WeakMap();
@@ -47,15 +70,16 @@
             const all = byTag.call(root, "*");
             for (let i = 0; i < all.length && i < 1500; i++) {
                 const element = all[i];
-                const rect = rectOf.call(element);
-                if (rect.width === 0 && rect.height === 0) { previous.delete(element); continue; }
-                const current = {x: rect.left + sx, y: rect.top + sy, w: rect.width, h: rect.height};
+                const current = boxOf(element, sx, sy);
+                if (current.w === 0 && current.h === 0) { previous.delete(element); continue; }
                 const before = previous.get(element);
                 previous.set(element, current);
                 if (!before) continue;
                 const dx = current.x - before.x, dy = current.y - before.y;
                 if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
-                moved.push([before.x - sx, before.y - sy, before.w, before.h], [rect.left, rect.top, rect.width, rect.height]);
+                // The old box where it would be in today's viewport.
+                moved.push([before.x - (current.x - current.vx), before.y - (current.y - current.vy), before.w, before.h],
+                           [current.vx, current.vy, current.w, current.h]);
                 elements.add(element);
                 distance = Math.max(distance, Math.abs(dx), Math.abs(dy));
                 if (moved.length >= 200) break;

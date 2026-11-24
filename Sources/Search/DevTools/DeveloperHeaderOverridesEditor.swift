@@ -55,13 +55,10 @@ extension DeveloperHeaderOverridesEditor {
                 guard let session, overrides.isOverridden(url) else { return }
                 if session.resources.contains(where: { $0.url == url }) { session.revealSource(url: url, line: 1) }
             }
-            if overrides.folder == nil {
-                overrides.chooseFolder {
-                    do { try overrides.save(url: url, content: body); reveal() } catch { session.message = error.localizedDescription }
-                }
-            } else {
+            let store = {
                 do { try overrides.save(url: url, content: body); reveal() } catch { session.message = error.localizedDescription }
             }
+            if overrides.folder == nil { overrides.chooseFolder(then: store) } else { store() }
         }
     }
 
@@ -103,24 +100,20 @@ extension DeveloperHeaderOverridesEditor {
                 rows.append(Row(name: header.name, value: header.value, kind: .response))
             }
         }
-        for header in own {
-            if cookie(header.name) {
-                if !rows.contains(where: { cookie($0.name) && $0.value == header.value }) {
-                    rows.append(Row(name: header.name, value: header.value, kind: .own))
-                }
-            } else if !placed.contains(header.name.lowercased()) {
-                rows.append(Row(name: header.name, value: header.value, kind: .own))
-            }
-        }
+        // Then the overrides the response lacks: every own one, each
+        // inherited name once.
         let ownNames = Set(own.map { $0.name.lowercased() })
-        for header in effective where !ownNames.contains(header.name.lowercased()) {
-            if cookie(header.name) {
-                if !rows.contains(where: { cookie($0.name) && $0.value == header.value }) {
-                    rows.append(Row(name: header.name, value: header.value, kind: .inherited))
+        let inherited = effective.filter { !ownNames.contains($0.name.lowercased()) }
+        for (headers, kind) in [(own, Row.Kind.own), (inherited, Row.Kind.inherited)] {
+            for header in headers {
+                if cookie(header.name) {
+                    if !rows.contains(where: { cookie($0.name) && $0.value == header.value }) {
+                        rows.append(Row(name: header.name, value: header.value, kind: kind))
+                    }
+                } else if !placed.contains(header.name.lowercased()) {
+                    if kind == .inherited { placed.insert(header.name.lowercased()) }
+                    rows.append(Row(name: header.name, value: header.value, kind: kind))
                 }
-            } else if !placed.contains(header.name.lowercased()) {
-                placed.insert(header.name.lowercased())
-                rows.append(Row(name: header.name, value: header.value, kind: .inherited))
             }
         }
         return rows

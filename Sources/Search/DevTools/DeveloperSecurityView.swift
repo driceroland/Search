@@ -174,12 +174,10 @@ struct DeveloperSecurityView: View {
             cards.append(Explanation(title: "Connection", summary: "obsolete connection settings",
                                      description: "The connection to this site uses \(version), an obsolete protocol.",
                                      secure: false))
-        } else if connection.settings.isEmpty {
-            cards.append(Explanation(title: "Connection", summary: "secure connection settings",
-                                     description: "The connection to this site is encrypted and authenticated.", secure: true))
         } else {
+            let using = connection.settings.isEmpty ? "" : " using " + connection.settings
             cards.append(Explanation(title: "Connection", summary: "secure connection settings",
-                                     description: "The connection to this site is encrypted and authenticated using \(connection.settings).",
+                                     description: "The connection to this site is encrypted and authenticated\(using).",
                                      secure: true))
         }
         let mixed = mixedContent()

@@ -66,12 +66,16 @@ struct DeveloperSourceMap: Equatable {
     /// `mapURL` is where the map was read from (nil for a data: URL), which
     /// its relative `sources` resolve against; else the compiled file's.
     init(text: String, mapURL: String?, scriptURL: String?) throws {
-        // A map may start with Chrome's XSSI guard, )]}' on its own line.
+        guard let json = Self.json(text) else { throw ParseError.notJSON }
+        try self.init(json: json, base: mapURL ?? scriptURL)
+    }
+
+    /// A map's text as JSON, past Chrome's XSSI guard, )]}' on its own
+    /// line, that a map may start with.
+    static func json(_ text: String) -> [String: Any]? {
         var body = Substring(text)
         if body.hasPrefix(")]}") { body = body.drop { $0 != "\n" } }
-        guard let data = body.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw ParseError.notJSON }
-        try self.init(json: json, base: mapURL ?? scriptURL)
+        return body.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
     }
 
     init(json: [String: Any], base: String?) throws {
@@ -446,13 +450,17 @@ enum DeveloperSourceMapURL {
 
     /// The folders an authored file sits in, under its origin.
     static func folders(of address: String) -> [String] {
+        path(of: address).split(separator: "/").dropLast().filter { $0 != "." }.map(String.init)
+    }
+
+    /// An address's path after its scheme and host, without query or fragment.
+    static func path(of address: String) -> Substring {
         var path = Substring(address)
         if let scheme = address.range(of: "://") {
             let afterScheme = address[scheme.upperBound...]
             path = afterScheme[(afterScheme.firstIndex(of: "/") ?? afterScheme.endIndex)...]
         }
-        path = path.prefix { $0 != "?" && $0 != "#" }
-        return path.split(separator: "/").dropLast().filter { $0 != "." }.map(String.init)
+        return path.prefix { $0 != "?" && $0 != "#" }
     }
 }
 
@@ -479,7 +487,7 @@ final class DeveloperSourceMaps {
 
     /// The navigator's and tab's symbol for an authored file.
     nonisolated static func icon(for url: String) -> String {
-        let path = url.prefix { $0 != "?" && $0 != "#" }.lowercased()
+        let path = key(url).lowercased()
         let style = [".css", ".scss", ".sass", ".less", ".styl"].contains { path.hasSuffix($0) }
         return style ? "paintbrush" : "curlybraces"
     }
@@ -494,6 +502,10 @@ final class DeveloperSourceMaps {
         let startLine: Int
         let startColumn: Int
         let map: DeveloperSourceMap
+        /// The map as read, and where from (nil for a data: URL), for a
+        /// Performance trace saved with its scripts.
+        let text: String
+        let mapURL: String?
     }
 
     private struct Script {
@@ -520,9 +532,8 @@ final class DeveloperSourceMaps {
         self.session = session
     }
 
-    private static func key(_ url: String) -> String {
-        String(url.prefix { $0 != "?" && $0 != "#" })
-    }
+    /// An address without query or fragment.
+    nonisolated static func key(_ url: String) -> String { String(url.prefix { $0 != "?" && $0 != "#" }) }
 
     private func enabled(_ entry: Attached) -> Bool { entry.css ? Self.cssEnabled : Self.javaScriptEnabled }
 
@@ -673,7 +684,8 @@ final class DeveloperSourceMaps {
                 let map = try DeveloperSourceMap(text: text, mapURL: mapURL, scriptURL: url)
                 self.resourceLog.finish(record, bytes: text.utf8.count)
                 guard !map.sources.isEmpty else { return }
-                self.attached[key] = Attached(url: url, css: css, startLine: startLine, startColumn: startColumn, map: map)
+                self.attached[key] = Attached(url: url, css: css, startLine: startLine, startColumn: startColumn, map: map,
+                                              text: text, mapURL: mapURL)
                 self.changed()
                 self.session?.debugger.sourceMapLoaded(Set(map.sources))
                 // Its third-party and ignore-listed sources are stepped over.
@@ -799,9 +811,11 @@ final class DeveloperSourceMaps {
     /// The map a script file names, for Performance's Duplicated and Legacy
     /// JavaScript insights: none for a stylesheet's, or an inline script's,
     /// whose lines aren't the file's.
-    func scriptMap(for url: String) -> DeveloperSourceMap? {
+    func scriptMap(for url: String) -> DeveloperSourceMap? { scriptEntry(for: url)?.map }
+
+    func scriptEntry(for url: String) -> Attached? {
         guard let entry = entry(forGenerated: url), !entry.css, entry.startLine == 0, entry.startColumn == 0 else { return nil }
-        return entry.map
+        return entry
     }
 
     /// How many authored files a compiled one has, for its status line.

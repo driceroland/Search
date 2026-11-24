@@ -78,15 +78,17 @@ async function manifestReport(manifest, base) {
         "theme_color", "background_color", "orientation"])
         types[key] = kind(manifest[key]);
     const text = (value) => typeof value === "string" ? clipped(value, 512) : null;
-    const icons = [];
-    if (Array.isArray(manifest.icons)) {
-        for (const icon of manifest.icons.slice(0, 15)) {
+    const iconList = async (list, count) => {
+        const icons = [];
+        for (const icon of (Array.isArray(list) ? list : []).slice(0, count)) {
             const src = link(icon?.src, base);
             if (!src) continue;
             icons.push({ src, sizes: text(icon.sizes) ?? "", purpose: text(icon.purpose) ?? "", type: text(icon.type) ?? "",
                 ...(await iconDetails(src)) });
         }
-    }
+        return icons;
+    };
+    const icons = await iconList(manifest.icons, 15);
     // Identity, Presentation, Protocol handlers, Shortcuts and Screenshots.
     // Colours come back as the canvas resolves them, so the view can draw a
     // swatch; one the canvas rejects comes back as null.
@@ -115,13 +117,7 @@ async function manifestReport(manifest, base) {
         for (const shortcut of manifest.shortcuts.slice(0, 10)) {
             const url = link(shortcut?.url, base);
             if (!url) continue;
-            const shortcutIcons = [];
-            for (const icon of (Array.isArray(shortcut.icons) ? shortcut.icons : []).slice(0, 4)) {
-                const src = link(icon?.src, base);
-                if (!src) continue;
-                shortcutIcons.push({ src, sizes: text(icon.sizes) ?? "", purpose: text(icon.purpose) ?? "",
-                    type: text(icon.type) ?? "", ...(await iconDetails(src)) });
-            }
+            const shortcutIcons = await iconList(shortcut.icons, 4);
             shortcuts.push({ name: text(shortcut.name) ?? "", short_name: text(shortcut.short_name) ?? "",
                 description: text(shortcut.description) ?? "", url, icons: shortcutIcons });
         }
@@ -460,11 +456,11 @@ function databaseBytes(name, budget) {
             opened?.close();
             resolve({ bytes, counted, complete });
         };
-        timer = setTimeout(() => { complete = false; finish(); }, 3000);
+        const fail = () => { complete = false; finish(); };
+        timer = setTimeout(fail, 3000);
         const request = indexedDB.open(name);
-        request.onupgradeneeded = () => { request.transaction.abort(); complete = false; finish(); };
-        request.onerror = () => { complete = false; finish(); };
-        request.onblocked = () => { complete = false; finish(); };
+        request.onupgradeneeded = () => { request.transaction.abort(); fail(); };
+        request.onerror = request.onblocked = fail;
         request.onsuccess = () => {
             opened = request.result;
             if (finished) { opened.close(); return; }
@@ -488,7 +484,7 @@ function databaseBytes(name, budget) {
                         entry.continue();
                     };
                 }
-            } catch { complete = false; finish(); }
+            } catch { fail(); }
         };
     });
 }

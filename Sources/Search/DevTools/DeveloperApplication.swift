@@ -355,10 +355,7 @@ enum DeveloperApplication {
                                 frameOrigin: scope.origin, frameAddress: scope.address)
         let shown = Array(entries.prefix(1000))
         let values: [[String]] = shown.map { [String($0.key.prefix(4096)), String($0.value.prefix(4096))] }
-        let edits: [DeveloperApplicationValue?] = shown.map { entry in
-            DeveloperApplicationValue(name: entry.key.isEmpty ? "Empty key" : String(entry.key.prefix(160)),
-                                      document: document, entry: .storage(persistent: persistent, key: entry.key))
-        }
+        let edits: [DeveloperApplicationValue?] = shown.map { storageEdit($0.key, persistent: persistent, document) }
         let items: [DeveloperApplicationItem?] = shown.map { entry in
             DeveloperApplicationItem(name: String(entry.key.prefix(160)), document: document,
                                      kind: .storage(persistent: persistent, key: entry.key))
@@ -394,12 +391,7 @@ enum DeveloperApplication {
         switch query.section {
         case .local, .session:
             let persistent = query.section == .local
-            edits = keys.map { key in
-                guard let key else { return nil }
-                let name = key.isEmpty ? "Empty key" : String(key.prefix(160))
-                return DeveloperApplicationValue(name: name, document: document,
-                    entry: .storage(persistent: persistent, key: key))
-            }
+            edits = keys.map { $0.map { storageEdit($0, persistent: persistent, document) } }
             items = make { .storage(persistent: persistent, key: $0) }
             container = DeveloperApplicationItem(name: query.section.rawValue, document: document,
                                                  kind: .allStorage(persistent: persistent))
@@ -439,6 +431,12 @@ enum DeveloperApplication {
         snapshot.container = container
         if query.section == .manifest, let raw = response.manifest { snapshot.manifest = DeveloperManifestReport.validate(raw) }
         return snapshot
+    }
+
+    /// A Web Storage item's value, for the value editor.
+    private static func storageEdit(_ key: String, persistent: Bool, _ document: Document) -> DeveloperApplicationValue {
+        DeveloperApplicationValue(name: key.isEmpty ? "Empty key" : String(key.prefix(160)), document: document,
+                                  entry: .storage(persistent: persistent, key: key))
     }
 
     // MARK: The sidebar's tree
@@ -730,18 +728,16 @@ enum DeveloperApplication {
         let reply = try await script(.init(section: .storage), web: web, address: address, origin: origin)
         let data = reply.overview ?? [:]
         var cookieCount: Int?
-        if #available(macOS 27, *), let scoped = await cookies(for: address, in: web) {
-            cookieCount = scoped.filter { ExtensionFetch.sends($0, to: address, at: Date()) }.count
-        }
         var cookieBytes: Double?
         if #available(macOS 27, *), let scoped = await cookies(for: address, in: web) {
-            cookieBytes = Double(scoped.filter { ExtensionFetch.sends($0, to: address, at: Date()) }
-                .reduce(0) { $0 + $1.name.utf8.count + $1.value.utf8.count })
+            let sent = scoped.filter { ExtensionFetch.sends($0, to: address, at: Date()) }
+            cookieCount = sent.count
+            cookieBytes = Double(sent.reduce(0) { $0 + $1.name.utf8.count + $1.value.utf8.count })
         }
         func count(_ key: String) -> Int? { (data[key] as? NSNumber)?.intValue }
-        let sizes = data["sizes"] as? [String: Any] ?? [:]
-        let approximate = Set(sizes["approximate"] as? [String] ?? [])
-        func size(_ key: String) -> Double? { (sizes[key] as? NSNumber)?.doubleValue }
+        let sizes = data.object("sizes") ?? [:]
+        let approximate = Set(sizes.strings("approximate") ?? [])
+        func size(_ key: String) -> Double? { sizes.double(key) }
         // What WebKit counts against the quota: IndexedDB, Cache storage and
         // the file system. Web Storage and cookies it keeps apart.
         let parts: [(String, String, Double?, Bool)] = [
@@ -750,9 +746,9 @@ enum DeveloperApplication {
             ("File system", "fileSystem", size("fileSystem"), true), ("Cookies", "cookies", cookieBytes, false),
             ("Service workers", "workers", nil, true),
         ]
-        let usage = (data["usage"] as? NSNumber)?.doubleValue
+        let usage = data.double("usage")
         var overview = DeveloperStorageOverview(
-            usage: usage, quota: (data["quota"] as? NSNumber)?.doubleValue,
+            usage: usage, quota: data.double("quota"),
             persisted: data["persisted"] as? Bool,
             counts: [("Local storage", count("local")), ("Session storage", count("session")),
                      ("IndexedDB databases", count("databases")), ("Cookies", cookieCount),
@@ -983,16 +979,12 @@ enum DeveloperApplication {
 
     private static func script(_ query: DeveloperApplicationQuery, web: WKWebView,
                                address: URL, origin: URL) async throws -> ScriptReply {
-        var input = arguments(address: address, origin: origin)
-        input["section"] = query.section.rawValue
-        input["database"] = query.database as Any? ?? NSNull()
-        input["store"] = query.store as Any? ?? NSNull()
-        input["cache"] = query.cache as Any? ?? NSNull()
-        input["index"] = query.index as Any? ?? NSNull()
-        input["startKey"] = query.startKey as Any? ?? NSNull()
-        input["skip"] = max(0, query.skip)
-        input["pageSize"] = DeveloperApplicationQuery.pageSize
-        input["maxKey"] = storageKeyLimit
+        let input = arguments(address: address, origin: origin).merging([
+            "section": query.section.rawValue, "database": query.database as Any? ?? NSNull(),
+            "store": query.store as Any? ?? NSNull(), "cache": query.cache as Any? ?? NSNull(),
+            "index": query.index as Any? ?? NSNull(), "startKey": query.startKey as Any? ?? NSNull(),
+            "skip": max(0, query.skip), "pageSize": DeveloperApplicationQuery.pageSize, "maxKey": storageKeyLimit,
+        ]) { _, new in new }
         let reply = try await evaluate(DeveloperApplicationScript.read, in: web, arguments: input)
         guard let id = reply["documentID"] as? String else { throw Issue.unavailable }
         return ScriptReply(id: id, rows: reply["rows"] as? [[String]] ?? [], keys: reply["keys"] as? [Any] ?? [],
@@ -1017,15 +1009,9 @@ enum DeveloperApplication {
 
     private static func storageValue(_ key: String, persistent: Bool, reference: DeveloperApplicationValue, web: WKWebView,
                                      replacement: String? = nil, original: String? = nil) async throws -> [String: Any] {
-        let document = reference.document
-        var input = arguments(address: document.address, origin: document.origin, expected: document.id)
-        input["key"] = key
-        input["persistent"] = persistent
-        input["replacement"] = replacement as Any? ?? NSNull()
-        input["expectedValue"] = original as Any? ?? NSNull()
-        input["maxKey"] = storageKeyLimit
-        input["maxValue"] = storageValueLimit
-        return try await evaluate(DeveloperApplicationScript.storageValue, in: web, arguments: input)
+        try await evaluate(DeveloperApplicationScript.storageValue, in: web, arguments: merged(reference.document, [
+            "key": key, "persistent": persistent, "replacement": replacement as Any? ?? NSNull(),
+            "expectedValue": original as Any? ?? NSNull(), "maxKey": storageKeyLimit, "maxValue": storageValueLimit]))
     }
 
     private static func evaluate(_ source: String, in web: WKWebView, arguments: [String: Any]) async throws -> [String: Any] {
@@ -1058,11 +1044,8 @@ enum DeveloperApplication {
 
     @available(macOS 27, *)
     private static func editableCookie(_ key: Cookie, address: URL, in web: WKWebView) async throws -> HTTPCookie {
-        guard let cookies = await cookies(for: address, in: web) else { throw Issue.unavailable }
-        let matches = cookies.filter { Cookie($0) == key }
-        guard matches.count == 1, let cookie = matches.first,
-              editable(cookie, on: address)
-        else { throw Issue.valueChanged }
+        let cookie = try await matchingCookie(key, address: address, in: web)
+        guard editable(cookie, on: address) else { throw Issue.valueChanged }
         return cookie
     }
 

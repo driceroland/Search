@@ -212,14 +212,14 @@ struct DeveloperCSSOverviewView: View {
         if !uses.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("\(title): \(uses.count)").fontWeight(.medium)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 116), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 8) {
                     ForEach(uses) { use in
                         let shown = Detail(title: "\(title) · \(use.key)", elements: use.elements)
                         Button { detail = shown } label: {
                             HStack(spacing: 6) {
                                 DeveloperCSSSwatch(color: use.color)
                                 VStack(alignment: .leading, spacing: 0) {
-                                    Text(use.key).font(DeveloperToolsStyle.code).lineLimit(1).truncationMode(.middle)
+                                    Text(use.key).font(DeveloperToolsStyle.code).lineLimit(1).truncationMode(.middle).layoutPriority(1)
                                     Text("\(use.count)").foregroundStyle(.secondary).monospacedDigit()
                                 }
                             }

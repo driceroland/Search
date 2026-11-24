@@ -90,13 +90,7 @@ final class DeveloperWorkspace: ObservableObject {
             if address.percentEncodedPath.isEmpty || address.percentEncodedPath.hasSuffix("/") { parts.append("index.html") }
             return parts.filter { $0 != "." && $0 != ".." && !$0.isEmpty }
         }
-        var path = Substring(url)
-        if let scheme = url.range(of: "://") {
-            let afterScheme = url[scheme.upperBound...]
-            path = afterScheme[(afterScheme.firstIndex(of: "/") ?? afterScheme.endIndex)...]
-        }
-        path = path.prefix { $0 != "?" && $0 != "#" }
-        return path.split(separator: "/").map { String($0).removingPercentEncoding ?? String($0) }
+        return DeveloperSourceMapURL.path(of: url).split(separator: "/").map { String($0).removingPercentEncoding ?? String($0) }
             .filter { $0 != "." && $0 != ".." && !$0.isEmpty }
     }
 
@@ -356,12 +350,9 @@ final class DeveloperWorkspace: ObservableObject {
         guard automaticFoldersEnabled, let url = Self.devToolsJSONURL(for: page),
               let origin = page.flatMap(Self.origin(of:)) else { return }
         let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5)
-        let offered: AutomaticFolder?
-        if let result = try? await DeveloperResourceRequest.data(for: request, sameOriginRedirects: true),
-           let response = result.1 as? HTTPURLResponse, response.statusCode == 200 {
-            offered = Self.automaticFolder(from: result.0, origin: origin)
-        } else {
-            offered = nil
+        let offered: AutomaticFolder? = (try? await DeveloperResourceRequest.data(for: request, sameOriginRedirects: true)).flatMap { data, response in
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            return Self.automaticFolder(from: data, origin: origin)
         }
         if automaticFolders[origin] != offered { automaticFolders[origin] = offered }
     }
@@ -563,8 +554,7 @@ final class DeveloperWorkspace: ObservableObject {
                     if isFolder { walker.skipDescendants() }
                     continue
                 }
-                guard values?.isRegularFile == true else { continue }
-                guard full.hasPrefix(root + "/") else { continue }
+                guard values?.isRegularFile == true, full.hasPrefix(root + "/") else { continue }
                 found.append(relative)
             }
         }
@@ -572,8 +562,7 @@ final class DeveloperWorkspace: ObservableObject {
         var names: [String: [String]] = [:]
         for path in found { names[(path as NSString).lastPathComponent, default: []].append(path) }
         byName[folder.id] = names
-        matches = [:]
-        texts = [:]
+        changed()
         revision += 1
     }
 }
@@ -751,7 +740,7 @@ struct DeveloperWorkspaceNavigator: View {
             if row.isFolder {
                 Image(systemName: "folder").foregroundStyle(DeveloperToolsStyle.tint).frame(width: 15)
             } else {
-                DeveloperWorkspaceDot(symbol: "doc", mapped: resource != nil)
+                Image(systemName: "doc").foregroundStyle(.secondary).frame(width: 15).developerWorkspaceDot(resource != nil)
             }
             if renaming == key(folder, row.path) {
                 TextField("Name", text: $newName)
@@ -793,22 +782,16 @@ struct DeveloperWorkspaceNavigator: View {
     }
 }
 
-/// A file's icon with Chrome's green dot: served from a workspace folder.
-struct DeveloperWorkspaceDot: View {
-    let symbol: String
-    var mapped = true
-
-    var body: some View {
-        Image(systemName: symbol)
-            .foregroundStyle(.secondary)
-            .frame(width: 15)
-            .overlay(alignment: .bottomTrailing) {
-                if mapped {
-                    Circle().fill(Color.green).frame(width: 6, height: 6)
-                        .overlay(Circle().stroke(Color(nsColor: .textBackgroundColor), lineWidth: 1))
-                        .offset(x: 1, y: 1)
-                        .accessibilityLabel("Mapped to the workspace")
-                }
+extension View {
+    /// Chrome's green dot on a file's icon: served from a workspace folder.
+    func developerWorkspaceDot(_ mapped: Bool) -> some View {
+        overlay(alignment: .bottomTrailing) {
+            if mapped {
+                Circle().fill(Color.green).frame(width: 6, height: 6)
+                    .overlay(Circle().stroke(Color(nsColor: .textBackgroundColor), lineWidth: 1))
+                    .offset(x: 1, y: 1)
+                    .accessibilityLabel("Mapped to the workspace")
             }
+        }
     }
 }

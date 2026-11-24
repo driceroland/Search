@@ -275,17 +275,12 @@ enum DeveloperLighthouseValue: Equatable {
 /// (for highlight and reveal) and as Lighthouse shows a node.
 struct DeveloperLighthouseNode: Equatable, Hashable {
     var index: Int
-    var snippet: String
-    var selector: String
-    var label: String
+    var snippet = ""
+    var selector = ""
+    var label = ""
+}
 
-    init(index: Int, snippet: String = "", selector: String = "", label: String = "") {
-        self.index = index
-        self.snippet = snippet
-        self.selector = selector
-        self.label = label
-    }
-
+extension DeveloperLighthouseNode {
     /// `[index, snippet, selector, label]`, as the page script sends one.
     init?(_ raw: Any?) {
         guard let parts = raw as? [Any], let index = (parts.first as? NSNumber)?.intValue else { return nil }

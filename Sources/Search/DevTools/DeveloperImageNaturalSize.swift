@@ -64,10 +64,5 @@ enum DeveloperImageNaturalSize {
         return corrected(images, sizes: sizes)
     }
 
-    private static func number(_ value: Any?) -> Double? {
-        if let value = value as? NSNumber { return value.doubleValue }
-        if let value = value as? Double { return value }
-        if let value = value as? Int { return Double(value) }
-        return nil
-    }
+    private static func number(_ value: Any?) -> Double? { DeveloperProtocolValue.number(value) }
 }

@@ -499,19 +499,9 @@ struct DeveloperLighthouseMetrics: Equatable {
         a.fcp == b.fcp && a.lcp == b.lcp && a.cls == b.cls && a.taskSource == b.taskSource
             && a.tasks.map { $0.start } == b.tasks.map { $0.start } && a.tasks.map { $0.duration } == b.tasks.map { $0.duration }
     }
+}
 
-    init(fcp: Double? = nil, lcp: Double? = nil, lcpSupported: Bool = false, cls: Double? = nil, clsSupported: Bool = false,
-         tasks: [(start: Double, duration: Double)] = [], taskSource: TaskSource = .none, ttfb: Double? = nil) {
-        self.fcp = fcp
-        self.lcp = lcp
-        self.lcpSupported = lcpSupported
-        self.cls = cls
-        self.clsSupported = clsSupported
-        self.tasks = tasks
-        self.taskSource = taskSource
-        self.ttfb = ttfb
-    }
-
+extension DeveloperLighthouseMetrics {
     init(_ raw: [String: Any]) {
         func number(_ key: String) -> Double? { (raw[key] as? NSNumber)?.doubleValue }
         fcp = number("fcp")

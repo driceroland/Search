@@ -96,14 +96,9 @@ struct DeveloperResourceList: Equatable {
 enum DeveloperResourceFilter {
     static func matches(_ record: DeveloperResourceRecord, query: String) -> Bool {
         let url = record.url.lowercased()
-        for word in query.lowercased().split(whereSeparator: \.isWhitespace) {
-            if word.hasPrefix("-"), word.count > 1 {
-                if url.contains(word.dropFirst()) { return false }
-            } else if !url.contains(word) {
-                return false
-            }
+        return query.lowercased().split(whereSeparator: \.isWhitespace).allSatisfy { word in
+            word.hasPrefix("-") && word.count > 1 ? !url.contains(word.dropFirst()) : url.contains(word)
         }
-        return true
     }
 
     static func filter(_ records: [DeveloperResourceRecord], query: String) -> [DeveloperResourceRecord] {

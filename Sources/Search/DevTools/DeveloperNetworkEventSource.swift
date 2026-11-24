@@ -26,18 +26,10 @@ final class DeveloperNetworkEventSource {
         var requestID: String?
     }
 
-    private static let handler = "perchNetworkEventSource"
     private static let connectionLimit = 32
     private static let messageLimit = 512
-    private static let frameLimit = 64
-    /// One message handler per content controller, shared by the sessions on
-    /// it: adding a second handler with the same name raises.
-    private static var relays: [ObjectIdentifier: Relay] = [:]
     private let sessionID = UUID()
-    private weak var web: WKWebView?
-    private var script: WKUserScript?
-    private var frames: [String: WKFrameInfo] = [:]
-    private var frameOrder: [String] = []
+    private var relay = DeveloperScriptRelay(handler: "perchNetworkEventSource")
     private var mainDocument: String?
     private var connections: [String: Connection] = [:]
     private var order: [String] = []
@@ -45,63 +37,16 @@ final class DeveloperNetworkEventSource {
     private var streamOrder: [String] = []
 
     func start(on web: WKWebView) {
-        guard script == nil else { return }
-        self.web = web
-        let content = web.configuration.userContentController
-        let source = DeveloperNetworkBridgeScript.eventSource(session: sessionID)
-        let script = WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page)
-        self.script = script
-        Self.relay(for: content).owners[sessionID] = Owner(value: self)
-        content.addUserScript(script)
-        ArmedRiders.add(script, to: content)
-        // The current document gets the capture now. Existing subframes get it
-        // at their next navigation, since WKWebView doesn't list their frames.
-        web.evaluateJavaScript(source, in: nil, in: .page, completionHandler: nil)
-    }
-
-    private static func relay(for content: WKUserContentController) -> Relay {
-        let id = ObjectIdentifier(content)
-        if let relay = relays[id], relay.content === content { return relay }
-        let relay = Relay(content)
-        relays[id] = relay
-        content.add(relay, contentWorld: .page, name: handler)
-        return relay
+        guard relay.script == nil else { return }
+        relay.start(DeveloperNetworkBridgeScript.eventSource(session: sessionID), key: sessionID, owner: self, on: web) {
+            [weak self] in self?.receive($0)
+        }
     }
 
     func stop() {
-        guard let script else { return }
-        self.script = nil
-        ArmedRiders.remove(script)
-        defer {
-            frames.removeAll()
-            frameOrder.removeAll()
-            mainDocument = nil
-            clear()
-            self.web = nil
-        }
-        guard let web else { return }
-        let content = web.configuration.userContentController
-        let id = ObjectIdentifier(content)
-        if let relay = Self.relays[id], relay.content === content {
-            relay.owners[sessionID] = nil
-            if relay.owners.values.allSatisfy({ $0.value == nil }) {
-                Self.relays[id] = nil
-                content.removeScriptMessageHandler(forName: Self.handler, contentWorld: .page)
-            }
-        }
-        if content.userScripts.contains(where: { $0 === script }) {
-            let kept = content.userScripts.filter { $0 !== script }
-            content.removeAllUserScripts()
-            kept.forEach(content.addUserScript)
-        }
-        let cleanup = """
-            { const capture = globalThis[Symbol.for('perch.eventSourceCapture')];
-              if (capture?.owns?.('\(sessionID.uuidString)')) capture.stop(); }
-            """
-        web.evaluateJavaScript(cleanup, in: nil, in: .page, completionHandler: nil)
-        for frame in frames.values where !frame.isMainFrame {
-            web.evaluateJavaScript(cleanup, in: frame, in: .page, completionHandler: nil)
-        }
+        guard relay.stop(key: sessionID, symbol: "perch.eventSourceCapture") else { return }
+        mainDocument = nil
+        clear()
     }
 
     func clear() {
@@ -117,29 +62,18 @@ final class DeveloperNetworkEventSource {
         connections.values.first { $0.requestID == requestID }?.dropped ?? 0
     }
 
-    /// The frames to restore when capture stops. The page's own is always
-    /// reached; subframes are kept by document, most recent last, and a new
-    /// page document takes the old one's subframes with it.
+    /// The page's frame is always reached; subframes are kept by document,
+    /// and a new page document takes the old one's subframes with it.
     private func remember(_ frame: String, _ info: WKFrameInfo) {
-        if info.isMainFrame {
-            if mainDocument != frame {
-                mainDocument = frame
-                frames.removeAll()
-                frameOrder.removeAll()
-            }
-            return
+        if info.isMainFrame, mainDocument != frame {
+            mainDocument = frame
+            relay.forgetFrames()
         }
-        if frames[frame] != nil { frameOrder.removeAll { $0 == frame } }
-        frames[frame] = info
-        frameOrder.append(frame)
-        if frameOrder.count > Self.frameLimit {
-            for id in frameOrder.prefix(frameOrder.count - Self.frameLimit) { frames[id] = nil }
-            frameOrder.removeFirst(frameOrder.count - Self.frameLimit)
-        }
+        relay.remember(frame, info)
     }
 
     private func receive(_ message: WKScriptMessage) {
-        guard script != nil, let web, message.webView === web,
+        guard relay.script != nil, let web = relay.web, message.webView === web,
               let body = message.body as? [String: Any], body["session"] as? String == sessionID.uuidString,
               let frame = body["frame"] as? String, frame.count <= 80,
               let list = body["messages"] as? [[String: Any]] else { return }
@@ -264,20 +198,5 @@ final class DeveloperNetworkEventSource {
         address.fragment = nil
         if omitQuery { address.query = nil }
         return address.string
-    }
-
-    private struct Owner {
-        weak var value: DeveloperNetworkEventSource?
-    }
-
-    private final class Relay: NSObject, WKScriptMessageHandler {
-        weak var content: WKUserContentController?
-        var owners: [UUID: Owner] = [:]
-        init(_ content: WKUserContentController) { self.content = content }
-        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            MainActor.assumeIsolated {
-                for owner in owners.values { owner.value?.receive(message) }
-            }
-        }
     }
 }

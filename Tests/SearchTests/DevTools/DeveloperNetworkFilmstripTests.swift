@@ -90,7 +90,7 @@ final class DeveloperNetworkFilmstripTests: XCTestCase {
     }
 
     func testTimeLabelsReadAsTheSummarysDo() {
-        XCTAssertEqual(DeveloperNetworkFilmstripView.seconds(120), "120 ms")
-        XCTAssertEqual(DeveloperNetworkFilmstripView.seconds(1_500), "1.50 s")
+        XCTAssertEqual(DeveloperNetworkTimingPopover.seconds(120), "120 ms")
+        XCTAssertEqual(DeveloperNetworkTimingPopover.seconds(1_500), "1.50 s")
     }
 }

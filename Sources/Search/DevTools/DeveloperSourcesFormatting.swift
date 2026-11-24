@@ -66,10 +66,10 @@ enum SourceFormatter {
 
         mutating func space() { if !atLineStart { pendingSpace = true } }
 
-        mutating func write(_ u: UnsafeBufferPointer<UInt16>, _ start: Int, _ end: Int, indentBy extra: Int = 0) {
+        mutating func write(_ u: UnsafeBufferPointer<UInt16>, _ start: Int, _ end: Int) {
             guard start < end else { return }
             if atLineStart {
-                for _ in 0..<max(0, indent + extra) { out.append(contentsOf: [32, 32, 32, 32]) }
+                for _ in 0..<max(0, indent) { out.append(contentsOf: [32, 32, 32, 32]) }
                 if origins[origins.count - 1] == nil { origins[origins.count - 1] = start }
                 atLineStart = false
             } else if pendingSpace {
@@ -90,19 +90,6 @@ enum SourceFormatter {
                 }
                 k += 1
             }
-            blankLines = 0
-        }
-
-        mutating func write(_ literal: String, origin: Int?) {
-            if atLineStart {
-                for _ in 0..<max(0, indent) { out.append(contentsOf: [32, 32, 32, 32]) }
-                if origins[origins.count - 1] == nil { origins[origins.count - 1] = origin }
-                atLineStart = false
-            } else if pendingSpace {
-                out.append(32)
-            }
-            pendingSpace = false
-            out.append(contentsOf: literal.utf16)
             blankLines = 0
         }
 
@@ -186,6 +173,20 @@ enum SourceFormatter {
             w.write(u, lexeme.start, lexeme.end)
         }
 
+        /// A line break where a statement starts.
+        func newStatement() {
+            lineBreak()
+            role = .start
+        }
+
+        /// An operator between two things, a space either side.
+        func binary(_ lexeme: JSLexeme) {
+            w.space()
+            emit(lexeme)
+            w.space()
+            role = .binary
+        }
+
         func next(after index: Int) -> JSLexeme? {
             var n = index + 1
             while n < lexemes.count {
@@ -216,8 +217,7 @@ enum SourceFormatter {
                 default: return  // an operator: the expression goes on
                 }
             }
-            lineBreak()
-            role = .start
+            newStatement()
         }
 
         var index = 0
@@ -238,15 +238,13 @@ enum SourceFormatter {
             case .lineComment:
                 spaceIf(!w.atLineStart)
                 emit(lexeme)
-                lineBreak()
-                role = .start
+                newStatement()
                 continue
             case .blockComment:
                 spaceIf(!w.atLineStart)
                 emit(lexeme)
                 if let following = index + 1 < lexemes.count ? lexemes[index + 1] : nil, following.breaks > 0 {
-                    lineBreak()
-                    role = .start
+                    newStatement()
                 } else {
                     w.space()
                 }
@@ -297,8 +295,7 @@ enum SourceFormatter {
                 spaceIf(role == .word || role == .binary)
                 emit(lexeme)
                 stack.append(context)
-                lineBreak()
-                role = .start
+                newStatement()
             case "}"?:
                 while stack.count > 1, stack[stack.count - 1].kind != .brace { stack.removeLast() }
                 let closed = stack.count > 1 ? stack.removeLast() : stack[0]
@@ -347,15 +344,13 @@ enum SourceFormatter {
                     w.space()
                     role = .binary
                 } else {
-                    lineBreak()
-                    role = .start
+                    newStatement()
                 }
             case ","?:
                 w.pendingSpace = false
                 emit(lexeme)
                 if top.kind == .brace {
-                    lineBreak()
-                    role = .start
+                    newStatement()
                 } else {
                     w.space()
                     role = .binary
@@ -363,16 +358,12 @@ enum SourceFormatter {
             case ":"?:
                 if top.ternaries > 0 {
                     stack[stack.count - 1].ternaries -= 1
-                    w.space()
-                    emit(lexeme)
-                    w.space()
-                    role = .binary
+                    binary(lexeme)
                 } else if pendingCase {
                     pendingCase = false
                     emit(lexeme)
                     stack[stack.count - 1].inCase = true
-                    lineBreak()
-                    role = .start
+                    newStatement()
                 } else {
                     emit(lexeme)
                     w.space()
@@ -380,10 +371,7 @@ enum SourceFormatter {
                 }
             case "?"?:
                 stack[stack.count - 1].ternaries += 1
-                w.space()
-                emit(lexeme)
-                w.space()
-                role = .binary
+                binary(lexeme)
             case "."?, "?."?:
                 emit(lexeme)
                 role = .dot
@@ -402,10 +390,7 @@ enum SourceFormatter {
                 }
             case "+"?, "-"?:
                 if role == .word {
-                    w.space()
-                    emit(lexeme)
-                    w.space()
-                    role = .binary
+                    binary(lexeme)
                 } else {
                     spaceIf(role == .binary)
                     emit(lexeme)
@@ -421,10 +406,7 @@ enum SourceFormatter {
             case let other?:
                 // Every other punctuator is an operator between two things.
                 if other == "=>" || other.count > 1 || "=<>*/%&|^".contains(other) {
-                    w.space()
-                    emit(lexeme)
-                    w.space()
-                    role = .binary
+                    binary(lexeme)
                 } else {
                     spaceIf(role == .word || role == .binary)
                     emit(lexeme)
@@ -694,21 +676,8 @@ enum SourceFormatter {
             while n < end, SourceLexing.isIDPart(u[n]) || u[n] == UInt16(ascii: "-") || u[n] == UInt16(ascii: ":") { n += 1 }
             let name = String(decoding: UnsafeBufferPointer(rebasing: u[nameStart..<n]), as: UTF16.self).lowercased()
             // The tag's end, past quoted values that may hold a `>`.
-            var j = n
-            var quote: UInt16 = 0
+            let tagEnd = SourceHighlighter.tagEnd(u, from: n)
             var typeValue: String?
-            while j < end {
-                let c = u[j]
-                if quote != 0 {
-                    if c == quote { quote = 0 }
-                } else if c == UInt16(ascii: "\"") || c == UInt16(ascii: "'") {
-                    quote = c
-                } else if c == UInt16(ascii: ">") {
-                    break
-                }
-                j += 1
-            }
-            let tagEnd = min(j + 1, end)
             let selfClosing = tagEnd >= 2 && u[tagEnd - 2] == UInt16(ascii: "/")
             if name == "script" {
                 let tag = String(decoding: UnsafeBufferPointer(rebasing: u[s..<tagEnd]), as: UTF16.self).lowercased()
@@ -800,9 +769,4 @@ enum SourceFormatter {
         while k < end, SourceLexing.isSpace(u[k]) || SourceLexing.isNewline(u[k]) { k += 1 }
         return k
     }
-}
-
-fileprivate extension UInt16 {
-    /// A code unit for an ASCII character, as UInt8(ascii:) is for bytes.
-    @inline(__always) init(ascii scalar: Unicode.Scalar) { self = UInt16(truncatingIfNeeded: scalar.value) }
 }

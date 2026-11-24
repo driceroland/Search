@@ -74,6 +74,10 @@
     // and of them the worst, less one for every 50 interactions.
     let interactionCount = 0;
     const interactionsSeen = new Map();
+    const recent = [];
+    // Shifts before this index (counted with shiftBase) are cleared from
+    // the live view's Layout shifts log.
+    let shiftLogFrom = 0;
     let worst = [];
     const interaction = (entry) => {
         const id = entry.interactionId;
@@ -89,6 +93,17 @@
         }
         if (known !== undefined && known >= entry.duration) return;
         interactionsSeen.set(id, entry.duration);
+        // The live view's Interactions log: the latest 50, each at its
+        // longest event so far.
+        const logged = recent.find((item) => item.id === id);
+        if (logged) {
+            logged.duration = entry.duration;
+            logged.name = entry.name;
+            logged.target = hold(entry.target);
+        } else {
+            recent.push({id, name: entry.name, target: hold(entry.target), duration: entry.duration, time: entry.startTime});
+            if (recent.length > 50) recent.shift();
+        }
         worst = worst.filter((item) => item.id !== id);
         worst.push({id, duration: entry.duration, name: entry.name, target: hold(entry.target)});
         worst.sort((a, b) => b.duration - a.duration);
@@ -278,7 +293,20 @@
                 inpSupported: eventSupported,
                 inp: inp(),
                 interactions: interactionCount,
+                interactionLog: recent.map((item) => ({
+                    name: item.name, target: describe(release(item.target)), duration: item.duration, time: item.time,
+                })),
+                shiftLog: shifts.slice(Math.max(0, shiftLogFrom - shiftBase)).slice(-50).map((shift) => ({
+                    time: shift.time, value: shift.value,
+                    elements: shift.elements.map((held) => describe(release(held))).filter((text) => !!text),
+                })),
             };
+        },
+        // The live view's Clear: its logs start again from now.
+        clearLogs() {
+            recent.length = 0;
+            shiftLogFrom = shiftBase + shifts.length;
+            return true;
         },
         lcpNode() { return release(lcpElement); },
         shiftNode(index, node) {

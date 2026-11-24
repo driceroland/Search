@@ -3,8 +3,8 @@
 // call is noted; once the transition's pseudo-elements are built (its
 // `ready` promise), their ::view-transition animations are read with the
 // Web Animations API and kept until the drawer collects them. Also says
-// what this WebKit supports: view transitions, ScrollTimeline and
-// ViewTimeline. Run again, it only hands over what was noted since.
+// what this WebKit supports: view transitions and ScrollTimeline. Run
+// again, it only hands over what was noted since.
 (() => {
     const key = Symbol.for("perch.animations.page");
     let state = window[key];
@@ -14,7 +14,6 @@
         state = {
             viewTransitions: typeof native === "function",
             scrollTimelines: typeof ScrollTimeline === "function",
-            viewTimelines: typeof ViewTimeline === "function",
             pending: [],
             serial: 0,
         };
@@ -74,8 +73,5 @@
     }
     const transitions = state.pending;
     state.pending = [];
-    return {
-        viewTransitions: state.viewTransitions, scrollTimelines: state.scrollTimelines,
-        viewTimelines: state.viewTimelines, transitions,
-    };
+    return {viewTransitions: state.viewTransitions, scrollTimelines: state.scrollTimelines, transitions};
 })()

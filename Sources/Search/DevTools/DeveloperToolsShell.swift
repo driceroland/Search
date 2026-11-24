@@ -94,13 +94,6 @@ enum DeveloperDrawerItem: Hashable, Identifiable {
         case .panel(let panel): panel.rawValue
         }
     }
-
-    var icon: String {
-        switch self {
-        case .tool(let tool): tool.icon
-        case .panel(let panel): panel.icon
-        }
-    }
 }
 
 extension DeveloperPanel {
@@ -378,10 +371,7 @@ final class DeveloperToolsShell: ObservableObject {
     func movePanelToTop(_ panel: DeveloperPanel) {
         panels.inDrawer.remove(panel)
         panels.closed.remove(panel)
-        if let index = drawerTabs.firstIndex(of: .panel(panel)) {
-            drawerTabs.remove(at: index)
-            if drawerSelection == .panel(panel) { drawerSelection = drawerTabs[max(0, index - 1)] }
-        }
+        closeDrawerTab(.panel(panel))
     }
 
     // MARK: Zoom

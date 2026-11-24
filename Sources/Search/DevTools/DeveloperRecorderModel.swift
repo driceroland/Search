@@ -238,10 +238,9 @@ final class DeveloperRecorderModel: ObservableObject, DeveloperSessionModel {
         controller.add(relay, contentWorld: Self.world, name: Self.handlerName)
         let source = source(for: recording)
         let script = WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Self.world)
-        controller.addUserScript(script)
         // Kept by Tab.arm at each navigation: a load or reload says it is
         // loading before Tab.arm takes the scripts out.
-        ArmedRiders.add(script, to: controller)
+        controller.developerArm(script)
         self.relay = relay
         userScript = script
         recordingSource = source
@@ -258,11 +257,8 @@ final class DeveloperRecorderModel: ObservableObject, DeveloperSessionModel {
     /// came too late; already there, it does nothing.
     private func loadingChanged(_ web: WKWebView) {
         guard recordingID != nil, web === recordingWeb else { return }
-        let controller = web.configuration.userContentController
         if web.isLoading {
-            if let script = userScript, !controller.userScripts.contains(where: { $0 === script }) {
-                controller.addUserScript(script)
-            }
+            if let script = userScript { web.configuration.userContentController.developerArm(script) }
         } else {
             web.evaluateJavaScript(recordingSource, in: nil, in: Self.world, completionHandler: nil)
         }
@@ -329,12 +325,7 @@ final class DeveloperRecorderModel: ObservableObject, DeveloperSessionModel {
         if let web = recordingWeb {
             let controller = web.configuration.userContentController
             controller.removeScriptMessageHandler(forName: Self.handlerName, contentWorld: Self.world)
-            if let script = userScript, controller.userScripts.contains(where: { $0 === script }) {
-                // WebKit takes user scripts out all at once; the tab's go back.
-                let others = controller.userScripts.filter { $0 !== script }
-                controller.removeAllUserScripts()
-                others.forEach(controller.addUserScript)
-            }
+            if let script = userScript { controller.developerRemove(script) }
             web.evaluateJavaScript("(() => { const r = window[Symbol.for('perch.recorder')]; if (r) r.stop(); return true; })()",
                                    in: nil, in: Self.world, completionHandler: nil)
         }
@@ -425,7 +416,7 @@ final class DeveloperRecorderModel: ObservableObject, DeveloperSessionModel {
         switch step.kind {
         case .emulateNetworkConditions:
             guard let condition = DeveloperRecorderNetwork.condition(of: step) else {
-                throw DeveloperRecorderError("The step has no latency to emulate.")
+                throw DeveloperPanelError("The step has no latency to emulate.")
             }
             session?.networkTools.apply(condition)
             // Let the conditions reach the page before the next step.
@@ -438,13 +429,13 @@ final class DeveloperRecorderModel: ObservableObject, DeveloperSessionModel {
             return
         case .navigate:
             guard let address = step.url, let url = URL(string: address) else {
-                throw DeveloperRecorderError("The step has no address to go to.")
+                throw DeveloperPanelError("The step has no address to go to.")
             }
             let before = marker(web)
             if let tab = session?.tab, tab.built === web { tab.go(to: url) } else { web.load(URLRequest(url: url)) }
             try await waitForNavigation(web, since: before, timeout: max(timeout, 30_000))
         case nil:
-            throw DeveloperRecorderError("Replay doesn't know \(step.type) steps.")
+            throw DeveloperPanelError("Replay doesn't know \(step.type) steps.")
         default:
             await waitWhileLoading(web, timeout: timeout)
             let before = marker(web)
@@ -456,9 +447,9 @@ final class DeveloperRecorderModel: ObservableObject, DeveloperSessionModel {
                     in: nil, contentWorld: Self.world
                 )
                 if let reply = result as? [String: Any], let error = reply["error"] as? String {
-                    throw DeveloperRecorderError(error)
+                    throw DeveloperPanelError(error)
                 }
-            } catch let error as DeveloperRecorderError {
+            } catch let error as DeveloperPanelError {
                 throw error
             } catch {
                 // The page going away mid-step is what a navigating step does.
@@ -487,7 +478,7 @@ final class DeveloperRecorderModel: ObservableObject, DeveloperSessionModel {
             if sawLoading || moved, !web.isLoading { return }
             try await Task.sleep(for: .milliseconds(50))
         }
-        throw DeveloperRecorderError("Timed out after \(DeveloperRecorderJSON.format(timeout)) ms waiting for the page to navigate.")
+        throw DeveloperPanelError("Timed out after \(DeveloperRecorderJSON.format(timeout)) ms waiting for the page to navigate.")
     }
 
     private func waitWhileLoading(_ web: WKWebView, timeout: Double) async {
@@ -524,36 +515,20 @@ final class DeveloperRecorderModel: ObservableObject, DeveloperSessionModel {
 
     func export(_ id: UUID?, as format: ExportFormat) {
         guard let recording = store.recording(id) else { return }
-        let panel = NSSavePanel()
         let base = recording.title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
-        panel.nameFieldStringValue = base + "." + format.fileExtension
-        panel.allowedContentTypes = [format.type]
-        panel.canCreateDirectories = true
         let text = format.text(recording)
-        let write = { [weak self] (url: URL) in
+        DeveloperFilePanel.save(name: base + "." + format.fileExtension, types: [format.type]) { [weak self] url in
             do {
                 try Data(text.utf8).write(to: url, options: .atomic)
             } catch {
                 self?.problem = error.localizedDescription
             }
         }
-        if let window = NSApp.keyWindow {
-            panel.beginSheetModal(for: window) { response in
-                guard response == .OK, let url = panel.url else { return }
-                write(url)
-            }
-        } else if panel.runModal() == .OK, let url = panel.url {
-            write(url)
-        }
     }
 
     /// Import recording: a Chrome Recorder JSON file.
     func importRecording() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        let read = { [weak self] (url: URL) in
+        DeveloperFilePanel.open(types: [.json]) { [weak self] url in
             guard let self else { return }
             do {
                 let recording = try DeveloperRecording(data: Data(contentsOf: url))
@@ -564,14 +539,6 @@ final class DeveloperRecorderModel: ObservableObject, DeveloperSessionModel {
             } catch {
                 self.problem = "Couldn't import \(url.lastPathComponent): \(error.localizedDescription)"
             }
-        }
-        if let window = NSApp.keyWindow {
-            panel.beginSheetModal(for: window) { response in
-                guard response == .OK, let url = panel.url else { return }
-                read(url)
-            }
-        } else if panel.runModal() == .OK, let url = panel.url {
-            read(url)
         }
     }
 }

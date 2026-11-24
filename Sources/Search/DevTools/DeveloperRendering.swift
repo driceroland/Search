@@ -21,7 +21,12 @@ final class DeveloperRendering: ObservableObject {
         /// Done in the page (DeveloperRenderingPage), as approximations.
         var frameStats = false
         var layoutShifts = false
+        var scrollIssues = false
+        var highlightAds = false
+        /// Enable automatic dark mode: `prefers-color-scheme: dark` and the page darkened.
+        var autoDarkMode = false
         var focusedPage = false
+        var localFontsDisabled = false
         /// Media features emulated by rewriting the page's CSS, by value,
         /// or `nil` for no emulation.
         var forcedColors: String?
@@ -37,7 +42,7 @@ final class DeveloperRendering: ObservableObject {
             let contrast = nativeContrast && self.contrast == "more" ? "More" : nil
             return [
                 "paintFlashing": paintFlashing, "layerBorders": layerBorders, "mediaType": mediaType,
-                "colorScheme": colorScheme as Any? ?? NSNull(), "reducedMotion": reducedMotion as Any? ?? NSNull(),
+                "colorScheme": (autoDarkMode ? "Dark" : colorScheme) as Any? ?? NSNull(), "reducedMotion": reducedMotion as Any? ?? NSNull(),
                 "contrast": contrast as Any? ?? NSNull(), "javaScriptDisabled": javaScriptDisabled,
                 "imagesDisabled": imagesDisabled,
             ]
@@ -52,7 +57,8 @@ final class DeveloperRendering: ObservableObject {
             media["prefers-reduced-data"] = reducedData
             if let contrast, !(nativeContrast && contrast == "more") { media["prefers-contrast"] = contrast }
             return DeveloperRenderingPage.State(frameStats: frameStats, layoutShifts: layoutShifts,
-                                                focused: focusedPage, media: media)
+                                                scrollIssues: scrollIssues, highlightAds: highlightAds, autoDark: autoDarkMode,
+                                                focused: focusedPage, noLocalFonts: localFontsDisabled, media: media)
         }
     }
 
@@ -78,34 +84,27 @@ final class DeveloperRendering: ObservableObject {
         /// Chromium's filters: Machado et al. (2009) matrices at full severity,
         /// a blur, and halved contrast.
         var filters: [CIFilter] {
-            func matrix(_ m: [CGFloat]) -> CIFilter? {
-                let filter = CIFilter(name: "CIColorMatrix")
-                filter?.setValue(CIVector(x: m[0], y: m[1], z: m[2], w: 0), forKey: "inputRVector")
-                filter?.setValue(CIVector(x: m[3], y: m[4], z: m[5], w: 0), forKey: "inputGVector")
-                filter?.setValue(CIVector(x: m[6], y: m[7], z: m[8], w: 0), forKey: "inputBVector")
-                return filter
+            func filter(_ name: String, _ values: [String: Any]) -> [CIFilter] {
+                guard let filter = CIFilter(name: name) else { return [] }
+                for (key, value) in values { filter.setValue(value, forKey: key) }
+                return [filter]
+            }
+            func matrix(_ m: [CGFloat]) -> [CIFilter] {
+                filter("CIColorMatrix", ["inputRVector": CIVector(x: m[0], y: m[1], z: m[2], w: 0),
+                                         "inputGVector": CIVector(x: m[3], y: m[4], z: m[5], w: 0),
+                                         "inputBVector": CIVector(x: m[6], y: m[7], z: m[8], w: 0)])
             }
             switch self {
             case .none: return []
-            case .blurredVision:
-                let blur = CIFilter(name: "CIGaussianBlur")
-                blur?.setValue(2.0, forKey: kCIInputRadiusKey)
-                return blur.map { [$0] } ?? []
-            case .reducedContrast:
-                let controls = CIFilter(name: "CIColorControls")
-                controls?.setValue(0.5, forKey: kCIInputContrastKey)
-                return controls.map { [$0] } ?? []
-            case .achromatopsia:
-                return matrix([0.213, 0.715, 0.072, 0.213, 0.715, 0.072, 0.213, 0.715, 0.072]).map { [$0] } ?? []
+            case .blurredVision: return filter("CIGaussianBlur", [kCIInputRadiusKey: 2.0])
+            case .reducedContrast: return filter("CIColorControls", [kCIInputContrastKey: 0.5])
+            case .achromatopsia: return matrix([0.213, 0.715, 0.072, 0.213, 0.715, 0.072, 0.213, 0.715, 0.072])
             case .protanopia:
-                return matrix([0.152286, 1.052583, -0.204868, 0.114503, 0.786281, 0.099216,
-                               -0.003882, -0.048116, 1.051998]).map { [$0] } ?? []
+                return matrix([0.152286, 1.052583, -0.204868, 0.114503, 0.786281, 0.099216, -0.003882, -0.048116, 1.051998])
             case .deuteranopia:
-                return matrix([0.367322, 0.860646, -0.227968, 0.280085, 0.672501, 0.047413,
-                               -0.011820, 0.042940, 0.968881]).map { [$0] } ?? []
+                return matrix([0.367322, 0.860646, -0.227968, 0.280085, 0.672501, 0.047413, -0.011820, 0.042940, 0.968881])
             case .tritanopia:
-                return matrix([1.255528, -0.076749, -0.178779, -0.078411, 0.930809, 0.147602,
-                               0.004733, 0.691367, 0.303900]).map { [$0] } ?? []
+                return matrix([1.255528, -0.076749, -0.178779, -0.078411, 0.930809, 0.147602, 0.004733, 0.691367, 0.303900])
             }
         }
     }
@@ -115,6 +114,8 @@ final class DeveloperRendering: ObservableObject {
     @Published private(set) var vision = VisionDeficiency.none
     @Published var problem: String?
     private let page = DeveloperRenderingPage()
+    /// Device mode's touch emulation, done by the same page script.
+    private var touch = false
     private var queue: Task<Void, Never>?
     private weak var filteredWeb: WKWebView?
     private var originalFilters: [Any]?
@@ -146,6 +147,7 @@ final class DeveloperRendering: ObservableObject {
     /// out. Call when Developer Tools closes.
     func detach() {
         detachVision()
+        touch = false
         page.stop()
     }
 
@@ -175,7 +177,7 @@ final class DeveloperRendering: ObservableObject {
         guard next != options else { return }
         options = next
         let nativeContrast = support?.preferences.contains("PrefersContrast") == true
-        let state = next.pageState(nativeContrast: nativeContrast)
+        let state = pageState(next, nativeContrast: nativeContrast)
         if state != page.state { page.apply(state, to: session.web) }
         enqueue(session) { rendering, session in
             _ = try await session.evaluateInFrontend(Self.install)
@@ -184,6 +186,29 @@ final class DeveloperRendering: ObservableObject {
             rendering.problem = nil
         }
     }
+
+    /// Device mode turns touch emulation on while its device is a touch
+    /// device, as Chrome's does, and off when it closes.
+    func setTouch(_ on: Bool, web: WKWebView?) {
+        touch = on
+        let nativeContrast = support?.preferences.contains("PrefersContrast") == true
+        let state = pageState(options, nativeContrast: nativeContrast)
+        if state != page.state { page.apply(state, to: web) }
+    }
+
+    /// The page script's state: the drawer's options, and touch with the
+    /// pointer and hover a touch screen reports.
+    func pageState(_ options: Options, nativeContrast: Bool) -> DeveloperRenderingPage.State {
+        var state = options.pageState(nativeContrast: nativeContrast)
+        guard touch else { return state }
+        state.touch = true
+        for (feature, value) in DeveloperRendering.touchMedia where state.media[feature] == nil {
+            state.media[feature] = value
+        }
+        return state
+    }
+
+    static let touchMedia = ["pointer": "coarse", "any-pointer": "coarse", "hover": "none", "any-hover": "none"]
 
     private func enqueue(_ session: DeveloperToolsSession,
                          _ work: @escaping @MainActor (DeveloperRendering, DeveloperToolsSession) async throws -> Void) {
@@ -205,18 +230,29 @@ final class DeveloperRendering: ObservableObject {
 struct DeveloperRenderingView: View {
     @ObservedObject var session: DeveloperToolsSession
     @ObservedObject private var rendering: DeveloperRendering
+    @ObservedObject private var network: DeveloperNetworkTools
 
     init(session: DeveloperToolsSession) {
         self.session = session
         rendering = session.rendering
+        network = session.networkTools
     }
 
     private static let unsupported = "Not available in WebKit."
     private static let layoutShiftsHelp = "Highlights areas of the page (blue) that were shifted. Approximate: "
         + "Search flashes where the moved elements are now, from the page’s layout-shift entries or, where WebKit "
         + "has none, its own estimate."
-    private static let frameStatsHelp = "Plots frame throughput and dropped frames. Approximate: Search counts "
-        + "the page’s animation frames, not the compositor’s."
+    private static let autoDarkHelp = "Enables automatic dark mode and sets `prefers-color-scheme` to `dark`. "
+        + "Approximate: Search inverts the colors of pages without a dark theme and inverts images, video, "
+        + "and canvases back. Strongly saturated colors in them may shift."
+    private static let scrollIssuesHelp = "Highlights elements (teal) that can slow down scrolling. "
+        + "Search outlines blocking wheel and touch handlers and fixed backgrounds. "
+        + "Reload to include handlers added before it was turned on."
+    private static let adsHelp = "Highlights frames from known ad networks and ad slots (red). "
+        + "Search uses the Shield rules to identify them."
+    private static let frameStatsHelp = "Plots frame throughput and dropped frames from the page’s animation frames."
+    private static let localFontsHelp = "Disables `local()` sources by rewriting the page’s `@font-face` rules "
+        + "and `FontFace` sources. Cross-origin style sheets are left as they are."
     private static let rewrittenHelp = "Approximate: Search rewrites the page’s media queries and wraps "
         + "`matchMedia`. Cross-origin style sheets are left as they are."
 
@@ -233,14 +269,16 @@ struct DeveloperRenderingView: View {
                        on: rendering.options.layerBorders, available: support.settings) { $0.layerBorders = $1 }
                 option("Frame rendering stats", Self.frameStatsHelp,
                        on: rendering.options.frameStats, available: true) { $0.frameStats = $1 }
-                unavailable("Scrolling performance issues",
-                            "Highlights elements (teal) that can slow down scrolling. " + Self.unsupported)
-                unavailable("Highlight ads", "Highlights elements (red) detected to be ads. " + Self.unsupported)
-                unavailable("Disable local fonts", "Disables `local()` sources in `@font-face` rules. " + Self.unsupported)
+                option("Scrolling performance issues", Self.scrollIssuesHelp,
+                       on: rendering.options.scrollIssues, available: true) { $0.scrollIssues = $1 }
+                option("Highlight ads", Self.adsHelp,
+                       on: rendering.options.highlightAds, available: true) { $0.highlightAds = $1 }
+                option("Disable local fonts", Self.localFontsHelp,
+                       on: rendering.options.localFontsDisabled, available: true) { $0.localFontsDisabled = $1 }
                 option("Emulate a focused page", DeveloperRendering.focusedPageHelp,
                        on: rendering.options.focusedPage, available: true) { $0.focusedPage = $1 }
-                unavailable("Enable automatic dark mode",
-                            "Enables automatic dark mode and sets `prefers-color-scheme` to `dark`. " + Self.unsupported)
+                option("Enable automatic dark mode", Self.autoDarkHelp,
+                       on: rendering.options.autoDarkMode, available: true) { $0.autoDarkMode = $1 }
                 Divider()
                 preference("prefers-color-scheme", "PrefersColorScheme", value: rendering.options.colorScheme,
                            support: support, choices: [("Light", "light"), ("Dark", "dark")]) { $0.colorScheme = $1 }
@@ -264,16 +302,16 @@ struct DeveloperRenderingView: View {
                           values: ["srgb", "p3", "rec2020"]) { $0.colorGamut = $1 }
                 vision
                 unavailable("Emulate OS text scale", "Forces OS text scale emulation. " + Self.unsupported)
-                unavailable("Disable AVIF image format", Self.unsupported)
-                unavailable("Disable JPEG XL image format", Self.unsupported)
-                unavailable("Disable WebP image format", Self.unsupported)
+                imageFormat("Disable AVIF image format", .avif)
+                imageFormat("Disable JPEG XL image format", .jxl)
+                imageFormat("Disable WebP image format", .webp)
                 Divider()
                 Text("Page settings").fontWeight(.semibold)
                 option("Disable JavaScript", "Stops scripts in the inspected tab. Reload to stop scripts already running.",
                        on: rendering.options.javaScriptDisabled, available: support.settings) { $0.javaScriptDisabled = $1 }
                 option("Disable images", "Stops loading images. Reload to apply to images already shown.",
                        on: rendering.options.imagesDisabled, available: support.settings) { $0.imagesDisabled = $1 }
-                if rendering.active {
+                if rendering.active || !network.disabledImageFormats.isEmpty {
                     Text("These overrides apply to the inspected tab until Developer Tools closes.")
                         .foregroundStyle(.secondary)
                 }
@@ -303,29 +341,36 @@ struct DeveloperRenderingView: View {
         }
     }
 
-    private func option(_ title: String, _ detail: String, on: Bool, available: Bool,
-                        set: @escaping (inout DeveloperRendering.Options, Bool) -> Void) -> some View {
-        Toggle(isOn: Binding(get: { on }, set: { value in rendering.update(in: session) { set(&$0, value) } })) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(available ? detail : Self.unsupported).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .toggleStyle(.developerCheckbox)
-        .disabled(!available)
-    }
-
-    private func unavailable(_ title: String, _ detail: String) -> some View {
-        Toggle(isOn: .constant(false)) {
+    /// A checkbox with its title and, under it, what it does.
+    private func checkbox(_ title: String, _ detail: String, isOn: Binding<Bool>) -> some View {
+        Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                 Text(detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
         .toggleStyle(.developerCheckbox)
-        .disabled(true)
-        .accessibilityHint(Self.unsupported)
+    }
+
+    private func option(_ title: String, _ detail: String, on: Bool, available: Bool,
+                        set: @escaping (inout DeveloperRendering.Options, Bool) -> Void) -> some View {
+        checkbox(title, available ? detail : Self.unsupported,
+                 isOn: Binding(get: { on }, set: { value in rendering.update(in: session) { set(&$0, value) } }))
+            .disabled(!available)
+    }
+
+    /// Chrome's image format switches, through the Network tools' interception.
+    private func imageFormat(_ title: String, _ format: DeveloperNetworkTools.ImageFormat) -> some View {
+        checkbox(title, "Requires a page reload to apply and disables caching for image requests.",
+                 isOn: Binding(get: { network.disabledImageFormats.contains(format) }, set: { on in
+                     if on { network.disabledImageFormats.insert(format) } else { network.disabledImageFormats.remove(format) }
+                 }))
+    }
+
+    private func unavailable(_ title: String, _ detail: String) -> some View {
+        checkbox(title, detail, isOn: .constant(false))
+            .disabled(true)
+            .accessibilityHint(Self.unsupported)
     }
 
     private func menu(_ title: String, _ detail: String, value: String, available: Bool,
@@ -357,10 +402,9 @@ struct DeveloperRenderingView: View {
     }
 
     private func preference(_ feature: String, _ name: String, value: String?, support: DeveloperRendering.Support,
-                            choices: [(String, String)], note: String? = nil,
+                            choices: [(String, String)],
                             set: @escaping (inout DeveloperRendering.Options, String?) -> Void) -> some View {
-        menu("Emulate CSS media feature " + feature,
-             "Forces CSS `\(feature)` media feature" + (note.map { ". " + $0 } ?? ""),
+        menu("Emulate CSS media feature " + feature, "Forces CSS `\(feature)` media feature",
              value: value ?? "", available: support.preferences.contains(name),
              choices: [("", "No emulation")] + choices.map { ($0.0, feature + ": " + $0.1) }) { options, new in
             set(&options, new.isEmpty ? nil : new)
@@ -399,9 +443,7 @@ struct DeveloperRenderingShortcuts: View {
                 .frame(width: DeveloperToolsStyle.controlHeight, height: DeveloperToolsStyle.controlHeight)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
         .help("Toggle common rendering emulations")
         .accessibilityLabel("Toggle common rendering emulations")
         .onAppear { rendering.prepare(in: session) }

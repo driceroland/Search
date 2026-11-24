@@ -56,10 +56,11 @@ final class DeveloperElementsTreeTests: XCTestCase {
 
             page.load(URLRequest(url: server.url("/second")))
             try await wait("second page") { page.title == "Second article" }
+            // The new document opens on <body>, as Chrome's Elements does.
             try await wait("tree for the new document") {
                 session.root.flatMap { session.nodes[$0] }.map { root in
                     root.children.contains { session.nodes[$0].map { $0.name == "html" && $0.type == 1 } == true }
-                } == true && session.selectedNode == nil
+                } == true && session.selectedNode.flatMap { session.nodes[$0] }?.name == "body"
             }
             try await assertDocumentTree(session, "after navigating")
 

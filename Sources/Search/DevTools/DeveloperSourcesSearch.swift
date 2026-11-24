@@ -109,15 +109,8 @@ enum SourceSearch {
 /// options, the results, and the files' text fetched for them.
 @MainActor
 final class DeveloperSourcesSearchModel: ObservableObject {
-    private static var models: [ObjectIdentifier: DeveloperSourcesSearchModel] = [:]
-
     static func of(_ session: DeveloperToolsSession) -> DeveloperSourcesSearchModel {
-        let key = ObjectIdentifier(session)
-        if let model = models[key], model.session === session { return model }
-        models = models.filter { $0.value.session != nil }
-        let model = DeveloperSourcesSearchModel(session: session)
-        models[key] = model
-        return model
+        DeveloperSessionModels.model(for: session, make: DeveloperSourcesSearchModel.init)
     }
 
     struct FileResult: Identifiable {

@@ -242,17 +242,14 @@ struct DeveloperNetworkBlockingView: View {
         .accessibilityIdentifier("developer-network-blocking")
     }
 
-    private func affected(_ pattern: String) -> Int {
-        requests.filter { tools.extras[$0.id]?.blocked == true && Self.matches(pattern, $0.url) }.count
-    }
-
-    private func throttled(_ pattern: String) -> Int {
-        requests.filter { tools.extras[$0.id]?.throttled != nil && Self.matches(pattern, $0.url) }.count
-    }
-
+    /// The requests a row blocked or throttled.
     private func count(_ item: DeveloperNetworkTools.BlockPattern) -> String {
-        DeveloperNetworkTools.condition(of: item, profiles: tools.profiles) == .block
-            ? "\(affected(item.pattern)) blocked" : "\(throttled(item.pattern)) throttled"
+        let blocks = DeveloperNetworkTools.condition(of: item, profiles: tools.profiles) == .block
+        let count = requests.filter { request in
+            let extra = tools.extras[request.id]
+            return (blocks ? extra?.blocked == true : extra?.throttled != nil) && Self.matches(item.pattern, request.url)
+        }.count
+        return "\(count) " + (blocks ? "blocked" : "throttled")
     }
 
     /// Block, a preset or a custom profile, as Chrome's per-row menu offers.
@@ -449,11 +446,7 @@ struct DeveloperNetworkMessagesView: View {
     var visible: [DeveloperNetworkTools.Frame] {
         let expression = filter.isEmpty ? nil : try? NSRegularExpression(pattern: filter, options: .caseInsensitive)
         return frames.dropFirst(cleared).filter { frame in
-            switch kind {
-            case .all: break
-            case .sent: if frame.kind != .sent { return false }
-            case .received: if frame.kind != .received { return false }
-            }
+            if kind == .sent && frame.kind != .sent || kind == .received && frame.kind != .received { return false }
             let text = request.isEventSource
                 ? [frame.eventType, frame.eventID, frame.data].compactMap { $0 }.joined(separator: " ") : frame.data
             guard let expression else { return filter.isEmpty || text.localizedCaseInsensitiveContains(filter) }
@@ -671,6 +664,7 @@ struct DeveloperNetworkTimingPopover: View {
             : (milliseconds / 1_000).formatted(.number.precision(.fractionLength(2))) + " s"
     }
 
+    /// As the summary and filmstrip write times: milliseconds, then seconds.
     static func seconds(_ milliseconds: Double) -> String {
         milliseconds < 1_000 ? "\(Int(milliseconds.rounded())) ms"
             : (milliseconds / 1_000).formatted(.number.precision(.fractionLength(2))) + " s"

@@ -142,21 +142,7 @@ struct DeveloperViewportSettings: Equatable, Codable {
         showDevicePixelRatio = (try? values.decodeIfPresent(Bool.self, forKey: .showDevicePixelRatio)) ?? false
         showDeviceType = (try? values.decodeIfPresent(Bool.self, forKey: .showDeviceType)) ?? false
     }
-
-    func encode(to encoder: Encoder) throws {
-        var values = encoder.container(keyedBy: CodingKeys.self)
-        try values.encodeIfPresent(device, forKey: .device)
-        try values.encode(landscape, forKey: .landscape)
-        try values.encode(responsiveWidth, forKey: .responsiveWidth)
-        try values.encode(responsiveHeight, forKey: .responsiveHeight)
-        try values.encode(responsiveType, forKey: .responsiveType)
-        try values.encodeIfPresent(responsiveScaleFactor, forKey: .responsiveScaleFactor)
-        try values.encode(zoom, forKey: .zoom)
-        try values.encode(showMediaQueries, forKey: .showMediaQueries)
-        try values.encode(showRulers, forKey: .showRulers)
-        try values.encode(showDevicePixelRatio, forKey: .showDevicePixelRatio)
-        try values.encode(showDeviceType, forKey: .showDeviceType)
-    }
+    // encode(to:) is synthesized from CodingKeys.
 }
 
 struct DeveloperViewportPresentation {

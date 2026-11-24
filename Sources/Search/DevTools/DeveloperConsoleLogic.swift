@@ -25,11 +25,7 @@ enum ConsoleErrorStack {
     /// Every frame line in a stack string; lines that are not frames, such
     /// as V8's leading `Error: message`, are left out.
     static func parse(_ stack: String) -> [ConsoleCallFrame] {
-        var frames = [ConsoleCallFrame]()
-        for raw in stack.components(separatedBy: "\n").prefix(200) {
-            if let frame = frame(raw) { frames.append(frame) }
-        }
-        return frames
+        stack.components(separatedBy: "\n").prefix(200).compactMap { frame($0) }
     }
 
     private static func isV8Frame(_ line: String) -> Bool {
@@ -70,9 +66,7 @@ enum ConsoleErrorStack {
     private static func location(_ place: String) -> (url: String, line: Int, column: Int)? {
         var parts = place.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
         guard parts.count >= 2 else { return nil }
-        var column = 0
-        if parts.count >= 3, let last = Int(parts[parts.count - 1]), let line = Int(parts[parts.count - 2]) {
-            column = last
+        if parts.count >= 3, let column = Int(parts[parts.count - 1]), let line = Int(parts[parts.count - 2]) {
             parts.removeLast(2)
             let url = parts.joined(separator: ":")
             return url.isEmpty ? nil : (url, line, column)
@@ -81,7 +75,7 @@ enum ConsoleErrorStack {
         parts.removeLast()
         let url = parts.joined(separator: ":")
         guard !url.isEmpty, url.contains("/") || url.contains(".") || url.hasPrefix("<") else { return nil }
-        return (url, line, column)
+        return (url, line, 0)
     }
 }
 
@@ -304,19 +298,17 @@ struct ConsoleExecutionContext: Identifiable, Equatable, Hashable {
     /// The worker's script address.
     var url = ""
 
-    init(contextID: Int, targetID: String?, name: String, frameName: String, isTop: Bool, isContentScript: Bool, depth: Int,
-         isWorker: Bool = false, url: String = "") {
-        self.contextID = contextID
-        self.targetID = targetID
-        self.name = name
-        self.frameName = frameName
-        self.isTop = isTop
-        self.isContentScript = isContentScript
-        self.depth = depth
-        self.isWorker = isWorker
-        self.url = url
+    /// Chrome's label: `top`, a frame by its name or address, and an
+    /// extension's content script by the extension's name.
+    var title: String {
+        if isContentScript { return name.isEmpty ? "Content script" : name }
+        if isWorker { return name.isEmpty ? "worker" : name }
+        if isTop { return "top" }
+        return frameName.isEmpty ? (name.isEmpty ? "iframe" : name) : frameName
     }
+}
 
+extension ConsoleExecutionContext {
     init?(_ raw: [String: Any]) {
         guard let id = raw["id"] as? Int else { return nil }
         contextID = id
@@ -328,15 +320,6 @@ struct ConsoleExecutionContext: Identifiable, Equatable, Hashable {
         name = raw["name"] as? String ?? ""
         isWorker = raw["worker"] as? Bool ?? false
         url = raw["url"] as? String ?? ""
-    }
-
-    /// Chrome's label: `top`, a frame by its name or address, and an
-    /// extension's content script by the extension's name.
-    var title: String {
-        if isContentScript { return name.isEmpty ? "Content script" : name }
-        if isWorker { return name.isEmpty ? "worker" : name }
-        if isTop { return "top" }
-        return frameName.isEmpty ? (name.isEmpty ? "iframe" : name) : frameName
     }
 }
 
@@ -351,14 +334,10 @@ struct ConsoleNodeSummary: Equatable, Hashable {
     var text: String?
     var children = 0
 
-    init(type: Int, name: String, attributes: [[String]] = [], text: String? = nil, children: Int = 0) {
-        self.type = type
-        self.name = name
-        self.attributes = attributes
-        self.text = text
-        self.children = children
-    }
+    var isElement: Bool { type == 1 }
+}
 
+extension ConsoleNodeSummary {
     init?(_ raw: [String: Any]?) {
         guard let raw, let type = raw["type"] as? Int else { return nil }
         self.type = type
@@ -367,8 +346,6 @@ struct ConsoleNodeSummary: Equatable, Hashable {
         text = raw["text"] as? String
         children = raw["children"] as? Int ?? 0
     }
-
-    var isElement: Bool { type == 1 }
 }
 
 struct ConsoleNodeTree: Equatable {
@@ -379,12 +356,9 @@ struct ConsoleNodeTree: Equatable {
 
     let summary: ConsoleNodeSummary?
     let children: [Child]
+}
 
-    init(summary: ConsoleNodeSummary?, children: [Child]) {
-        self.summary = summary
-        self.children = children
-    }
-
+extension ConsoleNodeTree {
     init(_ raw: [String: Any]) {
         summary = ConsoleNodeSummary(raw["summary"] as? [String: Any])
         children = (raw["children"] as? [[String: Any]] ?? []).compactMap { item in

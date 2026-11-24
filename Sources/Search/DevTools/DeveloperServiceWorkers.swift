@@ -45,7 +45,6 @@ struct DeveloperWorkerRegistration: Identifiable, Equatable {
     let workers: [Worker]
     let controlsPage: Bool
     let updateViaCache: String
-    let subscribed: Bool
     let syncSupported: Bool
     var id: String { scope }
 
@@ -63,7 +62,6 @@ struct DeveloperWorkerRegistration: Identifiable, Equatable {
         }
         controlsPage = raw["controlsPage"] as? Bool == true
         updateViaCache = raw["updateViaCache"] as? String ?? "imports"
-        subscribed = raw["subscribed"] as? Bool == true
         syncSupported = raw["sync"] as? Bool == true
     }
 }
@@ -95,7 +93,7 @@ extension DeveloperServiceWorkers {
     private static func run(_ web: WKWebView, action: Action?, scope: String? = nil, tag: String? = nil) async throws -> [String: Any] {
         guard let url = web.url, let origin = DeveloperApplication.origin(of: url) else { throw Problem.pageChanged }
         let arguments: [String: Any] = [
-            "origin": origin.absoluteString.hasSuffix("/") ? String(origin.absoluteString.dropLast()) : origin.absoluteString,
+            "origin": DeveloperApplication.originText(origin),
             "action": action?.rawValue as Any? ?? NSNull(), "scope": scope as Any? ?? NSNull(), "tag": tag as Any? ?? NSNull(),
         ]
         let reply: Any?
@@ -129,8 +127,7 @@ extension DeveloperServiceWorkers {
     /// so a test push is never sent there.
     static func pushAllowed(for url: URL?) -> Bool {
         guard let url, let origin = DeveloperApplication.origin(of: url) else { return false }
-        let site = origin.absoluteString.hasSuffix("/") ? String(origin.absoluteString.dropLast()) : origin.absoluteString
-        return Shared.prefs.siteNotifications && SiteNotifications.choices[site] == true
+        return Shared.prefs.siteNotifications && SiteNotifications.choices[DeveloperApplication.originText(origin)] == true
     }
 }
 

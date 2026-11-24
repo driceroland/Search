@@ -647,28 +647,15 @@ final class DeveloperCoverage: ObservableObject {
             message = error.localizedDescription
             return
         }
-        let panel = NSSavePanel()
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd'T'HHmmss"
-        let stamp = formatter.string(from: Date())
-        panel.nameFieldStringValue = "Coverage-\(stamp).json"
-        panel.allowedContentTypes = [.json]
-        panel.canCreateDirectories = true
-        let write = { [weak self] (url: URL) in
+        DeveloperFilePanel.save(name: "Coverage-\(formatter.string(from: Date())).json", types: [.json]) { [weak self] url in
             do {
                 try data.write(to: url, options: .atomic)
             } catch {
                 self?.message = error.localizedDescription
             }
-        }
-        if let window = NSApp.keyWindow {
-            panel.beginSheetModal(for: window) { response in
-                guard response == .OK, let url = panel.url else { return }
-                write(url)
-            }
-        } else if panel.runModal() == .OK, let url = panel.url {
-            write(url)
         }
     }
 

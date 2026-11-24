@@ -455,20 +455,12 @@ struct DeveloperToolsContext {
         case .closeDetails: DeveloperPanelKeys.network?.closeDetails()
         case .recordNetwork: session.recordNetwork.toggle()
         case .recordPerformance(let reload):
-            if reload {
-                // Start profiling and reload page: only from a stop.
-                if !session.recordingTimeline { session.toggleTimeline(reloading: true) }
-            } else {
-                session.toggleTimeline()
-            }
+            // Start profiling and reload page: only from a stop.
+            if !reload || !session.recordingTimeline { session.toggleTimeline(reloading: reload) }
         case .performanceProfile(let save):
             if let keys = DeveloperPanelKeys.performance {
                 if save { keys.save() } else { keys.load() }
-            } else if save {
-                DeveloperPerformanceFiles.save(session)
-            } else {
-                DeveloperPerformanceFiles.load(into: session)
-            }
+            } else if save { DeveloperPerformanceFiles.save(session) } else { DeveloperPerformanceFiles.load(into: session) }
         case .callFrame(let offset):
             let debugger = session.debugger
             guard let pause = debugger.pause else { return }

@@ -196,8 +196,13 @@ enum DeveloperPerformanceInsights {
     // MARK: Render blocking requests
 
     static func isRenderBlockingType(_ bar: Profile.NetworkBar) -> Bool {
-        if ["Stylesheet", "StyleSheet", "Script"].contains(bar.resourceType) { return true }
-        let type = (bar.mimeType ?? "").lowercased()
+        isRenderBlockingType(bar.resourceType, mimeType: bar.mimeType)
+    }
+
+    /// A stylesheet or script, by its resource type or else its MIME type.
+    static func isRenderBlockingType(_ resourceType: String, mimeType: String?) -> Bool {
+        if ["Stylesheet", "StyleSheet", "Script"].contains(resourceType) { return true }
+        let type = (mimeType ?? "").lowercased()
         return type.contains("css") || type.contains("javascript") || type.contains("ecmascript")
     }
 

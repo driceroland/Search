@@ -290,22 +290,22 @@ enum DeveloperCommandMenu {
         rows.append(.init(title: "Clear network log", category: "Network") { session.clearNetwork() })
 
         // Rendering.
-        rows.append(.init(title: rendering.options.paintFlashing ? "Hide paint flashing rectangles" : "Show paint flashing rectangles",
-                          category: "Rendering") { rendering.update(in: session) { $0.paintFlashing.toggle() } })
-        rows.append(.init(title: rendering.options.layerBorders ? "Hide layer borders" : "Show layer borders",
-                          category: "Rendering") { rendering.update(in: session) { $0.layerBorders.toggle() } })
-        rows.append(.init(title: rendering.options.layoutShifts ? "Hide layout shift regions" : "Show layout shift regions",
-                          category: "Rendering") { rendering.update(in: session) { $0.layoutShifts.toggle() } })
-        rows.append(.init(title: rendering.options.frameStats ? "Hide frames per second (FPS) meter" : "Show frames per second (FPS) meter",
-                          category: "Rendering") { rendering.update(in: session) { $0.frameStats.toggle() } })
-        rows.append(.init(title: "Emulate CSS print media type", category: "Rendering") { rendering.update(in: session) { $0.mediaType = "print" } })
-        rows.append(.init(title: "Emulate CSS screen media type", category: "Rendering") { rendering.update(in: session) { $0.mediaType = "screen" } })
-        rows.append(.init(title: "Do not emulate CSS media type", category: "Rendering") { rendering.update(in: session) { $0.mediaType = "" } })
-        rows.append(.init(title: "Emulate CSS prefers-color-scheme: light", category: "Rendering") { rendering.update(in: session) { $0.colorScheme = "Light" } })
-        rows.append(.init(title: "Emulate CSS prefers-color-scheme: dark", category: "Rendering") { rendering.update(in: session) { $0.colorScheme = "Dark" } })
-        rows.append(.init(title: "Do not emulate CSS prefers-color-scheme", category: "Rendering") { rendering.update(in: session) { $0.colorScheme = nil } })
-        rows.append(.init(title: "Emulate CSS prefers-reduced-motion: reduce", category: "Rendering") { rendering.update(in: session) { $0.reducedMotion = "Reduce" } })
-        rows.append(.init(title: "Do not emulate CSS prefers-reduced-motion", category: "Rendering") { rendering.update(in: session) { $0.reducedMotion = nil } })
+        func render(_ title: String, _ change: @escaping (inout DeveloperRendering.Options) -> Void) {
+            rows.append(.init(title: title, category: "Rendering") { rendering.update(in: session, change) })
+        }
+        let options = rendering.options
+        render(options.paintFlashing ? "Hide paint flashing rectangles" : "Show paint flashing rectangles") { $0.paintFlashing.toggle() }
+        render(options.layerBorders ? "Hide layer borders" : "Show layer borders") { $0.layerBorders.toggle() }
+        render(options.layoutShifts ? "Hide layout shift regions" : "Show layout shift regions") { $0.layoutShifts.toggle() }
+        render(options.frameStats ? "Hide frames per second (FPS) meter" : "Show frames per second (FPS) meter") { $0.frameStats.toggle() }
+        render("Emulate CSS print media type") { $0.mediaType = "print" }
+        render("Emulate CSS screen media type") { $0.mediaType = "screen" }
+        render("Do not emulate CSS media type") { $0.mediaType = "" }
+        render("Emulate CSS prefers-color-scheme: light") { $0.colorScheme = "Light" }
+        render("Emulate CSS prefers-color-scheme: dark") { $0.colorScheme = "Dark" }
+        render("Do not emulate CSS prefers-color-scheme") { $0.colorScheme = nil }
+        render("Emulate CSS prefers-reduced-motion: reduce") { $0.reducedMotion = "Reduce" }
+        render("Do not emulate CSS prefers-reduced-motion") { $0.reducedMotion = nil }
         // Every media feature the Rendering tool emulates, as Chrome lists them:
         // one command per value and one to stop.
         let features: [(name: String, values: [String], key: WritableKeyPath<DeveloperRendering.Options, String?>)] = [
@@ -317,16 +317,11 @@ enum DeveloperCommandMenu {
         ]
         for feature in features {
             for value in feature.values {
-                rows.append(.init(title: "Emulate CSS \(feature.name): \(value)", category: "Rendering") {
-                    rendering.update(in: session) { $0[keyPath: feature.key] = value }
-                })
+                render("Emulate CSS \(feature.name): \(value)") { $0[keyPath: feature.key] = value }
             }
-            rows.append(.init(title: "Do not emulate CSS \(feature.name)", category: "Rendering") {
-                rendering.update(in: session) { $0[keyPath: feature.key] = nil }
-            })
+            render("Do not emulate CSS \(feature.name)") { $0[keyPath: feature.key] = nil }
         }
-        rows.append(.init(title: rendering.options.focusedPage ? "Do not emulate a focused page" : "Emulate a focused page",
-                          category: "Rendering") { rendering.update(in: session) { $0.focusedPage.toggle() } })
+        render(options.focusedPage ? "Do not emulate a focused page" : "Emulate a focused page") { $0.focusedPage.toggle() }
         for deficiency in DeveloperRendering.VisionDeficiency.allCases {
             let title = deficiency == .none ? "Do not emulate any vision deficiency"
                 : "Emulate " + deficiency.rawValue.prefix { $0 != "(" }.trimmingCharacters(in: .whitespaces).lowercased()
@@ -444,7 +439,13 @@ struct DeveloperCommandMenuView: View {
             VStack(spacing: 0) {
                 TextField(mode == .commands ? "Run a command" : "Search files or type ? for help", text: Binding(
                     get: { shell.commandMenu?.query ?? "" },
-                    set: { shell.commandMenu = DeveloperCommandMenuState(query: $0) }))
+                    // The field hands its text back as it ends editing, after a
+                    // command has closed the menu: that mustn't open it again
+                    // (as Open file, its text gone).
+                    set: { query in
+                        guard shell.commandMenu != nil else { return }
+                        shell.commandMenu = DeveloperCommandMenuState(query: query)
+                    }))
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .focused($focused)

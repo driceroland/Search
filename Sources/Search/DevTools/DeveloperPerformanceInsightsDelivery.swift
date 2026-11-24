@@ -25,6 +25,11 @@ extension DeveloperPerformanceInsights {
         return profile.network.first { !$0.isRedirect && stripped($0.url) == key }
     }
 
+    /// The first 200 of `urls`' requests, as the ranges a card highlights.
+    static func requestRanges(_ urls: [String], in profile: Profile) -> [ClosedRange<Double>] {
+        urls.prefix(200).compactMap { request(for: $0, in: profile).map { $0.start...$0.end } }
+    }
+
     /// The bytes a request cost: over the network, or decoded when it came from a cache.
     static func size(of bar: Profile.NetworkBar) -> Double? {
         if let size = bar.transferSize, size > 0 { return size }
@@ -292,9 +297,7 @@ extension DeveloperPerformanceInsights {
                            + "page and LCP.",
                        headline: findings.isEmpty ? "No images to improve"
                            : "Est savings \(DeveloperMetricFormat.bytes(total))",
-                       rows: Array(rows), ranges: findings.prefix(200).compactMap { finding in
-                           request(for: finding.url, in: profile).map { $0.start...$0.end }
-                       })
+                       rows: Array(rows), ranges: requestRanges(findings.map(\.url), in: profile))
     }
 
     // MARK: Font display
@@ -392,9 +395,7 @@ extension DeveloperPerformanceInsights {
                        explanation: "A long cache lifetime can speed up repeat visits to your page.",
                        headline: findings.isEmpty ? "No static resources with short cache lifetimes"
                            : "Est savings \(DeveloperMetricFormat.bytes(wasted))",
-                       rows: Array(rows), ranges: findings.prefix(200).compactMap { finding in
-                           request(for: finding.url, in: profile).map { $0.start...$0.end }
-                       })
+                       rows: Array(rows), ranges: requestRanges(findings.map(\.url), in: profile))
     }
 
     // MARK: Optimize viewport for mobile

@@ -23,6 +23,14 @@
         "row", "tooltip", "listitem", "term", "legend", "caption",
     ]);
     const buttonTypes = ["button", "submit", "reset", "image"];
+    // Elements whose implicit role doesn't depend on their attributes.
+    const fixedRoles = {
+        button: "button", textarea: "textbox", h1: "heading", h2: "heading", h3: "heading", h4: "heading", h5: "heading",
+        h6: "heading", nav: "navigation", main: "main", aside: "complementary", ul: "list", ol: "list", menu: "list",
+        li: "listitem", table: "table", tr: "row", td: "cell", th: "columnheader", option: "option", dialog: "dialog",
+        progress: "progressbar", meter: "meter", fieldset: "group", details: "group", summary: "button", hr: "separator",
+        article: "article",
+    };
 
     function squash(text) {
         return (text || "").replace(spaces, " ").trim();
@@ -73,12 +81,11 @@
 
     function implicitRole(el) {
         const tag = el.localName;
+        if (Object.hasOwn(fixedRoles, tag)) return fixedRoles[tag];
         switch (tag) {
         case "a":
         case "area":
             return el.hasAttribute("href") ? "link" : "";
-        case "button":
-            return "button";
         case "input": {
             const type = (el.getAttribute("type") || "text").toLowerCase();
             if (buttonTypes.includes(type)) return "button";
@@ -92,30 +99,8 @@
         }
         case "select":
             return el.multiple || el.size > 1 ? "listbox" : "combobox";
-        case "textarea":
-            return "textbox";
-        case "h1": case "h2": case "h3": case "h4": case "h5": case "h6":
-            return "heading";
         case "img":
             return el.getAttribute("alt") === "" ? "presentation" : "img";
-        case "nav": return "navigation";
-        case "main": return "main";
-        case "aside": return "complementary";
-        case "ul": case "ol": case "menu": return "list";
-        case "li": return "listitem";
-        case "table": return "table";
-        case "tr": return "row";
-        case "td": return "cell";
-        case "th": return "columnheader";
-        case "option": return "option";
-        case "dialog": return "dialog";
-        case "progress": return "progressbar";
-        case "meter": return "meter";
-        case "fieldset": return "group";
-        case "details": return "group";
-        case "summary": return "button";
-        case "hr": return "separator";
-        case "article": return "article";
         case "form": return el.hasAttribute("aria-label") || el.hasAttribute("aria-labelledby") ? "form" : "";
         case "section": return el.hasAttribute("aria-label") || el.hasAttribute("aria-labelledby") ? "region" : "";
         default: return "";

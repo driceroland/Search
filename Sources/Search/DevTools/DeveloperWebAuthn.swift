@@ -113,8 +113,7 @@ enum DeveloperWebAuthnKey {
         case .eddsa(let key): return Data([0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00]) + key.publicKey.rawRepresentation
         case .rs256(let key):
             let pkcs1 = SecKeyCopyPublicKey(key).flatMap { SecKeyCopyExternalRepresentation($0, nil) as Data? } ?? Data()
-            let algorithm = Data([0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00])
-            return DeveloperDER.sequence(algorithm + DeveloperDER.element(0x03, Data([0]) + pkcs1))
+            return DeveloperDER.sequence(Self.rsaAlgorithm + DeveloperDER.element(0x03, Data([0]) + pkcs1))
         }
     }
 
@@ -127,11 +126,14 @@ enum DeveloperWebAuthnKey {
             return DeveloperDER.pem(der, label: "PRIVATE KEY")
         case .rs256(let key):
             let pkcs1 = (SecKeyCopyExternalRepresentation(key, nil) as Data?) ?? Data()
-            let algorithm = Data([0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00])
-            return DeveloperDER.pem(DeveloperDER.sequence(Data([0x02, 0x01, 0x00]) + algorithm + DeveloperDER.element(0x04, pkcs1)),
-                                    label: "PRIVATE KEY")
+            return DeveloperDER.pem(DeveloperDER.sequence(Data([0x02, 0x01, 0x00]) + Self.rsaAlgorithm
+                                                          + DeveloperDER.element(0x04, pkcs1)), label: "PRIVATE KEY")
         }
     }
+
+    /// AlgorithmIdentifier for rsaEncryption, with its NULL parameters.
+    private static let rsaAlgorithm = Data([0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01,
+                                            0x05, 0x00])
 
     /// RSAPublicKey's modulus and exponent, leading zero bytes dropped.
     private var rsaModulusAndExponent: (Data, Data) {
@@ -223,6 +225,8 @@ struct DeveloperVirtualAuthenticator: Identifiable {
     /// U2F authenticators keep no resident keys and can't verify the user.
     var supportsResidentKeys: Bool { protocolKind == .ctap2 && residentKeys }
     var supportsUserVerification: Bool { protocolKind == .ctap2 && userVerification }
+    /// Whether it verifies the user when asked.
+    var verifiesUser: Bool { supportsUserVerification && userVerified }
 }
 
 enum DeveloperWebAuthn {
@@ -297,15 +301,27 @@ enum DeveloperWebAuthn {
         (value as? [[String: Any]] ?? []).compactMap { bytes($0["id"]) }
     }
 
+    /// The challenge, once the relying party ID is found to suit the host.
+    private static func challenge(_ request: [String: Any], rpID: String, host: String) throws -> Data {
+        guard Self.rpID(rpID, validFor: host) else {
+            throw Failure(name: "SecurityError", message: "The relying party ID '\(rpID)' isn't a registrable suffix of '\(host)'.")
+        }
+        guard let challenge = bytes(request["challenge"]) else { throw Failure(name: "TypeError", message: "No challenge.") }
+        return challenge
+    }
+
+    private static func requireVerification(_ uv: Any?, _ authenticator: DeveloperVirtualAuthenticator) throws {
+        if uv as? String == "required", !authenticator.verifiesUser {
+            throw Failure(name: "NotAllowedError", message: "The active authenticator can't verify the user.")
+        }
+    }
+
     /// navigator.credentials.create(): a new credential on `authenticator`.
     static func create(_ request: [String: Any], origin: String, host: String,
                        authenticator: inout DeveloperVirtualAuthenticator) throws -> [String: Any] {
         let rp = request["rp"] as? [String: Any] ?? [:]
         let rpID = (rp["id"] as? String) ?? host
-        guard Self.rpID(rpID, validFor: host) else {
-            throw Failure(name: "SecurityError", message: "The relying party ID '\(rpID)' isn't a registrable suffix of '\(host)'.")
-        }
-        guard let challenge = bytes(request["challenge"]) else { throw Failure(name: "TypeError", message: "No challenge.") }
+        let challenge = try Self.challenge(request, rpID: rpID, host: host)
         let user = request["user"] as? [String: Any] ?? [:]
         guard let userHandle = bytes(user["id"]), (1...64).contains(userHandle.count) else {
             throw Failure(name: "TypeError", message: "user.id must be 1 to 64 bytes.")
@@ -324,10 +340,7 @@ enum DeveloperWebAuthn {
         if residentKey == "required", !authenticator.supportsResidentKeys {
             throw Failure(name: "NotAllowedError", message: "The active authenticator doesn't support resident keys.")
         }
-        let uv = selection["userVerification"] as? String ?? "preferred"
-        if uv == "required", !(authenticator.supportsUserVerification && authenticator.userVerified) {
-            throw Failure(name: "NotAllowedError", message: "The active authenticator can't verify the user.")
-        }
+        try requireVerification(selection["userVerification"], authenticator)
         let excluded = Set(ids(request["excludeCredentials"]))
         if authenticator.credentials.contains(where: { excluded.contains($0.id) && $0.rpID == rpID }) {
             throw Failure(name: "InvalidStateError", message: "The authenticator already holds an excluded credential.")
@@ -345,7 +358,7 @@ enum DeveloperWebAuthn {
         }
         let resident = authenticator.supportsResidentKeys && (residentKey == "required" || residentKey == "preferred")
         var flags: Flags = [.userPresent, .attested]
-        if authenticator.supportsUserVerification && authenticator.userVerified { flags.insert(.userVerified) }
+        if authenticator.verifiesUser { flags.insert(.userVerified) }
         let authData = authenticatorData(rpID: rpID, flags: flags, counter: 0, credential: (id, key.coseKey))
         let clientData = clientDataJSON(type: "webauthn.create", challenge: challenge, origin: origin)
         // Asked for attestation: "packed" self attestation, signed with the
@@ -381,14 +394,8 @@ enum DeveloperWebAuthn {
     static func get(_ request: [String: Any], origin: String, host: String,
                     authenticator: inout DeveloperVirtualAuthenticator) throws -> [String: Any] {
         let rpID = (request["rpId"] as? String) ?? host
-        guard Self.rpID(rpID, validFor: host) else {
-            throw Failure(name: "SecurityError", message: "The relying party ID '\(rpID)' isn't a registrable suffix of '\(host)'.")
-        }
-        guard let challenge = bytes(request["challenge"]) else { throw Failure(name: "TypeError", message: "No challenge.") }
-        let uv = request["userVerification"] as? String ?? "preferred"
-        if uv == "required", !(authenticator.supportsUserVerification && authenticator.userVerified) {
-            throw Failure(name: "NotAllowedError", message: "The active authenticator can't verify the user.")
-        }
+        let challenge = try Self.challenge(request, rpID: rpID, host: host)
+        try requireVerification(request["userVerification"], authenticator)
         let allowed = ids(request["allowCredentials"])
         guard let index = authenticator.credentials.firstIndex(where: { credential in
             credential.rpID == rpID && (allowed.isEmpty ? credential.isResident : allowed.contains(credential.id))
@@ -398,7 +405,7 @@ enum DeveloperWebAuthn {
         authenticator.credentials[index].signCount += 1
         let credential = authenticator.credentials[index]
         var flags: Flags = [.userPresent]
-        if authenticator.supportsUserVerification && authenticator.userVerified { flags.insert(.userVerified) }
+        if authenticator.verifiesUser { flags.insert(.userVerified) }
         let authData = authenticatorData(rpID: rpID, flags: flags, counter: credential.signCount)
         let clientData = clientDataJSON(type: "webauthn.get", challenge: challenge, origin: origin)
         let signature = try credential.key.sign(authData + Data(SHA256.hash(data: clientData)))

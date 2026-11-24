@@ -80,6 +80,8 @@ final class DeveloperToolsSession: ObservableObject {
     /// read with its computed style, for Styles' inactive-declaration hints.
     @Published private(set) var layoutContext: DeveloperInactiveCSS.Context?
     @Published private(set) var listeners: [EventListener] = []
+    /// Sources › Global Listeners: the listeners on `window`, as Chrome lists them.
+    @Published var globalListeners: [EventListener] = []
     /// Whether the Event Listeners tab is in front, so a new selection loads them.
     var listenersShown = false
     @Published var listenerAncestors = true
@@ -118,9 +120,14 @@ final class DeveloperToolsSession: ObservableObject {
     @Published private(set) var resourceFrames: [ResourceFrame] = []
     @Published private(set) var timeline: [Timing] = []
     @Published private(set) var timelineAnnotations: [DeveloperPerformanceAnnotation] = []
+    /// The scripts and source maps a recording opened from a file carries,
+    /// for its JavaScript insights; nil for one recorded here.
+    private(set) var timelineScripts: [DeveloperPerformanceScript]?
     @Published private(set) var recordingTimeline = false
+    /// The latest recording's self time by script line, for Sources' gutter.
+    @Published var lineProfile = DeveloperLineProfile()
     private var collectingScriptSamples = false
-    private var scriptProfilerStarted = false
+    private(set) var scriptProfilerStarted = false
     private var capturingTracks = false
     private var trackStart: Double?
     private var trackNetwork = DeveloperPerformanceNetworkRecording()
@@ -169,7 +176,7 @@ final class DeveloperToolsSession: ObservableObject {
     private var pendingPick: NSPoint?
     private var pickWhenReady = false
     private var commandNumber = 0
-    private var navigationID: String?
+    private(set) var navigationID: String?
     private var remainingCapabilityChecks = 0
 
     var host: String { web?.url?.host() ?? web?.url?.scheme ?? "Web page" }
@@ -249,15 +256,13 @@ final class DeveloperToolsSession: ObservableObject {
             try await Task.sleep(for: .milliseconds(100))
         }
         guard let capabilities else { throw Error.unavailable }
-        _ = try? await frontend?.evaluateJavaScript(DeveloperNetworkBridgeScript.source)
         requestInterception = capabilities["requestInterception"] as? Bool == true
         domTargetID = capabilities["domTargetId"] as? String
         runtimeTargetID = capabilities["runtimeTargetId"] as? String
         try await updateEventDomains()
         // Elements' DOM mirror listens from the start (DeveloperElementsBridgeScript).
-        _ = try? await elementsBridge("return perchElements.setUserAgentShadowDOM(on);", [
-            "on": DeveloperElementsSettings.showUserAgentShadowDOM,
-        ])
+        _ = try? await elementsBridge("return perchElements.setUserAgentShadowDOM(on);",
+                                      ["on": DeveloperElementsSettings.showUserAgentShadowDOM])
         ready = true
         networkEventSource.start(on: web)
         debugger.connected()
@@ -281,7 +286,8 @@ final class DeveloperToolsSession: ObservableObject {
     }
 
     /// Puts Search's bridge and Console scripts in the frontend; the
-    /// capabilities it then answers with, once it says it is ready.
+    /// capabilities it then answers with, once it says it is ready (and
+    /// then the Network panel's script beside them).
     private func installScripts(in frontend: WKWebView,
                                 capabilities: () async throws -> Any?) async -> [String: Any]? {
         let status = try? await frontend.evaluateJavaScript(DeveloperToolsBridgeScript.source)
@@ -289,6 +295,7 @@ final class DeveloperToolsSession: ObservableObject {
         guard status as? Bool == true,
               let state = try? await capabilities() as? [String: Any],
               state["ready"] as? Bool == true else { return nil }
+        _ = try? await frontend.evaluateJavaScript(DeveloperNetworkBridgeScript.source)
         return state
     }
 
@@ -325,6 +332,7 @@ final class DeveloperToolsSession: ObservableObject {
         DeveloperLiveMetricsModel.closed(self)
         DeveloperWebAudioModel.closed(self)
         DeveloperSessionModels.closed(self)
+        aiAssistance.stop()
         stopPicking(clearHighlight: false)
         pump?.cancel()
         operations?.cancel()
@@ -443,12 +451,9 @@ final class DeveloperToolsSession: ObservableObject {
                 if let state = await installScripts(in: current, capabilities: {
                     try await self.callFrontend("return perchInspector.capabilities();", [:])
                 }) {
-                    _ = try? await current.evaluateJavaScript(DeveloperNetworkBridgeScript.source)
                     domTargetID = state["domTargetId"] as? String
                     runtimeTargetID = state["runtimeTargetId"] as? String
-                    _ = try await callFrontend("perchInspector.setDomains(domains);", [
-                        "domains": eventDomains,
-                    ])
+                    _ = try await callFrontend("perchInspector.setDomains(domains);", ["domains": eventDomains])
                     refresh()
                     // The fresh frontend has none of the Local Overrides (content or headers).
                     DeveloperLocalOverrides.shared.attach(self)
@@ -474,16 +479,13 @@ final class DeveloperToolsSession: ObservableObject {
         }
         let arguments: [String: Any] = ["method": method, "params": params, "target": targetID as Any? ?? NSNull()]
         // One stored flag while the Protocol monitor is closed.
-        guard protocolMonitor.isActive else {
-            return try await bridge("return await perchInspector.command(method, params, target);", arguments) as? [String: Any] ?? [:]
-        }
-        let monitored = protocolMonitor.sent(method, params: params, target: targetID)
+        let monitored = protocolMonitor.isActive ? protocolMonitor.sent(method, params: params, target: targetID) : nil
         do {
             let result = try await bridge("return await perchInspector.command(method, params, target);", arguments) as? [String: Any] ?? [:]
-            protocolMonitor.answered(monitored, response: result)
+            if let monitored { protocolMonitor.answered(monitored, response: result) }
             return result
         } catch {
-            protocolMonitor.failed(monitored, error: error.localizedDescription)
+            if let monitored { protocolMonitor.failed(monitored, error: error.localizedDescription) }
             throw error
         }
     }
@@ -528,9 +530,7 @@ final class DeveloperToolsSession: ObservableObject {
         // Network is recorded as long as the dock is open, independent of its selected tab.
         // The bridge limits every message and drops sensitive request fields.
         let domains = eventDomains
-        _ = try await bridge("perchInspector.setDomains(domains);", [
-            "domains": domains,
-        ])
+        _ = try await bridge("perchInspector.setDomains(domains);", ["domains": domains])
         // WebKit sends storage changes only once the domain is enabled.
         if domains.contains("DOMStorage") { _ = try? await command("DOMStorage.enable") }
     }
@@ -636,6 +636,7 @@ final class DeveloperToolsSession: ObservableObject {
                 let id = frame["loaderId"] as? String
                 if navigationID != id {
                     navigationID = id
+                    if aiAssistance.responding { aiAssistance.stop() }
                     memory.invalidateObjectIDs()
                     documentChanged = true
                     navigated = true
@@ -684,6 +685,7 @@ final class DeveloperToolsSession: ObservableObject {
                 // comes from the debugger by script id.
                 guard params["isContentScript"] as? Bool == true, let id = params["scriptId"] as? String,
                       let url = params["url"] as? String ?? params["sourceURL"] as? String, !url.isEmpty,
+                      !Self.isBrowserOwnScript(url),
                       !contentScripts.contains(where: { $0.url == url }) else { continue }
                 contentScripts.append(Resource(frame: id, url: url, type: "ContentScript"))
             case "Debugger.globalObjectCleared":
@@ -758,8 +760,8 @@ final class DeveloperToolsSession: ObservableObject {
                 hiddenNodeChanges.formUnion(changedNodes)
             }
         }
-        if documentChanged { hiddenNodeChanges = [] }
         if documentChanged {
+            hiddenNodeChanges = []
             if picking || pickerMonitor != nil { stopPicking() }
             // The same page's document sent again (DevTools reopened, the
             // inspector resynced): as Chrome does, the element that was
@@ -821,8 +823,7 @@ final class DeveloperToolsSession: ObservableObject {
             editedTree = true
         case "DOM.shadowRootPushed", "DOM.pseudoElementAdded":
             // A shadow root attached, or a ::before that now has content.
-            let parentKey = method == "DOM.shadowRootPushed" ? "hostId" : "parentId"
-            let childKey = method == "DOM.shadowRootPushed" ? "root" : "pseudoElement"
+            let (parentKey, childKey) = method == "DOM.shadowRootPushed" ? ("hostId", "root") : ("parentId", "pseudoElement")
             guard let parent = params[parentKey] as? Int, var container = dom[parent],
                   let child = params[childKey] as? [String: Any],
                   DeveloperElementsSettings.showUserAgentShadowDOM || child["shadowRootType"] as? String != "user-agent",
@@ -833,19 +834,11 @@ final class DeveloperToolsSession: ObservableObject {
             dom[parent] = container
             changedNodes.insert(id)
             editedTree = true
-        case "DOM.shadowRootPopped", "DOM.pseudoElementRemoved":
-            let parentKey = method == "DOM.shadowRootPopped" ? "hostId" : "parentId"
-            let childKey = method == "DOM.shadowRootPopped" ? "rootId" : "pseudoElementId"
+        case "DOM.shadowRootPopped", "DOM.pseudoElementRemoved", "DOM.childNodeRemoved":
+            let (parentKey, childKey) = method == "DOM.childNodeRemoved" ? ("parentNodeId", "nodeId")
+                : method == "DOM.shadowRootPopped" ? ("hostId", "rootId") : ("parentId", "pseudoElementId")
             guard let parent = params[parentKey] as? Int, var container = dom[parent],
                   let id = params[childKey] as? Int, container.children.contains(id) else { return }
-            container.children.removeAll { $0 == id }
-            container.count = max(container.children.count, container.count - 1)
-            dom[parent] = container
-            Self.removeNode(id, from: &dom)
-            editedTree = true
-        case "DOM.childNodeRemoved":
-            guard let parent = params["parentNodeId"] as? Int, var container = dom[parent],
-                  let id = params["nodeId"] as? Int, container.children.contains(id) else { return }
             container.children.removeAll { $0 == id }
             container.count = max(container.children.count, container.count - 1)
             dom[parent] = container
@@ -907,7 +900,6 @@ final class DeveloperToolsSession: ObservableObject {
             recordingTimelineMemory = false
             trackShots?.stop()
             if let start = trackStart, let end = params["endTime"] as? Double, end >= start {
-                record = Self.withinRecording(record, from: start)
                 record.append(Timing(type: "RecordingBounds", start: start, end: end))
                 record += trackNetwork.timings(from: start, to: end)
                 if let page = trackPage,
@@ -916,6 +908,8 @@ final class DeveloperToolsSession: ObservableObject {
                     record += DeveloperPerformancePageTimings.screenshots(shots.images, pageNow: now, pageDate: date,
                                                                           sync: sync, bounds: start...end)
                 }
+                // Last, so what the network and page added is cut too.
+                record = Self.withinRecording(record, from: start)
             }
             trackStart = nil
             trackNetwork = .init()
@@ -937,6 +931,7 @@ final class DeveloperToolsSession: ObservableObject {
             collectingScriptSamples = false
             let traces = (params["samples"] as? [String: Any])?["stackTraces"] as? [[String: Any]] ?? []
             record += DeveloperScriptProfile.timings(traces, within: record)
+            lineProfile = DeveloperLineProfile(traces)
         default: break
         }
     }
@@ -959,9 +954,8 @@ final class DeveloperToolsSession: ObservableObject {
         let revision = domRevision
         var raw: [String: Any]?
         for attempt in 0..<12 {
-            raw = try await elementsBridge("return await perchElements.documentRoot(target);", [
-                "target": domTargetID as Any? ?? NSNull(),
-            ]) as? [String: Any]
+            raw = try await elementsBridge("return await perchElements.documentRoot(target);",
+                                           ["target": domTargetID as Any? ?? NSNull()]) as? [String: Any]
             if raw != nil || domRevision != revision { break }
             try await Task.sleep(for: .milliseconds(attempt < 4 ? 100 : 250))
         }
@@ -977,13 +971,26 @@ final class DeveloperToolsSession: ObservableObject {
            let node = tree[html] {
             expand(node)
         }
-        if let path = reselectPath {
-            reselectPath = nil
+        // The element selected before the document came anew, or else
+        // <body>, as Chrome opens Elements on it, expanded.
+        let path = reselectPath ?? "body"
+        let reselecting = reselectPath != nil
+        reselectPath = nil
+        if selectedNode == nil {
             let found = try? await command("DOM.querySelector", ["nodeId": id, "selector": path], targetID: domTargetID)
             if domRevision == revision, selectedNode == nil, let node = found?["nodeId"] as? Int, node > 0 {
                 selectNode(node)
+                if !reselecting, let body = nodes[node], !expanded.contains(node) { expand(body) }
             }
         }
+    }
+
+    /// The browser's own scripts in the page: Search's user scripts
+    /// (WebKit names them user-script:N; an extension's content scripts
+    /// have its webkit-extension: URL) and WebKit's built-in ones, such as
+    /// the media controls. Chrome lists none of DevTools' or its own.
+    nonisolated static func isBrowserOwnScript(_ url: String) -> Bool {
+        url.hasPrefix("user-script:") || url.hasPrefix("__InjectedScript_")
     }
 
     /// Found again after the document is sent anew (readDocument).
@@ -1143,9 +1150,8 @@ final class DeveloperToolsSession: ObservableObject {
         let target: Any = domTargetID as Any? ?? NSNull()
         Task { [weak self] in
             guard let self else { return }
-            let raw = try? await self.elementsBridge("return perchElements.flags(ids, target);", [
-                "ids": asked, "target": target,
-            ]) as? [String: [String]]
+            let raw = try? await self.elementsBridge("return perchElements.flags(ids, target);",
+                                                     ["ids": asked, "target": target]) as? [String: [String]]
             guard self.domRevision == revision, let raw else { return }
             var tree = self.nodes
             var changed = false
@@ -1157,6 +1163,13 @@ final class DeveloperToolsSession: ObservableObject {
             }
             if changed { self.nodes = tree }
         }
+    }
+
+    /// No node selected: a tree row that isn't one (an adopted sheet) is.
+    func deselectNode() {
+        selection?.cancel()
+        selection = nil
+        selectedNode = nil
     }
 
     func selectNode(_ id: Int) {
@@ -1326,9 +1339,8 @@ final class DeveloperToolsSession: ObservableObject {
     private func addPath(to id: Int, target: String?, revision: Int) async throws {
         // WebKit may already have sent the ancestors to its built-in
         // frontend before our local tree started collecting events.
-        let path = try await bridge("return perchInspector.nodePath(node, target);", [
-            "node": id, "target": target as Any? ?? NSNull(),
-        ]) as? [[String: Any]]
+        let path = try await bridge("return perchInspector.nodePath(node, target);",
+                                    ["node": id, "target": target as Any? ?? NSNull()]) as? [[String: Any]]
         guard domRevision == revision, selectedNode == id, let path,
               path.first?["nodeId"] as? Int == root else { return }
         var tree = nodes
@@ -1384,9 +1396,8 @@ final class DeveloperToolsSession: ObservableObject {
     /// model alone, say, as Chrome's Layout and Styles box model hover.
     func highlightNode(_ id: Int, config: DeveloperHighlight) {
         showHighlight(.node(id, config)) { session, target in
-            _ = try await session.command("DOM.highlightNode", [
-                "nodeId": id, "highlightConfig": config.protocolValue,
-            ], targetID: target)
+            _ = try await session.command("DOM.highlightNode", ["nodeId": id, "highlightConfig": config.protocolValue],
+                                          targetID: target)
             await session.showRulers(true, target: target)
         }
     }
@@ -1402,9 +1413,9 @@ final class DeveloperToolsSession: ObservableObject {
             return
         }
         showHighlight(.selector(selector, config)) { session, target in
-            _ = try await session.command("DOM.highlightSelector", [
-                "selectorString": selector, "highlightConfig": config.protocolValue,
-            ], targetID: target)
+            _ = try await session.command("DOM.highlightSelector",
+                                          ["selectorString": selector, "highlightConfig": config.protocolValue],
+                                          targetID: target)
             await session.showRulers(true, target: target)
         }
     }
@@ -1696,7 +1707,7 @@ final class DeveloperToolsSession: ObservableObject {
     }
 
     private func appendConsole(_ level: String, _ text: String) {
-        console = Array((console + [ConsoleLine(level: level, text: String(text.prefix(8_192)))]).suffix(Self.consoleLimit))
+        appendConsoleLine(ConsoleLine(level: level, text: String(text.prefix(8_192))))
     }
 
     func appendConsoleLine(_ line: ConsoleLine) {
@@ -1721,12 +1732,8 @@ final class DeveloperToolsSession: ObservableObject {
     func requestDetails(_ id: String) async -> DeveloperRequestDetails? {
         if let imported = networkTools.imported[id] { return imported }
         guard ready else { return nil }
-        do {
-            let raw = try await bridge("return await perchInspector.requestDetails(id);", ["id": id]) as? [String: Any]
-            return raw.map(DeveloperRequestDetails.init)
-        } catch {
-            return nil
-        }
+        let raw = try? await bridge("return await perchInspector.requestDetails(id);", ["id": id]) as? [String: Any]
+        return raw.map(DeveloperRequestDetails.init)
     }
 
     /// Bridge calls for the Network panel's tools (DeveloperNetworkTools).
@@ -1737,8 +1744,9 @@ final class DeveloperToolsSession: ObservableObject {
     /// Requests read from a HAR file, listed after the recorded ones.
     func addImportedRequests(_ imported: [Request]) {
         var network = requests
-        for request in imported where requestIndex[request.id] == nil {
+        for var request in imported where requestIndex[request.id] == nil {
             requestIndex[request.id] = network.count
+            request.number = request.number ?? (network.last?.number ?? 0) + 1
             network.append(request)
         }
         requests = network
@@ -1773,6 +1781,7 @@ final class DeveloperToolsSession: ObservableObject {
                     request.originalURL = previous.originalURL ?? previous.url
                     request.wallStarted = previous.wallStarted ?? request.wallStarted
                 }
+                request.number = network[index].number
                 network[index] = request
             } else {
                 if network.count >= 1_000 {
@@ -1780,6 +1789,7 @@ final class DeveloperToolsSession: ObservableObject {
                     requestIndex = Dictionary(uniqueKeysWithValues: network.enumerated().map { ($1.id, $0) })
                 }
                 requestIndex[id] = network.count
+                request.number = (network.last?.number ?? 0) + 1
                 network.append(request)
             }
             return
@@ -1932,9 +1942,6 @@ final class DeveloperToolsSession: ObservableObject {
         let serial: Int
     }
 
-    /// Opens a script in Sources and scrolls to a line, as a file:line link
-    /// does in Chrome's Console and Network panels. The file is matched on
-    /// its address without query or fragment when no exact match is listed.
     /// Chrome's name for a script with no address: VM and its id.
     nonisolated static func anonymousScriptURL(_ id: String) -> String { "VM" + id }
 
@@ -1943,6 +1950,9 @@ final class DeveloperToolsSession: ObservableObject {
         return String(url.dropFirst(2))
     }
 
+    /// Opens a script in Sources and scrolls to a line, as a file:line link
+    /// does in Chrome's Console and Network panels. The file is matched on
+    /// its address without query or fragment when no exact match is listed.
     func revealSource(url: String, line: Int, column: Int? = nil, showPanel: Bool = true) {
         guard ready, !url.isEmpty else { return }
         revealSerial += 1
@@ -2004,20 +2014,12 @@ final class DeveloperToolsSession: ObservableObject {
             }
             return
         }
-        if resource.type == DeveloperWorker.scriptType, let place = DeveloperWorker.parse(resourceFrame: resource.frame) {
-            // A worker's script: from the worker's own debugger, by script id.
+        // A worker's script (from the worker's own debugger) or a content script: by script id.
+        let place = resource.type == DeveloperWorker.scriptType ? DeveloperWorker.parse(resourceFrame: resource.frame) : nil
+        if place != nil || resource.type == "ContentScript" {
             run { session in
-                let result = try await session.command("Debugger.getScriptSource", ["scriptId": place.script],
-                                                       targetID: place.target)
-                guard session.sourceResource == resource else { return }
-                session.source = result["scriptSource"] as? String ?? "This script has no source."
-                session.updateBreakpoints()
-            }
-            return
-        }
-        if resource.type == "ContentScript" {
-            run { session in
-                let result = try await session.command("Debugger.getScriptSource", ["scriptId": resource.frame])
+                let result = try await session.command("Debugger.getScriptSource", ["scriptId": place?.script ?? resource.frame],
+                                                       targetID: place?.target)
                 guard session.sourceResource == resource else { return }
                 session.source = result["scriptSource"] as? String ?? "This script has no source."
                 session.updateBreakpoints()
@@ -2132,8 +2134,6 @@ final class DeveloperToolsSession: ObservableObject {
                          ["uncaught": uncaught, "caught": caught]) as? Bool ?? false
     }
 
-    /// A recording opened from a file (Performance › Load profile, ⌘O),
-    /// shown as one just made would be. Not while recording.
     /// A console message's level as Chrome gives it. WebKit makes
     /// console.count's and console.time's lines Debug, which Chrome's
     /// default levels hide; Chrome makes them Info. Those lines carry no
@@ -2146,7 +2146,11 @@ final class DeveloperToolsSession: ObservableObject {
         return parameters.isEmpty && message["type"] as? String ?? "log" == "log" ? "info" : level
     }
 
-    func loadTimeline(_ timings: [Timing], annotations: [DeveloperPerformanceAnnotation] = []) {
+    /// A recording opened from a file (Performance › Load profile, ⌘O),
+    /// shown as one just made would be, with the scripts the file carries.
+    /// Not while recording.
+    func loadTimeline(_ timings: [Timing], annotations: [DeveloperPerformanceAnnotation] = [],
+                      scripts: [DeveloperPerformanceScript]? = nil) {
         guard !recordingTimeline else { return }
         // Nothing of a recording left unfinished applies to the file.
         collectingScriptSamples = false
@@ -2158,6 +2162,7 @@ final class DeveloperToolsSession: ObservableObject {
         trackPageDate = nil
         trackShots?.stop()
         trackShots = nil
+        timelineScripts = scripts
         timeline = Self.cappedTimeline(timings)
         timelineAnnotations = annotations
     }
@@ -2192,6 +2197,7 @@ final class DeveloperToolsSession: ObservableObject {
             if start {
                 session.timeline = []
                 session.timelineAnnotations = []
+                session.timelineScripts = nil
                 session.screenshotsRecorded = 0
                 session.capturingTracks = true
                 session.trackStart = nil
@@ -2204,7 +2210,7 @@ final class DeveloperToolsSession: ObservableObject {
                 try? await session.updateEventDomains()
                 // WebKit's Screenshot instrument captures full-size frames and can
                 // stall compositing. Track screenshots using small view snapshots.
-                var instruments = ["Timeline", "ScriptProfiler"]
+                var instruments = DeveloperPerformanceCapture.jsSamplesDisabled ? ["Timeline"] : ["Timeline", "ScriptProfiler"]
                 if memory { instruments.append("Memory") }
                 // The CPU and Animations tracks' instruments; WebKit refuses
                 // the whole list over an instrument it doesn't know.
@@ -2219,10 +2225,8 @@ final class DeveloperToolsSession: ObservableObject {
             } else {
                 session.trackShots?.stop()
             }
-            if !start, session.recordingTimelineMemory, !DeveloperPerformanceMonitorModel.isRunning(for: session) {
-                _ = try? await session.command("Memory.stopTracking")
-            }
             if !start, !DeveloperPerformanceMonitorModel.isRunning(for: session) {
+                if session.recordingTimelineMemory { _ = try? await session.command("Memory.stopTracking") }
                 _ = try? await session.command("CPUProfiler.stopTracking")
             }
             if !start, session.capturingTracks, let web = session.web, !session.paused {
@@ -2249,7 +2253,8 @@ final class DeveloperToolsSession: ObservableObject {
                     shots.start(web)
                     session.trackShots = shots
                 }
-                session.scriptProfilerStarted = (try? await session.command("ScriptProfiler.startTracking", ["includeSamples": true])) != nil
+                session.scriptProfilerStarted = DeveloperPerformanceCapture.jsSamplesDisabled ? false
+                    : (try? await session.command("ScriptProfiler.startTracking", ["includeSamples": true])) != nil
                 session.collectingScriptSamples = session.scriptProfilerStarted
                 if memory { _ = try? await session.command("Memory.startTracking") }
                 _ = try? await session.command("CPUProfiler.startTracking")
@@ -2317,8 +2322,16 @@ final class DeveloperToolsSession: ObservableObject {
     /// started: WebKit can send a record left from before
     /// Timeline.recordingStarted, and the earliest record sets the
     /// recording's zero, so one such record put the page load seconds in.
+    /// A record still running when it started is cut at the recording's
+    /// start, as Chrome's trace clips it: one that began with the page load
+    /// a minute earlier put the zero there, and the recording read 65 s.
     nonisolated static func withinRecording(_ records: [Timing], from start: Double) -> [Timing] {
-        records.filter { $0.end >= start }
+        records.filter { $0.end >= start }.map { record in
+            guard record.start < start else { return record }
+            var clipped = record
+            clipped.start = start
+            return clipped
+        }
     }
 
     /// A WebKit timeline record and the records nested in it, in the order

@@ -106,16 +106,20 @@ final class Shield: ObservableObject {
         holding.setObject(NSNumber(value: on), forKey: controller)
     }
 
-    /// Third parties whose only job is to watch or to sell. First-party
-    /// requests are untouched: a site's own scripts are the site.
-    private static let unwanted = [
+    /// Third parties who serve ads, also used by Rendering's Highlight ads.
+    nonisolated static let adNetworks = [
         "doubleclick.net", "googlesyndication.com", "googleadservices.com",
-        "googletagservices.com", "google-analytics.com", "googletagmanager.com",
-        "adservice.google.com", "amazon-adsystem.com", "adnxs.com", "adsrvr.org",
-        "criteo.com", "criteo.net", "taboola.com", "outbrain.com",
+        "googletagservices.com", "adservice.google.com", "amazon-adsystem.com",
+        "adnxs.com", "adsrvr.org", "criteo.com", "criteo.net", "taboola.com", "outbrain.com",
         "rubiconproject.com", "pubmatic.com", "openx.net", "casalemedia.com",
         "smartadserver.com", "sharethrough.com", "indexww.com", "bidswitch.net",
         "33across.com", "teads.tv", "moatads.com", "adroll.com",
+    ]
+
+    /// Third parties whose only job is to watch or to sell. First-party
+    /// requests are untouched: a site's own scripts are the site.
+    private static let unwanted = adNetworks + [
+        "google-analytics.com", "googletagmanager.com",
         "scorecardresearch.com", "quantserve.com", "chartbeat.com",
         "hotjar.com", "mouseflow.com", "fullstory.com", "clarity.ms",
         "mixpanel.com", "amplitude.com", "segment.com", "segment.io",
@@ -128,6 +132,9 @@ final class Shield: ObservableObject {
         "dns-finder.com", "confiant-integrations.net", "cloudflareinsights.com",
     ]
 
+    /// Ad slot selectors used by Rendering's Highlight ads.
+    nonisolated static var adSlots: [String] { slots + reddit }
+
     /// The few slots that are reliably an advertisement and nothing else. Kept
     /// deliberately short — a generous cosmetic list is how a blocker starts
     /// eating the page it was meant to clean.
@@ -137,7 +144,7 @@ final class Shield: ObservableObject {
     /// nothing (#159). Each is a whole class name from EasyList's generic
     /// hiding list, matched as a whole word: an element whose class is
     /// `ad-slot` goes, one whose class merely contains "ad" stays.
-    private static let slots = [
+    nonisolated private static let slots = [
         ".adsbygoogle", "ins.adsbygoogle", "[id^=\"google_ads_\"]",
         "[id^=\"div-gpt-ad\"]", "[id^=\"taboola-\"]", "#taboola-below-article",
         "iframe[src*=\"doubleclick.net\"]", "iframe[src*=\"googlesyndication\"]",
@@ -163,7 +170,7 @@ final class Shield: ObservableObject {
     /// plain hiding rule reaches them. Only reddit.com; a normal post is a
     /// `shreddit-post`, never one of these. Test runs can add a local
     /// stand-in for Reddit (`test.redditHosts`).
-    private static let reddit = [
+    nonisolated private static let reddit = [
         "shreddit-ad-post", "shreddit-comments-page-ad", "shreddit-sidebar-ad",
         "shreddit-dynamic-ad-link", "comment-tree-ad", ".promotedlink",
     ]

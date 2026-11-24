@@ -47,7 +47,7 @@ struct ConsoleCustomFormattedMessage<Fallback: View>: View {
                     ForEach(Array(pieces.enumerated()), id: \.offset) { index, piece in
                         switch piece {
                         case .text(let run):
-                            Text(ConsoleText.attributed(run, base: nil)).textSelection(.enabled)
+                            Text(ConsoleText.attributed(run)).textSelection(.enabled)
                         case .custom(let preview):
                             ConsoleCustomHeaderView(session: session, store: store, preview: preview, targetID: targetID,
                                                     key: key + "/custom\(index)", depth: 0)
@@ -171,7 +171,7 @@ private struct ConsoleJsonMLRunsView: View {
             ForEach(Array(pieces.enumerated()), id: \.offset) { index, piece in
                 switch piece {
                 case .text(let run):
-                    Text(ConsoleText.attributed(run, base: nil)).textSelection(.enabled)
+                    Text(ConsoleText.attributed(run)).textSelection(.enabled)
                 case .object(let object, let config):
                     ConsoleCustomObjectReference(session: session, store: store, object: object, config: config,
                                                  targetID: targetID, key: key + "/o\(index)", depth: depth + 1)
@@ -199,7 +199,7 @@ private struct ConsoleCustomObjectReference: View {
 
     var body: some View {
         if object.objectId == nil || depth > 20 {
-            Text(ConsoleText.attributed([.object(object, .plain)], base: nil)).textSelection(.enabled)
+            Text(ConsoleText.attributed([.object(object, .plain)])).textSelection(.enabled)
         } else if let preview = store.customHeader(object, config: config) {
             ConsoleCustomHeaderView(session: session, store: store, preview: preview, targetID: targetID,
                                     key: key, depth: depth)
@@ -207,7 +207,7 @@ private struct ConsoleCustomObjectReference: View {
             ConsoleValueLine(session: session, store: store, name: nil, object: object, targetID: targetID,
                              key: key, depth: depth)
         } else {
-            Text(ConsoleText.attributed([.object(object, .plain)], base: nil))
+            Text(ConsoleText.attributed([.object(object, .plain)]))
                 .onAppear { session.loadConsoleCustomHeader(object, config: config, targetID: targetID) }
         }
     }

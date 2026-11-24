@@ -31,7 +31,7 @@ struct DeveloperMemoryInspectorView: View {
                 VStack(spacing: 6) {
                     if let problem = memory.problem { Text(problem).foregroundStyle(.secondary) }
                     Text("No open inspections").fontWeight(.semibold)
-                    Text("Right-click an ArrayBuffer, TypedArray, DataView or WebAssembly.Memory in the Console or in the Scope pane while paused, and choose Reveal in Memory inspector.")
+                    Text("Click the memory icon next to an ArrayBuffer, TypedArray, DataView or WebAssembly.Memory in the Console, or right-click one there or in the Scope pane while paused and choose Reveal in Memory inspector.")
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 440)
@@ -79,10 +79,8 @@ struct DeveloperMemoryInspectorView: View {
                 ForEach(memory.buffers) { buffer in
                     let selected = memory.selected?.id == buffer.id
                     HStack(spacing: 4) {
-                        Button { memory.selectedID = buffer.id } label: {
-                            Text(buffer.title)
-                        }
-                        .buttonStyle(.plain)
+                        Button(buffer.title) { memory.selectedID = buffer.id }
+                            .buttonStyle(.plain)
                         Button { memory.close(buffer.id) } label: {
                             Image(systemName: "xmark").font(.system(size: 8, weight: .semibold))
                         }

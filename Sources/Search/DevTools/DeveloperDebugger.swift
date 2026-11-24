@@ -445,8 +445,6 @@ final class DeveloperDebugger: ObservableObject {
         compiledPatterns = ignorePatterns.filter(\.enabled).compactMap { try? NSRegularExpression(pattern: $0.pattern) }
     }
 
-    private static func scriptKey(_ url: String) -> String { String(url.prefix { $0 != "?" && $0 != "#" }) }
-
     /// Whether an enabled rule matches an address.
     func matchesIgnorePattern(_ url: String) -> Bool {
         guard !url.isEmpty else { return false }
@@ -458,7 +456,7 @@ final class DeveloperDebugger: ObservableObject {
     /// every source is ignored, or an authored file a map lists as third-party.
     func isIgnored(_ url: String) -> Bool {
         guard !url.isEmpty else { return false }
-        return isListed(url) || matchesIgnorePattern(url) || mapBlackboxes[Self.scriptKey(url)] == .whole
+        return isListed(url) || matchesIgnorePattern(url) || mapBlackboxes[DeveloperSourceMaps.key(url)] == .whole
             || (ignoreThirdParty && thirdPartySources.contains(url))
     }
 
@@ -481,10 +479,14 @@ final class DeveloperDebugger: ObservableObject {
             applyMapIgnoreLists()
             return
         }
-        run { debugger in
-            _ = try await debugger.command("Debugger.setShouldBlackboxURL",
-                                           ["url": url, "shouldBlackbox": ignored, "caseSensitive": true, "isRegex": false])
-        }
+        run { debugger in try await debugger.blackbox(url, ignored) }
+    }
+
+    /// Debugger.setShouldBlackboxURL for an address, or a rule's pattern.
+    private func blackbox(_ url: String, _ on: Bool, isRegex: Bool = false, ranges: [Int]? = nil) async throws {
+        var params: [String: Any] = ["url": url, "shouldBlackbox": on, "caseSensitive": true, "isRegex": isRegex]
+        if let ranges { params["sourceRanges"] = ranges }
+        _ = try await command("Debugger.setShouldBlackboxURL", params)
     }
 
     // MARK: Exclusion rules
@@ -543,10 +545,7 @@ final class DeveloperDebugger: ObservableObject {
     }
 
     private func sendPattern(_ pattern: String, _ on: Bool) {
-        run { debugger in
-            _ = try await debugger.command("Debugger.setShouldBlackboxURL",
-                                           ["url": pattern, "shouldBlackbox": on, "caseSensitive": true, "isRegex": true])
-        }
+        run { debugger in try await debugger.blackbox(pattern, on, isRegex: true) }
     }
 
     /// Every enabled rule and mapped script's ignore list, sent again (a
@@ -563,9 +562,9 @@ final class DeveloperDebugger: ObservableObject {
     /// third-party list, a rule, or by hand) are stepped over.
     func scriptMapLoaded(url: String, map: DeveloperSourceMap, startLine: Int, startColumn: Int) {
         guard !url.isEmpty else { return }
-        mappedScripts[Self.scriptKey(url)] = MappedScript(url: url, map: map, startLine: startLine, startColumn: startColumn)
+        mappedScripts[DeveloperSourceMaps.key(url)] = MappedScript(url: url, map: map, startLine: startLine, startColumn: startColumn)
         thirdPartySources.formUnion(map.ignoredSourceURLs)
-        applyMapIgnoreList(Self.scriptKey(url))
+        applyMapIgnoreList(DeveloperSourceMaps.key(url))
     }
 
     /// Whether an authored file of a map is ignored.
@@ -600,20 +599,11 @@ final class DeveloperDebugger: ObservableObject {
         let sending = wanted
         run { debugger in
             // An address added by hand keeps its own blackboxing.
-            if previous != nil, !debugger.isListed(url) {
-                _ = try? await debugger.command("Debugger.setShouldBlackboxURL",
-                                                ["url": url, "shouldBlackbox": false, "caseSensitive": true, "isRegex": false])
-            }
+            if previous != nil, !debugger.isListed(url) { try? await debugger.blackbox(url, false) }
             switch sending {
-            case .whole?:
-                _ = try await debugger.command("Debugger.setShouldBlackboxURL",
-                                               ["url": url, "shouldBlackbox": true, "caseSensitive": true, "isRegex": false])
-            case let .ranges(ranges)?:
-                _ = try? await debugger.command("Debugger.setShouldBlackboxURL",
-                                                ["url": url, "shouldBlackbox": true, "caseSensitive": true, "isRegex": false,
-                                                 "sourceRanges": ranges])
-            case nil:
-                break
+            case .whole?: try await debugger.blackbox(url, true)
+            case let .ranges(ranges)?: try? await debugger.blackbox(url, true, ranges: ranges)
+            case nil: break
             }
         }
     }
@@ -627,10 +617,7 @@ final class DeveloperDebugger: ObservableObject {
         anonymousScripts = []
         guard !sent.isEmpty else { return }
         run { debugger in
-            for url in sent {
-                _ = try? await debugger.command("Debugger.setShouldBlackboxURL",
-                                                ["url": url, "shouldBlackbox": false, "caseSensitive": true, "isRegex": false])
-            }
+            for url in sent { try? await debugger.blackbox(url, false) }
         }
     }
 
@@ -674,11 +661,7 @@ final class DeveloperDebugger: ObservableObject {
         }
         refreshWatches()
         // Chrome shows a mapped frame in its authored file.
-        if let original = frame.original {
-            reveal(Location(url: original.url, line: original.line + 1))
-        } else {
-            reveal(Location(url: frame.url, line: frame.line + 1))
-        }
+        reveal(Location(url: frame.original?.url ?? frame.url, line: (frame.original?.line ?? frame.line) + 1))
     }
 
     /// Shows a line in the editor, opening its file when the page lists it.
@@ -960,21 +943,26 @@ final class DeveloperDebugger: ObservableObject {
     /// An expression's remote object, in the frame when paused.
     private func evaluateRaw(_ expression: String, callFrame: String?, targetID: String?,
                              group: String = "scope-edit") async throws -> [String: Any] {
-        let result: [String: Any]
+        let result = try await evaluate(expression, callFrame: callFrame, targetID: targetID, group: group)
+        try Self.checkThrown(result)
+        return result["result"] as? [String: Any] ?? [:]
+    }
+
+    /// The protocol's reply to an expression evaluated on a call frame, or
+    /// on the page when there is none.
+    private func evaluate(_ expression: String, callFrame: String?, targetID: String?,
+                          group: String) async throws -> [String: Any] {
         if let callFrame {
-            result = try await command("Debugger.evaluateOnCallFrame", [
+            return try await command("Debugger.evaluateOnCallFrame", [
                 "callFrameId": callFrame, "expression": expression, "objectGroup": group,
                 "includeCommandLineAPI": false, "doNotPauseOnExceptionsAndMuteConsole": true,
                 "returnByValue": false, "generatePreview": false,
             ], targetID: targetID)
-        } else {
-            result = try await command("Runtime.evaluate", [
-                "expression": expression, "objectGroup": group, "includeCommandLineAPI": false,
-                "doNotPauseOnExceptionsAndMuteConsole": true, "returnByValue": false,
-            ], targetID: targetID)
         }
-        try Self.checkThrown(result)
-        return result["result"] as? [String: Any] ?? [:]
+        return try await command("Runtime.evaluate", [
+            "expression": expression, "objectGroup": group, "includeCommandLineAPI": false,
+            "doNotPauseOnExceptionsAndMuteConsole": true, "returnByValue": false,
+        ], targetID: targetID)
     }
 
     private static func checkThrown(_ result: [String: Any]) throws {
@@ -1095,23 +1083,10 @@ final class DeveloperDebugger: ObservableObject {
         expanded = expanded.filter { !$0.hasPrefix("watch:") }
         run { debugger in
             for (id, expression) in expressions {
-                var result: [String: Any]
-                do {
-                    if let callFrame {
-                        result = try await debugger.command("Debugger.evaluateOnCallFrame", [
-                            "callFrameId": callFrame, "expression": expression, "objectGroup": "watch-group",
-                            "includeCommandLineAPI": false, "doNotPauseOnExceptionsAndMuteConsole": true,
-                            "returnByValue": false, "generatePreview": false,
-                        ], targetID: targetID)
-                    } else {
-                        result = try await debugger.command("Runtime.evaluate", [
-                            "expression": expression, "objectGroup": "watch-group", "includeCommandLineAPI": false,
-                            "doNotPauseOnExceptionsAndMuteConsole": true, "returnByValue": false,
-                        ])
-                    }
-                } catch {
-                    result = ["wasThrown": true]
-                }
+                // Not paused: on the page's main target.
+                let result = (try? await debugger.evaluate(expression, callFrame: callFrame,
+                                                           targetID: callFrame == nil ? nil : targetID,
+                                                           group: "watch-group")) ?? ["wasThrown": true]
                 guard generation == debugger.watchGeneration,
                       let index = debugger.watches.firstIndex(where: { $0.id == id }) else { return }
                 let thrown = result["wasThrown"] as? Bool == true
@@ -1267,26 +1242,26 @@ final class DeveloperDebugger: ObservableObject {
     func addURLBreakpoint(_ text: String) {
         guard !urlBreakpoints.contains(where: { $0.url == text }) else { return }
         urlBreakpoints.append(URLBreakpoint(url: text))
-        run { debugger in _ = try await debugger.command("DOMDebugger.setURLBreakpoint", ["url": text, "isRegex": false]) }
+        sendURLBreakpoint(text, true)
+    }
+
+    private func sendURLBreakpoint(_ url: String, _ on: Bool) {
+        run { debugger in
+            _ = try await debugger.command(on ? "DOMDebugger.setURLBreakpoint" : "DOMDebugger.removeURLBreakpoint",
+                                           ["url": url, "isRegex": false])
+        }
     }
 
     func setURLBreakpointEnabled(_ id: URLBreakpoint.ID, _ enabled: Bool) {
         guard let index = urlBreakpoints.firstIndex(where: { $0.id == id }), urlBreakpoints[index].enabled != enabled else { return }
         urlBreakpoints[index].enabled = enabled
-        let url = urlBreakpoints[index].url
-        run { debugger in
-            _ = try await debugger.command(enabled ? "DOMDebugger.setURLBreakpoint" : "DOMDebugger.removeURLBreakpoint",
-                                           ["url": url, "isRegex": false])
-        }
+        sendURLBreakpoint(urlBreakpoints[index].url, enabled)
     }
 
     func removeURLBreakpoint(_ id: URLBreakpoint.ID) {
         guard let index = urlBreakpoints.firstIndex(where: { $0.id == id }) else { return }
         let item = urlBreakpoints.remove(at: index)
-        guard item.enabled else { return }
-        run { debugger in
-            _ = try await debugger.command("DOMDebugger.removeURLBreakpoint", ["url": item.url, "isRegex": false])
-        }
+        if item.enabled { sendURLBreakpoint(item.url, false) }
     }
 
     // MARK: DOM breakpoints
@@ -1297,30 +1272,28 @@ final class DeveloperDebugger: ObservableObject {
             removeDOMBreakpoint(existing.id)
             return
         }
-        let label = session?.nodes[node].map(Self.nodeLabel) ?? "node"
-        domBreakpoints.append(DOMBreakpoint(node: node, type: type, label: label))
+        let item = DOMBreakpoint(node: node, type: type, label: session?.nodes[node].map(Self.nodeLabel) ?? "node")
+        domBreakpoints.append(item)
+        sendDOMBreakpoint(item, true)
+    }
+
+    private func sendDOMBreakpoint(_ item: DOMBreakpoint, _ on: Bool) {
         run { debugger in
-            _ = try await debugger.command("DOMDebugger.setDOMBreakpoint", ["nodeId": node, "type": type.rawValue])
+            _ = try await debugger.command(on ? "DOMDebugger.setDOMBreakpoint" : "DOMDebugger.removeDOMBreakpoint",
+                                           ["nodeId": item.node, "type": item.type.rawValue])
         }
     }
 
     func setDOMBreakpointEnabled(_ id: DOMBreakpoint.ID, _ enabled: Bool) {
         guard let index = domBreakpoints.firstIndex(where: { $0.id == id }), domBreakpoints[index].enabled != enabled else { return }
         domBreakpoints[index].enabled = enabled
-        let item = domBreakpoints[index]
-        run { debugger in
-            _ = try await debugger.command(enabled ? "DOMDebugger.setDOMBreakpoint" : "DOMDebugger.removeDOMBreakpoint",
-                                           ["nodeId": item.node, "type": item.type.rawValue])
-        }
+        sendDOMBreakpoint(domBreakpoints[index], enabled)
     }
 
     func removeDOMBreakpoint(_ id: DOMBreakpoint.ID) {
         guard let index = domBreakpoints.firstIndex(where: { $0.id == id }) else { return }
         let item = domBreakpoints.remove(at: index)
-        guard item.enabled else { return }
-        run { debugger in
-            _ = try await debugger.command("DOMDebugger.removeDOMBreakpoint", ["nodeId": item.node, "type": item.type.rawValue])
-        }
+        if item.enabled { sendDOMBreakpoint(item, false) }
     }
 
     static func nodeLabel(_ node: DeveloperToolsSession.DOMNode) -> String {
@@ -1384,8 +1357,7 @@ final class DeveloperDebugger: ObservableObject {
                 _ = try await debugger.command("DOMDebugger.setEventBreakpoint", item.parameters)
             }
             for url in ignored where debugger.session?.sourceMaps.isAuthored(url) != true {
-                _ = try await debugger.command("Debugger.setShouldBlackboxURL",
-                                               ["url": url, "shouldBlackbox": true, "caseSensitive": true, "isRegex": false])
+                try await debugger.blackbox(url, true)
             }
         }
         applyIgnoreList()

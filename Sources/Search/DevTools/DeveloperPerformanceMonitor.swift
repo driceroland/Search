@@ -279,21 +279,6 @@ struct DeveloperPageCounts: Equatable {
     var documents: Double?
     var frames: Double?
 
-    init(nodes: Double? = nil, documents: Double? = nil, frames: Double? = nil) {
-        self.nodes = nodes
-        self.documents = documents
-        self.frames = frames
-    }
-
-    init(raw: Any?) {
-        let raw = raw as? [String: Any] ?? [:]
-        func number(_ key: String) -> Double? {
-            guard let value = (raw[key] as? NSNumber)?.doubleValue, value.isFinite, value >= 0 else { return nil }
-            return value
-        }
-        self.init(nodes: number("nodes"), documents: number("documents"), frames: number("frames"))
-    }
-
     /// Elements in the page and every same-origin frame's document;
     /// documents, the page's and its same-origin frames'; frames, the page
     /// and every frame under it, cross-origin ones counted by their window.
@@ -317,6 +302,17 @@ struct DeveloperPageCounts: Equatable {
             return {nodes, documents, frames};
         })()
         """
+}
+
+extension DeveloperPageCounts {
+    init(raw: Any?) {
+        let raw = raw as? [String: Any] ?? [:]
+        func number(_ key: String) -> Double? {
+            guard let value = raw.double(key), value.isFinite, value >= 0 else { return nil }
+            return value
+        }
+        self.init(nodes: number("nodes"), documents: number("documents"), frames: number("frames"))
+    }
 }
 
 /// The samples of every metric, kept for the window and a little more.
@@ -350,18 +346,19 @@ struct DeveloperPerformanceHistory {
     /// The timeline's running counts of layouts and style recalculations,
     /// as rates; nil counts (no recording) read n/a and start the rates over.
     mutating func addTimeline(layouts: Double?, styles: Double?, at time: Double) {
-        if let layouts {
-            add(.layouts, layoutMeter.rate(count: layouts, at: time), at: time)
-        } else {
-            layoutMeter.reset()
-            add(.layouts, nil, at: time)
+        let layoutRate = Self.rate(&layoutMeter, layouts, at: time)
+        add(.layouts, layoutRate, at: time)
+        let styleRate = Self.rate(&styleMeter, styles, at: time)
+        add(.styleRecalcs, styleRate, at: time)
+    }
+
+    /// A running count as a rate; no count starts the meter over.
+    private static func rate(_ meter: inout DeveloperRateMeter, _ count: Double?, at time: Double) -> Double? {
+        guard let count else {
+            meter.reset()
+            return nil
         }
-        if let styles {
-            add(.styleRecalcs, styleMeter.rate(count: styles, at: time), at: time)
-        } else {
-            styleMeter.reset()
-            add(.styleRecalcs, nil, at: time)
-        }
+        return meter.rate(count: count, at: time)
     }
 
     func samples(_ metric: DeveloperPerformanceMetric) -> [DeveloperMetricSample] {

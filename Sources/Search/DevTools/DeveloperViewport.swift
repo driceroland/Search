@@ -482,6 +482,24 @@ enum DeveloperViewportThrottling: String, CaseIterable, Identifiable {
     }
 }
 
+/// A device toolbar menu's title and its chevron.
+private func viewportMenuLabel(_ text: String) -> some View {
+    HStack(spacing: 3) {
+        Text(text).lineLimit(1)
+        Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).foregroundStyle(.secondary)
+    }
+    .padding(.horizontal, 5)
+    .frame(height: DeveloperToolsStyle.controlHeight)
+    .contentShape(Rectangle())
+}
+
+private extension View {
+    /// A device toolbar menu: borderless, no indicator, its own size.
+    func viewportMenu() -> some View {
+        menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+    }
+}
+
 private struct DeveloperViewportThrottle: View {
     @ObservedObject private var tools = DeveloperTools.shared
 
@@ -500,11 +518,9 @@ private struct DeveloperViewportThrottle: View {
             Menu {
                 items(current)
             } label: {
-                label(title)
+                viewportMenuLabel(title).foregroundStyle(session.throttle == .unrestricted ? Palette.ink : Color.orange)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .viewportMenu()
             .disabled(!session.requestInterception)
             .accessibilityLabel("Throttling")
             .accessibilityValue(title)
@@ -523,18 +539,6 @@ private struct DeveloperViewportThrottle: View {
                 Divider()
                 Text("WebKit hasn’t given this page’s requests to Developer Tools yet.")
             }
-        }
-
-        private func label(_ title: String) -> some View {
-            let tint: Color = session.throttle == .unrestricted ? Palette.ink : Color.orange
-            return HStack(spacing: 3) {
-                Text(title).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 5)
-            .frame(height: DeveloperToolsStyle.controlHeight)
-            .contentShape(Rectangle())
-            .foregroundStyle(tint)
         }
     }
 }
@@ -588,16 +592,6 @@ private struct DeveloperViewportToolbar: View {
         }
     }
 
-    private func menuLabel(_ text: String) -> some View {
-        HStack(spacing: 3) {
-            Text(text).lineLimit(1)
-            Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 5)
-        .frame(height: DeveloperToolsStyle.controlHeight)
-        .contentShape(Rectangle())
-    }
-
     private var device: some View {
         Menu {
             Button { settings.select(nil) } label: { check("Responsive", settings.isResponsive) }
@@ -608,11 +602,9 @@ private struct DeveloperViewportToolbar: View {
             Divider()
             Button("Edit…") { shell.showSettings(.devices) }
         } label: {
-            menuLabel("Dimensions: " + (settings.device?.title ?? "Responsive"))
+            viewportMenuLabel("Dimensions: " + (settings.device?.title ?? "Responsive"))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .viewportMenu()
         .accessibilityLabel("Device")
         .accessibilityValue(settings.device?.title ?? "Responsive")
         .help("Emulated device")
@@ -665,11 +657,9 @@ private struct DeveloperViewportToolbar: View {
                 }
             }
         } label: {
-            menuLabel(percent(scale))
+            viewportMenuLabel(percent(scale))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .viewportMenu()
         .accessibilityLabel("Zoom")
         .accessibilityValue(percent(scale))
         .help("Zoom. The preview scale never changes the page's CSS viewport.")
@@ -698,11 +688,9 @@ private struct DeveloperViewportToolbar: View {
                 Text("This version of WebKit can’t emulate the device pixel ratio.")
             }
         } label: {
-            menuLabel(text).foregroundStyle(supported ? .primary : .secondary)
+            viewportMenuLabel(text).foregroundStyle(supported ? .primary : .secondary)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .viewportMenu()
         .disabled(supported && !settings.isResponsive)
         .accessibilityLabel("Device pixel ratio")
         .accessibilityValue(text)
@@ -720,11 +708,9 @@ private struct DeveloperViewportToolbar: View {
                 Button { settings.responsiveType = type } label: { check(type.rawValue, settings.responsiveType == type) }
             }
         } label: {
-            menuLabel(settings.device?.type.rawValue ?? settings.responsiveType.rawValue)
+            viewportMenuLabel(settings.device?.type.rawValue ?? settings.responsiveType.rawValue)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .viewportMenu()
         .disabled(!settings.isResponsive)
         .accessibilityLabel("Device type")
         .help("Device type. Mobile sends a mobile user agent.")
@@ -761,8 +747,8 @@ private struct DeveloperViewportToolbar: View {
                 Text(settings.userAgent ?? "Search’s own user agent")
             }
             Section("Touch") {
-                Text(settings.touch ? "WebKit can’t emulate touch input. Mouse events stay mouse events."
-                     : "No touch emulation")
+                Text(settings.touch ? "Approximate: Search turns presses and drags into touch events. "
+                     + "Reload pages that look for touch as they load." : "No touch emulation")
             }
             if !DeveloperDeviceEmulation.canEmulateScaleFactor {
                 Section("Device pixel ratio") {
@@ -776,9 +762,7 @@ private struct DeveloperViewportToolbar: View {
                 .frame(width: DeveloperToolsStyle.controlHeight, height: DeveloperToolsStyle.controlHeight)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .viewportMenu()
         .accessibilityLabel("More options")
         .help("More options")
     }

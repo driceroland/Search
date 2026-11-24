@@ -149,8 +149,7 @@ private struct DeveloperAnimationPreview: View {
     }
 
     private var fill: Color {
-        if selected { return DeveloperToolsStyle.selected }
-        return hovering ? DeveloperToolsStyle.raised : Color.clear
+        selected ? DeveloperToolsStyle.selected : hovering ? DeveloperToolsStyle.raised : Color.clear
     }
 
     private func draw(in context: inout GraphicsContext, size: CGSize) {
@@ -408,16 +407,8 @@ private struct DeveloperAnimationBar: View {
             }
             .onDisappear { if cursor { NSCursor.pop(); cursor = false } }
             .gesture(DragGesture(minimumDistance: 2).onChanged { value in
-                guard !animation.destroyed else { return }
-                let handle: DeveloperAnimationTimeline.Handle
-                if let held = drag?.handle {
-                    handle = held
-                } else if let found = DeveloperAnimationTimeline.handle(atX: value.startLocation.x, animation, in: group,
-                                                                         duration: duration, width: width) {
-                    handle = found
-                } else {
-                    return
-                }
+                guard !animation.destroyed, let handle = drag?.handle ?? DeveloperAnimationTimeline.handle(
+                    atX: value.startLocation.x, animation, in: group, duration: duration, width: width) else { return }
                 let delta = width > 0 ? Double(value.translation.width / width) * duration : 0
                 let timing = DeveloperAnimationTimeline.retimed(animation.effect, handle, by: delta)
                 drag = Drag(handle: handle, delay: timing.delay, duration: timing.duration)

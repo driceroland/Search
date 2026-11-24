@@ -23,6 +23,8 @@ final class DeveloperNetworkTools: ObservableObject {
         /// The response headers' values by lowercased name, for the list's
         /// header columns.
         var responseHeaderValues: [String: String] = [:]
+        /// The request headers' values likewise, for Request headers columns.
+        var requestHeaderValues: [String: String] = [:]
         /// Where the request was started from: the line WebKit reports with
         /// the initiator, and its call stack when a script made it.
         var initiatorLine: Int?
@@ -63,19 +65,6 @@ final class DeveloperNetworkTools: ObservableObject {
         var domain = ""
         var path = ""
 
-        init(name: String, value: String, domain: String = "", path: String = "") {
-            self.name = name
-            self.value = value
-            self.domain = domain
-            self.path = path
-        }
-
-        init?(row: [String: Any]) {
-            guard let name = row["name"] as? String, !name.isEmpty else { return nil }
-            self.init(name: name, value: row["value"] as? String ?? "", domain: row["domain"] as? String ?? "",
-                      path: row["path"] as? String ?? "")
-        }
-
         /// The domain and path the jar keeps each request cookie under: the
         /// jar's cookie of that name that the address would be sent, the most
         /// specific path first, as the browser picks what to send.
@@ -114,12 +103,6 @@ final class DeveloperNetworkTools: ObservableObject {
         /// name (`NetworkCondition.rawValue`) or a custom profile's id. Nil
         /// blocks, as rows saved before per-request throttling did.
         var throttling: String?
-
-        init(pattern: String, enabled: Bool = true, throttling: String? = nil) {
-            self.pattern = pattern
-            self.enabled = enabled
-            self.throttling = throttling
-        }
     }
 
     /// What a Request conditions row does to a matching request.
@@ -214,6 +197,14 @@ final class DeveloperNetworkTools: ObservableObject {
     /// Bumped on every change to `extras`, so the list can tell cheaply
     /// whether its cached rows still hold.
     private(set) var extrasRevision = 0
+    private var requestHeaderNamesCache: (revision: Int, names: [String]) = (-1, [])
+    /// Every request header name recorded, sorted, for Request headers.
+    var requestHeaderNames: [String] {
+        if requestHeaderNamesCache.revision != extrasRevision {
+            requestHeaderNamesCache = (extrasRevision, Set(extras.values.flatMap(\.requestHeaders)).sorted())
+        }
+        return requestHeaderNamesCache.names
+    }
     @Published private(set) var domContentLoaded: Double?
     @Published private(set) var load: Double?
     @Published private(set) var blockingActive = false
@@ -236,12 +227,46 @@ final class DeveloperNetworkTools: ObservableObject {
         }
     }
     @Published private(set) var activeProfile: ThrottlingProfile.ID?
+    /// Network conditions' Accepted Content-Encodings: nil uses the
+    /// browser's own Accept-Encoding; otherwise the encodings each request
+    /// offers, as Chrome's Network.setAcceptedEncodings sets them.
+    @Published var acceptedEncodings: Set<ContentEncoding>? {
+        didSet { if acceptedEncodings != oldValue { syncBlocking() } }
+    }
+
+    /// Rendering's Disable AVIF / JPEG XL / WebP image format, as Chrome does
+    /// it: image requests stop offering the format, and a response in it
+    /// fails to decode.
+    @Published var disabledImageFormats: Set<ImageFormat> = [] {
+        didSet { if disabledImageFormats != oldValue { syncBlocking() } }
+    }
+
+    enum ImageFormat: String, CaseIterable, Identifiable {
+        case avif = "image/avif", jxl = "image/jxl", webp = "image/webp"
+        var id: String { rawValue }
+    }
+
+    /// The encodings Chrome lists, in its order.
+    enum ContentEncoding: String, CaseIterable, Identifiable {
+        case deflate, gzip, br, zstd
+        var id: String { rawValue }
+    }
+
+    /// The Accept-Encoding header for `encodings`: nil leaves the
+    /// browser's; none accepted asks for the body as it is.
+    static func acceptEncoding(_ encodings: Set<ContentEncoding>?) -> String? {
+        guard let encodings else { return nil }
+        let list = ContentEncoding.allCases.filter(encodings.contains).map(\.rawValue)
+        return list.isEmpty ? "identity" : list.joined(separator: ", ")
+    }
     /// Whether `Network.setEmulatedConditions` exists in this WebKit.
     @Published private(set) var bandwidthThrottling = false
     @Published var message: String?
     /// The page's frames, read for Group by frame.
     @Published private(set) var frames: [DeveloperToolsSession.ResourceFrame] = []
     var imported: [String: DeveloperRequestDetails] = [:]
+    /// Imported WebSocket and EventSource messages, for the Messages tab.
+    var importedFrames: [String: [Frame]] = [:]
     /// Capture screenshots' frames, observed by the filmstrip alone so a
     /// new screenshot doesn't redraw the list.
     let filmstrip: DeveloperNetworkFilmstrip
@@ -314,6 +339,7 @@ final class DeveloperNetworkTools: ObservableObject {
             extra.requestHeaders = row["requestHeaders"] as? [String] ?? extra.requestHeaders
             extra.responseHeaders = row["responseHeaders"] as? [String] ?? extra.responseHeaders
             extra.responseHeaderValues = row["responseHeaderValues"] as? [String: String] ?? extra.responseHeaderValues
+            extra.requestHeaderValues = row["requestHeaderValues"] as? [String: String] ?? extra.requestHeaderValues
             extra.initiatorLine = row["initiatorLine"] as? Int ?? extra.initiatorLine
             if let stack = row["initiatorStack"] as? [[String: Any]] {
                 extra.initiatorStack = stack.map(DeveloperRequestDetails.StackFrame.init)
@@ -384,6 +410,7 @@ final class DeveloperNetworkTools: ObservableObject {
     func clear() {
         extras = [:]
         imported = [:]
+        importedFrames = [:]
         domContentLoaded = nil
         load = nil
         Task { _ = try? await call("perchNetwork.clear(); return true;") }
@@ -392,7 +419,10 @@ final class DeveloperNetworkTools: ObservableObject {
     // MARK: Request blocking
 
     private var blockingOptions: [String: Any] {
-        Self.blockingOptions(enabled: blockingEnabled, patterns: blockPatterns, profiles: profiles)
+        var options = Self.blockingOptions(enabled: blockingEnabled, patterns: blockPatterns, profiles: profiles)
+        options["acceptEncoding"] = Self.acceptEncoding(acceptedEncodings) ?? NSNull()
+        options["disabledImageTypes"] = disabledImageFormats.map(\.rawValue).sorted()
+        return options
     }
 
     private func syncBlocking() {
@@ -517,6 +547,7 @@ final class DeveloperNetworkTools: ObservableObject {
     // MARK: WebSocket and EventSource messages
 
     func frames(for id: String, after count: Int) async -> (count: Int, frames: [Frame]) {
+        if let frames = importedFrames[id] { return (frames.count, frames.filter { $0.id > count }) }
         if let session, session.requests.contains(where: { $0.id == id && $0.isEventSource }) {
             return session.networkEventSource.messages(for: id, after: count, requests: session.requests)
         }
@@ -596,11 +627,19 @@ final class DeveloperNetworkTools: ObservableObject {
         let clock = requests.compactMap { $0.ended ?? $0.started }.max() ?? 0
         var entries: [[String: Any]] = []
         for request in requests {
-            if let entry = built[request.id] {
-                entries.append(entry)
+            var entry: [String: Any]
+            if let found = built[request.id] {
+                entry = found
             } else if let details = await session.requestDetails(request.id) {
-                entries.append(DeveloperHAR.entry(request, details: details, clock: clock))
+                entry = DeveloperHAR.entry(request, details: details, clock: clock)
+            } else { continue }
+            // Chrome's _webSocketMessages and _eventSourceMessages.
+            if request.type == "WebSocket" || request.isEventSource {
+                let list = await frames(for: request.id, after: 0).frames
+                let messages = DeveloperHAR.messages(list, eventSource: request.isEventSource)
+                entry[messages.key] = messages.value
             }
+            entries.append(entry)
         }
         if sanitize { entries = entries.map(DeveloperHAR.sanitized) }
         log["entries"] = entries
@@ -628,7 +667,7 @@ final class DeveloperNetworkTools: ObservableObject {
         Task {
             guard let data = await har(for: requests, sanitize: sanitize), let text = String(data: data, encoding: .utf8)
             else { return }
-            Self.copy(text)
+            DeveloperToolsSession.copyToPasteboard(text)
         }
     }
 
@@ -668,9 +707,13 @@ final class DeveloperNetworkTools: ObservableObject {
         var extra = extras
         for item in log {
             imported[item.request.id] = item.details
+            if !item.frames.isEmpty { importedFrames[item.request.id] = item.frames }
             var row = item.extra
             for header in item.details.responseHeaders where row.responseHeaderValues[header.name.lowercased()] == nil {
                 row.responseHeaderValues[header.name.lowercased()] = header.value
+            }
+            for header in item.details.requestHeaders where row.requestHeaderValues[header.name.lowercased()] == nil {
+                row.requestHeaderValues[header.name.lowercased()] = header.value
             }
             extra[item.request.id] = row
         }
@@ -680,15 +723,10 @@ final class DeveloperNetworkTools: ObservableObject {
 
     // MARK: Request actions
 
-    static func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
-
     func copy(_ request: DeveloperToolsSession.Request, as format: @escaping (DeveloperRequestDetails) -> String) {
         Task {
             guard let details = await session?.requestDetails(request.id) else { return }
-            Self.copy(format(details))
+            DeveloperToolsSession.copyToPasteboard(format(details))
         }
     }
 
@@ -699,7 +737,7 @@ final class DeveloperNetworkTools: ObservableObject {
             for request in requests where !request.url.hasPrefix("blob:") {
                 if let details = await session?.requestDetails(request.id) { commands.append(format(details)) }
             }
-            Self.copy(commands.joined(separator: separator))
+            DeveloperToolsSession.copyToPasteboard(commands.joined(separator: separator))
         }
     }
 
@@ -757,6 +795,14 @@ final class DeveloperNetworkTools: ObservableObject {
     private enum ToolError: LocalizedError {
         case unavailable
         var errorDescription: String? { "The page’s inspector isn’t ready." }
+    }
+}
+
+extension DeveloperNetworkTools.Cookie {
+    init?(row: [String: Any]) {
+        guard let name = row["name"] as? String, !name.isEmpty else { return nil }
+        self.init(name: name, value: row["value"] as? String ?? "", domain: row["domain"] as? String ?? "",
+                  path: row["path"] as? String ?? "")
     }
 }
 

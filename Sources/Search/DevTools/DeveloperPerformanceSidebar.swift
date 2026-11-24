@@ -47,16 +47,14 @@ struct DeveloperPerformanceSidebar: View {
     // MARK: Insights
 
     private var insightList: some View {
-        let failing = insights.filter { if case .pass = $0.verdict { return false } else { return true } }
-        let passed = insights.filter { if case .pass = $0.verdict { return true } else { return false } }
+        let failing = insights.filter { $0.verdict != .pass }
+        let passed = insights.filter { $0.verdict == .pass }
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 6) {
                 if insights.isEmpty {
                     Text("No insights for this recording.").foregroundStyle(.secondary).padding(.vertical, 8)
                 }
-                if !failing.isEmpty {
-                    ForEach(failing) { card($0) }
-                }
+                ForEach(failing) { card($0) }
                 if !passed.isEmpty {
                     Text("Passed insights").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
                         .padding(.top, failing.isEmpty ? 0 : 8)

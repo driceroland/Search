@@ -50,6 +50,10 @@ struct DeveloperPerformanceView: View {
     @State private var sawLoading = false
     @State private var input = DeveloperPerformanceInput()
     @State private var screenshots = DeveloperPerformanceScreenshots.enabled
+    /// Chrome's capture settings row, under the toolbar, and its one
+    /// recording option WebKit can honour.
+    @State private var captureSettingsShown = false
+    @State private var jsSamplesDisabled = DeveloperPerformanceCapture.jsSamplesDisabled
     @State private var addingAnnotation = false
     @State private var annotationLabel = ""
     @State private var annotationRange: ClosedRange<Double>?
@@ -170,7 +174,7 @@ struct DeveloperPerformanceView: View {
         default: Color(red: 0.10, green: 0.41, blue: 0.22)
         }
     }
-    private static let longTaskColor = Color(red: 0.85, green: 0.19, blue: 0.15)
+    static let longTaskColor = Color(red: 0.85, green: 0.19, blue: 0.15)
     private static let interactionColor = Color(red: 0.45, green: 0.62, blue: 0.86)
     private static let measureColor = Color(red: 0.96, green: 0.70, blue: 0.48)
     private static let frameColor = Color(red: 0.55, green: 0.80, blue: 0.47)
@@ -200,9 +204,7 @@ struct DeveloperPerformanceView: View {
         let offset: CGFloat
     }
 
-    private var timelineKey: String {
-        "\(session.timeline.count)-\(session.timeline.last?.id.uuidString ?? "")"
-    }
+    private var timelineKey: String { DeveloperPerformanceRecordings.key(session.timeline) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -256,6 +258,46 @@ struct DeveloperPerformanceView: View {
 
     // MARK: Toolbar
 
+    /// Chrome's capture settings: the options WebKit can honour, the
+    /// network throttling Network shares, and a word on what it can't.
+    private var captureSettings: some View {
+        HStack(spacing: DeveloperToolsStyle.controlSpacing * 2) {
+            checkbox("Disable JavaScript samples", Binding(get: { jsSamplesDisabled }, set: {
+                jsSamplesDisabled = $0
+                DeveloperPerformanceCapture.jsSamplesDisabled = $0
+            }), help: "Reduces the overhead of recording; the Main track then has no JavaScript call frames.",
+                     id: "developer-performance-disable-js-samples")
+            .disabled(session.recordingTimeline)
+            HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+                Image(systemName: "wifi").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("Network:").font(.system(size: 11)).foregroundStyle(.secondary)
+                Menu {
+                    ForEach(DeveloperToolsSession.NetworkCondition.allCases) { condition in
+                        Button {
+                            session.networkTools.apply(condition)
+                        } label: {
+                            if session.networkTools.activeProfile == nil && session.throttle == condition {
+                                Label(condition.rawValue, systemImage: "checkmark")
+                            } else {
+                                Text(condition.rawValue)
+                            }
+                        }
+                    }
+                } label: {
+                    Text(session.networkTools.activeProfileName ?? session.throttle.rawValue).font(.system(size: 11))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(!session.requestInterception)
+                .accessibilityLabel("Network throttling")
+            }
+            .fixedSize()
+            Spacer(minLength: 0)
+        }
+        .help("WebKit has no CPU throttling, advanced paint instrumentation or CSS selector stats to offer here.")
+        .developerToolbarRow()
+    }
+
     private var toolbar: some View {
         VStack(spacing: 0) {
             HStack(spacing: DeveloperToolsStyle.controlSpacing) {
@@ -263,7 +305,7 @@ struct DeveloperPerformanceView: View {
                                    active: showSidebar) { showSidebar.toggle() }
                     .disabled(session.recordingTimeline || profile.isEmpty)
                     .accessibilityIdentifier("developer-performance-sidebar-toggle")
-                Divider().frame(height: 16).padding(.horizontal, 2)
+                toolbarDivider
                 DeveloperPanelIcon(symbol: session.recordingTimeline ? "stop.circle.fill" : "record.circle",
                                    title: session.recordingTimeline ? "Stop (⌘E)" : "Record (⌘E)",
                                    active: session.recordingTimeline) { record() }
@@ -275,7 +317,7 @@ struct DeveloperPerformanceView: View {
                 .accessibilityIdentifier("developer-performance-reload")
                 DeveloperPanelIcon(symbol: "nosign", title: "Clear") { clear() }
                     .disabled(session.recordingTimeline || profile.isEmpty)
-                Divider().frame(height: 16).padding(.horizontal, 2)
+                toolbarDivider
                 DeveloperPanelIcon(symbol: "arrow.up.to.line", title: "Load profile… (⌘O)") { loadProfile() }
                     .disabled(session.recordingTimeline)
                     .accessibilityIdentifier("developer-performance-load")
@@ -284,42 +326,69 @@ struct DeveloperPerformanceView: View {
                     .accessibilityIdentifier("developer-performance-save")
                 historyAndFind
                 DeveloperPanelIcon(symbol: "text.bubble", title: "Add annotation…") {
-                    let event = selected.flatMap { profile.events.indices.contains($0) ? profile.events[$0] : nil }
-                    beginAnnotation(event.map { $0.start...$0.end } ?? window.range)
+                    beginAnnotation(selectedEvent.map { $0.start...$0.end } ?? window.range)
                 }
                 .disabled(session.recordingTimeline || profile.isEmpty || session.timelineAnnotations.count >= 256)
                 .accessibilityIdentifier("developer-performance-annotation")
-                Divider().frame(height: 16).padding(.horizontal, 2)
-                Toggle("Screenshots", isOn: Binding(get: { screenshots }, set: {
+                toolbarDivider
+                checkbox("Screenshots", Binding(get: { screenshots }, set: {
                     screenshots = $0
                     DeveloperPerformanceScreenshots.enabled = $0
-                }))
-                .toggleStyle(.developerCheckbox).font(.system(size: 11))
+                }), help: "Capture screenshots while recording", id: "developer-performance-screenshots")
                 .disabled(session.recordingTimeline)
-                .help("Capture screenshots while recording")
-                .accessibilityIdentifier("developer-performance-screenshots")
-                Toggle("Memory", isOn: $memory)
-                    .toggleStyle(.developerCheckbox).font(.system(size: 11))
+                checkbox("Memory", $memory, help: "Capture JavaScript heap usage while recording",
+                         id: "developer-performance-memory")
                     .disabled(session.recordingTimeline)
-                    .help("Capture JavaScript heap usage while recording")
-                    .accessibilityIdentifier("developer-performance-memory")
-                Toggle("Dim 3rd parties", isOn: $dimThirdParties)
-                    .toggleStyle(.developerCheckbox).font(.system(size: 11))
-                    .help("Dim entries from 3rd-party scripts in the Main track")
-                    .accessibilityIdentifier("developer-performance-dim-third-parties")
-                Divider().frame(height: 16).padding(.horizontal, 2)
+                checkbox("Dim 3rd parties", $dimThirdParties, help: "Dim entries from 3rd-party scripts in the Main track",
+                         id: "developer-performance-dim-third-parties")
+                toolbarDivider
                 if !profile.isEmpty && !session.recordingTimeline {
-                    Text("\(DeveloperPerformanceRuler.label(window.lower)) – \(DeveloperPerformanceRuler.label(window.upper))")
-                        .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary).fixedSize()
-                    DeveloperPanelIcon(symbol: "arrow.up.left.and.arrow.down.right", title: "Show the whole recording") {
-                        window = breadcrumbs.select(0)
+                    // Shown while there's room for it; a narrow dock keeps
+                    // the buttons and the capture settings gear instead.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+                            Text("\(DeveloperPerformanceRuler.label(window.lower)) – \(DeveloperPerformanceRuler.label(window.upper))")
+                                .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary).fixedSize()
+                            wholeRecordingButton
+                        }
+                        wholeRecordingButton
+                        Color.clear.frame(width: 0, height: 0)
                     }
                 }
                 Spacer(minLength: 0)
             }
             .developerToolbarRow()
+            // Pinned at the right, outside the row that clips in a narrow dock.
+            .overlay(alignment: .trailing) {
+                DeveloperPanelIcon(symbol: "gearshape", title: captureSettingsShown ? "Hide capture settings" : "Capture settings",
+                                   active: captureSettingsShown || jsSamplesDisabled || session.throttle != .unrestricted) {
+                    captureSettingsShown.toggle()
+                }
+                .padding(.leading, DeveloperToolsStyle.controlSpacing)
+                .padding(.trailing, DeveloperToolsStyle.gutter)
+                .frame(maxHeight: .infinity)
+                .background(DeveloperToolsStyle.chrome)
+                .accessibilityIdentifier("developer-performance-capture-settings")
+            }
             Divider()
+            if captureSettingsShown {
+                captureSettings
+                Divider()
+            }
         }
+    }
+
+    private var toolbarDivider: some View { Divider().frame(height: 16).padding(.horizontal, 2) }
+
+    private var wholeRecordingButton: some View {
+        DeveloperPanelIcon(symbol: "arrow.up.left.and.arrow.down.right", title: "Show the whole recording") {
+            window = breadcrumbs.select(0)
+        }
+    }
+
+    private func checkbox(_ title: String, _ isOn: Binding<Bool>, help: String, id: String) -> some View {
+        Toggle(title, isOn: isOn).toggleStyle(.developerCheckbox).font(.system(size: 11))
+            .help(help).accessibilityIdentifier(id)
     }
 
     /// The recording history menu, as in Chrome. ⌘F (Find in the
@@ -411,16 +480,20 @@ struct DeveloperPerformanceView: View {
             }
             .frame(minHeight: 150, idealHeight: 280)
             DeveloperPerformanceDetails(session: session, profile: profile, range: window.range,
-                                        selected: selected.flatMap { profile.events.indices.contains($0) ? profile.events[$0] : nil },
+                                        selected: selectedEvent,
                                         shift: selectedShift.flatMap { profile.layoutShifts.indices.contains($0) ? $0 : nil },
                                         custom: selectedCustom.flatMap { profile.customSummary($0) },
-                                        choose: { selected = $0; selectedShift = nil; selectedCustom = nil },
+                                        choose: { select($0) },
                                         reveal: { index, node in
                                             DeveloperLiveMetricsModel.model(for: session).revealShiftNode(index: index, node: node)
                                         })
                 .equatable()
                 .frame(minHeight: 110, idealHeight: 200)
         }
+    }
+
+    private var selectedEvent: DeveloperPerformanceEvent? {
+        selected.flatMap { profile.events.indices.contains($0) ? profile.events[$0] : nil }
     }
 
     /// The insight the timeline highlights: the card under the pointer, or the one open.
@@ -606,12 +679,7 @@ struct DeveloperPerformanceView: View {
         let width = Double(size.width)
         let ruler = Self.rulerHeight, row = Self.rowHeight
         context.fill(Path(CGRect(x: 0, y: 0, width: size.width, height: ruler)), with: .color(DeveloperToolsStyle.chrome))
-        for tick in DeveloperPerformanceRuler.ticks(in: window, width: width) {
-            let x = CGFloat(window.x(tick, width: width))
-            context.fill(Path(CGRect(x: x, y: 0, width: 0.5, height: size.height)), with: .color(DeveloperToolsStyle.rule))
-            context.draw(Text(DeveloperPerformanceRuler.label(tick)).font(.system(size: 9)).foregroundColor(.secondary),
-                         at: CGPoint(x: x + 3, y: ruler / 2), anchor: .leading)
-        }
+        DeveloperPerformanceRuler.draw(in: &context, window: window, size: size, labelY: ruler / 2)
         let mainTop = drawAuxiliaryTracks(in: &context, width: size.width, from: ruler + annotationHeight)
         // Main's header stays put as its lanes scroll.
         context.fill(Path(CGRect(x: 0, y: mainTop, width: size.width, height: Self.trackHeight)),
@@ -653,9 +721,7 @@ struct DeveloperPerformanceView: View {
                 lanes.fill(Path(rect), with: .color(Self.findColor.opacity(0.35)))
                 lanes.stroke(Path(rect.insetBy(dx: 0.5, dy: 0.5)), with: .color(Self.findColor), lineWidth: 1.5)
             }
-            if selected == event.id {
-                lanes.stroke(Path(rect.insetBy(dx: 0.75, dy: 0.75)), with: .color(DeveloperToolsStyle.tint), lineWidth: 1.5)
-            }
+            if selected == event.id { Self.outline(&lanes, rect) }
             let decorated = event.hidesChildren && rect.width > 8
             if decorated {
                 // Chrome's mark on an entry whose children are hidden: a
@@ -821,29 +887,18 @@ struct DeveloperPerformanceView: View {
         var y = start
         for entry in tracks {
             let height: CGFloat = entry.height
+            defer { y += height }
+            guard let title = trackTitle(entry.track) else { continue }
+            trackHeader(title, in: &context, width: width, y: y, height: height)
             switch entry.track {
-            case .network:
-                trackHeader("Network", in: &context, width: width, y: y, height: height)
-                drawNetworkTrack(in: &context, width: width, y: y)
-            case .frames:
-                trackHeader("Frames", in: &context, width: width, y: y, height: height)
-                drawFramesTrack(in: &context, width: width, y: y)
-            case .animations:
-                trackHeader("Animations", in: &context, width: width, y: y, height: height)
-                drawAnimationsTrack(in: &context, width: width, y: y)
-            case .timings:
-                trackHeader("Timings", in: &context, width: width, y: y, height: height)
-                drawTimingsTrack(in: &context, width: width, y: y)
-            case .interactions:
-                trackHeader("Interactions", in: &context, width: width, y: y, height: height)
-                drawInteractionsTrack(in: &context, width: width, y: y)
-            case .layoutShifts:
-                trackHeader("Layout shifts", in: &context, width: width, y: y, height: height)
-                drawLayoutShiftsTrack(in: &context, width: width, y: y)
+            case .network: drawNetworkTrack(in: &context, width: width, y: y)
+            case .frames: drawFramesTrack(in: &context, width: width, y: y)
+            case .animations: drawAnimationsTrack(in: &context, width: width, y: y)
+            case .timings: drawTimingsTrack(in: &context, width: width, y: y)
+            case .interactions: drawInteractionsTrack(in: &context, width: width, y: y)
+            case .layoutShifts: drawLayoutShiftsTrack(in: &context, width: width, y: y)
             case .heap:
-                let maximum = max(1, profile.heap.map(\.bytes).max() ?? 0)
-                trackHeader("JS heap size (\(DeveloperMetricFormat.bytes(maximum)) max)", in: &context, width: width,
-                            y: y, height: height)
+                let maximum = heapMaximum
                 let graph = CGRect(x: 0, y: y + Self.trackHeight, width: width, height: height - Self.trackHeight)
                 var line = Path()
                 for (index, point) in profile.heap.enumerated() {
@@ -857,26 +912,36 @@ struct DeveloperPerformanceView: View {
                 clipped.clip(to: Path(graph))
                 clipped.stroke(line, with: .color(DeveloperToolsStyle.tint), lineWidth: 1.5)
             case .cpu:
-                let busiest = profile.cpu.map(\.usage).max() ?? 0
-                trackHeader("CPU (\(DeveloperPerformanceCPU.percent(busiest)) max)", in: &context, width: width,
-                            y: y, height: height)
                 let graph = CGRect(x: 0, y: y + Self.trackHeight, width: width, height: height - Self.trackHeight - 1)
                 var clipped = context
                 clipped.clip(to: Path(graph))
-                Self.drawCPU(profile.cpu, in: &clipped, graph: graph, window: window, scale: max(100, busiest))
-            case .customGroup(let name):
-                let collapsed = collapsedGroups.contains(name)
-                trackHeader((collapsed ? "▸ " : "▾ ") + name, in: &context, width: width, y: y, height: height)
-            case .custom(let index):
-                guard profile.customTracks.indices.contains(index) else { break }
-                let custom = profile.customTracks[index]
-                trackHeader(custom.group == nil ? custom.name : "    " + custom.name, in: &context, width: width,
-                            y: y, height: height)
-                drawCustomTrack(index, in: &context, width: width, y: y)
+                Self.drawCPU(profile.cpu, in: &clipped, graph: graph, window: window, scale: max(100, cpuBusiest))
+            case .customGroup: break
+            case .custom(let index): drawCustomTrack(index, in: &context, width: width, y: y)
             }
-            y += height
         }
         return y
+    }
+
+    private var heapMaximum: Double { max(1, profile.heap.map(\.bytes).max() ?? 0) }
+    private var cpuBusiest: Double { profile.cpu.map(\.usage).max() ?? 0 }
+
+    /// A track's header title; nil for a custom track that's gone.
+    private func trackTitle(_ track: Track) -> String? {
+        switch track {
+        case .network: "Network"
+        case .frames: "Frames"
+        case .animations: "Animations"
+        case .timings: "Timings"
+        case .interactions: "Interactions"
+        case .layoutShifts: "Layout shifts"
+        case .heap: "JS heap size (\(DeveloperMetricFormat.bytes(heapMaximum)) max)"
+        case .cpu: "CPU (\(DeveloperPerformanceCPU.percent(cpuBusiest)) max)"
+        case .customGroup(let name): (collapsedGroups.contains(name) ? "▸ " : "▾ ") + name
+        case .custom(let index):
+            profile.customTracks.indices.contains(index)
+                ? (profile.customTracks[index].group == nil ? "" : "    ") + profile.customTracks[index].name : nil
+        }
     }
 
     /// A track's title bar, and the rule under the track.
@@ -936,9 +1001,7 @@ struct DeveloperPerformanceView: View {
             let fill: Color = dropped ? Self.longTaskColor.opacity(0.35) : Self.frameColor.opacity(0.55)
             context.fill(Path(rect), with: .color(fill))
             context.stroke(Path(rect), with: .color(DeveloperToolsStyle.rule), lineWidth: 0.5)
-            if selected == id {
-                context.stroke(Path(rect.insetBy(dx: 0.75, dy: 0.75)), with: .color(DeveloperToolsStyle.tint), lineWidth: 1.5)
-            }
+            if selected == id { Self.outline(&context, rect) }
             Self.trackLabel(DeveloperPerformanceRuler.label(frame.duration), in: rect, context: context)
         }
     }
@@ -1037,9 +1100,7 @@ struct DeveloperPerformanceView: View {
                 let from: CGFloat = max(rect.minX, over)
                 Self.overrun(&context, CGRect(x: from, y: rect.minY, width: max(0, rect.maxX - from), height: rect.height))
             }
-            if selected == interaction.event {
-                context.stroke(Path(whole.insetBy(dx: 0.75, dy: 0.75)), with: .color(DeveloperToolsStyle.tint), lineWidth: 1.5)
-            }
+            if selected == interaction.event { Self.outline(&context, whole) }
             Self.trackLabel(interaction.type, in: rect, context: context)
         }
     }
@@ -1079,11 +1140,16 @@ struct DeveloperPerformanceView: View {
                               width: max(2, right - left), height: Self.barHeight - 2)
             context.fill(Path(rect), with: .color(Self.extensionColor(entry.color)))
             if selectedCustom == DeveloperPerformanceExtensions.Selection(track: index, index: entryIndex) {
-                context.stroke(Path(rect.insetBy(dx: 0.75, dy: 0.75)), with: .color(DeveloperToolsStyle.tint), lineWidth: 1.5)
+                Self.outline(&context, rect)
             }
             let ink: Color = DeveloperPerformanceExtensions.isLight(entry.color) ? .black.opacity(0.82) : .white
             Self.trackLabel(entry.name, in: rect, context: context, color: ink)
         }
+    }
+
+    /// The chosen entry's outline.
+    private static func outline(_ context: inout GraphicsContext, _ rect: CGRect) {
+        context.stroke(Path(rect.insetBy(dx: 0.75, dy: 0.75)), with: .color(DeveloperToolsStyle.tint), lineWidth: 1.5)
     }
 
     /// Chrome's mark for work past its budget: red stripes over the part
@@ -1164,7 +1230,7 @@ struct DeveloperPerformanceView: View {
     @ViewBuilder private func cpuTooltip(width: CGFloat) -> some View {
         if let pointer, flameDrag == nil, track(at: pointer.y)?.track == .cpu,
            let sample = DeveloperPerformanceCPU.sample(
-               at: window.time(atX: Double(pointer.x), width: Double(max(flameSize.width, 1))), in: profile.cpu) {
+               at: window.time(atX: Double(pointer.x), width: chartWidth), in: profile.cpu) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(DeveloperPerformanceRuler.label(sample.time)).monospacedDigit().foregroundStyle(.secondary)
@@ -1184,33 +1250,22 @@ struct DeveloperPerformanceView: View {
                     }
                 }
             }
-            .font(.system(size: 11))
-            .padding(6)
-            .frame(width: 200, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(DeveloperToolsStyle.rule))
-            .offset(x: min(pointer.x + 12, max(0, width - 210)), y: pointer.y + 14)
-            .allowsHitTesting(false)
+            .flameTooltip(at: pointer, in: width, width: 200, fixed: true)
         }
     }
 
     /// The page's milestones as dashed lines down the tracks and lanes.
     private func drawMarkerLines(in context: inout GraphicsContext, size: CGSize) {
-        let width = Double(size.width)
+        func line(at time: Double) -> Path {
+            let x = CGFloat(window.x(time, width: Double(size.width)))
+            return Path { $0.move(to: CGPoint(x: x, y: Self.rulerHeight)); $0.addLine(to: CGPoint(x: x, y: size.height)) }
+        }
         for marker in profile.markers where marker.start >= window.lower && marker.start <= window.upper {
-            let x = CGFloat(window.x(marker.start, width: width))
-            var line = Path()
-            line.move(to: CGPoint(x: x, y: Self.rulerHeight))
-            line.addLine(to: CGPoint(x: x, y: size.height))
-            context.stroke(line, with: .color(Self.markerColor(marker.kind).opacity(0.7)),
+            context.stroke(line(at: marker.start), with: .color(Self.markerColor(marker.kind).opacity(0.7)),
                            style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
         }
         for marker in profile.extensionMarkers where marker.time >= window.lower && marker.time <= window.upper {
-            let x = CGFloat(window.x(marker.time, width: width))
-            var line = Path()
-            line.move(to: CGPoint(x: x, y: Self.rulerHeight))
-            line.addLine(to: CGPoint(x: x, y: size.height))
-            context.stroke(line, with: .color(Self.extensionColor(marker.color).opacity(0.8)), lineWidth: 1)
+            context.stroke(line(at: marker.time), with: .color(Self.extensionColor(marker.color).opacity(0.8)), lineWidth: 1)
         }
     }
 
@@ -1228,13 +1283,7 @@ struct DeveloperPerformanceView: View {
                 }
                 if let frame = event.stack.first { Text(frame).font(DeveloperToolsStyle.code).lineLimit(1) }
             }
-            .font(.system(size: 11))
-            .padding(6)
-            .frame(maxWidth: 280, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(DeveloperToolsStyle.rule))
-            .offset(x: min(pointer.x + 12, max(0, width - 290)), y: pointer.y + 14)
-            .allowsHitTesting(false)
+            .flameTooltip(at: pointer, in: width)
         }
     }
 
@@ -1256,7 +1305,7 @@ struct DeveloperPerformanceView: View {
             return
         }
         let top = found.top
-        let width = Double(max(flameSize.width, 1))
+        let width = chartWidth
         let time = window.time(atX: Double(location.x), width: width)
         let slack = 3 / width * window.span
         switch found.track {
@@ -1290,7 +1339,7 @@ struct DeveloperPerformanceView: View {
     /// The custom track entry or extension marker at `location`.
     private func customHit(_ location: CGPoint) -> DeveloperPerformanceExtensions.Selection? {
         guard let found = track(at: location.y) else { return nil }
-        let width = Double(max(flameSize.width, 1))
+        let width = chartWidth
         let time = window.time(atX: Double(location.x), width: width)
         switch found.track {
         case .custom(let index):
@@ -1322,20 +1371,14 @@ struct DeveloperPerformanceView: View {
                 }
                 if let tooltip = item.tooltip { Text(tooltip).foregroundStyle(.secondary).lineLimit(4) }
             }
-            .font(.system(size: 11))
-            .padding(6)
-            .frame(maxWidth: 280, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(DeveloperToolsStyle.rule))
-            .offset(x: min(pointer.x + 12, max(0, width - 290)), y: pointer.y + 14)
-            .allowsHitTesting(false)
+            .flameTooltip(at: pointer, in: width)
         }
     }
 
     private func hit(_ location: CGPoint) -> DeveloperPerformanceEvent? {
         guard location.y > lanesTop else { return nil }
         let row = Int((location.y - lanesTop + offset) / Self.rowHeight)
-        let width = Double(max(flameSize.width, 1))
+        let width = chartWidth
         let time = window.time(atX: Double(location.x), width: width)
         return profile.event(at: time, row: row, tolerance: 2 / width * window.span)
     }
@@ -1348,8 +1391,10 @@ struct DeveloperPerformanceView: View {
     /// The time under the pointer, or the window's middle.
     private var anchor: Double {
         guard let pointer else { return (window.lower + window.upper) / 2 }
-        return window.time(atX: Double(pointer.x), width: Double(max(flameSize.width, 1)))
+        return window.time(atX: Double(pointer.x), width: chartWidth)
     }
+
+    private var chartWidth: Double { Double(max(flameSize.width, 1)) }
 
     /// As in Chrome DevTools: W zooms in, S out, A pans earlier, D later.
     private func navigate(_ key: String) {
@@ -1379,7 +1424,7 @@ struct DeveloperPerformanceView: View {
             window = window.zoomed(by: pow(1.01, Double(move.zoom)), around: anchor, in: profile.bounds)
         }
         if move.pan != 0 {
-            window = window.panned(by: -Double(move.pan) / Double(max(flameSize.width, 1)) * window.span, in: profile.bounds)
+            window = window.panned(by: -Double(move.pan) / chartWidth * window.span, in: profile.bounds)
         }
         if move.scroll != 0 { offset = clampedOffset(offset - move.scroll) }
         return true
@@ -1430,21 +1475,33 @@ struct DeveloperPerformanceView: View {
     private func chooseRow(_ insight: DeveloperPerformanceInsight, _ row: DeveloperPerformanceInsight.Row) {
         openInsight = insight.id
         if let event = row.event, profile.events.indices.contains(event) {
-            selected = event
-            selectedShift = nil
-            selectedCustom = nil
+            select(event)
             show(profile.events[event].start...profile.events[event].end)
         } else if let range = row.range {
             if case .layoutShifts = insight.kind, profile.layoutShifts.indices.contains(row.id) {
-                selected = nil
-                selectedShift = row.id
-                selectedCustom = nil
+                select(nil, shift: row.id)
             }
             show(range)
         }
     }
 
     // MARK: Recording
+
+    /// A Main track entry, or a layout shift, chosen in place of what was.
+    private func select(_ id: Int?, shift: Int? = nil) {
+        selected = id
+        selectedShift = shift
+        selectedCustom = nil
+    }
+
+    /// Nothing chosen, hovered, open or being linked, for a recording new or cleared.
+    private func resetSelection() {
+        select(nil)
+        openInsight = nil
+        hoveredInsight = nil
+        hovered = nil
+        linkingFrom = nil
+    }
 
     private func record() {
         stopAfterLoad = false
@@ -1472,13 +1529,7 @@ struct DeveloperPerformanceView: View {
         thirdParty = []
         scriptInsights?.cancel()
         insights = []
-        openInsight = nil
-        hoveredInsight = nil
-        selected = nil
-        selectedShift = nil
-        selectedCustom = nil
-        hovered = nil
-        linkingFrom = nil
+        resetSelection()
         links = []
         // As Chrome's Clear empties the recording history too.
         history.history.clear()
@@ -1538,9 +1589,7 @@ struct DeveloperPerformanceView: View {
     private func reveal(_ id: Int) {
         guard profile.shown.indices.contains(id) else { return }
         let event = profile.shown[id]
-        selected = id
-        selectedShift = nil
-        selectedCustom = nil
+        select(id)
         if event.duration > window.span * 0.9 {
             show(event.start...event.end)
         } else if event.start < window.lower || event.end > window.upper {
@@ -1627,16 +1676,10 @@ struct DeveloperPerformanceView: View {
         insights = DeveloperPerformanceInsights.all(fresh, page: session.address)
         loadScriptInsights(fresh)
         thirdParty = DeveloperPerformanceThirdParties.dimmed(fresh, page: session.address)
-        openInsight = nil
-        hoveredInsight = nil
         window = DeveloperFlameWindow(fresh.bounds)
         breadcrumbs.reset(fresh.bounds)
-        selected = nil
-        selectedShift = nil
-        selectedCustom = nil
-        hovered = nil
+        resetSelection()
         offset = 0
-        linkingFrom = nil
         relink(session.timelineAnnotations)
         findIndex = nil
         refind(jump: false)
@@ -1649,13 +1692,16 @@ struct DeveloperPerformanceView: View {
 
     /// Duplicated and Legacy JavaScript read the page's scripts and their
     /// source maps, which take a moment: their cards join the others once
-    /// read, if the recording is still the one shown.
+    /// read, if the recording is still the one shown. A file saved with
+    /// its scripts brings its own.
     private func loadScriptInsights(_ fresh: DeveloperPerformanceProfile) {
         scriptInsights?.cancel()
         let key = timelineKey
+        let loaded = session.timelineScripts
         scriptInsights = Task {
-            guard let scripts = await DeveloperPerformanceInsights.scripts(session, profile: fresh),
-                  !Task.isCancelled else { return }
+            var read = loaded
+            if read == nil { read = await DeveloperPerformanceInsights.scripts(session, profile: fresh) }
+            guard let scripts = read, !Task.isCancelled else { return }
             let found = await Task.detached(priority: .userInitiated) {
                 DeveloperPerformanceInsights.javaScriptInsights(fresh, scripts: scripts)
             }.value
@@ -1666,67 +1712,77 @@ struct DeveloperPerformanceView: View {
     }
 }
 
+private extension View {
+    /// A flame chart tooltip by the pointer, kept inside the chart, `chart`
+    /// wide: `width` wide when `fixed`, at most that otherwise.
+    func flameTooltip(at pointer: CGPoint, in chart: CGFloat, width: CGFloat = 280, fixed: Bool = false) -> some View {
+        font(.system(size: 11))
+            .padding(6)
+            .frame(width: fixed ? width : nil, alignment: .leading)
+            .frame(maxWidth: fixed ? nil : width, alignment: .leading)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+            .overlay(RoundedRectangle(cornerRadius: 5).stroke(DeveloperToolsStyle.rule))
+            .offset(x: min(pointer.x + 12, max(0, chart - width - 10)), y: pointer.y + 14)
+            .allowsHitTesting(false)
+    }
+}
+
 /// The save and open panels for Performance profiles, for the panel's
 /// buttons and keys and for the command menu.
 @MainActor
 enum DeveloperPerformanceFiles {
+    static let includeScriptsKey = "DeveloperPerformanceIncludeScripts"
+
+    /// With Chrome's "Include script content and source maps" under the
+    /// file name: the page's scripts and their maps go in the file, so its
+    /// JavaScript insights work wherever it's opened.
     static func save(_ session: DeveloperToolsSession) {
         let timings = session.timeline
         guard !timings.isEmpty, !session.recordingTimeline else { return }
         let annotations = session.timelineAnnotations
         let address = session.address?.absoluteString
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = DeveloperPerformanceTrace.fileName()
-        panel.allowedContentTypes = [.json]
-        panel.canCreateDirectories = true
-        let saveTo = { (url: URL) in
-            do {
-                let data = try DeveloperPerformanceTrace.export(timings, url: address, annotations: annotations)
-                try data.write(to: url, options: .atomic)
-            } catch {
-                report(error)
+        let loaded = session.timelineScripts
+        let include = NSButton(checkboxWithTitle: "Include script content and source maps", target: nil, action: nil)
+        include.state = UserDefaults.standard.bool(forKey: includeScriptsKey) ? .on : .off
+        include.sizeToFit()
+        // Room around it: a bare checkbox is cut short by the panel.
+        let accessory = NSView(frame: include.frame.insetBy(dx: -20, dy: -10).offsetBy(dx: 20, dy: 10))
+        include.setFrameOrigin(NSPoint(x: 20, y: 10))
+        accessory.addSubview(include)
+        DeveloperFilePanel.save(name: DeveloperPerformanceTrace.fileName(), types: [.json], accessory: accessory) { url in
+            let including = include.state == .on
+            UserDefaults.standard.set(including, forKey: includeScriptsKey)
+            Task { @MainActor in
+                var scripts = including ? loaded : nil
+                if including, scripts == nil {
+                    scripts = await DeveloperPerformanceInsights.scripts(session, profile: DeveloperPerformanceProfile(timings))
+                }
+                attempt {
+                    try DeveloperPerformanceTrace.export(timings, url: address, annotations: annotations, scripts: scripts)
+                        .write(to: url, options: .atomic)
+                }
             }
-        }
-        if let window = NSApp.keyWindow {
-            panel.beginSheetModal(for: window) { response in
-                guard response == .OK, let url = panel.url else { return }
-                saveTo(url)
-            }
-        } else if panel.runModal() == .OK, let url = panel.url {
-            saveTo(url)
         }
     }
 
     static func load(into session: DeveloperToolsSession) {
         guard !session.recordingTimeline else { return }
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        let openFrom = { (url: URL) in
-            do {
-                let data = try Data(contentsOf: url)
-                let recording = try DeveloperPerformanceTrace.recording(from: data)
-                session.loadTimeline(recording.timings, annotations: recording.annotations)
-            } catch {
-                report(error)
+        DeveloperFilePanel.open(types: [.json]) { url in
+            attempt {
+                let recording = try DeveloperPerformanceTrace.recording(from: Data(contentsOf: url))
+                session.loadTimeline(recording.timings, annotations: recording.annotations, scripts: recording.scripts)
             }
-        }
-        if let window = NSApp.keyWindow {
-            panel.beginSheetModal(for: window) { response in
-                guard response == .OK, let url = panel.url else { return }
-                openFrom(url)
-            }
-        } else if panel.runModal() == .OK, let url = panel.url {
-            openFrom(url)
         }
     }
 
-    private static func report(_ error: Error) {
-        let alert = NSAlert()
-        alert.messageText = "Couldn't open or save the profile"
-        alert.informativeText = error.localizedDescription
-        alert.runModal()
+    /// Runs `work`, saying in an alert what went wrong if it throws.
+    private static func attempt(_ work: () throws -> Void) {
+        do { try work() } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't open or save the profile"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 }
 
@@ -1738,14 +1794,8 @@ private struct DeveloperPerformanceOverviewChart: View, Equatable {
 
     var body: some View {
         Canvas { context, size in
-            let width = Double(size.width)
-            let whole = DeveloperFlameWindow(profile.bounds)
-            for tick in DeveloperPerformanceRuler.ticks(in: whole, width: width, spacing: 100) {
-                let x = CGFloat(whole.x(tick, width: width))
-                context.fill(Path(CGRect(x: x, y: 0, width: 0.5, height: size.height)), with: .color(DeveloperToolsStyle.rule))
-                context.draw(Text(DeveloperPerformanceRuler.label(tick)).font(.system(size: 9)).foregroundColor(.secondary),
-                             at: CGPoint(x: x + 3, y: 7), anchor: .leading)
-            }
+            DeveloperPerformanceRuler.draw(in: &context, window: DeveloperFlameWindow(profile.bounds), size: size, labelY: 7,
+                                           spacing: 100)
             let top: CGFloat = 16
             let height = size.height - top - 2
             let buckets = profile.activity(buckets: max(1, Int(size.width / 2)))
@@ -1943,13 +1993,10 @@ private struct DeveloperPerformanceDetails: View, Equatable {
 
     private func eventSummary(_ event: DeveloperPerformanceEvent) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 2).fill(event.category.color).frame(width: 10, height: 10)
-                Text(event.title).font(.system(size: 13, weight: .semibold)).textSelection(.enabled)
-            }
+            heading(event.category.color, event.title)
             if event.parent == nil, event.duration > DeveloperPerformanceProfile.longTask {
                 Label("Long task took \(time(event.duration)).", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Color(red: 0.85, green: 0.19, blue: 0.15))
+                    .foregroundStyle(DeveloperPerformanceView.longTaskColor)
             }
             if let interaction = profile.interactions.first(where: { $0.event == event.id }) {
                 interactionSummary(interaction)
@@ -2027,7 +2074,7 @@ private struct DeveloperPerformanceDetails: View, Equatable {
         VStack(alignment: .leading, spacing: 4) {
             if interaction.duration > DeveloperPerformanceProfile.longInteraction {
                 Label("Long interaction took \(time(interaction.duration)).", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Color(red: 0.85, green: 0.19, blue: 0.15))
+                    .foregroundStyle(DeveloperPerformanceView.longTaskColor)
             }
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
                 field("Interaction", interaction.type)
@@ -2078,11 +2125,7 @@ private struct DeveloperPerformanceDetails: View, Equatable {
     /// tooltipText, where it is, and its properties, as Chrome lists them.
     private func customSummary(_ item: DeveloperPerformanceExtensions.Summary) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 2).fill(DeveloperPerformanceView.extensionColor(item.color))
-                    .frame(width: 10, height: 10)
-                Text(item.title).font(.system(size: 13, weight: .semibold)).textSelection(.enabled)
-            }
+            heading(DeveloperPerformanceView.extensionColor(item.color), item.title)
             if let tooltip = item.tooltip { Text(tooltip).textSelection(.enabled) }
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
                 field("Type", item.kind)
@@ -2102,6 +2145,14 @@ private struct DeveloperPerformanceDetails: View, Equatable {
             }
         }
         .accessibilityIdentifier("developer-performance-extension-summary")
+    }
+
+    /// A Summary's title, by its colour's swatch.
+    private func heading(_ color: Color, _ title: String) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 10, height: 10)
+            Text(title).font(.system(size: 13, weight: .semibold)).textSelection(.enabled)
+        }
     }
 
     private func field(_ label: String, _ value: String) -> some View {
@@ -2147,16 +2198,7 @@ private struct DeveloperPerformanceDetails: View, Equatable {
     private var treeView: some View {
         let total = max(range.upperBound - range.lowerBound, .leastNonzeroMagnitude)
         return VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Text("Self time").frame(width: 110, alignment: .trailing)
-                Text("Total time").frame(width: 110, alignment: .trailing)
-                Text("Activity").padding(.leading, 12)
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(.secondary)
-            .frame(height: DeveloperToolsStyle.rowHeight)
-            .padding(.horizontal, DeveloperToolsStyle.gutter)
-            Divider()
+            columns(["Self time", "Total time"], width: 110)
             if nodes.isEmpty {
                 Text("No activity in this range").foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2171,19 +2213,33 @@ private struct DeveloperPerformanceDetails: View, Equatable {
         }
     }
 
+    /// A table's header: its time columns, `width` wide, then Activity.
+    @ViewBuilder private func columns(_ times: [String], width: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            ForEach(times, id: \.self) { Text($0).frame(width: width, alignment: .trailing) }
+            Text("Activity").padding(.leading, 12)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.secondary)
+        .frame(height: DeveloperToolsStyle.rowHeight)
+        .padding(.horizontal, DeveloperToolsStyle.gutter)
+        Divider()
+    }
+
     private func treeList(total: Double) -> some View {
         List(selection: $selectedNode) {
             OutlineGroup(nodes, children: \.outline) { node in
                 HStack(spacing: 0) {
                     share(node.selfTime, of: total).frame(width: 110, alignment: .trailing)
                     share(node.totalTime, of: total).frame(width: 110, alignment: .trailing)
-                    if node.isGroup {
-                        Image(systemName: "folder").font(.system(size: 9)).foregroundStyle(.secondary)
-                            .frame(width: 9, height: 9).padding(.leading, 12).padding(.trailing, 5)
-                    } else {
-                        RoundedRectangle(cornerRadius: 2).fill(node.category.color).frame(width: 9, height: 9)
-                            .padding(.leading, 12).padding(.trailing, 5)
+                    Group {
+                        if node.isGroup {
+                            Image(systemName: "folder").font(.system(size: 9)).foregroundStyle(.secondary)
+                        } else {
+                            RoundedRectangle(cornerRadius: 2).fill(node.category.color)
+                        }
                     }
+                    .frame(width: 9, height: 9).padding(.leading, 12).padding(.trailing, 5)
                     if !node.isGroup, let id = node.event, profile.shown.indices.contains(id),
                        let source = profile.shown[id].source {
                         // As Chrome's rows: the activity, then its script place as a link.
@@ -2255,17 +2311,7 @@ private struct DeveloperPerformanceDetails: View, Equatable {
 
     private var logView: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Text("Start time").frame(width: 80, alignment: .trailing)
-                Text("Self time").frame(width: 80, alignment: .trailing)
-                Text("Total time").frame(width: 80, alignment: .trailing)
-                Text("Activity").padding(.leading, 12)
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(.secondary)
-            .frame(height: DeveloperToolsStyle.rowHeight)
-            .padding(.horizontal, DeveloperToolsStyle.gutter)
-            Divider()
+            columns(["Start time", "Self time", "Total time"], width: 80)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(log) { event in
@@ -2293,6 +2339,20 @@ private struct DeveloperPerformanceDetails: View, Equatable {
     }
 }
 
+extension DeveloperPerformanceRuler {
+    /// The ruler's gridlines down `size`, each labelled at `labelY`.
+    static func draw(in context: inout GraphicsContext, window: DeveloperFlameWindow, size: CGSize, labelY: CGFloat,
+                     spacing: Double = 80) {
+        let width = Double(size.width)
+        for tick in ticks(in: window, width: width, spacing: spacing) {
+            let x = CGFloat(window.x(tick, width: width))
+            context.fill(Path(CGRect(x: x, y: 0, width: 0.5, height: size.height)), with: .color(DeveloperToolsStyle.rule))
+            context.draw(Text(label(tick)).font(.system(size: 9)).foregroundColor(.secondary),
+                         at: CGPoint(x: x + 3, y: labelY), anchor: .leading)
+        }
+    }
+}
+
 /// Scroll, pinch and key events for the Performance panel. SwiftUI on
 /// macOS 14 has no scroll-wheel or magnify gestures, and ⌘E is the
 /// system's Use Selection for Find, so they are taken from the window's
@@ -2306,18 +2366,13 @@ final class DeveloperPerformanceInput {
 
     func start() {
         guard monitors.isEmpty else { return }
-        if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify], handler: { [weak self] event in
-            let handled = MainActor.assumeIsolated { self?.scroll?(event) ?? false }
-            return handled ? nil : event
-        }) {
-            monitors.append(monitor)
+        let wheel = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify]) { [weak self] event in
+            MainActor.assumeIsolated { self?.scroll?(event) ?? false } ? nil : event
         }
-        if let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
-            let handled = MainActor.assumeIsolated { self?.key?(event) ?? false }
-            return handled ? nil : event
-        }) {
-            monitors.append(monitor)
+        let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            MainActor.assumeIsolated { self?.key?(event) ?? false } ? nil : event
         }
+        monitors = [wheel, keys].compactMap { $0 }
     }
 
     func stop() {

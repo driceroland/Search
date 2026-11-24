@@ -9,10 +9,10 @@ import FoundationModels
 // selected element, a network request or a Console message, opened from
 // Elements' and Network's "Ask AI" and the Console's "Understand this error".
 //
-// The model only reads the context DeveloperAIContextText writes for it.
-// Chrome's agent can also run JavaScript in the inspected page; that is
-// deliberately out of scope here. The session is made without tools, and
-// nothing it answers is evaluated, so it can't change or probe the page.
+// The model reads the context DeveloperAIContextText writes for it, and,
+// as Chrome's agent does, can ask to run JavaScript in the inspected page
+// through one tool. Each script is shown in the chat first and runs only
+// when the user chooses Run; declined, stopped or a new chat, it never runs.
 
 /// Whether AI assistance can answer, and if not, why, in Chrome's manner.
 enum DeveloperAIAvailability: Equatable {
@@ -57,19 +57,49 @@ enum DeveloperAIAvailability: Equatable {
 }
 
 #if canImport(FoundationModels)
-/// One chat's model session. Made with instructions and no tools: it can
-/// only read what it is sent.
+/// The model's one tool: JavaScript run in the inspected page, each script
+/// only once the user approves it in the chat.
+@available(macOS 26.0, *)
+private struct DeveloperAIRunJavaScript: Tool {
+    let name = "runJavaScript"
+    let description = """
+        Runs JavaScript in the inspected page and returns the value of its last expression, \
+        for reading the page's live state: the DOM, computed styles, globals. The app asks the \
+        user to approve the code, so call this tool instead of showing code or asking first.
+        """
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Short, read-only JavaScript to run in the page. The value of its last expression is returned; await is allowed.")
+        var code: String
+    }
+
+    let run: @MainActor @Sendable (String) async -> String
+
+    func call(arguments: Arguments) async throws -> String {
+        await run(arguments.code)
+    }
+}
+
+/// One chat's model session: instructions and the run-JavaScript tool,
+/// which asks the user before anything runs.
 @available(macOS 26.0, *)
 @MainActor
 private final class DeveloperAIEngine {
-    private var session = DeveloperAIEngine.make()
+    private let tool: DeveloperAIRunJavaScript
+    private var session: LanguageModelSession
 
-    private static func make() -> LanguageModelSession {
-        LanguageModelSession(instructions: DeveloperAIContextText.instructions)
+    init(run: @escaping @MainActor @Sendable (String) async -> String) {
+        tool = DeveloperAIRunJavaScript(run: run)
+        session = Self.make(tool)
+    }
+
+    private static func make(_ tool: DeveloperAIRunJavaScript) -> LanguageModelSession {
+        LanguageModelSession(tools: [tool], instructions: DeveloperAIContextText.instructions)
     }
 
     /// Forgets the conversation, for a chat that outgrew the context window.
-    func reset() { session = Self.make() }
+    func reset() { session = Self.make(tool) }
 
     /// Streams the answer, each snapshot the whole answer so far.
     func stream(_ prompt: String, update: (String) -> Void) async throws {
@@ -118,6 +148,17 @@ final class DeveloperAIAssistance: ObservableObject {
         let fromUser: Bool
         var text: String
         var failed = false
+        /// A script the model asked to run, shown for approval.
+        var script: Script?
+    }
+
+    /// JavaScript the model asked to run in the page, and what became of it.
+    struct Script: Equatable {
+        enum State: Equatable { case pending, running, ran, threw, declined }
+        let code: String
+        var state = State.pending
+        /// The value or the error, as the model was told it.
+        var result = ""
     }
 
     @Published private(set) var subject: DeveloperAISubject?
@@ -134,6 +175,8 @@ final class DeveloperAIAssistance: ObservableObject {
     private var toldSubject: DeveloperAISubject?
     /// Characters the model's session has read and written this chat.
     private var spent = 0
+    /// Scripts waiting on Run or Don't run, by their message.
+    private var approvals: [UUID: CheckedContinuation<Bool, Never>] = [:]
 
     init(session: DeveloperToolsSession) {
         self.session = session
@@ -242,9 +285,7 @@ final class DeveloperAIAssistance: ObservableObject {
 
     /// The new-chat button: the conversation forgotten, the chip kept.
     func newChat() {
-        task?.cancel()
-        task = nil
-        responding = false
+        stop()
         messages = []
         engine = nil
         toldSubject = nil
@@ -252,6 +293,7 @@ final class DeveloperAIAssistance: ObservableObject {
     }
 
     func stop() {
+        declineWaiting()
         task?.cancel()
         task = nil
         responding = false
@@ -291,10 +333,17 @@ final class DeveloperAIAssistance: ObservableObject {
     private func answer(_ question: String, about subject: DeveloperAISubject?, into id: UUID) async {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *) {
-            let engine = (self.engine as? DeveloperAIEngine) ?? DeveloperAIEngine()
+            let engine = (self.engine as? DeveloperAIEngine) ?? DeveloperAIEngine { [weak self] code in
+                await self?.requestRun(code) ?? Self.declined
+            }
             self.engine = engine
             var retried = false
             var includeContext = subject.map { !$0.same(as: toldSubject) } ?? false
+            func restart() {
+                engine.reset()
+                spent = 0
+                toldSubject = nil
+            }
             while true {
                 var context: String?
                 if includeContext, let subject { context = await gather(subject) }
@@ -303,9 +352,7 @@ final class DeveloperAIAssistance: ObservableObject {
                 // The conversation so far plus this turn would outgrow the
                 // window: start the model afresh, told the context again.
                 if DeveloperAIContextText.needsFreshSession(spent: spent, next: prompt.count), spent > 0 {
-                    engine.reset()
-                    spent = 0
-                    toldSubject = nil
+                    restart()
                     if !includeContext, subject != nil { includeContext = true; continue }
                 }
                 do {
@@ -325,9 +372,7 @@ final class DeveloperAIAssistance: ObservableObject {
                     // context again, asked once more, as Chrome starts over.
                     if DeveloperAIEngine.overflowed(error), !retried {
                         retried = true
-                        engine.reset()
-                        spent = 0
-                        toldSubject = nil
+                        restart()
                         includeContext = subject != nil
                         continue
                     }
@@ -339,6 +384,112 @@ final class DeveloperAIAssistance: ObservableObject {
         #endif
         fail(id, DeveloperAIAvailability.unsupportedSystem.message ?? "")
     }
+
+    // MARK: Running JavaScript
+
+    static let declined = "The user chose not to run this code. Answer without it, and don't ask to run it again."
+
+    /// Whether a script is waiting on the user.
+    var awaitingApproval: Bool { !approvals.isEmpty }
+
+    /// The tool's call: the script shown in the chat, above the answer being
+    /// written, and run in the page only once the user chooses Run.
+    func requestRun(_ code: String) async -> String {
+        let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else { return "No code was given." }
+        guard responding, !Task.isCancelled, let session, !session.isClosed, let web = session.web else { return Self.declined }
+        let navigation = session.navigationID
+        let address = web.url
+        let target = session.runtimeTargetID
+        let message = Message(fromUser: false, text: "", script: Script(code: code))
+        let id = message.id
+        let answering = messages.last.map { !$0.fromUser && $0.script == nil } ?? false
+        messages.insert(message, at: answering ? messages.count - 1 : messages.count)
+        let approved = await withCheckedContinuation { approvals[id] = $0 }
+        guard approved, responding, !Task.isCancelled, !session.isClosed,
+              session.web === web, web.url == address, session.navigationID == navigation,
+              session.runtimeTargetID == target else {
+            setScript(id) { $0.state = .declined }
+            return Self.declined
+        }
+        setScript(id) { $0.state = .running }
+        let outcome = await Self.run(code, in: session, target: target)
+        setScript(id) {
+            $0.state = outcome.threw ? .threw : .ran
+            $0.result = outcome.text
+        }
+        return outcome.threw ? "The code threw: " + outcome.text : "Result: " + outcome.text
+    }
+
+    /// Marks a response underway without the model, so tests can drive the
+    /// tool's approval gate.
+    func beginResponseForTesting() { responding = true }
+
+    /// Run or Don't run, on a script's card.
+    func decide(_ id: UUID, run: Bool) {
+        approvals.removeValue(forKey: id)?.resume(returning: run)
+    }
+
+    /// Stop and New chat: nothing waiting runs.
+    private func declineWaiting() {
+        let waiting = approvals
+        approvals = [:]
+        for continuation in waiting.values { continuation.resume(returning: false) }
+    }
+
+    private func setScript(_ id: UUID, _ change: (inout Script) -> Void) {
+        guard let index = messages.firstIndex(where: { $0.id == id }), var script = messages[index].script else { return }
+        change(&script)
+        messages[index].script = script
+    }
+
+    /// Evaluates `code` in the page as the Console would (top-level await, a
+    /// bare object literal), its value read back as JSON.
+    private static func run(_ code: String, in session: DeveloperToolsSession, target: String?) async -> (text: String, threw: Bool) {
+        let prepared = DeveloperConsoleSyntax.prepare(code, paused: false)
+        let objectGroup = "search-ai-assistance-" + UUID().uuidString
+        defer {
+            Task { _ = try? await session.command("Runtime.releaseObjectGroup", ["objectGroup": objectGroup], targetID: target) }
+        }
+        do {
+            var reply = try await session.command("Runtime.evaluate", [
+                "expression": prepared.expression, "objectGroup": objectGroup,
+                "includeCommandLineAPI": true, "returnByValue": !prepared.awaited,
+            ], targetID: target)
+            if prepared.awaited, reply["wasThrown"] as? Bool != true,
+               let promise = (reply["result"] as? [String: Any])?["objectId"] as? String {
+                reply = try await session.command("Runtime.awaitPromise", [
+                    "promiseObjectId": promise, "returnByValue": true,
+                ], targetID: target)
+            }
+            return outcome(reply)
+        } catch {
+            return (error.localizedDescription, true)
+        }
+    }
+
+    /// A Runtime.evaluate reply as the model reads it: the value as JSON, or
+    /// the exception's description; trimmed to fit the context window.
+    static func outcome(_ reply: [String: Any]) -> (text: String, threw: Bool) {
+        let result = reply["result"] as? [String: Any] ?? [:]
+        let threw = reply["wasThrown"] as? Bool == true
+        let text: String
+        if threw {
+            text = result["description"] as? String ?? "Error"
+        } else if result["type"] as? String == "undefined" {
+            text = "undefined"
+        } else if let value = result["value"], !(value is NSNull) || result["subtype"] as? String == "null",
+                  let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys]),
+                  let json = String(data: data, encoding: .utf8) {
+            text = json
+        } else {
+            text = result["description"] as? String ?? "undefined"
+        }
+        return (DeveloperAIContextText.trim(text, to: resultBudget), threw)
+    }
+
+    /// Characters of a script's result the model is told.
+    static let resultBudget = 1_500
 
     private func update(_ id: UUID, _ text: String) {
         guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
@@ -397,14 +548,16 @@ struct DeveloperAIAssistanceView: View {
             DeveloperPanelIcon(symbol: "square.and.pencil", title: "New chat") { assistance.newChat() }
                 .disabled(assistance.messages.isEmpty)
             Spacer(minLength: 0)
-            DeveloperPanelIcon(symbol: "gearshape", title: "Settings") {
-                shell.settingsSection = .preferences
-                shell.settingsShown = true
-            }
+            DeveloperPanelIcon(symbol: "gearshape", title: "Settings", action: openSettings)
         }
         .padding(.horizontal, DeveloperToolsStyle.gutter)
         .frame(height: DeveloperToolsStyle.toolbarHeight)
         .background(DeveloperToolsStyle.chrome)
+    }
+
+    private func openSettings() {
+        shell.settingsSection = .preferences
+        shell.settingsShown = true
     }
 
     private func unavailable(_ reason: String, _ availability: DeveloperAIAvailability) -> some View {
@@ -416,11 +569,7 @@ struct DeveloperAIAssistanceView: View {
                 .frame(maxWidth: 360)
             switch availability {
             case .turnedOff:
-                Button("Open settings") {
-                    shell.settingsSection = .preferences
-                    shell.settingsShown = true
-                }
-                .buttonStyle(PillStyle())
+                Button("Open settings", action: openSettings).buttonStyle(PillStyle())
             case .modelNotReady:
                 Button("Try again") { recheck += 1 }.buttonStyle(PillStyle())
             default:
@@ -442,7 +591,9 @@ struct DeveloperAIAssistanceView: View {
                     } else {
                         ForEach(assistance.messages) { message in
                             DeveloperAIMessageView(message: message,
-                                                   streaming: assistance.responding && message.id == assistance.messages.last?.id)
+                                                   streaming: assistance.responding && message.id == assistance.messages.last?.id,
+                                                   waiting: assistance.awaitingApproval,
+                                                   decide: { assistance.decide(message.id, run: $0) })
                                 .id(message.id)
                         }
                     }
@@ -451,6 +602,9 @@ struct DeveloperAIAssistanceView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .onChange(of: assistance.messages.last?.text) { _, _ in
+                if let last = assistance.messages.last?.id { reader.scrollTo(last, anchor: .bottom) }
+            }
+            .onChange(of: assistance.messages.count) { _, _ in
                 if let last = assistance.messages.last?.id { reader.scrollTo(last, anchor: .bottom) }
             }
         }
@@ -533,8 +687,19 @@ struct DeveloperAIAssistanceView: View {
 private struct DeveloperAIMessageView: View {
     let message: DeveloperAIAssistance.Message
     let streaming: Bool
+    /// A script waits on the user, so the answer below it is paused.
+    let waiting: Bool
+    let decide: (Bool) -> Void
 
     var body: some View {
+        if let script = message.script {
+            DeveloperAIScriptView(script: script, decide: decide)
+        } else {
+            turn
+        }
+    }
+
+    private var turn: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(message.fromUser ? "You" : "AI assistance")
                 .font(.system(size: 10.5, weight: .semibold))
@@ -542,7 +707,7 @@ private struct DeveloperAIMessageView: View {
             if !message.fromUser && message.text.isEmpty && streaming {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text("Thinking…").foregroundStyle(.secondary)
+                    Text(waiting ? "Waiting for you to run or skip the code…" : "Thinking…").foregroundStyle(.secondary)
                 }
             } else {
                 Text(rendered)
@@ -560,5 +725,66 @@ private struct DeveloperAIMessageView: View {
         guard !message.fromUser, !message.failed else { return AttributedString(message.text) }
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         return (try? AttributedString(markdown: message.text, options: options)) ?? AttributedString(message.text)
+    }
+}
+
+/// A script the model asked to run: the code, Run and Don't run while it
+/// waits, then what it returned.
+private struct DeveloperAIScriptView: View {
+    let script: DeveloperAIAssistance.Script
+    let decide: (Bool) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: "curlybraces")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(.secondary)
+            ScrollView(.horizontal) {
+                Text(script.code)
+                    .font(DeveloperToolsStyle.code)
+                    .textSelection(.enabled)
+                    .fixedSize()
+                    .padding(6)
+            }
+            .frame(maxHeight: 160)
+            .background(DeveloperToolsStyle.raised, in: RoundedRectangle(cornerRadius: DeveloperToolsStyle.controlRadius))
+            switch script.state {
+            case .pending:
+                Text("This code runs in the inspected page and can read or change it.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+                    Button("Run") { decide(true) }
+                        .buttonStyle(PillStyle())
+                        .keyboardShortcut(.return, modifiers: .command)
+                    Button("Don’t run") { decide(false) }
+                        .buttonStyle(PillStyle())
+                }
+            case .running:
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Running…").foregroundStyle(.secondary)
+                }
+            case .ran, .threw:
+                Text(script.result)
+                    .font(DeveloperToolsStyle.code)
+                    .foregroundStyle(script.state == .threw ? ConsoleTheme.errorText : Palette.ink)
+                    .textSelection(.enabled)
+                    .lineLimit(12)
+            case .declined:
+                Text("Not run.").foregroundStyle(.secondary)
+            }
+        }
+        .padding(8)
+        .overlay(RoundedRectangle(cornerRadius: DeveloperToolsStyle.controlRadius).strokeBorder(Palette.hairline))
+    }
+
+    private var title: String {
+        switch script.state {
+        case .pending: "Run this JavaScript?"
+        case .running, .ran: "JavaScript"
+        case .threw: "JavaScript threw"
+        case .declined: "JavaScript (not run)"
+        }
     }
 }

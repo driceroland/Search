@@ -44,6 +44,7 @@ enum SourceLanguage: Equatable {
     }
 
     var canPrettyPrint: Bool { self != .plain }
+    var isJavaScript: Bool { if case .javascript = self { return true } else { return false } }
 }
 
 enum SourceTokenKind: UInt8, CaseIterable {
@@ -132,6 +133,33 @@ enum SourceLexing {
     }
 
     @inline(__always) static func isIDPart(_ c: UInt16) -> Bool { isIDStart(c) || isDigit(c) }
+
+    /// Over `count` ascending values: the last index whose value is at most
+    /// `target` (0 when none is).
+    static func lastIndex(_ count: Int, atMost target: Int, _ value: (Int) -> Int) -> Int {
+        var low = 0, high = count - 1
+        while low < high {
+            let mid = (low + high + 1) / 2
+            if value(mid) <= target { low = mid } else { high = mid - 1 }
+        }
+        return low
+    }
+
+    /// Over `count` ascending values: the first index whose value is past
+    /// `target` (`count` when none is).
+    static func firstIndex(_ count: Int, past target: Int, _ value: (Int) -> Int) -> Int {
+        var low = 0, high = count
+        while low < high {
+            let mid = (low + high) / 2
+            if value(mid) <= target { low = mid + 1 } else { high = mid }
+        }
+        return low
+    }
+
+    /// The 0-based line an offset is on.
+    static func lineIndex(_ offset: Int, in starts: [Int]) -> Int {
+        lastIndex(starts.count, atMost: offset) { starts[$0] }
+    }
 
     /// Where every line starts, counting line breaks the way NSTextView
     /// does: \n, \r, \r\n, U+2028, U+2029 and U+0085.
@@ -481,7 +509,7 @@ struct JSLexer {
         case UInt16(ascii: "!"):
             if d == eq { return e == eq ? 3 : 2 }
             return 1
-        case UInt16(ascii: "<"):
+        case UInt16(ascii: "<"), UInt16(ascii: "*"), UInt16(ascii: "&"), UInt16(ascii: "|"):
             if d == c { return e == eq ? 3 : 2 }
             return d == eq ? 2 : 1
         case UInt16(ascii: ">"):
@@ -489,12 +517,6 @@ struct JSLexer {
                 if e == c { return at(3) == eq ? 4 : 3 }
                 return e == eq ? 3 : 2
             }
-            return d == eq ? 2 : 1
-        case UInt16(ascii: "*"):
-            if d == c { return e == eq ? 3 : 2 }
-            return d == eq ? 2 : 1
-        case UInt16(ascii: "&"), UInt16(ascii: "|"):
-            if d == c { return e == eq ? 3 : 2 }
             return d == eq ? 2 : 1
         case UInt16(ascii: "+"), UInt16(ascii: "-"):
             return d == c || d == eq ? 2 : 1
@@ -896,14 +918,14 @@ enum SourceHighlighter {
                     }
                     continue
                 }
+                var kind = SourceTokenKind.atom
                 if prelude {
+                    // A media feature's name, before its colon.
                     var j = k
                     while j < end, SourceLexing.isSpace(u[j]) { j += 1 }
-                    let isFeature = j < end && u[j] == UInt16(ascii: ":")
-                    tokens.append(SourceToken(start: s, length: length, kind: isFeature ? .property : .atom))
-                } else {
-                    tokens.append(SourceToken(start: s, length: length, kind: .atom))
+                    if j < end && u[j] == UInt16(ascii: ":") { kind = .property }
                 }
+                tokens.append(SourceToken(start: s, length: length, kind: kind))
                 continue
             }
             k += 1
@@ -992,6 +1014,24 @@ enum SourceHighlighter {
         }
     }
 
+    /// The offset after the `>` that ends a tag, past quoted values, or the end.
+    static func tagEnd(_ u: UnsafeBufferPointer<UInt16>, from k: Int) -> Int {
+        var j = k
+        var quote: UInt16 = 0
+        while j < u.count {
+            let c = u[j]
+            if quote != 0 {
+                if c == quote { quote = 0 }
+            } else if c == UInt16(ascii: "\"") || c == UInt16(ascii: "'") {
+                quote = c
+            } else if c == UInt16(ascii: ">") {
+                return j + 1
+            }
+            j += 1
+        }
+        return u.count
+    }
+
     /// Where `</name` starts, after `k`, in any case.
     static func rawTextEnd(_ u: UnsafeBufferPointer<UInt16>, from k: Int, name: String) -> Int {
         let target = Array(name.utf16)
@@ -1022,7 +1062,7 @@ enum HTMLScriptKind {
     }
 }
 
-fileprivate extension UInt16 {
+extension UInt16 {
     /// A code unit for an ASCII character, as UInt8(ascii:) is for bytes.
     @inline(__always) init(ascii scalar: Unicode.Scalar) { self = UInt16(truncatingIfNeeded: scalar.value) }
 }

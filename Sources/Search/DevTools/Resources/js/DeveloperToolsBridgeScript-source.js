@@ -417,7 +417,7 @@
         return networkCall(target, "interceptContinue", {requestId, stage: requestStage});
     }
 
-    function isConditionedRequest(message, target) {
+    function isConditionedRequest(message, target, release = continueRequest) {
         if (!condition || condition.target !== target ||
             message?.method !== "Network.requestIntercepted")
             return false;
@@ -434,14 +434,23 @@
                 .catch(() => continueRequest(target, requestId)).catch(() => {});
         } else if (mode.held.size >= 128) {
             // A busy page should not leave a large backlog of paused loads.
-            continueRequest(target, requestId).catch(() => {});
+            release(target, requestId, request).catch(() => {});
         } else if (!mode.held.has(requestId)) {
-            mode.held.set(requestId, setTimeout(() => {
+            const resume = () => release(target, requestId, request);
+            const timer = setTimeout(() => {
                 mode.held.delete(requestId);
-                continueRequest(target, requestId).catch(() => {});
-            }, mode.latency));
+                resume().catch(() => {});
+            }, mode.latency);
+            mode.held.set(requestId, {timer, resume});
         }
         return true;
+    }
+
+    // The page-wide condition on a target, for the Network tools' own
+    // interception, which releases requests itself and has to keep it.
+    function conditionFor(target) {
+        const mode = condition;
+        return mode && mode.target === target ? {latency: mode.latency, offline: mode.offline} : null;
     }
 
     async function clearConditions() {
@@ -450,10 +459,10 @@
         if (!mode)
             return;
         const requests = [];
-        for (const [requestId, timer] of mode.held) {
+        for (const {timer, resume} of mode.held.values()) {
             clearTimeout(timer);
             if (!mode.target.isDestroyed)
-                requests.push(continueRequest(mode.target, requestId));
+                requests.push(resume());
         }
         mode.held.clear();
         if (mode.target.isDestroyed)
@@ -865,6 +874,7 @@
                 method: typeof request.method === "string" ? request.method : "GET",
                 requestHeaders: headerList(request.headers),
                 postData: typeof request.postData === "string" ? request.postData.slice(0, 262144) : null,
+                referrerPolicy: typeof request.referrerPolicy === "string" ? request.referrerPolicy : null,
                 initiator: data.initiator ? {
                     type: data.initiator.type ?? null, url: data.initiator.url ?? null,
                     lineNumber: data.initiator.lineNumber ?? null,
@@ -1198,7 +1208,7 @@
     }
 
     globalThis.perchInspector = Object.freeze({
-        command, supports, drain, setDomains, capabilities, networkConditions, nodePath,
+        command, supports, drain, setDomains, capabilities, networkConditions, conditionFor, isConditionedRequest, nodePath,
         requestDetails, clearRequestDetails: () => details.clear(), setStyleText, eventListeners,
         scriptLocation, pauseOnExceptions, workers, setWorkerBreakpoints, mark,
     });

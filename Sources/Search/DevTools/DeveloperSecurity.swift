@@ -22,21 +22,6 @@ enum DeveloperSecurity {
         var networkProtocol: String?
         var cipher: String?
         var certificate: ResponseCertificate?
-
-        init(networkProtocol: String? = nil, cipher: String? = nil, certificate: ResponseCertificate? = nil) {
-            self.networkProtocol = networkProtocol
-            self.cipher = cipher
-            self.certificate = certificate
-        }
-
-        /// The bridge's `security` object (DeveloperToolsBridgeScript-source.js); nil when it has nothing.
-        init?(_ raw: [String: Any]?) {
-            guard let raw else { return nil }
-            networkProtocol = (raw["protocol"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            cipher = (raw["cipher"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            certificate = ResponseCertificate(raw["certificate"] as? [String: Any])
-            if networkProtocol == nil, cipher == nil, certificate == nil { return nil }
-        }
     }
 
     /// WebKit's `Security.Certificate`: its dates are seconds since 1970.
@@ -45,22 +30,6 @@ enum DeveloperSecurity {
         var validFrom: Date?
         var validUntil: Date?
         var names: [String]
-
-        init(subject: String?, validFrom: Date?, validUntil: Date?, names: [String]) {
-            self.subject = subject
-            self.validFrom = validFrom
-            self.validUntil = validUntil
-            self.names = names
-        }
-
-        init?(_ raw: [String: Any]?) {
-            guard let raw else { return nil }
-            subject = raw["subject"] as? String
-            validFrom = (raw["validFrom"] as? Double).map { Date(timeIntervalSince1970: $0) }
-            validUntil = (raw["validUntil"] as? Double).map { Date(timeIntervalSince1970: $0) }
-            names = (raw["dnsNames"] as? [String] ?? []) + (raw["ipAddresses"] as? [String] ?? [])
-            if subject == nil, validFrom == nil, validUntil == nil, names.isEmpty { return nil }
-        }
     }
 
     /// One origin the page loaded from, as a sidebar row.
@@ -328,4 +297,26 @@ enum DeveloperSecurity {
         formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
         return formatter
     }()
+}
+
+extension DeveloperSecurity.ResponseSecurity {
+    /// The bridge's `security` object (DeveloperToolsBridgeScript-source.js); nil when it has nothing.
+    init?(_ raw: [String: Any]?) {
+        guard let raw else { return nil }
+        networkProtocol = (raw["protocol"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        cipher = (raw["cipher"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        certificate = DeveloperSecurity.ResponseCertificate(raw["certificate"] as? [String: Any])
+        if networkProtocol == nil, cipher == nil, certificate == nil { return nil }
+    }
+}
+
+extension DeveloperSecurity.ResponseCertificate {
+    init?(_ raw: [String: Any]?) {
+        guard let raw else { return nil }
+        subject = raw["subject"] as? String
+        validFrom = (raw["validFrom"] as? Double).map { Date(timeIntervalSince1970: $0) }
+        validUntil = (raw["validUntil"] as? Double).map { Date(timeIntervalSince1970: $0) }
+        names = (raw["dnsNames"] as? [String] ?? []) + (raw["ipAddresses"] as? [String] ?? [])
+        if subject == nil, validFrom == nil, validUntil == nil, names.isEmpty { return nil }
+    }
 }

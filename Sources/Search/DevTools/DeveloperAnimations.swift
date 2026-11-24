@@ -39,20 +39,10 @@ struct DeveloperAnimationEffect: Equatable {
     var fillMode: String?
     var keyframes: [Keyframe] = []
 
-    init(startDelay: Double = 0, endDelay: Double = 0, iterationCount: Double = 1, iterationStart: Double = 0,
-         iterationDuration: Double = 0, timingFunction: String? = nil, playbackDirection: String? = nil,
-         fillMode: String? = nil, keyframes: [Keyframe] = []) {
-        self.startDelay = startDelay
-        self.endDelay = endDelay
-        self.iterationCount = iterationCount
-        self.iterationStart = iterationStart
-        self.iterationDuration = iterationDuration
-        self.timingFunction = timingFunction
-        self.playbackDirection = playbackDirection
-        self.fillMode = fillMode
-        self.keyframes = keyframes
-    }
+    var infinite: Bool { !iterationCount.isFinite }
+}
 
+extension DeveloperAnimationEffect {
     /// From the protocol's object. WebKit sends -1 for an endless count
     /// (the frontend script turns Infinity into -1 on its way here too).
     init(raw: [String: Any]) {
@@ -76,8 +66,6 @@ struct DeveloperAnimationEffect: Equatable {
             return Keyframe(offset: offset, easing: frame["easing"] as? String, style: frame["style"] as? String)
         }
     }
-
-    var infinite: Bool { !iterationCount.isFinite }
 }
 
 /// One animation the page started, as the drawer keeps it.
@@ -86,8 +74,8 @@ struct DeveloperAnimation: Identifiable, Equatable {
 
     let id: String
     var name: String?
-    var kind: Kind
-    var effect: DeveloperAnimationEffect
+    var kind = Kind.script
+    var effect = DeveloperAnimationEffect()
     /// When the drawer heard of it, in milliseconds since 1970; what
     /// animations are grouped by.
     let arrival: Double
@@ -138,15 +126,12 @@ struct DeveloperAnimation: Identifiable, Equatable {
             || (label?.contains("::view-transition") ?? false)
     }
 
-    init(id: String, name: String? = nil, kind: Kind = .script, effect: DeveloperAnimationEffect = .init(),
-         arrival: Double) {
-        self.id = id
-        self.name = name
-        self.kind = kind
-        self.effect = effect
-        self.arrival = arrival
-    }
+    /// The row's name: the @keyframes name, the transitioned property, or
+    /// the script's own name for it.
+    var title: String { name ?? (kind == .cssTransition ? "transition" : "(anonymous)") }
+}
 
+extension DeveloperAnimation {
     init?(raw: [String: Any], arrival: Double) {
         guard let id = raw["animationId"] as? String, !id.isEmpty else { return nil }
         let animationName = (raw["cssAnimationName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
@@ -156,10 +141,6 @@ struct DeveloperAnimation: Identifiable, Equatable {
                   effect: (raw["effect"] as? [String: Any]).map(DeveloperAnimationEffect.init(raw:)) ?? .init(),
                   arrival: arrival)
     }
-
-    /// The row's name: the @keyframes name, the transitioned property, or
-    /// the script's own name for it.
-    var title: String { name ?? (kind == .cssTransition ? "transition" : "(anonymous)") }
 }
 
 /// Animations started together (within about a frame), as Chrome's
@@ -175,13 +156,6 @@ struct DeveloperAnimationGroup: Identifiable, Equatable {
     let start: Double
     var animations: [DeveloperAnimation]
     var kind = Kind.time
-
-    init(id: String, start: Double, animations: [DeveloperAnimation], kind: Kind = .time) {
-        self.id = id
-        self.start = start
-        self.animations = animations
-        self.kind = kind
-    }
 
     /// The label Chrome gives a group that isn't timed: "Scroll-driven",
     /// "View transition".
@@ -213,15 +187,7 @@ enum DeveloperAnimationTimeline {
     /// The shortest timeline, so a 0ms transition still has a bar.
     static let minimumDuration = 100.0
 
-    static func number(_ value: Any?) -> Double? {
-        switch value {
-        case let number as NSNumber: return number.doubleValue
-        case let string as String:
-            if string.lowercased() == "infinity" { return .infinity }
-            return Double(string)
-        default: return nil
-        }
-    }
+    static func number(_ value: Any?) -> Double? { DeveloperProtocolValue.numeric(value) }
 
     // MARK: Grouping
 
@@ -571,14 +537,8 @@ final class DeveloperAnimations: ObservableObject {
     /// quarter second; while it's hidden the frontend keeps them.
     func start() {
         guard poll == nil else { return }
-        poll = Task { [weak self] in
-            // Ends with the model, not only on stop().
-            while !Task.isCancelled {
-                guard let self else { return }
-                await self.tick()
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-        }
+        // Ends with the model, not only on stop().
+        poll = developerPoll(every: .milliseconds(250)) { [weak self] in await self?.tick() != nil }
     }
 
     func stop() {
@@ -622,7 +582,7 @@ final class DeveloperAnimations: ObservableObject {
             } catch {
                 listening = false
                 enabledTarget = .some(target)
-                throw DeveloperAnimationsError("WebKit can’t report this page’s animations.")
+                throw DeveloperPanelError("WebKit can’t report this page’s animations.")
             }
         }
         enabledTarget = .some(target)
@@ -726,13 +686,19 @@ final class DeveloperAnimations: ObservableObject {
         let target = session.domTargetID
         Task { [weak self] in
             guard let reply = try? await session.command("Animation.requestEffect", ["animationId": id], targetID: target),
-                  let raw = reply["effect"] as? [String: Any],
-                  let self, let at = self.animations.firstIndex(where: { $0.id == id }) else { return }
-            let effect = DeveloperAnimationEffect(raw: raw)
-            guard effect != self.animations[at].effect else { return }
-            self.animations[at].effect = effect
-            self.groups = self.regroup(self.animations)
+                  let raw = reply["effect"] as? [String: Any] else { return }
+            self?.update(id) { $0.effect = DeveloperAnimationEffect(raw: raw) }
         }
+    }
+
+    /// Changes one animation, regrouping if that changed it.
+    private func update(_ id: String, _ change: (inout DeveloperAnimation) -> Void) {
+        guard let at = animations.firstIndex(where: { $0.id == id }) else { return }
+        var animation = animations[at]
+        change(&animation)
+        guard animation != animations[at] else { return }
+        animations[at] = animation
+        groups = regroup(animations)
     }
 
     /// The animation's element: its node id, for Reveal in Elements, and
@@ -752,19 +718,16 @@ final class DeveloperAnimations: ObservableObject {
             let node = bare ?? (effectTarget?["nodeId"] as? NSNumber)?.intValue
             let pseudo = effectTarget?["pseudoId"] as? String
             let value = try? await self?.call(id, Self.describeFunction, arguments: [holdIfNeeded && paused, holdIfNeeded ? rate : 1])
-            guard let self, let at = self.animations.firstIndex(where: { $0.id == id }) else { return }
-            var animation = self.animations[at]
-            animation.node = node.flatMap { $0 > 0 ? $0 : nil }
-            animation.pseudo = pseudo
-            animation.scrollTimeline = DeveloperAnimationTimeline.scrollTimeline((value as? [String: Any])?["timeline"])
-            if let label = (value as? [String: Any])?["label"] as? String, !label.isEmpty {
-                animation.label = label
-            } else if let node, let name = session.nodes[node]?.name {
-                animation.label = name.lowercased() + (pseudo.map { "::" + $0 } ?? "")
+            self?.update(id) { animation in
+                animation.node = node.flatMap { $0 > 0 ? $0 : nil }
+                animation.pseudo = pseudo
+                animation.scrollTimeline = DeveloperAnimationTimeline.scrollTimeline((value as? [String: Any])?["timeline"])
+                if let label = (value as? [String: Any])?["label"] as? String, !label.isEmpty {
+                    animation.label = label
+                } else if let node, let name = session.nodes[node]?.name {
+                    animation.label = name.lowercased() + (pseudo.map { "::" + $0 } ?? "")
+                }
             }
-            guard animation != self.animations[at] else { return }
-            self.animations[at] = animation
-            self.groups = self.regroup(self.animations)
         }
     }
 
@@ -792,7 +755,7 @@ final class DeveloperAnimations: ObservableObject {
                     "arguments": arguments.map { ["value": $0] }, "returnByValue": true,
                 ], targetID: target)
                 if reply["wasThrown"] as? Bool == true {
-                    throw DeveloperAnimationsError(((reply["result"] as? [String: Any])?["description"] as? String) ?? "The animation refused.")
+                    throw DeveloperPanelError(((reply["result"] as? [String: Any])?["description"] as? String) ?? "The animation refused.")
                 }
                 return (reply["result"] as? [String: Any])?["value"]
             } catch {
@@ -893,14 +856,11 @@ final class DeveloperAnimations: ObservableObject {
         Task { [weak self] in
             do {
                 let value = try await self?.call(id, Self.retimeFunction, arguments: [delay, duration])
-                guard let self, let timing = value as? [String: Any],
-                      let index = self.animations.firstIndex(where: { $0.id == id }) else { return }
-                var effect = self.animations[index].effect
-                if let set = DeveloperAnimationTimeline.number(timing["delay"]) { effect.startDelay = max(0, set) }
-                if let set = DeveloperAnimationTimeline.number(timing["duration"]) { effect.iterationDuration = max(0, set) }
-                guard effect != self.animations[index].effect else { return }
-                self.animations[index].effect = effect
-                self.groups = self.regroup(self.animations)
+                guard let timing = value as? [String: Any] else { return }
+                self?.update(id) { animation in
+                    if let set = DeveloperAnimationTimeline.number(timing["delay"]) { animation.effect.startDelay = max(0, set) }
+                    if let set = DeveloperAnimationTimeline.number(timing["duration"]) { animation.effect.iterationDuration = max(0, set) }
+                }
             } catch {
                 self?.problem = error.localizedDescription
                 self?.requestEffect(id)
@@ -1022,10 +982,4 @@ final class DeveloperAnimations: ObservableObject {
             this.currentTime = Math.max(0, time);
         }
         """
-}
-
-struct DeveloperAnimationsError: LocalizedError {
-    let message: String
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
 }

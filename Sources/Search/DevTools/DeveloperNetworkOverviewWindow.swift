@@ -45,11 +45,8 @@ struct DeveloperNetworkOverviewWindow: View {
                 guard drag == nil else { return }
                 switch phase {
                 case .active(let point):
-                    if let span, Self.handle(at: point.x - inset, span: span) != nil {
-                        NSCursor.resizeLeftRight.set()
-                    } else {
-                        NSCursor.arrow.set()
-                    }
+                    let onHandle = span.flatMap { Self.handle(at: point.x - inset, span: $0) } != nil
+                    (onHandle ? NSCursor.resizeLeftRight : NSCursor.arrow).set()
                 case .ended:
                     NSCursor.arrow.set()
                 }

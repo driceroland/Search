@@ -9,15 +9,16 @@ final class DeveloperPerformanceRecordingTests: XCTestCase {
     func testRecordsOverBeforeTheRecordingAreLeftOut() {
         let records = [
             Timing(type: "Paint", start: 100, end: 100.01),
-            Timing(type: "Layout", start: 114.99, end: 115.2),
+            Timing(type: "Layout", start: 55, end: 115.2),
             Timing(type: "EvaluateScript", start: 115.3, end: 115.4),
         ]
         let kept = DeveloperToolsSession.withinRecording(records, from: 115)
         XCTAssertEqual(kept.map(\.type), ["Layout", "EvaluateScript"])
         let profile = DeveloperPerformanceProfile(kept + [Timing(type: "RecordingBounds", start: 115, end: 117)])
-        // Zero is the earliest record still running when the recording
-        // started, not one from 15 s before it.
-        XCTAssertEqual(profile.duration, 2_010, accuracy: 0.001)
+        // Zero is the recording's start: the Layout running across it is
+        // cut there, and the Paint from 15 s before is gone.
+        XCTAssertEqual(kept[0].start, 115)
+        XCTAssertEqual(profile.duration, 2_000, accuracy: 0.001)
     }
 }
 

@@ -147,6 +147,13 @@ final class DeveloperPerformanceHistoryStore: ObservableObject {
 /// goes in each event's args.perch, so a file saved here opens here as it
 /// was recorded.
 ///
+/// Saved with "Include script content and source maps", as Chrome saves
+/// them: the file becomes {"traceEvents": [...], "metadata": {...}}, each
+/// script a ScriptRundown event (its URL and map's) with its text in
+/// ScriptRundownSource, each map in metadata.sourceMaps as {url,
+/// sourceMapUrl, sourceMap}; loading reads them back for the Duplicated
+/// and Legacy JavaScript insights.
+///
 /// Loading takes that format (as an array or as Chrome's own
 /// {"traceEvents": [...]} object, with complete, instant and begin/end
 /// events, keeping only the page's main thread from a trace Chrome
@@ -175,6 +182,8 @@ enum DeveloperPerformanceTrace {
     struct Recording {
         let timings: [Timing]
         let annotations: [DeveloperPerformanceAnnotation]
+        /// The scripts the file carries; nil when it has none.
+        var scripts: [DeveloperPerformanceScript]? = nil
     }
 
     /// WebKit's record types under Chrome's names, where the two differ.
@@ -211,13 +220,19 @@ enum DeveloperPerformanceTrace {
     ]
 
     /// Chrome's bookkeeping events, which aren't work the page did.
-    private static let skipped: Set<String> = ["TracingStartedInBrowser", "TracingStartedInPage", "TracingSessionIdForWorker"]
+    private static let skipped: Set<String> = ["TracingStartedInBrowser", "TracingStartedInPage", "TracingSessionIdForWorker",
+                                               rundown, rundownSource]
+    private static let rundown = "ScriptRundown"
+    private static let rundownSource = "ScriptRundownSource"
+    /// Chrome's V8 isolate, which with the script id names each script.
+    private static let isolate = "1"
 
     // MARK: Saving
 
-    /// The recording as a trace file. `url` is the page it was recorded on.
-    static func export(_ timings: [Timing], url: String? = nil,
-                       annotations: [DeveloperPerformanceAnnotation] = []) throws -> Data {
+    /// The recording as a trace file. `url` is the page it was recorded on;
+    /// `scripts`, when given, go in with their maps.
+    static func export(_ timings: [Timing], url: String? = nil, annotations: [DeveloperPerformanceAnnotation] = [],
+                       scripts: [DeveloperPerformanceScript]? = nil) throws -> Data {
         let ids: [String: Any] = ["pid": processID, "tid": threadID]
         func event(_ fields: [String: Any]) -> [String: Any] { fields.merging(ids) { first, _ in first } }
         let origin = timings.map(\.start).min() ?? 0
@@ -276,7 +291,28 @@ enum DeveloperPerformanceTrace {
                 "args": args,
             ]))
         }
-        return try JSONSerialization.data(withJSONObject: events, options: [])
+        guard let scripts, !scripts.isEmpty else { return try JSONSerialization.data(withJSONObject: events, options: []) }
+        var maps: [[String: Any]] = []
+        for (index, script) in scripts.enumerated() {
+            var data: [String: Any] = ["isolate": isolate, "scriptId": index + 1, "url": script.url, "isModule": false,
+                                       "startLine": 0, "startColumn": 0, "length": script.text.utf16.count]
+            var map: [String: Any] = ["url": script.url]
+            if let mapURL = script.mapURL { data["sourceMapUrl"] = mapURL; map["sourceMapUrl"] = mapURL }
+            for (name, category, args) in [
+                (rundown, "disabled-by-default-devtools.v8-source-rundown", data),
+                (rundownSource, "disabled-by-default-devtools.v8-source-rundown-sources",
+                 ["isolate": isolate, "scriptId": index + 1, "length": script.text.utf16.count, "sourceText": script.text]),
+            ] as [(String, String, [String: Any])] {
+                events.append(event(["name": name, "cat": category, "ph": "I", "s": "t", "ts": origin * 1_000_000,
+                                     "args": ["data": args]]))
+            }
+            if let json = script.mapText.flatMap(DeveloperSourceMap.json) {
+                map["sourceMap"] = json
+                maps.append(map)
+            }
+        }
+        return try JSONSerialization.data(withJSONObject: ["traceEvents": events,
+                                                           "metadata": ["source": "DevTools", "sourceMaps": maps]])
     }
 
     /// An entries link's end, its times in ms from the recording's start.
@@ -305,15 +341,9 @@ enum DeveloperPerformanceTrace {
     }
 
     static func recording(from data: Data) throws -> Recording {
-        guard let json = try? JSONSerialization.jsonObject(with: data) else { throw Failure.unreadable }
-        let list: [Any]
-        if let array = json as? [Any] {
-            list = array
-        } else if let object = json as? [String: Any], let events = object["traceEvents"] as? [Any] {
-            list = events
-        } else if let object = json as? [String: Any], let records = object["records"] as? [Any] {
-            list = records
-        } else {
+        let json = try? JSONSerialization.jsonObject(with: data)
+        let object = json as? [String: Any]
+        guard let list = json as? [Any] ?? object?["traceEvents"] as? [Any] ?? object?["records"] as? [Any] else {
             throw Failure.unreadable
         }
         let objects = list.compactMap { $0 as? [String: Any] }
@@ -344,7 +374,40 @@ enum DeveloperPerformanceTrace {
             }
             return DeveloperPerformanceAnnotation(id: id, label: String(label.prefix(120)), range: start...end, link: link)
         }
-        return Recording(timings: result, annotations: annotations)
+        return Recording(timings: result, annotations: annotations,
+                         scripts: traceScripts(objects, metadata: object?["metadata"] as? [String: Any]))
+    }
+
+    /// The scripts a trace carries: each ScriptRundown with the text its
+    /// ScriptRundownSource events hold (in pieces, for a long one), and
+    /// the map metadata.sourceMaps has for it. Nil when there are none.
+    static func traceScripts(_ events: [[String: Any]], metadata: [String: Any]?) -> [DeveloperPerformanceScript]? {
+        func payload(_ event: [String: Any]) -> [String: Any]? { (event["args"] as? [String: Any])?["data"] as? [String: Any] }
+        func key(_ data: [String: Any]) -> String { "\(data["isolate"] ?? "").\(data["scriptId"] ?? "")" }
+        var pieces: [String: [Int: String]] = [:]
+        for event in events where event["name"] as? String == rundownSource {
+            guard let data = payload(event), let text = data["sourceText"] as? String else { continue }
+            let index = (data["splitIndex"] as? NSNumber)?.intValue ?? pieces[key(data)]?.count ?? 0
+            pieces[key(data), default: [:]][index] = text
+        }
+        let maps = metadata?["sourceMaps"] as? [[String: Any]] ?? []
+        var seen = Set<String>()
+        var scripts: [DeveloperPerformanceScript] = []
+        for event in events where event["name"] as? String == rundown {
+            guard let data = payload(event), let url = data["url"] as? String, !url.isEmpty,
+                  let parts = pieces[key(data)], seen.insert(url).inserted else { continue }
+            let mapURL = data["sourceMapUrl"] as? String
+            let entry = maps.first { $0["url"] as? String == url && $0["sourceMapUrl"] as? String == mapURL }
+                ?? maps.first { $0["url"] as? String == url }
+            let json = entry?["sourceMap"] as? [String: Any]
+            let base = (entry?["sourceMapUrl"] as? String).flatMap { $0.isEmpty || $0.hasPrefix("data:") ? nil : $0 }
+            scripts.append(DeveloperPerformanceScript(
+                url: url, text: parts.sorted { $0.key < $1.key }.map(\.value).joined(),
+                map: json.flatMap { try? DeveloperSourceMap(json: $0, base: base ?? url) },
+                mapText: json.flatMap { try? JSONSerialization.data(withJSONObject: $0) }.map { String(decoding: $0, as: UTF8.self) },
+                mapURL: base))
+        }
+        return scripts.isEmpty ? nil : scripts
     }
 
     private static func number(_ value: Any?) -> Double? {
@@ -415,11 +478,7 @@ enum DeveloperPerformanceTrace {
         let args = event["args"] as? [String: Any] ?? [:]
         let perch = args["perch"] as? [String: Any]
         let raw = args["data"] as? [String: Any] ?? [:]
-        var data: [String: String] = [:]
-        for (key, value) in raw {
-            if let text = value as? String { data[key] = text }
-            else if let number = value as? NSNumber { data[key] = number.stringValue }
-        }
+        let data = raw.compactMapValues { ($0 as? String) ?? ($0 as? NSNumber)?.stringValue }
         if perch == nil {
             // Chrome's page milestones and performance.mark()s, for the
             // Timings track.
@@ -432,12 +491,7 @@ enum DeveloperPerformanceTrace {
                               data: ["kind": "mark", "name": name])
             }
         }
-        let stack: [String]
-        if let saved = perch?["stack"] as? [String] {
-            stack = saved
-        } else {
-            stack = (raw["stackTrace"] as? [[String: Any]] ?? []).prefix(5).map(Timing.frame)
-        }
+        let stack = perch?["stack"] as? [String] ?? (raw["stackTrace"] as? [[String: Any]] ?? []).prefix(5).map(Timing.frame)
         return Timing(type: perch?["type"] as? String ?? webKitNames[name] ?? name,
                       start: start / 1_000_000, end: end / 1_000_000,
                       depth: (perch?["depth"] as? NSNumber)?.intValue ?? 0, data: data, stack: stack,

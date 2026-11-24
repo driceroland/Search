@@ -16,8 +16,7 @@ enum DeveloperStorageValuePreview {
 
     /// The column holding the value, Chrome's "Value"; nil when there is none.
     static func valueColumn(_ columns: [String]) -> Int? {
-        if let index = columns.firstIndex(where: { $0.caseInsensitiveCompare("Value") == .orderedSame }) { return index }
-        return nil
+        columns.firstIndex { $0.caseInsensitiveCompare("Value") == .orderedSame }
     }
 
     /// decodeURIComponent, which Chrome's checkbox runs: `+` stays, and a
@@ -31,8 +30,8 @@ enum DeveloperStorageValuePreview {
     /// string, number or boolean stays text, as in Chrome.
     static func json(_ text: String) -> DeveloperJSONValue? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let first = trimmed.first, first == "{" || first == "[" else { return nil }
-        guard let value = DeveloperJSONValue.parse(trimmed), value.isContainer else { return nil }
+        guard let first = trimmed.first, first == "{" || first == "[",
+              let value = DeveloperJSONValue.parse(trimmed), value.isContainer else { return nil }
         return value
     }
 }

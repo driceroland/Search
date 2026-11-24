@@ -7,7 +7,7 @@ import SwiftUI
 struct DeveloperDebuggerSidebar: View {
     @ObservedObject var session: DeveloperToolsSession
     @ObservedObject var debugger: DeveloperDebugger
-    @State private var collapsed: Set<Pane> = [.watch, .xhr, .dom, .events, .csp]
+    @State private var collapsed: Set<Pane> = [.watch, .xhr, .dom, .global, .events, .csp]
     @State private var addingWatch = false
     @State private var newWatch = ""
     @State private var editingWatch: DeveloperDebugger.Watch.ID?
@@ -28,7 +28,8 @@ struct DeveloperDebuggerSidebar: View {
 
     enum Pane: String, CaseIterable {
         case watch = "Watch", breakpoints = "Breakpoints", scope = "Scope", threads = "Threads", callStack = "Call Stack"
-        case xhr = "XHR/fetch breakpoints", dom = "DOM breakpoints", events = "Event listener breakpoints"
+        case xhr = "XHR/fetch breakpoints", dom = "DOM breakpoints", global = "Global Listeners"
+        case events = "Event listener breakpoints"
         case csp = "CSP violation breakpoints"
     }
 
@@ -44,6 +45,7 @@ struct DeveloperDebuggerSidebar: View {
                 PaneView(sidebar: self, pane: .callStack)
                 PaneView(sidebar: self, pane: .xhr)
                 PaneView(sidebar: self, pane: .dom)
+                PaneView(sidebar: self, pane: .global)
                 PaneView(sidebar: self, pane: .events)
                 PaneView(sidebar: self, pane: .csp)
             }
@@ -81,6 +83,11 @@ struct DeveloperDebuggerSidebar: View {
             case .callStack: sidebar.pane(.callStack) { sidebar.callStackPane }
             case .xhr: sidebar.pane(.xhr, actions: { sidebar.xhrActions }) { sidebar.xhrPane }
             case .dom: sidebar.pane(.dom) { sidebar.domPane }
+            case .global:
+                sidebar.pane(.global, actions: {
+                    DeveloperPanelIcon(symbol: "arrow.clockwise", title: "Refresh global listeners",
+                                       action: session.loadGlobalListeners)
+                }) { DeveloperGlobalListenersPane(session: session) }
             case .events: sidebar.pane(.events) { sidebar.eventsPane }
             case .csp: sidebar.pane(.csp) { sidebar.cspPane }
             }
@@ -426,8 +433,7 @@ struct DeveloperDebuggerSidebar: View {
             let isPaused = paused.contains(thread.id)
             Button { debugger.selectThread(thread.id) } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "arrowtriangle.right.fill").font(.system(size: 8))
-                        .foregroundStyle(Color(nsColor: .systemBlue)).frame(width: 10).opacity(selected ? 1 : 0)
+                    selectionArrow(selected)
                     Image(systemName: thread.id.isEmpty ? "macwindow" : "gearshape")
                         .foregroundStyle(.secondary).frame(width: 14)
                     Text(thread.title).lineLimit(1).truncationMode(.middle)
@@ -477,6 +483,12 @@ struct DeveloperDebuggerSidebar: View {
         }
     }
 
+    /// The arrow on the thread or frame the Call Stack shows.
+    private func selectionArrow(_ selected: Bool) -> some View {
+        Image(systemName: "arrowtriangle.right.fill").font(.system(size: 8))
+            .foregroundStyle(Color(nsColor: .systemBlue)).frame(width: 10).opacity(selected ? 1 : 0)
+    }
+
     /// The frames the ignore list leaves shown.
     private func visibleFrames(_ frames: [DeveloperDebugger.CallFrame]) -> [DeveloperDebugger.CallFrame] {
         frames.filter { debugger.showIgnoreListed || !debugger.isIgnored($0) }
@@ -489,8 +501,7 @@ struct DeveloperDebuggerSidebar: View {
         let help: String = frame.url.isEmpty ? frame.functionName : original + frame.url + ":\(frame.line + 1)"
         return Button { debugger.selectFrame(frame.index) } label: {
             HStack(spacing: 4) {
-                Image(systemName: "arrowtriangle.right.fill").font(.system(size: 8))
-                    .foregroundStyle(Color(nsColor: .systemBlue)).frame(width: 10).opacity(selected ? 1 : 0)
+                selectionArrow(selected)
                 Text(frame.functionName).font(DeveloperToolsStyle.code).lineLimit(1)
                 Spacer(minLength: 4)
                 Text(frame.location).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
@@ -512,9 +523,7 @@ struct DeveloperDebuggerSidebar: View {
     private func callFrameMenu(_ frame: DeveloperDebugger.CallFrame, in pause: DeveloperDebugger.Pause, ignored: Bool) -> some View {
         Button("Restart frame") {}.disabled(true)
             .help("WebKit can’t restart a call frame.")
-        Button("Copy stack trace") {
-            copy(pause.stackTrace)
-        }
+        Button("Copy stack trace") { DeveloperToolsSession.copyToPasteboard(pause.stackTrace) }
         if frame.original != nil {
             // The source-mapped frame's compiled place.
             Button("Show generated location (\(frame.generatedLocation))") { debugger.revealGenerated(frame) }
@@ -734,11 +743,6 @@ struct DeveloperDebuggerSidebar: View {
         default: return false
         }
     }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
 }
 
 // MARK: - Pieces
@@ -796,10 +800,10 @@ struct DeveloperObjectMenu: View {
 
     var body: some View {
         if let value = row.value {
-            Button("Copy value") { Self.copy(value.primitive ?? value.description) }
+            Button("Copy value") { DeveloperToolsSession.copyToPasteboard(value.primitive ?? value.description) }
         }
         if let path = row.propertyPath {
-            Button("Copy property path") { Self.copy(path) }
+            Button("Copy property path") { DeveloperToolsSession.copyToPasteboard(path) }
         }
         if let value = row.value, value.objectID != nil || DeveloperDebugger.literal(value) != nil {
             Button("Store as global variable") { debugger.storeAsGlobal(value) }
@@ -815,11 +819,6 @@ struct DeveloperObjectMenu: View {
                                                      className: value.className, description: value.description)
             }
         }
-    }
-
-    private static func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 

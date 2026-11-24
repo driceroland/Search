@@ -38,9 +38,16 @@ final class DeveloperPerformanceMetricsLiveTests: XCTestCase {
                     XCTFail("no LCP value")
                 }
                 model.revealLCP()
+                // As the panel does: leaving Performance takes the script
+                // (and its hold on the element) out of the page.
+                try await wait("Elements") { live.session.panel == .elements }
+                model.detach()
                 try await wait("the LCP element selected in Elements") {
                     live.session.selectedNode.flatMap { live.session.nodes[$0]?.attributes }?.contains("hero") == true
                 }
+                model.attach()
+                model.startPolling()
+                try await wait("a reading again") { model.metrics != nil }
             } else {
                 XCTAssertEqual(first.reading(.lcp), .unavailable, "LCP without the entries reads as not available")
             }
@@ -57,6 +64,16 @@ final class DeveloperPerformanceMetricsLiveTests: XCTestCase {
                 return true;
                 """)
             try await wait("CLS from the shift", seconds: 10) { (model.metrics?.cls ?? 0) > 0 }
+            // The live view's Layout shifts log names what moved; Clear
+            // starts it again and leaves CLS as it was.
+            try await wait("the shift in the log") {
+                model.metrics?.shiftLog.contains { $0.value > 0 && $0.elements.contains("h1#hero") } == true
+            }
+            let cls = model.metrics?.cls
+            model.clearLogs()
+            try await Task.sleep(for: .milliseconds(1_500))
+            XCTAssertEqual(model.metrics?.shiftLog, [])
+            XCTAssertEqual(model.metrics?.cls, cls)
             model.detach()
             await finish(live)
         } catch {
@@ -158,6 +175,72 @@ final class DeveloperPerformanceMetricsLiveTests: XCTestCase {
             try await wait("the shifted heading selected in Elements") {
                 live.session.selectedNode.flatMap { live.session.nodes[$0]?.attributes }?.contains("moved") == true
             }
+            await finish(live)
+        } catch {
+            await finish(live)
+            throw error
+        }
+    }
+
+    /// Transforms move what's painted, not the layout: Chrome counts no
+    /// shift for a spinning or sliding element, and neither may the DevTools
+    /// estimate (which once read every frame of them as one).
+    func testTransformAnimationsAreNotLayoutShifts() async throws {
+        let live = try await open("""
+            <!doctype html><title>Transform fixture</title><body style='margin:0'>
+            <div id=spin style='width:80px;height:80px;background:#c63'></div>
+            <div id=slide style='width:80px;height:80px;background:#36c'></div>
+            <div id=fixed style='position:fixed;top:10px;right:10px;width:40px;height:40px;background:#3a3'></div>
+            <script>
+            // Set by script, not animated: an off-screen test window's
+            // animations are paused, its timers aren't.
+            let step = 0;
+            setInterval(() => {
+                step++;
+                spin.style.transform = `rotate(${step * 30}deg)`;
+                slide.style.transform = `translateX(${(step % 2) * 300}px)`;
+            }, 120);
+            </script>
+            </body>
+            """, title: "Transform fixture")
+        defer { live.window.close() }
+        do {
+            live.session.toggleTimeline()
+            try await wait("recording") { live.session.recordingTimeline }
+            try await Task.sleep(for: .milliseconds(1_500))
+            live.session.toggleTimeline()
+            try await wait("the recording") { !live.session.recordingTimeline && !live.session.timeline.isEmpty }
+            try await Task.sleep(for: .milliseconds(300))
+            let shifts = live.session.timeline.filter { $0.type == "LayoutShift" }
+            XCTAssertTrue(shifts.isEmpty, "shifts from transforms: \(shifts.map { $0.data["nodes"] ?? "" })")
+            await finish(live)
+        } catch {
+            await finish(live)
+            throw error
+        }
+    }
+
+    /// Capture settings' "Disable JavaScript samples": the sampling
+    /// profiler stays off for the recording, and the timeline still records.
+    func testDisablingJavaScriptSamplesLeavesTheProfilerOff() async throws {
+        let live = try await open("""
+            <!doctype html><title>Samples fixture</title><body>
+            <script>setInterval(() => { let x = 0; for (let i = 0; i < 2e5; i++) x += i; }, 50);</script>
+            </body>
+            """, title: "Samples fixture")
+        defer { live.window.close() }
+        let saved = DeveloperPerformanceCapture.jsSamplesDisabled
+        DeveloperPerformanceCapture.jsSamplesDisabled = true
+        defer { DeveloperPerformanceCapture.jsSamplesDisabled = saved }
+        do {
+            live.session.toggleTimeline()
+            try await wait("recording") { live.session.recordingTimeline }
+            XCTAssertFalse(live.session.scriptProfilerStarted)
+            try await Task.sleep(for: .milliseconds(800))
+            live.session.toggleTimeline()
+            try await wait("the recording") { !live.session.recordingTimeline && !live.session.timeline.isEmpty }
+            XCTAssertTrue(live.session.timeline.contains { $0.type == "TimerFire" || $0.type == "FunctionCall" },
+                          "types \(Set(live.session.timeline.map(\.type)))")
             await finish(live)
         } catch {
             await finish(live)

@@ -53,6 +53,11 @@ struct DeveloperCSSColor: Equatable, Hashable {
                                  blue: channel(blue, background.blue), alpha: alpha)
     }
 
+    /// `layers`, topmost first, drawn down onto white.
+    static func composite(_ layers: [DeveloperCSSColor]) -> DeveloperCSSColor {
+        layers.reversed().reduce(DeveloperCSSColor.white) { $1.over($0) }
+    }
+
     /// WCAG 2's relative luminance, of the colour as if opaque.
     var luminance: Double {
         func linear(_ channel: Double) -> Double {
@@ -191,23 +196,11 @@ enum DeveloperCSSOverview {
         var index: Int
         var parent: Int?
         var label: String
-        var hasText: Bool
-        var rendered: Bool
-        var backgroundImage: Bool
-        var svgShape: Bool
-        var values: [String: String]
-
-        init(index: Int, parent: Int? = nil, label: String, hasText: Bool = false, rendered: Bool = true,
-             backgroundImage: Bool = false, svgShape: Bool = false, values: [String: String] = [:]) {
-            self.index = index
-            self.parent = parent
-            self.label = label
-            self.hasText = hasText
-            self.rendered = rendered
-            self.backgroundImage = backgroundImage
-            self.svgShape = svgShape
-            self.values = values
-        }
+        var hasText = false
+        var rendered = true
+        var backgroundImage = false
+        var svgShape = false
+        var values: [String: String] = [:]
 
         subscript(_ field: String) -> String { values[field] ?? "" }
 
@@ -255,6 +248,18 @@ enum DeveloperCSSOverview {
     /// The selectors of a rule's selector text, split at its top-level
     /// commas (not those inside `:is(…)` or `[a="x,y"]`).
     static func splitSelectorList(_ text: String) -> [String] {
+        split(text) { $0 == "," }
+    }
+
+    /// The compound selectors of one selector, split at its top-level
+    /// combinators (descendant space, `>`, `+`, `~`).
+    static func compounds(_ selector: String) -> [String] {
+        split(selector) { " \t\n>+~".contains($0) }
+    }
+
+    /// `text` split at the characters `separator` picks outside quotes,
+    /// brackets and parentheses, each part trimmed, empty ones dropped.
+    private static func split(_ text: String, at separator: (Character) -> Bool) -> [String] {
         var parts: [String] = []
         var current = ""
         var depth = 0
@@ -272,51 +277,17 @@ enum DeveloperCSSOverview {
             case "\"", "'": quote = character
             case "(", "[": depth += 1
             case ")", "]": depth = max(0, depth - 1)
-            case "," where depth == 0:
-                parts.append(current)
-                current = ""
-                continue
-            default: break
+            default:
+                if depth == 0, separator(character) {
+                    parts.append(current)
+                    current = ""
+                    continue
+                }
             }
             current.append(character)
         }
         parts.append(current)
         return parts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-    }
-
-    /// The compound selectors of one selector, split at its top-level
-    /// combinators (descendant space, `>`, `+`, `~`).
-    static func compounds(_ selector: String) -> [String] {
-        var parts: [String] = []
-        var current = ""
-        var depth = 0
-        var quote: Character?
-        var escaped = false
-        func flush() {
-            let part = current.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !part.isEmpty { parts.append(part) }
-            current = ""
-        }
-        for character in selector {
-            if escaped { current.append(character); escaped = false; continue }
-            if character == "\\" { current.append(character); escaped = true; continue }
-            if let open = quote {
-                if character == open { quote = nil }
-                current.append(character)
-                continue
-            }
-            switch character {
-            case "\"", "'": quote = character
-            case "(", "[": depth += 1
-            case ")", "]": depth = max(0, depth - 1)
-            case " ", "\t", "\n", ">", "+", "~":
-                if depth == 0 { flush(); continue }
-            default: break
-            }
-            current.append(character)
-        }
-        flush()
-        return parts
     }
 
     /// What kinds of simple selector `compound` has, at its top level.
@@ -613,9 +584,7 @@ enum DeveloperCSSOverview {
             current = element.parent
             steps += 1
         }
-        var result = DeveloperCSSColor.white
-        for color in layers.reversed() { result = color.over(result) }
-        return result
+        return DeveloperCSSColor.composite(layers)
     }
 
     /// Large text by WCAG: 24px, or 18.66px (14pt) bold.

@@ -107,10 +107,7 @@ function focusFor(el) {
 async function press(el, target, x, y, button, count) {
     const code = { primary: 0, auxiliary: 1, secondary: 2, back: 3, forward: 4 }[button || "primary"] || 0;
     const mask = [1, 4, 2, 8, 16][code];
-    pointer("pointerover", target, x, y, 0, 0, 0);
-    pointer("mouseover", target, x, y, 0, 0, 0);
-    pointer("pointermove", target, x, y, 0, 0, 0);
-    pointer("mousemove", target, x, y, 0, 0, 0);
+    for (const type of ["pointerover", "mouseover", "pointermove", "mousemove"]) pointer(type, target, x, y, 0, 0, 0);
     for (let click = 1; click <= count; click++) {
         pointer("pointerdown", target, x, y, code, mask, click);
         const allowed = pointer("mousedown", target, x, y, code, mask, click);
@@ -141,13 +138,9 @@ async function press(el, target, x, y, button, count) {
 function setValue(el, value) {
     el.focus({ preventScroll: true });
     const tag = el.localName;
-    if (tag === "select") {
-        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
-        setter.call(el, value);
-    } else if (tag === "input" || tag === "textarea") {
-        const proto = tag === "input" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
-        setter.call(el, value);
+    const field = tag === "select" ? HTMLSelectElement : tag === "input" ? HTMLInputElement : tag === "textarea" ? HTMLTextAreaElement : null;
+    if (field) {
+        Object.getOwnPropertyDescriptor(field.prototype, "value").set.call(el, value);
     } else if (el.isContentEditable) {
         el.textContent = value;
     } else {
@@ -174,17 +167,8 @@ function keyboard(type, key) {
     }
     const init = Object.assign({ key, code, bubbles: true, cancelable: true, composed: true, view: window }, modifiers());
     const allowed = target.dispatchEvent(new KeyboardEvent(type, init));
-    if (type === "keydown") {
-        if (key === "Shift") keyState.shift = true;
-        if (key === "Control") keyState.control = true;
-        if (key === "Alt") keyState.alt = true;
-        if (key === "Meta") keyState.meta = true;
-    } else {
-        if (key === "Shift") keyState.shift = false;
-        if (key === "Control") keyState.control = false;
-        if (key === "Alt") keyState.alt = false;
-        if (key === "Meta") keyState.meta = false;
-    }
+    const modifier = { Shift: "shift", Control: "control", Alt: "alt", Meta: "meta" }[key];
+    if (modifier && Object.hasOwn(keyState, modifier)) keyState[modifier] = type === "keydown";
     if (type !== "keydown" || !allowed) return;
     if (key === "Enter") {
         if (target.localName === "input" && target.form) {
@@ -208,24 +192,17 @@ function keyboard(type, key) {
 async function run() {
     const selectors = Array.isArray(step.selectors) ? step.selectors.map((each) => (Array.isArray(each) ? each : [each])) : [];
     switch (step.type) {
-    case "click": {
-        const { el, target, x, y } = await aim(selectors);
-        await press(el, target, x, y, step.button, 1);
-        break;
-    }
+    case "click":
     case "doubleClick": {
         const { el, target, x, y } = await aim(selectors);
-        await press(el, target, x, y, step.button, 2);
+        await press(el, target, x, y, step.button, step.type === "doubleClick" ? 2 : 1);
         break;
     }
     case "hover": {
         const { target, x, y } = await aim(selectors);
-        pointer("pointerover", target, x, y, 0, 0, 0);
-        pointer("pointerenter", target, x, y, 0, 0, 0);
-        pointer("mouseover", target, x, y, 0, 0, 0);
-        pointer("mouseenter", target, x, y, 0, 0, 0);
-        pointer("pointermove", target, x, y, 0, 0, 0);
-        pointer("mousemove", target, x, y, 0, 0, 0);
+        for (const type of ["pointerover", "pointerenter", "mouseover", "mouseenter", "pointermove", "mousemove"]) {
+            pointer(type, target, x, y, 0, 0, 0);
+        }
         break;
     }
     case "change": {
@@ -235,10 +212,8 @@ async function run() {
         break;
     }
     case "keyDown":
-        keyboard("keydown", String(step.key || ""));
-        break;
     case "keyUp":
-        keyboard("keyup", String(step.key || ""));
+        keyboard(step.type === "keyDown" ? "keydown" : "keyup", String(step.key || ""));
         break;
     case "scroll": {
         const x = Number(step.x || 0);

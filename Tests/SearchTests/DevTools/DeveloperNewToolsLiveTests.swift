@@ -33,7 +33,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
         let session = live.session
         let memory = DeveloperMemory.store(for: session)
         memory.clear()
-        do {
+        try await live.run {
             memory.takeSnapshot()
             try await wait("first heap snapshot", seconds: 30) { memory.snapshots.count == 1 || memory.message != nil }
             XCTAssertNil(memory.message)
@@ -77,11 +77,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
             let instance = try XCTUnwrap(second.instances(of: leakNow.index).first)
             let preview = await memory.preview(second.ids[instance])
             XCTAssertTrue(preview.contains("PerchLeak"), preview)
-        } catch {
-            await finish(live)
-            throw error
         }
-        await finish(live)
     }
 
     func testAllocationTimelineFindsSurvivorsAndGarbageCollections() async throws {
@@ -94,7 +90,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
         defer { live.window.close() }
         let session = live.session
         let memory = DeveloperMemory.store(for: session)
-        do {
+        try await live.run {
             memory.startAllocations()
             try await wait("allocation recording to start", seconds: 30) {
                 memory.recordingAllocations || memory.message != nil
@@ -122,11 +118,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
             XCTAssertTrue(profile.collections.contains { $0.full })
             // The strip has a mark for each, whatever WebKit's clock says.
             XCTAssertEqual(profile.marks(end: entry.snapshot.timestamp).count, profile.collections.count)
-        } catch {
-            await finish(live)
-            throw error
         }
-        await finish(live)
     }
 
     func testHeapObjectCanBeStoredAsGlobalAndDOMNodeRevealed() async throws {
@@ -143,7 +135,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
         defer { live.window.close() }
         let session = live.session
         let memory = DeveloperMemory.store(for: session)
-        do {
+        try await live.run {
             session.select(.memory)
             memory.takeSnapshot()
             try await wait("snapshot for object actions", seconds: 30) {
@@ -173,11 +165,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
                 session.selectedNode.flatMap { session.nodes[$0]?.attributes }?.contains("heap-action-node") == true
             }
             XCTAssertEqual(session.panel, .elements)
-        } catch {
-            await finish(live)
-            throw error
         }
-        await finish(live)
     }
 
     // MARK: Coverage
@@ -257,10 +245,10 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
             coverage.stop()
         } catch {
             coverage.stop()
-            await finish(live)
+            await live.finish()
             throw error
         }
-        await finish(live)
+        await live.finish()
     }
 
     // MARK: Animations
@@ -318,10 +306,10 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
             model.stop()
         } catch {
             model.stop()
-            await finish(live)
+            await live.finish()
             throw error
         }
-        await finish(live)
+        await live.finish()
     }
 
     /// document.startViewTransition, caught by the page hook: its
@@ -335,7 +323,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
         defer { live.window.close() }
         let supported = try await page(live.page, "return typeof document.startViewTransition === 'function';") as? Bool
         guard supported == true else {
-            await finish(live)
+            await live.finish()
             throw XCTSkip("This WebKit has no document.startViewTransition.")
         }
         let session = live.session
@@ -353,7 +341,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
             // off-screen test window's is.
             if try await page(live.page, "return document.visibilityState;") as? String == "hidden" {
                 model.stop()
-                await finish(live)
+                await live.finish()
                 throw XCTSkip("View transitions are skipped while the document is hidden.")
             }
             _ = try await page(live.page, """
@@ -379,10 +367,10 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
             model.stop()
         } catch {
             model.stop()
-            await finish(live)
+            await live.finish()
             throw error
         }
-        await finish(live)
+        await live.finish()
     }
 
     /// The speed buttons set the page's animations' playbackRate, and a
@@ -446,10 +434,10 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
         } catch {
             model.setRate(1)
             model.stop()
-            await finish(live)
+            await live.finish()
             throw error
         }
-        await finish(live)
+        await live.finish()
     }
 
     // MARK: Changes
@@ -468,7 +456,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
         func color() async throws -> String? {
             try await page(live.page, "return getComputedStyle(document.getElementById('target')).color;") as? String
         }
-        do {
+        try await live.run {
             try await wait("the document") { session.root != nil }
             let found = await session.searchDOM("#target")
             let target = try XCTUnwrap(found.first, "#target in the tree")
@@ -513,11 +501,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
             try await wait("Styles read again") {
                 session.styles.contains { $0.name == "color" && $0.value == "rgb(10, 20, 30)" }
             }
-        } catch {
-            await finish(live)
-            throw error
         }
-        await finish(live)
     }
 
     /// The font editor's edits, as its popover makes them, on a live rule:
@@ -536,7 +520,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
         func computed(_ name: String) async throws -> String? {
             try await page(live.page, "return getComputedStyle(document.getElementById('target')).getPropertyValue('\(name)');") as? String
         }
-        do {
+        try await live.run {
             try await wait("the document") { session.root != nil }
             let found = await session.searchDOM("#target")
             let target = try XCTUnwrap(found.first, "#target in the tree")
@@ -544,13 +528,13 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
             try await wait("the #target rule", state: { "rules \(session.matchedStyles.map(\.selector))" }) {
                 session.matchedStyles.contains { $0.selector == "#target" && $0.editable }
             }
-            func rule() throws -> DeveloperToolsSession.StyleRule {
+            @MainActor func rule() throws -> DeveloperToolsSession.StyleRule {
                 try XCTUnwrap(session.matchedStyles.first { $0.selector == "#target" })
             }
             XCTAssertTrue(DeveloperFontEditor.carriesButton(try rule().properties, at: 0))
             /// One edit as the popover makes it, then the page's computed
             /// `property` until it reads `expected`.
-            func set(_ name: String, _ value: String?, computed property: String, _ expected: String) async throws {
+            @MainActor func set(_ name: String, _ value: String?, computed property: String, _ expected: String) async throws {
                 let current = try rule()
                 session.editStyle(current.id, properties: DeveloperFontEditor.setting(name, value, in: current.properties))
                 let deadline = Date().addingTimeInterval(6)
@@ -569,11 +553,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
             XCTAssertEqual(try rule().properties.map(\.name), ["font-size", "color", "font-family", "font-weight"])
             try await set("font-weight", nil, computed: "font-weight", "400")
             XCTAssertEqual(try rule().properties.map(\.name), ["font-size", "color", "font-family"])
-        } catch {
-            await finish(live)
-            throw error
         }
-        await finish(live)
     }
 
     /// The WebAuthn tool's virtual authenticator answering the page's own
@@ -584,7 +564,7 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
         defer { live.window.close() }
         let model = DeveloperWebAuthnModel.model(for: live.session)
         defer { model.setEnabled(false) }
-        do {
+        try await live.run {
             model.setEnabled(true)
             XCTAssertTrue(model.enabled, model.problem ?? "")
             model.addAuthenticator(DeveloperVirtualAuthenticator(name: "", transport: .internal, residentKeys: true,
@@ -659,61 +639,16 @@ final class DeveloperNewToolsLiveTests: XCTestCase {
                 }
                 panel.close()
             }
-        } catch {
-            await finish(live)
-            throw error
         }
-        await finish(live)
     }
 
     // MARK: Support
 
-    private struct Live {
-        let server: LocalPageServer
-        let page: WKWebView
-        let window: NSWindow
-        let tab: Tab
-        let session: DeveloperToolsSession
-    }
+    private typealias Live = DeveloperLivePage
 
-    /// The page in an on-screen borderless window, off to the side (a page
-    /// in no window now and then stops answering the inspector), loaded,
-    /// with a DevTools session attached and ready.
     private func open(_ html: String, title: String) async throws -> Live {
-        _ = NSApplication.shared
-        let server = try LocalPageServer(["/": .init(type: "text/html", body: html)])
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        Web.inspector(configuration.preferences)
-        let page = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
-        let window = NSWindow(contentRect: CGRect(x: -4_000, y: -4_000, width: 800, height: 600),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = page
-        window.orderFrontRegardless()
-        page.load(URLRequest(url: server.url("/")))
-        do {
-            try await wait("page to load") { page.title == title }
-        } catch {
-            window.close()
-            throw error
-        }
-        let tab = Tab(shy: true)
-        let session = DeveloperToolsSession(tab: tab, web: page, after: nil)
-        watched = session
-        let live = Live(server: server, page: page, window: window, tab: tab, session: session)
-        do {
-            try await wait("inspector") { session.ready }
-        } catch {
-            await finish(live)
-            window.close()
-            throw error
-        }
-        return live
-    }
-
-    private func finish(_ live: Live) async {
-        await DeveloperTestSupport.finish(live.session, page: live.page, keeping: live.tab, live.server)
+        try await Live.open(["/": .init(type: "text/html", body: html)], title: title, opened: { watched = $0 },
+                            wait: { try await wait($0, until: $1) })
     }
 
     private func page(_ page: WKWebView, _ body: String) async throws -> Any? {

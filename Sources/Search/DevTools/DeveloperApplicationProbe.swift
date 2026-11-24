@@ -42,26 +42,16 @@ final class DeveloperApplicationProbe {
         observation?.invalidate()
         observation = nil
         if let script = userScript { ArmedRiders.remove(script) }
-        if let web, let script = userScript {
-            let controller = web.configuration.userContentController
-            if controller.userScripts.contains(where: { $0 === script }) {
-                // WebKit takes user scripts out all at once; the tab's go back.
-                let others = controller.userScripts.filter { $0 !== script }
-                controller.removeAllUserScripts()
-                others.forEach(controller.addUserScript)
-            }
-        }
+        if let web, let script = userScript { web.configuration.userContentController.developerRemove(script) }
         userScript = nil
         web = nil
     }
 
     private func ensure(_ web: WKWebView) {
         guard let script = userScript else { return }
-        let controller = web.configuration.userContentController
         // Kept by Tab.arm at each navigation, as the tab's own scripts are:
         // a load or reload says it is loading before Tab.arm takes them out.
-        ArmedRiders.add(script, to: controller)
-        if !controller.userScripts.contains(where: { $0 === script }) { controller.addUserScript(script) }
+        web.configuration.userContentController.developerArm(script)
     }
 
     /// Already there, it does nothing; otherwise it starts now, marked late.
@@ -259,12 +249,10 @@ enum DeveloperApplicationMore {
         parts?.queryItems = query
         guard let away = parts?.url else { throw Issue.couldNotLeave }
         web.load(URLRequest(url: away))
-        let left = await wait(seconds: 8) { web.url == away && !web.isLoading }
-        guard left else { throw Issue.couldNotLeave }
+        guard await wait(seconds: 8, until: { web.url == away && !web.isLoading }) else { throw Issue.couldNotLeave }
         guard web.canGoBack else { throw Issue.couldNotReturn }
         web.goBack()
-        let back = await wait(seconds: 12) { web.url == address && !web.isLoading }
-        guard back else { throw Issue.couldNotReturn }
+        guard await wait(seconds: 12, until: { web.url == address && !web.isLoading }) else { throw Issue.couldNotReturn }
         let reply = (try? await web.callAsyncJavaScript("""
             const state = globalThis[Symbol.for(key)];
             return { same: !!state && state.token === token, persisted: state ? state.persisted : null };

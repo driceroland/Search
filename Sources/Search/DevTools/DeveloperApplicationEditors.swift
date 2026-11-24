@@ -36,16 +36,8 @@ struct DeveloperStorageItemEditor: View {
             } else if problem == nil {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 50)
             }
-            if let problem { Text(problem).foregroundStyle(.secondary).textSelection(.enabled) }
-            HStack {
-                if saving { ProgressView().controlSize(.small) }
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!loaded || saving || page == nil)
-            }
+            DeveloperEditorFooter(problem: problem, saving: saving, disabled: !loaded || saving || page == nil,
+                                  save: save)
         }
         .padding(16)
         .frame(width: 400)
@@ -61,7 +53,7 @@ struct DeveloperStorageItemEditor: View {
             draftValue = value
             loaded = true
         } catch {
-            problem = (error as? DeveloperApplication.Issue)?.errorDescription ?? error.localizedDescription
+            problem = error.localizedDescription
         }
     }
 
@@ -81,15 +73,36 @@ struct DeveloperStorageItemEditor: View {
                                                               origin: origin)
                 didSave()
             } catch {
-                problem = (error as? DeveloperApplication.Issue)?.errorDescription ?? error.localizedDescription
+                problem = error.localizedDescription
             }
+        }
+    }
+}
+
+/// An editor sheet's problem, if any, and its Cancel and Save buttons.
+private struct DeveloperEditorFooter: View {
+    @Environment(\.developerDismiss) private var dismiss
+    let problem: String?
+    let saving: Bool
+    let disabled: Bool
+    let save: () -> Void
+
+    var body: some View {
+        if let problem { Text(problem).foregroundStyle(.secondary).textSelection(.enabled) }
+        HStack {
+            if saving { ProgressView().controlSize(.small) }
+            Spacer()
+            Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+            Button("Save", action: save)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(disabled)
         }
     }
 }
 
 /// Chrome's editable cookie row, as a form: every attribute WebKit stores.
 struct DeveloperCookieEditor: View {
-    @Environment(\.developerDismiss) private var dismiss
     let previous: DeveloperApplicationItem?
     let session: DeveloperToolsSession
     let page: URL?
@@ -148,16 +161,8 @@ struct DeveloperCookieEditor: View {
             } else if problem == nil {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 50)
             }
-            if let problem { Text(problem).foregroundStyle(.secondary).textSelection(.enabled) }
-            HStack {
-                if saving { ProgressView().controlSize(.small) }
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!loaded || saving || page == nil || draft.name.isEmpty)
-            }
+            DeveloperEditorFooter(problem: problem, saving: saving,
+                                  disabled: !loaded || saving || page == nil || draft.name.isEmpty, save: save)
         }
         .padding(16)
         .frame(width: 420)
@@ -171,7 +176,7 @@ struct DeveloperCookieEditor: View {
             if let date = draft.expires { expires = date; sessionOnly = false }
             loaded = true
         } catch {
-            problem = (error as? DeveloperApplication.Issue)?.errorDescription ?? error.localizedDescription
+            problem = error.localizedDescription
         }
     }
 
@@ -188,7 +193,7 @@ struct DeveloperCookieEditor: View {
                                                           origin: origin)
                 didSave()
             } catch {
-                problem = (error as? DeveloperApplication.Issue)?.errorDescription ?? error.localizedDescription
+                problem = error.localizedDescription
             }
         }
     }
@@ -277,7 +282,7 @@ struct DeveloperStorageOverviewView: View {
             overview = try await DeveloperApplication.overview(in: session, address: page)
             problem = nil
         } catch {
-            problem = (error as? DeveloperApplication.Issue)?.errorDescription ?? error.localizedDescription
+            problem = error.localizedDescription
         }
     }
 
@@ -293,7 +298,7 @@ struct DeveloperStorageOverviewView: View {
                 cleared = failed.isEmpty ? "Site data cleared." : "Could not clear: " + failed.joined(separator: ", ") + "."
                 didClear()
             } catch {
-                cleared = (error as? DeveloperApplication.Issue)?.errorDescription ?? error.localizedDescription
+                cleared = error.localizedDescription
             }
         }
     }

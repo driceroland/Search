@@ -275,8 +275,6 @@ struct DeveloperBackForwardCacheSignals: Equatable {
             status = document.status
         }
     }
-
-    init() {}
 }
 
 struct DeveloperBackForwardCacheReason: Equatable {
@@ -434,13 +432,11 @@ enum DeveloperFrameDetails {
             guard let parsed = DeveloperHeaderParsing.isolationPolicy(headers?.value(name)) else { return missing }
             return parsed.value + (parsed.reportTo.map { " (report-to: \($0))" } ?? "")
         }
-        security.append(["Cross-Origin-Opener-Policy", policy("Cross-Origin-Opener-Policy")])
-        if headers?.value("Cross-Origin-Opener-Policy-Report-Only") != nil {
-            security.append(["COOP (report only)", policy("Cross-Origin-Opener-Policy-Report-Only")])
-        }
-        security.append(["Cross-Origin-Embedder-Policy", policy("Cross-Origin-Embedder-Policy")])
-        if headers?.value("Cross-Origin-Embedder-Policy-Report-Only") != nil {
-            security.append(["COEP (report only)", policy("Cross-Origin-Embedder-Policy-Report-Only")])
+        for (name, short) in [("Cross-Origin-Opener-Policy", "COOP"), ("Cross-Origin-Embedder-Policy", "COEP")] {
+            security.append([name, policy(name)])
+            if headers?.value(name + "-Report-Only") != nil {
+                security.append(["\(short) (report only)", policy(name + "-Report-Only")])
+            }
         }
         if let resource = headers?.value("Cross-Origin-Resource-Policy") { security.append(["Cross-Origin-Resource-Policy", resource]) }
         let csp = headers?.value("Content-Security-Policy")

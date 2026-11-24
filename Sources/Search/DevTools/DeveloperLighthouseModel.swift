@@ -727,23 +727,9 @@ final class DeveloperLighthouseModel: ObservableObject {
         // the evaluate) takes the new holder with it.
         await releaseNow()
         let target = session.runtimeTargetID
-        let reply = try await session.command("Runtime.evaluate", [
-            "expression": Self.collectScript, "objectGroup": Self.objectGroup,
-            "doNotPauseOnExceptionsAndMuteConsole": true, "includeCommandLineAPI": false,
-        ], targetID: target)
-        if reply["wasThrown"] as? Bool == true {
-            let description = (reply["result"] as? [String: Any])?["description"] as? String
-            throw DeveloperLighthouseError(description ?? "The page refused the audit.")
-        }
-        guard let object = reply["result"] as? [String: Any], let id = object["objectId"] as? String else {
-            throw DeveloperLighthouseError("The page sent nothing back.")
-        }
-        let data = try await session.command("Runtime.callFunctionOn", [
-            "objectId": id, "functionDeclaration": "function() { return this.data; }", "returnByValue": true,
-        ], targetID: target)
-        guard let value = (data["result"] as? [String: Any])?["value"] as? [String: Any] else {
-            throw DeveloperLighthouseError("The page's answer was too large to read back.")
-        }
+        let (id, value) = try await session.scanPage(Self.collectScript, group: Self.objectGroup, target: target,
+                                                     refused: "The page refused the audit.",
+                                                     tooLarge: "The page's answer was too large to read back.")
         holder = id
         holderTarget = target
         // WebKit's naturalWidth of a scaled-down image is its decoded size.
@@ -778,50 +764,21 @@ final class DeveloperLighthouseModel: ObservableObject {
 
     private func node(_ index: Int) async -> Int? {
         guard let session, let holder, live, index >= 0 else { return nil }
-        let target = holderTarget
-        guard let reply = try? await session.command("Runtime.callFunctionOn", [
-            "objectId": holder, "functionDeclaration": "function(index) { return this.elements[index] || null; }",
-            "arguments": [["value": index]],
-        ], targetID: target),
-            let object = (reply["result"] as? [String: Any])?["objectId"] as? String else { return nil }
-        let node = try? await session.command("DOM.requestNode", ["objectId": object], targetID: session.domTargetID)
-        _ = try? await session.command("Runtime.releaseObject", ["objectId": object], targetID: target)
-        guard let id = (node?["nodeId"] as? NSNumber)?.intValue, id > 0 else { return nil }
-        return id
+        return await session.scannedNode(holder: holder, index: index, target: holderTarget)
     }
 
     /// An element hovered in a table: drawn on the page; nil hides it.
     func hover(_ index: Int?) {
         hoverTask?.cancel()
-        guard let session else { return }
-        guard let index else { session.hideHighlight(); return }
-        hoverTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(40))
-            guard !Task.isCancelled, let node = await self?.node(index), !Task.isCancelled else { return }
-            session.highlightNode(node)
-        }
+        guard let index else { session?.hideHighlight(); return }
+        hoverTask = session?.hoverScanned { [weak self] in await self?.node(index) }
     }
 
-    /// Shows the element in the Elements panel, once Elements has read the
-    /// document afresh (as the CSS overview's reveal does).
+    /// Shows the element in the Elements panel (as the CSS overview's reveal does).
     func reveal(_ index: Int) {
         guard let session, live else { return }
         hoverTask?.cancel()
-        session.hideHighlight()
-        let switching = session.panel != .elements
-        let before = session.root
-        session.select(.elements)
-        Task { [weak self] in
-            for _ in 0..<40 where switching {
-                guard session.root == before || session.root == nil else { break }
-                try? await Task.sleep(for: .milliseconds(50))
-            }
-            guard let node = await self?.node(index) else { return }
-            for _ in 0..<40 where session.nodes[node] == nil {
-                try? await Task.sleep(for: .milliseconds(50))
-            }
-            session.selectNode(node)
-        }
+        session.revealScanned { [weak self] in await self?.node(index) }
     }
 
     // MARK: Export
@@ -831,49 +788,21 @@ final class DeveloperLighthouseModel: ObservableObject {
             problem = "The report couldn't be written as JSON."
             return
         }
-        let panel = NSSavePanel()
-        let host = (URL(string: report.finalURL)?.host() ?? "report").replacingOccurrences(of: ":", with: "-")
-        let stamp = report.fetchTime.formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false))
-            .replacingOccurrences(of: ":", with: "-")
-        panel.nameFieldStringValue = "\(host)-\(stamp).report.json"
-        panel.allowedContentTypes = [.json]
-        panel.canCreateDirectories = true
-        let write = { [weak self] (url: URL) in
-            do {
-                try data.write(to: url, options: .atomic)
-            } catch {
-                self?.problem = error.localizedDescription
-            }
-        }
-        if let window = NSApp.keyWindow {
-            panel.beginSheetModal(for: window) { response in
-                if response == .OK, let url = panel.url { write(url) }
-            }
-        } else if panel.runModal() == .OK, let url = panel.url {
-            write(url)
-        }
+        save(data, name: "\(Self.fileStem(report)).report.json", type: .json)
     }
 
     /// Saves the report as one self-contained HTML page (DeveloperLighthouseHTML).
     func exportHTML(_ report: DeveloperLighthouseReport) {
-        let data = Data(DeveloperLighthouseHTML.html(report).utf8)
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "\(Self.fileStem(report)).report.html"
-        panel.allowedContentTypes = [.html]
-        panel.canCreateDirectories = true
-        let write = { [weak self] (url: URL) in
+        save(Data(DeveloperLighthouseHTML.html(report).utf8), name: "\(Self.fileStem(report)).report.html", type: .html)
+    }
+
+    private func save(_ data: Data, name: String, type: UTType) {
+        DeveloperFilePanel.save(name: name, types: [type]) { [weak self] url in
             do {
                 try data.write(to: url, options: .atomic)
             } catch {
                 self?.problem = error.localizedDescription
             }
-        }
-        if let window = NSApp.keyWindow {
-            panel.beginSheetModal(for: window) { response in
-                if response == .OK, let url = panel.url { write(url) }
-            }
-        } else if panel.runModal() == .OK, let url = panel.url {
-            write(url)
         }
     }
 
@@ -904,13 +833,6 @@ final class DeveloperLighthouseModel: ObservableObject {
 
     func copyJSON(_ report: DeveloperLighthouseReport) {
         guard let data = DeveloperLighthouseLHR.data(report) else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(String(decoding: data, as: UTF8.self), forType: .string)
+        DeveloperToolsSession.copyToPasteboard(String(decoding: data, as: UTF8.self))
     }
-}
-
-struct DeveloperLighthouseError: LocalizedError {
-    let message: String
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
 }

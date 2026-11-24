@@ -188,11 +188,17 @@ enum DeveloperNetworkColumn: String, CaseIterable, Identifiable, Codable {
     case name = "Name", path = "Path", url = "URL", method = "Method", status = "Status", networkProtocol = "Protocol"
     case scheme = "Scheme", domain = "Domain", remoteAddress = "Remote address", type = "Type"
     case initiator = "Initiator", cookies = "Cookies", setCookies = "Set cookies", size = "Size", time = "Time"
-    case priority = "Priority", connection = "Connection ID", hasOverrides = "Has overrides", waterfall = "Waterfall"
+    case priority = "Priority", connection = "Connection ID", hasOverrides = "Has overrides"
+    case renderBlocking = "Render blocking", requestNumber = "Request #", waterfall = "Waterfall"
 
     var id: Self { self }
     static let defaults: [Self] = [.name, .status, .type, .initiator, .size, .time, .waterfall]
-    var numeric: Bool { [.status, .size, .time, .cookies, .setCookies].contains(self) }
+    var numeric: Bool { [.status, .size, .time, .cookies, .setCookies, .requestNumber].contains(self) }
+    /// What the header's tooltip adds where WebKit can't say for certain.
+    var note: String? {
+        self == .renderBlocking ? "Estimated: WebKit doesn't report render blocking, so stylesheets and scripts "
+            + "the HTML parser requested count as blocking" : nil
+    }
 
     /// The width a column asks for, or nil for the one that takes the rest.
     var width: CGFloat? {
@@ -200,11 +206,10 @@ enum DeveloperNetworkColumn: String, CaseIterable, Identifiable, Codable {
         case .name: nil
         case .path, .url: 160
         case .connection, .hasOverrides: 90
-        case .method, .scheme: 64
+        case .method, .scheme, .requestNumber: 64
         case .status, .networkProtocol, .time, .cookies, .priority: 70
-        case .setCookies: 84
-        case .domain, .remoteAddress, .initiator: 120
-        case .type: 84
+        case .setCookies, .type: 84
+        case .domain, .remoteAddress, .initiator, .renderBlocking: 120
         case .size: 80
         case .waterfall: 200
         }
@@ -233,19 +238,29 @@ enum DeveloperNetworkColumn: String, CaseIterable, Identifiable, Codable {
         case .size, .time, .waterfall: return ""
         case .priority: return extra?.priority.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? ""
         case .hasOverrides: return hasOverrides(extra)
+        case .renderBlocking: return renderBlocking(request)
+        case .requestNumber: return request.number.map(String.init) ?? ""
         }
+    }
+
+    /// The Render blocking column, estimated as the Performance panel's
+    /// insight reads it: stylesheets and scripts the parser asked for hold
+    /// the first paint (a script may be async or deferred); ones a script
+    /// added don't.
+    static func renderBlocking(_ request: DeveloperToolsSession.Request) -> String {
+        guard !["XHR", "Fetch"].contains(request.type),
+              DeveloperPerformanceInsights.isRenderBlockingType(request.type, mimeType: request.mimeType) else { return "" }
+        guard request.initiatorType == "parser" else { return "Non-blocking dynamic" }
+        let style = request.type.lowercased() == "stylesheet" || (request.mimeType ?? "").lowercased().contains("css")
+        return style ? "Blocking" : "Potentially blocking"
     }
 
     /// The Has overrides column, as Chrome writes it: what Local Overrides
     /// replaced, or nothing.
     static func hasOverrides(_ extra: DeveloperNetworkTools.Extra?) -> String {
         guard let extra else { return "" }
-        switch (extra.overriddenContent, extra.overriddenHeaders) {
-        case (true, true): return "content, headers"
-        case (true, false): return "content"
-        case (false, true): return "headers"
-        case (false, false): return ""
-        }
+        return [extra.overriddenContent ? "content" : nil, extra.overriddenHeaders ? "headers" : nil]
+            .compactMap { $0 }.joined(separator: ", ")
     }
 
     /// Sorted as Chrome sorts the column: numbers by value, text by text,
@@ -260,6 +275,7 @@ enum DeveloperNetworkColumn: String, CaseIterable, Identifiable, Codable {
             case .time: return request.time ?? -1
             case .cookies: return Double(extras[request.id]?.cookies.count ?? 0)
             case .setCookies: return Double(extras[request.id]?.setCookies.count ?? 0)
+            case .requestNumber: return Double(request.number ?? 0)
             case .waterfall: return waterfall.value(request)
             default: return request.started ?? 0
             }
@@ -331,11 +347,18 @@ enum DeveloperNetworkListColumn: Hashable, Identifiable {
     case standard(DeveloperNetworkColumn)
     /// A response header, by its lowercased name.
     case header(String)
+    /// A request header, by its lowercased name, from Request headers.
+    case requestHeader(String)
 
     /// The response headers Chrome's header menu offers as columns.
     static let responseHeaders = [
         "cache-control", "connection", "content-encoding", "content-length", "etag", "keep-alive",
         "last-modified", "server", "vary",
+    ]
+    /// The request headers the header menu's Request headers always offers.
+    static let requestHeaders = [
+        "accept", "accept-encoding", "accept-language", "cache-control", "content-type", "origin", "referer",
+        "user-agent",
     ]
 
     var id: String { key }
@@ -345,13 +368,14 @@ enum DeveloperNetworkListColumn: Hashable, Identifiable {
         switch self {
         case .standard(let column): column.rawValue
         case .header(let name): "header:" + name
+        case .requestHeader(let name): "request-header:" + name
         }
     }
 
     var title: String {
         switch self {
         case .standard(let column): column.rawValue
-        case .header(let name): Self.title(forHeader: name)
+        case .header(let name), .requestHeader(let name): Self.title(forHeader: name)
         }
     }
 
@@ -360,11 +384,16 @@ enum DeveloperNetworkListColumn: Hashable, Identifiable {
         return false
     }
 
+    var note: String? {
+        if case .standard(let column) = self { return column.note }
+        return nil
+    }
+
     /// The width a column asks for, or nil for the one that takes the rest.
     var defaultWidth: CGFloat? {
         switch self {
         case .standard(let column): column.width
-        case .header: 120
+        case .header, .requestHeader: 120
         }
     }
 
@@ -381,6 +410,7 @@ enum DeveloperNetworkListColumn: Hashable, Identifiable {
         switch column {
         case .standard(let standard): DeveloperNetworkColumn.value(standard, request, extra)
         case .header(let name): extra?.responseHeaderValues[name] ?? ""
+        case .requestHeader(let name): extra?.requestHeaderValues[name] ?? ""
         }
     }
 
@@ -390,7 +420,7 @@ enum DeveloperNetworkListColumn: Hashable, Identifiable {
         switch column {
         case .standard(let standard):
             return DeveloperNetworkColumn.sort(rows, by: standard, ascending: ascending, extras: extras, waterfall: waterfall)
-        case .header:
+        case .header, .requestHeader:
             return DeveloperNetworkColumn.stableSort(rows, ascending: ascending) { left, right in
                 value(column, left, extras[left.id]).localizedStandardCompare(value(column, right, extras[right.id]))
             }

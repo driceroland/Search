@@ -67,7 +67,7 @@ final class DeveloperConsoleTests: XCTestCase {
             XCTAssertTrue(ConsoleFormat.plain(segments).hasPrefix("plain text and 42 "), ConsoleFormat.plain(segments))
             guard case .object(let sample, _) = try XCTUnwrap(segments.last) else { return XCTFail("object argument") }
             XCTAssertTrue(sample.expandable)
-            XCTAssertEqual(ConsoleFormat.inline(sample), "{name: 'perch', list: Array(3), nested: {deep: true}}")
+            XCTAssertEqual(ConsoleFormat.inline(sample), "{name: 'perch', list: Array(3), nested: {…}}")
 
             // %c styles the text that follows it.
             let styled = try XCTUnwrap(lines.first { $0.text.contains("styled") })
@@ -401,5 +401,24 @@ final class DeveloperConsoleTests: XCTestCase {
             let last = watched.console.suffix(4).map { "\($0.level): \($0.text.prefix(60))" }.joined(separator: " | ")
             return "ready \(watched.ready), message \(watched.message ?? "none"), last: \(last)"
         }, until: condition)
+    }
+}
+
+/// One level down, a preview abbreviates as Chrome's does.
+final class DeveloperConsoleNestedPreviewTests: XCTestCase {
+    func testAnArrayPreviewAbbreviatesWhatItHolds() {
+        let preview = ConsoleObjectPreview([
+            "type": "object", "subtype": "array", "description": "Array", "size": 4, "lossless": false,
+            "properties": [
+                ["name": "0", "type": "number", "value": "1"],
+                ["name": "1", "type": "object", "value": "Object",
+                 "valuePreview": ["type": "object", "description": "Object", "lossless": true,
+                                  "properties": [["name": "a", "type": "number", "value": "2"]]]],
+                ["name": "2", "type": "object", "subtype": "node", "value": "<h1>"],
+                ["name": "3", "type": "object", "subtype": "map", "value": "Map",
+                 "valuePreview": ["type": "object", "subtype": "map", "description": "Map", "size": 1, "lossless": false]],
+            ] as [[String: Any]],
+        ])
+        XCTAssertEqual(ConsoleFormat.inline(preview), "(4) [1, {…}, h1, Map(1)]")
     }
 }

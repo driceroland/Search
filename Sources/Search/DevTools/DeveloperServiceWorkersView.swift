@@ -114,23 +114,11 @@ struct DeveloperServiceWorkersView: View {
                     .foregroundStyle(registration.controlsPage ? Palette.ink : .secondary)
                     .lineLimit(1).truncationMode(.middle)
             }
-            row("Push") {
-                HStack(spacing: DeveloperToolsStyle.controlSpacing) {
-                    TextField("Test push message from DevTools.", text: entry($pushText, registration.scope))
-                        .textFieldStyle(.roundedBorder).controlSize(.small).frame(maxWidth: 320)
-                    Button("Push") { push(registration) }.controlSize(.small)
-                        .disabled(registration.active == nil || busy != nil)
-                }
+            send("Push", "Test push message from DevTools.", $pushText, registration) { push(registration) }
+            send("Sync", "test-tag-from-devtools", $syncTag, registration) {
+                act(.sync, registration, tag: syncTag[registration.scope])
             }
-            row("Sync") {
-                HStack(spacing: DeveloperToolsStyle.controlSpacing) {
-                    TextField("test-tag-from-devtools", text: entry($syncTag, registration.scope))
-                        .textFieldStyle(.roundedBorder).controlSize(.small).frame(maxWidth: 320)
-                    Button("Sync") { act(.sync, registration, tag: syncTag[registration.scope]) }.controlSize(.small)
-                        .disabled(registration.active == nil || busy != nil)
-                }
-                .help(registration.syncSupported ? "Register a Background Sync" : "WebKit doesn’t support Background Sync")
-            }
+            .help(registration.syncSupported ? "Register a Background Sync" : "WebKit doesn’t support Background Sync")
             row("Update Cycle") {
                 Text("updateViaCache: \(registration.updateViaCache)").foregroundStyle(.secondary)
             }
@@ -165,8 +153,18 @@ struct DeveloperServiceWorkersView: View {
         .accessibilityIdentifier("developer-worker-\(title.lowercased())")
     }
 
-    private func entry(_ state: Binding<[String: String]>, _ key: String) -> Binding<String> {
-        Binding(get: { state.wrappedValue[key] ?? "" }, set: { state.wrappedValue[key] = $0 })
+    /// Push and Sync: a field, kept per registration, and its button.
+    private func send(_ title: String, _ prompt: String, _ state: Binding<[String: String]>,
+                      _ registration: DeveloperWorkerRegistration, action: @escaping () -> Void) -> some View {
+        let key = registration.scope
+        return row(title) {
+            HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+                TextField(prompt, text: Binding(get: { state.wrappedValue[key] ?? "" }, set: { state.wrappedValue[key] = $0 }))
+                    .textFieldStyle(.roundedBorder).controlSize(.small).frame(maxWidth: 320)
+                Button(title, action: action).controlSize(.small)
+                    .disabled(registration.active == nil || busy != nil)
+            }
+        }
     }
 
     private func placeholder(_ text: String) -> some View {
@@ -178,11 +176,10 @@ struct DeveloperServiceWorkersView: View {
         do {
             let fresh = try await DeveloperServiceWorkers.list(in: web)
             if fresh.registrations != listing.registrations || fresh.note != listing.note { listing = fresh }
-            loaded = true
         } catch {
             if !quietly { message = error.localizedDescription }
-            loaded = true
         }
+        loaded = true
     }
 
     private func act(_ action: DeveloperServiceWorkers.Action, _ registration: DeveloperWorkerRegistration, tag: String? = nil) {

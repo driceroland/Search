@@ -195,10 +195,7 @@ private struct DeveloperRecorderRecording: View {
                 settingsShown.toggle()
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 8, weight: .semibold))
-                        .rotationEffect(.degrees(settingsShown ? 90 : 0))
-                        .foregroundStyle(.secondary)
+                    recorderChevron(settingsShown)
                     Text("Replay settings").fontWeight(.medium)
                     if !settingsShown {
                         Text(settingsSummary).foregroundStyle(.secondary).lineLimit(1)
@@ -276,10 +273,7 @@ private struct DeveloperRecorderRecording: View {
                 .fixedSize()
                 .controlSize(.small)
                 Spacer(minLength: 0)
-                DeveloperPanelIcon(symbol: "doc.on.doc", title: "Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                }
+                DeveloperPanelIcon(symbol: "doc.on.doc", title: "Copy") { DeveloperToolsSession.copyToPasteboard(text) }
                 DeveloperPanelIcon(symbol: "xmark", title: "Hide code") { showCode = false }
             }
             .padding(.horizontal, DeveloperToolsStyle.gutter)
@@ -314,10 +308,8 @@ private struct DeveloperRecorderRecording: View {
                             .id(step.id)
                     }
                     if !model.recording {
-                        Button {
+                        Button("Add step", systemImage: "plus") {
                             model.addStep(near: recording.steps.last?.id, after: true, in: recording.id)
-                        } label: {
-                            Label("Add step", systemImage: "plus")
                         }
                         .buttonStyle(.borderless)
                         .padding(.leading, 34)
@@ -358,11 +350,7 @@ private struct DeveloperRecorderRecording: View {
             if model.recording, model.recordingID == recording.id {
                 Circle().fill(.red).frame(width: 8, height: 8)
                 Text("Recording…").foregroundStyle(.secondary)
-                Button {
-                    model.addAssertion()
-                } label: {
-                    Label("Add assertion", systemImage: "checkmark.seal")
-                }
+                Button("Add assertion", systemImage: "checkmark.seal") { model.addAssertion() }
                 .help("Add a step that waits for the element last acted on")
                 Button("End recording") { model.stopRecording() }
                     .keyboardShortcut(.defaultAction)
@@ -382,18 +370,10 @@ private struct DeveloperRecorderRecording: View {
                 .labelsHidden()
                 .fixedSize()
                 .help("Replay speed")
-                Button {
-                    model.replay(recording.id, measure: true)
-                } label: {
-                    Label("Measure performance", systemImage: "waveform.path")
-                }
+                Button("Measure performance", systemImage: "waveform.path") { model.replay(recording.id, measure: true) }
                 .disabled(model.recording || model.replaying)
                 .help("Replay while the Performance panel records")
-                Button {
-                    model.replay(recording.id)
-                } label: {
-                    Label("Replay", systemImage: "play.fill")
-                }
+                Button("Replay", systemImage: "play.fill") { model.replay(recording.id) }
                 .disabled(model.recording || model.replaying || recording.steps.isEmpty)
             }
             DeveloperPanelIcon(symbol: "chevron.left.forwardslash.chevron.right",
@@ -405,6 +385,14 @@ private struct DeveloperRecorderRecording: View {
         .padding(.horizontal, DeveloperToolsStyle.gutter + 4)
         .padding(.vertical, 6)
     }
+}
+
+/// The disclosure chevron of Replay settings and of a step.
+private func recorderChevron(_ open: Bool) -> some View {
+    Image(systemName: "chevron.right")
+        .font(.system(size: 8, weight: .semibold))
+        .rotationEffect(.degrees(open ? 90 : 0))
+        .foregroundStyle(.secondary)
 }
 
 /// A step in the list: its status on the timeline line, its title and
@@ -427,10 +415,7 @@ private struct DeveloperRecorderStepRow: View {
                     expanded.toggle()
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 8, weight: .semibold))
-                            .rotationEffect(.degrees(expanded ? 90 : 0))
-                            .foregroundStyle(.secondary)
+                        recorderChevron(expanded)
                         Text(step.title).fontWeight(.medium)
                         Text(step.subtitle).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         if step.assertsNavigation {
@@ -633,22 +618,15 @@ private struct DeveloperRecorderStepEditor: View {
                             get: { text },
                             set: { value in
                                 change { edited in
-                                    var all = edited.selectors
-                                    guard all.indices.contains(index), all[index].indices.contains(part) else { return }
-                                    all[index][part] = value
-                                    edited.selectors = all
+                                    guard edited.selectors.indices.contains(index), edited.selectors[index].indices.contains(part) else { return }
+                                    edited.selectors[index][part] = value
                                 }
                             }
                         ))
                         .frame(minWidth: 120, maxWidth: 360)
                     }
                     DeveloperPanelIcon(symbol: "minus", title: "Remove selector", size: 16) {
-                        change { edited in
-                            var all = edited.selectors
-                            guard all.indices.contains(index) else { return }
-                            all.remove(at: index)
-                            edited.selectors = all
-                        }
+                        change { if $0.selectors.indices.contains(index) { $0.selectors.remove(at: index) } }
                     }
                 }
             }
@@ -666,12 +644,7 @@ private struct DeveloperRecorderStepEditor: View {
                     TextField("url", text: eventBinding(index, \.url)).frame(minWidth: 160, maxWidth: 320)
                     TextField("title", text: eventBinding(index, \.title)).frame(minWidth: 100, maxWidth: 220)
                     DeveloperPanelIcon(symbol: "minus", title: "Remove event", size: 16) {
-                        change { edited in
-                            var all = edited.assertedEvents
-                            guard all.indices.contains(index) else { return }
-                            all.remove(at: index)
-                            edited.assertedEvents = all
-                        }
+                        change { if $0.assertedEvents.indices.contains(index) { $0.assertedEvents.remove(at: index) } }
                     }
                 }
             }
@@ -685,12 +658,7 @@ private struct DeveloperRecorderStepEditor: View {
         Binding(
             get: { step.assertedEvents.indices.contains(index) ? step.assertedEvents[index][keyPath: key] ?? "" : "" },
             set: { value in
-                change { edited in
-                    var all = edited.assertedEvents
-                    guard all.indices.contains(index) else { return }
-                    all[index][keyPath: key] = value
-                    edited.assertedEvents = all
-                }
+                change { if $0.assertedEvents.indices.contains(index) { $0.assertedEvents[index][keyPath: key] = value } }
             }
         )
     }

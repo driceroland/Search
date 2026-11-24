@@ -160,16 +160,13 @@ enum DeveloperRequestCopy {
                 if let index = headerList.firstIndex(where: { $0.0 == name }) { headerList[index].1 = value }
                 else { headerList.append((name, value)) }
             }
-            if !headerList.isEmpty { fields.append(("headers", .object(headerList.map { ($0.0, .string($0.1)) }))) }
-            fields.append(("body", request.postData.map(DeveloperJSON.string) ?? .null))
-            fields.append(("method", .string(request.method)))
-        } else {
-            if !headerList.isEmpty { fields.append(("headers", .object(headerList.map { ($0.0, .string($0.1)) }))) }
-            if let referrer { fields.append(("referrer", .string(referrer))) }
-            fields.append(("body", request.postData.map(DeveloperJSON.string) ?? .null))
-            fields.append(("method", .string(request.method)))
-            fields.append(("mode", .string("cors")))
-            fields.append(("credentials", .string(hasCredentials ? "include" : "omit")))
+        }
+        if !headerList.isEmpty { fields.append(("headers", .object(headerList.map { ($0.0, .string($0.1)) }))) }
+        if !node, let referrer { fields.append(("referrer", .string(referrer))) }
+        fields.append(("body", request.postData.map(DeveloperJSON.string) ?? .null))
+        fields.append(("method", .string(request.method)))
+        if !node {
+            fields += [("mode", .string("cors")), ("credentials", .string(hasCredentials ? "include" : "omit"))]
         }
         return "fetch(\(DeveloperJSON.quote(url)), \(DeveloperJSON.object(fields).json(indent: 0)));"
     }
@@ -246,12 +243,14 @@ enum DeveloperHAR {
         let request: DeveloperToolsSession.Request
         let details: DeveloperRequestDetails
         let extra: DeveloperNetworkTools.Extra
+        var frames: [DeveloperNetworkTools.Frame] = []
     }
 
     /// Without fractions of a second, for the HAR files that leave them out.
     private static let plainDates = ISO8601DateFormatter()
 
-    private static let dates: ISO8601DateFormatter = {
+    /// ISO dates with milliseconds, as HAR and Chrome's cookie table write them.
+    static let dates: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
@@ -299,6 +298,37 @@ enum DeveloperHAR {
         ]
         if let address = details.remoteAddress { entry["serverIPAddress"] = address }
         return entry
+    }
+
+    /// A WebSocket's or EventSource's messages as Chrome writes them on the
+    /// entry: `_webSocketMessages` or `_eventSourceMessages`.
+    static func messages(_ frames: [DeveloperNetworkTools.Frame], eventSource: Bool)
+        -> (key: String, value: [[String: Any]]) {
+        if eventSource {
+            return ("_eventSourceMessages", frames.map { frame -> [String: Any] in
+                ["time": frame.time ?? 0, "eventName": frame.eventType ?? "message", "eventId": frame.eventID ?? "",
+                 "data": frame.data]
+            })
+        }
+        return ("_webSocketMessages", frames.filter { $0.kind != .error }.map { frame -> [String: Any] in
+            ["type": frame.kind == .sent ? "send" : "receive", "time": frame.time ?? 0, "opcode": frame.opcode ?? 1,
+             "data": frame.data]
+        })
+    }
+
+    /// The messages an entry carries, read back for the Messages tab.
+    static func frames(_ entry: [String: Any]) -> [DeveloperNetworkTools.Frame] {
+        let socket = entry["_webSocketMessages"] as? [[String: Any]]
+        let list = socket ?? entry["_eventSourceMessages"] as? [[String: Any]] ?? []
+        return list.enumerated().map { index, item in
+            let data = item["data"] as? String ?? ""
+            let source = socket == nil
+            return DeveloperNetworkTools.Frame(
+                id: index + 1, kind: item["type"] as? String == "send" ? .sent : .received,
+                opcode: source ? nil : item["opcode"] as? Int ?? 1, data: data, length: data.utf8.count,
+                time: item["time"] as? Double, eventID: source ? item["eventId"] as? String : nil,
+                eventType: source ? item["eventName"] as? String : nil)
+        }
     }
 
     /// Chrome's "sanitized" HAR: no cookies or authorization.
@@ -385,7 +415,7 @@ enum DeveloperHAR {
             extra.responseHeaders = details.responseHeaders.map { $0.name.lowercased() }
             extra.cookies = details.requestCookies.map(\.name)
             extra.setCookies = details.responseCookies.map(\.name)
-            return Imported(request: row, details: details, extra: extra)
+            return Imported(request: row, details: details, extra: extra, frames: Self.frames(entry))
         }
     }
 
@@ -394,6 +424,7 @@ enum DeveloperHAR {
         case "xhr": "XHR"
         case "fetch": "Fetch"
         case "websocket": "WebSocket"
+        case "eventsource": "EventSource"
         case "stylesheet": "StyleSheet"
         default: type.prefix(1).uppercased() + type.dropFirst()
         }

@@ -45,8 +45,7 @@ if (!globalThis.perchPerformanceAnimations) {
     globalThis.perchPerformanceAnimations = Object.freeze({
         drain() {
             const result = {updates, overflowed};
-            updates = [];
-            overflowed = false;
+            this.reset();
             return result;
         },
         reset() {

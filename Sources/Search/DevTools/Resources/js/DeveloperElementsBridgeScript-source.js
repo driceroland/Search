@@ -813,6 +813,22 @@ if (!globalThis.perchElements && globalThis.perchInspector) {
         return "temp" + index;
     }
 
+    // A document's or shadow root's adoptedStyleSheets, each as its rules'
+    // text (null where they can't be read); given text, sheet `index` is
+    // replaced through replaceSync first.
+    function inPageAdoptedSheets(index, text) {
+        const sheets = Array.from(this.adoptedStyleSheets ?? []).slice(0, 1000);
+        if (text != null && sheets[index])
+            sheets[index].replaceSync(text);
+        return sheets.map((sheet) => {
+            try {
+                return Array.from(sheet.cssRules).map((rule) => rule.cssText);
+            } catch {
+                return null;
+            }
+        });
+    }
+
     function inPageScroll() {
         if (typeof this.scrollIntoViewIfNeeded === "function")
             this.scrollIntoViewIfNeeded(true);
@@ -887,12 +903,16 @@ if (!globalThis.perchElements && globalThis.perchInspector) {
     }
 
     function style(selector, origin, source, extra) {
-        const styleId = source?.styleId && typeof source.styleId.styleSheetId === "string"
+        // A user agent or user sheet's rules aren't editable, and WebKit
+        // sends their properties without source text: they are kept by
+        // name and value, as Chrome lists them under "user agent stylesheet".
+        const editable = origin !== "user-agent" && origin !== "user";
+        const styleId = editable && source?.styleId && typeof source.styleId.styleSheetId === "string"
             ? {styleSheetId: source.styleId.styleSheetId, ordinal: source.styleId.ordinal ?? 0} : null;
         return {
             selector: String(selector).slice(0, 350), origin: String(origin ?? "").slice(0, 60),
-            styleId: origin === "user-agent" || origin === "user" ? null : styleId,
-            properties: (source?.cssProperties ?? []).filter((item) =>
+            styleId,
+            properties: agentProperties(editable, source).filter((item) =>
                 typeof item.name === "string" && typeof item.value === "string" &&
                 item.implicit !== true && (typeof item.text === "string" || item.status === "disabled" || !styleId)
             ).slice(0, 120).map((item) => ({
@@ -906,6 +926,23 @@ if (!globalThis.perchElements && globalThis.perchInspector) {
             })),
             ...extra,
         };
+    }
+
+    // A user agent rule's properties as written: WebKit sends `margin: 8px`
+    // as its longhands with the shorthand in shorthandEntries, and Chrome
+    // shows the shorthand.
+    function agentProperties(editable, source) {
+        const properties = source?.cssProperties ?? [];
+        const shorthands = editable ? [] : (source?.shorthandEntries ?? [])
+            .filter((entry) => typeof entry.name === "string" && typeof entry.value === "string" && entry.value);
+        if (!shorthands.length)
+            return properties;
+        const covered = new Set(shorthands.flatMap((entry) => longhands(entry.name, entry.value).map((item) => item.name)));
+        if (!covered.size)
+            return properties;
+        const shown = shorthands.filter((entry) => longhands(entry.name, entry.value).length)
+            .map((entry) => ({name: entry.name, value: entry.value, priority: entry.priority ?? ""}));
+        return [...shown, ...properties.filter((item) => !covered.has(item.name))];
     }
 
     function fromRule(rule, extra) {
@@ -1342,42 +1379,47 @@ if (!globalThis.perchElements && globalThis.perchInspector) {
         return state.count();
     }
 
-    // DevTools checks in with the page's overlay layer every second while
-    // it shows anything; once it stops, the layer takes itself down.
-    const overlayPings = new Map;
-    function keepPageOverlays(targetId) {
+    // DevTools checks in with a page layer (the overlays, the source order
+    // badges: `document[Symbol.for(symbol)]`) every second while it shows
+    // anything; once it stops, the layer takes itself down.
+    function keepPinging(pings, symbol, targetId) {
         const key = targetKey(targetId);
-        if (overlayPings.has(key))
+        if (pings.has(key))
             return;
-        overlayPings.set(key, setInterval(() => {
+        pings.set(key, setInterval(() => {
             command("Runtime.evaluate", {
-                expression: "document[Symbol.for('perch.elementsOverlay')]?.ping?.() ?? 0", returnByValue: true,
+                expression: `document[Symbol.for('${symbol}')]?.ping?.() ?? 0`, returnByValue: true,
             }, targetId).then((reply) => {
                 if (!reply?.result?.value)
-                    stopPageOverlayPings(key);
-            }).catch(() => stopPageOverlayPings(key));
+                    stopPinging(pings, key);
+            }).catch(() => stopPinging(pings, key));
         }, 1000));
     }
-    function stopPageOverlayPings(key) {
-        clearInterval(overlayPings.get(key));
-        overlayPings.delete(key);
+    function stopPinging(pings, key) {
+        clearInterval(pings.get(key));
+        pings.delete(key);
+    }
+    // The layer taken down now.
+    function removeLayer(pings, symbol, targetId) {
+        stopPinging(pings, targetKey(targetId));
+        return command("Runtime.evaluate", {
+            expression: `document[Symbol.for('${symbol}')]?.remove?.()`, returnByValue: true,
+        }, targetId).catch(() => {});
     }
 
+    const overlayPings = new Map;
     async function setPageOverlay(nodeId, targetId, kind, on) {
         if (kind !== "container" && kind !== "scroll-snap")
             return 0;
         const shown = await callOn(nodeId, targetId, inPageOverlay, [kind, !!on]);
         if (shown)
-            keepPageOverlays(targetId);
+            keepPinging(overlayPings, "perch.elementsOverlay", targetId);
         return shown;
     }
 
     // Every page-drawn overlay taken down (the document was read again).
     function clearPageOverlays(targetId) {
-        stopPageOverlayPings(targetKey(targetId));
-        command("Runtime.evaluate", {
-            expression: "document[Symbol.for('perch.elementsOverlay')]?.remove?.()", returnByValue: true,
-        }, targetId).catch(() => {});
+        removeLayer(overlayPings, "perch.elementsOverlay", targetId);
     }
 
     // Elements › Properties: the node object's properties, own first and
@@ -1557,6 +1599,35 @@ if (!globalThis.perchElements && globalThis.perchInspector) {
         return {backgrounds, fontSize: style.fontSize, fontWeight: style.fontWeight};
     }
 
+    // Run in the page on the selected element, for the Styles hover on
+    // calc(), min(), max() and clamp(): each step set in turn on a hidden
+    // copy of the element placed beside it (so %, em and the rest resolve
+    // as for it) and the copy's computed `property` read; null where the
+    // step isn't valid for the property. Elements that would load or run
+    // something when copied are stood in for by a div.
+    function inPageMathSteps(property, steps) {
+        if (this.nodeType !== Node.ELEMENT_NODE)
+            return null;
+        const loads = /^(iframe|frame|img|video|audio|object|embed|script|link|style|source|picture|portal|html|body|head)$/i;
+        const probe = loads.test(this.localName) ? document.createElement("div") : this.cloneNode(false);
+        probe.removeAttribute("id");
+        probe.style.setProperty("visibility", "hidden", "important");
+        probe.style.setProperty("pointer-events", "none", "important");
+        if (this.parentElement)
+            this.after(probe);
+        else
+            this.appendChild(probe);
+        try {
+            return steps.map((step) => {
+                probe.style.removeProperty(property);
+                probe.style.setProperty(property, `calc(${step})`, "important");
+                return probe.style.getPropertyValue(property) ? getComputedStyle(probe).getPropertyValue(property) : null;
+            });
+        } finally {
+            probe.remove();
+        }
+    }
+
     // Run in the page on the listener's node (or window), with the console's
     // getEventListeners: the listener WebKit lists as the `index`th of its
     // type and phase there, removed or its handler's source read.
@@ -1703,30 +1774,13 @@ if (!globalThis.perchElements && globalThis.perchInspector) {
     }
 
     const sourceOrderPings = new Map;
-    function stopSourceOrderPings(key) {
-        clearInterval(sourceOrderPings.get(key));
-        sourceOrderPings.delete(key);
-    }
     async function setSourceOrder(nodeId, targetId, on, cap) {
-        const key = targetKey(targetId);
         if (!on || nodeId == null) {
-            stopSourceOrderPings(key);
-            await command("Runtime.evaluate", {
-                expression: "document[Symbol.for('perch.sourceOrder')]?.remove?.()", returnByValue: true,
-            }, targetId).catch(() => {});
+            await removeLayer(sourceOrderPings, "perch.sourceOrder", targetId);
             return {shown: 0, capped: false};
         }
         const shown = await callOn(nodeId, targetId, inPageSourceOrder, [true, cap]);
-        if (!sourceOrderPings.has(key)) {
-            sourceOrderPings.set(key, setInterval(() => {
-                command("Runtime.evaluate", {
-                    expression: "document[Symbol.for('perch.sourceOrder')]?.ping?.() ?? 0", returnByValue: true,
-                }, targetId).then((reply) => {
-                    if (!reply?.result?.value)
-                        stopSourceOrderPings(key);
-                }).catch(() => stopSourceOrderPings(key));
-            }, 1000));
-        }
+        keepPinging(sourceOrderPings, "perch.sourceOrder", targetId);
         return shown;
     }
 
@@ -1734,10 +1788,12 @@ if (!globalThis.perchElements && globalThis.perchInspector) {
         details, flags, documentRoot, subtree, children, search, styles, addRule, fonts, cssCatalog, layoutNodes, setOverlay, properties, accessibility,
         setPageOverlay, clearPageOverlays, anchorOf, accessibilityTreeRoot, accessibilityTreeChildren, listener, setSourceOrder,
         contrast: (nodeId, targetId) => callOn(nodeId, targetId, inPageContrast),
+        mathSteps: (nodeId, targetId, property, steps) => callOn(nodeId, targetId, inPageMathSteps, [String(property), steps]),
         paths: (nodeId, targetId) => callOn(nodeId, targetId, inPagePaths),
         toggleHidden: (nodeId, targetId, hidden) => callOn(nodeId, targetId, inPageToggleHidden, [!!hidden]),
         storeAsGlobal: (nodeId, targetId) => callOn(nodeId, targetId, inPageStore),
         scrollIntoView: (nodeId, targetId) => callOn(nodeId, targetId, inPageScroll),
+        adoptedSheets: (nodeId, targetId, index, text) => callOn(nodeId, targetId, inPageAdoptedSheets, [index, text]),
         setUserAgentShadowDOM: (on) => { userAgentShadowDOM = !!on; return userAgentShadowDOM; },
     });
 }

@@ -194,6 +194,8 @@ struct DeveloperMemoryView: View {
                 Text("Record to see objects allocated during that time that are still alive when you stop.")
                     .foregroundStyle(.secondary)
             }
+            DeveloperHeapTotal(session: session)
+                .padding(.top, 6)
             HStack(spacing: 8) {
                 Button(profile == .snapshot ? "Take snapshot" : profile == .detached ? "Start" : recordingTitle,
                        action: record)
@@ -1227,5 +1229,52 @@ private extension View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(selected ? DeveloperToolsStyle.selected : .clear)
             .contentShape(Rectangle())
+    }
+}
+
+
+/// Memory's start page, as Chrome shows it: the page's JavaScript VM and
+/// its heap now, and the total, read as the Performance monitor reads it.
+struct DeveloperHeapTotal: View {
+    @ObservedObject var session: DeveloperToolsSession
+    @ObservedObject private var monitor: DeveloperPerformanceMonitorModel
+
+    init(session: DeveloperToolsSession) {
+        self.session = session
+        monitor = DeveloperPerformanceMonitorModel.model(for: session)
+    }
+
+    var body: some View {
+        let heap = monitor.latest(.jsHeap)
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Select JavaScript VM instance").font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 12) {
+                Text(Self.host(session.address)).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 12)
+                Text(Self.size(heap)).monospacedDigit().foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: DeveloperToolsStyle.rowHeight)
+            .background(DeveloperToolsStyle.selected)
+            Text("Total JS heap size: \(Self.size(heap))")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("developer-memory-total-heap")
+                .help(monitor.unavailableReason(.jsHeap) ?? "The page’s JavaScript heap, read once a second.")
+        }
+        .frame(maxWidth: 420, alignment: .leading)
+        .onAppear { monitor.start() }
+        .onDisappear { monitor.stop() }
+    }
+
+    static func host(_ address: URL?) -> String {
+        guard let address else { return "Page" }
+        return address.host() ?? address.absoluteString
+    }
+
+    /// Chrome's "4.2 MB"; a dash until the first reading.
+    static func size(_ bytes: Double?) -> String {
+        guard let bytes else { return "–" }
+        return String(format: "%.1f MB", bytes / 1_000_000)
     }
 }

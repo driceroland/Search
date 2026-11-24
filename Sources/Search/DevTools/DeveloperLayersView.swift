@@ -27,13 +27,32 @@ struct DeveloperLayersView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack(spacing: 0) {
-                    list.frame(minWidth: 220, idealWidth: 320, maxWidth: 380)
-                    Divider()
-                    DeveloperLayersDiagram(layers: layers)
-                        .frame(minWidth: 160, maxWidth: .infinity, maxHeight: .infinity)
-                    Divider()
-                    details.frame(width: 260)
+                // Narrower than the three columns need, the details go
+                // under the list and view, as Chrome's Layers does; the
+                // drawer never asks for more width than it has, which would
+                // push the whole DevTools column off its edges.
+                GeometryReader { space in
+                    if space.size.width >= 640 {
+                        HStack(spacing: 0) {
+                            list.frame(minWidth: 220, idealWidth: 320, maxWidth: 380)
+                            Divider()
+                            DeveloperLayersDiagram(layers: layers)
+                                .frame(minWidth: 160, maxWidth: .infinity, maxHeight: .infinity)
+                            Divider()
+                            details.frame(width: 260)
+                        }
+                    } else {
+                        VStack(spacing: 0) {
+                            HStack(spacing: 0) {
+                                list.frame(width: max(140, min(320, space.size.width * 0.55)))
+                                Divider()
+                                DeveloperLayersDiagram(layers: layers)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                            Divider()
+                            details.frame(maxWidth: .infinity, maxHeight: max(80, space.size.height * 0.4))
+                        }
+                    }
                 }
             }
         }
@@ -252,15 +271,15 @@ private struct DeveloperLayersDiagram: View {
                         }
                         .onEnded { _ in dragStart = nil }
                 )
-                .simultaneousGesture(TapGesture(count: 2).onEnded { resetView() })
+                .simultaneousGesture(TapGesture(count: 2).onEnded {
+                    withAnimation(.easeInOut(duration: 0.25)) { yaw = 0; pitch = 0 }
+                })
                 .simultaneousGesture(SpatialTapGesture().onEnded { tap in
                     if let id = DeveloperLayerGeometry.hit(fitted, at: tap.location) { layers.selection = id }
                 })
-                HStack(spacing: DeveloperToolsStyle.controlSpacing) {
-                    DeveloperPanelIcon(symbol: "rotate.3d", title: "Turn to see the layers apart", active: yaw != 0 || pitch != 0) {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            if yaw == 0 && pitch == 0 { yaw = -0.6; pitch = 0.45 } else { yaw = 0; pitch = 0 }
-                        }
+                DeveloperPanelIcon(symbol: "rotate.3d", title: "Turn to see the layers apart", active: yaw != 0 || pitch != 0) {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        if yaw == 0 && pitch == 0 { yaw = -0.6; pitch = 0.45 } else { yaw = 0; pitch = 0 }
                     }
                 }
                 .padding(DeveloperToolsStyle.controlSpacing)
@@ -271,10 +290,6 @@ private struct DeveloperLayersDiagram: View {
         }
         .background(DeveloperToolsStyle.surface)
         .clipped()
-    }
-
-    private func resetView() {
-        withAnimation(.easeInOut(duration: 0.25)) { yaw = 0; pitch = 0 }
     }
 
     private func fittedQuads(_ size: CGSize) -> [DeveloperLayerGeometry.Quad] {

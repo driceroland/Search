@@ -44,11 +44,15 @@ struct DeveloperMediaView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack(spacing: 0) {
-                    list.frame(minWidth: 170, idealWidth: 220, maxWidth: 300)
-                    Divider()
-                    if let player = media.selected {
-                        detail(player).frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The list takes a share of a narrow drawer, not a fixed
+                // 170 pt that would push the details past its edge.
+                GeometryReader { proxy in
+                    HStack(spacing: 0) {
+                        list.frame(width: max(120, min(300, proxy.size.width * 0.35)))
+                        Divider()
+                        if let player = media.selected {
+                            detail(player).frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
                 }
             }
@@ -226,11 +230,8 @@ struct DeveloperMediaView: View {
                     + (track.on ? " (on)" : "")
             }.joined(separator: "\n")
         }
-        var rows: [(String, String)] = []
-        if !player.audioTracks.isEmpty { rows.append(("Audio tracks", text(player.audioTracks))) }
-        if !player.videoTracks.isEmpty { rows.append(("Video tracks", text(player.videoTracks))) }
-        if !player.textTracks.isEmpty { rows.append(("Text tracks", text(player.textTracks))) }
-        return rows
+        return [("Audio tracks", player.audioTracks), ("Video tracks", player.videoTracks),
+                ("Text tracks", player.textTracks)].filter { !$0.1.isEmpty }.map { ($0.0, text($0.1)) }
     }
 
     private func flag(_ value: Bool) -> String { value ? "true" : "false" }
@@ -253,9 +254,9 @@ struct DeveloperMediaView: View {
         let start = log.first?.time ?? 0
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text("Timestamp").frame(width: 84, alignment: .leading)
-                Text("Event").frame(width: 120, alignment: .leading)
-                Text("currentTime").frame(width: 84, alignment: .leading)
+                Text("Timestamp").frame(width: 66, alignment: .leading)
+                Text("Event").frame(width: 104, alignment: .leading)
+                Text("currentTime").frame(width: 76, alignment: .leading)
                 Text("Detail").frame(maxWidth: .infinity, alignment: .leading)
             }
             .foregroundStyle(.secondary)
@@ -272,13 +273,14 @@ struct DeveloperMediaView: View {
                             ForEach(log) { event in
                                 HStack(spacing: 8) {
                                     Text(DeveloperMediaTime.offset(event.time, from: start))
-                                        .frame(width: 84, alignment: .leading)
+                                        .frame(width: 66, alignment: .leading)
                                         .help(Date(timeIntervalSince1970: event.time / 1_000).formatted(date: .omitted, time: .standard))
-                                    Text(event.name).frame(width: 120, alignment: .leading)
+                                    Text(event.name).frame(width: 104, alignment: .leading)
                                         .foregroundStyle(DeveloperMediaState.isTrouble(event.name) ? Color.orange : Palette.ink)
-                                    Text(DeveloperMediaTime.clock(event.mediaTime)).frame(width: 84, alignment: .leading)
+                                    Text(DeveloperMediaTime.clock(event.mediaTime)).frame(width: 76, alignment: .leading)
                                     Text(event.detail ?? "").foregroundStyle(.secondary).lineLimit(1)
                                         .frame(maxWidth: .infinity, alignment: .leading)
+                                        .help(event.detail ?? "")
                                 }
                                 .font(DeveloperToolsStyle.code)
                                 .textSelection(.enabled)
@@ -334,16 +336,8 @@ struct DeveloperMediaTimeline: View {
                 let width = proxy.size.width
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2).fill(DeveloperToolsStyle.raised)
-                    ForEach(Array(DeveloperMediaRanges.fractions(player.buffered, duration: duration).enumerated()), id: \.offset) { _, part in
-                        Rectangle().fill(DeveloperToolsStyle.tint.opacity(0.35))
-                            .frame(width: max(1, (part.end - part.start) * width))
-                            .offset(x: part.start * width)
-                    }
-                    ForEach(Array(DeveloperMediaRanges.fractions(player.played, duration: duration).enumerated()), id: \.offset) { _, part in
-                        Rectangle().fill(DeveloperToolsStyle.tint)
-                            .frame(width: max(1, (part.end - part.start) * width), height: 4)
-                            .offset(x: part.start * width)
-                    }
+                    bars(player.buffered, DeveloperToolsStyle.tint.opacity(0.35), height: nil, width: width)
+                    bars(player.played, DeveloperToolsStyle.tint, height: 4, width: width)
                     if let duration, duration.isFinite, duration > 0 {
                         Rectangle().fill(Color.red)
                             .frame(width: 2)
@@ -355,19 +349,35 @@ struct DeveloperMediaTimeline: View {
             .accessibilityLabel("Buffered " + DeveloperMediaRanges.format(player.buffered))
             HStack {
                 Text(DeveloperMediaTime.clock(player.currentTime) + " / "
-                     + (player.duration.map { DeveloperMediaTime.clock($0) } ?? (player.durationText ?? "—")))
-                Spacer()
-                HStack(spacing: 4) {
-                    Circle().fill(DeveloperToolsStyle.tint.opacity(0.35)).frame(width: 7, height: 7)
-                    Text("Buffered")
-                    Circle().fill(DeveloperToolsStyle.tint).frame(width: 7, height: 7)
-                    Text("Played")
-                    Rectangle().fill(Color.red).frame(width: 2, height: 8)
-                    Text("Playhead")
+                     + (player.duration.map { DeveloperMediaTime.clock($0) }
+                        ?? player.durationText.flatMap { $0 == "NaN" ? nil : $0 } ?? "—"))
+                    .lineLimit(1)
+                    .layoutPriority(1)
+                Spacer(minLength: 6)
+                // The key gives way first in a narrow drawer.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) {
+                        Circle().fill(DeveloperToolsStyle.tint.opacity(0.35)).frame(width: 7, height: 7)
+                        Text("Buffered")
+                        Circle().fill(DeveloperToolsStyle.tint).frame(width: 7, height: 7)
+                        Text("Played")
+                        Rectangle().fill(Color.red).frame(width: 2, height: 8)
+                        Text("Playhead")
+                    }
+                    .lineLimit(1)
+                    Color.clear.frame(width: 0, height: 0)
                 }
             }
             .font(.system(size: 10))
             .foregroundStyle(.secondary)
+        }
+    }
+
+    private func bars(_ ranges: [DeveloperMediaRange], _ color: Color, height: CGFloat?, width: CGFloat) -> some View {
+        ForEach(Array(DeveloperMediaRanges.fractions(ranges, duration: player.duration).enumerated()), id: \.offset) { _, part in
+            Rectangle().fill(color)
+                .frame(width: max(1, (part.end - part.start) * width), height: height)
+                .offset(x: part.start * width)
         }
     }
 }

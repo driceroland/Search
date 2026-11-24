@@ -315,7 +315,9 @@
         return {result: {type: "undefined"}};
     }
 
-    async function evaluate(expression, nodes, userGesture, targetId, where) {
+    // `awaited`: the prompt was made an async function (top-level await,
+    // DeveloperConsoleSyntax), so its promise is awaited for the result.
+    async function evaluate(expression, nodes, userGesture, targetId, where, awaited = false) {
         const history = Array.isArray(nodes) ? nodes.filter(Number.isFinite) : [];
         if (history.length)
             await command("DOM.setInspectedNode", {nodeId: history[0]}, null).catch(() => {});
@@ -334,8 +336,15 @@
                 ? await withNodeHistory(source, history.length ? history : [], targetId, where)
                 : await run({
                     expression: source, objectGroup: "console", includeCommandLineAPI: true,
-                    generatePreview: true, saveResult: true, emulateUserGesture: userGesture !== false,
+                    generatePreview: true, saveResult: !awaited, emulateUserGesture: userGesture !== false,
                 }, targetId, where);
+            if (awaited && !result.wasThrown && result.result?.objectId) {
+                const settled = await command("Runtime.awaitPromise", {
+                    promiseObjectId: result.result.objectId, generatePreview: true, saveResult: true,
+                }, place(where).targetId ?? targetId).catch(() => null);
+                if (settled)
+                    result = {...settled, contextReset: result.contextReset};
+            }
         }
         return {value: remote(result.result), wasThrown: result.wasThrown === true, contextReset: result.contextReset === true};
     }

@@ -5,11 +5,12 @@ import SwiftUI
 /// Search has them.
 enum DeveloperSettingsSection: String, CaseIterable, Identifiable {
     case preferences = "Preferences"
+    // In Chrome's order.
     case workspace = "Workspace"
+    case ignoreList = "Ignore list"
     case devices = "Devices"
     case throttling = "Throttling"
     case locations = "Locations"
-    case ignoreList = "Ignore list"
     case shortcuts = "Shortcuts"
 
     var id: Self { self }
@@ -400,20 +401,24 @@ private struct DeveloperPreferencesSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             group("Appearance") {
-                Picker("Theme", selection: $theme.theme) {
-                    ForEach(DeveloperToolsTheme.allCases) { Text($0.title).tag($0) }
+                row("Theme") {
+                    SettingsDropdown(selection: $theme.theme,
+                                     options: DeveloperToolsTheme.allCases.map { ($0, $0.title) })
                 }
-                .fixedSize()
                 .help("System preference follows the browser’s light or dark appearance.")
-                Picker("Panel layout", selection: $tools.dockPosition) {
-                    ForEach(DeveloperDockPosition.allCases) { Text($0.title).tag($0) }
+                row("Panel layout") {
+                    SettingsDropdown(selection: $tools.dockPosition,
+                                     options: DeveloperDockPosition.allCases.map { ($0, $0.title) })
                 }
-                .fixedSize()
-                HStack {
-                    Text("Zoom: \(Int((shell.scale * 100).rounded()))%")
-                    Button("−") { shell.zoom(by: -1) }
-                    Button("+") { shell.zoom(by: 1) }
-                    Button("Reset") { shell.zoom(by: 0) }.disabled(shell.scale == 1)
+                row("Zoom") {
+                    HStack(spacing: 4) {
+                        Button("−") { shell.zoom(by: -1) }
+                        Text("\(Int((shell.scale * 100).rounded()))%").monospacedDigit()
+                            .frame(minWidth: 40)
+                        Button("+") { shell.zoom(by: 1) }
+                        Spacer(minLength: 0)
+                        Button("Reset") { shell.zoom(by: 0) }.disabled(shell.scale == 1)
+                    }
                 }
             }
             group("Global") {
@@ -427,8 +432,7 @@ private struct DeveloperPreferencesSettings: View {
                 Toggle("Show detailed inspect tooltip", isOn: $detailedTooltip)
                 Toggle("Show CSS documentation tooltip", isOn: $cssDocumentation)
             }
-            .onChange(of: userAgentShadowDOM) { _, _ in session.elementsSettingsChanged() }
-            .onChange(of: comments) { _, _ in session.elementsSettingsChanged() }
+            .onChange(of: [userAgentShadowDOM, comments]) { _, _ in session.elementsSettingsChanged() }
             .onChange(of: rulers) { _, on in
                 if !on { Task { await session.showRulers(false, target: session.domTargetID) } }
             }
@@ -454,15 +458,12 @@ private struct DeveloperPreferencesSettings: View {
                 Toggle("Display variable values inline while debugging", isOn: $inlineValues)
                 Toggle("Enable CSS source maps", isOn: $cssSourceMaps)
                 Toggle("Allow scrolling past end of file", isOn: $scrollPastEnd)
-                Picker("Default indentation", selection: $defaultIndentation) {
-                    ForEach(DeveloperSourcesPreferences.indentationChoices) { choice in
-                        Text(choice.title).tag(choice.value)
-                    }
+                row("Default indentation") {
+                    SettingsDropdown(selection: $defaultIndentation,
+                                     options: DeveloperSourcesPreferences.indentationChoices.map { ($0.value, $0.title) })
                 }
-                .fixedSize()
             }
-            .onChange(of: javaScriptSourceMaps) { _, _ in session.sourceMaps.settingsChanged() }
-            .onChange(of: cssSourceMaps) { _, _ in session.sourceMaps.settingsChanged() }
+            .onChange(of: [javaScriptSourceMaps, cssSourceMaps]) { _, _ in session.sourceMaps.settingsChanged() }
             group("Debugger") {
                 Toggle("Disable async stack traces", isOn: $asyncStacksDisabled)
             }
@@ -475,10 +476,10 @@ private struct DeveloperPreferencesSettings: View {
                 Toggle("Color-code resource types", isOn: $colorCodeTypes)
             }
             group("Performance") {
-                Picker("Flamechart mouse wheel action", selection: $flameNavigation) {
-                    ForEach(DeveloperFlameChartNavigation.allCases) { Text($0.title).tag($0) }
+                row("Flamechart mouse wheel action") {
+                    SettingsDropdown(selection: $flameNavigation,
+                                     options: DeveloperFlameChartNavigation.allCases.map { ($0, $0.title) })
                 }
-                .fixedSize()
                 .help("Modern: scroll moves, ⌘-scroll zooms. Classic: scroll zooms, Shift-scroll moves up and down.")
             }
             group("AI assistance") {
@@ -508,6 +509,61 @@ private struct DeveloperPreferencesSettings: View {
             DeveloperSettingsHeading(title)
             content()
         }
+    }
+
+    /// A labelled control: the label on the left, the control right-aligned
+    /// in a column of one width, so the drop-downs line up down the page.
+    private func row<Control: View>(_ label: String, @ViewBuilder _ control: () -> Control) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+            Spacer(minLength: 12)
+            control()
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+                .frame(width: Self.controlWidth, alignment: .trailing)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private static let controlWidth: CGFloat = 180
+}
+
+/// A drop-down that fills the width it is given, where a system pop-up
+/// button keeps to the width of its longest item, so a column of them
+/// lines up edge to edge.
+struct SettingsDropdown<Value: Hashable>: View {
+    @Binding var selection: Value
+    let options: [(Value, String)]
+
+    var body: some View {
+        Menu {
+            ForEach(options, id: \.0) { option in
+                Toggle(option.1, isOn: isOn(option.0))
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(options.first { $0.0 == selection }?.1 ?? "")
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, minHeight: 22)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.07)))
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+    }
+
+    /// An item's checkmark: on for the current value; choosing it selects it.
+    func isOn(_ value: Value) -> Binding<Bool> {
+        Binding(get: { selection == value },
+                set: { if $0 { selection = value } })
     }
 }
 

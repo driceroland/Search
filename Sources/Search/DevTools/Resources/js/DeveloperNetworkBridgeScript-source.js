@@ -324,6 +324,7 @@
             const item = row(data.requestId);
             const headers = data.request?.headers;
             item.requestHeaders = lower(headers);
+            item.requestHeaderValues = headerValues(headers);
             item.cookies = cookieNames(headerValue(headers, "cookie"));
             item.requestCookies = cookiePairs(headerValue(headers, "cookie"));
             item.frameId = data.frameId ?? null;
@@ -367,6 +368,7 @@
                 item.decoded = metrics.responseBodyDecodedSize;
             if (metrics.requestHeaders) {
                 item.requestHeaders = lower(metrics.requestHeaders);
+                item.requestHeaderValues = headerValues(metrics.requestHeaders);
                 item.cookies = cookieNames(headerValue(metrics.requestHeaders, "cookie"));
                 item.requestCookies = cookiePairs(headerValue(metrics.requestHeaders, "cookie"));
             }
@@ -458,7 +460,7 @@
     let syncing = Promise.resolve();
     function syncBlocking() {
         const next = syncing.then(async () => {
-            const wanted = blockingEnabled && (matchers.length > 0 || throttles.length > 0);
+            const wanted = (blockingEnabled && (matchers.length > 0 || throttles.length > 0)) || rewritesRequests();
             const target = wanted ? interceptionTarget() : null;
             if (blockRule && (blockRule !== target || !wanted)) {
                 const previous = blockRule;
@@ -481,8 +483,11 @@
         return next;
     }
 
-    function setBlocking({enabled = true, patterns: list = [], throttled: delays = []} = {}) {
+    function setBlocking({enabled = true, patterns: list = [], throttled: delays = [], acceptEncoding: encoding = null,
+                          disabledImageTypes: types = []} = {}) {
         blockingEnabled = !!enabled;
+        acceptEncoding = typeof encoding === "string" && encoding.trim() ? encoding.trim() : null;
+        disabledImageTypes = (Array.isArray(types) ? types : []).filter((type) => imageFormats.includes(type));
         patterns = (Array.isArray(list) ? list : []).filter((item) => typeof item === "string" && item.trim())
             .slice(0, 200);
         matchers = patterns.map((pattern) => {
@@ -498,7 +503,127 @@
                 return null;
             }
         }).filter(Boolean);
-        return syncBlocking();
+        return Promise.all([syncBlocking(), syncImages()]).then(([request]) => request);
+    }
+
+    // Network conditions' Accepted Content-Encodings: the Accept-Encoding
+    // each request goes out with, or null for the browser's own.
+    let acceptEncoding = null;
+
+    // Rendering's Disable AVIF / JPEG XL / WebP image format, as Chrome does
+    // it: image requests stop offering the type, and a response in it is
+    // answered with no bytes, so the image fails to decode.
+    const imageFormats = ["image/avif", "image/jxl", "image/webp"];
+    let disabledImageTypes = [];
+    const imageStage = "response";
+    // Case-insensitive, stage response: no other rule has this key.
+    const imageInterception = {url: "^https?://", stage: imageStage, isRegex: true, caseSensitive: false};
+    let imageRule = null;
+
+    function rewritesRequests() {
+        return acceptEncoding !== null || disabledImageTypes.length > 0;
+    }
+
+    // The Accept header without the disabled image types.
+    function acceptWithout(value) {
+        if (typeof value !== "string" || !disabledImageTypes.length)
+            return value;
+        return value.split(",").filter((part) =>
+            !disabledImageTypes.includes(part.split(";")[0].trim().toLowerCase())).join(",");
+    }
+
+    let imageSyncing = Promise.resolve();
+    function syncImages() {
+        const next = imageSyncing.then(async () => {
+            const wanted = disabledImageTypes.length > 0;
+            const target = wanted ? headerTarget() : null;
+            if (imageRule && (imageRule !== target || !wanted)) {
+                const previous = imageRule;
+                imageRule = null;
+                if (!previous.isDestroyed)
+                    await previous.NetworkAgent.removeInterception.invoke(imageInterception).catch(() => {});
+            }
+            if (!wanted || !target || imageRule === target)
+                return {active: !!imageRule};
+            if (WI.networkManager && WI.networkManager.interceptionEnabled === false)
+                WI.networkManager.interceptionEnabled = true;
+            await target.NetworkAgent.addInterception.invoke(imageInterception).catch((error) => {
+                if (!/already exists/i.test(String(error?.message ?? error)))
+                    throw error;
+            });
+            imageRule = target;
+            return {active: true};
+        });
+        imageSyncing = next.catch(() => {});
+        return next;
+    }
+
+    function imageIntercepted(message, target) {
+        if (message?.method !== "Network.responseIntercepted" || !disabledImageTypes.length || !target?.NetworkAgent)
+            return false;
+        const {requestId, response} = message.params ?? {};
+        if (typeof requestId !== "string" || !response)
+            return false;
+        let type = typeof response.mimeType === "string" ? response.mimeType : "";
+        if (!type) {
+            for (const [name, value] of Object.entries(response.headers ?? {})) {
+                if (name.toLowerCase() === "content-type")
+                    type = String(value);
+            }
+        }
+        type = type.split(";")[0].trim().toLowerCase();
+        if (!disabledImageTypes.includes(type))
+            return false;
+        const headers = {};
+        for (const [name, value] of Object.entries(response.headers ?? {})) {
+            if (!["content-encoding", "content-length"].includes(name.toLowerCase()))
+                headers[name] = value;
+        }
+        headers["Cache-Control"] = "no-store";
+        target.NetworkAgent.interceptWithResponse.invoke({
+            requestId, content: "", base64Encoded: true, mimeType: type,
+            status: Number.isFinite(response.status) ? response.status : 200,
+            statusText: typeof response.statusText === "string" ? response.statusText : "OK", headers,
+        }).catch(() => target.NetworkAgent.interceptContinue.invoke({requestId, stage: imageStage}).catch(() => {}));
+        return true;
+    }
+
+    // Lets an intercepted request go, with the chosen Accept-Encoding and
+    // without the disabled image types.
+    function release(target, requestId, request) {
+        if (rewritesRequests() && request && typeof request.headers === "object"
+            && typeof target.NetworkAgent?.interceptWithRequest?.invoke === "function") {
+            const headers = {};
+            for (const [name, value] of Object.entries(request.headers ?? {})) {
+                const lower = name.toLowerCase();
+                if (lower === "accept-encoding" && acceptEncoding !== null)
+                    continue;
+                headers[name] = lower === "accept" ? acceptWithout(value) : value;
+            }
+            if (acceptEncoding !== null)
+                headers["Accept-Encoding"] = acceptEncoding;
+            return target.NetworkAgent.interceptWithRequest.invoke({requestId, headers})
+                .catch(() => target.NetworkAgent.interceptContinue.invoke({requestId, stage: blockStage}));
+        }
+        return target.NetworkAgent.interceptContinue.invoke({requestId, stage: blockStage});
+    }
+
+    // A request neither blocked nor held, sent on with the chosen encodings.
+    function encodeIntercepted(message, target) {
+        if (message?.method !== "Network.requestIntercepted" || !rewritesRequests())
+            return false;
+        const {requestId, request} = message.params ?? {};
+        if (typeof requestId !== "string" || !/^https?:/i.test(request?.url ?? ""))
+            return false;
+        // Let WebKit serve any explicit request-stage Local Override.
+        const overrides = WI.networkManager?.localResourceOverridesForURL?.(request.url) ?? [];
+        if (overrides.some((override) => !override.disabled && override.networkStage === blockStage))
+            return false;
+        // The page-wide condition owns the hold and also fails offline requests.
+        if (globalThis.perchInspector?.isConditionedRequest?.(message, target, release))
+            return true;
+        release(target, requestId, request).catch(() => {});
+        return true;
     }
 
     // The first throttling condition whose pattern matches, as Chrome
@@ -514,7 +639,8 @@
     // Holds a matching request for its condition's latency, then lets it
     // go. Bandwidth can't be paced per request through interception.
     function throttleIntercepted(message, target) {
-        if (message?.method !== "Network.requestIntercepted" || !blockingEnabled || !throttles.length)
+        if (message?.method !== "Network.requestIntercepted" || !blockingEnabled || !throttles.length
+            || globalThis.perchInspector?.conditionFor?.(target)?.offline)
             return false;
         const {requestId, request} = message.params ?? {};
         if (typeof requestId !== "string" || throttled.has(requestId))
@@ -530,7 +656,7 @@
         throttled.set(requestId, setTimeout(() => {
             throttled.delete(requestId);
             if (!target.isDestroyed)
-                target.NetworkAgent.interceptContinue.invoke({requestId, stage: blockStage}).catch(() => {});
+                release(target, requestId, request).catch(() => {});
         }, rule.latency));
         return true;
     }
@@ -969,8 +1095,11 @@
     }
 
     function state(since = 0) {
-        if (blockingEnabled && (matchers.length || throttles.length) && blockRule !== interceptionTarget())
+        if (((blockingEnabled && (matchers.length || throttles.length)) || rewritesRequests())
+            && blockRule !== interceptionTarget())
             syncBlocking().catch(() => {});
+        if (disabledImageTypes.length && imageRule !== headerTarget())
+            syncImages().catch(() => {});
         if (headerRules.length && headerRule !== headerTarget())
             syncHeaders().catch(() => {});
         const changed = [];
@@ -998,6 +1127,12 @@
     if (typeof dispatchEvent === "function") {
         connection._dispatchEvent = function(message) {
             try {
+                if (imageIntercepted(message, this.target))
+                    return;
+            } catch {
+                // WebKit's frontend releases the response.
+            }
+            try {
                 if (headerIntercepted(message, this.target))
                     return;
             } catch {
@@ -1014,6 +1149,12 @@
                     return;
             } catch {
                 // The page-wide throttling or WebKit's frontend releases it.
+            }
+            try {
+                if (encodeIntercepted(message, this.target))
+                    return;
+            } catch {
+                // WebKit's frontend releases it with the browser's encodings.
             }
             try {
                 observe(message, this.target);

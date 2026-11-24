@@ -202,32 +202,26 @@ enum SourceEditing {
         let closers = Dictionary(uniqueKeysWithValues: pairs.map { ($0.value, $0.key) })
         for at in [caret, caret - 1] where at >= 0 && at < length {
             let unit = string.character(at: at)
+            // Forward from an opener to its closer, backward from a closer.
+            let partner: unichar, step: Int
             if let closer = pairs[unit] {
-                var depth = 0
-                var index = at
-                while index < length {
-                    let current = string.character(at: index)
-                    if current == unit { depth += 1 } else if current == closer {
-                        depth -= 1
-                        if depth == 0 { return index }
-                    }
-                    index += 1
-                }
-                return nil
+                (partner, step) = (closer, 1)
+            } else if let opener = closers[unit] {
+                (partner, step) = (opener, -1)
+            } else {
+                continue
             }
-            if let opener = closers[unit] {
-                var depth = 0
-                var index = at
-                while index >= 0 {
-                    let current = string.character(at: index)
-                    if current == unit { depth += 1 } else if current == opener {
-                        depth -= 1
-                        if depth == 0 { return index }
-                    }
-                    index -= 1
+            var depth = 0
+            var index = at
+            while index >= 0, index < length {
+                let current = string.character(at: index)
+                if current == unit { depth += 1 } else if current == partner {
+                    depth -= 1
+                    if depth == 0 { return index }
                 }
-                return nil
+                index += step
             }
+            return nil
         }
         return nil
     }

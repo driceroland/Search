@@ -926,6 +926,14 @@ final class DeveloperMemory: ObservableObject {
     /// Heap.snapshot runs a full collection first, then hands over the
     /// whole heap as one JSON string; reading it happens off the main thread.
     func takeSnapshot() {
+        snapshotPage { json, snapshot, generation, _ in self.append(snapshot, generation: generation, json: json) }
+    }
+
+    /// Takes and parses a snapshot, then hands it on with the object
+    /// generation it was taken in. Errors land in `message`.
+    private func snapshotPage(
+        then finish: @escaping @MainActor (String, DeveloperHeapSnapshot, Int, DeveloperToolsSession) async throws -> Void
+    ) {
         guard progress == nil, recording == nil, let session, session.ready else { return }
         progress = "Snapshotting…"
         message = nil
@@ -943,7 +951,7 @@ final class DeveloperMemory: ObservableObject {
                 let snapshot = try await Task.detached(priority: .userInitiated) {
                     try DeveloperHeapSnapshot(json: json, timestamp: timestamp)
                 }.value
-                append(snapshot, generation: generation, json: json)
+                try await finish(json, snapshot, generation, session)
             } catch {
                 message = error.localizedDescription
             }
@@ -970,33 +978,14 @@ final class DeveloperMemory: ObservableObject {
     /// resolved on the page and asked whether it's connected. The ones
     /// that aren't are listed by description, each with its retainers.
     func findDetachedElements() {
-        guard progress == nil, recording == nil, let session, session.ready else { return }
-        progress = "Snapshotting…"
-        message = nil
-        let generation = objectGeneration
-        Task {
-            defer { progress = nil }
-            do {
-                await enable(session)
-                let result = try await session.command("Heap.snapshot")
-                guard let json = result["snapshotData"] as? String else {
-                    throw DeveloperHeapSnapshot.ParseError.malformed("WebKit sent no snapshot")
-                }
-                let timestamp = result["timestamp"] as? Double ?? Date().timeIntervalSince1970
-                progress = "Building the dominator tree…"
-                let (snapshot, candidates) = try await Task.detached(priority: .userInitiated) {
-                    let snapshot = try DeveloperHeapSnapshot(json: json, timestamp: timestamp)
-                    return (snapshot, snapshot.detachedCandidates())
-                }.value
-                progress = "Checking \(candidates.nodes.count.formatted()) DOM nodes…"
-                let probes = await probeDOMNodes(candidates.nodes, of: snapshot, session: session)
-                guard generation == objectGeneration else { throw ObjectActionError.stale }
-                let report = snapshot.detachedReport(probes: probes, checked: candidates.nodes.count,
-                                                     candidates: candidates.total)
-                append(snapshot, generation: generation, json: json, detached: report)
-            } catch {
-                message = error.localizedDescription
-            }
+        snapshotPage { json, snapshot, generation, session in
+            let candidates = await Task.detached(priority: .userInitiated) { snapshot.detachedCandidates() }.value
+            self.progress = "Checking \(candidates.nodes.count.formatted()) DOM nodes…"
+            let probes = await self.probeDOMNodes(candidates.nodes, of: snapshot, session: session)
+            guard generation == self.objectGeneration else { throw ObjectActionError.stale }
+            let report = snapshot.detachedReport(probes: probes, checked: candidates.nodes.count,
+                                                 candidates: candidates.total)
+            self.append(snapshot, generation: generation, json: json, detached: report)
         }
     }
 
@@ -1007,21 +996,27 @@ final class DeveloperMemory: ObservableObject {
         guard !nodes.isEmpty else { return [:] }
         let target = session.runtimeTargetID
         let group = "perch-heap-detached-" + UUID().uuidString
-        let queue = ProbeQueue<DeveloperHeapDOMProbe>(nodes: nodes)
         let ids = snapshot.ids
+        let found = await probe(nodes, session: session) { node in
+            await Self.probeDOMNode(heapID: ids[node], session: session, group: group, target: target)
+        }
+        _ = try? await session.command("Runtime.releaseObjectGroup", ["objectGroup": group], targetID: target)
+        return found
+    }
+
+    /// Asks `ask` about each node, a few at a time, while the session lasts.
+    private func probe<Value>(_ nodes: [Int], session: DeveloperToolsSession,
+                              _ ask: @escaping @MainActor (Int) async -> Value?) async -> [Int: Value] {
+        let queue = ProbeQueue<Value>(nodes: nodes)
         let workers = (0..<min(Self.detachedProbeConcurrency, nodes.count)).map { _ in
             Task { @MainActor in
                 while let node = queue.take() {
                     guard session.ready else { return }
-                    if let probe = await Self.probeDOMNode(heapID: ids[node], session: session,
-                                                           group: group, target: target) {
-                        queue.found[node] = probe
-                    }
+                    if let value = await ask(node) { queue.found[node] = value }
                 }
             }
         }
         for worker in workers { await worker.value }
-        _ = try? await session.command("Runtime.releaseObjectGroup", ["objectGroup": group], targetID: target)
         return queue.found
     }
 
@@ -1110,22 +1105,10 @@ final class DeveloperMemory: ObservableObject {
     /// snapshot is left out.
     private func probeStrings(_ nodes: [Int], of snapshot: DeveloperHeapSnapshot,
                               session: DeveloperToolsSession) async -> [Int: String] {
-        guard !nodes.isEmpty else { return [:] }
-        let queue = ProbeQueue<String>(nodes: nodes)
         let ids = snapshot.ids
-        let workers = (0..<min(Self.detachedProbeConcurrency, nodes.count)).map { _ in
-            Task { @MainActor in
-                while let node = queue.take() {
-                    guard session.ready else { return }
-                    if let reply = try? await session.command("Heap.getPreview", ["heapObjectId": ids[node]]),
-                       let value = reply["string"] as? String {
-                        queue.found[node] = value
-                    }
-                }
-            }
+        return await probe(nodes, session: session) { node in
+            (try? await session.command("Heap.getPreview", ["heapObjectId": ids[node]]))?["string"] as? String
         }
-        for worker in workers { await worker.value }
-        return queue.found
     }
 
     // MARK: Summary filter

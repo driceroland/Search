@@ -116,7 +116,7 @@ final class SourceDocument: ObservableObject {
         if pretty {
             pretty = false
             Self.prettyURLs.remove(url)
-            let offset = prettyResult.map { originalOffset(ofLine: lineIndex(caret, in: $0.lineStarts), in: $0) } ?? 0
+            let offset = prettyResult.map { originalOffset(ofLine: SourceLexing.lineIndex(caret, in: $0.lineStarts), in: $0) } ?? 0
             show(id: 0, text: original, starts: originalStarts, caret: offset)
             return
         }
@@ -156,11 +156,7 @@ final class SourceDocument: ObservableObject {
         var last = (line: 1, column: 0)
         for (index, origin) in formatted.origins.enumerated() {
             if let origin {
-                var low = 0, high = originalStarts.count - 1
-                while low < high {
-                    let mid = (low + high + 1) / 2
-                    if originalStarts[mid] <= origin { low = mid } else { high = mid - 1 }
-                }
+                let low = SourceLexing.lineIndex(origin, in: originalStarts)
                 last = (low + 1, origin - originalStarts[low])
                 if firstLine[last.line] == nil { firstLine[last.line] = index + 1 }
                 let position = SourceBreakpoint(line: last.line, column: last.column)
@@ -173,29 +169,20 @@ final class SourceDocument: ObservableObject {
                       firstLine: firstLine, lineAt: lineAt, origins: origins)
     }
 
-    private func lineIndex(_ offset: Int, in starts: [Int]) -> Int {
-        var low = 0, high = starts.count - 1
-        while low < high {
-            let mid = (low + high + 1) / 2
-            if starts[mid] <= offset { low = mid } else { high = mid - 1 }
-        }
-        return low
-    }
-
     private func originalOffset(ofLine index: Int, in pretty: Pretty) -> Int {
         guard index < pretty.lines.count else { return 0 }
         let position = pretty.lines[index]
         return originalStarts[min(position.line - 1, originalStarts.count - 1)] + position.column
     }
 
+    /// The formatted line (0-based) an original offset is on.
+    private static func formattedLine(forOriginal offset: Int, in pretty: Pretty) -> Int {
+        pretty.origins[SourceLexing.lastIndex(pretty.origins.count, atMost: offset) { pretty.origins[$0].offset }].line
+    }
+
     private func formattedOffset(forOriginal offset: Int, in pretty: Pretty) -> Int {
-        var low = 0, high = pretty.origins.count - 1
-        guard high >= 0 else { return 0 }
-        while low < high {
-            let mid = (low + high + 1) / 2
-            if pretty.origins[mid].offset <= offset { low = mid } else { high = mid - 1 }
-        }
-        let line = pretty.origins[low].line
+        guard !pretty.origins.isEmpty else { return 0 }
+        let line = Self.formattedLine(forOriginal: offset, in: pretty)
         return line < pretty.lineStarts.count ? pretty.lineStarts[line] : 0
     }
 
@@ -216,13 +203,7 @@ final class SourceDocument: ObservableObject {
         guard pretty, let prettyResult, !prettyResult.origins.isEmpty, line >= 1, line <= originalStarts.count else {
             return shownLine(forOriginal: line)
         }
-        let offset = originalStarts[line - 1] + max(0, column)
-        var low = 0, high = prettyResult.origins.count - 1
-        while low < high {
-            let mid = (low + high + 1) / 2
-            if prettyResult.origins[mid].offset <= offset { low = mid } else { high = mid - 1 }
-        }
-        return prettyResult.origins[low].line + 1
+        return Self.formattedLine(forOriginal: originalStarts[line - 1] + max(0, column), in: prettyResult) + 1
     }
 
     /// The UTF-16 offset in the shown text of an original position: the
@@ -341,6 +322,16 @@ struct DeveloperSourcePane: View {
     private var coverageLines: [Int: Bool] {
         guard !document.pretty, !document.formatting else { return [:] }
         return coverage.lineUsage(for: document.url)
+    }
+
+    /// Performance's line-level profile in the lines shown: pretty-printed,
+    /// or an authored file's through its source map, as Chrome's gutter.
+    private var profileLines: [Int: Double] {
+        guard !session.lineProfile.isEmpty, !document.formatting else { return [:] }
+        let maps = session.sourceMaps, document = document
+        return session.lineProfile.lines(of: document.url,
+                                         original: isAuthored ? { maps.original(url: $0, line: $1, column: $2) } : nil,
+                                         shown: { document.shownLine(forOriginal: $0, column: $1) })
     }
 
     /// Each shown line's breakpoint marker.
@@ -469,6 +460,7 @@ struct DeveloperSourcePane: View {
             return controller
         }
         actions.paused = debugger.pause != nil
+        actions.clearLineProfile = { session.lineProfile = DeveloperLineProfile() }
         actions.continueToHere = { line in
             debugger.continueToHere(url: url, line: document.breakpointTarget(line: line).line)
         }
@@ -497,36 +489,32 @@ struct DeveloperSourcePane: View {
         actions.canPrettyPrint = document.language.canPrettyPrint && !isSnippet && !overridden && !mapped
         let overrides = overrides
         let workspace = workspace
-        if mapped {
-            let page = session.address?.absoluteString
+        if mapped || overridden {
+            // Saved to the workspace folder, or to the overrides folder (and
+            // listed in Changes as edited).
+            let write: (_ text: String, _ css: Bool) throws -> Void
+            if mapped {
+                let page = session.address?.absoluteString
+                write = { try workspace.save(url: url, page: page, content: $0, needsReload: !$1) }
+            } else {
+                write = { text, _ in try overrides.save(url: url, content: text) }
+            }
+            let override = !mapped
             actions.edited = { text in
                 document.editedText = text
                 tabs.unsaved.insert(url)
+                if override {
+                    DeveloperChanges.of(session).editedSource(url: url, original: document.originalText, text: text,
+                                                              css: document.language == .css)
+                }
             }
             actions.save = {
                 do {
                     let text = document.editedText ?? document.originalText
                     let css = document.language == .css
-                    try workspace.save(url: url, page: page, content: text, needsReload: !css)
+                    try write(text, css)
                     tabs.unsaved.remove(url)
                     if css { DeveloperWorkspace.applyStyleSheet(url: url, text: text, session: session) }
-                } catch {
-                    session.message = error.localizedDescription
-                }
-            }
-        } else if overridden {
-            actions.edited = { text in
-                document.editedText = text
-                tabs.unsaved.insert(url)
-                DeveloperChanges.of(session).editedSource(url: url, original: document.originalText, text: text,
-                                                          css: document.language == .css)
-            }
-            actions.save = {
-                do {
-                    let text = document.editedText ?? document.originalText
-                    try overrides.save(url: url, content: text)
-                    tabs.unsaved.remove(url)
-                    if document.language == .css { DeveloperWorkspace.applyStyleSheet(url: url, text: text, session: session) }
                 } catch {
                     session.message = error.localizedDescription
                 }
@@ -603,6 +591,7 @@ struct DeveloperSourcePane: View {
                 reveal: reveal,
                 execution: execution,
                 coverage: coverageLines,
+                profile: profileLines,
                 inlineValues: inlineAnnotations?.key == key ? inlineAnnotations?.lines ?? [:] : [:],
                 moved:{ position = $0; document.caret = $0.offset },
                 revealed: { serial in DispatchQueue.main.async { session.revealedSource(serial) } }
@@ -631,9 +620,7 @@ struct DeveloperSourcePane: View {
     /// (no Debugger.setScriptSource), so the saved one runs after a reload.
     private var reloadNote: some View {
         let url = document.url
-        let isJavaScript: Bool
-        if case .javascript = document.language { isJavaScript = true } else { isJavaScript = false }
-        let script = isJavaScript || session.sourceResource?.type == "Script"
+        let script = document.language.isJavaScript || session.sourceResource?.type == "Script"
         return HStack(spacing: 8) {
             Image(systemName: "info.circle").foregroundStyle(DeveloperToolsStyle.tint)
             Text(script ? "Reload the page to run the saved file" : "Reload the page to use the saved file")
@@ -829,6 +816,8 @@ final class SourceEditorActions {
     var closeTab: (() -> Void)?
     /// ⌥⌘F, ⇧⌘F: Search across all sources.
     var showSearch: (() -> Void)?
+    /// The gutter's Clear line-level profile data.
+    var clearLineProfile: () -> Void = {}
     var url = ""
     var isPretty = false
     var canPrettyPrint = false
@@ -868,6 +857,8 @@ struct SourceCodeView: NSViewRepresentable {
     var execution: Int? = nil
     /// Coverage marks by 1-based line: true for code that ran.
     var coverage: [Int: Bool] = [:]
+    /// Line-level profile milliseconds by 1-based line.
+    var profile: [Int: Double] = [:]
     var inlineValues: [Int: String] = [:]
     var moved: (SourceTextView.Position) -> Void
     var revealed: (Int) -> Void = { _ in }
@@ -928,6 +919,11 @@ struct SourceCodeView: NSViewRepresentable {
         }
         if textView.coverageLines != coverage {
             textView.coverageLines = coverage
+            container.gutter.needsDisplay = true
+        }
+        if textView.profileLines != profile {
+            textView.profileLines = profile
+            container.gutter.updateThickness(lines: textView.lineStarts.count)
             container.gutter.needsDisplay = true
         }
         if let reveal, textView.displayID == display.id, container.revealed != reveal.serial {
@@ -1085,6 +1081,8 @@ final class SourceTextView: NSTextView {
     var breakpointMarkers: [Int: SourceGutterMarker] = [:]
     /// The Coverage tool's marks by 1-based line: true for code that ran.
     var coverageLines: [Int: Bool] = [:]
+    /// Performance's line-level profile: milliseconds by 1-based line.
+    var profileLines: [Int: Double] = [:]
     var inlineValues: [Int: String] = [:] {
         didSet { if inlineValues != oldValue { needsDisplay = true } }
     }
@@ -1199,11 +1197,7 @@ final class SourceTextView: NSTextView {
 
     /// The colour class of the character at an offset, once tokens are in.
     func tokenKind(at offset: Int) -> SourceTokenKind? {
-        var low = 0, high = tokens.count
-        while low < high {
-            let mid = (low + high) / 2
-            if tokens[mid].end <= offset { low = mid + 1 } else { high = mid }
-        }
+        let low = SourceLexing.firstIndex(tokens.count, past: offset) { tokens[$0].end }
         guard low < tokens.count, tokens[low].start <= offset else { return nil }
         return tokens[low].kind
     }
@@ -1391,23 +1385,27 @@ final class SourceTextView: NSTextView {
     }
 
     override func moveLeft(_ sender: Any?) {
-        guard !extraCarets.isEmpty else { return super.moveLeft(sender) }
-        placeCarets(SourceCarets.move(allCarets, by: -1, in: string as NSString))
+        if !moveCarets(by: -1, vertically: false) { super.moveLeft(sender) }
     }
 
     override func moveRight(_ sender: Any?) {
-        guard !extraCarets.isEmpty else { return super.moveRight(sender) }
-        placeCarets(SourceCarets.move(allCarets, by: 1, in: string as NSString))
+        if !moveCarets(by: 1, vertically: false) { super.moveRight(sender) }
     }
 
     override func moveUp(_ sender: Any?) {
-        guard !extraCarets.isEmpty else { return super.moveUp(sender) }
-        placeCarets(SourceCarets.moveVertically(allCarets, by: -1, in: string as NSString))
+        if !moveCarets(by: -1, vertically: true) { super.moveUp(sender) }
     }
 
     override func moveDown(_ sender: Any?) {
-        guard !extraCarets.isEmpty else { return super.moveDown(sender) }
-        placeCarets(SourceCarets.moveVertically(allCarets, by: 1, in: string as NSString))
+        if !moveCarets(by: 1, vertically: true) { super.moveDown(sender) }
+    }
+
+    /// Moves every caret, when there are extra ones; false for NSTextView to move as usual.
+    private func moveCarets(by step: Int, vertically: Bool) -> Bool {
+        guard !extraCarets.isEmpty else { return false }
+        let text = string as NSString
+        placeCarets(vertically ? SourceCarets.moveVertically(allCarets, by: step, in: text) : SourceCarets.move(allCarets, by: step, in: text))
+        return true
     }
 
     /// ⌥⌘↑ / ⌥⌘↓: another caret on the line above the topmost or below
@@ -1490,12 +1488,7 @@ final class SourceTextView: NSTextView {
 
     private func paint(from low: Int, to high: Int, _ layoutManager: NSLayoutManager) {
         // The first token that ends past `low`.
-        var lo = 0, hi = tokens.count
-        while lo < hi {
-            let mid = (lo + hi) / 2
-            if tokens[mid].end <= low { lo = mid + 1 } else { hi = mid }
-        }
-        var index = lo
+        var index = SourceLexing.firstIndex(tokens.count, past: low) { tokens[$0].end }
         while index < tokens.count, tokens[index].start < high {
             let token = tokens[index]
             let start = max(token.start, low)
@@ -1509,14 +1502,7 @@ final class SourceTextView: NSTextView {
 
     // MARK: Lines
 
-    func lineIndex(of offset: Int) -> Int {
-        var low = 0, high = lineStarts.count - 1
-        while low < high {
-            let mid = (low + high + 1) / 2
-            if lineStarts[mid] <= offset { low = mid } else { high = mid - 1 }
-        }
-        return low
-    }
+    func lineIndex(of offset: Int) -> Int { SourceLexing.lineIndex(offset, in: lineStarts) }
 
     /// The line a link revealed, tinted for a moment as Chrome tints it.
     private(set) var flashedLine: Int?
@@ -1540,11 +1526,10 @@ final class SourceTextView: NSTextView {
         let range = NSRange(location: min(at, length), length: 0)
         setSelectedRange(range)
         window?.makeFirstResponder(self)
-        if let layoutManager, let textContainer {
+        if let layoutManager {
             let glyph = layoutManager.glyphIndexForCharacter(at: min(range.location, max(0, length - 1)))
             var rect = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
             rect.origin.y += textContainerOrigin.y
-            _ = textContainer
             // The line in the middle, as Chrome puts it.
             let height = enclosingScrollView?.contentView.bounds.height ?? visibleRect.height
             scrollToVisible(NSRect(x: 0, y: rect.midY - height / 2, width: 1, height: height))
@@ -1583,11 +1568,12 @@ final class SourceTextView: NSTextView {
         let end = line < lineStarts.count ? lineStarts[line] : length
         let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: min(start, length - 1), length: max(1, min(end, length) - start)),
                                               actualCharacterRange: nil)
-        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
-        rect.origin.y += textContainerOrigin.y
-        rect.origin.x = 0
-        rect.size.width = bounds.width
-        return rect
+        return fullWidth(layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer))
+    }
+
+    /// A rect in the text container as a band across this view.
+    private func fullWidth(_ rect: NSRect) -> NSRect {
+        NSRect(x: 0, y: rect.minY + textContainerOrigin.y, width: bounds.width, height: rect.height)
     }
 
     /// The visual line the caret is on: a wrapped line's piece, not the whole
@@ -1606,10 +1592,7 @@ final class SourceTextView: NSTextView {
         } else {
             rect = layoutManager.lineFragmentRect(forGlyphAt: layoutManager.glyphIndexForCharacter(at: min(location, length - 1)), effectiveRange: nil)
         }
-        rect.origin.y += textContainerOrigin.y
-        rect.origin.x = 0
-        rect.size.width = bounds.width
-        return rect
+        return fullWidth(rect)
     }
 
     /// The visual line the paused statement is on.
@@ -1618,11 +1601,7 @@ final class SourceTextView: NSTextView {
         let length = (string as NSString).length
         guard length > 0 else { return nil }
         let glyph = layoutManager.glyphIndexForCharacter(at: min(max(0, offset), length - 1))
-        var rect = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-        rect.origin.y += textContainerOrigin.y
-        rect.origin.x = 0
-        rect.size.width = bounds.width
-        return rect
+        return fullWidth(layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil))
     }
 
     override func drawBackground(in rect: NSRect) {
@@ -1742,8 +1721,8 @@ final class SourceTextView: NSTextView {
             if let address = URL(string: url), address.scheme?.hasPrefix("http") == true {
                 menu.addItem(item("Open in new tab") { _ = Browsers.acting.open(address, foreground: true) })
             }
-            menu.addItem(item("Copy link address") { Self.copyText(url) })
-            menu.addItem(item("Copy file name") { Self.copyText(SourceTree.fileName(url)) })
+            menu.addItem(item("Copy link address") { DeveloperToolsSession.copyToPasteboard(url) })
+            menu.addItem(item("Copy file name") { DeveloperToolsSession.copyToPasteboard(SourceTree.fileName(url)) })
             menu.addItem(item("Save as…") { [weak self] in self?.saveAs(name: SourceTree.fileName(url)) })
             if let override = actions?.overrideContent {
                 menu.addItem(item("Override content", override))
@@ -1885,12 +1864,7 @@ final class SourceTextView: NSTextView {
         }
     }
 
-    static func copyText(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
-
-    private func item(_ title: String, _ perform: @escaping () -> Void) -> NSMenuItem {
+    fileprivate func item(_ title: String, _ perform: @escaping () -> Void) -> NSMenuItem {
         let item = SourceMenuItem(title: title, action: #selector(SourceMenuItem.fire), keyEquivalent: "")
         item.handler = perform
         item.target = item
@@ -1975,10 +1949,13 @@ final class SourceTextView: NSTextView {
 
     /// ⌥⌘B: the caret line's breakpoint editor (a condition or a log message).
     func editBreakpointAtCaret() {
-        guard canSetBreakpoints else { return }
-        let line = caretLine
-        let kind: DeveloperDebugger.Breakpoint.Kind = breakpointMarkers[line]?.kind == .logpoint ? .logpoint : .conditional
-        editBreakpoint(line: line, kind: kind)
+        if canSetBreakpoints { editBreakpoint(line: caretLine) }
+    }
+
+    /// A line's breakpoint editor, for a log message on a logpoint's line,
+    /// a condition otherwise.
+    func editBreakpoint(line: Int) {
+        editBreakpoint(line: line, kind: breakpointMarkers[line]?.kind == .logpoint ? .logpoint : .conditional)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -2112,10 +2089,16 @@ final class SourceGutterView: NSRulerView {
     /// The column of fold markers, right of the numbers, when code folding is on.
     static let foldWidth: CGFloat = 12
     var foldColumn: CGFloat { textView?.foldingEnabled == true ? Self.foldWidth : 0 }
+    /// The line-level profile's timings, left of the numbers, while there are any.
+    var profileColumn: CGFloat {
+        guard let most = textView?.profileLines.values.max() else { return 0 }
+        return ceil((DeveloperLineProfile.label(most) as NSString).size(withAttributes: [.font: Self.font]).width) + 8
+    }
 
     func updateThickness(lines: Int) {
         let digits = max(2, String(lines).count)
         let width = CGFloat(digits) * ("8" as NSString).size(withAttributes: [.font: Self.font]).width + 22 + foldColumn
+            + profileColumn
         if abs(width - ruleThickness) > 0.5 { ruleThickness = ceil(width) }
     }
 
@@ -2166,9 +2149,20 @@ final class SourceGutterView: NSRulerView {
         let markers = textView.breakpointMarkers
         let coverage = textView.coverageLines
         let foldColumn = self.foldColumn
+        let profile = textView.profileLines, profileColumn = self.profileColumn
+        let most = profile.values.max() ?? 0
         for (line, y, height) in visibleLines() {
             let lineRect = NSRect(x: 0, y: y, width: bounds.width - 1, height: height)
             guard lineRect.intersects(rect) else { continue }
+            if let ms = profile[line], most > 0 {
+                // Chrome's line-level timing, shaded by its share of the busiest line's.
+                NSColor.systemOrange.withAlphaComponent(0.1 + 0.5 * ms / most).setFill()
+                NSRect(x: 0, y: y, width: profileColumn - 2, height: height).fill()
+                let label = NSAttributedString(string: DeveloperLineProfile.label(ms),
+                                               attributes: [.font: Self.font, .foregroundColor: SourceTheme.text])
+                let size = label.size()
+                label.draw(at: NSPoint(x: profileColumn - 5 - size.width, y: y + (min(height, 16) - size.height) / 2))
+            }
             if let used = coverage[line] {
                 // Chrome's coverage bar down the gutter's edge, under a marker.
                 (used ? DeveloperCoverageStyle.used : DeveloperCoverageStyle.unused).setFill()
@@ -2178,7 +2172,8 @@ final class SourceGutterView: NSRulerView {
             let marked = marker != nil
             if let marker {
                 // Chrome's marker: a tag over the number, pointing at the code.
-                let tag = NSRect(x: 2, y: y + 1, width: bounds.width - 5 - foldColumn, height: max(height - 2, 10))
+                let tag = NSRect(x: 2 + profileColumn, y: y + 1, width: bounds.width - 5 - foldColumn - profileColumn,
+                                 height: max(height - 2, 10))
                 let path = NSBezierPath()
                 let tip: CGFloat = 5
                 path.move(to: NSPoint(x: tag.minX + 2, y: tag.minY))
@@ -2207,7 +2202,13 @@ final class SourceGutterView: NSRulerView {
             }
         }
         if let execution = textView.executionRect {
+            NSGraphicsContext.saveGraphicsState()
+            // Right of the profile's timings, at the numbers' left edge.
+            let shift = NSAffineTransform()
+            shift.translateX(by: profileColumn, yBy: 0)
+            shift.concat()
             drawExecutionArrow(at: convert(NSPoint(x: 0, y: execution.minY), from: textView).y, height: execution.height)
+            NSGraphicsContext.restoreGraphicsState()
         }
     }
 
@@ -2265,8 +2266,7 @@ final class SourceGutterView: NSRulerView {
             let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
             if modifiers == .command {
                 // ⌘-click: the conditional breakpoint editor; ⇧⌘-click: a logpoint's.
-                let kind: DeveloperDebugger.Breakpoint.Kind = textView.breakpointMarkers[hit.0]?.kind == .logpoint ? .logpoint : .conditional
-                textView.editBreakpoint(line: hit.0, kind: kind)
+                textView.editBreakpoint(line: hit.0)
             } else if modifiers == [.command, .shift] {
                 textView.editBreakpoint(line: hit.0, kind: .logpoint)
             } else if event.modifierFlags.contains(.shift), !existing.isEmpty {
@@ -2286,13 +2286,17 @@ final class SourceGutterView: NSRulerView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard let textView, textView.canSetBreakpoints else { return nil }
+        guard let textView else { return nil }
         let point = convert(event.locationInWindow, from: nil)
-        guard let hit = visibleLines().last(where: { $0.1 <= point.y }) else { return nil }
         let menu = NSMenu()
-        textView.addBreakpointItems(to: menu, line: hit.0)
+        if textView.canSetBreakpoints, let hit = visibleLines().last(where: { $0.1 <= point.y }) {
+            textView.addBreakpointItems(to: menu, line: hit.0)
+        }
+        if !textView.profileLines.isEmpty, let actions = textView.actions {
+            menu.addItem(textView.item("Clear line-level profile data", actions.clearLineProfile))
+        }
         if menu.items.last?.isSeparatorItem == true { menu.removeItem(at: menu.items.count - 1) }
-        return menu
+        return menu.items.isEmpty ? nil : menu
     }
 
     override func resetCursorRects() {

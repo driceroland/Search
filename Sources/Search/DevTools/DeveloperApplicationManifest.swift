@@ -30,16 +30,18 @@ struct DeveloperManifestIcon: Equatable, Identifiable {
 
     init?(_ raw: [String: Any]) {
         guard let url = raw["src"] as? String else { return nil }
-        var thumbnail: Data?
+        self.url = url
+        sizes = raw["sizes"] as? String ?? ""
+        purpose = raw["purpose"] as? String ?? ""
+        type = raw["type"] as? String ?? ""
+        width = (raw["width"] as? NSNumber).flatMap { $0.intValue > 0 ? $0.intValue : nil }
+        height = (raw["height"] as? NSNumber).flatMap { $0.intValue > 0 ? $0.intValue : nil }
+        failed = raw["failed"] as? Bool == true
         if let text = raw["thumbnail"] as? String, let comma = text.firstIndex(of: ","), text.hasPrefix("data:image/png;base64") {
             thumbnail = Data(base64Encoded: String(text[text.index(after: comma)...]))
+        } else {
+            thumbnail = nil
         }
-        let width = (raw["width"] as? NSNumber)?.intValue
-        let height = (raw["height"] as? NSNumber)?.intValue
-        self.init(url: url, sizes: raw["sizes"] as? String ?? "", purpose: raw["purpose"] as? String ?? "",
-                  type: raw["type"] as? String ?? "", width: width.flatMap { $0 > 0 ? $0 : nil },
-                  height: height.flatMap { $0 > 0 ? $0 : nil }, failed: raw["failed"] as? Bool == true,
-                  thumbnail: thumbnail)
     }
 
     /// The sizes the manifest declares: pixels across and down, or nil for "any".
@@ -192,11 +194,10 @@ struct DeveloperManifestReport: Equatable {
                 report.errors.append("Manifest: property '\(key)' ignored, type string expected.")
             }
         }
-        if let type = types["icons"], type != "missing", type != "array" {
-            report.errors.append("Manifest: property 'icons' ignored, type array expected.")
-        }
-        if let type = types["display_override"], type != "missing", type != "array" {
-            report.errors.append("Manifest: property 'display_override' ignored, type array expected.")
+        for key in ["icons", "display_override"] {
+            if let type = types[key], type != "missing", type != "array" {
+                report.errors.append("Manifest: property '\(key)' ignored, type array expected.")
+            }
         }
 
         let document = (raw["documentURL"] as? String).flatMap(URL.init(string:))
@@ -290,8 +291,7 @@ struct DeveloperManifestReport: Equatable {
         if string("name") == nil && string("short_name") == nil {
             report.installability.append("Manifest does not contain a 'name' or 'short_name' field")
         }
-        let overrides = (raw["display_override"] as? [String] ?? []).map { $0.lowercased() }
-        let effective = overrides.first(where: installableDisplays.contains) ?? display ?? "browser"
+        let effective = report.displayOverride.first(where: installableDisplays.contains) ?? display ?? "browser"
         if !installableDisplays.contains(effective) {
             report.installability.append("Manifest 'display' property must be one of 'standalone', 'fullscreen', or 'minimal-ui'")
         }
@@ -454,10 +454,10 @@ struct DeveloperManifestView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Screenshot #\(index + 1)").font(.system(size: 11, weight: .semibold))
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
-                field("Form factor", shot.formFactor.isEmpty ? nil : shot.formFactor)
-                field("Label", shot.label.isEmpty ? nil : shot.label)
-                field("Platform", shot.platform.isEmpty ? nil : shot.platform)
-                field("Sizes", shot.image.sizes.isEmpty ? nil : shot.image.sizes)
+                field("Form factor", shot.formFactor)
+                field("Label", shot.label)
+                field("Platform", shot.platform)
+                field("Sizes", shot.image.sizes)
             }
             Group {
                 if let data = shot.image.thumbnail, let image = NSImage(data: data) {
@@ -561,10 +561,7 @@ struct DeveloperManifestView: View {
             Text("Note: id is not specified in the manifest, start_url is used instead. To specify an App Id "
                  + "that matches the current identity, set the id field to \(recommended).")
                 .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-            Button("Copy") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(recommended, forType: .string)
-            }
+            Button("Copy") { DeveloperToolsSession.copyToPasteboard(recommended) }
             .controlSize(.small)
             .help("Copy suggested ID to clipboard")
         }

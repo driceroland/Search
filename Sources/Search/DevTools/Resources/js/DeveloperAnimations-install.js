@@ -76,7 +76,6 @@ if (!globalThis.perchAnimations) {
             pending = [];
             return {now: performance.now(), events};
         },
-        reset() { pending = []; },
     });
     fresh = true;
 }

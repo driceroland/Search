@@ -74,3 +74,18 @@ final class DeveloperProtocolMonitorTests: XCTestCase {
         XCTAssertNil(DeveloperProtocolMonitor.parameters("{oops"))
     }
 }
+
+@MainActor
+final class DeveloperProtocolMonitorColumnTests: XCTestCase {
+    /// Timestamp goes first, then Elapsed time, as the table narrows; at
+    /// its narrowest (260) Method keeps its room.
+    func testColumnsGiveWayInANarrowTable() {
+        typealias Column = DeveloperProtocolMonitorView.Column
+        XCTAssertTrue(Column.shown(900).elapsed)
+        XCTAssertTrue(Column.shown(900).time)
+        XCTAssertFalse(Column.shown(260).time)
+        XCTAssertFalse(Column.shown(260).elapsed)
+        let middle = (1...900).map(CGFloat.init).first { Column.shown($0).elapsed && !Column.shown($0).time }
+        XCTAssertNotNil(middle, "Elapsed time stays a while after Timestamp goes")
+    }
+}

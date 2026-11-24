@@ -170,10 +170,7 @@ struct DeveloperCoverageView: View {
         .onTapGesture { selection = entry.id }
         .contextMenu {
             Button("Open in Sources panel") { open(entry) }
-            Button("Copy URL") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(entry.url, forType: .string)
-            }
+            Button("Copy URL") { DeveloperToolsSession.copyToPasteboard(entry.url) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityValue("\(DeveloperCoverageMath.percent(used: entry.unused, total: entry.total)) unused")

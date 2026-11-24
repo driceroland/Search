@@ -52,19 +52,15 @@ final class DeveloperNetworkFilmstrip: ObservableObject {
     /// The wall clock less WebKit's network clock, read from a request
     /// that has both; nil before any request.
     nonisolated static func clockOffset(_ requests: [Request]) -> Double? {
-        for request in requests where request.originalURL == nil {
-            if let wall = request.wallStarted, let started = request.started { return wall - started }
-        }
-        return nil
+        requests.lazy.compactMap { request in
+            request.originalURL == nil ? request.wallStarted.flatMap { wall in request.started.map { wall - $0 } } : nil
+        }.first
     }
 
     /// The requests finished by the moment a screenshot was taken, which a
     /// click on it lists, as in Chrome.
     nonisolated static func finished(by time: Double, _ rows: [Request]) -> [Request] {
-        rows.filter { request in
-            guard let ended = request.ended else { return false }
-            return ended <= time
-        }
+        rows.filter { $0.ended.map { $0 <= time } ?? false }
     }
 
     /// Adds a screenshot, unless the recording is full.
@@ -158,7 +154,7 @@ struct DeveloperNetworkFilmstripView: View {
     }
 
     private func label(_ frame: DeveloperNetworkFilmstrip.Frame) -> String {
-        DeveloperNetworkFilmstripView.seconds(max(0, (frame.time - origin) * 1_000))
+        DeveloperNetworkTimingPopover.seconds(max(0, (frame.time - origin) * 1_000))
     }
 
     private func thumbnail(_ frame: DeveloperNetworkFilmstrip.Frame) -> some View {
@@ -199,11 +195,5 @@ struct DeveloperNetworkFilmstripView: View {
         .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : [.isButton])
         .accessibilityAction { selected = chosen ? nil : frame.time }
         .help(chosen ? "Show all requests" : "Show requests finished by " + label(frame))
-    }
-
-    /// As the summary writes times: milliseconds, then seconds.
-    static func seconds(_ milliseconds: Double) -> String {
-        milliseconds < 1_000 ? "\(Int(milliseconds.rounded())) ms"
-            : (milliseconds / 1_000).formatted(.number.precision(.fractionLength(2))) + " s"
     }
 }

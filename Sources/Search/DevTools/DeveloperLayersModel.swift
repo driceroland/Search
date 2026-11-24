@@ -54,14 +54,8 @@ final class DeveloperLayers: ObservableObject {
 
     func start() {
         guard poll == nil else { return }
-        poll = Task { [weak self] in
-            // Ends with the model, not only on stop().
-            while !Task.isCancelled {
-                guard let self else { return }
-                await self.tick()
-                try? await Task.sleep(for: .milliseconds(400))
-            }
-        }
+        // Ends with the model, not only on stop().
+        poll = developerPoll(every: .milliseconds(400)) { [weak self] in await self?.tick() != nil }
     }
 
     func stop() {
@@ -143,7 +137,7 @@ final class DeveloperLayers: ObservableObject {
     private func fetch(_ session: DeveloperToolsSession) async throws {
         let target = session.domTargetID
         guard let document = try await documentNode(session) else {
-            throw DeveloperLayersError("The page’s document isn’t available yet. Open the Elements panel and try again.")
+            throw DeveloperPanelError("The page’s document isn’t available yet. Open the Elements panel and try again.")
         }
         let reply = try await session.command("LayerTree.layersForNode", ["nodeId": document], targetID: target)
         let found = DeveloperLayerTree.layers(reply["layers"] as? [[String: Any]] ?? [])
@@ -310,10 +304,4 @@ final class DeveloperLayers: ObservableObject {
             });
         }
         """
-}
-
-struct DeveloperLayersError: LocalizedError {
-    let message: String
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
 }

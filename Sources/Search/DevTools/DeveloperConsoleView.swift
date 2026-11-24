@@ -235,7 +235,7 @@ private struct DeveloperConsoleContent: View {
         let others = store.contexts.filter { !$0.isTop && !$0.isWorker }
         let workers = store.contexts.filter(\.isWorker)
         let title = chosen?.title ?? "top"
-        return Menu {
+        return dropdown(title) {
             Toggle("top", isOn: Binding(get: { chosen == nil }, set: { _ in store.context = nil }))
             ForEach(others) { context in
                 Toggle(String(repeating: "    ", count: min(context.depth, 6)) + context.title,
@@ -249,16 +249,7 @@ private struct DeveloperConsoleContent: View {
                 }
                 .help(context.url)
             }
-        } label: {
-            HStack(spacing: DeveloperToolsStyle.controlSpacing) {
-                Text(title).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
-            }
-            .foregroundStyle(.secondary)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
         .help(debugger.frame.map { "JavaScript context: paused in \($0.functionName); the prompt evaluates in this call frame" }
               ?? "JavaScript context: " + title)
         .accessibilityLabel("JavaScript context")
@@ -317,7 +308,7 @@ private struct DeveloperConsoleContent: View {
 
     private var levelsMenu: some View {
         let controlledBySidebar = store.showsSidebar && store.sidebar.group.levels != nil
-        return Menu {
+        return dropdown(ConsoleLevel.label(store.levels)) {
             ForEach(ConsoleLevel.allCases) { level in
                 Toggle(level.rawValue, isOn: Binding(
                     get: { store.levels.contains(level) },
@@ -325,9 +316,18 @@ private struct DeveloperConsoleContent: View {
             }
             Divider()
             Button("Default") { store.levels = ConsoleLevel.defaults }
-        } label: {
+        }
+        .disabled(controlledBySidebar)
+        .help(controlledBySidebar ? "Log levels are controlled by the Console sidebar" : "Log level: " + ConsoleLevel.label(store.levels))
+        .accessibilityLabel("Log levels")
+        .accessibilityValue(ConsoleLevel.label(store.levels))
+    }
+
+    /// A toolbar menu drawn as Chrome's: its value and a small chevron.
+    private func dropdown<Items: View>(_ title: String, @ViewBuilder items: () -> Items) -> some View {
+        Menu(content: items) {
             HStack(spacing: DeveloperToolsStyle.controlSpacing) {
-                Text(ConsoleLevel.label(store.levels))
+                Text(title).lineLimit(1).truncationMode(.middle)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
             }
             .foregroundStyle(.secondary)
@@ -335,10 +335,6 @@ private struct DeveloperConsoleContent: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .disabled(controlledBySidebar)
-        .help(controlledBySidebar ? "Log levels are controlled by the Console sidebar" : "Log level: " + ConsoleLevel.label(store.levels))
-        .accessibilityLabel("Log levels")
-        .accessibilityValue(ConsoleLevel.label(store.levels))
     }
 
     /// renderSettingsPane in Chrome's ConsoleView.ts, in its order and words.
@@ -518,6 +514,24 @@ enum ConsoleRowContent {
         ConsoleLineCache.shared.segments(line) { build(line) }
     }
 
+    /// A message that is just one DOM node draws as Chrome's element tree.
+    static func nodeRoot(_ line: DeveloperToolsSession.ConsoleLine) -> ConsoleRemoteObject? {
+        let parts = Self.segments(line), type = line.details?.type
+        guard type != "dir", type != "result" || line.level != "error", parts.count == 1,
+              case .object(let object, _) = parts[0], object.isNode, object.objectId != nil else { return nil }
+        return object
+    }
+
+    /// The logged objects a message opens under it.
+    @MainActor static func objects(_ line: DeveloperToolsSession.ConsoleLine, store: DeveloperConsoleStore) -> [ConsoleRemoteObject] {
+        guard nodeRoot(line) == nil else { return [] }
+        return Self.segments(line).compactMap {
+            // A custom formatter's header has its own triangle.
+            if case .object(let object, _) = $0, object.expandable, store.customHeader(object) == nil { return object }
+            return nil
+        }
+    }
+
     /// A JavaScript error as Chrome words it: an exception the page didn't
     /// catch is "Uncaught …", a rejection nothing handled "Uncaught (in
     /// promise) …". WebKit's own notices, such as a fetch blocked by
@@ -574,21 +588,8 @@ private struct ConsoleMessageRow: View {
 
     private var segments: [ConsoleSegment] { ConsoleRowContent.segments(line) }
 
-    /// A message that is just one DOM node draws as Chrome's element tree.
-    private var nodeRoot: ConsoleRemoteObject? {
-        guard details?.type != "dir", details?.type != "result" || !isError, segments.count == 1,
-              case .object(let object, _) = segments[0], object.isNode, object.objectId != nil else { return nil }
-        return object
-    }
-
-    private var objects: [ConsoleRemoteObject] {
-        guard nodeRoot == nil else { return [] }
-        return segments.compactMap {
-            // A custom formatter's header has its own triangle.
-            if case .object(let object, _) = $0, object.expandable, store.customHeader(object) == nil { return object }
-            return nil
-        }
-    }
+    private var nodeRoot: ConsoleRemoteObject? { ConsoleRowContent.nodeRoot(line) }
+    private var objects: [ConsoleRemoteObject] { ConsoleRowContent.objects(line, store: store) }
 
     /// Errors among the arguments (or a result that is one), whose stack
     /// Chrome prints in full under the message.
@@ -668,7 +669,7 @@ private struct ConsoleMessageRow: View {
             if offersInsight { hovering = inside }
             if let hoverNode, nodeRoot == nil { session.highlightConsoleNode(inside ? hoverNode : nil, targetID: details?.targetID) }
         }
-        .contextMenu { menu }
+        .consoleMenu { menu }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLevel + ConsoleLayout.searchableText(line))
     }
@@ -716,6 +717,12 @@ private struct ConsoleMessageRow: View {
             } else if store.settings.customFormatters {
                 ConsoleCustomFormattedMessage(session: session, store: store, segments: segments,
                                               targetID: details?.targetID, key: objectKey) { message }
+            } else if let object = details?.parameters.first(where: { $0.expandable }), details?.parameters.count == 1,
+                      object.memoryID != nil {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    message
+                    ConsoleMemoryIcon(session: session, object: object, targetID: details?.targetID)
+                }
             } else {
                 message
             }
@@ -782,41 +789,41 @@ private struct ConsoleMessageRow: View {
             if object.type == "function" {
                 Button("Show function definition") { session.showConsoleFunctionDefinition(object, targetID: details?.targetID) }
             }
-            if let id = object.objectId, DeveloperMemoryInspectable.inspectable(className: object.className, type: object.type, objectId: id) {
-                Button("Reveal in Memory inspector panel") {
-                    DeveloperMemoryInspectorModel.reveal(session: session, objectId: id, targetID: details?.targetID,
-                                                         className: object.className, description: object.description)
-                }
+            if object.memoryID != nil {
+                Button("Reveal in Memory inspector panel") { ConsoleMemoryIcon.reveal(object, session: session, targetID: details?.targetID) }
             }
             Divider()
         } else if let string = details?.parameters.first(where: { $0.type == "string" }), details?.type == "result" {
-            Button("Copy string contents") { copy(string.plainText) }
+            Button("Copy string contents") { DeveloperToolsSession.copyToPasteboard(string.plainText) }
             Divider()
         }
         if offersInsight {
             Button(isError ? "Understand this error" : "Understand this warning") { session.aiAssistance.understand(line) }
             Divider()
         }
-        Button("Copy message") { copy(ConsoleLayout.searchableText(line).trimmingCharacters(in: .whitespaces)) }
+        Button("Copy message") { DeveloperToolsSession.copyToPasteboard(ConsoleLayout.searchableText(line).trimmingCharacters(in: .whitespaces)) }
         // The ⌘A selection, or this message, as rich text in its %c styles.
         Button("Copy visible styled selection") { ConsoleStyledCopy.copy(store.allSelected ? store.layout.rows : [row]) }
         if let link = locationLink {
-            Button("Copy link address") { copy(link.url) }
+            Button("Copy link address") { DeveloperToolsSession.copyToPasteboard(link.url) }
             Button("Hide messages from " + ConsoleFormat.location(link.url, line: nil)) {
                 let term = "-url:" + link.url
                 store.filter = store.filter.isEmpty ? term : store.filter + " " + term
             }
         }
         if !stack.isEmpty {
-            Button("Copy stack trace") { copy(stack.map { "\($0.name) @ \($0.url):\($0.lineNumber)" }.joined(separator: "\n")) }
+            Button("Copy stack trace") { DeveloperToolsSession.copyToPasteboard(stack.map { "\($0.name) @ \($0.url):\($0.lineNumber)" }.joined(separator: "\n")) }
         }
+        Divider()
+        Button("Expand all") { store.setAllExpanded(true, lines: session.console, load: { session.loadConsoleProperties($0, targetID: $1) }) }
+        Button("Collapse all") { store.setAllExpanded(false, lines: session.console) }
         Divider()
         Button("Clear console", action: session.clearConsole)
         Button("Clear console history") { store.history = [] }
         Divider()
         // The rows as last laid out, read when chosen, so rows need not
         // each carry the whole list.
-        Button("Copy all messages") { copy(session.consoleText(store.layout.rows)) }
+        Button("Copy all messages") { DeveloperToolsSession.copyToPasteboard(session.consoleText(store.layout.rows)) }
         Button("Save as…") { session.saveConsole(store.layout.rows) }
     }
 
@@ -912,7 +919,7 @@ private struct ConsoleMessageRow: View {
                 .italic().foregroundStyle(.secondary).textSelection(.enabled)
         } else {
             // A table draws its argument, then the grid, as Chrome does.
-            Text(ConsoleText.attributed(segments, base: nil, find: find))
+            Text(ConsoleText.attributed(segments, find: find))
                 .textSelection(.enabled)
                 .fontWeight(row.opensGroup ? .semibold : .regular)
                 .simultaneousGesture(TapGesture().onEnded { tapMessage() })
@@ -956,18 +963,13 @@ private struct ConsoleMessageRow: View {
             : top.flatMap { $0.url == link.url && $0.lineNumber == link.line ? $0.columnNumber : nil }
         return session.sourceMaps.linked(url: link.url, line: link.line, column: column)
     }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
 }
 
 /// Builds a line's styled text: `%c` styles, value colours, links on
 /// DOM nodes so a click reveals them in Elements, links on the URLs in
 /// logged strings, and the Find bar's matches.
 enum ConsoleText {
-    static func attributed(_ segments: [ConsoleSegment], base: Color?, find: ConsoleRowFind? = nil) -> AttributedString {
+    static func attributed(_ segments: [ConsoleSegment], find: ConsoleRowFind? = nil) -> AttributedString {
         var output = AttributedString()
         for (index, segment) in segments.enumerated() {
             switch segment {
@@ -1043,7 +1045,6 @@ enum ConsoleText {
 
 // MARK: - Object trees
 
-/// The properties of one expanded object.
 /// The triangle that opens a message, an object or a node, as Chrome
 /// draws it.
 struct ConsoleDisclosure: View {
@@ -1061,6 +1062,7 @@ struct ConsoleDisclosure: View {
     }
 }
 
+/// The properties of one expanded object.
 private struct ConsoleObjectChildren: View {
     @ObservedObject var session: DeveloperToolsSession
     @ObservedObject var store: DeveloperConsoleStore
@@ -1124,6 +1126,39 @@ private struct ConsoleObjectChildren: View {
     }
 }
 
+extension ConsoleRemoteObject {
+    /// The object's id, when the Memory inspector can open it.
+    var memoryID: String? {
+        objectId.flatMap { DeveloperMemoryInspectable.inspectable(className: className, type: type, objectId: $0) ? $0 : nil }
+    }
+}
+
+/// Chrome's memory icon after an ArrayBuffer, typed array, DataView or
+/// WebAssembly.Memory in the Console: opens it in the Memory inspector.
+struct ConsoleMemoryIcon: View {
+    @ObservedObject var session: DeveloperToolsSession
+    let object: ConsoleRemoteObject
+    let targetID: String?
+
+    static func reveal(_ object: ConsoleRemoteObject, session: DeveloperToolsSession, targetID: String?) {
+        guard let id = object.memoryID else { return }
+        DeveloperMemoryInspectorModel.reveal(session: session, objectId: id, targetID: targetID,
+                                             className: object.className, description: object.description)
+    }
+
+    var body: some View {
+        Button { Self.reveal(object, session: session, targetID: targetID) } label: {
+            Image(systemName: "memorychip")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Reveal in Memory inspector panel")
+        .accessibilityLabel("Reveal in Memory inspector panel")
+    }
+}
+
 /// `name: value`, with a triangle when the value opens.
 struct ConsoleValueLine: View {
     @ObservedObject var session: DeveloperToolsSession
@@ -1161,12 +1196,16 @@ struct ConsoleValueLine: View {
                         else { session.openConsoleLink(url) }
                         return .handled
                     })
+                if object.memoryID != nil {
+                    ConsoleMemoryIcon(session: session, object: object, targetID: targetID)
+                        .padding(.leading, 4)
+                }
             }
             .contentShape(Rectangle())
             .onHover { inside in
                 if object.isNode { session.highlightConsoleNode(inside ? object : nil, targetID: targetID) }
             }
-            .contextMenu { menu }
+            .consoleMenu { menu }
             if open, object.expandable {
                 ConsoleObjectChildren(session: session, store: store, object: object, targetID: targetID,
                                       key: key, depth: depth + 1, path: path)
@@ -1200,12 +1239,9 @@ struct ConsoleValueLine: View {
             Divider()
             Button("Reveal in Elements panel") { session.revealConsoleNode(object, targetID: targetID) }
         }
-        if let id = object.objectId, DeveloperMemoryInspectable.inspectable(className: object.className, type: object.type, objectId: id) {
+        if object.memoryID != nil {
             Divider()
-            Button("Reveal in Memory inspector panel") {
-                DeveloperMemoryInspectorModel.reveal(session: session, objectId: id, targetID: targetID,
-                                                     className: object.className, description: object.description)
-            }
+            Button("Reveal in Memory inspector panel") { ConsoleMemoryIcon.reveal(object, session: session, targetID: targetID) }
         }
         if object.expandable {
             Divider()
@@ -1218,6 +1254,9 @@ struct ConsoleValueLine: View {
                 store.deepExpansion = store.deepExpansion.filter { $0.key != key && !$0.key.hasPrefix(key + "/") }
             }
         }
+        Divider()
+        Button("Expand all") { store.setAllExpanded(true, lines: session.console, load: { session.loadConsoleProperties($0, targetID: $1) }) }
+        Button("Collapse all") { store.setAllExpanded(false, lines: session.console) }
     }
 
     private var label: AttributedString {
@@ -1452,7 +1491,7 @@ private struct ConsoleNodeLine: View {
             .onHover { inside in
                 if let object { session.highlightConsoleNode(inside ? object : nil, targetID: targetID) }
             }
-            .contextMenu {
+            .consoleMenu {
                 if let object {
                     Button("Reveal in Elements panel") { session.revealConsoleNode(object, targetID: targetID) }
                     Button("Store as global variable") { session.storeConsoleObjectAsGlobal(object, targetID: targetID) }
@@ -1549,6 +1588,7 @@ private struct ConsoleListMonitor: NSViewRepresentable {
         private var observer: NSObjectProtocol?
         private var monitor: Any?
         private var lastPinned = true
+        private var menuShown = false
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -1563,7 +1603,7 @@ private struct ConsoleListMonitor: NSViewRepresentable {
                     MainActor.assumeIsolated { self?.report() }
                 }
             }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .keyDown]) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .rightMouseUp, .keyDown]) { [weak self] event in
                 let consumed = MainActor.assumeIsolated { self?.handle(event) ?? false }
                 return consumed ? nil : event
             }
@@ -1596,6 +1636,14 @@ private struct ConsoleListMonitor: NSViewRepresentable {
                     mouseDown(scroll.bounds.contains(point))
                 }
                 return false
+            case .rightMouseDown:
+                menuShown = ConsoleMenuAnchor.popUp(for: event, in: window)
+                return menuShown
+            case .rightMouseUp:
+                // The release of a click whose menu the console showed,
+                // or the text under it opens its own menu after.
+                defer { menuShown = false }
+                return menuShown
             case .keyDown:
                 return key(event)
             default:
@@ -1605,15 +1653,108 @@ private struct ConsoleListMonitor: NSViewRepresentable {
     }
 }
 
+extension View {
+    /// The console's menu on a row. A `.contextMenu` alone loses to the
+    /// row's selectable text, which answers a right-click with macOS's
+    /// text menu (Cut, Copy, Paste…); the anchor lets the list's monitor
+    /// show the row's own menu there instead, as Chrome does.
+    fileprivate func consoleMenu<Items: View>(@ViewBuilder _ items: @escaping () -> Items) -> some View {
+        contextMenu(menuItems: items)
+            .background(ConsoleMenuAnchor(items: AnyView(items())))
+    }
+}
+
+/// Where a console row is, and its menu, for a right-click on its text.
+struct ConsoleMenuAnchor: NSViewRepresentable {
+    /// Built with the row, where its state reads true; built later, a
+    /// row's @State would read as it began.
+    var items: AnyView
+
+    func makeNSView(context: Context) -> AnchorView { AnchorView() }
+
+    func updateNSView(_ view: AnchorView, context: Context) { view.items = items }
+
+    /// The innermost row's menu under a right-click, shown; false when no
+    /// row is there (the prompt, an empty stretch) or before macOS 15.
+    @MainActor
+    static func popUp(for event: NSEvent, in window: NSWindow) -> Bool {
+        guard #available(macOS 15, *) else { return false }
+        guard let anchor = innermost(at: event.locationInWindow, in: window), let items = anchor.items else { return false }
+        let menu = NSHostingMenu(rootView: items)
+        NSMenu.popUpContextMenu(menu, with: event, for: anchor)
+        // The system still opens the selectable text's own menu once this
+        // one closes, from outside the app's event monitors; it is closed
+        // a turn after it starts (closed while starting, menus wedge).
+        let until = Date().addingTimeInterval(0.5)
+        let menuID = ObjectIdentifier(menu)
+        var observer: NSObjectProtocol?
+        observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { note in
+            MainActor.assumeIsolated {
+                if Date() < until, let other = note.object as? NSMenu, ObjectIdentifier(other) != menuID {
+                    DispatchQueue.main.async { other.cancelTracking() }
+                }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+        }
+        return true
+    }
+
+    /// The smallest row under a point in the window: a property inside
+    /// an object inside a message gets its own menu.
+    @MainActor
+    static func innermost(at point: NSPoint, in window: NSWindow) -> AnchorView? {
+        AnchorView.live.allObjects.filter { anchor in
+            guard anchor.window === window, !anchor.isHiddenOrHasHiddenAncestor else { return false }
+            let local = anchor.convert(point, from: nil)
+            // SwiftUI's hosted views can report a visible rect past their
+            // bounds, so both are asked.
+            return anchor.bounds.contains(local) && anchor.visibleRect.contains(local)
+        }
+        .min { $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height }
+    }
+
+    final class AnchorView: NSView {
+        @MainActor static let live = NSHashTable<AnchorView>.weakObjects()
+        var items: AnyView?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil { Self.live.remove(self) } else { Self.live.add(self) }
+        }
+    }
+}
+
 // MARK: - Prompt
+
+/// The prompt's place in its history: the draft, and edits made to recalled
+/// entries, kept while moving through it until a command runs, as in Chrome.
+struct DeveloperConsoleHistoryCursor: Equatable {
+    var index: Int?
+    var draft = ""
+    var edits: [Int: String] = [:]
+
+    /// Keeps `text` and moves `offset` entries; the text to show, or nil
+    /// when there is no history.
+    mutating func move(_ offset: Int, from text: String, in history: [String]) -> String? {
+        guard !history.isEmpty else { return nil }
+        if let index, history.indices.contains(index) { edits[index] = text == history[index] ? nil : text }
+        else { draft = text }
+        let next = min(history.count, max(0, (index ?? history.count) + offset))
+        index = next == history.count ? nil : next
+        return index.map { edits[$0] ?? history[$0] } ?? draft
+    }
+}
 
 private struct ConsolePrompt: View {
     @ObservedObject var session: DeveloperToolsSession
     @ObservedObject var store: DeveloperConsoleStore
     @State private var text = ""
     @State private var height: CGFloat = 15
-    @State private var historyIndex: Int?
-    @State private var draft = ""
+    @State private var cursor = DeveloperConsoleHistoryCursor()
     @State private var eager: String?
     @State private var suggestions: [String] = []
     @State private var prefix = ""
@@ -1780,7 +1921,7 @@ private struct ConsolePrompt: View {
         let expression = text
         guard !expression.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         session.evaluateInConsole(expression)
-        historyIndex = nil
+        cursor = DeveloperConsoleHistoryCursor()
         text = ""
         externalEdits += 1
         eager = nil
@@ -1788,12 +1929,8 @@ private struct ConsolePrompt: View {
     }
 
     private func moveHistory(_ offset: Int) {
-        let history = store.history
-        guard !history.isEmpty else { return }
-        if historyIndex == nil { draft = text }
-        let index = min(history.count, max(0, (historyIndex ?? history.count) + offset))
-        historyIndex = index == history.count ? nil : index
-        text = historyIndex.map { history[$0] } ?? draft
+        guard let shown = cursor.move(offset, from: text, in: store.history) else { return }
+        text = shown
         externalEdits += 1
         suggestions = []
     }

@@ -35,8 +35,6 @@ struct DeveloperPerformanceTextFilter: Equatable {
     var matchCase = false
     var regex = false
 
-    var isEmpty: Bool { text.isEmpty }
-
     /// Whether a regular expression typed is one; a broken one filters nothing.
     var isValid: Bool { !regex || text.isEmpty || expression != nil }
 
@@ -44,24 +42,14 @@ struct DeveloperPerformanceTextFilter: Equatable {
         try? NSRegularExpression(pattern: text, options: matchCase ? [] : [.caseInsensitive])
     }
 
-    func matches(_ value: String) -> Bool {
-        guard !text.isEmpty else { return true }
-        if regex {
-            guard let expression else { return true }
-            return expression.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
-        }
-        return matchCase ? value.contains(text) : value.localizedCaseInsensitiveContains(text)
-    }
-
     /// The rows that match and those above them, the rest pruned.
     func apply(to nodes: [DeveloperPerformanceNode]) -> [DeveloperPerformanceNode] {
         guard !text.isEmpty, isValid else { return nodes }
-        if regex, let expression {
-            return Self.prune(nodes) { value in
-                expression.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
-            }
+        let compiled = regex ? expression : nil
+        return Self.prune(nodes) { value in
+            if let compiled { return compiled.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil }
+            return matchCase ? value.contains(text) : value.localizedCaseInsensitiveContains(text)
         }
-        return Self.prune(nodes) { matches($0) }
     }
 
     private static func prune(_ nodes: [DeveloperPerformanceNode],
@@ -217,12 +205,8 @@ extension DeveloperPerformanceProfile {
             above.append(caller)
             node = caller
         }
-        var frames: [(activity: String, category: DeveloperPerformanceCategory, total: Double, chosen: Bool)] = []
-        for caller in above.reversed() {
-            frames.append((activity: caller.activity, category: caller.category, total: caller.totalTime, chosen: false))
-        }
-        for (index, row) in rows.enumerated().reversed() {
-            frames.append((activity: row.activity, category: row.category, total: row.totalTime, chosen: index == rows.count - 1))
+        var frames = (Array(above.reversed()) + rows.reversed()).map {
+            (activity: $0.activity, category: $0.category, total: $0.totalTime, chosen: $0.id == chosen.id)
         }
         // Below: what the top-level activity's outermost records called most.
         var current = shown.filter {

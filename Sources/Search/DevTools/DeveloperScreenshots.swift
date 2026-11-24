@@ -212,37 +212,34 @@ extension Browser {
         return session.tab === tab && session.selectedNode != nil
     }
 
+    /// The page in front to take a picture of, the host to name it by (none
+    /// for a private tab) and the folder it goes in.
+    private var screenshotTarget: (web: PageView, host: String?, folder: URL)? {
+        guard let tab = active, tab.isWeb else { return nil }
+        return (tab.web, tab.shy ? nil : tab.web.url?.host(), downloadsFolder)
+    }
+
     /// Capture screenshot: what the page shows now, as it is on screen.
     func captureScreenshot() {
-        guard let tab = active, tab.isWeb else { return }
-        let web = tab.web
-        let host = tab.shy ? nil : web.url?.host()
-        let folder = downloadsFolder
-        web.takeSnapshot(with: nil) { [weak self] image, error in
-            MainActor.assumeIsolated {
-                guard let image else { self?.screenshotFailed(error?.localizedDescription); return }
-                self?.keepScreenshot(image, host: host, in: folder)
-            }
-        }
+        guard let target = screenshotTarget else { return }
+        snapshot(target.web, nil, host: target.host, in: target.folder)
     }
 
     /// Capture full size screenshot: the whole page, top to bottom.
     func captureFullSizeScreenshot() {
-        guard let tab = active, tab.isWeb else { return }
-        let web = tab.web
-        let host = tab.shy ? nil : web.url?.host()
-        let folder = downloadsFolder
+        guard let target = screenshotTarget else { return }
+        let web = target.web, host = target.host, folder = target.folder
         let backing = web.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         web.createPDF(configuration: WKPDFConfiguration()) { [weak self] result in
             MainActor.assumeIsolated {
                 switch result {
                 case .success(let pdf):
                     guard let drawn = DeveloperScreenshot.draw(pdf: pdf, backing: backing) else {
-                        self?.screenshotFailed("no page in the PDF"); return
+                        self?.screenshotFailed(); return
                     }
                     self?.keepScreenshot(drawn.image, host: host, in: folder, cropped: drawn.cropped)
-                case .failure(let error):
-                    self?.screenshotFailed(error.localizedDescription)
+                case .failure:
+                    self?.screenshotFailed()
                 }
             }
         }
@@ -262,35 +259,38 @@ extension Browser {
     /// inside it is saved as the other screenshots are. Esc or a click
     /// without a drag cancels.
     func captureAreaScreenshot() {
-        guard let tab = active, tab.isWeb else { return }
-        let web = tab.web
-        let host = tab.shy ? nil : web.url?.host()
-        let folder = downloadsFolder
-        DeveloperAreaCapture.begin(on: web) { [weak self, weak web] rect in
+        guard let target = screenshotTarget else { return }
+        let host = target.host, folder = target.folder
+        DeveloperAreaCapture.begin(on: target.web) { [weak self, weak web = target.web] rect in
             guard let self, let web, let rect else { return }
             let configuration = WKSnapshotConfiguration()
             configuration.rect = rect
-            web.takeSnapshot(with: configuration) { [weak self] image, error in
-                MainActor.assumeIsolated {
-                    guard let image else { self?.screenshotFailed(error?.localizedDescription); return }
-                    self?.keepScreenshot(image, host: host, in: folder)
-                }
+            snapshot(web, configuration, host: host, in: folder)
+        }
+    }
+
+    /// The page's snapshot (of `configuration`'s rect, or what it shows), kept.
+    private func snapshot(_ web: WKWebView, _ configuration: WKSnapshotConfiguration?, host: String?, in folder: URL) {
+        web.takeSnapshot(with: configuration) { [weak self] image, _ in
+            MainActor.assumeIsolated {
+                guard let image else { self?.screenshotFailed(); return }
+                self?.keepScreenshot(image, host: host, in: folder)
             }
         }
     }
 
     private func keepScreenshot(_ image: NSImage, host: String?, in folder: URL, cropped: Bool = false) {
-        guard let png = DeveloperScreenshot.png(image) else { return screenshotFailed("no PNG") }
+        guard let png = DeveloperScreenshot.png(image) else { return screenshotFailed() }
         do {
             let file = try DeveloperScreenshot.save(png, host: host, in: folder)
             announce(cropped ? "The top of the page saved to \(folder.lastPathComponent)"
                              : "Saved to \(folder.lastPathComponent)", file: file)
         } catch {
-            screenshotFailed(error.localizedDescription)
+            screenshotFailed()
         }
     }
 
-    private func screenshotFailed(_ reason: String?) {
+    private func screenshotFailed() {
         announce("Couldn't capture this page")
     }
 }

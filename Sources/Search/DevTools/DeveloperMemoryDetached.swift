@@ -12,18 +12,13 @@ import Foundation
 struct DeveloperHeapDOMProbe: Equatable, Sendable {
     let connected: Bool
     /// The node's nodeName: "DIV", "svg", "#text".
-    let nodeName: String
-    let elementID: String
+    var nodeName = ""
+    var elementID = ""
     /// The class attribute as written.
-    let classes: String
+    var classes = ""
+}
 
-    init(connected: Bool, nodeName: String = "", elementID: String = "", classes: String = "") {
-        self.connected = connected
-        self.nodeName = nodeName
-        self.elementID = elementID
-        self.classes = classes
-    }
-
+extension DeveloperHeapDOMProbe {
     /// The value `function` returns by value, or nil when it said the
     /// object isn't a node.
     init?(_ value: Any?) {

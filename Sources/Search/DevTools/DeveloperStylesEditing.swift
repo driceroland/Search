@@ -28,6 +28,9 @@ struct DeveloperStyleRuleView: View {
     @State private var expanded = Set<Int>()
     /// The value tooltip ⌥↓ opened under a value field, until a key or an edit.
     @State private var tip: ValueTip?
+    /// The calc()/min()/max()/clamp() hovers, worked out in the page, by
+    /// node, property and value.
+    @State private var mathTips: [String: String] = [:]
 
     private struct ValueTip: Equatable {
         let field: DeveloperStyleEditing.Field
@@ -86,9 +89,8 @@ struct DeveloperStyleRuleView: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
-        .onAppear { DispatchQueue.main.async { takePendingSelector() } }
+        .onAppear { DispatchQueue.main.async { takePendingSelector(); takePendingName() } }
         .onChange(of: elements.pendingSelector) { _, _ in takePendingSelector() }
-        .onAppear { DispatchQueue.main.async { takePendingName() } }
         .onChange(of: elements.pendingName) { _, _ in takePendingName() }
     }
 
@@ -99,15 +101,16 @@ struct DeveloperStyleRuleView: View {
         // two don't fit on a line the source goes above, and the selector
         // has the whole width to wrap in.
         ViewThatFits(in: .horizontal) {
-            selectorRow(editing: editing, wraps: false) { source }
+            selectorRow(editing: editing, wraps: false)
             VStack(alignment: .trailing, spacing: 0) {
                 source
-                selectorRow(editing: editing, wraps: true) { EmptyView() }
+                selectorRow(editing: editing, wraps: true)
             }
         }
     }
 
-    private func selectorRow<Trailing: View>(editing: Bool, wraps: Bool, @ViewBuilder trailing: () -> Trailing) -> some View {
+    /// Unwrapped, the source follows on the line.
+    private func selectorRow(editing: Bool, wraps: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             if editing {
                 editor(.selector)
@@ -128,7 +131,7 @@ struct DeveloperStyleRuleView: View {
             Color.clear.frame(minWidth: 8, maxWidth: .infinity, minHeight: 13, maxHeight: 13)
                 .contentShape(Rectangle())
                 .onTapGesture { begin(.newName(0)) }
-            trailing().fixedSize()
+            if !wraps { source.fixedSize() }
         }
     }
 
@@ -281,10 +284,7 @@ struct DeveloperStyleRuleView: View {
         if rule.editable {
             Toggle("", isOn: Binding(get: { property.enabled }, set: { on in
                 if edit != nil { session.finishStyleEdit() }
-                var properties = current
-                guard properties.indices.contains(index) else { return }
-                properties[index].enabled = on
-                session.editStyle(rule.id, properties: properties)
+                update(at: index) { $0.enabled = on }
             }))
             .toggleStyle(.developerCheckbox)
             .controlSize(.mini)
@@ -337,11 +337,13 @@ struct DeveloperStyleRuleView: View {
                     .foregroundStyle(dim ? .secondary : Palette.ink)
                     .underline(true, pattern: .dot)
                     .strikethrough(struck)
-                    .help(resolved(variable))
+                    .help(variableChain(segment.text).joined(separator: "\n"))
                     .onTapGesture { session.revealDeclaration(variable) }
             } else {
                 Text(segment.text).foregroundStyle(dim ? .secondary : Palette.ink).strikethrough(struck)
                     .contentShape(Rectangle()).onTapGesture(perform: edit)
+                    .help(mathTips[mathKey(property)] ?? "")
+                    .onHover { if $0 { evaluateMath(property) } }
             }
         }
         if property.important {
@@ -351,16 +353,29 @@ struct DeveloperStyleRuleView: View {
         Text(";").strikethrough(struck).contentShape(Rectangle()).onTapGesture(perform: edit)
     }
 
-    /// What var(--name) stands for here: the computed value, else the
-    /// winning declaration's.
-    private func resolved(_ variable: String) -> String {
-        if let value = session.styles.first(where: { $0.name == variable })?.value { return value }
-        for rule in session.matchedStyles {
-            if let found = rule.properties.first(where: { $0.name == variable && $0.enabled && !$0.overridden }) {
-                return found.value
-            }
+    /// As in Chrome: a var() reference followed through each custom
+    /// property to its value (DeveloperToolsSession.variableChain).
+    private func variableChain(_ reference: String) -> [String] { session.variableChain(reference) }
+
+    private func mathKey(_ property: Detail) -> String {
+        "\(session.selectedNode ?? 0) \(property.name): \(property.value)"
+    }
+
+    /// As in Chrome: a calc(), min(), max() or clamp() value hovered is
+    /// worked out step by step in the page, on the selected element (so
+    /// not for inherited, pseudo-element or custom-property declarations).
+    private func evaluateMath(_ property: Detail) {
+        let key = mathKey(property)
+        guard mathTips[key] == nil, !rule.inherited, rule.pseudo == nil, !property.name.hasPrefix("--"),
+              let node = session.selectedNode else { return }
+        let steps = DeveloperStyleEditing.mathSteps(property.value)
+        guard !steps.isEmpty else { return }
+        mathTips[key] = ""
+        Task {
+            let results = await session.styleMathResults(of: node, property: property.name, steps: steps)
+            let used = property.overridden || !property.enabled ? nil : session.styles.first(where: { $0.name == property.name })?.value
+            mathTips[key] = DeveloperStyleEditing.mathLines(steps, results: results, used: used).joined(separator: "\n")
         }
-        return "\(variable) is not defined"
     }
 
     @ViewBuilder
@@ -378,10 +393,7 @@ struct DeveloperStyleRuleView: View {
         Button("View computed value") { session.showComputed(property.name) }
     }
 
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
+    private func copy(_ text: String) { DeveloperToolsSession.copyToPasteboard(text) }
 
     @ViewBuilder
     private var newDeclaration: some View {
@@ -410,18 +422,20 @@ struct DeveloperStyleRuleView: View {
         }
     }
 
-    private func setValue(_ value: String, at index: Int) {
+    private func setValue(_ value: String, at index: Int) { update(at: index) { $0.value = value } }
+
+    /// One of the rule's declarations changed and the rule written.
+    private func update(at index: Int, _ change: (inout Detail) -> Void) {
         var properties = current
         guard properties.indices.contains(index) else { return }
-        properties[index].value = value
+        change(&properties[index])
         session.editStyle(rule.id, properties: properties)
     }
 
     /// The flexbox and grid editors: a declaration set, replaced or removed.
     private func setDeclaration(_ name: String, _ value: String?) {
-        var properties = current.filter { $0.name != name }
-        if let value { properties += DeveloperStyleEditing.parse("\(name): \(value)") }
-        session.editStyle(rule.id, properties: properties)
+        let added = value.map { DeveloperStyleEditing.parse("\(name): \($0)") } ?? []
+        session.editStyle(rule.id, properties: DeveloperStyleEditing.setting(name, to: added, in: current, name: \.name))
     }
 
     // MARK: The editor
@@ -554,7 +568,7 @@ struct DeveloperStyleRuleView: View {
                 lines.append(DeveloperStyleEditing.functionHelp(function))
                 if function == "var" {
                     for segment in DeveloperStyleEditing.segments(text) {
-                        if let variable = segment.variable { lines.append("  \(segment.text) = \(resolved(variable))") }
+                        if segment.variable != nil { lines += variableChain(segment.text).map { "  " + $0 } }
                     }
                 }
             }
@@ -685,10 +699,7 @@ struct DeveloperStyleRuleView: View {
             advance(forward: false)
             return .handled
         case .escape:
-            if tip != nil {
-                tip = nil
-                return .handled
-            }
+            if tip != nil { tip = nil; return .handled }
             if !items.isEmpty {
                 edit.suggest = false
                 elements.styleEdit = edit
@@ -878,15 +889,11 @@ struct DeveloperStyleField: NSViewRepresentable {
         func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             let event = NSApp.currentEvent
             let flags = event?.modifierFlags.intersection(.deviceIndependentFlagsMask) ?? []
+            // ↑, ↓, Page Up and Page Down, by key code.
+            let arrows: [UInt16: (NSEvent.ModifierFlags) -> Key] = [126: Key.up, 125: Key.down, 116: Key.pageUp, 121: Key.pageDown]
             let key: Key
-            if let event, event.type == .keyDown, event.keyCode == 126 {
-                key = .up(flags)
-            } else if let event, event.type == .keyDown, event.keyCode == 125 {
-                key = .down(flags)
-            } else if let event, event.type == .keyDown, event.keyCode == 116 {
-                key = .pageUp(flags)
-            } else if let event, event.type == .keyDown, event.keyCode == 121 {
-                key = .pageDown(flags)
+            if let event, event.type == .keyDown, let arrow = arrows[event.keyCode] {
+                key = arrow(flags)
             } else {
                 switch selector {
                 case #selector(NSResponder.moveRight(_:)): key = .right
@@ -1387,23 +1394,13 @@ struct DeveloperEventListenersView: View {
         let groups = Dictionary(grouping: shown, by: \.type)
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DeveloperToolsStyle.gutter) {
-                Toggle("Ancestors", isOn: Binding(get: { session.listenerAncestors }, set: {
-                    session.listenerAncestors = $0
-                    session.loadListeners()
-                }))
-                .toggleStyle(.developerCheckbox).controlSize(.small)
-                .help("Show listeners on the ancestors")
+                reloading("Ancestors", \.listenerAncestors, help: "Show listeners on the ancestors")
                 Picker("", selection: $category) {
                     ForEach(["All", "Passive", "Blocking"], id: \.self) { Text($0).tag($0) }
                 }
                 .labelsHidden().fixedSize().controlSize(.small)
                 .help("Event listeners category")
-                Toggle("Framework listeners", isOn: Binding(get: { session.listenerFramework }, set: {
-                    session.listenerFramework = $0
-                    session.loadListeners()
-                }))
-                .toggleStyle(.developerCheckbox).controlSize(.small)
-                .help("Show handlers registered through jQuery and React")
+                reloading("Framework listeners", \.listenerFramework, help: "Show handlers registered through jQuery and React")
                 Spacer(minLength: 0)
                 DeveloperPanelIcon(symbol: "arrow.clockwise", title: "Refresh event listeners", action: session.loadListeners)
             }
@@ -1439,6 +1436,17 @@ struct DeveloperEventListenersView: View {
             sources = [:]
             await session.readListenerBreakpoints()
         }
+    }
+
+    /// A checkbox for one of the session's listener options; the list is read again as it changes.
+    private func reloading(_ title: String, _ option: ReferenceWritableKeyPath<DeveloperToolsSession, Bool>,
+                           help: String) -> some View {
+        Toggle(title, isOn: Binding(get: { session[keyPath: option] }, set: {
+            session[keyPath: option] = $0
+            session.loadListeners()
+        }))
+        .toggleStyle(.developerCheckbox).controlSize(.small)
+        .help(help)
     }
 
     private func listenerRow(_ listener: DeveloperToolsSession.EventListener) -> some View {
@@ -1543,14 +1551,11 @@ struct DeveloperEventListenersView: View {
     private func flags(_ listener: DeveloperToolsSession.EventListener) -> String {
         var parts = ["handler: " + (listener.handler.isEmpty ? "(anonymous)" : listener.handler)]
         if let framework = listener.framework {
-            parts.append(framework)
-            if listener.useCapture { parts.append("capture") }
-            return parts.joined(separator: " · ")
+            parts += [framework] + (listener.useCapture ? ["capture"] : [])
+        } else {
+            parts += ["useCapture: \(listener.useCapture)", "passive: \(listener.passive)", "once: \(listener.once)"]
+            if listener.isAttribute { parts.append("attribute") }
         }
-        parts.append("useCapture: \(listener.useCapture)")
-        parts.append("passive: \(listener.passive)")
-        parts.append("once: \(listener.once)")
-        if listener.isAttribute { parts.append("attribute") }
         return parts.joined(separator: " · ")
     }
 }

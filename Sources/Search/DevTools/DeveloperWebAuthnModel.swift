@@ -82,11 +82,7 @@ final class DeveloperWebAuthnModel: ObservableObject {
             controller.removeScriptMessageHandler(forName: Self.handlerName, contentWorld: .page)
             if let script {
                 ArmedRiders.remove(script)
-                if controller.userScripts.contains(where: { $0 === script }) {
-                    let others = controller.userScripts.filter { $0 !== script }
-                    controller.removeAllUserScripts()
-                    others.forEach(controller.addUserScript)
-                }
+                controller.developerRemove(script)
             }
         }
         script = nil

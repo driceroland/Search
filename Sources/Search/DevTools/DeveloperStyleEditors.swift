@@ -449,6 +449,18 @@ enum DeveloperLayoutEditor {
         ("justify-items", ["center", "start", "end", "stretch"]),
     ]
 
+    /// grid-auto-flow's direction and whether it is dense: "column dense" → ("column", true).
+    static func autoFlow(_ value: String?) -> (direction: String?, dense: Bool) {
+        let words = (value ?? "").split(separator: " ").map(String.init)
+        return (words.first { $0 != "dense" }, words.contains("dense"))
+    }
+
+    /// The two written back: "row dense", "dense", "column", or nil for none.
+    static func autoFlow(direction: String?, dense: Bool) -> String? {
+        let words = [direction, dense ? "dense" : nil].compactMap { $0 }
+        return words.isEmpty ? nil : words.joined(separator: " ")
+    }
+
     static func kind(_ property: DeveloperToolsSession.Detail) -> String? {
         guard property.name == "display" else { return nil }
         switch property.value.trimmingCharacters(in: .whitespaces) {
@@ -478,17 +490,28 @@ struct DeveloperLayoutEditorButton: View {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(kind == "flex" ? DeveloperLayoutEditor.flexbox : DeveloperLayoutEditor.grid, id: \.0) { name, values in
                     let current = rule.properties.last { $0.name == name && $0.enabled }?.value
+                    // grid-auto-flow's direction buttons keep its dense checkbox, as in Chrome.
+                    let flow = name == "grid-auto-flow" ? DeveloperLayoutEditor.autoFlow(current) : nil
                     VStack(alignment: .leading, spacing: 3) {
                         Text(name + ": " + (current ?? "")).font(DeveloperToolsStyle.code)
                         HStack(spacing: 3) {
                             ForEach(values, id: \.self) { value in
-                                let on = current == value
-                                Button(value) { onSet(name, on ? nil : value) }
+                                let on = flow.map { $0.direction == value } ?? (current == value)
+                                Button(value) {
+                                    onSet(name, flow.map { DeveloperLayoutEditor.autoFlow(direction: on ? nil : value, dense: $0.dense) }
+                                        ?? (on ? nil : value))
+                                }
                                     .buttonStyle(.plain).font(.system(size: 10))
                                     .padding(.horizontal, 5).frame(height: 18)
                                     .background(on ? DeveloperToolsStyle.selected : DeveloperToolsStyle.raised,
                                                 in: RoundedRectangle(cornerRadius: 3))
                                     .help(on ? "Remove \(name): \(value)" : "Add \(name): \(value)")
+                            }
+                            if let flow {
+                                Toggle("dense", isOn: Binding(get: { flow.dense }, set: {
+                                    onSet(name, DeveloperLayoutEditor.autoFlow(direction: flow.direction, dense: $0))
+                                }))
+                                .toggleStyle(.developerCheckbox).font(.system(size: 10)).padding(.leading, 4)
                             }
                         }
                     }
@@ -505,15 +528,6 @@ struct DeveloperLayoutEditorButton: View {
 /// As in Chrome, the checkbox switches a breakpoint off and on (it stays
 /// listed); the context menu removes it.
 struct DeveloperDOMBreakpointsPane: View {
-    @ObservedObject var session: DeveloperToolsSession
-    @ObservedObject var elements: DeveloperElementsState
-
-    var body: some View {
-        DeveloperDOMBreakpointList(session: session, debugger: session.debugger)
-    }
-}
-
-private struct DeveloperDOMBreakpointList: View {
     @ObservedObject var session: DeveloperToolsSession
     @ObservedObject var debugger: DeveloperDebugger
 

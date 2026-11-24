@@ -37,6 +37,9 @@ final class DeveloperMemoryInspectorModel: ObservableObject, DeveloperSessionMod
         var bytes: [UInt8] = []
         var history = DeveloperMemoryHistory()
         var problem: String?
+        /// The page's own number for the memory underneath (an ArrayBuffer,
+        /// or a WebAssembly.Memory): views on it share one tab, as in Chrome.
+        var identity: Int?
     }
 
     @Published private(set) var buffers: [Buffer] = []
@@ -88,15 +91,22 @@ final class DeveloperMemoryInspectorModel: ObservableObject, DeveloperSessionMod
             do {
                 let held = try await Self.hold(session, objectId: objectId, targetID: targetID)
                 guard let self else { return }
-                var buffer = Buffer(title: Self.title(description, className: className), className: className, kind: kind,
-                                    objectId: held.objectId, owned: held.owned, targetID: targetID, address: session.address)
+                // The tab already on this memory: the new view's bytes highlighted in it.
+                let index = held.identity.flatMap { identity in
+                    self.buffers.firstIndex { $0.identity == identity && $0.targetID == targetID && $0.address == session.address }
+                }
+                if index != nil, held.owned { self.release(held.objectId, targetID: targetID) }
+                var buffer = index.map { self.buffers[$0] }
+                    ?? Buffer(title: "", className: className, kind: kind, objectId: held.objectId, owned: held.owned,
+                              targetID: targetID, address: session.address, identity: held.identity)
+                buffer.title = Self.title(description, className: className)
                 buffer.length = held.length
                 buffer.regionStart = held.offset
                 buffer.regionLength = held.size
                 buffer.selected = DeveloperMemoryLayout.clamp(held.offset, length: held.length)
                 buffer.pageStart = self.layout.pageStart(buffer.selected)
                 buffer.history.visit(buffer.selected)
-                self.buffers.append(buffer)
+                if let index { self.buffers[index] = buffer } else { self.buffers.append(buffer) }
                 self.selectedID = buffer.id
                 self.read(buffer.id)
             } catch {
@@ -116,6 +126,7 @@ final class DeveloperMemoryInspectorModel: ObservableObject, DeveloperSessionMod
         let length: Int
         let offset: Int
         let size: Int
+        var identity: Int?
     }
 
     /// The object parked, taken back into the inspector's own group, and
@@ -136,6 +147,7 @@ final class DeveloperMemoryInspectorModel: ObservableObject, DeveloperSessionMod
         let length = (value["length"] as? NSNumber)?.intValue ?? 0
         let offset = (value["offset"] as? NSNumber)?.intValue ?? 0
         let size = (value["size"] as? NSNumber)?.intValue ?? length
+        let identity = (value["identity"] as? NSNumber)?.intValue
         let taken = try? await session.command("Runtime.evaluate", [
             "expression": "(() => { const h = globalThis[Symbol.for('perch.memoryInspector')]; if (!h) return undefined; const o = h.slots.get(\(slot)); h.slots.delete(\(slot)); return o; })()",
             "objectGroup": objectGroup, "doNotPauseOnExceptionsAndMuteConsole": true, "includeCommandLineAPI": false,
@@ -146,9 +158,9 @@ final class DeveloperMemoryInspectorModel: ObservableObject, DeveloperSessionMod
             "functionDeclaration": "function(slot) { const h = globalThis[Symbol.for('perch.memoryInspector')]; if (h) h.slots.delete(slot); }",
         ], targetID: targetID)
         if let id = (taken?["result"] as? [String: Any])?["objectId"] as? String {
-            return Held(objectId: id, owned: true, length: length, offset: offset, size: size)
+            return Held(objectId: id, owned: true, length: length, offset: offset, size: size, identity: identity)
         }
-        return Held(objectId: objectId, owned: false, length: length, offset: offset, size: size)
+        return Held(objectId: objectId, owned: false, length: length, offset: offset, size: size, identity: identity)
     }
 
     // MARK: Closing
@@ -157,12 +169,12 @@ final class DeveloperMemoryInspectorModel: ObservableObject, DeveloperSessionMod
         guard let index = buffers.firstIndex(where: { $0.id == id }) else { return }
         let buffer = buffers.remove(at: index)
         if selectedID == id { selectedID = buffers.isEmpty ? nil : buffers[max(0, index - 1)].id }
-        release(buffer)
+        if buffer.owned { release(buffer.objectId, targetID: buffer.targetID) }
     }
 
-    private func release(_ buffer: Buffer) {
-        guard buffer.owned, let session else { return }
-        Task { _ = try? await session.command("Runtime.releaseObject", ["objectId": buffer.objectId], targetID: buffer.targetID) }
+    private func release(_ objectId: String, targetID: String?) {
+        guard let session else { return }
+        Task { _ = try? await session.command("Runtime.releaseObject", ["objectId": objectId], targetID: targetID) }
     }
 
     // MARK: Reading
@@ -274,14 +286,12 @@ final class DeveloperMemoryInspectorModel: ObservableObject, DeveloperSessionMod
         go(to: layout.step(current.selected, pages: pages, length: current.length))
     }
 
-    func back() {
-        guard let id = selected?.id, let index = buffers.firstIndex(where: { $0.id == id }) else { return }
-        if let address = buffers[index].history.back() { go(to: address, record: false) }
-    }
+    func back() { travel { $0.back() } }
+    func forward() { travel { $0.forward() } }
 
-    func forward() {
+    private func travel(_ move: (inout DeveloperMemoryHistory) -> Int?) {
         guard let id = selected?.id, let index = buffers.firstIndex(where: { $0.id == id }) else { return }
-        if let address = buffers[index].history.forward() { go(to: address, record: false) }
+        if let address = move(&buffers[index].history) { go(to: address, record: false) }
     }
 
     /// The view reflowed to a width: rows of a new size, the page kept on
@@ -329,7 +339,7 @@ final class DeveloperMemoryInspectorModel: ObservableObject, DeveloperSessionMod
             const key = Symbol.for("perch.memoryInspector");
             let holder = globalThis[key];
             if (!holder) {
-                holder = {next: 0, slots: new Map()};
+                holder = {next: 0, slots: new Map(), ids: new WeakMap(), nextID: 0};
                 Object.defineProperty(globalThis, key, {value: holder, configurable: true, enumerable: false});
             }
             const slot = ++holder.next;
@@ -338,7 +348,14 @@ final class DeveloperMemoryInspectorModel: ObservableObject, DeveloperSessionMod
             const view = ArrayBuffer.isView(this);
             let length = 0;
             try { length = view || tag === "WebAssembly.Memory" ? this.buffer.byteLength : this.byteLength; } catch (e) {}
-            return {slot, tag, length, offset: view ? this.byteOffset : 0, size: view ? this.byteLength : length};
+            // The memory underneath, numbered once: a WebAssembly.Memory by
+            // itself, as its buffer is replaced when it grows.
+            if (!holder.ids) { holder.ids = new WeakMap(); holder.nextID = 0; }
+            let memory = this;
+            try { memory = view ? this.buffer : this; } catch (e) {}
+            let identity = holder.ids.get(memory);
+            if (identity === undefined) { identity = ++holder.nextID; holder.ids.set(memory, identity); }
+            return {slot, tag, length, offset: view ? this.byteOffset : 0, size: view ? this.byteLength : length, identity};
         }
         """
 

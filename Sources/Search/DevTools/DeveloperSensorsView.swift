@@ -101,8 +101,20 @@ struct DeveloperSensorsView: View {
         // Manage opens Settings › Locations, as in Chrome; what it changed
         // is read back when Settings closes.
         .onChange(of: shell.settingsShown) { _, shown in
-            if !shown { locations = DeveloperLocations.saved }
+            if !shown {
+                locations = DeveloperLocations.saved
+                location = Self.selection(location, in: locations)
+            }
         }
+    }
+
+    /// The picker's choice once the list changed: a saved location that was
+    /// removed becomes Other…, its values kept, as the override still is.
+    static func selection(_ choice: String, in locations: [DeveloperLocation]) -> String {
+        if [noOverride, other, unavailable].contains(choice) || locations.contains(where: { $0.title == choice }) {
+            return choice
+        }
+        return other
     }
 
     // MARK: Location
@@ -145,11 +157,8 @@ struct DeveloperSensorsView: View {
     private func chooseLocation(_ value: String) {
         location = value
         if let preset = locations.first(where: { $0.title == value }) {
-            latitude = String(preset.latitude)
-            longitude = String(preset.longitude)
-            timezone = preset.timezone
-            locale = preset.locale
-            accuracy = String(preset.accuracy)
+            (latitude, longitude, accuracy) = (String(preset.latitude), String(preset.longitude), String(preset.accuracy))
+            (timezone, locale) = (preset.timezone, preset.locale)
         }
         apply()
     }
@@ -196,9 +205,7 @@ struct DeveloperSensorsView: View {
     private func chooseOrientation(_ value: String) {
         orientation = value
         if let preset = Self.orientationPresets.first(where: { $0.0 == value }) {
-            alpha = Self.angle(preset.1)
-            beta = Self.angle(preset.2)
-            gamma = Self.angle(preset.3)
+            (alpha, beta, gamma) = (Self.angle(preset.1), Self.angle(preset.2), Self.angle(preset.3))
         }
         apply()
     }
@@ -334,9 +341,7 @@ struct DeveloperSensorsView: View {
             location = Self.unavailable
         }
         if let angles = current.orientation {
-            alpha = Self.angle(angles.alpha)
-            beta = Self.angle(angles.beta)
-            gamma = Self.angle(angles.gamma)
+            (alpha, beta, gamma) = (Self.angle(angles.alpha), Self.angle(angles.beta), Self.angle(angles.gamma))
             orientation = Self.orientationPresets.first {
                 $0.1 == angles.alpha && $0.2 == angles.beta && $0.3 == angles.gamma
             }?.0 ?? Self.custom

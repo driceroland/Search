@@ -276,21 +276,13 @@ extension DeveloperLighthouseRules {
     static func unusedBytes(_ id: String, _ entries: [DeveloperCoverageMath.Entry], threshold: Double,
                             _ input: DeveloperLighthouseInput) -> Audit {
         var items: [[String: Value]] = []
-        var total = 0.0
         for entry in entries where entry.total > 0 {
             let size = transferEstimate(entry.url, length: Double(entry.total), input)
             let wasted = size * Double(entry.unused) / Double(entry.total)
             guard wasted >= threshold else { continue }
-            total += wasted
             items.append(["url": .url(entry.url), "totalBytes": .bytes(size), "wastedBytes": .bytes(wasted)])
         }
-        items.sort { (number($0["wastedBytes"]) ?? 0) > (number($1["wastedBytes"]) ?? 0) }
-        return opportunity(id, items: items, headings: [
-            Heading(key: "url", label: "URL", valueType: "url"),
-            Heading(key: "totalBytes", label: "Transfer Size", valueType: "bytes"),
-            Heading(key: "wastedBytes", label: "Est Savings", valueType: "bytes"),
-        ], savingsBytes: total, savingsMs: DeveloperLighthouseScoring.milliseconds(forBytes: total, input.formFactor),
-           input.formFactor)
+        return byteOpportunity(id, items, input)
     }
 
     static func unusedJavaScript(_ input: DeveloperLighthouseInput) -> Audit {
@@ -400,7 +392,6 @@ extension DeveloperLighthouseRules {
         guard input.mode != .timespan else { return notApplicable(id) }
         guard let contents = input.contents else { return notApplicable(id, "The page's files couldn't be read.") }
         var items: [[String: Value]] = []
-        var total = 0.0
         var seen = Set<String>()
         for content in contents where content.kind == kind && seen.insert(content.url).inserted {
             let length = content.text.utf16.count
@@ -410,16 +401,9 @@ extension DeveloperLighthouseRules {
             let wasted = size * ratio
             // unminified-*.js IGNORE_THRESHOLD_IN_PERCENT and IGNORE_THRESHOLD_IN_BYTES.
             guard ratio * 100 >= minPercent, wasted >= 2_048 else { continue }
-            total += wasted
             items.append(["url": .url(content.url), "totalBytes": .bytes(size), "wastedBytes": .bytes(wasted)])
         }
-        items.sort { (number($0["wastedBytes"]) ?? 0) > (number($1["wastedBytes"]) ?? 0) }
-        return opportunity(id, items: items, headings: [
-            Heading(key: "url", label: "URL", valueType: "url"),
-            Heading(key: "totalBytes", label: "Transfer Size", valueType: "bytes"),
-            Heading(key: "wastedBytes", label: "Est Savings", valueType: "bytes"),
-        ], savingsBytes: total, savingsMs: DeveloperLighthouseScoring.milliseconds(forBytes: total, input.formFactor),
-           input.formFactor)
+        return byteOpportunity(id, items, input)
     }
 
     /// offscreen-images.js computeVisiblePixels: the image's area within
@@ -455,23 +439,14 @@ extension DeveloperLighthouseRules {
             }
         }
         var items: [[String: Value]] = []
-        var total = 0.0
         for src in order {
             guard let entry = best[src], entry.size > 0 else { continue }
             // IGNORE_THRESHOLD_IN_BYTES and IGNORE_THRESHOLD_IN_PERCENT.
             guard entry.wasted > 2_048, entry.wasted / entry.size * 100 >= 75 else { continue }
-            total += entry.wasted
             items.append(["node": .node(entry.image.node), "url": .url(src), "totalBytes": .bytes(entry.size),
                           "wastedBytes": .bytes(entry.wasted)])
         }
-        items.sort { (number($0["wastedBytes"]) ?? 0) > (number($1["wastedBytes"]) ?? 0) }
-        return opportunity(id, items: items, headings: [
-            Heading(key: "node", label: "", valueType: "node"),
-            Heading(key: "url", label: "URL", valueType: "url"),
-            Heading(key: "totalBytes", label: "Resource Size", valueType: "bytes"),
-            Heading(key: "wastedBytes", label: "Est Savings", valueType: "bytes"),
-        ], savingsBytes: total, savingsMs: DeveloperLighthouseScoring.milliseconds(forBytes: total, input.formFactor),
-           input.formFactor)
+        return byteOpportunity(id, items, sizeLabel: "Resource Size", nodes: true, input)
     }
 
     // MARK: Network
@@ -558,14 +533,14 @@ extension DeveloperLighthouseRules {
     static func fontDisplay(_ input: DeveloperLighthouseInput) -> Audit {
         let id = "font-display"
         guard input.mode == .navigation else { return notApplicable(id, "Needs a page load: run in Navigation mode.") }
-        func key(_ url: String) -> String { url.split(separator: "#", maxSplits: 1).first.map(String.init) ?? url }
         var failingURLs = Set<String>()
         for face in input.page.fontFaces where !fontDisplayPasses(face.display) {
-            for url in face.urls { failingURLs.insert(key(url)) }
+            for url in face.urls { failingURLs.insert(withoutFragment(url)) }
         }
         var items: [[String: Value]] = []
         var seen = Set<String>()
-        for request in input.requests where failingURLs.contains(key(request.url)) && seen.insert(key(request.url)).inserted {
+        for request in input.requests where failingURLs.contains(withoutFragment(request.url))
+            && seen.insert(withoutFragment(request.url)).inserted {
             // The text stays invisible for up to 3 s while the font loads.
             items.append(["url": .url(request.url), "wastedMs": .ms(min(request.durationMs ?? 0, 3_000))])
         }
@@ -841,9 +816,7 @@ extension DeveloperLighthouseRules {
         let id = "robots-txt"
         guard let robots = input.robots else { return notApplicable(id, "robots.txt is only fetched for http and https pages.") }
         guard let status = robots.status else {
-            var audit = binary(id, passed: false)
-            audit.explanation = "Search was unable to download a robots.txt file"
-            return audit
+            return binary(id, passed: false, explanation: "Search was unable to download a robots.txt file")
         }
         if status >= 500 { return binary(id, passed: false, displayValue: "Request for robots.txt returned HTTP status: \(status)") }
         guard status < 400, let content = robots.content, !content.isEmpty else { return notApplicable(id) }
@@ -854,6 +827,6 @@ extension DeveloperLighthouseRules {
             Heading(key: "line", label: "Content", valueType: "code"),
             Heading(key: "message", label: "Error", valueType: "code"),
         ], items: errors.map { ["index": .text("\($0.line)"), "line": .code($0.content), "message": .code($0.message)] }),
-        displayValue: errors.count == 1 ? "1 error found" : "\(errors.count) errors found")
+        displayValue: found(errors.count, "error"))
     }
 }

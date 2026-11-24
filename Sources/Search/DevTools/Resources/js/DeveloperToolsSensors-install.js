@@ -151,7 +151,26 @@ function (input) {
     zone = null;
   }
 
+  // As Chrome's emulated sensor does, a deviceorientation listener added
+  // while the override is on hears the angles too, not only those there
+  // when it was set. Only window's own method is wrapped, and only then.
+  const nativeAdd = EventTarget.prototype.addEventListener;
+  function addListener(type, listener, options) {
+    const result = Reflect.apply(nativeAdd, this, [type, listener, options]);
+    if (orientation && this === window && String(type) === "deviceorientation" && listener) publishOrientation();
+    return result;
+  }
+  function hookListeners() {
+    if (Object.getOwnPropertyDescriptor(window, "addEventListener")) return;
+    Object.defineProperty(window, "addEventListener", {configurable: true, writable: true, value: addListener});
+  }
+  function unhookListeners() {
+    if (Object.getOwnPropertyDescriptor(window, "addEventListener")?.value === addListener)
+      Reflect.deleteProperty(window, "addEventListener");
+  }
+
   function publishOrientation() {
+    clearTimeout(orientationTimer);
     orientationTimer = setTimeout(() => {
       if (!orientation) return;
       let event;
@@ -169,6 +188,7 @@ function (input) {
 
   function clearOrientation() {
     clearTimeout(orientationTimer);
+    unhookListeners();
     window.removeEventListener("DOMContentLoaded", publishOrientation);
     orientation = null;
   }
@@ -196,6 +216,7 @@ function (input) {
     clearOrientation();
     if (!angles) return;
     orientation = angles;
+    hookListeners();
     if (document.readyState === "loading") {
       window.addEventListener("DOMContentLoaded", publishOrientation, {once: true});
     } else {

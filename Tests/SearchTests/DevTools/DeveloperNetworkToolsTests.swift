@@ -219,6 +219,45 @@ final class DeveloperNetworkToolsTests: XCTestCase {
         XCTAssertFalse(headers.contains { ($0["name"] as? String)?.lowercased() == "cookie" })
     }
 
+    func testHARCarriesWebSocketAndEventSourceMessages() throws {
+        typealias Frame = DeveloperNetworkTools.Frame
+        let socket = DeveloperToolsSession.Request(id: "ws", url: "wss://example.test/live", method: "GET",
+                                                   type: "WebSocket", loader: nil, started: 1)
+        let events = DeveloperToolsSession.Request(id: "es", url: "https://example.test/feed", method: "GET",
+                                                   type: "EventSource", loader: nil, started: 1)
+        let details = DeveloperRequestDetails(["url": socket.url, "method": "GET"])
+        var socketEntry = DeveloperHAR.entry(socket, details: details, clock: 2)
+        let sent = DeveloperHAR.messages([
+            Frame(id: 0, kind: .sent, opcode: 1, data: "hello", length: 5, time: 1_700_000_000.5),
+            Frame(id: 1, kind: .received, opcode: 2, data: "AQI=", length: 2, time: 1_700_000_001),
+            Frame(id: 2, kind: .error, opcode: nil, data: "closed", length: 6, time: nil),
+        ], eventSource: false)
+        XCTAssertEqual(sent.key, "_webSocketMessages")
+        XCTAssertEqual(sent.value.map { $0["type"] as? String }, ["send", "receive"], "Errors aren't Chrome messages")
+        socketEntry[sent.key] = sent.value
+        var eventEntry = DeveloperHAR.entry(events, details: details, clock: 2)
+        let received = DeveloperHAR.messages([
+            Frame(id: 1, kind: .received, opcode: nil, data: "{\"n\":1}", length: 7, time: 1_700_000_002,
+                  eventID: "42", eventType: "tick"),
+        ], eventSource: true)
+        XCTAssertEqual(received.key, "_eventSourceMessages")
+        eventEntry[received.key] = received.value
+        let data = try JSONSerialization.data(withJSONObject: ["log": ["version": "1.2", "entries": [socketEntry, eventEntry]]])
+        let read = try DeveloperHAR.read(data)
+        XCTAssertEqual(read.map(\.request.type), ["WebSocket", "EventSource"])
+        let frames = read[0].frames
+        XCTAssertEqual(frames.map(\.kind), [.sent, .received])
+        XCTAssertEqual(frames.map(\.data), ["hello", "AQI="])
+        XCTAssertEqual(frames.map(\.opcode), [1, 2])
+        XCTAssertEqual(frames.first?.time, 1_700_000_000.5)
+        let event = try XCTUnwrap(read[1].frames.first)
+        XCTAssertEqual(event.eventType, "tick")
+        XCTAssertEqual(event.eventID, "42")
+        XCTAssertEqual(event.data, "{\"n\":1}")
+        XCTAssertNil(event.opcode)
+        XCTAssertTrue(read[1].request.isEventSource)
+    }
+
     func testNetworkToolsAgainstARealPage() async throws {
         _ = NSApplication.shared
         let echo = try await EchoSocketServer.start()
