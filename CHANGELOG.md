@@ -22,6 +22,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Settings › Browsing › Links › Go to a tab that has the page now works without small windows too: a link from another app to a page you already have open switches to that tab instead of opening a new one. Thanks [@pasteley](https://github.com/pasteley). ([#1485](https://github.com/driceroland/Search/pull/1485))
 
+### Better
+
+- Landing on a space with many tabs is quicker: the column makes only the loose rows in sight, and only those are given the new space's tabs, rather than every row of a long space. The pass that takes the space went from about 220 ms to about 115 ms with 200 tabs a space, and from about 110 ms to about 90 ms with 60 tabs and 12 pins; the column holds less in memory too. `python3 Tests/space_pace.py`, `python3 Tests/space_switch_time.py 60 200` (ideas 1051, 1024)
+
 ### Fixed
 
 - An extension page with no `<head>` tag (a popup, options page or side panel written as `<!doctype html><html><body>…`) renders in standards mode again: Search's shim went in front of its doctype, which left the page in quirks mode and could break its layout. The shim now goes after the doctype and the `<html>` tag, still before the page's own scripts; a page's byte order mark is kept, a `<header>` is no longer taken for the head, and pages prepared by an earlier version are mended. `python3 Tests/extension_page_doctype.py`

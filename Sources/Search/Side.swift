@@ -1370,7 +1370,12 @@ struct SideBar: View {
                 // Under each tab's row key, not its id: another space's tabs
                 // come into these same rows (see Browser.rowKey).
                 let rows = loose.enumerated().map { LooseRow(id: browser.rowKey($0.element), index: $0.offset, tab: $0.element) }
-                VStack(spacing: SideBar.gap) {
+                // Lazy: only the rows in sight are made, and only those are
+                // told their new tab as a space lands. Made whole, a space of
+                // 60 loose tabs took about 1 ms a row in the pass that takes
+                // it (Tests/space_pace.py: 85–95 ms with 60 tabs, 31–41 ms
+                // with 5), every row out of sight included (idea 1051).
+                LazyVStack(spacing: SideBar.gap) {
                     ForEach(rows) { row in
                         let index = row.index, tab = row.tab
                         if ghost == index, let carried = crossingTab {
