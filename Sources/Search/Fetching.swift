@@ -687,8 +687,10 @@ struct FetchDoor: View {
     /// Whether it is in the row, for those that make room for it. Its list
     /// hanging keeps it there: ⇧⌘J asks for the list with nothing coming in
     /// and the button otherwise away, and the list needs it to hang from.
+    /// Unticked under Buttons under the column, only the list brings it.
     static func shows(_ fetches: Fetches, _ prefs: Preferences, hanging: Bool = false) -> Bool {
-        fetches.showing || !fetches.entries.isEmpty || prefs.alwaysShowsDownloads || hanging
+        hanging || (!prefs.hidesDownloadsDoor
+            && (fetches.showing || !fetches.entries.isEmpty || prefs.alwaysShowsDownloads))
     }
 
     private func float(_ on: Bool) {

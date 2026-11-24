@@ -418,10 +418,12 @@ final class Preferences: ObservableObject {
     /// How many of back, forward and reload are shown.
     var helmDoors: Int { [hidesBack, hidesForward, hidesReload].filter { !$0 }.count }
     /// The buttons at the column's foot (and the strip's end), each hidden on
-    /// its own: the extensions' puzzle, bookmarks and the profile (idea 426).
-    /// Shown unless hidden. A pinned extension keeps its button.
+    /// its own: the extensions' puzzle, bookmarks, downloads and the profile
+    /// (idea 426). Shown unless hidden. A pinned extension keeps its button;
+    /// downloads hidden still come up on ⇧⌘J, and their list hangs from it.
     @Published var hidesExtensionsDoor: Bool { didSet { store.set(hidesExtensionsDoor, forKey: "foot.extensions.hidden") } }
     @Published var hidesBookmarksDoor: Bool { didSet { store.set(hidesBookmarksDoor, forKey: "foot.bookmarks.hidden") } }
+    @Published var hidesDownloadsDoor: Bool { didSet { store.set(hidesDownloadsDoor, forKey: "foot.downloads.hidden") } }
     @Published var hidesProfileDoor: Bool { didSet { store.set(hidesProfileDoor, forKey: "foot.profile.hidden") } }
     /// The profile's badge is drawn: several profiles, and not hidden.
     var showsProfileDoor: Bool { Profiles.shared.several && !hidesProfileDoor }
@@ -1260,6 +1262,7 @@ final class Preferences: ObservableObject {
         hidesReload = store.bool(forKey: "helm.reload.hidden")
         hidesExtensionsDoor = store.bool(forKey: "foot.extensions.hidden")
         hidesBookmarksDoor = store.bool(forKey: "foot.bookmarks.hidden")
+        hidesDownloadsDoor = store.bool(forKey: "foot.downloads.hidden")
         hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen

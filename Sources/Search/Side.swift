@@ -1749,7 +1749,8 @@ private struct SideFoot: View {
     /// The doors that always show, and downloads, side by side: what the
     /// lights' row must have to take them (SideBar.doorsUp).
     @MainActor static func keptWidth(_ prefs: Preferences, spaces: Int = 0) -> CGFloat {
-        var kept = 1 + spaces  // downloads and a button per space
+        var kept = spaces  // a button per space
+        if !prefs.hidesDownloadsDoor { kept += 1 }
         if !prefs.hidesExtensionsDoor { kept += 1 }  // the puzzle
         if !prefs.hidesBookmarksDoor { kept += 1 }
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
@@ -1767,7 +1768,7 @@ private struct SideFoot: View {
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
         if prefs.showsProfileDoor { kept += 1 }
         // Up, downloads keep their place whether running or not.
-        if up || FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
+        if (up && !prefs.hidesDownloadsDoor) || FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
         let free = (up ? width : width - 2 * 10) + 2 - CGFloat(kept) * door
         return max(0, Int((free / door).rounded(.down)))
     }

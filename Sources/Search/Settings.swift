@@ -592,7 +592,12 @@ struct SettingsPanel: View {
         case "quit.confirm": Switch(on: $prefs.confirmsQuit)
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)
-        case "downloads.button": Switch(on: $prefs.alwaysShowsDownloads)
+        case "downloads.button":
+            // Always shown means shown: it unhides the button under the column.
+            Switch(on: Binding(
+                get: { prefs.alwaysShowsDownloads && !prefs.hidesDownloadsDoor },
+                set: { on in withAnimation(Motion.glide) { prefs.alwaysShowsDownloads = on; if on { prefs.hidesDownloadsDoor = false } } }
+            ))
         case "downloads.open":
             Picker("Open Downloads", selection: $prefs.downloadsOpening) {
                 ForEach(DownloadsOpening.allCases) { Text($0.title).tag($0) }
@@ -670,6 +675,7 @@ struct SettingsPanel: View {
         case "foot.shown":
             Ticks(items: [("Extensions", Binding(get: { !prefs.hidesExtensionsDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesExtensionsDoor = !on } })),
                           ("Bookmarks", Binding(get: { !prefs.hidesBookmarksDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesBookmarksDoor = !on } })),
+                          ("Downloads", Binding(get: { !prefs.hidesDownloadsDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesDownloadsDoor = !on } })),
                           ("Profile", Binding(get: { !prefs.hidesProfileDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesProfileDoor = !on } }))])
         case "glyph": Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
         case "tabs.highContrast": Switch(on: $prefs.highContrastText)
