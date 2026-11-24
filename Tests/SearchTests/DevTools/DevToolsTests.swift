@@ -137,6 +137,23 @@ final class DevToolsTests: XCTestCase {
         XCTAssertThrowsError(try DevToolsPackages.verify(bundle, offer: rehashed, release: false)) {
             XCTAssertEqual($0 as? DevToolsPackages.Refused, .signature, "the signature covers every byte")
         }
+        // More than the feed's size is cut off as it streams in, announced
+        // or not, and never lands on the disk past the limit.
+        let big = String(repeating: "x", count: 300_000)
+        let flood = try LocalPageServer(["/said": .init(type: "application/zip", body: big),
+                                         "/unsaid": .init(type: "application/zip", body: big, withoutLength: true)])
+        defer { flood.stop() }
+        for path in ["/said", "/unsaid"] {
+            let file = scratch.appendingPathComponent("flood\(path.dropFirst()).zip")
+            do {
+                try await DevToolsPackages.stream(flood.url(path), session: .shared, into: file, limit: 100_000)
+                XCTFail("\(path): more than the limit was taken")
+            } catch {
+                XCTAssertTrue(error.localizedDescription.contains("isn't what the feed lists"), "\(path): \(error)")
+            }
+            let kept = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            XCTAssertLessThanOrEqual(kept, 100_000, "\(path): nothing past the limit on disk")
+        }
         XCTAssertTrue(packages.installed.isEmpty)
         XCTAssertTrue(DevToolsPackages.idle)
         packages.offered = []

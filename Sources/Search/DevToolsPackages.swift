@@ -497,12 +497,10 @@ final class DevToolsPackages: ObservableObject {
             ProxyNetwork.stamp(configuration)
             let session = URLSession(configuration: configuration)
             defer { session.finishTasksAndInvalidate() }
-            let (temporary, response) = try await session.download(from: offer.url)
-            guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false else {
-                try? FileManager.default.removeItem(at: temporary)
-                throw AIDownload.Failure("The download was refused.")
-            }
-            try FileManager.default.moveItem(at: temporary, to: file)
+            let url = offer.url, limit = offer.size
+            try await Task.detached(priority: .utility) {
+                try await stream(url, session: session, into: file, limit: limit)
+            }.value
         }
         progress(0.9)
         let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? -1
@@ -511,6 +509,36 @@ final class DevToolsPackages: ObservableObject {
             throw AIDownload.Failure("What arrived isn't what the feed lists, so it was deleted.")
         }
         return file
+    }
+
+    /// The answer written to `file` as it arrives, cut off as soon as it
+    /// passes `limit` bytes (the feed's size for it, itself under 64 MB):
+    /// a server that sends more never gets it onto the disk.
+    nonisolated static func stream(_ url: URL, session: URLSession, into file: URL, limit: Int64) async throws {
+        let (bytes, response) = try await session.bytes(from: url)
+        guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false else {
+            bytes.task.cancel()
+            throw AIDownload.Failure("The download was refused.")
+        }
+        let tooBig = AIDownload.Failure("What arrived isn't what the feed lists, so it was deleted.")
+        if response.expectedContentLength > limit { bytes.task.cancel(); throw tooBig }
+        guard FileManager.default.createFile(atPath: file.path, contents: nil) else { throw AIDownload.Failure("The package couldn't be saved.") }
+        let handle = try FileHandle(forWritingTo: file)
+        defer { try? handle.close() }
+        var written: Int64 = 0
+        var chunk = [UInt8]()
+        chunk.reserveCapacity(1 << 16)
+        func flush() throws {
+            written += Int64(chunk.count)
+            guard written <= limit else { bytes.task.cancel(); throw tooBig }
+            try handle.write(contentsOf: chunk)
+            chunk.removeAll(keepingCapacity: true)
+        }
+        for try await byte in bytes {
+            chunk.append(byte)
+            if chunk.count == 1 << 16 { try flush() }
+        }
+        try flush()
     }
 
     /// ditto, as the updater unpacks: links come out as links, and are
