@@ -24,6 +24,7 @@ struct Omnibox: View {
     @ObservedObject private var typing: FieldState
     /// Raised over a page by ⌘L, rather than standing on an empty tab.
     let over: Bool
+    @Environment(\.accessibilityReduceTransparency) private var reducesTransparency
 
     /// The field's own height — the 22 of text and 14 of air above and below it
     /// that `field` lays out — so the list can sit below it without being
@@ -91,7 +92,8 @@ struct Omnibox: View {
                 if over {
                     // The page is still there, just out of the way.
                     Rectangle()
-                        .fill(Palette.ground.opacity(0.74))
+                        .fill(Palette.ground.opacity(reducesTransparency ? 0.74 : 0.32))
+                        .background { if !reducesTransparency { Rectangle().fill(.ultraThinMaterial) } }
                         .ignoresSafeArea(.all, edges: fitted ? [] : .all)
                         .onTapGesture { browser.dismiss() }
                         .transition(.opacity)
@@ -152,19 +154,19 @@ struct Omnibox: View {
                     // picture as a white or dark smudge (idea 952).
                     UnlessThemed(over: over) { Breath() }
 
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(Palette.ground)
                 }
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(
                         refused ? Color.red.opacity(0.35) : Palette.hairline,
                         lineWidth: 1
                     )
                     .allowsHitTesting(false)
             )
-            .shadow(color: .black.opacity(0.06), radius: 24, y: 8)
+            .shadow(color: .black.opacity(over ? 0.14 : 0.06), radius: over ? 32 : 24, y: over ? 12 : 8)
             .modifier(Shake(travel: shake))
             .onAppear {
                 shake = 0
@@ -209,9 +211,9 @@ struct Omnibox: View {
             }
         }
         .padding(6)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.07), radius: 20, y: 6)

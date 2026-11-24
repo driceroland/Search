@@ -430,6 +430,7 @@ final class Preferences: ObservableObject {
     /// Shown unless hidden. A pinned extension keeps its button.
     @Published var hidesExtensionsDoor: Bool { didSet { store.set(hidesExtensionsDoor, forKey: "foot.extensions.hidden") } }
     @Published var hidesBookmarksDoor: Bool { didSet { store.set(hidesBookmarksDoor, forKey: "foot.bookmarks.hidden") } }
+    @Published var fitsPins: Bool { didSet { store.set(fitsPins, forKey: "pins.fit") } }
     @Published var hidesProfileDoor: Bool { didSet { store.set(hidesProfileDoor, forKey: "foot.profile.hidden") } }
     /// The profile's badge is drawn: several profiles, and not hidden.
     var showsProfileDoor: Bool { Profiles.shared.several && !hidesProfileDoor }
@@ -1299,6 +1300,7 @@ final class Preferences: ObservableObject {
         hidesReload = store.bool(forKey: "helm.reload.hidden")
         hidesExtensionsDoor = store.bool(forKey: "foot.extensions.hidden")
         hidesBookmarksDoor = store.bool(forKey: "foot.bookmarks.hidden")
+        fitsPins = store.bool(forKey: "pins.fit")
         hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen

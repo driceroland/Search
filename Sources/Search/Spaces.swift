@@ -1087,6 +1087,15 @@ enum SpaceMenu {
     }
 
     /// The menu itself, for show() to pop up, and for the bench to read.
+    static func flat(_ menu: NSMenu) -> [NSMenuItem] {
+        menu.items.flatMap { item in [item] + (item.title.hasPrefix("Edit “") ? item.submenu?.items ?? [] : []) }
+    }
+
+    static func perform(_ item: NSMenuItem) {
+        guard let owner = item.menu else { return }
+        owner.performActionForItem(at: owner.index(of: item))
+    }
+
     static func menu(for browser: Browser) -> NSMenu {
         actions = []
         let menu = NSMenu()
@@ -1122,9 +1131,9 @@ enum SpaceMenu {
             holder.submenu = profiles
             menu.addItem(holder)
         }
-        menu.addItem(.separator())
         let here = browser.space
-        menu.addItem(item("Rename “\(here.name)”…") {
+        let edit = NSMenu()
+        edit.addItem(item("Rename…") {
             Ask.name("Rename Space", placeholder: here.name, initial: here.name, confirm: "Rename") { browser.renameSpace(here.id, to: $0) }
         })
         let icons = NSMenu()
@@ -1135,41 +1144,27 @@ enum SpaceMenu {
         }
         let icon = NSMenuItem(title: "Icon", action: nil, keyEquivalent: "")
         icon.submenu = icons
-        menu.addItem(icon)
-        // Everything the space can wear, in one popover (see SpaceLookPicker).
-        menu.addItem(item("Colour…") {
-            // Once the menu has gone: a popover shown while it tracks closes with it.
+        edit.addItem(icon)
+        edit.addItem(item("Colour…") {
             DispatchQueue.main.async { SpaceLookPopover.show(for: browser) }
         })
-        // The order is the swipe's, and ⌃1–⌃9's. With profiles in one
-        // window, past its profile's first or last space the move takes the
-        // whole profile past the one beside it, so any profile can come first.
         if let at = browser.spaces.firstIndex(where: { $0.id == here.id }) {
+            var moves: [NSMenuItem] = []
             if at > 0 {
-                menu.addItem(item("Move Left") { browser.moveSpace(here.id, to: at - 1) })
+                moves.append(item("Move Left") { browser.moveSpace(here.id, to: at - 1) })
             } else if browser.profileBeyond(-1) != nil {
-                menu.addItem(item("Move Left") { Profiles.shared.move(browser.profileID, by: -1) })
+                moves.append(item("Move Left") { Profiles.shared.move(browser.profileID, by: -1) })
             }
             if at < browser.spaces.count - 1 {
-                menu.addItem(item("Move Right") { browser.moveSpace(here.id, to: at + 1) })
+                moves.append(item("Move Right") { browser.moveSpace(here.id, to: at + 1) })
             } else if browser.profileBeyond(1) != nil {
-                menu.addItem(item("Move Right") { Profiles.shared.move(browser.profileID, by: 1) })
+                moves.append(item("Move Right") { Profiles.shared.move(browser.profileID, by: 1) })
+            }
+            if !moves.isEmpty {
+                edit.addItem(.separator())
+                moves.forEach(edit.addItem)
             }
         }
-        // Every group of this space, folded or opened at once, as in Arc.
-        if browser.prefs.usesTabGroups, !browser.tabGroups.isEmpty {
-            menu.addItem(.separator())
-            let fold = item("Fold All Groups") { browser.foldAllGroups(true) }
-            fold.isEnabled = browser.canFoldAllGroups
-            let unfold = item("Unfold All Groups") { browser.foldAllGroups(false) }
-            unfold.isEnabled = browser.canUnfoldAllGroups
-            menu.autoenablesItems = false
-            menu.addItem(fold)
-            menu.addItem(unfold)
-            menu.addItem(.separator())
-        }
-        // Where this space's downloads go, in one place: the folder in
-        // Settings, or one of its own.
         let folder = here.downloads.map { URL(fileURLWithPath: $0).lastPathComponent }
         let places = NSMenu()
         places.addItem(item("Same as Settings", checked: folder == nil) { browser.setSpaceDownloads(here.id, to: nil) })
@@ -1178,14 +1173,15 @@ enum SpaceMenu {
         }
         places.addItem(.separator())
         places.addItem(item("Choose Folder…") { Ask.folder { browser.setSpaceDownloads(here.id, to: $0) } })
-        let downloads = NSMenuItem(title: "Downloads", action: nil, keyEquivalent: "")
+        let downloads = NSMenuItem(title: "Downloads Folder", action: nil, keyEquivalent: "")
         downloads.submenu = places
-        menu.addItem(downloads)
+        edit.addItem(.separator())
+        edit.addItem(downloads)
         if browser.canDeleteSpace(here.id) {
-            menu.addItem(.separator())
+            edit.addItem(.separator())
             // Signed in with the others, it has no cookies of its own to erase.
             let own = Spaces.ownsStore(here.id)
-            menu.addItem(item("Delete “\(here.name)”…") {
+            edit.addItem(item("Delete…") {
                 Ask.sure("Delete “\(here.name)”?",
                          detail: own ? "Its tabs close, and its cookies and sign-ins are erased from this Mac. History and bookmarks stay."
                                      : "Its tabs and pins close. Your sign-ins, history and bookmarks stay.",
@@ -1196,8 +1192,8 @@ enum SpaceMenu {
         } else if browser.spaces.count == 1, browser.profileID != Profile.personalID {
             // A profile's last space goes with the profile.
             let profile = Profiles.shared.profile(browser.profileID)
-            menu.addItem(.separator())
-            menu.addItem(item("Delete Profile “\(profile.name)”…") {
+            edit.addItem(.separator())
+            edit.addItem(item("Delete Profile “\(profile.name)”…") {
                 Ask.sure("Delete “\(profile.name)”?",
                          detail: "“\(here.name)” is its last space. The profile's windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac.",
                          confirm: "Delete", returnCancels: true) {
@@ -1205,6 +1201,20 @@ enum SpaceMenu {
                 }
             })
         }
+        if browser.prefs.usesTabGroups, !browser.tabGroups.isEmpty {
+            menu.addItem(.separator())
+            let fold = item("Fold All Groups") { browser.foldAllGroups(true) }
+            fold.isEnabled = browser.canFoldAllGroups
+            let unfold = item("Unfold All Groups") { browser.foldAllGroups(false) }
+            unfold.isEnabled = browser.canUnfoldAllGroups
+            menu.autoenablesItems = false
+            menu.addItem(fold)
+            menu.addItem(unfold)
+        }
+        menu.addItem(.separator())
+        let holder = NSMenuItem(title: "Edit “\(here.name)”", action: nil, keyEquivalent: "")
+        holder.submenu = edit
+        menu.addItem(holder)
         return menu
     }
 }

@@ -110,7 +110,7 @@ struct SideBar: View {
     /// What sits above the pins: the lights' band, and with icons only the
     /// three doors under it.
     private var top: CGFloat {
-        !icons ? Metrics.strip : !strip ? lightsBand + Metrics.helmDoors(prefs) + 8 : lightsBand + (stripUp ? stackedDoors : 0)
+        !icons ? Metrics.strip : !strip ? lightsBand + Metrics.helmDoorsTall(prefs) + 8 : lightsBand + (stripUp ? stackedDoors : 0)
     }
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
 
@@ -1061,6 +1061,8 @@ struct SideBar: View {
     /// and three, nine three, three and three, ten four, three and three.
     /// Up to three stay the one row of three places they always were, with
     /// a place or two empty rather than a lonely button the column's width.
+    static let narrowSquare: CGFloat = 30
+
     static func pinRows(_ count: Int, most: Int) -> [Int] {
         guard count > 0 else { return [] }
         let most = max(1, most)
@@ -1079,9 +1081,12 @@ struct SideBar: View {
         let room = width - 20
         let gap = SideBar.pinGap
         let fits = Int((room + gap) / (SideBar.square + gap))
-        let rows = SideBar.pinRows(count, most: min(4, max(1, fits)))
+        let narrow = Int((room + gap) / (SideBar.narrowSquare + gap))
+        let rows = prefs.fitsPins
+            ? SideBar.pinRows(count, most: max(1, narrow))
+            : SideBar.pinRows(count, most: min(4, max(1, fits)))
         // A row of fewer than three keeps three places.
-        let slots = rows.map { rows.count == 1 ? max($0, min(3, fits)) : $0 }
+        let slots = prefs.fitsPins ? rows : rows.map { rows.count == 1 ? max($0, min(3, fits)) : $0 }
         let widths = slots.map { max(20, (room - CGFloat($0 - 1) * gap) / CGFloat($0)) }
         let height = min(SideBar.square, widths.min() ?? SideBar.square)
         var cells: [CGRect] = []
@@ -1714,7 +1719,10 @@ private struct SideFoot: View {
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
                 SpaceButtons(browser: browser, vertical: true)
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
-                if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
+                if prefs.showsProfileDoor {
+                    Rectangle().fill(Palette.muted.opacity(0.3)).frame(width: 14, height: 1).padding(.vertical, 3)
+                    ProfileBadge(browser: browser)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.bottom, 8)
@@ -1724,7 +1732,10 @@ private struct SideFoot: View {
             // instead (Browser.switchSpace): beside the dot it would lie
             // over the helm.
             HStack(spacing: 2) {
-                if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
+                if prefs.showsProfileDoor {
+                    ProfileBadge(browser: browser)
+                    Rectangle().fill(Palette.muted.opacity(0.3)).frame(width: 1, height: 14).padding(.horizontal, 3)
+                }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser, names: false) }
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom, live: live)
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: .bottom) }
@@ -1733,10 +1744,12 @@ private struct SideFoot: View {
             }
         } else {
             HStack(spacing: 2) {
-                if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
+                if prefs.showsProfileDoor {
+                    ProfileBadge(browser: browser)
+                    Rectangle().fill(Palette.muted.opacity(0.3)).frame(width: 1, height: 14).padding(.horizontal, 3)
+                }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
                 ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room, puzzle: !prefs.hidesExtensionsDoor)
-                if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
                 SpaceButtons(browser: browser, squeezes: true)
                 // Only while a download is running, and a moment after.
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
@@ -1744,6 +1757,7 @@ private struct SideFoot: View {
                 // column: at one side, a row of spaces read as a toolbar
                 // that had slid off. Otherwise at the side, as it always was.
                 if !prefs.showsSpaceButtons { Spacer(minLength: 0) }
+                if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
             }
             // The column's width and never more: wider, with a button per
             // space, the column took the row's width, and centred slid its
@@ -1773,13 +1787,13 @@ private struct SideFoot: View {
         if !prefs.hidesBookmarksDoor { kept += 1 }
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
         if prefs.showsProfileDoor { kept += 1 }
-        return CGFloat(kept) * (26 + 2) - 2
+        return CGFloat(kept) * (Door.width + 2) - 2 + (prefs.showsProfileDoor ? 7 : 0)
     }
 
     /// How many pinned extensions fit beside the doors that stay. Every door
     /// is 26 points, with 2 between them.
     private var room: Int {
-        let door: CGFloat = 26 + 2
+        let door: CGFloat = Door.width + 2
         var kept = SpaceButtons.count(prefs, browser.spaces)  // the spaces' buttons
         if !prefs.hidesExtensionsDoor { kept += 1 }  // the puzzle
         if !prefs.hidesBookmarksDoor { kept += 1 }
@@ -1787,7 +1801,7 @@ private struct SideFoot: View {
         if prefs.showsProfileDoor { kept += 1 }
         // Up, downloads keep their place whether running or not.
         if up || FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
-        let free = (up ? width : width - 2 * 10) + 2 - CGFloat(kept) * door
+        let free = (up ? width : width - 2 * 10) + 2 - CGFloat(kept) * door - (prefs.showsProfileDoor ? 7 : 0)
         return max(0, Int((free / door).rounded(.down)))
     }
 }
@@ -1961,11 +1975,11 @@ private struct PinSquare: View, Equatable {
                     // Darker than the resting squares' grey by as much as a live
                     // row is darker than the white it sits on (Drice: the live
                     // pin barely showed among the others).
-                    RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
+                    RoundedRectangle(cornerRadius: scale * 12 / 34, style: .continuous)
                         .fill(greys.pinLive)
                         .modifier(LiveMatch(id: LivePill.id(browser), in: pill))
                 } else {
-                    RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
+                    RoundedRectangle(cornerRadius: scale * 12 / 34, style: .continuous)
                         .fill(selected ? greys.wash :
                               hovering ? greys.hover : greys.tile)
                 }
@@ -1974,7 +1988,7 @@ private struct PinSquare: View, Equatable {
         }
         .overlay {
             if selected {
-                RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
+                RoundedRectangle(cornerRadius: scale * 12 / 34, style: .continuous)
                     .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
                     .allowsHitTesting(false)
             }
@@ -1987,7 +2001,7 @@ private struct PinSquare: View, Equatable {
             }
         }
         .animation(Motion.quick, value: peek?.id)
-        .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: scale * 12 / 34, style: .continuous))
         .modifier(TabPress(enabled: !lettering && !pickedAmongOthers, active: live, selected: $selectedOnPress) {
             browser.clearTabSelection()
             browser.select(tab)
@@ -2439,6 +2453,7 @@ struct Speaker: View {
 
 /// A small square holding one symbol. Lit when what it opens is open.
 struct Door: View {
+    static let width: CGFloat = 32
     @Environment(\.greys) private var greys
     let icon: String
     var on = false
@@ -2464,15 +2479,15 @@ struct Door: View {
             if opened { opened = false } else { act() }
         } label: {
             Image(systemName: icon)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(on ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
                 .offset(x: nudge)
-                .frame(width: 26, height: 26)
+                .frame(width: Door.width, height: 26)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    Capsule()
                         .fill(on ? greys.wash : (hovering ? greys.hover : .clear))
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .simultaneousGesture(

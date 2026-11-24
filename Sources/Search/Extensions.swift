@@ -2567,12 +2567,12 @@ private struct ExtensionButtons: View {
         var body: some View {
             SwiftUI.Button(action: press) {
                 ExtensionIcon(button: button, size: 15)
-                    .frame(width: 26, height: 26)
+                    .frame(width: Door.width, height: 26)
                     .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        Capsule()
                             .fill(hovering ? Palette.hover : .clear)
                     )
-                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }

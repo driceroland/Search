@@ -17,6 +17,7 @@ struct SettingsGroup: Identifiable {
     let page: SettingsPanel.Page
     let title: String
     let icon: String
+    var note: String? = nil
 }
 
 /// One row of Settings.
@@ -59,7 +60,7 @@ enum SettingsIndex {
     // MARK: - groups
 
     static let groups: [SettingsGroup] = [
-        .init(id: "browser", page: .general, title: "Your browser", icon: "globe.desk"),
+        .init(id: "browser", page: .general, title: "Your browser", icon: "globe.desk", note: "Search can be the browser other apps open links in."),
         .init(id: "downloads", page: .general, title: "Downloads", icon: "arrow.down.circle"),
 
         .init(id: "theme", page: .appearance, title: "Light and dark", icon: "circle.lefthalf.filled"),
@@ -80,8 +81,9 @@ enum SettingsIndex {
         .init(id: "video", page: .browsing, title: "Video", icon: "play.rectangle"),
         .init(id: "pages", page: .browsing, title: "Pages", icon: "doc.richtext"),
 
-        .init(id: "arc", page: .spaces, title: "Coming from Arc?", icon: "arrow.down.forward.square"),
-        .init(id: "spaces", page: .spaces, title: "Spaces and profiles", icon: "rectangle.3.group"),
+        .init(id: "arc", page: .spaces, title: "Coming from Arc?", icon: "arrow.down.forward.square", note: "Bring your Arc setup over in one step. Nothing in Arc is changed."),
+        .init(id: "spaces", page: .spaces, title: "Spaces", icon: "rectangle.3.group", note: "Spaces keep separate sets of tabs in one window. Switch with ⌥1–⌥9 or a two-finger swipe."),
+        .init(id: "profiles", page: .spaces, title: "Profiles", icon: "person.2", note: "Each profile has its own sign-ins, history and bookmarks. Extensions, passwords and settings are shared."),
         .init(id: "pins", page: .spaces, title: "Pins", icon: "pin"),
         .init(id: "opening", page: .spaces, title: "Opening and starting", icon: "command"),
 
@@ -476,11 +478,11 @@ enum SettingsIndex {
               keys: [Preferences.spaceButtonsKey],
               words: ["arc", "spaces", "buttons", "icons", "switcher", "dot", "footer", "bottom"],
               parent: "spaces"),
-        .init(id: "profiles", group: "spaces", icon: "person.2",
+        .init(id: "profiles", group: "profiles", icon: "person.2",
               title: "Profiles", detail: "Spaces with their own sign-ins, history and bookmarks",
               more: "In windows of their own, unless Profiles in one window is on. Extensions, passwords and settings are shared.",
               words: ["profile", "accounts", "work", "personal"]),
-        .init(id: "profiles.oneWindow", group: "spaces", icon: "macwindow",
+        .init(id: "profiles.oneWindow", group: "profiles", icon: "macwindow",
               title: "Profiles in one window", detail: "Every profile's spaces in one window, switched in place",
               more: "Choosing a space of another profile brings that profile's window into this one's place, so each keeps its own sign-ins. Closing it closes them all.",
               keys: ["profiles.oneWindow"], words: ["arc", "profiles", "single window", "merge"], parent: "profiles"),
@@ -501,6 +503,9 @@ enum SettingsIndex {
               title: "Pins keep their site", detail: "Links elsewhere open over the pin, and ⌘W takes it back home",
               more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at.",
               keys: ["pins.home", "pins.peek"], words: ["pinned tabs", "go home", "reset pin"]),
+        .init(id: "pins.fit", group: "pins", icon: "arrow.left.and.right.square",
+              title: "Fit pinned squares in one row", detail: "Squares get narrower so more fit side by side, as in Arc",
+              keys: ["pins.fit"], words: ["arc", "favorites", "squares", "shrink", "width", "fit", "one row"]),
         .init(id: "pins.list", group: "pins", icon: "list.bullet.rectangle",
               title: "Pinned rows", detail: "Pins as rows under the squares, and Clear over the rest",
               more: "As in Arc: squares for the sites you live in, rows for pages you keep, and a line over the rest with Clear. Right-click a tab to pin it as a row.",

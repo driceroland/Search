@@ -52,7 +52,7 @@ def main():
         t.ok("three spaces, the first on screen", [s["name"] for s in st["spaces"]] == ["Personal", "Work", "Solo"]
              and st["current"] == "Personal", st["spaces"])
         menu = [m["title"] for m in st["menu"]]
-        t.ok("the first space's menu has Delete", "Delete “Personal”…" in menu, menu)
+        t.ok("the first space's menu has Delete", "Delete…" in menu, menu)
 
         sv.cmd({"do": "space", "action": "delete"})
         time.sleep(1)

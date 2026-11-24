@@ -174,10 +174,10 @@ enum Metrics {
     /// Where the first tab starts. The traffic lights run from 19 to 79 —
     /// measured, not guessed — so this leaves them the same air on their right
     /// that the window gives them on their left.
-    static let lights: CGFloat = 100
+    static let lights: CGFloat = 108
     /// Back, forward and reload, at the far end of the row beside the
     /// bookmarks: three doors and the air before the next one.
-    static let helm: CGFloat = 3 * 26 + 2 * 2 + 8
+    static let helm: CGFloat = 3 * Door.width + 2 * 2 + 8
     /// The same three doors again, in the sidebar, where they sit right of
     /// the lights instead. The column already has 10 of horizontal padding
     /// of its own before this even starts. 72 put the back door's box 3
@@ -186,19 +186,23 @@ enum Metrics {
     /// lights, about the 19 the window leaves on their left, as a toolbar's
     /// first item sits in Safari. A column too narrow for that gives back
     /// what it must (SideBar.lights), down to where it was.
-    static let sideLights: CGFloat = 80
+    static let sideLights: CGFloat = 88
     /// The least of it the fold door may have: its box 3 points clear of
     /// the zoom button (SideBar.folds).
-    static let sideLightsLeast: CGFloat = 72
+    static let sideLightsLeast: CGFloat = 80
     /// The three doors' own width, without the air after them.
-    static let helmDoors: CGFloat = 3 * 26 + 2 * 4
+    static let helmDoors: CGFloat = 3 * Door.width + 2 * 4
     /// The same two, for the doors Settings leaves shown (idea 815): all
     /// three unless some are hidden, nothing when none is.
     @MainActor static func helm(_ prefs: Preferences) -> CGFloat {
         let n = CGFloat(prefs.helmDoors)
-        return n == 0 ? 0 : n * 26 + (n - 1) * 2 + 8
+        return n == 0 ? 0 : n * Door.width + (n - 1) * 2 + 8
     }
     @MainActor static func helmDoors(_ prefs: Preferences) -> CGFloat {
+        let n = CGFloat(prefs.helmDoors)
+        return n == 0 ? 0 : n * Door.width + (n - 1) * 4
+    }
+    @MainActor static func helmDoorsTall(_ prefs: Preferences) -> CGFloat {
         let n = CGFloat(prefs.helmDoors)
         return n == 0 ? 0 : n * 26 + (n - 1) * 4
     }

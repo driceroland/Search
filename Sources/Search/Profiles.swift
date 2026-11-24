@@ -32,6 +32,10 @@ struct Profile: Codable, Identifiable, Equatable {
     /// home's going makes the next one in the order the home (Personal's
     /// too, kept in profiles.json; an older Search reads the first back).
     var home: UUID
+    var icon: String? = nil
+    var colour: Int? = nil
+
+    var tint: Color? { colour.flatMap { $0 > 0 && Spaces.colours.indices.contains($0) ? Spaces.colours[$0] : nil } }
 
     static let personalID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1") ?? UUID()
     var isPersonal: Bool { id == Profile.personalID }
@@ -59,7 +63,7 @@ final class Profiles: ObservableObject {
 
     nonisolated static func read() -> [Profile] {
         let saved = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([Profile].self, from: $0) } ?? []
-        let personal = saved.first(where: \.isPersonal).map { Profile(id: Profile.personalID, name: $0.name, home: $0.home) } ?? .personal
+        let personal = saved.first(where: \.isPersonal).map { Profile(id: Profile.personalID, name: $0.name, home: $0.home, icon: $0.icon, colour: $0.colour) } ?? .personal
         let others = saved.filter { !$0.isPersonal }
         // Where Personal stands in the file is where it was moved to; a file
         // without it (only ever written by hand) has it first.
@@ -153,6 +157,18 @@ final class Profiles: ObservableObject {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, let at = list.firstIndex(where: { $0.id == id }) else { return }
         list[at].name = name
+        write()
+    }
+
+    func setIcon(_ id: UUID, to icon: String?) {
+        guard let at = list.firstIndex(where: { $0.id == id }) else { return }
+        list[at].icon = icon.flatMap { Spaces.icons.contains($0) ? $0 : nil }
+        write()
+    }
+
+    func setColour(_ id: UUID, to colour: Int) {
+        guard let at = list.firstIndex(where: { $0.id == id }) else { return }
+        list[at].colour = colour > 0 ? colour : nil
         write()
     }
 
@@ -265,7 +281,7 @@ extension Browsers {
 /// the list; choosing another brings its window, as in Chrome.
 struct ProfileBadge: View {
     /// Its width in the row across the top.
-    static let width: CGFloat = 26
+    static let width: CGFloat = Door.width
 
     @ObservedObject var browser: Browser
     @ObservedObject var profiles = Profiles.shared
@@ -275,14 +291,10 @@ struct ProfileBadge: View {
 
     var body: some View {
         Button { ProfileMenu.show(for: browser) } label: {
-            Text(String(name.prefix(1)).uppercased())
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(hovering ? Palette.ink : Palette.muted)
-                .frame(width: 17, height: 17)
-                .background(Circle().strokeBorder(hovering ? Palette.ink.opacity(0.5) : Palette.muted.opacity(0.6), lineWidth: 1.2))
-                .frame(width: Self.width, height: Self.width)
+            ProfileAvatar(profile: profiles.profile(browser.profileID), size: 17, emphasis: hovering)
+                .frame(width: Self.width, height: 26)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    Capsule()
                         .fill(hovering ? Palette.hover : .clear)
                 )
                 .contentShape(Rectangle())
@@ -348,67 +360,196 @@ enum ProfileMenu {
 
 // MARK: - Settings
 
-/// Settings › Spaces & Pins: once there is more than one profile, each
-/// with its spaces, Open, Rename… and Delete…, under the Profiles row.
 struct ProfileList: View {
     @ObservedObject var browser: Browser
     @ObservedObject var profiles = Profiles.shared
 
     var body: some View {
-        if profiles.several {
-            ForEach(profiles.list) { profile in
-                Rule()
-                ProfilesSettings.Row(profile: profile, current: profile.id == browser.profileID,
-                                     spaces: profiles.spaces(of: profile.id).map(\.name))
-            }
+        ForEach(Array(profiles.list.enumerated()), id: \.element.id) { index, profile in
+            if index > 0 { Rule() }
+            ProfileRow(profile: profile, current: profile.id == browser.profileID,
+                       spaces: profiles.spaces(of: profile.id).count, deletable: profiles.several && !profile.isPersonal)
         }
+        Rule()
+        NewProfileRow()
     }
 }
 
-/// Profiles in a card of its own: New Profile…, and once there is more
-/// than one, each with its spaces, Rename… and Delete….
-struct ProfilesSettings: View {
-    @ObservedObject var browser: Browser
-    @ObservedObject var profiles = Profiles.shared
+private struct ProfileRow: View {
+    let profile: Profile
+    let current: Bool
+    let spaces: Int
+    let deletable: Bool
+
+    private var detail: String {
+        let count = spaces == 1 ? "1 space" : "\(spaces) spaces"
+        return current ? "This window · \(count)" : count
+    }
 
     var body: some View {
-        Card {
-            Line("Profiles", "Separate sets of spaces, each with its own sign-ins, history and bookmarks, in windows of their own. Extensions, passwords and settings are shared.") {
-                Pill("New Profile…") { ProfileMenu.askNew() }
+        HStack(spacing: 10) {
+            ProfileIconPicker(profile: profile)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(profile.name)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.ink)
+                Text(detail)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.muted)
             }
-            if profiles.several {
-                ForEach(profiles.list) { profile in
-                    Rule()
-                    Row(profile: profile, current: profile.id == browser.profileID, spaces: profiles.spaces(of: profile.id).map(\.name))
+            Spacer(minLength: 8)
+            if !current { Pill("Open") { Browsers.open(profile: profile.id) } }
+            Menu {
+                Button("Rename…") {
+                    Ask.name("Rename Profile", placeholder: profile.name, initial: profile.name, confirm: "Rename") {
+                        Profiles.shared.rename(profile.id, to: $0)
+                    }
+                }
+                if deletable {
+                    Divider()
+                    Button("Delete…", role: .destructive) {
+                        Ask.sure("Delete “\(profile.name)”?",
+                                 detail: "Its windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac.",
+                                 confirm: "Delete", returnCancels: true) {
+                            Profiles.shared.delete(profile.id)
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("More for \(profile.name)")
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 16)
+        .padding(.vertical, 13)
+    }
+}
+
+private struct NewProfileRow: View {
+    @State private var hovering = false
+
+    var body: some View {
+        Button { ProfileMenu.askNew() } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 20)
+                Text("New Profile…")
+                    .font(.system(size: 13))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(hovering ? Palette.ink : Palette.ink.opacity(0.8))
+            .padding(.leading, 14)
+            .padding(.trailing, 16)
+            .padding(.vertical, 15)
+            .background(hovering ? Palette.hover : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+struct ProfileIconPicker: View {
+    let profile: Profile
+    @State private var open = false
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            ProfileAvatar(profile: profile, size: 26, emphasis: open)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Change Icon")
+        .accessibilityLabel("Icon for \(profile.name)")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    ForEach(Spaces.colours.indices, id: \.self) { i in
+                        swatch(i)
+                    }
+                }
+                Rule()
+                cell(nil, help: "Letter") {
+                    Text(String(profile.name.prefix(1)).uppercased())
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 18, height: 18)
+                        .background(Circle().strokeBorder(Palette.ink.opacity(0.6), lineWidth: 1.2))
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 4), count: 6), spacing: 4) {
+                    ForEach(Array(zip(Spaces.icons, Spaces.iconNames)), id: \.0) { symbol, name in
+                        cell(symbol, help: name) {
+                            Image(systemName: symbol).font(.system(size: 14))
+                        }
+                    }
                 }
             }
+            .padding(10)
         }
     }
 
-    struct Row: View {
-        let profile: Profile
-        let current: Bool
-        let spaces: [String]
+    private func swatch(_ i: Int) -> some View {
+        let chosen = (profile.colour ?? 0) == i
+        return Button { Profiles.shared.setColour(profile.id, to: i) } label: {
+            Circle()
+                .fill(i == 0 ? Color.clear : Spaces.colours[i])
+                .overlay(Circle().strokeBorder(i == 0 ? Palette.muted.opacity(0.6) : .clear, lineWidth: 1.2))
+                .frame(width: 16, height: 16)
+                .padding(3)
+                .overlay(Circle().strokeBorder(chosen ? Palette.ink.opacity(0.6) : .clear, lineWidth: 1.5))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(Spaces.colourNames[i])
+    }
 
-        var body: some View {
-            Line(profile.name + (current ? " — this window" : ""), spaces.joined(separator: ", ")) {
-                HStack(spacing: 6) {
-                    if !current { Pill("Open") { Browsers.open(profile: profile.id) } }
-                    Pill("Rename…") {
-                        Ask.name("Rename Profile", placeholder: profile.name, initial: profile.name, confirm: "Rename") {
-                            Profiles.shared.rename(profile.id, to: $0)
-                        }
-                    }
-                    if !profile.isPersonal {
-                        Pill("Delete…", tint: .red) {
-                            Ask.sure("Delete “\(profile.name)”?",
-                                     detail: "Its windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac.",
-                                     confirm: "Delete", returnCancels: true) {
-                                Profiles.shared.delete(profile.id)
-                            }
-                        }
-                    }
-                }
+    private func cell<Content: View>(_ symbol: String?, help: String, @ViewBuilder _ content: () -> Content) -> some View {
+        let chosen = profile.icon == symbol
+        return Button {
+            Profiles.shared.setIcon(profile.id, to: symbol)
+            open = false
+        } label: {
+            content()
+                .foregroundStyle(Palette.ink)
+                .frame(width: 30, height: 30)
+                .background(chosen ? Palette.hover : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(chosen ? Palette.ink.opacity(0.35) : .clear, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
+struct ProfileAvatar: View {
+    let profile: Profile
+    let size: CGFloat
+    var emphasis = false
+
+    var body: some View {
+        let tint = profile.tint
+        Group {
+            if let icon = profile.icon {
+                Image(systemName: icon).font(.system(size: size * (tint == nil ? 0.76 : 0.56), weight: .semibold))
+            } else {
+                Text(String(profile.name.prefix(1)).uppercased()).font(.system(size: size * 0.62, weight: .semibold))
+            }
+        }
+        .foregroundStyle(tint != nil ? Color.white : (emphasis ? Palette.ink : Palette.muted))
+        .frame(width: size, height: size)
+        .background {
+            if let tint {
+                Circle().fill(tint.opacity(emphasis ? 1 : 0.9))
+            } else if profile.icon == nil {
+                Circle().strokeBorder(emphasis ? Palette.ink.opacity(0.5) : Palette.muted.opacity(0.6), lineWidth: 1.2)
             }
         }
     }

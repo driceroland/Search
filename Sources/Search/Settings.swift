@@ -95,13 +95,13 @@ struct SettingsPanel: View {
         }
     }
 
-    private static let rail: CGFloat = 196
+    private static let rail: CGFloat = 212
     private static let column: CGFloat = 600
-    private static let width: CGFloat = 720
-    private static let height: CGFloat = 540
+    private static let width: CGFloat = 760
+    private static let height: CGFloat = 580
     /// Where a row's words start, past its icon. What goes under a row's
     /// words (pictures, lists, fields) starts there too.
-    static let textInset: CGFloat = 52
+    static let textInset: CGFloat = 48
     /// A list under a row's words starts this far in, its lines adding
     /// their own 14 to reach textInset.
     static let listInset: CGFloat = textInset - 14
@@ -146,12 +146,12 @@ struct SettingsPanel: View {
             content
         }
         .frame(width: SettingsPanel.width, height: SettingsPanel.height)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: .black.opacity(0.16), radius: 34, y: 12)
         .onChange(of: page) { _, page in Store.settings.set(page.rawValue, forKey: "settings.page") }
     }
@@ -163,19 +163,19 @@ struct SettingsPanel: View {
 
     private var pages: some View {
         let counts = Dictionary(grouping: hits, by: \.page).mapValues(\.count)
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: 4) {
             Text("Settings")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Palette.ink)
-                .padding(.horizontal, 10)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 12)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
             FindField(text: $query, focus: $finding)
-                .padding(.bottom, 10)
+                .padding(.bottom, 14)
             ForEach(Array(Page.blocks.enumerated()), id: \.offset) { index, block in
                 if index > 0 {
                     Rectangle().fill(Palette.hairline).frame(height: 1)
-                        .padding(.horizontal, 10).padding(.vertical, 7)
+                        .padding(.horizontal, 12).padding(.vertical, 10)
                 }
                 ForEach(block) { item in
                     PageRow(page: item, on: !searching && page == item,
@@ -188,7 +188,7 @@ struct SettingsPanel: View {
             Spacer(minLength: 0)
         }
         .animation(slide, value: page)
-        .padding(8)
+        .padding(10)
         .frame(width: SettingsPanel.rail, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Palette.wash.opacity(0.45), in: Rectangle())
@@ -237,10 +237,10 @@ struct SettingsPanel: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 9)
-            .frame(height: 28)
-            .background(Palette.ground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+            .background(Palette.ground, in: Capsule())
+            .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
         }
     }
 
@@ -255,7 +255,7 @@ struct SettingsPanel: View {
 
         var body: some View {
             Button(action: act) {
-                HStack(spacing: 9) {
+                HStack(spacing: 10) {
                     Image(systemName: page.icon)
                         .font(.system(size: 12, weight: .medium))
                         .frame(width: 16)
@@ -273,20 +273,20 @@ struct SettingsPanel: View {
                 }
                 .foregroundStyle(on ? Palette.ink : (hovering ? Palette.ink.opacity(0.75) : Palette.muted))
                 .opacity(count == 0 ? 0.4 : 1)
-                .padding(.horizontal, 10)
-                .frame(height: 30)
+                .padding(.horizontal, 12)
+                .frame(height: 34)
                 .background {
                     if on {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        Capsule()
                             .fill(Palette.ground)
                             .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
                             .matchedGeometryEffect(id: "chosen", in: chosen)
                     } else if hovering {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        Capsule()
                             .fill(Palette.hover)
                     }
                 }
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
@@ -320,10 +320,10 @@ struct SettingsPanel: View {
 
             ScrollViewReader { reader in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 36) {
                         if searching { results } else { section(page) }
                     }
-                    .environment(\.ruleInset, 0)
+                    .environment(\.ruleInset, SettingsPanel.textInset)
                     .padding(.bottom, 24)
                     // Keep the rows narrow, not the scroll view: the empty
                     // space beside them must receive scrolling too.
@@ -369,8 +369,26 @@ struct SettingsPanel: View {
 
     private func groups(of page: Page) -> some View {
         ForEach(SettingsIndex.groups(of: page)) { group in
+            groupBlock(group)
+        }
+    }
+
+    @ViewBuilder
+    private func groupBlock(_ group: SettingsGroup) -> some View {
+        if group.id == "profiles" {
+            GroupBlock(title: group.title, icon: group.icon) {
+                Card { ProfileList(browser: browser) }
+                if let note = group.note { GroupNote(note) }
+                let rest = SettingsIndex.items(in: group.id).filter { $0.id != "profiles" && shown($0) }
+                if !rest.isEmpty {
+                    Card { rows(rest, searched: false) }
+                        .padding(.top, 14)
+                }
+            }
+        } else {
             GroupBlock(title: group.title, icon: group.icon) {
                 Card { rows(SettingsIndex.items(in: group.id).filter(shown), searched: false) }
+                if let note = group.note { GroupNote(note) }
             }
         }
     }
@@ -834,6 +852,7 @@ struct SettingsPanel: View {
         case "links.ask": Switch(on: $prefs.asksSpaceForLinks)
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
+        case "pins.fit": Switch(on: $prefs.fitsPins)
         case "pins.folders": Switch(on: $prefs.pinFolders)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
@@ -1238,7 +1257,7 @@ private extension View {
     /// out to the card's left edge, as every other one in Settings.
     func under() -> some View {
         padding(.leading, SettingsPanel.listInset)
-            .environment(\.ruleInset, -SettingsPanel.listInset)
+            .environment(\.ruleInset, SettingsPanel.textInset - SettingsPanel.listInset)
     }
 }
 
@@ -1250,18 +1269,30 @@ struct GroupBlock<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 10.5, weight: .semibold))
-                Text(title.uppercased())
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .tracking(0.5)
+        VStack(alignment: .leading, spacing: 10) {
+            if !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.ink.opacity(0.85))
+                    .padding(.leading, 6)
             }
-            .foregroundStyle(Palette.ink.opacity(0.62))
-            .padding(.leading, 2)
             content()
         }
+    }
+}
+
+struct GroupNote: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .foregroundStyle(Palette.muted)
+            .lineSpacing(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 6)
+            .padding(.top, -2)
     }
 }
 
@@ -1281,13 +1312,12 @@ struct SettingRow<Control: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: 14) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Palette.ink.opacity(0.78))
-                    .frame(width: 26, height: 26)
-                    .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
+                    .font(.system(size: 14))
+                    .foregroundStyle(Palette.ink.opacity(0.7))
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 5) {
                         Text(title)
                             .font(.system(size: 13))
@@ -1326,12 +1356,12 @@ struct SettingRow<Control: View>: View {
             }
             if wide {
                 control()
-                    .padding(.leading, 38)
+                    .padding(.leading, 34)
             }
         }
         .padding(.leading, 14)
-        .padding(.trailing, 14)
-        .padding(.vertical, 10)
+        .padding(.trailing, 16)
+        .padding(.vertical, 15)
         .background(lit ? Palette.hover : .clear)
     }
 }
@@ -1692,10 +1722,10 @@ struct Pill: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11.5))
+                .font(.system(size: 12))
                 .foregroundStyle(filled ? Palette.ground : tint)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
                 .background(filled ? Palette.ink : (hovering ? Palette.hover : Palette.ground), in: Capsule())
                 .overlay(Capsule().strokeBorder(filled ? .clear : Palette.hairline, lineWidth: 1))
                 .contentShape(Capsule())

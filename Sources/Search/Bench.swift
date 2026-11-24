@@ -3680,9 +3680,8 @@ final class Bench {
                     guard let at = view.items.firstIndex(where: { $0.title == title }) else { answer(["error": "no “\(title)” in View"]); return }
                     view.performActionForItem(at: at)
                 case "space":
-                    let menu = SpaceMenu.menu(for: browser)
-                    guard let at = menu.items.firstIndex(where: { $0.title == title }) else { answer(["error": "no “\(title)” in the space's menu"]); return }
-                    menu.performActionForItem(at: at)
+                    guard let found = SpaceMenu.flat(SpaceMenu.menu(for: browser)).first(where: { $0.title == title }) else { answer(["error": "no “\(title)” in the space's menu"]); return }
+                    SpaceMenu.perform(found)
                 default:
                     browser.foldAllGroups(all == "fold")
                 }
@@ -5276,17 +5275,16 @@ final class Bench {
                     grain: request["grain"] as? Bool ?? false))
             case "menu":
                 // A space chosen from the space's menu, by its title, as a click would.
-                let menu = SpaceMenu.menu(for: browser)
-                guard let at = menu.items.firstIndex(where: { $0.title == request["title"] as? String && $0.action != nil }) else {
+                guard let found = SpaceMenu.flat(SpaceMenu.menu(for: browser)).first(where: { $0.title == request["title"] as? String && $0.action != nil }) else {
                     answer(["error": "no such space in the menu"]); return
                 }
-                menu.performActionForItem(at: at)
+                SpaceMenu.perform(found)
             default: break
             }
             let out: [String: Any] = [
                 // The space's menu as it would open: section headers and spaces,
                 // with their ⌃ keys and the one ticked.
-                "menu": SpaceMenu.menu(for: browser).items.map { item -> [String: Any] in
+                "menu": SpaceMenu.flat(SpaceMenu.menu(for: browser)).map { item -> [String: Any] in
                     ["title": item.title, "header": item.isSectionHeader, "key": item.keyEquivalent, "on": item.state == .on]
                 },
                 "every": browser.everySpace.map(\.name),

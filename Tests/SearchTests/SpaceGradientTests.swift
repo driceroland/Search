@@ -478,10 +478,10 @@ final class SpaceGradientTests: XCTestCase {
         browser.restoreLook(id, colour: 4, gradient: nil)
         XCTAssertEqual(browser.space.lookChoice, .colour(4))
 
-        let titles = SpaceMenu.menu(for: browser).items.map(\.title)
+        let titles = SpaceMenu.flat(SpaceMenu.menu(for: browser)).map(\.title)
         XCTAssertTrue(titles.contains("Colour…"))
         XCTAssertFalse(titles.contains("Colour"), "no submenu")
-        XCTAssertNil(SpaceMenu.menu(for: browser).items.first { $0.title == "Colour…" }?.submenu)
+        XCTAssertNil(SpaceMenu.flat(SpaceMenu.menu(for: browser)).first { $0.title == "Colour…" }?.submenu)
     }
 
     func testFoundInSettings() {
