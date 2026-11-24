@@ -300,16 +300,15 @@ struct SideBar: View {
                 $0.modifier(EndInset(bottom: footHeight))
             }
             .padding(.bottom, (browser.player == nil ? 0 : rowHeight + SideBar.playerGap)
-                     + (agentHere && !icons ? SideBar.agentRow + SideBar.playerGap : 0)
+                     + (agentHere && !icons ? agentCard + SideBar.playerGap : 0)
                      + (updateHere ? rowHeight + SideBar.playerGap : 0))
 
             VStack(spacing: 0) {
                 Spacer()
-                // A coding agent allowed in this window: its pill and Stop,
+                // A coding agent allowed in this window: its card and Stop,
                 // in the column rather than over the page (AgentBanner).
                 if agentHere, !icons {
                     AgentStatus(browser: browser, style: .row)
-                        .frame(height: SideBar.agentRow)
                         .padding(.horizontal, 10)
                         .padding(.bottom, SideBar.playerGap)
                         .transition(.opacity)
@@ -1645,8 +1644,8 @@ struct SideBar: View {
     }
     /// Between what plays in another tab and the foot's doors.
     private static let playerGap: CGFloat = 4
-    /// The agent's quiet line at the column's foot.
-    private static let agentRow: CGFloat = 30
+    /// The agent's card at the column's foot (AgentStatus).
+    private var agentCard: CGFloat { AgentStatus.cardHeight(row: rowHeight, auto: agents.session?.auto == true) }
     /// "Update ready" is showing at the foot (UpdateNotice); not in the
     /// column of icons, where there is no room for its words.
     private var updateHere: Bool { !icons && UpdateNotice.shown(updater, prefs) != nil }
@@ -2182,10 +2181,6 @@ private struct SideRow: View, Equatable {
             .padding(.leading, 10)
             .padding(.trailing, status || peeking ? 0 : 10)
             .frame(height: prefs.sideRow)
-            // Stop, under the pointer, on the row the agent is working in.
-            .overlay(alignment: .trailing) {
-                if hovering, tab.agentWorking, !editing { AgentRowStop().padding(.trailing, 4) }
-            }
             .contentShape(Rectangle())
             .modifier(TabPress(enabled: interactive && !editing && !pickedAmongOthers, active: live, selected: $selectedOnPress, pressing: $pressed) {
                 browser.clearTabSelection()
