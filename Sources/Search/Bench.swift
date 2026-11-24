@@ -6344,7 +6344,7 @@ final class Bench {
                     let frame = { (w: NSWindow?) in w.map { [Int($0.frame.minX), Int($0.frame.minY), Int($0.frame.width), Int($0.frame.height)] } ?? [] }
                     answer(["value": Bench.plain(value), "up": ExtensionPopup.shared.isUp,
                             "visible": web.window?.isVisible ?? false, "frame": frame(web.window), "browser": frame(browser.window),
-                            "placement": ExtensionPopup.shared.placement])
+                            "placement": ExtensionPopup.shared.placement, "popover": ExtensionPopup.shared.drawn])
                 }
             }
         case "ext-page":
