@@ -121,6 +121,10 @@ enum ExtensionShims {
         try script.write(to: folder.appendingPathComponent(file), atomically: true, encoding: .utf8)
         try contentShim(script).write(to: folder.appendingPathComponent(contentFile), atomically: true, encoding: .utf8)
         try PasskeyRelay.page.write(to: folder.appendingPathComponent(passkeys), atomically: true, encoding: .utf8)
+        if ExtensionDevtools.page(in: manifest) != nil {
+            try withShim(ExtensionDevtools.probePage).write(to: folder.appendingPathComponent(ExtensionDevtools.probeFile),
+                                                           atomically: true, encoding: .utf8)
+        }
 
         // Native messaging is how the shim reaches the browser; user scripts
         // are carried out through WebKit's registered content scripts, which
@@ -2884,6 +2888,7 @@ enum ExtensionShims {
           // Read as the worker starts: Claude's lists its colours in a class.
           Color: { GREY: "grey", BLUE: "blue", RED: "red", YELLOW: "yellow", GREEN: "green",
             PINK: "pink", PURPLE: "purple", CYAN: "cyan", ORANGE: "orange" } });
+      \#(ExtensionDevtools.shim)
       // A port to the browser for as long as something here listens for an
       // event WebKit lacks: the browser speaks on it when there is news
       // (ExtensionWatch.swift), where this used to ask every few seconds.
@@ -5067,7 +5072,8 @@ enum ExtensionShims {
           // later would hear the numbered wrapper. Held on the port, it stays.
           set(port, "onMessage", event);
           set(port, "postMessage", (message) => post.call(port, { __searchPort: [me, ++sent], message }));
-          set(event, "addListener", (f) => { listeners.add(f); });
+          // Vue DevTools opens its port before it has a message callback.
+          set(event, "addListener", (f) => { if (typeof f === "function") listeners.add(f); });
           set(event, "removeListener", (f) => { listeners.delete(f); });
           set(event, "hasListener", (f) => listeners.has(f));
           set(event, "hasListeners", () => listeners.size > 0);
@@ -5808,7 +5814,7 @@ enum ExtensionShims {
     /// extensions see it, and `w`, that window's frame from windows.getAll()
     /// (see Extensions.tab(windowFrame:index:)). A bare number, or no frame,
     /// is only understood while there is one window.
-    private static func located(_ place: Any?, context: WKWebExtensionContext, owner: Extensions) -> Tab? {
+    static func located(_ place: Any?, context: WKWebExtensionContext, owner: Extensions) -> Tab? {
         let spec = place as? [String: Any]
         guard let index = (place as? NSNumber)?.intValue ?? (spec?["i"] as? NSNumber)?.intValue else { return nil }
         let number = { (value: Any?) in (value as? NSNumber)?.doubleValue }
@@ -5883,6 +5889,9 @@ enum ExtensionShims {
     }
 
     private static func run(_ api: String, _ args: [Any], context: WKWebExtensionContext, owner: Extensions) async throws -> Any? {
+        if api.hasPrefix("devtools.") {
+            return try await ExtensionDevtools.run(api, args, context: context, owner: owner)
+        }
         guard let browser = owner.browser else { throw Unsupported(what: "No browser window") }
         let first = args.first
         let id = context.uniqueIdentifier

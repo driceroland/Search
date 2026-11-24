@@ -259,6 +259,116 @@ final class DevToolsFullTests: XCTestCase {
         _ = try await perform("close", [:], tab)
     }
 
+    // MARK: - 2b. Installed extensions: panels, inspected tab and lifecycle
+
+    func test2bExtensionPanelsUseTheInspectedTab() async throws {
+        guard #available(macOS 15.4, *) else { throw XCTSkip("WebKit extensions require macOS 15.4") }
+        if packages.installed["full"] == nil {
+            packages.offered = [try XCTUnwrap(try localPackage("DevToolsFull")([:]))]
+            packages.install("full")
+            try await waitUntil(timeout: 60) { self.packages.states["full"] == .idle && self.packages.installed["full"] != nil }
+        }
+        let previous = packages.primaryID
+        packages.primaryID = "full"
+        defer { packages.primaryID = previous }
+        Browsers.register(browser)
+        defer {
+            tab = nil
+            Browsers.discard(browser)
+        }
+
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("DevtoolsFixture", isDirectory: true)
+        let source = scratch.appendingPathComponent("extension", isDirectory: true)
+        try FileManager.default.copyItem(at: fixture, to: source)
+        let extensions = Extensions.shared
+        let id = Crx.unpackedID(for: URL(fileURLWithPath: Crx.realPath(of: source), isDirectory: true))
+        extensions.installFolder(at: source, confirm: false)
+        defer { extensions.remove(id) }
+        try await waitUntil { extensions.contexts[id]?.isLoaded == true }
+
+        let inspected = try await open("/app")
+        let other = browser.open(server.url("/hostile"), foreground: false)
+        try await waitUntil { other.committed == self.server.url("/hostile") }
+        XCTAssertTrue(browser.active === inspected)
+        let before = try await perform("extension.panels", [:], inspected)
+        XCTAssertEqual((before["panels"] as? [[String: Any]])?.count, 0)
+        browser.toggleInspector()
+        let ready = try await perform("ready", [:], inspected)
+        XCTAssertEqual(ready["ready"] as? Bool, true, "\(ready)")
+
+        var items: [[String: Any]] = []
+        try await waitUntil { [self] in
+            items = (try? await perform("extension.panels", [:], inspected))?["panels"] as? [[String: Any]] ?? []
+            return items.count == 2
+        }
+        func panelID(_ title: String) throws -> String {
+            try XCTUnwrap(items.first(where: { $0["title"] as? String == title })?["id"] as? String, "\(items)")
+        }
+        let components = try panelID("Fixture Components")
+        let profiler = try panelID("Fixture Profiler")
+        XCTAssertNotEqual(components, profiler)
+        let selected = try await perform("extension.select", ["id": components], inspected)
+        XCTAssertEqual(selected["selected"] as? String, components, "\(selected)")
+        XCTAssertEqual(selected["rendered"] as? Bool, true, "\(selected)")
+        try await waitUntil { [self] in
+            let state = try? await perform("extension.state", [:], inspected)
+            return state?["viewTitle"] as? String == "Components | app | Panel fixture | hidden:0"
+        }
+
+        // Switching panels sends onHidden before onShown. The second panel
+        // still reads the inspected document despite the other tab.
+        let second = try await perform("extension.select", ["id": profiler], inspected)
+        XCTAssertEqual(second["selected"] as? String, profiler, "\(second)")
+        XCTAssertEqual(second["rendered"] as? Bool, true, "\(second)")
+        try await waitUntil { [self] in
+            let state = try? await perform("extension.state", [:], inspected)
+            return state?["viewTitle"] as? String == "Profiler | app | Panel fixture | hidden:1"
+        }
+
+        _ = try await perform("select", ["panel": "Elements"], inspected)
+        let native = try await perform("extension.state", [:], inspected)
+        XCTAssertEqual(native["selected"] as? String, "", "\(native)")
+        XCTAssertEqual(native["rendered"] as? Bool, false, "\(native)")
+        _ = try await perform("close", [:], inspected)
+        let closed = try await perform("extension.panels", [:], inspected)
+        XCTAssertEqual((closed["panels"] as? [[String: Any]])?.count, 0)
+        XCTAssertFalse(DevToolsPackages.busy(inspected))
+
+        // Turning the extension off while tools are open removes its panels.
+        _ = try await perform("open", ["item": "devtools"], inspected)
+        try await waitUntil { [self] in
+            let listed = try? await perform("extension.panels", [:], inspected)
+            return (listed?["panels"] as? [[String: Any]])?.count == 2
+        }
+        extensions.setEnabled(id, false)
+        try await waitUntil { [self] in
+            let listed = try? await perform("extension.panels", [:], inspected)
+            return extensions.contexts[id] == nil && (listed?["panels"] as? [[String: Any]])?.count == 0
+        }
+        _ = try await perform("close", [:], inspected)
+
+        // Even with the extension allowed into private tabs, Full does not
+        // provide an extension panel for an inspected private document.
+        extensions.setEnabled(id, true)
+        try await waitUntil { extensions.contexts[id]?.isLoaded == true }
+        extensions.setPrivate(id, true)
+        XCTAssertTrue(extensions.contexts[id]?.hasAccessToPrivateData == true)
+        browser.newShyTab()
+        let privateTab = try XCTUnwrap(browser.active)
+        tab = privateTab
+        XCTAssertTrue(privateTab.shy)
+        window.contentView = privateTab.web
+        privateTab.go(to: server.url("/app"))
+        try await waitUntil { privateTab.committed == self.server.url("/app") && !privateTab.web.isLoading }
+        browser.toggleInspector()
+        let privateReady = try await perform("ready", [:], privateTab)
+        XCTAssertEqual(privateReady["ready"] as? Bool, true, "\(privateReady)")
+        let privatePanels = try await perform("extension.panels", [:], privateTab)
+        XCTAssertEqual((privatePanels["panels"] as? [[String: Any]])?.count, 0)
+        _ = try await perform("close", [:], privateTab)
+    }
+
     // MARK: - 3. Both packages: the picker decides; Remove each
 
     func test3BothInstalledPickerAndRemove() async throws {

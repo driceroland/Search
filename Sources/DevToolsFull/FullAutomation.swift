@@ -44,6 +44,16 @@ enum FullAutomation {
             session.select(panel)
             return ["panel": session.panel.rawValue]
 
+        case "extension.panels":
+            let items = session()?.extensionPanels.items ?? []
+            return ["panels": items.map { ["id": $0.id, "title": $0.title] }]
+        case "extension.select", "extension.state":
+            let panels = session()?.extensionPanels
+            if command == "extension.select" { panels?.select(arguments["id"] as? String) }
+            let selection = panels?.selection
+            return ["selected": selection?.id ?? "", "rendered": selection?.view != nil,
+                    "viewTitle": (selection?.view as? WKWebView)?.title ?? ""]
+
         // Elements
         case "elements.tree":
             guard let session = session() else { return ["error": "not open"] }

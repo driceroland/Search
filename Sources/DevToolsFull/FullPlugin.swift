@@ -165,6 +165,16 @@ public final class FullPlugin: NSObject, SearchDevToolsPlugin, DevToolsOwner {
     public func dockView(webView: WKWebView) -> NSView? {
         let tools = DeveloperTools.shared
         guard let session = tools.session, session.web === webView else { return nil }
+        let context = DeveloperToolsContext(session: session, tools: tools, shell: DeveloperToolsShell.shared)
+        let root = AnyView(DeveloperToolsRoot(session: session, tools: tools).id(ObjectIdentifier(session)))
+        if tools.dockPosition == .window {
+            // Keep a host-owned extension view in only one view tree.
+            dock?.view.hosting.rootView = AnyView(EmptyView())
+            dock = nil
+            DeveloperToolsWindow.shared.show(root, context: context)
+            return nil
+        }
+        DeveloperToolsWindow.shared.dismiss()
         let view: DeveloperToolsHostView
         if let dock, dock.session == ObjectIdentifier(session) {
             view = dock.view
@@ -172,15 +182,8 @@ public final class FullPlugin: NSObject, SearchDevToolsPlugin, DevToolsOwner {
             view = DeveloperToolsHostView()
             dock = (ObjectIdentifier(session), view)
         }
-        let context = DeveloperToolsContext(session: session, tools: tools, shell: DeveloperToolsShell.shared)
         view.context = context
-        view.hosting.rootView = AnyView(DeveloperToolsRoot(session: session, tools: tools).id(ObjectIdentifier(session)))
-        // Undocked, the tools are in a window of their own.
-        if tools.dockPosition == .window {
-            DeveloperToolsWindow.shared.show(AnyView(DeveloperToolsRoot(session: session, tools: tools)), context: context)
-            return nil
-        }
-        DeveloperToolsWindow.shared.dismiss()
+        view.hosting.rootView = root
         return view
     }
 
@@ -241,7 +244,7 @@ struct DeveloperToolsRoot: View {
     @ObservedObject var tools: DeveloperTools
 
     var body: some View {
-        DeveloperToolsView(session: session, tools: tools, retry: {
+        DeveloperToolsView(session: session, tools: tools, extensionPanels: session.extensionPanels, retry: {
             if let web = session.web { tools.close(); tools.open(web: web, panel: session.panel) }
         })
         .overlay { DeveloperSheetLayer() }

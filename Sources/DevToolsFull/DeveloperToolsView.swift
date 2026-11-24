@@ -49,12 +49,13 @@ extension View {
 struct DeveloperToolsView: View {
     @ObservedObject var session: DeveloperToolsSession
     @ObservedObject var tools: DeveloperTools
+    @ObservedObject var extensionPanels: DeveloperExtensionPanelState
     let retry: () -> Void
     @ObservedObject var shell = DeveloperToolsShell.shared
     @State private var filter = ""
     @State private var networkOptions = DeveloperNetworkView.Options()
     /// Each tab's width, measured, for what fits before the » menu.
-    @State private var tabWidths: [DeveloperPanel: CGFloat] = [:]
+    @State private var tabWidths: [DeveloperToolsTab: CGFloat] = [:]
     @State private var stripWidth: CGFloat = 10_000
     /// The tab being dragged to a new place in the strip.
     @State private var dragging: DeveloperPanel?
@@ -71,7 +72,7 @@ struct DeveloperToolsView: View {
             header
             Divider()
             // Lighthouse and the Recorder don't need WebKit's inspector.
-            if session.ready || session.panel == .lighthouse || session.panel == .recorder {
+            if extensionPanels.selection != nil || session.ready || session.panel == .lighthouse || session.panel == .recorder {
                 GeometryReader { space in
                     VStack(spacing: 0) {
                         Panels(owner: self)
@@ -253,7 +254,7 @@ struct DeveloperToolsView: View {
         .background(alignment: .leading) {
             HStack(spacing: 2) {
                 ForEach(tabs, id: \.self) { tab in
-                    tabLabel(tab, text: true, selected: true)
+                    tabLabel(tab)
                         .developerTab(selected: true)
                         .fixedSize()
                         .background {
@@ -270,41 +271,56 @@ struct DeveloperToolsView: View {
         .onPreferenceChange(DeveloperTabWidths.self) { widths in tabWidths = widths }
     }
 
-    private func tabButton(_ panel: DeveloperPanel) -> some View {
-        let selected = context.currentTab == panel
-        return Button { session.select(panel) } label: { selectedBackground(tabLabel(panel, text: true, selected: selected), selected) }
-            .buttonStyle(.plain)
-            .accessibilityLabel(panel.rawValue)
-            .accessibilityAddTraits(selected ? .isSelected : [])
-            .help(panel.rawValue)
-            .onDrag {
-                dragging = panel
-                return NSItemProvider(object: panel.rawValue as NSString)
-            }
-            .onDrop(of: [.text], delegate: DeveloperTabDrop(target: panel, dragging: $dragging, shell: shell))
-            .contextMenu {
-                if panel.closeable {
-                    Button("Close") {
-                        if session.panel == panel { session.select(.elements) }
-                        shell.closePanel(panel)
-                    }
-                    Button("Move to bottom") {
-                        if session.panel == panel { session.select(.elements) }
-                        shell.movePanelToDrawer(panel)
+    @ViewBuilder
+    private func tabButton(_ tab: DeveloperToolsTab) -> some View {
+        switch tab {
+        case .panel(let panel):
+            stripButton(tab, title: panel.rawValue)
+                .onDrag {
+                    dragging = panel
+                    return NSItemProvider(object: panel.rawValue as NSString)
+                }
+                .onDrop(of: [.text], delegate: DeveloperTabDrop(target: panel, dragging: $dragging, shell: shell))
+                .contextMenu {
+                    if panel.closeable {
+                        Button("Close") {
+                            if context.currentTab == tab { session.select(.elements) }
+                            shell.closePanel(panel)
+                        }
+                        Button("Move to bottom") {
+                            if context.currentTab == tab { session.select(.elements) }
+                            shell.movePanelToDrawer(panel)
+                        }
                     }
                 }
-            }
+        case .extensionPanel(let id):
+            if let item = extensionPanels.item(id) { stripButton(tab, title: item.title) }
+        }
     }
 
-    private func selectedBackground(_ label: some View, _ selected: Bool) -> some View {
-        label.developerTab(selected: selected)
+    private func stripButton(_ tab: DeveloperToolsTab, title: String) -> some View {
+        let selected = context.currentTab == tab
+        return Button { context.select(tab) } label: { tabLabel(tab).developerTab(selected: selected) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .help(title)
     }
 
-    /// Chrome's » button: the tabs that didn't fit.
-    private func overflowMenu(_ hidden: [DeveloperPanel]) -> some View {
+    /// The tabs that don't fit in the strip.
+    private func overflowMenu(_ hidden: [DeveloperToolsTab]) -> some View {
         Menu {
-            ForEach(hidden, id: \.self) { panel in
-                Button { session.select(panel) } label: { Label(panel.rawValue, systemImage: panel.icon) }
+            ForEach(hidden, id: \.self) { tab in
+                switch tab {
+                case .panel(let panel):
+                    Button { context.select(tab) } label: { Label(panel.rawValue, systemImage: panel.icon) }
+                case .extensionPanel(let id):
+                    if let item = extensionPanels.item(id) {
+                        Button { context.select(tab) } label: {
+                            Label(item.title, systemImage: "puzzlepiece.extension")
+                        }
+                    }
+                }
             }
         } label: {
             Image(systemName: "chevron.right.2")
@@ -318,12 +334,30 @@ struct DeveloperToolsView: View {
         .help("More tabs")
     }
 
-    private func tabLabel(_ panel: DeveloperPanel, text: Bool, selected: Bool) -> some View {
-        HStack(spacing: DeveloperToolsStyle.controlSpacing) {
-            Image(systemName: panel.icon)
-                .font(.system(size: 12, weight: .medium))
-                .frame(width: 14)
-            if text { Text(panel.rawValue) }
+    @ViewBuilder
+    private func tabLabel(_ tab: DeveloperToolsTab) -> some View {
+        switch tab {
+        case .panel(let panel):
+            HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+                Image(systemName: panel.icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 14)
+                Text(panel.rawValue)
+            }
+        case .extensionPanel(let id):
+            if let item = extensionPanels.item(id) {
+                HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+                    Group {
+                        if let icon = item.icon {
+                            Image(nsImage: icon).resizable().interpolation(.high).scaledToFit()
+                        } else {
+                            Image(systemName: "puzzlepiece.extension").font(.system(size: 12, weight: .medium))
+                        }
+                    }
+                    .frame(width: 14, height: 14)
+                    Text(item.title)
+                }
+            }
         }
     }
 
@@ -388,7 +422,9 @@ struct DeveloperToolsView: View {
                     }
                     .onEnded { _ in drawerDragStart = nil })
                 .accessibilityLabel("Resize drawer")
-            DeveloperDrawerView(session: session, shell: shell) { panel in builtInPanel(panel) }
+            DeveloperDrawerView(session: session, shell: shell, extensionPanelShown: extensionPanels.selection != nil) { panel in
+                builtInPanel(panel)
+            }
                 .frame(height: height - 5)
         }
     }
@@ -411,7 +447,20 @@ struct DeveloperToolsView: View {
         var body: some View { owner.panels }
     }
 
-    private var panels: some View { builtInPanel(session.panel) }
+    @ViewBuilder
+    private var panels: some View {
+        if let selection = extensionPanels.selection {
+            if let view = selection.view {
+                DeveloperExtensionPanelView(panel: view)
+            } else {
+                Text("This extension panel is unavailable.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        } else {
+            builtInPanel(session.panel)
+        }
+    }
 
     /// Each panel erased on its own, rather than one twelve-way
     /// @ViewBuilder switch whose nested conditional type was slow to check.
@@ -580,9 +629,34 @@ struct DeveloperToolsView: View {
 
 /// The strip's tabs' natural widths, measured for the » menu.
 private struct DeveloperTabWidths: PreferenceKey {
-    static let defaultValue: [DeveloperPanel: CGFloat] = [:]
-    static func reduce(value: inout [DeveloperPanel: CGFloat], nextValue: () -> [DeveloperPanel: CGFloat]) {
+    static let defaultValue: [DeveloperToolsTab: CGFloat] = [:]
+    static func reduce(value: inout [DeveloperToolsTab: CGFloat], nextValue: () -> [DeveloperToolsTab: CGFloat]) {
         value.merge(nextValue()) { $1 }
+    }
+}
+
+/// Moves the host's extension view into the visible dock or window.
+private struct DeveloperExtensionPanelView: NSViewRepresentable {
+    let panel: NSView
+
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        updateNSView(container, context: context)
+        return container
+    }
+
+    func updateNSView(_ container: NSView, context: Context) {
+        guard panel.superview !== container else { return }
+        for old in container.subviews { old.removeFromSuperview() }
+        panel.removeFromSuperview()
+        panel.frame = container.bounds
+        panel.autoresizingMask = [.width, .height]
+        container.addSubview(panel)
+    }
+
+    static func dismantleNSView(_ container: NSView, coordinator: ()) {
+        // The panel may already have moved to another container.
+        for panel in container.subviews { panel.removeFromSuperview() }
     }
 }
 

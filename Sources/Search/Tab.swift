@@ -402,7 +402,10 @@ final class Tab: ObservableObject, Identifiable {
         // about:blank too: a document another page wrote into (an opener
         // sending its window there, then writing) is that page's, not the
         // one before it, and is offered nothing that belonged to it.
-        if let url = built?.url { committed = url }
+        if let built {
+            if let url = built.url { committed = url }
+            DevToolsPackages.documentChanged(built)
+        }
         // A link followed out of an article is a page, not an article: ⇧⌘R
         // reads it rather than reloading it, and the article's corner goes.
         reader = false

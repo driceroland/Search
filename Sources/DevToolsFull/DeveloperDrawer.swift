@@ -23,6 +23,7 @@ enum DeveloperDrawerTools {
 struct DeveloperDrawerView: View {
     @ObservedObject var session: DeveloperToolsSession
     @ObservedObject var shell: DeveloperToolsShell
+    let extensionPanelShown: Bool
     /// A panel moved down from the main strip, drawn as the strip draws it.
     let panel: (DeveloperPanel) -> AnyView
 
@@ -123,7 +124,7 @@ struct DeveloperDrawerView: View {
         case .tool(.console):
             // As in Chrome: with the Console panel itself in front, the
             // drawer doesn't show the same console a second time.
-            if session.panel == .console {
+            if session.panel == .console && !extensionPanelShown {
                 placeholder("The Console is shown in the main panel.")
             } else {
                 DeveloperConsoleView(session: session)

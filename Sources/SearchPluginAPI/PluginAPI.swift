@@ -49,6 +49,20 @@ public protocol SearchDevToolsHost: NSObjectProtocol {
     func invalidate()
 }
 
+/// Optional host capability for installed WebExtension DevTools pages.
+/// Older hosts and packages still use SearchDevToolsHost.
+@objc(SearchDevToolsExtensionHost) @MainActor
+public protocol SearchDevToolsExtensionHost: SearchDevToolsHost {
+    func startExtensionPanels(in webView: WKWebView, changed: @escaping () -> Void)
+    func stopExtensionPanels(in webView: WKWebView)
+    /// Registration order, with string id and title in each row.
+    func extensionPanels(in webView: WKWebView) -> [[String: String]]
+    func extensionPanelIcon(_ id: String, in webView: WKWebView) -> NSImage?
+    func selectedExtensionPanel(in webView: WKWebView) -> String?
+    /// Nil hides the current panel. A valid selection returns its extension view.
+    func showExtensionPanel(_ id: String?, in webView: WKWebView) -> NSView?
+}
+
 /// A package, as Search sees it. Every call is on the main thread.
 @objc(SearchDevToolsPlugin) @MainActor
 public protocol SearchDevToolsPlugin: NSObjectProtocol {

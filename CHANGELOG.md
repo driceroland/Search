@@ -28,6 +28,7 @@ Not in this version, kept on main for a later one:
 
 ### Added
 
+- Developer Tools Full shows panels from enabled extensions with access to the inspected page.
 - Developer Tools packages carry the recent Perch changes for Elements, Console, Network, Sources, Performance, Memory and device emulation.
 
 - Settings › Tabs › Keep the window when its last tab closes, off unless turned on: ⌘W on the window's last tab, an empty one, leaves it there with its field ready, as Arc does, instead of closing the window; ⇧⌘W still closes it. With Leave a new tab when the last tab closes, a window is then never closed by one ⌘W too many. `python3 Tests/keep_window_last_tab.py` (reported by email, idea 1102)

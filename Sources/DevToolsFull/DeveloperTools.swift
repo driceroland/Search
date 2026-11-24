@@ -62,6 +62,7 @@ final class DeveloperToolsSession: ObservableObject {
     let elements = DeveloperElementsState()
 
     @Published private(set) var panel: DeveloperPanel = .elements
+    let extensionPanels = DeveloperExtensionPanelState()
     @Published private(set) var ready = false
     @Published private(set) var connectionFailed = false
     @Published var message: String?
@@ -289,6 +290,7 @@ final class DeveloperToolsSession: ObservableObject {
 
     func disconnect() -> Task<Void, Never> {
         if let disconnectTask { return disconnectTask }
+        extensionPanels.stop()
         if userAgentOverride != nil { setUserAgentOverride(nil) }
         DeveloperIssuesModel.closed(self)
         DeveloperLiveMetricsModel.closed(self)
@@ -446,6 +448,7 @@ final class DeveloperToolsSession: ObservableObject {
         // As in Chrome DevTools: drawer tools (Rendering, Sensors) and panels
         // moved to the drawer open there, under the panel already shown.
         if DeveloperToolsShell.shared.openInDrawer(panel) { return }
+        extensionPanels.select(nil)
         guard self.panel != panel else { return }
         idleDrains = 0
         if self.panel == .elements { stopPicking() }
