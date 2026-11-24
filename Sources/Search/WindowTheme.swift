@@ -198,7 +198,7 @@ struct BrowserTheme: Codable, Equatable {
     /// window in one pink, at full strength. `BrowserTheme()` stays "no
     /// colour", what choosing none writes.
     static let standard = BrowserTheme.read(
-        ##"{"colour":0,"gradient":{"angle":135,"colours":["#ED7DFF","#ED7DFF"],"grain":false},"strength":"full"}"##
+        ##"{"colour":0,"darkenInDark":true,"gradient":{"angle":135,"colours":["#ED7DFF","#ED7DFF"],"grain":false},"strength":"full"}"##
     ) ?? BrowserTheme()
 
     private enum CodingKeys: String, CodingKey { case colour, gradient, strength, darkenInDark }
@@ -330,9 +330,9 @@ struct OKLab: Equatable {
     /// chroma to read as the chosen colour, while holding lightness and
     /// saturation where light ink and dark pages sit cleanly together.
     var darkFull: OKLab {
-        let lightness = min(L, 0.16 + 0.08 * L)
+        let lightness = min(L, 0.27 + 0.15 * L)
         let c = chroma
-        let wanted = min(c * 0.42, 0.072)
+        let wanted = min(c * 0.72, 0.145)
         let scale = c > 1e-9 ? wanted / c : 1
         return OKLab(L: lightness, a: a * scale, b: b * scale)
     }
