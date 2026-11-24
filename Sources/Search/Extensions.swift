@@ -189,11 +189,15 @@ final class Extensions: NSObject, ObservableObject {
 
     private override init() {
         super.init()
+        // Register the custom extension scheme up front: WKWebExtensionContext.baseURL
+        // and WKWebExtension.MatchPattern assert if `load(_:)` runs before `controller`
+        // is lazily constructed (for instance when launching onto a blank tab or while
+        // the active tab's wake is still deferred).
+        WKWebExtension.MatchPattern.registerCustomURLScheme(Extensions.scheme)
         installed = (try? JSONDecoder().decode([Installed].self, from: Data(contentsOf: Extensions.list))) ?? []
     }
 
     private func makeController() -> WKWebExtensionController {
-        WKWebExtension.MatchPattern.registerCustomURLScheme(Extensions.scheme)
         // A test run keeps its extensions' storage apart, as it does its
         // cookies and passwords.
         let configuration: WKWebExtensionController.Configuration = Store.testing && !Store.ownContainer
@@ -1134,6 +1138,7 @@ final class Extensions: NSObject, ObservableObject {
         save()
         // Loaded in WebKit's first five seconds, a new extension would be
         // told the browser started, and never that it was installed.
+        _ = controller
         let early = 5.5 - Date().timeIntervalSince(controllerMade ?? Date())
         if early > 0 { try? await Task.sleep(for: .seconds(early)) }
         guard installed.contains(where: { $0.id == id }) else { return }
