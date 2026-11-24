@@ -2,8 +2,8 @@ import AppKit
 import ObjectiveC
 
 /// The bench's `seam`, test runs only: a hidden probe's browser window told
-/// it is in full screen, or in or out of sight, without AppKit moving it or
-/// showing it. A hidden window never enters full screen and is never in
+/// it is in full screen, in or out of sight, or minimised, without AppKit
+/// moving it or showing it. A hidden window never enters full screen and is never in
 /// view, so the code that asks (the key monitor's Escape, idea 582; the
 /// floating video waiting for the window to be out of sight, idea 470) is
 /// reached only this way. The window's own class answers `styleMask` and
@@ -16,6 +16,9 @@ enum BenchSeams {
     nonisolated(unsafe) static var fullScreen: Bool?
     /// In sight as told, or AppKit's own (nil).
     nonisolated(unsafe) static var visible: Bool?
+    /// Minimised as told, or AppKit's own (nil): a hidden window can't be
+    /// put in the Dock without showing the app.
+    nonisolated(unsafe) static var minimized: Bool?
     /// Escape presses that went on to the window itself (sendEvent), where
     /// AppKit would take a window out of full screen on one.
     nonisolated(unsafe) static var escapes = 0
@@ -57,6 +60,13 @@ enum BenchSeams {
                 }
                 return state.rawValue
             } as @convention(block) (AnyObject) -> UInt
+        }
+        typealias Flag = @convention(c) (AnyObject, Selector) -> Bool
+        override(#selector(getter: NSWindow.isMiniaturized), "B@:") { old in
+            { (me: AnyObject) -> Bool in
+                if me === BenchSeams.target, let on = BenchSeams.minimized { return on }
+                return unsafeBitCast(old, to: Flag.self)(me, #selector(getter: NSWindow.isMiniaturized))
+            } as @convention(block) (AnyObject) -> Bool
         }
         override(#selector(NSWindow.sendEvent(_:)), "v@:@") { old in
             { (me: AnyObject, event: NSEvent) in

@@ -1345,6 +1345,12 @@ struct ContentView: View {
             window.animationBehavior = .none
             window.isExcludedFromWindowsMenu = true
             window.orderOut(nil)
+        } else {
+            // SwiftUI leaves the window of a Window scene out of the Window
+            // menu, and so out of the Dock icon's list of windows and, it
+            // seems, ⌘`'s round: with a second window open, there was no
+            // going from one to the other there (idea 1047).
+            window.isExcludedFromWindowsMenu = false
         }
         window.tabbingMode = .disallowed
         // Light or dark is the app's to say (Settings › Appearance); the

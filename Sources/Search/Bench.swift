@@ -3914,13 +3914,22 @@ final class Bench {
                 BenchSeams.visible = nil
                 BenchSeams.restore(window)
             }
-            if request["fullScreen"] is Bool || request["visible"] is Bool || request["count"] is Bool { BenchSeams.fake(window) }
+            if request["fullScreen"] is Bool || request["visible"] is Bool || request["count"] is Bool
+                || request["minimized"] is Bool { BenchSeams.fake(window) }
+            if let on = request["minimized"] as? Bool { BenchSeams.minimized = on }
+            if request["real"] as? Bool == true { BenchSeams.minimized = nil }
             if let on = request["fullScreen"] as? Bool { BenchSeams.fullScreen = on }
             if request["count"] as? Bool == true { BenchSeams.escapes = 0; BenchSeams.toggles = 0 }
             if let on = request["visible"] as? Bool {
                 BenchSeams.visible = on
                 NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
             }
+            // "reopen": the Dock icon clicked, AppKit saying whether any
+            // window of the app is shown (its value: the floating video's,
+            // a download's): whether a browser window is brought. Only asked:
+            // a hidden probe's windows are never ordered in.
+            var reopens: Bool?
+            if let anyShown = request["reopen"] as? Bool { reopens = Browsers.reopening(anyShown: anyShown) }
             switch request["app"] as? String {
             case "left":
                 // The little window off every screen; the page taken for a
@@ -3942,7 +3951,16 @@ final class Bench {
                 answer(["fullScreen": window.styleMask.contains(.fullScreen), "visible": window.occlusionState.contains(.visible),
                         "escapes": BenchSeams.escapes, "toggles": BenchSeams.toggles,
                         "showing": browser.floater.showing, "floating": browser.floating?.uuidString ?? "",
-                        "playing": browser.active?.playingVideo ?? false])
+                        "playing": browser.active?.playingVideo ?? false,
+                        "reopens": reopens.map { $0 as Any } ?? NSNull(), "minimized": window.isMiniaturized,
+                        // Every window the app has, as AppKit's Dock click,
+                        // ⌘` and the Window menu judge them.
+                        "windows": NSApp.windows.map { w -> [String: Any] in
+                            ["class": "\(type(of: w))", "visible": w.isVisible, "key": w.canBecomeKey, "main": w.canBecomeMain,
+                             "menu": !w.isExcludedFromWindowsMenu, "behavior": w.collectionBehavior.rawValue,
+                             "level": w.level.rawValue, "mini": w.isMiniaturized, "browser": Browsers.browser(for: w) != nil,
+                             "frame": [w.frame.minX, w.frame.minY, w.frame.width, w.frame.height], "alpha": w.alphaValue]
+                        }])
             }
 
         case "float":

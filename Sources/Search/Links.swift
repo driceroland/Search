@@ -263,9 +263,7 @@ final class Links: NSObject, NSApplicationDelegate {
         // (`open -n` of a second probe) can reach it as a reopen, and nothing
         // is brought back, made or brought forward for it.
         guard !Store.testing else { return false }
-        // The small window on screen counts as a window to macOS; the
-        // browser's, kept away behind it, are what the Dock icon is for.
-        if !flag || Browsers.keptAway { Browsers.ensureWindow() }
+        if Browsers.reopening(anyShown: flag) { Browsers.reopen(anyShown: flag) }
         return true
     }
 
