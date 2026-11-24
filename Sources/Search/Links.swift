@@ -466,7 +466,7 @@ final class Links: NSObject, NSApplicationDelegate {
         let prefs = Shared.prefs
         // A site sent to a space opens there, with that space's sign-ins.
         if SpaceRoutes.space(for: url) != nil { return false }
-        if prefs.littleLinks, prefs.littleFindsTabs, goToOpen(url) { return true }
+        if prefs.linksFindTabs, goToOpen(url) { return true }
         if asksSpace(for: url) {
             keepWindowsAway()
             LinkChooserPanel.shared.ask(url, sender: sender, pid: pid)
@@ -511,9 +511,10 @@ final class Links: NSObject, NSApplicationDelegate {
         Browsers.putAway()
     }
 
-    /// The page already open, for whoever asked for that in Settings: a
-    /// small window that has it comes forward, or a tab that has it, in its
-    /// window, the window in front looked in first. Only each window's
+    /// The page already open, for whoever asked for that in Settings, with
+    /// links opening in tabs or in small windows: a small window that has
+    /// it comes forward, or a tab that has it, in its window, the window in
+    /// front looked in first. Only each window's
     /// space on screen, as the address field's open pages are. False when
     /// none has it.
     @MainActor

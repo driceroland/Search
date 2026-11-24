@@ -16,6 +16,10 @@ in [ROADMAP.md](ROADMAP.md).
 - Settings › Appearance › Window › Fade scroll bars when scrolling stops, off unless you turn it on: pages, and Search's own lists, get the thin scroll bars macOS draws with a trackpad, over the page rather than beside it, that come up as it scrolls and fade out once it stops, even with System Settings › Appearance › Show scroll bars set to Always or a mouse plugged in. Pages already open change at once. Thanks [@pasteley](https://github.com/pasteley). ([#1490](https://github.com/driceroland/Search/pull/1490))
 - A finished download can be dragged out of the Downloads list (the tab, the side panel or the card under the button) as its file, with the file's icon under the pointer: onto a page to upload it, as a file from the Finder would be, or into the Finder, Mail or another app. A click still opens it; a download under way, a failed one or one whose file has gone has nothing to drag. `swift test --filter DownloadDragOutTests` ([#920](https://github.com/driceroland/Search/issues/920), [#1388](https://github.com/driceroland/Search/issues/1388), idea 566)
 
+### Changed
+
+- Settings › Browsing › Links › Go to a tab that has the page now works without small windows too: a link from another app to a page you already have open switches to that tab instead of opening a new one. Thanks [@pasteley](https://github.com/pasteley). ([#1485](https://github.com/driceroland/Search/pull/1485))
+
 ### Fixed
 
 - A page in a peek can share your screen: Search asks over it, as it does for a tab, with Share a Window, Share a Screen or Don't allow. A Google Meet link opened from a pinned Calendar or Gmail lands in a peek, and Meet's Present now was refused there without a question, so Meet said to look for a Screen Sharing setting that Search doesn't have. `swift test --filter ScreenPermissionTests`

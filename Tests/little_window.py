@@ -296,6 +296,19 @@ try:
     t.ok("the same link again brings that small window, not a second",
          st["littles"] == [elsewhere] and st["fronted"] == elsewhere, st)
 
+    # With small windows off too: a link to an open page goes to its tab
+    # rather than a second tab, and one open nowhere still gets a new tab.
+    sv.setup(**{"links.little": False, "links.little.tabs": True}); sv.launch()
+    sv.cmd({"do": "open", "url": opened}); time.sleep(1.5)
+    before = len(tabs())
+    t.ok("tabs: the page opens behind", active() != opened, tabs())
+    windows(action="link", url=opened); time.sleep(0.5)
+    t.ok("tabs: a link to an open page goes to its tab", active() == opened, tabs())
+    t.ok("tabs: with no second tab", len(tabs()) == before, tabs())
+    windows(action="link", url=elsewhere); time.sleep(1.5)
+    t.ok("tabs: a page open nowhere gets a new tab", active() == elsewhere and len(tabs()) == before + 1, tabs())
+    t.ok("tabs: and no small window", little("look")["littles"] == [], little("look"))
+
     # A tab lifted from a space that is then only on disk: closing its small
     # window takes that tab's entry out of the space's file, and not a tab
     # with the same address left in the row there (Browser.dropLifted).
