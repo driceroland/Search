@@ -66,6 +66,21 @@ final class SpaceRoutesTests: XCTestCase {
         XCTAssertNil(SpaceRoutes.space(for: url("https://other.example/"), routes: routes, on: true, spaces: spaces))
     }
 
+    func testEverythingElseFromOtherAppsGoesToTheChosenSpace() {
+        let routes = [SpaceRoute(site: "figma.com", space: work.id)]
+        func outside(_ text: String, other: UUID?, on: Bool = true) -> Space? {
+            SpaceRoutes.space(forOutside: url(text), routes: routes, other: other, on: on, spaces: spaces)
+        }
+        XCTAssertEqual(outside("https://figma.com/file/1", other: home.id), work, "a rule still wins")
+        XCTAssertEqual(outside("https://example.com/", other: home.id), home)
+        XCTAssertNil(outside("https://example.com/", other: nil), "none chosen: the current space, as before")
+        XCTAssertNil(outside("https://example.com/", other: home.id, on: false))
+        XCTAssertNil(outside("https://example.com/", other: UUID()), "a space that has gone is passed over")
+        XCTAssertNil(outside("mailto:me@example.com", other: home.id), "web links only")
+        XCTAssertNil(SpaceRoutes.space(for: url("https://example.com/"), routes: routes, on: true, spaces: spaces),
+                     "a page's new-tab links with no rule stay in its space")
+    }
+
     func testKeptAsPlainSettings() {
         let route = SpaceRoute(site: "figma.com", space: work.id)
         XCTAssertEqual(SpaceRoute(plist: route.plist), route)
@@ -75,7 +90,7 @@ final class SpaceRoutesTests: XCTestCase {
     }
 
     func testOffByDefaultFindableAndKeptBetweenRuns() {
-        let keys = [SpaceRoutes.key, SpaceRoutes.rulesKey]
+        let keys = [SpaceRoutes.key, SpaceRoutes.rulesKey, SpaceRoutes.otherKey]
         let saved = keys.map { ($0, Store.settings.object(forKey: $0)) }
         defer { for (key, value) in saved { Store.settings.set(value, forKey: key) } }
         keys.forEach(Store.settings.removeObject(forKey:))
@@ -84,7 +99,10 @@ final class SpaceRoutesTests: XCTestCase {
         XCTAssertTrue(prefs.spaceRoutes.isEmpty)
         prefs.spaceRoutes = [SpaceRoute(site: "figma.com", space: work.id)]
         XCTAssertEqual(Preferences().spaceRoutes, prefs.spaceRoutes)
-        for words in ["send links", "air traffic control", "open in space", "routing"] {
+        XCTAssertNil(prefs.spaceForOtherLinks)
+        prefs.spaceForOtherLinks = home.id
+        XCTAssertEqual(Preferences().spaceForOtherLinks, home.id)
+        for words in ["send links", "air traffic control", "open in space", "routing", "default space", "everything else"] {
             XCTAssertTrue(SettingsIndex.find(words).contains { $0.id == "spaces.links" }, words)
         }
         XCTAssertEqual(SettingsIndex.item("spaces.links")?.page, .spaces)
