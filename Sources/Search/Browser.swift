@@ -5153,9 +5153,19 @@ final class Browser: NSObject, ObservableObject {
     /// Off a pin or a grouped tab just put away, onto the tab looked at last.
     /// Ordinary tabs first. Falling back to the most recent tab of any kind
     /// meant closing one pin landed you on another pin, and ⌘W bounced
-    /// between the two instead of getting you out of them.
+    /// between the two instead of getting you out of them. With Settings ›
+    /// Tabs › Closing a tab goes back to the one before, the tab viewed
+    /// before this one, pin or not, as closing any other tab goes back: two
+    /// pins open, closing one landed on a new tab rather than the other pin
+    /// (idea 1063). Never one put down: that is the bounce.
     private func leave(_ tab: Tab) {
         let others = tabs.filter { $0.id != tab.id && !$0.asleep }
+        if prefs.closeGoesBack,
+           let id = tabSwitcher.lastLeft(among: Set(others.filter(standsInRow).map(\.id)), other: tab.id),
+           let back = others.first(where: { $0.id == id }) {
+            select(back)
+            return
+        }
         let loose = others.filter { $0.pin == nil }
         if let back = (loose.isEmpty ? others : loose).max(by: { $0.touched < $1.touched }) {
             select(back)
