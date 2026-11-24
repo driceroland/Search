@@ -369,7 +369,15 @@ final class Browser: NSObject, ObservableObject {
     @Published var folded = false {
         didSet { if folded != oldValue, !isPopup { Browsers.saveSoon() } }
     }
-    @Published var peeking = false
+    @Published var peeking = false {
+        // Going back in, the column still lies over the page while it
+        // slides, and the page under it hears nothing until it has gone
+        // (see covers).
+        didSet { if oldValue, !peeking { columnGoneAt = ProcessInfo.processInfo.systemUptime + Motion.columnAway } }
+    }
+    /// When the folded column last put back in is off the page: the end of
+    /// its slide, on the system's uptime clock.
+    var columnGoneAt: TimeInterval = 0
     /// ⌘S on its way to folding the column: the page already has the room,
     /// the column has not moved yet (see Browser.toggleFold).
     @Published var foldingAway = false

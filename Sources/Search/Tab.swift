@@ -2829,7 +2829,7 @@ final class PageView: WKWebView {
         // A press that reaches the page under a peek is a press beside the
         // panel, which puts the peek away (see Peek.swift); under the column
         // it is nobody's.
-        if underCover(event) {
+        if underCover(event, press: true) {
             if let browser, browser.peekInFront, browser.peekTab?.built !== self { browser.closePeek() }
             return
         }
@@ -2887,10 +2887,13 @@ final class PageView: WKWebView {
         return Browsers.all.first { $0.window === window }
     }
 
-    /// Whether the event is under cover, and if so, the page told so.
-    private func underCover(_ event: NSEvent) -> Bool {
+    /// Whether the event is under cover, and if so, the page told so. A
+    /// `press` is under cover only where something lies on the page: the
+    /// column's edge while it is away, and the column sliding back in,
+    /// hold back the pointer's moves alone (Browser.covers).
+    private func underCover(_ event: NSEvent, press: Bool = false) -> Bool {
         guard let window, event.window == nil || event.window === window,
-              browser?.covers(self, at: event.locationInWindow) == true
+              browser?.covers(self, at: event.locationInWindow, press: press) == true
         else {
             covered = false
             return false
@@ -2990,7 +2993,7 @@ final class PageView: WKWebView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        if underCover(event) { return }
+        if underCover(event, press: true) { return }
         super.rightMouseDown(with: event)
     }
 
@@ -3000,7 +3003,7 @@ final class PageView: WKWebView {
     /// drivers settled on regardless, so it's what a mouse's own firmware
     /// is tuned to send.
     override func otherMouseDown(with event: NSEvent) {
-        if underCover(event) { return }
+        if underCover(event, press: true) { return }
         switch event.buttonNumber {
         case 3 where canGoBack: goBack()
         case 4 where canGoForward: goForward()

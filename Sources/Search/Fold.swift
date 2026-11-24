@@ -300,8 +300,10 @@ extension Browser {
     /// window's own coordinates: a peek over the page in front (not over its
     /// own), the address field or a panel over it, the Find bar, or the
     /// folded column or strip out over the page. The page then
-    /// hears nothing of the pointer there (see PageView.underCover).
-    func covers(_ page: NSView, at point: NSPoint) -> Bool {
+    /// hears nothing of the pointer there (see PageView.underCover). The
+    /// column's edge while it is away, and the column sliding back in,
+    /// cover the page from the pointer's moves but not from a `press`.
+    func covers(_ page: NSView, at point: NSPoint, press: Bool = false) -> Bool {
         guard let window, page.window === window else { return false }
         if peekInFront, let peek = peekTab, peek.built !== page { return true }
         // The address field raised over the page in front, by ⌘L or by ⌘T's
@@ -320,9 +322,25 @@ extension Browser {
            hit !== page, !hit.isDescendant(of: page) {
             return true
         }
-        guard folded, peeking, !frontFillsHere, let size = window.contentView?.bounds.size else { return false }
-        if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
-        return prefs.sidePosition == .right ? point.x >= size.width - prefs.columnWidth : point.x <= prefs.columnWidth
+        guard folded, !frontFillsHere, let size = window.contentView?.bounds.size else { return false }
+        let right = prefs.sidebar && prefs.sidePosition == .right
+        // Out, or still sliding back in: where it lies.
+        func lies() -> Bool {
+            if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
+            return right ? point.x >= size.width - prefs.columnWidth : point.x <= prefs.columnWidth
+        }
+        if peeking { return lies() }
+        guard !press else { return false }
+        if ProcessInfo.processInfo.systemUptime < columnGoneAt { return lies() }
+        // Away: the edge that brings it out. The pointer waits there for
+        // the column, and a page's own menu along that edge (Gmail's rail
+        // opens on hover) is not to stir for a column on its way (idea
+        // 1048). Not in full screen's corner, which doesn't bring it
+        // (Fold.follow).
+        if !prefs.sidebar { return point.y >= size.height - Fold.edge }
+        if window.styleMask.contains(.fullScreen), size.height - point.y < Fold.fullScreenCorner { return false }
+        let zone = prefs.sideHides ? Fold.hiddenEdge : Fold.edge
+        return right ? point.x >= size.width - zone : point.x < zone
     }
 }
 
@@ -345,10 +363,10 @@ struct Fold: View {
     @State private var pointer = Pointer()
 
     /// How near the edge the pointer has to be.
-    private static let edge: CGFloat = 6
+    static let edge: CGFloat = 6
     /// For a column hidden for good, which waits for the pointer to settle
     /// (see dwell): a wider edge to find, as a hand reaches for it (#1279).
-    private static let hiddenEdge: CGFloat = 10
+    static let hiddenEdge: CGFloat = 10
     /// How far past the window's edge, on the column's side, the pointer
     /// still counts as on it.
     private static let overshoot: CGFloat = 48

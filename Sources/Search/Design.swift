@@ -382,6 +382,15 @@ enum Motion {
         out ? (0.14, 0.86) : (0.13, 1)
     }
 
+    /// How long the folded column takes to slide back in, or fade, and
+    /// is still over the page: the spring's response (Motion.fold) runs a
+    /// little past it.
+    static var columnAway: TimeInterval {
+        if reduced { return 0 }
+        if fadesColumn { return fade }
+        return slide(out: false) ?? 0.2
+    }
+
     static func folding(out: Bool) -> Animation? {
         if reduced { return nil }
         if let slide = slide(out: out) {

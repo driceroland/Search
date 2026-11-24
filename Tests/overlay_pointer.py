@@ -107,9 +107,28 @@ def main():
         t.ok("column: a press reaching the page under it isn't the page's", downs() == d, (d, downs()))
         t.ok("column: beside it, the page still hears the pointer", heard(800, 400))
 
+        # Going back in, it still lies over the page while it slides: no
+        # move there, a press is the page's (idea 1048).
+        sv.cmd({"do": "ui", "peek": False})
+        t.ok("column sliding in: the page under it hears no move", not heard(100, 400))
+        time.sleep(0.8)
         # The column back in: the page is the page's again where it was.
-        sv.cmd({"do": "ui", "peek": False}); time.sleep(0.8)
         t.ok("column in: the page hears the pointer there again", heard(100, 400))
+
+        # Away, the edge that brings it out holds the page's hover back
+        # (idea 1048): 6 points folded by ⌘S, 10 hidden for good. Presses
+        # there are the page's still, and the next move off the edge is too.
+        for hides, zone in [(False, 6), (True, 10)]:
+            sv.cmd({"do": "ui", "hides": hides}); time.sleep(0.6)
+            p = sv.cmd({"do": "probe"})
+            t.ok(f"edge ({zone}): still folded, column away", p.get("folded") is True and p.get("peeking") is False, p)
+            t.ok(f"edge ({zone}): the page hears no move on the edge",
+                 not heard(1, 400) and not heard(zone - 1, 600))
+            d = downs()
+            pointer(2, 400, what="press"); time.sleep(0.2)
+            t.ok(f"edge ({zone}): a press on the edge is the page's", downs() == d + 1, (d, downs()))
+            t.ok(f"edge ({zone}): just off the edge the page hears the pointer", heard(zone + 2, 400))
+        sv.cmd({"do": "ui", "hides": False}); time.sleep(0.6)
         sv.cmd({"do": "ui", "folded": False}); time.sleep(0.6)
 
         # The rest of what comes over the page, at every point of a grid
