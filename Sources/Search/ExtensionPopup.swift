@@ -168,16 +168,27 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
 
     /// Each extension's popup size, so the next opening starts there, after
     /// a relaunch too.
-    private static var lastSize: [String: NSSize] {
+    static var lastSize: [String: NSSize] {
         get {
             let kept = Store.settings.dictionary(forKey: "extensionPopupSizes") as? [String: [Double]] ?? [:]
-            return kept.compactMapValues { $0.count == 2 ? NSSize(width: $0[0], height: $0[1]) : nil }
+            return kept.compactMapValues { $0.count == 2 ? bounded(NSSize(width: $0[0], height: $0[1])) : nil }
         }
         set {
             Store.settings.set(newValue.mapValues { [Double($0.width), Double($0.height)] }, forKey: "extensionPopupSizes")
         }
     }
     private var shown = false
+
+    /// A size within a popup's limits (25 × 25 to 800 × 600), or nil for
+    /// one that isn't a number: what is kept, or measured, is never trusted
+    /// to be one the popover may take.
+    static func bounded(_ size: NSSize) -> NSSize? {
+        guard size.width.isFinite, size.height.isFinite else { return nil }
+        return NSSize(width: min(800, max(25, size.width.rounded(.up))), height: min(600, max(25, size.height.rounded(.up))))
+    }
+
+    /// Forgotten with its extension.
+    static func forget(_ id: String) { lastSize[id] = nil }
 
     /// The popover's size and whether the page is in view, for the bench.
     var drawn: [String: Any] {
@@ -396,8 +407,8 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
         }
     }
 
-    private func apply(_ size: NSSize) {
-        guard let popover else { return }
+    private func apply(_ measured: NSSize) {
+        guard let popover, let size = ExtensionPopup.bounded(measured) else { return }
         if abs(size.width - popover.contentSize.width) > 1 || abs(size.height - popover.contentSize.height) > 1 {
             // The popover takes its size from its view controller, and goes
             // back to it: both are told.
@@ -406,7 +417,7 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
             popover.contentViewController?.view.setFrameSize(size)
             if shown { web?.frame = NSRect(origin: .zero, size: size) }
         }
-        if let id = extensionID { ExtensionPopup.lastSize[id] = size }
+        if let id = extensionID, ExtensionPopup.lastSize[id] != size { ExtensionPopup.lastSize[id] = size }
         reveal()
     }
 

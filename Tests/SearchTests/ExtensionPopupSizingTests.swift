@@ -11,6 +11,34 @@ final class ExtensionPopupSizingTests: XCTestCase {
         super.setUp()
     }
 
+    func testKeptSizesAreBoundedAndForgottenOnUninstall() {
+        let key = "extensionPopupSizes"
+        let before = Store.settings.object(forKey: key)
+        defer { Store.settings.set(before, forKey: key) }
+        Store.settings.set([
+            "zero": [0.0, 0.0],
+            "negative": [-5.0, -5.0],
+            "huge": [1e6, 1e6],
+            "nan": [Double.nan, 300.0],
+            "valid": [360.0, 480.0],
+            "short": [360.0],
+        ], forKey: key)
+        let kept = ExtensionPopup.lastSize
+        XCTAssertEqual(kept["zero"], NSSize(width: 25, height: 25))
+        XCTAssertEqual(kept["negative"], NSSize(width: 25, height: 25))
+        XCTAssertEqual(kept["huge"], NSSize(width: 800, height: 600))
+        XCTAssertNil(kept["nan"], "a size that isn't a number is dropped")
+        XCTAssertNil(kept["short"])
+        XCTAssertEqual(kept["valid"], NSSize(width: 360, height: 480))
+        XCTAssertNil(ExtensionPopup.bounded(NSSize(width: 300, height: CGFloat.infinity)))
+
+        Extensions.shared.remove("valid")
+        XCTAssertNil(ExtensionPopup.lastSize["valid"], "uninstalling forgets the popup's size")
+        let stored = Store.settings.dictionary(forKey: key) as? [String: [Double]] ?? [:]
+        XCTAssertNil(stored["valid"])
+        XCTAssertEqual(stored["huge"], [800, 600])
+    }
+
     func testScrollbarDoesNotBecomeThePopupsExplicitWidth() async throws {
         try await eitherScrollBars { try await self.scrollbarDoesNotBecomeThePopupsExplicitWidth() }
     }

@@ -1216,6 +1216,7 @@ final class Extensions: NSObject, ObservableObject {
         SiteAccess.forget(id)
         clickGrants[id] = nil
         Store.settings.removeObject(forKey: "extensions.kept.\(id)")
+        ExtensionPopup.forget(id)
         installed.removeAll { $0.id == id }
         save()
         try? FileManager.default.removeItem(at: Extensions.folder(for: id))
