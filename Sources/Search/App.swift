@@ -875,13 +875,17 @@ struct ContentView: View {
 
     /// What the side panel takes from the page: its width, and the card's
     /// gap before it with the page as a card, or its hairline edge to edge.
+    /// Folded away, the panel goes edge to edge with the page.
     private var panelRoom: CGFloat {
-        panelUp ? panelWidth + (cards ? Metrics.cardGap : 1) : 0
+        panelUp ? panelWidth + (panelCard ? Metrics.cardGap : 1) : 0
     }
+
+    /// The side panel as a card: as the page is.
+    private var panelCard: Bool { cards && !edgeToEdge }
 
     private var sidePanel: some View {
         SidePanelBeside(browser: browser, prefs: browser.prefs, onLeft: sideOnRight,
-                        card: cards, width: panelWidth, onDrag: { [edges] in edges.panel = $0 })
+                        card: panelCard, width: panelWidth, onDrag: { [edges] in edges.panel = $0 })
             .padding(.top, chrome.height)
             .padding(.bottom, farGap)
             .padding(sideOnRight ? .leading : .trailing, farGap)
