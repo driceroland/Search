@@ -358,7 +358,29 @@ final class Tab: ObservableObject, Identifiable {
     /// opened this tab can write into it while the address it asked for is
     /// still loading, and that address must not vouch for what it wrote.
     /// A tab with no view (asleep, restored) has only its address to say.
-    var restAddress: URL? { built == nil ? address : committed }
+    var restAddress: URL? {
+        if failure != nil, let failedAt { return failedAt }
+        return built == nil ? address : committed
+    }
+
+    /// Where the last load was going when it failed before arriving — a
+    /// refused connection, a host that isn't there, a broken certificate —
+    /// as WebKit's error names it (NSURLErrorFailingURLErrorKey), never as
+    /// the page says it. WebKit puts its own address back to the page still
+    /// underneath; the tab says, copies and reloads this one instead, as
+    /// Safari and Chrome do (idea 1080): an OAuth code sent to a localhost
+    /// port nothing listens on can be copied out. Only while the failure is
+    /// up over the page: anything else that moves the tab lets it go.
+    private(set) var failedAt: URL? {
+        didSet { steps() }
+    }
+
+    /// The failure that `Browser.fail` has just put up was a load to `url`.
+    func failed(at url: URL?) {
+        guard let url, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
+        failedAt = url
+        address = url
+    }
 
     private(set) var documentGeneration: UInt64 = 0
 
@@ -384,6 +406,11 @@ final class Tab: ObservableObject, Identifiable {
         // A link followed out of an article is a page, not an article: ⇧⌘R
         // reads it rather than reloading it, and the article's corner goes.
         reader = false
+        // Whatever failed before it, this page is the one on screen now.
+        if failedAt != nil {
+            failedAt = nil
+            if let url = built?.url, url.absoluteString != "about:blank" { address = url }
+        }
         // A page arrived after all: the address is its own again.
         if held != nil, let url = built?.url, url.absoluteString != "about:blank" {
             held = nil
@@ -413,7 +440,12 @@ final class Tab: ObservableObject, Identifiable {
     /// connection, a process that kept dying. Shown in place of the page
     /// rather than in a dialog.
     @Published var failure: String? {
-        didSet { if failure == nil { dead = false } }
+        didSet {
+            if failure == nil {
+                dead = false
+                if failedAt != nil { failedAt = nil }
+            }
+        }
     }
     /// How far down the page you are, nought to one. The tab's own pill fills
     /// with it. Kept apart from the rest of the tab (see Reading): it changes
@@ -922,7 +954,7 @@ final class Tab: ObservableObject, Identifiable {
 
     /// Back and Forward as this tab has them now.
     private func steps() {
-        let back = page != nil ? !trail.isEmpty : (built?.canGoBack ?? false) || behind != nil
+        let back = page != nil ? !trail.isEmpty : (built?.canGoBack ?? false) || behind != nil || (failedAt != nil && committed != nil)
         let forward = page != nil ? !ahead.isEmpty : built?.canGoForward ?? false
         if canGoBack != back { canGoBack = back }
         if canGoForward != forward { canGoForward = forward }
@@ -1059,6 +1091,14 @@ final class Tab: ObservableObject, Identifiable {
                     if self.held != nil {
                         if fresh == self.heldOver { return }
                         self.held = nil
+                    }
+                    // WebKit going back to the page underneath a failed load
+                    // is not a move: the tab keeps saying where it failed.
+                    // Anything else — a new load, the page's own pushState —
+                    // is, and the failed address goes.
+                    if self.failedAt != nil {
+                        if fresh == self.committed { return }
+                        self.failedAt = nil
                     }
                     // By site, port included: localhost:3000 to localhost:5173
                     // is another project, with another icon. Another path on
@@ -2033,6 +2073,13 @@ final class Tab: ObservableObject, Identifiable {
         // the reload.
         guard !wake() else { return }
         reader = false
+        // Try again where it failed, not the page underneath (idea 1080).
+        // The failure stays up until that load arrives or fails again.
+        if let failedAt, failure != nil, built != nil {
+            loadGeneration &+= 1
+            web.open(failedAt)
+            return
+        }
         // Try again on a page that kept crashing: its process is gone, so
         // the address, checked as recoverFromCrash checks it.
         if dead, let address {
@@ -2066,6 +2113,13 @@ final class Tab: ObservableObject, Identifiable {
             title = last.title
             adoptIcon()
             steps()
+            return
+        }
+        // Back from a load that failed: the page it left, still underneath,
+        // with its own address — as Safari's error page steps back to it.
+        if failedAt != nil, failure != nil, let there = committed {
+            failure = nil
+            address = there
             return
         }
         // At the first web page after one of Search's own: back to it.

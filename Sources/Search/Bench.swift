@@ -374,6 +374,14 @@ final class Bench {
                 answer(["given": given, "answered": PointerLock.shared.answered])
             }
 
+        case "copyaddress":
+            // Copy Address (⇧⌘C) on the tab in front, onto a pasteboard of
+            // the bench's own, never the Mac's; what it holds then.
+            let board = NSPasteboard(name: NSPasteboard.Name("search.bench.address"))
+            board.clearContents()
+            browser.copyAddress(to: board)
+            answer(["copied": board.string(forType: .string) ?? ""])
+
         case "tabs":
             // A private tab is nobody's business but yours: a test run has none
             // of yours, so there every tab is listed.
@@ -6403,6 +6411,8 @@ final class Bench {
             // The group it is in, by name, whether or not groups are on.
             "group": browser?.group(of: tab).flatMap { id in browser?.tabGroups.first { $0.id == id }?.name } ?? "",
             "loading": tab.loading,
+            // The failure up over the page instead of it, "" for none.
+            "failure": tab.failure ?? "",
             "hollow": tab.hollow,
             "view": tab.built?.url?.absoluteString ?? "",
             "bench": tab.bench,

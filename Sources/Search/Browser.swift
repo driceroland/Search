@@ -2737,10 +2737,10 @@ final class Browser: NSObject, ObservableObject {
     let fetches = Shared.fetches
 
     /// ⌘⇧C. The address, in the clipboard, and a line that says as much.
-    func copyAddress() {
+    func copyAddress(to board: NSPasteboard = .general) {
         guard let url = active?.address else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        board.clearContents()
+        board.setString(url.absoluteString, forType: .string)
         announce("Address copied")
     }
 
@@ -9662,7 +9662,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         withError error: Error
     ) {
         tab(for: webView)?.extensionReturn.finished(navigation)
-        fail(webView, error)
+        fail(webView, error, provisional: true)
     }
 
     /// A page asking to close itself.
@@ -9813,7 +9813,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         }
     }
 
-    private func fail(_ webView: WKWebView, _ error: Error) {
+    private func fail(_ webView: WKWebView, _ error: Error, provisional: Bool = false) {
         let tab = tab(for: webView) ?? littleTab(for: webView)
         tab?.uncover()
         let nsError = error as NSError
@@ -9832,6 +9832,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // as in Safari, while the video plays. Answered as a failure, it
         // covered the playing video with "The page didn't load".
         guard !(nsError.domain == "WebKitErrorDomain" && code == 204) else { return }
+        // A page that never arrived: the tab says where it was going, as
+        // WebKit's error has it (idea 1080), before the failure goes up.
+        if provisional { tab?.failed(at: nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL) }
         tab?.failure = message(for: code)
     }
 
