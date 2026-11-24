@@ -1270,6 +1270,9 @@ final class Tab: ObservableObject, Identifiable {
         // Every frame, in the page's own world and ahead of its scripts: a
         // live player's speed nudges go through it (see LiveRate.swift).
         add(LiveRate.script, .atDocumentStart, mainFrameOnly: false, in: .page)
+        // Pages that wait for their fonts don't wait for the whole page too
+        // (see EarlyFonts.swift).
+        add(EarlyFonts.script, .atDocumentStart, mainFrameOnly: false, in: .page)
         // Every frame, in the page's own world: a page an extension lists
         // reaches it as chrome.runtime (see ExtensionExternal.swift).
         if let external = ExtensionExternal.script {
