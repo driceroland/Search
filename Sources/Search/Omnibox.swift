@@ -22,6 +22,7 @@ final class FieldState: ObservableObject {
 struct Omnibox: View {
     @Environment(\.colorScheme) private var scheme
     @ObservedObject var browser: Browser
+    @ObservedObject private var prefs = Shared.prefs
     @ObservedObject private var typing: FieldState
     /// Raised over a page by ⌘L, rather than standing on an empty tab.
     let over: Bool
@@ -95,7 +96,7 @@ struct Omnibox: View {
                         .fill(scheme == .dark ? Color.black.opacity(0.28) : Color.white.opacity(0.4))
                         .ignoresSafeArea(.all, edges: fitted ? [] : .all)
                         .onTapGesture { browser.dismiss() }
-                        .transition(.opacity)
+                        .transition(prefs.animatesField ? .opacity : .identity)
                 }
 
                 field
@@ -118,14 +119,14 @@ struct Omnibox: View {
                 // measuring.
                 .padding(.bottom, top == nil ? 60 : 0)
                 .padding(.top, top ?? 0)
-                .transition(.scale(scale: 0.97).combined(with: .opacity))
+                .transition(prefs.animatesField ? .scale(scale: 0.97).combined(with: .opacity) : .identity)
                 // The list's arrival and its leaving are animated from here,
                 // briefly: nothing that changes the suggestions does it inside
                 // an animation of its own. Its rows follow what was typed or
                 // pasted at once — sliding into place on a spring between
                 // keystrokes, they trailed behind the field.
-                .animation(Motion.quick, value: browser.offers.isEmpty && browser.siteOffer == nil && browser.switcherNote == nil)
-                .animation(Motion.settle, value: refused)
+                .animation(prefs.animatesField ? Motion.quick : nil, value: browser.offers.isEmpty && browser.siteOffer == nil && browser.switcherNote == nil)
+                .animation(prefs.animatesField ? Motion.settle : nil, value: refused)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -229,7 +230,7 @@ struct Omnibox: View {
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         )
         .shadow(color: Palette.lift(light: 0.04, dark: 0.07), radius: 20, y: 6)
-        .transition(.scale(scale: 0.98, anchor: .top).combined(with: .opacity))
+        .transition(prefs.animatesField ? .scale(scale: 0.98, anchor: .top).combined(with: .opacity) : .identity)
     }
 
     /// One row of a list of places, here and under the field in the tab.

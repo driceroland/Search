@@ -110,7 +110,7 @@ struct SideBar: View {
     /// What sits above the pins: the lights' band, and with icons only the
     /// three doors under it.
     private var top: CGFloat {
-        !icons ? Metrics.strip : !strip ? lightsBand + (prefs.helmDoors > 0 ? 26 + 8 + 8 : 0) : lightsBand + (stripUp ? stackedDoors : 0)
+        !icons ? Metrics.strip : !strip ? lightsBand + (prefs.helmDoors > 0 ? 26 + 16 : 0) : lightsBand + (stripUp ? stackedDoors : 0)
     }
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
 
@@ -266,8 +266,7 @@ struct SideBar: View {
                         SmartNav(browser: browser)
                             .modifier(IconNavPeek(browser: browser))
                             .frame(maxWidth: .infinity)
-                            .padding(.top, 8)
-                            .padding(.bottom, 8)
+                            .padding(.bottom, 16)
                     }
                 } else {
                     HStack(spacing: 0) {
@@ -809,7 +808,6 @@ struct SideBar: View {
                         }
                     }
                 }
-                .modifier(PinBox(on: icons, fill: greys.tile))
                 .padding(.bottom, icons ? 22 : 18)
             }
             if showsMarks {
@@ -966,7 +964,7 @@ struct SideBar: View {
     /// frame late, and for one frame the whole column would drag the window.
     private var rowsEnd: CGFloat {
         let pins = browser.squarePins.count
-        let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + (icons ? 30 : 18)
+        let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + (icons ? 22 : 18)
         return top + pinBlock + marksHeight + rowsHeight
     }
 
@@ -1176,7 +1174,6 @@ struct SideBar: View {
         } }
         .coordinateSpace(name: "pins")
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.grid = $0 }
-        .modifier(PinBox(on: icons && !tabs.isEmpty, fill: greys.tile))
     }
 
     // MARK: - the rows
@@ -1866,27 +1863,6 @@ private struct SideFoot: View {
 /// can't take them along: folded with ⌘S and brought back, the squares stood
 /// in place while the column came in beneath them. A dozen squares need no
 /// laziness.
-private struct PinBox: ViewModifier {
-    let on: Bool
-    let fill: Color
-
-    func body(content: Content) -> some View {
-        if on {
-            content
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background {
-                    RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
-                        .fill(fill)
-                        .frame(width: Metrics.iconTile + 16)
-                        .allowsHitTesting(false)
-                }
-        } else {
-            content
-        }
-    }
-}
-
 private struct PinGrid: Layout {
     /// Each square's place, worked out by the column (see pinCells).
     let cells: [CGRect]
@@ -2472,23 +2448,29 @@ struct KeepLine: View {
     let act: () -> Void
 
     @State private var hovering = false
+    @State private var clearHover = false
 
     var body: some View {
         HStack(spacing: compact ? 4 : 6) {
-            Rectangle()
-                .fill(Palette.hairline)
-                .frame(height: 1 / (NSScreen.main?.backingScaleFactor ?? 2))
+            if !(compact && clears && hovering) {
+                Rectangle()
+                    .fill(Palette.hairline)
+                    .frame(height: 1 / (NSScreen.main?.backingScaleFactor ?? 2))
+            }
             if clears && hovering {
                 Button(action: act) {
                     HStack(spacing: 3) {
                         Image(systemName: "trash")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: compact ? 11 : 10, weight: .medium))
                     }
-                    .foregroundStyle(Palette.muted)
+                    .foregroundStyle(clearHover ? Palette.ink : Palette.muted)
+                    .frame(maxWidth: compact ? .infinity : nil)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .onHover { clearHover = $0 }
                 .shortcutHelp { "Close the tabs under the line. Pins and groups stay; \($0.display("file.reopen") ?? "Reopen Closed Tab") brings them all back." }
+                .accessibilityLabel("Clear")
                 .transition(.opacity)
             }
         }

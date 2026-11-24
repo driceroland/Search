@@ -125,7 +125,7 @@ final class Lights: NSObject {
     }
 
     /// The close button's centre from the top, with the three stacked.
-    static let stackTop: CGFloat = 20
+    static let stackTop: CGFloat = 24
 
     @objc private func place() {
         // Full screen keeps its title bar in a window of its own, laid out by

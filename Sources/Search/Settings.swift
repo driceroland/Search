@@ -844,6 +844,7 @@ struct SettingsPanel: View {
         case "pins.fit": Switch(on: $prefs.fitsPins)
         case "folders.arrowHover": Switch(on: $prefs.foldersArrowOnHover)
         case "icons.peek": Switch(on: $prefs.iconPeeks)
+        case "field.animates": Switch(on: $prefs.animatesField)
         case "panels.clear": Switch(on: $prefs.clearPanels)
         case "empty.clear": Switch(on: $prefs.clearEmpty)
         case "pins.folders": Switch(on: $prefs.pinFolders)

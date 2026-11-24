@@ -433,6 +433,7 @@ final class Preferences: ObservableObject {
     @Published var fitsPins: Bool { didSet { store.set(fitsPins, forKey: "pins.fit") } }
     @Published var foldersArrowOnHover: Bool { didSet { store.set(foldersArrowOnHover, forKey: "folders.arrowHover") } }
     @Published var iconPeeks: Bool { didSet { store.set(iconPeeks, forKey: "icons.peek") } }
+    @Published var animatesField: Bool { didSet { store.set(animatesField, forKey: "field.animates") } }
     /// With no tab open, the main part is left clear: the window's glass shows.
     @Published var clearEmpty: Bool { didSet { store.set(clearEmpty, forKey: "empty.clear") } }
     @Published var clearPanels: Bool { didSet { store.set(clearPanels, forKey: "panels.clear") } }
@@ -1308,6 +1309,7 @@ final class Preferences: ObservableObject {
         fitsPins = store.bool(forKey: "pins.fit")
         foldersArrowOnHover = store.object(forKey: "folders.arrowHover") as? Bool ?? false
         iconPeeks = store.object(forKey: "icons.peek") as? Bool ?? true
+        animatesField = store.object(forKey: "field.animates") as? Bool ?? true
         clearPanels = store.bool(forKey: "panels.clear")
         clearEmpty = store.bool(forKey: "empty.clear")
         hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")

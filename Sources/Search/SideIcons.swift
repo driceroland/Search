@@ -24,7 +24,7 @@ extension Metrics {
     static let iconTile: CGFloat = 32
     /// The band the three traffic lights take, stacked, at its top
     /// (Lights.stackTop and their own spacing, and the same air under them).
-    static let iconLights: CGFloat = 86
+    static let iconLights: CGFloat = 92
 }
 
 /// What the tiles say, for the bench (`icons`): where each one is, its
@@ -365,6 +365,8 @@ final class IconLabel: ObservableObject {
         case nav
     }
 
+    static let grow = Animation.easeOut(duration: 0.16)
+
     struct Shown {
         let id: AnyHashable
         let browser: ObjectIdentifier
@@ -397,14 +399,14 @@ final class IconLabel: ObservableObject {
     }
 
     private func show(id: AnyHashable, browser: Browser, frame: CGRect, kind: Kind) {
-        withAnimation(Motion.quick) { shown = Shown(id: id, browser: ObjectIdentifier(browser), frame: frame, kind: kind) }
+        withAnimation(IconLabel.grow) { shown = Shown(id: id, browser: ObjectIdentifier(browser), frame: frame, kind: kind) }
     }
 
     private func leave(after delay: TimeInterval) {
         leaving?.cancel()
         let next = DispatchWorkItem { [weak self] in
             guard let self, !self.overPill else { return }
-            withAnimation(Motion.quick) { self.shown = nil }
+            withAnimation(IconLabel.grow) { self.shown = nil }
         }
         leaving = next
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: next)
@@ -441,10 +443,12 @@ struct IconLabelLayer: View {
             if let shown = label.shown, shown.browser == ObjectIdentifier(browser) {
                 let origin = geo.frame(in: .global).origin
                 pill(shown)
+                    .id(shown.id)
                     .fixedSize()
                     .frame(width: geo.size.width, height: geo.size.height, alignment: onRight ? .topTrailing : .topLeading)
                     .offset(x: onRight ? shown.frame.maxX - origin.x - geo.size.width : shown.frame.minX - origin.x, y: shown.frame.minY - origin.y)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: onRight ? .trailing : .leading)))
+                    .transaction { $0.animation = nil }
+                    .transition(.modifier(active: LabelGrow(active: true, onRight: onRight), identity: LabelGrow(active: false, onRight: onRight)))
             }
         }
         .onDisappear { label.clear() }
@@ -495,5 +499,16 @@ struct IconLabelLayer: View {
             .background(ground.clipShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)))
             .shadow(color: .black.opacity(0.22), radius: 10, y: 3)
         }
+    }
+}
+
+private struct LabelGrow: ViewModifier {
+    let active: Bool
+    let onRight: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(x: active ? 0.6 : 1, y: 1, anchor: onRight ? .trailing : .leading)
+            .opacity(active ? 0 : 1)
     }
 }

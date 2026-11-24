@@ -326,6 +326,9 @@ enum SettingsIndex {
               title: "Reduce animations", detail: "Switching tabs, spaces and panels happens at once, without sliding or fading",
               more: "For Search alone, whatever Reduce Motion in System Settings says. The tab ⌘1–⌘9 picks is lit at once, and the page shows at once.",
               keys: [Motion.instantKey], words: ["animations", "motion", "instant", "faster", "reduce motion", "transitions"]),
+        .init(id: "field.animates", group: "motion", icon: "wand.and.rays",
+              title: "Animate the address field", detail: "Off, the address field and its list appear and go at once",
+              keys: ["field.animates"], words: ["animation", "fast", "instant", "omnibox", "address", "field", "speed"]),
 
         // Tabs
         .init(id: "tabs.newPlace", group: "newtabs", icon: "arrow.right.to.line",
