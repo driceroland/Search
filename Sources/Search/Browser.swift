@@ -244,9 +244,10 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⇧⌘B. The page you are on, at the end of the list, and the card off
     /// the button to name it and file it — or the card for it, if it was
-    /// kept already. Without the button on screen (the tabs folded away)
+    /// kept already. Without the button on screen (the tabs folded away,
+    /// or the button taken out in Settings › Buttons under the column)
     /// there is nothing to hang the card from, and a word says what
-    /// happened instead.
+    /// happened instead (#1496).
     func bookmarkCurrent() {
         guard let tab = active, let url = tab.address else { return }
         let kept = bookmarks.bookmark(for: url)
@@ -255,7 +256,7 @@ final class Browser: NSObject, ObservableObject {
         // top level every time. One kept before stays where it is.
         let folder = kept == nil ? bookmarks.lastFolder : nil
         if let folder { bookmarks.move(id, into: folder) }
-        guard !folded else {
+        guard !folded, !prefs.hidesBookmarksDoor else {
             let name = folder.flatMap { bookmarks.bookmark($0)?.title }
             announce(kept == nil ? name.map { "Bookmarked in \($0)" } ?? "Bookmarked" : "Already a bookmark")
             return
