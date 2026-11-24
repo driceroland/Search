@@ -30,7 +30,7 @@ struct PasswordsPanel: View {
                                 : "Nothing matches.")
                     }
                 } else {
-                    ScrollView(showsIndicators: false) {
+                    ScrollView {
                         Card {
                             ForEach(Array(browser.shownSites.enumerated()), id: \.element.host) { index, site in
                                 if index > 0 { Rule() }

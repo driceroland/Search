@@ -319,7 +319,7 @@ struct SettingsPanel: View {
             .frame(maxWidth: .infinity)
 
             ScrollViewReader { reader in
-                ScrollView(showsIndicators: false) {
+                ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         if searching { results } else { section(page) }
                     }

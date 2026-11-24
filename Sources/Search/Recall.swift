@@ -63,7 +63,7 @@ struct HistoryPanel: View {
                     // Lazy: only the lines in view are made. Two thousand of
                     // them, each with its icon, took the panel a third of a
                     // second to open, and scrolling redrew them all.
-                    ScrollView(showsIndicators: false) {
+                    ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(lines) { line in
                                 switch line.kind {
@@ -404,7 +404,7 @@ struct DownloadsPanel: View {
         private static var space: String { "downloads.list" }
 
         var body: some View {
-            ScrollView(showsIndicators: false) {
+            ScrollView {
                 content()
                     // Read where it is rather than sent up as a preference:
                     // one from inside the scroll never came out of it here.
