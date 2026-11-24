@@ -5050,6 +5050,80 @@ final class Bench {
                 window.contentView = nil
             }
 
+        case "picked":
+            // Tabs picked in the column moved together (MovePicked.swift,
+            // idea 1092): into a pin folder or a group by the tab menu
+            // ("via": "menu") or by a drag of `id` let go there ("via":
+            // "drag"), and ⌘Z's undo of it. Test runs only.
+            guard Store.testing else { answer(["error": "picked only works on a --test run"]); return }
+            func find(_ key: String) -> Tab? {
+                guard let ref = (request[key] as? String)?.lowercased(), !ref.isEmpty else { return nil }
+                return browser.tabs.first { $0.id.uuidString.lowercased().hasPrefix(ref) }
+            }
+            let named = request["name"] as? String ?? ""
+            let drag = request["via"] as? String == "drag"
+            switch request["action"] as? String ?? "state" {
+            case "folder":
+                let into: UUID?
+                if named == "none" { into = nil }
+                else if let folder = browser.pinFolders.first(where: { $0.name == named }) { into = folder.id }
+                else { answer(["error": "no folder “\(named)”"]); return }
+                if drag {
+                    guard let tab = find("id") else { answer(["error": "a drag needs id"]); return }
+                    browser.movePin(tab, to: PinTree.Place(folder: into, anchor: find("anchor")?.id,
+                                                           after: request["after"] as? Bool ?? false))
+                } else {
+                    browser.movePins(browser.pickedTabs, into: into)
+                }
+            case "newFolder":
+                // New Folder with N Pins.
+                let picked = browser.pickedTabs
+                guard let first = picked.first else { answer(["error": "nothing picked"]); return }
+                browser.undoableMove {
+                    if let made = browser.newPinFolder(named: named.isEmpty ? "New Folder" : named, holding: first, rename: false) {
+                        browser.movePins(picked, into: made)
+                    }
+                }
+            case "group":
+                if drag {
+                    guard let tab = find("id"), let group = browser.tabGroups.first(where: { $0.name == named }) else {
+                        answer(["error": "a drag needs id and a group's name"]); return
+                    }
+                    browser.move(tab, toGroup: GroupDropTarget(group: group.id, member: find("member")?.id,
+                                                               after: request["after"] as? Bool ?? false))
+                } else if request["new"] as? Bool == true {
+                    guard let id = browser.addTabGroup(containing: browser.pickedTabs) else { answer(["error": "nothing picked"]); return }
+                    if !named.isEmpty { browser.renameTabGroup(id, to: named) }
+                    browser.editingGroupID = nil
+                } else if named == "none" {
+                    browser.move(browser.pickedTabs, toGroup: nil)
+                } else if let group = browser.tabGroups.first(where: { $0.name == named }) {
+                    browser.move(browser.pickedTabs, toGroup: group.id)
+                } else {
+                    answer(["error": "no group “\(named)”"]); return
+                }
+            case "undo":
+                browser.undoMove()
+            case "state":
+                break
+            default:
+                answer(["error": "picked: state, folder, newFolder, group or undo"]); return
+            }
+            let folders = browser.pinFolders, groups = browser.tabGroups
+            answer([
+                "row": browser.tabs.map { Bench.short($0) },
+                "folderOf": Dictionary(browser.tabs.filter { $0.pin != nil }.map {
+                    (Bench.short($0), $0.pinFolder.flatMap { id in folders.first { $0.id == id }?.name } ?? "")
+                }, uniquingKeysWith: { a, _ in a }),
+                "groupOf": Dictionary(browser.tabs.filter { $0.pin == nil }.map {
+                    (Bench.short($0), $0.groupID.flatMap { id in groups.first { $0.id == id }?.name } ?? "")
+                }, uniquingKeysWith: { a, _ in a }),
+                "groups": groups.map(\.name),
+                "folders": folders.map(\.name),
+                "selected": browser.pickedTabs.map { Bench.short($0) },
+                "canUndo": browser.canUndoMove,
+            ])
+
         case "pinfolder":
             // Folders in pinned rows (PinFolders.swift), as the setting,
             // the menus and a drag make and change them, and the rows read

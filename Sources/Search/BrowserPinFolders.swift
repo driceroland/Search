@@ -179,29 +179,15 @@ extension Browser {
     }
 
     /// A pinned row into a folder (nil: the top), beside `anchor`, or at the
-    /// end of that folder's pins.
+    /// end of that folder's pins (see movePins).
     func movePin(_ tab: Tab, into folder: UUID?, anchor: Tab.ID? = nil, after: Bool = false) {
-        guard takesFolder(tab), let here = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-        // Never into a live folder: what it holds is its feed's.
-        let folder = folder.flatMap { id in pinFolders.contains { $0.id == id && !$0.isLive } ? id : nil }
-        objectWillChange.send()
-        tab.pinFolder = folder
-        var row = tabs
-        row.remove(at: here)
-        if let anchor, anchor != tab.id, let at = row.firstIndex(where: { $0.id == anchor }) {
-            row.insert(tab, at: after ? at + 1 : at)
-        } else {
-            let end = (row.lastIndex { $0.pin != nil && $0.listed && !$0.shy }).map { $0 + 1 }
-                ?? row.firstIndex { $0.pin == nil || $0.shy } ?? row.count
-            row.insert(tab, at: end)
-        }
-        rearrangeTabs(row)
-        arrangePinFolders()
-        writeSession(now: true)
+        movePins([tab], into: folder, anchor: anchor, after: after)
     }
 
     /// A pin let go at a place the column worked out (PinTree.place).
+    /// Carried with the other rows picked with it (see carried), they all
+    /// go, in their order (idea 1092).
     func movePin(_ tab: Tab, to place: PinTree.Place) {
-        movePin(tab, into: place.folder, anchor: place.anchor, after: place.after)
+        movePins(carried(with: tab), into: place.folder, anchor: place.anchor, after: place.after)
     }
 }

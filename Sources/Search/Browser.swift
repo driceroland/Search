@@ -5701,6 +5701,7 @@ final class Browser: NSObject, ObservableObject {
         // bulk close's other tabs still to go.
         if let id = ghosts.last?.id {
             Browser.lastClose = LastClose(browser: self, ghost: id)
+            Browser.lastMove = nil
             DispatchQueue.main.async { [weak self] in
                 guard let self, Browser.lastClose?.ghost == id else { return }
                 Browser.lastClose?.scene = self.closeScene
@@ -6173,7 +6174,12 @@ final class Browser: NSObject, ObservableObject {
 
     /// Insert relative to a visible member, after removing the carried item.
     /// Assign the completed row once: tabs' normalization must not see a half move.
+    /// One step for ⌘Z, the tabs picked with it and all (see undoableMove).
     func move(_ tab: Tab, toGroup target: GroupDropTarget, detaching: Bool = false) {
+        undoableMove { carry(tab, toGroup: target, detaching: detaching) }
+    }
+
+    private func carry(_ tab: Tab, toGroup target: GroupDropTarget, detaching: Bool) {
         guard tabs.contains(where: { $0 === tab }),
               let groupIndex = tabGroups.firstIndex(where: { $0.id == target.group }) else { return }
         let moving = detaching ? [tab] : carried(with: tab)
@@ -6213,6 +6219,10 @@ final class Browser: NSObject, ObservableObject {
     /// goes too, as into a group: the tabs picked with it, a pair whole. A
     /// group left empty goes, as with Remove from Group.
     func move(_ tab: Tab, outOfGroupBefore loose: Tab.ID?) {
+        undoableMove { carry(tab, outOfGroupBefore: loose) }
+    }
+
+    private func carry(_ tab: Tab, outOfGroupBefore loose: Tab.ID?) {
         guard prefs.usesTabGroups, tabs.contains(where: { $0 === tab }) else { return }
         let moving = carried(with: tab)
         guard moving.allSatisfy({ $0.pin == nil && !$0.shy && !$0.bench }),

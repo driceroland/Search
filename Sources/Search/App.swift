@@ -1441,6 +1441,7 @@ struct ContentView: View {
                 // close a click on a tab's cross makes, on the way up, is.
                 guard let window, event.window === window else { return event }
                 Browser.lastClose = nil
+                Browser.lastMove = nil
                 // A click on the tab switcher, in this window only (see
                 // Browser.clickTabSwitcher), turned into the top-left
                 // coordinates SwiftUI's frames are in.
@@ -1553,7 +1554,7 @@ struct ContentView: View {
     /// acts on the key: ⌘W's own close is then the last.
     private static func keyed(_ event: NSEvent) {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if flags != .command || event.shortcutCharacters != "z" { Browser.lastClose = nil }
+        if flags != .command || event.shortcutCharacters != "z" { Browser.lastClose = nil; Browser.lastMove = nil }
     }
 
     /// Each browser's key monitor. Kept here rather than in the view, so
@@ -2142,9 +2143,16 @@ struct ContentView: View {
             // typed there to undo. Only once the page has left the key
             // unused (pageFirst): a document or a drawing keeps its own
             // undo. Not in a panel or another window.
-            guard browser.prefs.undoReopensTab, let window, event.window === window,
-                  browser.canUndoClose else { return false }
-            browser.undoClose()
+            // The same for a move of tabs into a folder or a group, or out
+            // of one (Browser.lastMove): all of them back in one step.
+            guard browser.prefs.undoReopensTab, let window, event.window === window else { return false }
+            if browser.canUndoMove {
+                browser.undoMove()
+            } else if browser.canUndoClose {
+                browser.undoClose()
+            } else {
+                return false
+            }
         // ⌘+ arrives as "=" or "+" depending on the keyboard; both mean bigger.
         case "=", "+":
             browser.zoom(by: 1.1)
