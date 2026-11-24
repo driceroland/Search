@@ -329,6 +329,34 @@ struct SettingsPanel: View {
                     .frame(maxWidth: asTab ? SettingsPanel.column : .infinity)
                     .frame(maxWidth: .infinity)
                 }
+                .overlayPreferenceValue(SettingsHoverHelp.self) { help in
+                    if let help {
+                        GeometryReader { geometry in
+                            let row = geometry[help.bounds]
+                            let height = geometry.size.height
+                            if row.maxY > 0, row.minY < height {
+                                let below = row.midY < height / 2
+                                Text(help.text)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Palette.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Palette.ground, in: RoundedRectangle(cornerRadius: 8))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.hairline))
+                                    .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
+                                    .frame(width: min(360, max(0, row.width - 32)), alignment: .leading)
+                                    .padding(.leading, row.minX + 16)
+                                    .padding(below ? .top : .bottom,
+                                             below ? min(row.maxY, height / 2) + 4
+                                                   : height - max(row.minY, height / 2) + 4)
+                                    .frame(maxHeight: .infinity, alignment: below ? .topLeading : .bottomLeading)
+                            }
+                        }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    }
+                }
                 .onAppear { if let lit { reader.scrollTo(lit, anchor: .center) } }
             }
             // A page of its own opens at its top. One scroll view kept for
@@ -1043,6 +1071,21 @@ struct GroupBlock<Content: View>: View {
     }
 }
 
+/// Draw hover help over the scroll view so the cards and their clipping
+/// do not cover it or interrupt interaction with the controls.
+private struct SettingsHoverHelp: PreferenceKey {
+    struct Help {
+        let text: String
+        let bounds: Anchor<CGRect>
+    }
+
+    static var defaultValue: Help? { nil }
+
+    static func reduce(value: inout Help?, nextValue: () -> Help?) {
+        if let help = nextValue() { value = help }
+    }
+}
+
 /// A setting's label, current value or status where needed, and its control.
 struct SettingRow<Control: View>: View {
     var icon: String? = nil
@@ -1052,6 +1095,9 @@ struct SettingRow<Control: View>: View {
     var wide = false
     var lit = false
     @ViewBuilder let control: () -> Control
+
+    @State private var hovering = false
+    @State private var showsHelp = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1084,7 +1130,21 @@ struct SettingRow<Control: View>: View {
         .frame(minHeight: 46)
         .background(lit ? Palette.hover : .clear)
         .contentShape(Rectangle())
-        .help(more ?? "")
+        .onHover { inside in
+            hovering = inside && more != nil
+            if !hovering { showsHelp = false }
+        }
+        .task(id: hovering) {
+            guard hovering else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled, hovering else { return }
+            showsHelp = true
+        }
+        .anchorPreference(key: SettingsHoverHelp.self, value: .bounds) { bounds in
+            guard showsHelp, let more else { return nil }
+            return .init(text: more, bounds: bounds)
+        }
+        .accessibilityHint(more ?? "")
     }
 }
 
