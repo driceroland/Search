@@ -162,7 +162,9 @@ PLIST
   fi
   codesign --verify --strict "$BUNDLE"
   ZIP="$DEST/$PRODUCT-$ARCH-$PVERSION.zip"
-  ditto -c -k --keepParent "$BUNDLE" "$ZIP"
+  # No resource forks, attributes or ACLs: Search refuses a package with
+  # any hidden entry, AppleDouble "._" files included.
+  ditto -c -k --norsrc --noextattr --noacl --keepParent "$BUNDLE" "$ZIP"
   cp "$META" "$DEST/$PRODUCT.entry.json"
   plutil -remove principal "$DEST/$PRODUCT.entry.json" 2>/dev/null || true
   plutil -insert file -string "$(basename "$ZIP")" "$DEST/$PRODUCT.entry.json"

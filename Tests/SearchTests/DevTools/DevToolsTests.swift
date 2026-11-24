@@ -94,6 +94,22 @@ final class DevToolsTests: XCTestCase {
         try await refused(offer(["api": SearchDevToolsAPI.version - 1]), "Update the package")
         // An executable that isn't the one the feed lists.
         try await refused(offer(["binary": String(repeating: "a", count: 64)]), "isn't the one the feed lists")
+        // A hidden entry anywhere in the ZIP, AppleDouble "._" files
+        // included, even with the hash and size the feed lists.
+        for hidden in ["DevToolsLite.bundle/Contents/.extra", "DevToolsLite.bundle/Contents/MacOS/._DevToolsLite", ".DS_Store"] {
+            let folder = scratch.appendingPathComponent("hidden-\(UUID().uuidString)")
+            try DevToolsPackages.unzip(zip, into: folder)
+            try Data("x".utf8).write(to: folder.appendingPathComponent(hidden))
+            let packed = scratch.appendingPathComponent("hidden-\(UUID().uuidString).zip")
+            let ditto = Process()
+            ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            ditto.arguments = ["-c", "-k", "--norsrc", "--noextattr", folder.path, packed.path]
+            try ditto.run()
+            ditto.waitUntilExit()
+            let size = try XCTUnwrap(packed.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+            try await refused(offer(["url": packed.absoluteString, "sha256": try DevToolsPackages.digest(packed), "size": size]),
+                              "laid out")
+        }
 
         // Release checks: an ad-hoc signature isn't Office Commun's
         // Developer ID, for any team.

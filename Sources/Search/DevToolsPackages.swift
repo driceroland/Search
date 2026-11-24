@@ -448,14 +448,17 @@ final class DevToolsPackages: ObservableObject {
         let out = staging.appendingPathComponent("out", isDirectory: true)
         try await Task.detached(priority: .utility) {
             try Self.unzip(zip, into: out)
-            let found = try files.contentsOfDirectory(atPath: out.path).filter { !$0.hasPrefix(".") }
-            guard found.count == 1, let name = found.first, name.hasSuffix(".bundle") else { throw Refused.layout }
-            // Every file inside is a plain file or folder: no link that could
-            // lead out of the package.
-            if let walk = files.enumerator(at: out, includingPropertiesForKeys: [.isSymbolicLinkKey]) {
-                for case let file as URL in walk.allObjects where (try? file.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
-                    throw Refused.layout
-                }
+            let found = try files.contentsOfDirectory(atPath: out.path)
+            guard found.count == 1, let name = found.first, name.hasSuffix(".bundle"), !name.hasPrefix(".") else { throw Refused.layout }
+            // Every entry inside is a plain file or folder with a name that
+            // isn't hidden: no link that could lead out of the package, and
+            // nothing tucked away (the ZIP is unpacked without turning
+            // AppleDouble "._" entries back into attributes, so they show
+            // here too, and build.sh packs none).
+            guard let walk = files.enumerator(at: out, includingPropertiesForKeys: [.isSymbolicLinkKey]) else { throw Refused.layout }
+            for case let file as URL in walk.allObjects {
+                if file.lastPathComponent.hasPrefix(".") { throw Refused.layout }
+                if (try? file.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink != false { throw Refused.layout }
             }
             try Self.verify(out.appendingPathComponent(name, isDirectory: true), offer: offer, release: release)
         }.value
@@ -513,10 +516,26 @@ final class DevToolsPackages: ObservableObject {
     /// ditto, as the updater unpacks: links come out as links, and are
     /// refused after.
     nonisolated static func unzip(_ zip: URL, into folder: URL) throws {
+        // Every entry's name read first: one that is hidden at any depth
+        // (AppleDouble "._" files, which ditto may turn into attributes or
+        // a resource fork, and __MACOSX included) refuses the package.
+        let list = Process()
+        list.executableURL = URL(fileURLWithPath: "/usr/bin/zipinfo")
+        list.arguments = ["-1", zip.path]
+        let names = Pipe()
+        list.standardOutput = names
+        list.standardError = FileHandle.nullDevice
+        try list.run()
+        let listed = names.fileHandleForReading.readDataToEndOfFile()
+        list.waitUntilExit()
+        guard list.terminationStatus == 0, let text = String(data: listed, encoding: .utf8) else { throw Refused.layout }
+        for entry in text.split(separator: "\n") {
+            if entry.split(separator: "/").contains(where: { $0.hasPrefix(".") || $0 == "__MACOSX" }) { throw Refused.layout }
+        }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let ditto = Process()
         ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        ditto.arguments = ["-x", "-k", zip.path, folder.path]
+        ditto.arguments = ["-x", "-k", "--norsrc", "--noextattr", "--noacl", zip.path, folder.path]
         ditto.standardOutput = FileHandle.nullDevice
         ditto.standardError = FileHandle.nullDevice
         try ditto.run()
