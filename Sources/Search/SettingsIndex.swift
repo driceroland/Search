@@ -304,6 +304,11 @@ enum SettingsIndex {
               more: "Folders keep their names. A bookmark you renamed to nothing already shows its icon alone.",
               keys: ["bookmarks.iconsOnly"], words: ["favorites bar", "bookmarks toolbar", "favicons", "compact", "icon only", "names", "titles"],
               parent: "bookmarks.bar"),
+        .init(id: "bookmarks.newTabOnly", group: "tablook", icon: "plus.square",
+              title: "Show the bookmarks bar only on new tabs", detail: "Hidden while a page is open, as Chrome and Edge can",
+              more: "The bar comes back as soon as the tab on screen is a new one.",
+              keys: ["bookmarks.newTabOnly"], words: ["favorites bar", "bookmarks toolbar", "new tab", "only", "hide", "chrome", "edge"],
+              parent: "bookmarks.bar"),
         .init(id: "motion.light", group: "motion", icon: "leaf",
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
@@ -803,7 +808,7 @@ enum SettingsIndex {
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
-        case "bookmarks.iconsOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
+        case "bookmarks.iconsOnly", "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several

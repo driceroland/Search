@@ -2317,6 +2317,7 @@ final class Bench {
             guard Store.testing else { answer(["error": "bar only works on a --test run — it would size your window"]); return }
             guard let window = browser.window else { answer(["error": "no window"]); return }
             if let on = request["iconsOnly"] as? Bool { browser.prefs.bookmarksIconsOnly = on }
+            if let on = request["newTabOnly"] as? Bool { browser.prefs.bookmarksNewTabOnly = on }
             if let width = request["width"] as? Double {
                 var frame = window.frame
                 frame.size.width = width
@@ -2366,7 +2367,15 @@ final class Bench {
                             "bare": roots.map { BookmarksBar.Item.bare($0, iconsOnly: iconsOnly) },
                             "hidden": hidden.map(\.label), "menu": lines(menu.items, 0),
                             "tabsBefore": before, "tabsAfter": browser.tabs.count,
-                            "active": browser.active?.address?.absoluteString ?? ""])
+                            "active": browser.active?.address?.absoluteString ?? "",
+                            // How far down the window the page on screen starts:
+                            // the bar's height more while the bar is up.
+                            "pageTop": browser.active?.built.flatMap { web -> Double? in
+                                guard web.window === window, let content = window.contentView else { return nil }
+                                let r = web.convert(web.bounds, to: nil)
+                                return Double(content.bounds.height - r.maxY)
+                            } ?? -1,
+                            "barForTab": browser.bookmarksBarForTab])
                 }
             }
 

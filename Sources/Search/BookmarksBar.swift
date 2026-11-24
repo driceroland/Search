@@ -1,5 +1,14 @@
 import SwiftUI
 
+extension Browser {
+    /// The bar above the page asked for, for the tab on screen: with
+    /// Settings › Show the bookmarks bar only on new tabs, only while that
+    /// tab is a new one (idea 1082).
+    var bookmarksBarForTab: Bool {
+        prefs.bookmarksBar && (!prefs.bookmarksNewTabOnly || (active?.isBlank ?? true))
+    }
+}
+
 // The bookmarks bar: the top of the bookmarks, in a thin row above the page,
 // as Chrome and Safari have one. A folder opens as a menu. What the row can't
 // hold goes into a » at its end, a menu of the rest, as in Chrome and Safari

@@ -816,7 +816,7 @@ struct ContentView: View {
     /// aren't folded away or under a video filling the screen, and it isn't
     /// in the column instead (SideBookmarks).
     private var barShown: Bool {
-        browser.prefs.bookmarksBar && !browser.prefs.sideBookmarks && !browser.bookmarks.isEmpty && !browser.folded
+        browser.bookmarksBarForTab && !browser.prefs.sideBookmarks && !browser.bookmarks.isEmpty && !browser.folded
             && fullscreenTab == nil
     }
 

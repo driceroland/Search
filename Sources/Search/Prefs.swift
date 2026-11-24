@@ -934,6 +934,12 @@ final class Preferences: ObservableObject {
     @Published var bookmarksInSidebar: Bool {
         didSet { store.set(bookmarksInSidebar, forKey: "bookmarks.side") }
     }
+    /// The bookmarks bar above the page only while the tab on screen is a
+    /// new one, as Chrome's and Edge's "Only on new tab" (idea 1082). Off
+    /// unless asked for.
+    @Published var bookmarksNewTabOnly: Bool {
+        didSet { store.set(bookmarksNewTabOnly, forKey: "bookmarks.newTabOnly") }
+    }
     /// Whether the bookmarks bar is in the column now: the bar shown, asked
     /// for there, and the tabs down a side. With the bar hidden it is hidden
     /// in the column too (Show Bookmarks Bar still says where it is); with
@@ -1490,6 +1496,7 @@ final class Preferences: ObservableObject {
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         bookmarksInSidebar = store.bool(forKey: "bookmarks.side")
         bookmarksIconsOnly = store.bool(forKey: "bookmarks.iconsOnly")
+        bookmarksNewTabOnly = store.bool(forKey: "bookmarks.newTabOnly")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
         downloadsOpening = store.string(forKey: "downloads.open").flatMap(DownloadsOpening.init(rawValue:)) ?? .tab
         let links = store.object(forKey: "links.show") as? Bool ?? true
@@ -1629,6 +1636,7 @@ final class Preferences: ObservableObject {
         take(\.bookmarksBar, store.bool(forKey: "bookmarks.bar"))
         take(\.bookmarksInSidebar, store.bool(forKey: "bookmarks.side"))
         take(\.bookmarksIconsOnly, store.bool(forKey: "bookmarks.iconsOnly"))
+        take(\.bookmarksNewTabOnly, store.bool(forKey: "bookmarks.newTabOnly"))
         take(\.alwaysShowsDownloads, store.bool(forKey: "downloads.button"))
     }
 
