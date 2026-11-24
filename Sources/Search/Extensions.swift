@@ -2514,11 +2514,39 @@ struct ExtensionSlot: View {
     /// The puzzle with the list; Settings can hide it, leaving the pinned
     /// extensions' buttons (idea 426).
     var puzzle = true
+    /// Whether this is the copy in sight. With Buttons at the top on, the
+    /// column draws its row of doors twice, up top and at the foot, and
+    /// hides the one not in use (see FetchDoor.live).
+    var live = true
 
     var body: some View {
         if #available(macOS 15.4, *) {
-            ExtensionButtons(browser: browser, extensions: .shared, edge: edge, room: room, puzzle: puzzle)
+            ExtensionButtons(browser: browser, extensions: .shared, edge: edge, room: room, puzzle: puzzle, live: live)
         }
+    }
+}
+
+/// Whether one copy of a window's puzzle has its list open. The window's
+/// flag (Extensions.menuOwner) says that its list is open; only the copy
+/// in sight holds it. Both copies of the doors' row were bound to the flag
+/// alone: both hung a popover, and the hidden one, closed by SwiftUI as it
+/// stood at no size, let go of the flag and closed the list the person had
+/// just opened (idea 1021).
+enum PuzzleList {
+    /// This copy's list is showing.
+    static func open(owner: ObjectIdentifier?, key: ObjectIdentifier, live: Bool) -> Bool {
+        live && owner == key
+    }
+    /// The flag after a press on this copy: only the copy in sight opens
+    /// or closes it.
+    static func pressed(owner: ObjectIdentifier?, key: ObjectIdentifier, live: Bool) -> ObjectIdentifier? {
+        guard live else { return owner }
+        return owner == key ? nil : key
+    }
+    /// The flag after this copy's popover closed on its own (a click
+    /// outside it): let go only if the list was this copy's to show.
+    static func closed(owner: ObjectIdentifier?, key: ObjectIdentifier, live: Bool) -> ObjectIdentifier? {
+        open(owner: owner, key: key, live: live) ? nil : owner
     }
 }
 
@@ -2529,6 +2557,7 @@ private struct ExtensionButtons: View {
     let edge: Edge
     var room: Int?
     var puzzle = true
+    var live = true
 
     var body: some View {
         if !extensions.installed.isEmpty {
@@ -2539,14 +2568,15 @@ private struct ExtensionButtons: View {
                         .contextMenu { ExtensionActions(id: button.id, name: button.name, browser: browser, extensions: extensions) }
                 }
                 let key = Extensions.menuKey(browser)
-                Door(icon: "puzzlepiece.extension", on: extensions.menuOwner == key, help: "Extensions", nudge: 1) {
-                    extensions.menuOwner = extensions.menuOwner == key ? nil : key
+                Door(icon: "puzzlepiece.extension", on: PuzzleList.open(owner: extensions.menuOwner, key: key, live: live),
+                     help: "Extensions", nudge: 1) {
+                    extensions.menuOwner = PuzzleList.pressed(owner: extensions.menuOwner, key: key, live: live)
                 }
                 .background(Anchor(id: Extensions.menuAnchor, browser: browser))
-                // This window's list only: closing, it lets go of the flag
-                // only if the flag is still its own.
-                .popover(isPresented: Binding(get: { extensions.menuOwner == key },
-                                              set: { if !$0, extensions.menuOwner == key { extensions.menuOwner = nil } }),
+                // This window's list, from the copy in sight only: closing,
+                // it lets go of the flag only if the list was its own.
+                .popover(isPresented: Binding(get: { PuzzleList.open(owner: extensions.menuOwner, key: key, live: live) },
+                                              set: { if !$0 { extensions.menuOwner = PuzzleList.closed(owner: extensions.menuOwner, key: key, live: live) } }),
                          hangingFrom: edge) {
                     ExtensionMenu(browser: browser, extensions: extensions)
                 }

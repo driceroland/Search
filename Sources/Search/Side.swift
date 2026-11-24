@@ -1710,7 +1710,7 @@ private struct SideFoot: View {
                 // An agent connected in this window: a click on it is Stop.
                 AgentStatus(browser: browser, style: .icon)
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
-                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0, puzzle: !prefs.hidesExtensionsDoor)
+                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0, puzzle: !prefs.hidesExtensionsDoor, live: live)
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
                 SpaceButtons(browser: browser, vertical: true)
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
@@ -1729,13 +1729,13 @@ private struct SideFoot: View {
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom, live: live)
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: .bottom) }
                 SpaceButtons(browser: browser)
-                ExtensionSlot(browser: browser, edge: .bottom, room: room, puzzle: !prefs.hidesExtensionsDoor)
+                ExtensionSlot(browser: browser, edge: .bottom, room: room, puzzle: !prefs.hidesExtensionsDoor, live: live)
             }
         } else {
             HStack(spacing: 2) {
                 if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
-                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room, puzzle: !prefs.hidesExtensionsDoor)
+                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room, puzzle: !prefs.hidesExtensionsDoor, live: live)
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
                 SpaceButtons(browser: browser, squeezes: true)
                 // Only while a download is running, and a moment after.
