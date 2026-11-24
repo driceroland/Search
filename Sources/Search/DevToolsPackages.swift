@@ -471,7 +471,12 @@ final class DevToolsPackages: ObservableObject {
         if scheme == "file", testing {
             try FileManager.default.copyItem(at: offer.url, to: file)
         } else {
-            guard scheme == "https" else { throw AIDownload.Failure("Not a secure address.") }
+            // Plain http only for a test run pointed at a feed of its own
+            // (Updater.overridden), as the feed itself; the package is still
+            // checked by hash and by the release signature rules.
+            guard scheme == "https" || (scheme == "http" && Updater.overridden) else {
+                throw AIDownload.Failure("Not a secure address.")
+            }
             let configuration = URLSessionConfiguration.ephemeral
             configuration.httpCookieStorage = nil
             configuration.urlCredentialStorage = nil

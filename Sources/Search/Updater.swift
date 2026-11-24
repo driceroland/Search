@@ -49,7 +49,7 @@ final class Updater: ObservableObject {
         #endif
     }()
 
-    private static var overridden: Bool {
+    static var overridden: Bool {
         Store.testing && ProcessInfo.processInfo.environment["SEARCH_FEED"] != nil
     }
 
@@ -359,9 +359,9 @@ final class Updater: ObservableObject {
         }
         // Developer tools packages for this Mac, when the feed lists any (see
         // DevToolsPackages): the list in Settings follows it.
-        let offers = DevToolsPackages.offers(from: json["devtools"]) { value in
-            link(value).flatMap { $0.scheme?.lowercased() == "https" ? $0 : nil }
-        }
+        // https on the feed's host, as the update's own links; plain http
+        // only for a test run handed SEARCH_FEED, as the feed itself.
+        let offers = DevToolsPackages.offers(from: json["devtools"]) { link($0) }
         await MainActor.run { DevToolsPackages.shared.offered = offers }
         return release
     }

@@ -4717,6 +4717,40 @@ final class Bench {
                 answer(worked ? ["saved": file.path] : ["error": "page wasn't exported"])
             }
 
+        case "devtools":
+            // Developer tools packages (DevToolsPackages) in a test run pointed
+            // at a feed of its own: `install`/`remove` an id, `pick` one,
+            // `open` a menu item of the picked one on the tab in front,
+            // `close` its tools there, `load` an installed one (its checks
+            // run again). Always what is offered, installed, loaded and why
+            // one failed, and whether the release checks apply.
+            guard Store.testing else { answer(["error": "devtools only works on a --test run"]); return }
+            let packages = DevToolsPackages.shared
+            let id = request["id"] as? String ?? ""
+            switch request["action"] as? String {
+            case "install": packages.install(id)
+            case "remove": packages.remove(id)
+            case "pick": packages.primaryID = id.isEmpty ? nil : id
+            case "load": _ = packages.plugin(id)
+            case "open": packages.open(request["item"] as? String ?? "", in: browser)
+            case "close":
+                if let web = browser.active?.built { packages.loaded.values.forEach { $0.close(webView: web) } }
+            default: break
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                let web = browser.active?.built
+                answer([
+                    "release": !DevToolsPackages.testing,
+                    "offered": packages.offered.map { ["id": $0.id, "version": $0.version, "url": $0.url.absoluteString] },
+                    "installed": packages.installed.keys.sorted(),
+                    "loaded": packages.loaded.keys.sorted(),
+                    "primary": packages.primary?.offer.id ?? "",
+                    "open": web.map { web in packages.loaded.filter { $0.value.isOpen(webView: web) }.keys.sorted() } ?? [],
+                    "states": packages.states.mapValues { String(describing: $0) },
+                    "folder": DevToolsPackages.folder.path,
+                ])
+            }
+
         case "update":
             // The updater, for a test run pointed at its own feed: `check`
             // is the menu's Check for Updates…, `disk` the Download button.
@@ -5703,9 +5737,9 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "devtools", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
 
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "devtools", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }

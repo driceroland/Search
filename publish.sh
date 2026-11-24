@@ -57,6 +57,33 @@ if [ -n "$ENGINEURL" ]; then
   cp "$ENGINEFILE" "$FOLDER/ai/"
   echo "copied: $ENGINEFILE → $FOLDER/ai/"
 fi
+# The developer tools packages the feed names (build.sh, write_devtools),
+# into devtools/ beside the app, where their addresses point: each a ZIP of
+# this chip whose size and hash are the feed's, and whose package inside
+# is signed with the Developer ID for its own identifier. All checked
+# before any is copied.
+DEVTOOLS="$(python3 -c '
+import json, sys
+for e in json.load(open(sys.argv[1])).get("devtools", []):
+    print(e["url"].rsplit("/", 1)[1], e["sha256"], e["size"], e["id"])' "$FROM/appcast.json")"
+if [ -n "$DEVTOOLS" ]; then
+  while read -r NAME WANT SIZE ID; do
+    PACKAGE="$FROM/devtools/$NAME"
+    [ -f "$PACKAGE" ] && [ "$(shasum -a 256 "$PACKAGE" | cut -d' ' -f1)" = "$WANT" ] && [ "$(stat -f%z "$PACKAGE")" = "$SIZE" ] \
+      || { echo "the package the feed names isn't $PACKAGE with its hash and size — not publishing" >&2; exit 1; }
+    case "$NAME" in *-"$ARCH"-*.zip) ;; *) echo "$NAME isn't a $ARCH package — not publishing" >&2; exit 1 ;; esac
+    UNPACKED="$(mktemp -d)"
+    ditto -x -k "$PACKAGE" "$UNPACKED"
+    codesign --verify --strict -R="anchor apple generic and identifier \"com.officecommun.search.devtools.$ID\" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = \"7BYKA895MC\"" "$UNPACKED"/*.bundle \
+      || { rm -rf "$UNPACKED"; echo "$PACKAGE isn't signed with the Developer ID as com.officecommun.search.devtools.$ID — not publishing" >&2; exit 1; }
+    rm -rf "$UNPACKED"
+  done <<< "$DEVTOOLS"
+  mkdir -p "$FOLDER/devtools"
+  while read -r NAME _; do
+    cp "$FROM/devtools/$NAME" "$FOLDER/devtools/"
+    echo "copied: $FROM/devtools/$NAME → $FOLDER/devtools/"
+  done <<< "$DEVTOOLS"
+fi
 for FILE in "${FILES[@]}"; do
   cp "$FROM/$FILE" "$FOLDER/$FILE"
   echo "copied: $FROM/$FILE → $FOLDER/$FILE"
