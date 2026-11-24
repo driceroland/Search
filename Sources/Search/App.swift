@@ -570,7 +570,7 @@ private struct MenuLine: View {
 /// and the sheet reads as empty air. This gives the sheet one arrow-sized
 /// rect to win with, frontmost because its NSView sits above the web view
 /// (a sheet is drawn by `.overlay { panels }` on `ContentView.body`).
-private struct CursorGround: NSViewRepresentable {
+struct CursorGround: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { CursorGroundView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 }

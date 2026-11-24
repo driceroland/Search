@@ -226,6 +226,9 @@ struct Omnibox: View {
                     .padding(.vertical, 9)
             }
         }
+        // The arrow over the rows: from the field's caret the pointer kept
+        // its text cursor down the list, nothing under it saying otherwise.
+        .background(CursorGround())
     }
 
     /// One row of a list of places, here and under the field in the tab.
