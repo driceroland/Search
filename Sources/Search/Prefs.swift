@@ -752,6 +752,14 @@ final class Preferences: ObservableObject {
             AutoScroll.on = autoScroll
         }
     }
+    /// Space and ← → play, pause and seek a clicked video showing the
+    /// browser's controls (see VideoKeys.swift). Off unless asked for.
+    @Published var videoKeys: Bool {
+        didSet {
+            store.set(videoKeys, forKey: "video.keys")
+            VideoKeys.on = videoKeys
+        }
+    }
     /// A mouse wheel's notches glide instead of jumping (see WheelGlide.swift).
     /// Off unless asked for.
     @Published var wheelGlides: Bool {
@@ -1479,6 +1487,9 @@ final class Preferences: ObservableObject {
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls
+        let videoKeys = store.bool(forKey: "video.keys")
+        self.videoKeys = videoKeys
+        VideoKeys.on = videoKeys
         let glides = store.bool(forKey: "wheel.smooth")
         wheelGlides = glides
         WheelGlide.on = glides

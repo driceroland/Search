@@ -1196,6 +1196,10 @@ final class Tab: ObservableObject, Identifiable {
         if AutoScroll.on {
             add(AutoScroll.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
         }
+        // Every frame: an embedded video takes its keys in its own document.
+        if VideoKeys.on {
+            add(VideoKeys.script, .atDocumentStart, mainFrameOnly: false, in: Web.world)
+        }
         // Every frame: a swipe over an embedded map is the map's, and only the
         // map's own document can say so.
         add(Swipe.watch, .atDocumentStart, mainFrameOnly: false, in: Web.world)

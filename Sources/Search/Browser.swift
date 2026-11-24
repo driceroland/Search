@@ -3516,6 +3516,18 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // The same for the keys on a video's controls (see VideoKeys.swift).
+        prefs.$videoKeys
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self else { return }
+                for tab in tabs + parkedTabs {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.built?.evaluateInSearch(on ? VideoKeys.script : VideoKeys.off)
+                }
+            }
+            .store(in: &bag)
+
         // A site's own style (see SiteStyles.swift), written or switched off.
         SiteStyles.shared.changed
             .sink { [weak self] host in self?.restyle(host) }

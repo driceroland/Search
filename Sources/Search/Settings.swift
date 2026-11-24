@@ -789,6 +789,7 @@ struct SettingsPanel: View {
                 .frame(maxWidth: 340)
         case "float.minimize": Switch(on: $prefs.floatMinimizes)
         case "media.click": Switch(on: $prefs.waitsForPlay)
+        case "video.keys": Switch(on: $prefs.videoKeys)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
         case "fullscreen.keepsWindow": Switch(on: $prefs.keepsWindow)
         case "translate.target":

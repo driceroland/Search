@@ -1376,6 +1376,8 @@ final class Bench {
                 case "shift": flags.insert(.shift)
                 case "ctrl": flags.insert(.control)
                 case "opt": flags.insert(.option)
+                // An arrow key's own flags, as the keyboard sends them.
+                case "arrow": flags.formUnion([.numericPad, .function])
                 default: break
                 }
             }
