@@ -1081,6 +1081,14 @@ final class Preferences: ObservableObject {
     @Published var pinCommandOpensTab: Bool {
         didSet { store.set(pinCommandOpensTab, forKey: "pins.commandNewTab") }
     }
+    /// A plain click on a link in a pinned tab, loose or in a pin folder,
+    /// opens the page in a new tab among the loose ones rather than in the
+    /// pin (idea 1039). Only a click taking the pin to another page: a
+    /// redirect, a form, a jump within the page and the site's own sign-in
+    /// pages stay in the pin (see Browser.leavesPin). Off unless asked for.
+    @Published var pinLinksOpenTabs: Bool {
+        didSet { store.set(pinLinksOpenTabs, forKey: "pins.linksNewTab") }
+    }
     /// A pin's ⌘ number pressed again, on that pin, goes back to the tab
     /// you were on before it.
     /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
@@ -1392,6 +1400,7 @@ final class Preferences: ObservableObject {
         listsPins = store.bool(forKey: "pins.list")
         pinFolders = store.bool(forKey: "pins.folders")
         pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
+        pinLinksOpenTabs = store.bool(forKey: "pins.linksNewTab")
         // "Pins keep their site" is one switch over two keys (see
         // SettingsIndex): on when either was on, on by default when neither
         // was ever touched (Drice, 24 Oct 2026), off when one was turned

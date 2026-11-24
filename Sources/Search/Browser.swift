@@ -8686,6 +8686,22 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             DispatchQueue.main.async { [weak self] in self?.openLinkBeside(url, from: from) }
             return
         }
+        // A plain click in a pin, with Settings › Spaces & Pins › Links from
+        // pinned tabs open in a new tab on: the page in a tab of its own
+        // among the loose ones, and the pin stays where it is (idea 1039).
+        // Before the peek: asked for, it takes links elsewhere too.
+        if prefs.pinLinksOpenTabs, action.navigationType == .linkActivated,
+           action.targetFrame?.isMainFrame == true,
+           action.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty,
+           let from = tab(for: webView), from.pin != nil,
+           Browser.leavesPin(url, from: webView.url) {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.sendToSpace(url, from: from) else { return }
+                self.open(url, foreground: true, from: from, mayWait: true, link: true)
+            }
+            return
+        }
         // A plain click in a pin, on a link to another site: a peek too, when
         // Settings says so (see peeksFromPin). Links into the page's frames
         // are the page's own business. A link the site sends out by way of

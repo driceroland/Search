@@ -518,6 +518,12 @@ enum SettingsIndex {
               more: "As in Arc: ⌘-clicking a pin opens a new tab at its address; on a pin that has wandered from its page, the wandered page is kept in loose tabs and the pin gets a fresh tab at home. Off, ⌘-click adds the pin to your tab selection.",
               keys: ["pins.commandNewTab"],
               words: ["command click", "cmd click", "pinned", "arc", "selection", "multi select"]),
+        .init(id: "pins.linksNewTab", group: "pins", icon: "arrow.up.forward.square",
+              title: "Links from pinned tabs open in a new tab",
+              detail: "A link clicked in a pin opens beside the loose tabs, and the pin stays on its page",
+              more: "For pins in folders and loose pins alike, and links to the pin's own site as well as to others. A redirect, a form, a jump within the page and the site's own sign-in pages still go in the pin. Off, a link within the site goes in the pin, as in Arc.",
+              keys: ["pins.linksNewTab"],
+              words: ["pinned", "pinned folder", "links", "new tab", "arc", "pin stays", "open links"]),
         .init(id: "newtab.floating", group: "opening", icon: "rectangle.and.text.magnifyingglass",
               title: "New tab in a floating field", detail: "⌘T raises the address field over the page, as in Arc",
               more: "Return opens what you typed in a new tab; Escape, ⌘W or a click outside puts it away.",
@@ -1035,6 +1041,7 @@ extension SettingsIndex {
             "pins.keep": prefs.pinsKeepSite,
             "pins.home": prefs.pinsGoHome,
             "pins.peek": prefs.pinsPeek,
+            "pins.linksNewTab": prefs.pinLinksOpenTabs,
             "links.peek": prefs.peekChoice.rawValue,
             "pages.120": prefs.fastPages.rawValue,
             "swipe.history": prefs.holdsHistory,
@@ -1077,6 +1084,9 @@ extension SettingsIndex {
         case "pins.folders":
             guard let on = value as? Bool else { return false }
             prefs.pinFolders = on
+        case "pins.linksNewTab":
+            guard let on = value as? Bool else { return false }
+            prefs.pinLinksOpenTabs = on
         case "sidebar.slides":
             guard let on = value as? Bool else { return false }
             prefs.slidesColumn = on
