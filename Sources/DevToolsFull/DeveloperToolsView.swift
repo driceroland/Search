@@ -415,10 +415,10 @@ struct DeveloperToolsView: View {
         case .memory: return AnyView(DeveloperMemoryView(session: session, memory: .store(for: session)))
         // Lite's, the same code in both packages (Shared/).
         case .lighthouse:
-            guard let web = session.web, let tools = FullPlugin.current?.sharedSession(web) else { return AnyView(EmptyView()) }
+            guard let web = session.web, let tools = FullPlugin.current?.sharedSession(web, making: DeveloperTools.shared.session === session) else { return AnyView(EmptyView()) }
             return AnyView(LighthousePanel(model: tools.lighthouse))
         case .recorder:
-            guard let web = session.web, let tools = FullPlugin.current?.sharedSession(web) else { return AnyView(EmptyView()) }
+            guard let web = session.web, let tools = FullPlugin.current?.sharedSession(web, making: DeveloperTools.shared.session === session) else { return AnyView(EmptyView()) }
             return AnyView(RecorderPanel(recorder: tools.recorder))
         }
     }

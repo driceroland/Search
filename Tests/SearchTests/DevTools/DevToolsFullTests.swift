@@ -138,6 +138,17 @@ final class DevToolsFullTests: XCTestCase {
         // Closed: nothing of it is left on the tab.
         browser.toggleInspector()
         try await waitUntil { !DevToolsPackages.busy(tab) }
+        // Lighthouse and Recorder in the dock, then the tools closed: the
+        // panel drawn once more as the dock goes doesn't make their session
+        // again, so the tab can sleep.
+        for item in ["lighthouse", "recorder"] {
+            packages.open(item, in: browser)
+            try await waitUntil { DevToolsPackages.busy(tab) }
+            try XCTUnwrap(packages.plugin("full")).close(webView: tab.web)
+            try await Task.sleep(for: .seconds(1))
+            XCTAssertFalse(try XCTUnwrap(packages.plugin("full")).isOpen(webView: tab.web), "\(item): closed stays closed")
+            XCTAssertFalse(DevToolsPackages.busy(tab), "\(item): the tab can sleep again")
+        }
         XCTAssertTrue(DevToolsPackages.scripts(for: tab).isEmpty, "no scripts once closed")
         tab.web.reload()
         try await waitUntil { !tab.web.isLoading }
