@@ -36,13 +36,25 @@ enum PaceFrames {
             let ticker = Ticker()
             ticker.probe = { Bench.columnOffset(browser) ?? .nan }
             var passes: [Double] = []
+            // The passes past half a frame: when (ms from the start), how
+            // long, and how many rows were made in each.
+            var timeline: [[Double]] = []
             var woke: CFAbsoluteTime = 0
+            var rowsAtWake = 0
+            let begun = CFAbsoluteTimeGetCurrent()
             let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { _, _ in
                 woke = CFAbsoluteTimeGetCurrent()
+                rowsAtWake = Bench.bodies["row", default: 0]
             }
             let sleep = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
                 guard woke > 0 else { return }
-                passes.append((CFAbsoluteTimeGetCurrent() - woke) * 1000); woke = 0
+                let ms = (CFAbsoluteTimeGetCurrent() - woke) * 1000
+                passes.append(ms)
+                if ms > 4 {
+                    timeline.append([((woke - begun) * 1000).rounded(), (ms * 10).rounded() / 10,
+                                     Double(Bench.bodies["row", default: 0] - rowsAtWake)])
+                }
+                woke = 0
             }
             let observers = [wake, sleep].compactMap { $0 }
             for o in observers { CFRunLoopAddObserver(CFRunLoopGetMain(), o, .commonModes) }
@@ -76,7 +88,7 @@ enum PaceFrames {
                             "busyMs": (passes.reduce(0, +) * 10).rounded() / 10, "longestPass": pct(passes.sorted(), 1),
                             "cpuMs": ((cpu1 - cpu0) * 10000).rounded() / 10, "rows": Bench.bodies["row", default: 0],
                             "landed": browser.spaceID != from, "tabs": browser.tabs.count,
-                            "offsetFrom": offs.first ?? -1, "hit": hitNames, "offsetTo": offs.last ?? -1])
+                            "offsetFrom": offs.first ?? -1, "hit": hitNames, "timeline": timeline, "offsetTo": offs.last ?? -1])
                 }
             }
             if kind == "swipe" {
