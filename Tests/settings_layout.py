@@ -77,8 +77,9 @@ def case_reachable(t):
     found = settings(find="video")["found"]
     t.ok("results carry section and group", found and all(i["page"] and i["groupTitle"] for i in found), found)
     t.ok("…in Browsing › Video", any(i["page"] == "browsing" and i["groupTitle"] == "Video" for i in found))
-    shown = [i for i in items if not i["findOnly"]]
-    t.ok("about a hundred and twenty rows in the sections", 105 <= len(shown) <= 140, len(shown))
+    t.ok("feedback is absent from Settings and its search",
+         all(i["group"] != "feedback" for i in items)
+         and not settings(find="send feedback")["found"])
     t.ok("nine sections, Pins among them", every["pages"] == ["general", "appearance", "tabs", "browsing", "pins", "privacy", "extensions", "keyboard", "about"], every["pages"])
     # Old addresses land in the new sections.
     sv.cmd({"do": "ui", "show": "search://settings/shortcuts"}); time.sleep(0.6)

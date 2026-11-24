@@ -1,26 +1,10 @@
 import SwiftUI
 import AppKit
 
-// The window's colour (Settings › Themes): one of the colours, or a
-// gradient of two or three, the way Arc and Ardia theme a window. Only for
-// whoever wants one: without one the chrome is as it always was.
-//
-// The gradient takes the colour's place wherever the wash is drawn — the
-// column or the strip, the bookmarks bar, the ground around the page's
-// card — at the same strength (Tints.washLight, washDark). It runs across
-// the window, not across each of those on its own, so where the column
-// meets the ground the colours carry on.
-//
-// The colours are mixed in OKLab, keeping the chroma of the ends, so the
-// middle of blue to orange is as bright and as coloured as they are rather
-// than a grey. Each colour's lightness is held to the band the plain
-// colours sit in: whatever is picked, the wash moves the ground no further
-// than they do, and the greys of the live tab and the one under the
-// pointer keep their step from it.
-//
-// Drawn once, as a gradient of stops; nothing moves while it stays, and a
-// change crossfades once, as the colour's does. The grain is one small
-// tile of noise, made once and laid over it.
+// The window tint spans the sidebar, bookmarks bar and the frame around
+// the page. Its gradient runs across the whole window so the colour lines
+// up between those surfaces. Full strength draws the selected sRGB colours
+// directly. The softer strengths tone them before blending with the chrome.
 
 struct ThemeGradient: Codable, Equatable, Hashable {
     /// The colours in the order they run, "#RRGGBB" in sRGB: two or three.
@@ -53,18 +37,20 @@ struct ThemeGradient: Codable, Equatable, Hashable {
 
     /// The colours as drawn: the first three that read, each held to the
     /// wash's band of lightness and chroma.
-    var drawn: [OKLab] {
-        Array(colours.compactMap(OKLab.init(hex:)).prefix(Self.most)).map(\.held)
+    var drawn: [OKLab] { sourceColours.map(\.held) }
+
+    private var sourceColours: [OKLab] {
+        Array(colours.lazy.compactMap(OKLab.init(hex:)).prefix(Self.most))
     }
 
     /// Two colours or more that read; otherwise the colour stands.
-    var usable: Bool { drawn.count >= 2 }
+    var usable: Bool { sourceColours.count >= 2 }
 
     /// What the gradient is drawn with: its colours mixed in OKLab at
     /// `count` stops, evenly spaced. SwiftUI blends between neighbours,
     /// which are close enough that how it blends doesn't show.
     func stops(count: Int = 24, strength: ThemeStrength = .subtle, dark: Bool = false) -> [Gradient.Stop] {
-        let lab = drawn.map { strength.tone($0, dark: dark) }
+        let lab = strength == .full ? sourceColours : drawn.map { strength.tone($0, dark: dark) }
         guard lab.count >= 2 else { return [] }
         return (0..<count).map { step in
             let t = Double(step) / Double(count - 1)
@@ -133,26 +119,16 @@ struct ThemeGradient: Codable, Equatable, Hashable {
     }
 }
 
-/// How strongly the colour or gradient washes the chrome. Subtle is the
-/// faint wash there always was; Rich and Vivid are for whoever wants the
-/// colour seen, closer to Arc's saturated themes (Settings › Themes'
-/// Strength).
-///
-/// Stronger, the wash stays on its side of the window's appearance: in a
-/// light window a deeper tint the ink still reads on, in a dark one a deep
-/// colour the light ink reads on. So the column's ink never has to turn
-/// over; the colour's lightness is held further for that (`tone`), and the
-/// greys and the tab titles are black or white with alpha (see Greys),
-/// keeping their step from whatever ground they land on. Checked against
-/// the worst colours in SpaceGradientTests.
+/// The window tint's coverage. Full uses an opaque tint and the original colours.
 enum ThemeStrength: String, CaseIterable, Codable, Hashable {
-    case subtle, rich, vivid
+    case subtle, rich, vivid, full
 
     var name: String {
         switch self {
         case .subtle: return "Subtle"
         case .rich: return "Rich"
         case .vivid: return "Vivid"
+        case .full: return "Full"
         }
     }
 
@@ -170,6 +146,7 @@ enum ThemeStrength: String, CaseIterable, Codable, Hashable {
         case .subtle: return dark ? Tints.washDark : Tints.washLight
         case .rich: return dark ? 0.22 : 0.18
         case .vivid: return dark ? 0.40 : 0.30
+        case .full: return 1
         }
     }
 
@@ -180,7 +157,7 @@ enum ThemeStrength: String, CaseIterable, Codable, Hashable {
     func tone(_ colour: OKLab, dark: Bool) -> OKLab {
         let (boost, band): (Double, ClosedRange<Double>) = {
             switch self {
-            case .subtle: return (1, 0...1)
+            case .subtle, .full: return (1, 0...1)
             case .rich: return (1.15, dark ? 0...0.72 : 0...1)
             case .vivid: return (1.3, dark ? 0.48...0.58 : 0.62...1)
             }
@@ -198,7 +175,7 @@ enum ThemeStrength: String, CaseIterable, Codable, Hashable {
         switch self {
         case .subtle: return base
         case .rich: return base * 1.25
-        case .vivid: return base * 1.5
+        case .vivid, .full: return base * 1.5
         }
     }
 }
@@ -521,7 +498,7 @@ enum Tints {
     /// Colour COLOUR as STRENGTH washes with it (ThemeStrength.tone): the
     /// colour itself at Subtle, so that wash is exactly as it always was.
     static func toned(_ colour: Int, _ strength: ThemeStrength, dark: Bool) -> Color {
-        guard strength != .subtle, colours.indices.contains(colour),
+        guard strength != .subtle, strength != .full, colours.indices.contains(colour),
               let c = NSColor(colours[colour]).usingColorSpace(.sRGB) else { return colours.indices.contains(colour) ? colours[colour] : .clear }
         let (r, g, b) = strength.tone(OKLab(r: c.redComponent, g: c.greenComponent, b: c.blueComponent), dark: dark).srgb
         return Color(.sRGB, red: r, green: g, blue: b)
@@ -531,7 +508,7 @@ enum Tints {
 struct ThemeWash: View {
     let look: ThemeLook?
     @Environment(\.colorScheme) private var scheme
-    /// Subtle, Rich or Vivid: set for the whole window (see washStrength).
+    /// Set for the whole window (see washStrength).
     @Environment(\.washStrength) private var strength
 
     var body: some View {

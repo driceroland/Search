@@ -179,7 +179,7 @@ enum HomeRender {
         if let image = made[key] { return image }
         let ground = groundColour(dark: dark)
         let canvas = Canvas { context, size in
-            HomeBackground.paint(theme, tuning, in: &context, size: size, dark: dark, ground: ground, calm: calm)
+            HomeBackground.paint(theme, tuning, in: &context, size: size, ground: ground, calm: calm)
         }
         .frame(width: size.width, height: size.height)
         let renderer = ImageRenderer(content: canvas)
@@ -310,25 +310,20 @@ struct HomeBackground: View {
     }
 
     fileprivate static func paint(_ theme: HomeTheme, _ t: HomeTuning, in context: inout GraphicsContext,
-                                  size: CGSize, dark: Bool, ground: Color, calm: Bool) {
+                                  size: CGSize, ground: Color, calm: Bool) {
         guard size.width > 1, size.height > 1 else { return }
         let m = min(size.width, size.height)
         let whole = CGRect(origin: .zero, size: size)
-        func colour(_ hex: String) -> Color {
-            let (red, green, blue) = channels(hex)
-            let brightness = dark ? 0.42 : 1.0
-            return Color(red: red * brightness, green: green * brightness, blue: blue * brightness)
-        }
         switch theme {
         case .solid:
-            context.fill(Path(whole), with: .color(colour(t.solid)))
+            context.fill(Path(whole), with: .color(Color(hex: t.solid)))
         case .gradient:
             let a = t.angle * .pi / 180
             let d = CGPoint(x: cos(a), y: sin(a))
             let half = (abs(size.width * d.x) + abs(size.height * d.y)) / 2
             let mid = CGPoint(x: size.width / 2, y: size.height / 2)
             context.fill(Path(whole), with: .linearGradient(
-                Gradient(colors: [colour(t.gradientA), colour(t.gradientB)]),
+                Gradient(colors: [Color(hex: t.gradientA), Color(hex: t.gradientB)]),
                 startPoint: CGPoint(x: mid.x - d.x * half, y: mid.y - d.y * half),
                 endPoint: CGPoint(x: mid.x + d.x * half, y: mid.y + d.y * half)))
         case .off, .custom:
