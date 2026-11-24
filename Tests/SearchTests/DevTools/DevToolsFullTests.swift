@@ -33,6 +33,12 @@ final class DevToolsFullTests: XCTestCase {
     private var scratch: URL!
 
     override func setUp() async throws {
+        // Skipped, not failed, in a plain `swift test`: every test here
+        // needs the built packages (a skip thrown inside XCTUnwrap would
+        // count as a failure).
+        guard ProcessInfo.processInfo.environment["SEARCH_TEST_DEVTOOLS"] != nil else {
+            throw XCTSkip("SEARCH_TEST_DEVTOOLS names no built package")
+        }
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         server = try LocalPageServer(Self.pages)
@@ -47,11 +53,13 @@ final class DevToolsFullTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        // Nothing to put away after a skip.
+        guard let server, let window, let browser else { return try await super.tearDown() }
         if let tab { browser.close(tab) }
         server.stop()
         window.orderOut(nil)
         window.close()
-        try? FileManager.default.removeItem(at: scratch)
+        if let scratch { try? FileManager.default.removeItem(at: scratch) }
         XCTAssertTrue(NSApp.windows.allSatisfy { !$0.isVisible }, "no window was shown")
         try await super.tearDown()
     }
