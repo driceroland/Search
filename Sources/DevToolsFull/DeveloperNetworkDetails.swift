@@ -823,9 +823,13 @@ private struct DeveloperHTMLPreview: NSViewRepresentable {
     }
 }
 
-final class WKWebViewPreview: NSView {
+final class WKWebViewPreview: NSView, WKNavigationDelegate {
     private let web: WKWebView
     private var shown: String?
+
+    /// Nothing but inline styles and data: images; a page's absolute
+    /// addresses would otherwise load, outside Search's proxy.
+    private static let policy = #"<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:">"#
 
     override init(frame: NSRect) {
         let configuration = WKWebViewConfiguration()
@@ -833,6 +837,7 @@ final class WKWebViewPreview: NSView {
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         web = WKWebView(frame: frame, configuration: configuration)
         super.init(frame: frame)
+        web.navigationDelegate = self
         web.autoresizingMask = [.width, .height]
         web.frame = bounds
         addSubview(web)
@@ -845,6 +850,12 @@ final class WKWebViewPreview: NSView {
         shown = html
         // No base URL: relative subresources stay unloaded, nothing reaches
         // the network from the preview.
-        web.loadHTMLString(html, baseURL: nil)
+        web.loadHTMLString(Self.policy + html, baseURL: nil)
+    }
+
+    /// Only the preview itself: no link, form, refresh or frame goes anywhere.
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        decisionHandler(action.request.url?.absoluteString == "about:blank" && action.navigationType == .other ? .allow : .cancel)
     }
 }
