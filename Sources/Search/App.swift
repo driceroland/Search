@@ -952,10 +952,8 @@ struct ContentView: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { browser.reviewing = false }
-                HiddenPanel(browser: browser)
-                    .padding(.top, Metrics.strip + 8)
-                    .padding(.trailing, 14)
-                    .transition(.scale(scale: 0.97, anchor: .topTrailing).combined(with: .opacity))
+                HiddenPanelPlace(browser: browser)
+                    .transition(.scale(scale: 0.97, anchor: .top).combined(with: .opacity))
             }
             .ignoresSafeArea()
             .transition(.opacity)

@@ -805,6 +805,10 @@ final class Browser: NSObject, ObservableObject {
         didSet { if !reviewing { stopPeeking() } }
     }
 
+    /// Where the list was dragged to in this window, kept while it is open;
+    /// nil, a top corner (see HiddenPanelPlace).
+    var hiddenPanelSpot: HiddenPanelPlace.Spot?
+
     var hereHost: String? { curtain.host(of: active?.address) }
     var hereVeils: [Veil] { curtain.veils(on: hereHost) }
 
