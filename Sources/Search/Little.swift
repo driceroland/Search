@@ -82,7 +82,10 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         // Never a test run's in front: a probe started hidden stays off every screen.
         guard front, !Store.testing else { return }
         little.window.makeKeyAndOrderFront(nil)
-        if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
+        // Asked again if the app in front didn't hand the front over: the
+        // address field from any app is a panel that never made Search the
+        // app in front, so a plain activate() left the window behind (#1494).
+        Links.comeForward()
     }
 
     /// The small windows open now, newest last — for the bench.
@@ -165,7 +168,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         guard !Store.testing else { return LittleWindow.fronted = tab.id }
         if window.isMiniaturized { window.deminiaturize(nil) }
         window.makeKeyAndOrderFront(nil)
-        if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
+        Links.comeForward()
     }
 
     /// The card the switcher is on, or the one clicked: a small window
