@@ -1009,9 +1009,9 @@ final class Preferences: ObservableObject {
         showsAddress = store.object(forKey: "tabs.address") as? Bool ?? true
         let keeps = store.bool(forKey: "sites.keep")
         keepsSignIns = keeps
-        // Before the first page is loaded into the store.
+        // Before the first page is loaded into the store; Store.websites
+        // applies the cookie policy automatically the first time it is used.
         Store.keepsSignIns = keeps
-        Store.followCookies(Store.websites)
         let signals = store.object(forKey: "privacy.gpc") as? Bool ?? true
         sendsPrivacySignal = signals
         PrivacySignal.on = signals
@@ -1097,11 +1097,11 @@ final class Preferences: ObservableObject {
         HoveredLink.on = links
         let dusk = store.bool(forKey: "pages.dusk")
         darkensPages = dusk
-        Dusk.shared.on = dusk
+        if dusk { Dusk.shared.on = true }
         capturesPages = store.bool(forKey: "pages.capture")
         let styles = store.bool(forKey: "sites.styles")
         sitesStyles = styles
-        SiteStyles.shared.on = styles
+        if styles { SiteStyles.shared.on = true }
         inspectorChrome = store.bool(forKey: "inspector.chrome")
         inspectorDark = store.bool(forKey: "inspector.dark")
         let scrolls = store.bool(forKey: "autoscroll")

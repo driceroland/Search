@@ -102,6 +102,8 @@ enum Browsers {
     /// The window around each browser that isn't the scene's: kept, since
     /// AppKit only lends it.
     private static var frames: [ObjectIdentifier: NSWindow] = [:]
+    /// The primary window around SceneSlot.shared.
+    private static var primaryWindow: NSWindow?
     /// Windows closed while others were open, newest last, for ⇧⌘T.
     private(set) static var closed: [(record: WindowRecord, at: Date)] = []
 
@@ -145,6 +147,56 @@ enum Browsers {
     }
 
     // MARK: - opening
+
+    /// The primary window around SceneSlot.shared, created once and reused.
+    /// Restores its saved frame under `Browsers.sceneID` before showing so it
+    /// never jumps from the default size (#202).
+    static func openPrimary(show: Bool = true) {
+        let browser = SceneSlot.shared.browser
+        let window: NSWindow
+        if let existing = primaryWindow {
+            window = existing
+        } else {
+            let host = NSHostingView(rootView: SceneRoot(slot: SceneSlot.shared).frame(minWidth: 640, minHeight: 420))
+            host.sizingOptions = [.minSize]
+            let made = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 1180, height: 780),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                backing: .buffered, defer: false
+            )
+            made.title = "Search"
+            made.isReleasedWhenClosed = false
+            made.tabbingMode = .disallowed
+            made.titlebarAppearsTransparent = true
+            made.titleVisibility = .hidden
+            made.minSize = NSSize(width: 640, height: 420)
+            made.contentView = host
+            if !made.setFrameUsingName(sceneID) { made.center() }
+            made.setFrameAutosaveName(sceneID)
+            primaryWindow = made
+            window = made
+        }
+        browser.window = window
+        browser.shut = false
+        register(browser)
+        Links.hand(to: browser)
+        BookmarkMenu.shared.start(for: browser)
+        watchFrames()
+        Bench.keepOff(window)
+        if keptAway {
+            window.orderOut(nil)
+            if !isAway(window) { away.append(window) }
+            return
+        }
+        if show && !(Store.testing && NSApp.isHidden) {
+            window.makeKeyAndOrderFront(nil)
+            becameKey(browser)
+            comeForward()
+        } else {
+            window.layoutIfNeeded()
+            restoreOnce()
+        }
+    }
 
     /// ⌘N. A window that is closed but kept — the last one, closed with the
     /// app running — comes back first, as a window always did; otherwise a

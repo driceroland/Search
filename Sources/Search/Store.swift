@@ -47,9 +47,17 @@ enum Store {
     /// A test run gets a store of its own, under a fixed name so it persists
     /// between probes the way the real one does. Wiping the test store is
     /// then as safe as wiping its folder.
+    private nonisolated(unsafe) static var cookiesFollowed = false
+
     static var websites: WKWebsiteDataStore {
-        guard testing, !ownContainer else { return .default() }
-        return WKWebsiteDataStore(forIdentifier: probeStore(1))
+        let store: WKWebsiteDataStore = (testing && !ownContainer)
+            ? WKWebsiteDataStore(forIdentifier: probeStore(1))
+            : .default()
+        if !cookiesFollowed {
+            cookiesFollowed = true
+            MainActor.assumeIsolated { followCookies(store) }
+        }
+        return store
     }
 
     /// Settings › Privacy › Prevent cross-site tracking, turned off. WebKit's

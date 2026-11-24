@@ -2260,14 +2260,7 @@ final class Browser: NSObject, ObservableObject {
             folded = (record ?? Browsers.read().first)?.folded == true
         }
 
-        // The History menu lists the last few places, and the menu is drawn
-        // from this object's changes — so a change to those is passed on,
-        // from the history.
-        History.shared.recentChanges
-            .sink { [weak self] in self?.objectWillChange.send() }
-            .store(in: &bag)
-
-        // So are the pins.
+        // Pins are shared across windows.
         NotificationCenter.default.publisher(for: Pins.changed)
             .sink { [weak self] note in
                 guard let self, !isPopup, (note.object as? Browser) !== self else { return }
@@ -2275,10 +2268,7 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
-        // Yesterday's tabs, or one empty one. Either way a web view is built
-        // now, which starts a content process while the window is still being
-        // drawn — so the first address you type navigates instead of waiting
-        // for WebKit to get up.
+        // Yesterday's tabs, or one empty one.
         defer {
             follow()
             if !isPopup { watchForSleep() }
@@ -2375,10 +2365,16 @@ final class Browser: NSObject, ObservableObject {
         activeID = first.id
         // Only the one you were looking at actually loads. Started hidden,
         // it waits for the extensions, which load at once then, so that
-        // their scripts meant to run before the page's do (#199); a
-        // visible launch keeps loading it alongside the first frame.
+        // their scripts meant to run before the page's do (#199). On a
+        // visible launch, waking waits one run-loop turn so the window paints
+        // its first frame before WKWebView and its user scripts spin up.
         if #available(macOS 15.4, *), NSApp.isHidden, Extensions.shared.starting {
             Extensions.shared.whenStarted(within: 1.5) { [weak self] in
+                guard let self else { return }
+                for tab in self.tabs where self.visibleTabIDs.contains(tab.id) { _ = tab.wake() }
+            }
+        } else if !NSApp.isHidden && (!Store.testing || Store.measuring) {
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 for tab in self.tabs where self.visibleTabIDs.contains(tab.id) { _ = tab.wake() }
             }
@@ -2396,7 +2392,7 @@ final class Browser: NSObject, ObservableObject {
         // moment after the window is up, so that the first address typed
         // finds everything already running, and the first frame never
         // had to share the CPU with it.
-        let tab = Tab(configuration: Web.configuration())
+        let tab = Tab()
         adopt(tab)
         activeID = tab.id
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak tab] in
@@ -5405,10 +5401,10 @@ final class Browser: NSObject, ObservableObject {
             // wherever it had been taken since.
             let home = Browser.home(of: entry, at: saved)
             let url = prefs.pinsGoHome ? home ?? saved : saved
-            let tab = Tab(configuration: Web.configuration())
+            let tab = Tab()
             prepare(tab)
             tab.restore(url: url, title: url == saved ? entry.title : url.host ?? "", name: entry.name,
-                        state: url == saved ? entry.keepsake?.state : nil)
+                        state: url == saved ? entry.keepsake?.state : nil, adoptIcon: false)
             // Never later than now: a clock set wrong once would keep the tab forever.
             if let touched = entry.touched { tab.touch(at: min(touched, Date())) }
             tab.letGo = entry.letGo.map { min($0, Date()) }
@@ -5440,6 +5436,7 @@ final class Browser: NSObject, ObservableObject {
         }
         restoredSplits += pinnedPairs(in: row, besides: restoredSplits)
         let active = said.flatMap { id in row.contains { $0.id == id } ? id : nil }
+        if !row.isEmpty { Favicons.shared.preload(for: row) }
         return RestoredRow(tabs: row, active: active, splits: restoredSplits)
     }
 

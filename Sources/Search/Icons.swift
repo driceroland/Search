@@ -198,6 +198,84 @@ final class Favicons {
         if !pages.isEmpty { save() }
     }
 
+    /// Reads `pages.json` and the PNG files for restored tabs off the main
+    /// thread so session restore never blocks the first frame on disk I/O.
+    func preload(for tabs: [Tab]) {
+        var items: [(tab: Tab, url: URL, site: String, page: String, shy: Bool)] = []
+        items.reserveCapacity(tabs.count)
+        for tab in tabs where tab.page == nil && tab.icon == nil {
+            guard let url = tab.address, let site = Favicons.site(url) else { continue }
+            items.append((tab, url, site, Favicons.page(url), tab.shy))
+        }
+        guard !items.isEmpty else { return }
+        if loaded {
+            for item in items { item.tab.adoptIcon() }
+            return
+        }
+        let dark = Favicons.dark
+        let index = Favicons.index
+        let folder = Favicons.folder
+        let targets = items.map { (site: $0.site, page: $0.page) }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var decoded: [String: [String: Page]]?
+            var folded = false
+            var dropped: Set<String> = []
+            if let data = try? Data(contentsOf: index),
+               var kept = try? JSONDecoder().decode([String: [String: Page]].self, from: data) {
+                for (site, sitePages) in kept {
+                    for (key, page) in sitePages {
+                        guard let mark = key.firstIndex(of: "?") else { continue }
+                        let path = String(key[..<mark]), there = kept[site]?[path]
+                        kept[site]?[key] = nil
+                        kept[site]?[path] = there.flatMap { $0.seen > page.seen ? $0 : nil } ?? page
+                        dropped.formUnion([page.light, page.dark, there?.light, there?.dark].compactMap { $0 })
+                        folded = true
+                    }
+                }
+                decoded = kept
+            }
+            var rawImages: [String: Data] = [:]
+            if let kept = decoded {
+                var idents: Set<String> = []
+                for target in targets {
+                    let other = target.site.hasPrefix("www.") ? String(target.site.dropFirst(4)) : "www." + target.site
+                    let page = kept[target.site]?[target.page] ?? kept[target.site]?["/"]
+                        ?? kept[other]?[target.page] ?? kept[other]?["/"]
+                    if let p = page, let ident = (dark ? p.dark ?? p.light : p.light) {
+                        idents.insert(ident)
+                    }
+                }
+                for ident in idents {
+                    if let data = try? Data(contentsOf: folder.appendingPathComponent(ident + ".png")) {
+                        rawImages[ident] = data
+                    }
+                }
+            }
+            let finalDecoded = decoded
+            let finalFolded = folded
+            let finalDropped = dropped
+            let finalRaw = rawImages
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if !self.loaded, let finalDecoded {
+                    self.loaded = true
+                    self.pages = finalDecoded
+                    if !finalDropped.isEmpty { self.dropped.formUnion(finalDropped) }
+                    if finalFolded { self.save() }
+                }
+                for (ident, data) in finalRaw {
+                    if self.memory.object(forKey: ident as NSString) == nil,
+                       let image = NSImage(data: data) {
+                        self.remember(image, as: ident)
+                    }
+                }
+                for item in items where item.tab.address == item.url && item.tab.icon == nil {
+                    item.tab.adoptIcon()
+                }
+            }
+        }
+    }
+
     /// Written a moment later, so a burst of pages loading is one write.
     private func save() {
         guard !saving else { return }
