@@ -155,6 +155,14 @@ build_devtools() {
 PLIST
   SIGNER="${SEARCH_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
     | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"' || true)}"
+  # A release package is the Developer ID's or nothing: an ad-hoc one only
+  # when asked for by name (SEARCH_SIGN_IDENTITY=-, for the tests), never
+  # because no certificate was found. (A `release dmg` on a Mac without one
+  # stays a local try, unsigned feed and all, as the app beside it.)
+  if [ "$CONFIG" = "release" ] && [ "$STEP" != "dmg" ] && [ -z "$SIGNER" ]; then
+    echo "no Developer ID Application certificate for $PRODUCT — SEARCH_SIGN_IDENTITY=- for an ad-hoc test package" >&2
+    exit 1
+  fi
   if [ -n "$SIGNER" ] && [ "$SIGNER" != "-" ]; then
     codesign --force --timestamp --options runtime --identifier "$IDENT" --sign "$SIGNER" "$BUNDLE"
   else
@@ -172,7 +180,11 @@ PLIST
   plutil -insert size -integer "$(stat -f%z "$ZIP")" "$DEST/$PRODUCT.entry.json"
   plutil -insert binary -string "$(shasum -a 256 "$BUNDLE/Contents/MacOS/$PRODUCT" | cut -d' ' -f1)" "$DEST/$PRODUCT.entry.json"
   echo "devtools: $ZIP ($(stat -f%z "$ZIP") bytes)"
+  BUILT_DEVTOOLS="$BUILT_DEVTOOLS $PRODUCT "
 }
+# The packages built by this run: the feed only ever names those, never an
+# entry.json left in build/ by an earlier one.
+BUILT_DEVTOOLS=""
 if [ "$STEP" = "devtools" ]; then
   for PACKAGE in "${DEVTOOLS_PACKAGES[@]}"; do build_devtools "$PACKAGE"; done
   exit 0
@@ -516,7 +528,7 @@ DEVBLOCK=""
 write_devtools() {
   local ENTRIES="" PACKAGE ENTRY
   for PACKAGE in "${DEVTOOLS_PACKAGES[@]}"; do
-    [ -f "$OUT/devtools/$PACKAGE.entry.json" ] || build_devtools "$PACKAGE"
+    case "$BUILT_DEVTOOLS" in *" $PACKAGE "*) ;; *) build_devtools "$PACKAGE" ;; esac
     ENTRY="$OUT/devtools/$PACKAGE.entry.json.feed"
     cp "$OUT/devtools/$PACKAGE.entry.json" "$ENTRY"
     plutil -insert url -string "$BASE/devtools/$(plutil -extract file raw -o - "$ENTRY")" "$ENTRY"
