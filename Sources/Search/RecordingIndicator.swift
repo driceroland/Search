@@ -208,7 +208,7 @@ struct PillView: View {
         .padding(.trailing, 7)
         .padding(.vertical, 7)
         // A capsule for one line; the same corners round a taller card.
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .pillGlass(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
         .fixedSize()
         .accessibilityElement(children: .contain)

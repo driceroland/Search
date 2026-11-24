@@ -1078,7 +1078,7 @@ struct BookmarkOutline: View {
             .padding(.leading, CGFloat(depth) * 18 + 10)
             .padding(.trailing, 10)
             .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(wash))
+            .background(RoundedRectangle(cornerRadius: Metrics.concentric(inset: 6), style: .continuous).fill(wash))
             .overlay(alignment: aim == .before ? .top : .bottom) {
                 if aim == .before || aim == .after {
                     // Below an open folder is its first child's place.
@@ -1180,12 +1180,12 @@ struct BookmarkCard: View {
     @FocusState private var naming: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 18) {
             Text("Bookmarked")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Palette.ink)
 
-            VStack(spacing: 8) {
+            VStack(spacing: 12) {
                 line("Name") {
                     // Emptied, the field shows what the lists will read.
                     TextField(bookmarks.bookmark(id)?.url.flatMap(URL.init(string:)).map(Address.pretty) ?? "", text: $title)
@@ -1194,9 +1194,9 @@ struct BookmarkCard: View {
                         .foregroundStyle(Palette.ink)
                         .focused($naming)
                         .onSubmit(close)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .padding(.horizontal, 10)
+                        .frame(height: 30)
+                        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .onChange(of: title) { _, typed in rename(typed) }
                 }
                 line("Folder") { folder }
@@ -1211,8 +1211,8 @@ struct BookmarkCard: View {
                 Pill("Done", filled: true, action: close)
             }
         }
-        .padding(14)
-        .frame(width: 280)
+        .padding(18)
+        .frame(width: 300)
         .popoverGround()
         .onAppear {
             title = bookmarks.bookmark(id)?.title ?? ""
@@ -1256,9 +1256,9 @@ struct BookmarkCard: View {
                     .font(.system(size: 8.5, weight: .semibold))
                     .foregroundStyle(Palette.muted)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(Palette.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .contentShape(Rectangle())
         }
         .menuStyle(.button)
@@ -1269,11 +1269,11 @@ struct BookmarkCard: View {
     private func file(into folder: Bookmark.ID?) { bookmarks.file(id, into: folder) }
 
     private func line(_ name: String, @ViewBuilder _ control: () -> some View) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Text(name)
-                .font(.system(size: 11.5))
+                .font(.system(size: 12))
                 .foregroundStyle(Palette.muted)
-                .frame(width: 42, alignment: .leading)
+                .frame(width: 44, alignment: .leading)
             control()
         }
     }
@@ -1340,7 +1340,8 @@ struct BookmarksDropdown: View {
                 }
             }
             Divider().overlay(Palette.hairline)
-            VStack(spacing: 1) {
+                .padding(.horizontal, 6)
+            VStack(spacing: 2) {
                 Foot(browser.pageKept ? "bookmark.fill" : "bookmark", browser.pageKept ? "Edit This Bookmark\u{2026}" : "Add This Page") {
                     browser.bookmarkCurrent()
                 }
@@ -1410,7 +1411,7 @@ struct BookmarksDropdown: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(hovering ? Palette.wash : .clear))
+            .background(RoundedRectangle(cornerRadius: Metrics.concentric(inset: 6), style: .continuous).fill(hovering ? Palette.wash : .clear))
             .contentShape(Rectangle())
             .onTapGesture(perform: act)
             .onHover { hovering = $0 }

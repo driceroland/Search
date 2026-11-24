@@ -82,7 +82,7 @@ final class PaneStage: NSView {
 
     /// Between the pages: room for the divider, and to keep it off the left
     /// page's scroll bar.
-    static let gutter: CGFloat = 12
+    static let gutter: CGFloat = 16
     /// Narrower than this, a page is no use: the pair shows the focused page
     /// alone until there is room again, and stays a pair.
     static let narrowest: CGFloat = 250
@@ -726,8 +726,8 @@ final class PaneStage: NSView {
         if fading, !Motion.reduced, tabs.first !== tab, let layer {
             let fade = CATransition()
             fade.type = .fade
-            fade.duration = 0.15
-            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            fade.duration = Motion.spaceSpan
+            fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
             layer.add(fade, forKey: "space")
         }
         // The usual way in, so a move under way is cut short as any change of

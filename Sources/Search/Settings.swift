@@ -120,7 +120,6 @@ struct SettingsPanel: View {
     private var tabbed: some View {
         HStack(spacing: 0) {
             pages
-            Rectangle().fill(Palette.hairline).frame(width: 1)
             content
                 .padding(.top, 26)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -142,7 +141,6 @@ struct SettingsPanel: View {
     private var card: some View {
         HStack(spacing: 0) {
             pages
-            Rectangle().fill(Palette.hairline).frame(width: 1)
             content
         }
         .frame(width: SettingsPanel.width, height: SettingsPanel.height)
@@ -402,6 +400,10 @@ struct SettingsPanel: View {
         }
     }
 
+    /// Segmented choices go under their words, as the long ones always did,
+    /// so no row has its choices to the right and another's below.
+    private static let stacked: Set<String> = ["address.width", "window.glass.style", "glyph", "float.style", "pages.120"]
+
     private func belongs(_ item: SettingsItem, to previous: SettingsItem) -> Bool {
         guard let parent = item.parent else { return false }
         return parent == previous.id || parent == previous.parent
@@ -416,8 +418,9 @@ struct SettingsPanel: View {
             title: relabel(title(of: item)),
             detail: relabel(counts ? detail(of: item) : SettingsIndex.needs(item)),
             more: counts ? item.more.map(relabel) : nil,
-            wide: item.kind == .wide,
+            wide: item.kind == .wide || Self.stacked.contains(item.id),
             lit: lit == item.id,
+            child: item.parent != nil,
             mark: searching ? query.trimmingCharacters(in: .whitespaces) : nil
         ) {
             control(item)
@@ -839,8 +842,10 @@ struct SettingsPanel: View {
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
         case "pins.fit": Switch(on: $prefs.fitsPins)
+        case "folders.arrowHover": Switch(on: $prefs.foldersArrowOnHover)
         case "icons.peek": Switch(on: $prefs.iconPeeks)
         case "panels.clear": Switch(on: $prefs.clearPanels)
+        case "empty.clear": Switch(on: $prefs.clearEmpty)
         case "pins.folders": Switch(on: $prefs.pinFolders)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
@@ -1292,10 +1297,13 @@ struct SettingRow<Control: View>: View {
     var more: String? = nil
     var wide = false
     var lit = false
+    /// Belongs to the row above it: set in a step, with a line down its side.
+    var child = false
     var mark: String? = nil
     @ViewBuilder let control: () -> Control
 
     @State private var open = false
+    @Environment(\.colorScheme) private var scheme
 
     private func marked(_ text: String) -> AttributedString {
         var out = AttributedString(text)
@@ -1310,8 +1318,7 @@ struct SettingRow<Control: View>: View {
                       let range = Range(found, in: text),
                       let lower = AttributedString.Index(range.lowerBound, within: out),
                       let upper = AttributedString.Index(range.upperBound, within: out) else { break }
-                out[lower..<upper].backgroundColor = Color(nsColor: .findHighlightColor)
-                out[lower..<upper].foregroundColor = .black
+                out[lower..<upper].backgroundColor = scheme == .dark ? Color.white.opacity(0.28) : Color.black.opacity(0.12)
                 from = found.location + found.length
             }
         }
@@ -1325,7 +1332,7 @@ struct SettingRow<Control: View>: View {
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.ink.opacity(0.7))
                     .frame(width: 20)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 5) {
                         Text(marked(title))
                             .font(.system(size: 13))
@@ -1347,11 +1354,11 @@ struct SettingRow<Control: View>: View {
                         Text(marked(detail))
                             .font(.system(size: 11.5))
                             .foregroundStyle(Palette.muted)
-                            .lineLimit(2)
+                            .lineSpacing(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: 16)
                 if !wide { control() }
             }
             if open, let more {
@@ -1368,9 +1375,14 @@ struct SettingRow<Control: View>: View {
                     .padding(.leading, 34)
             }
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 16)
-        .padding(.vertical, 15)
+        .padding(.leading, child ? 38 : 16)
+        .padding(.trailing, 18)
+        .padding(.vertical, 18)
+        .overlay(alignment: .leading) {
+            if child {
+                Rectangle().fill(Palette.hairline).frame(width: 1.5).padding(.leading, 25).padding(.vertical, 8)
+            }
+        }
         .background(lit ? Palette.hover : .clear)
     }
 }
@@ -1699,7 +1711,7 @@ struct Switch: View {
 
     var body: some View {
         Capsule()
-            .fill(on ? Palette.ink : Palette.muted.opacity(0.55))
+            .fill(on ? Palette.ink : Palette.muted.opacity(0.25))
             .frame(width: 30, height: 18)
             .overlay(alignment: on ? .trailing : .leading) {
                 Circle()

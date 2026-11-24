@@ -15,6 +15,13 @@ enum Palette {
     static let ink = Color(nsColor: NS.ink)             // neutral-900 · neutral-100
     static let muted = Color(nsColor: NS.muted)         // neutral-500
     static let faint = Color(nsColor: NS.faint)         // neutral-300 · neutral-700
+    /// A shadow's black, softer in a light window, where the full strength
+    /// reads as a dirty smudge on white.
+    static func lift(light: Double, dark: Double) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            NSColor(white: 0, alpha: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light)
+        })
+    }
     static let hairline = Color(nsColor: NS.hairline)   // neutral-200 · neutral-800
     static let wash = Color(nsColor: NS.wash)           // the live tab
     static let hover = Color(nsColor: NS.hover)         // the one under the pointer
@@ -34,7 +41,7 @@ enum Palette {
         static let ink = pair(0.09, 0.93)
         static let muted = pair(0.55, 0.58)
         static let faint = pair(0.83, 0.32)
-        static let hairline = pair(0.91, 0.20)
+        static let hairline = pair(0.87, 0.20)
         static let wash = pair(0.937, 0.175)
         static let hover = pair(0.965, 0.15)
         static let frame = pair(0.955, 0.075)
@@ -90,11 +97,11 @@ struct Greys {
     static let white = Greys(wash: shade(0.063, 0.073), hover: shade(0.035, 0.045),
                              tile: shade(0.063, 0.073).opacity(0.55), pinLive: shade(0.10, 0.112),
                              washOnTile: shade(0.0294, 0.0342), hoverOnTile: shade(0.004, 0.005),
-                             muted: shade(0.45, 0.5281), faint: shade(0.17, 0.236))
+                             muted: shade(0.58, 0.5281), faint: shade(0.30, 0.236))
     static let frame = Greys(wash: shade(0.0628, 0.0865), hover: shade(0.0419, 0.0595),
                              tile: shade(0.0314, 0.0432), pinLive: shade(0.0995, 0.1243),
                              washOnTile: shade(0.0324, 0.0452), hoverOnTile: shade(0.0108, 0.0169),
-                             muted: shade(0.4241, 0.5459), faint: shade(0.1309, 0.2649))
+                             muted: shade(0.55, 0.5459), faint: shade(0.27, 0.2649))
 
     private static func shade(_ light: CGFloat, _ dark: CGFloat) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -169,9 +176,14 @@ enum Metrics {
     /// With the tabs down the side the page is a card: this far from the
     /// window's edges (and from the column, folded away), and its corners
     /// this round.
-    static let cardGap: CGFloat = 8
+    static let cardGap: CGFloat = 14
+    static let columnRowInset: CGFloat = 10
     static let cardRadius: CGFloat = 10
     static let rowRadius: CGFloat = 10
+    /// A popover's own corners, and the concentric rule for what sits in
+    /// them: the inner radius is the outer one less the inset between.
+    static let popoverRadius: CGFloat = 16
+    static func concentric(outer: CGFloat = popoverRadius, inset: CGFloat) -> CGFloat { max(outer - inset, 0) }
     /// Where the first tab starts. The traffic lights run from 19 to 79 —
     /// measured, not guessed — so this leaves them the same air on their right
     /// that the window gives them on their left.
@@ -187,10 +199,10 @@ enum Metrics {
     /// lights, about the 19 the window leaves on their left, as a toolbar's
     /// first item sits in Safari. A column too narrow for that gives back
     /// what it must (SideBar.lights), down to where it was.
-    static let sideLights: CGFloat = 88
+    static let sideLights: CGFloat = 94
     /// The least of it the fold door may have: its box 3 points clear of
     /// the zoom button (SideBar.folds).
-    static let sideLightsLeast: CGFloat = 80
+    static let sideLightsLeast: CGFloat = 86
     /// The three doors' own width, without the air after them.
     static let helmDoors: CGFloat = 3 * Door.width + 2 * 4
     /// The same two, for the doors Settings leaves shown (idea 815): all
@@ -368,6 +380,12 @@ enum Motion {
         reduced ? nil : light ? .easeOut(duration: 0.16) : .spring(response: 0.30, dampingFraction: 0.86)
     }
 
+    static let spaceSpan: Double = 0.32
+
+    static var space: Animation? {
+        reduced ? nil : .timingCurve(0.22, 1, 0.36, 1, duration: spaceSpan)
+    }
+
     static var quick: Animation? {
         reduced ? nil : .easeOut(duration: 0.14)
     }
@@ -520,6 +538,13 @@ struct Shake: GeometryEffect {
 }
 
 extension View {
+    /// A floating pill or card: the page shows through, blurred, under a
+    /// light wash of the ground so the text stays clear to read.
+    func pillGlass<S: InsettableShape>(_ shape: S) -> some View {
+        background(Palette.ground.opacity(0.58), in: shape)
+            .background(.ultraThinMaterial, in: shape)
+    }
+
     /// What a popover holds, on the ground colour. From macOS 26 a popover
     /// clips what it holds to its own rounded glass, and the background
     /// fills its arrow too; before, an opaque background was drawn out to the

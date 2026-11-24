@@ -31,11 +31,35 @@ struct FindBar: View {
     private var narrow: Bool { availableWidth.map { $0 < 290 } ?? false }
     private var fieldWidth: CGFloat {
         guard let availableWidth else { return 150 }
-        return max(40, min(160, availableWidth - (narrow ? 80 : 130)))
+        return max(40, min(160, availableWidth - (narrow ? 110 : 160)))
     }
 
     var body: some View {
         HStack(spacing: 6) {
+            Menu {
+                Toggle("Match Case", isOn: $browser.matchCase)
+                    .help("Match uppercase and lowercase letters exactly.")
+                Toggle("Whole Words", isOn: $browser.wholeWords)
+                    .disabled(browser.findResult?.nativeFallback == true && !browser.wholeWords)
+                    .help("Match complete words. This option is unavailable for PDF pages.")
+            } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11, weight: .medium))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 6.5, weight: .bold))
+                }
+                .foregroundStyle(browser.matchCase || browser.wholeWords ? Palette.ink : Palette.muted)
+                .frame(height: 24)
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("Search options")
+            .accessibilityHint("Choose whether to match case or whole words.")
+            .help("Search options")
+
             ZStack(alignment: .leading) {
                 if browser.needle.isEmpty {
                     Text("Find on page")
@@ -53,60 +77,42 @@ struct FindBar: View {
             .frame(width: fieldWidth)
 
             // "3 of 17", as the page counted it.
-            if let status = browser.findStatus {
+            // Its room is kept, so the pill doesn't change width as one types.
+            ZStack(alignment: .leading) {
+                if let status = browser.findStatus {
                 Text(status)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(browser.missed ? Color.red.opacity(0.8) : Palette.muted)
+                    .foregroundStyle(browser.missed ? Color(nsColor: .systemRed) : Palette.muted)
                     .monospacedDigit()
                     .lineLimit(1)
                     .fixedSize()
                     .accessibilityLabel(status)
                     .accessibilityIdentifier("Find result status")
+                }
             }
+            .frame(width: 52, alignment: .leading)
 
             // A pane too narrow for them keeps Return and ⇧Return instead.
             if !narrow {
-                step("chevron.up", label: "Previous match", help: "Previous Match", shortcut: "edit.findPrevious") {
+                step("chevron.left", label: "Previous match", help: "Previous Match", shortcut: "edit.findPrevious") {
                     browser.look(forward: false)
                 }
-                step("chevron.down", label: "Next match", help: "Next Match", shortcut: "edit.findNext") {
+                step("chevron.right", label: "Next match", help: "Next Match", shortcut: "edit.findNext") {
                     browser.look(forward: true)
                 }
             }
 
-            Menu {
-                Toggle("Match case", isOn: $browser.matchCase)
-                    .help("Match uppercase and lowercase letters exactly.")
-                Toggle("Whole words", isOn: $browser.wholeWords)
-                    .disabled(browser.findResult?.nativeFallback == true && !browser.wholeWords)
-                    .help("Match complete words. This option is unavailable for PDF pages.")
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(browser.matchCase || browser.wholeWords ? Palette.ink : Palette.muted)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .accessibilityLabel("Search options")
-            .accessibilityHint("Choose whether to match case or whole words.")
-            .help("Search options")
 
             step("xmark", label: "Close Find on Page", help: "Close the find field and clear its selection.") {
                 browser.closeFind()
             }
         }
-        .padding(.leading, narrow ? 10 : 16)
-        .padding(.trailing, narrow ? 6 : 8)
-        .padding(.vertical, 8)
-        .background(Palette.ground, in: Capsule())
+        .padding(.leading, narrow ? 14 : 18)
+        .padding(.trailing, narrow ? 12 : 16)
+        .padding(.vertical, 11)
+        .pillGlass(Capsule())
         .overlay(
-            Capsule().strokeBorder(
-                browser.missed ? Color.red.opacity(0.35) : Palette.hairline,
-                lineWidth: 1
-            )
+            Capsule().strokeBorder(Palette.hairline, lineWidth: 1)
         )
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("find")) }) {
             onPillFrame?($0)

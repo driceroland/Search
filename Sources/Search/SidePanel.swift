@@ -753,32 +753,28 @@ struct SidePanelView: View {
     var body: some View {
         switch browser.sidePanel {
         case .page(let id, _, _):
-            VStack(spacing: 0) {
-                HStack(spacing: 8) {
+            ZStack(alignment: .top) {
+                PanelPage(web: SidePanelPages.shared.web(in: browser))
+                    .padding(.top, 52)
+                PanelToolbar {
                     if #available(macOS 15.4, *), let icon = Extensions.shared.contexts[id]?.webExtension.icon(for: CGSize(width: 16, height: 16)) {
-                        Image(nsImage: icon).resizable().interpolation(.high).frame(width: 14, height: 14)
+                        Image(nsImage: icon).resizable().interpolation(.high).frame(width: 16, height: 16)
                     }
                     Text(Browser.extensionName(id))
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     Door(icon: "xmark", help: "Close") { browser.closeSidePanel() }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                Rectangle().fill(Palette.hairline).frame(height: 1)
-                PanelPage(web: SidePanelPages.shared.web(in: browser))
             }
         case .site:
-            VStack(spacing: 0) {
-                // Its own line for each page made: a new site's line
-                // watches the new page, not the one let go.
+            ZStack(alignment: .top) {
+                PanelPage(web: SidePanelPages.shared.web(in: browser))
+                    .padding(.top, 52)
                 if let delegate = SidePanelPages.shared.siteDelegate(in: browser) {
                     SiteLine(browser: browser, delegate: delegate).id(ObjectIdentifier(delegate))
                 }
-                Rectangle().fill(Palette.hairline).frame(height: 1)
-                PanelPage(web: SidePanelPages.shared.web(in: browser))
             }
         case .downloads:
             // As tall as the panel, as its list is in a tab.
@@ -819,18 +815,35 @@ private struct SiteLine: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        PanelToolbar {
+            Image(systemName: seen.host.hasSuffix("(not secure)") ? "exclamationmark.triangle" : "globe")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Palette.muted)
             Text(seen.host)
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Palette.ink)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
-            Door(icon: "arrow.up.forward.square", help: "Open in a Tab") { browser.sitePanelToTab() }
-            Door(icon: "xmark", help: "Close") { browser.closeSidePanel() }
+            HStack(spacing: 2) {
+                Door(icon: "arrow.up.forward.square", help: "Open in a Tab") { browser.sitePanelToTab() }
+                Door(icon: "xmark", help: "Close") { browser.closeSidePanel() }
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+    }
+}
+
+private struct PanelToolbar<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: 10) { content }
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(Palette.ground, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+            .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+            .padding(8)
     }
 }
 

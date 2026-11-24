@@ -164,7 +164,7 @@ final class SpaceSwipe {
     /// just turned on, a stroke over the tabs brought a nameless card that
     /// looked like a second space nobody made; New Space… still opens it.
     private func furthest(_ browser: Browser) -> Int {
-        browser.spaces.count > 1 || browser.makingSpace ? browser.spaces.count : browser.spaces.count - 1
+        browser.prefs.sidebar || browser.spaces.count > 1 || browser.makingSpace ? browser.spaces.count : browser.spaces.count - 1
     }
 
     /// With profiles in one window, past this window's first space or its
@@ -256,7 +256,7 @@ final class SpaceSwipe {
         // the hand is still (landSoon), and until then, up to a click while
         // fingers rested on the trackpad, the column wore the last space's
         // colour under the new space's rows (idea 954).
-        if to != here, browser.spaceHeading != id { withAnimation(Motion.quick) { browser.spaceHeading = id } }
+        if to != here, browser.spaceHeading != id { withAnimation(Motion.space) { browser.spaceHeading = id } }
         let moved = browser.spaceComing != (to == here ? nil : id) || browser.comingSlot != slot
         browser.spaceComing = to == here ? nil : id
         browser.comingSlot = slot
@@ -358,7 +358,7 @@ final class SpaceSwipe {
     /// snaps back without moving (Motion.settle).
     private func carry(_ browser: Browser, to offset: CGFloat, then arrived: @escaping () -> Void) {
         guard !Motion.reduced else { return arrived() }
-        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
+        withAnimation(Motion.space, completionCriteria: .removed) {
             browser.spaceSwipe = offset
         } completion: {
             arrived()
@@ -658,7 +658,6 @@ struct NewSpaceCard: View {
     @State private var shared = true
     @State private var hovering = false
     @FocusState private var typing: Bool
-
     private var saying: String {
         shared ? "Signed in wherever your other spaces are." : "Its own cookies and sign-ins, starting from none."
     }
@@ -691,8 +690,6 @@ struct NewSpaceCard: View {
                             .multilineTextAlignment(.center)
                     }
                     field
-                    // Most people want Google and the rest to know them here too;
-                    // some want a clean slate.
                     VStack(spacing: 6) {
                         Segmented(options: [(true, "Signed in"), (false, "Signed out")], selection: $shared, wide: true)
                         Text(saying)
@@ -923,11 +920,7 @@ final class SwipeGlide: NSObject {
     /// Steps it on when no frame comes: a window that isn't drawn — a hidden
     /// one, as the bench's — gets none, and the rows stayed out of place.
     private var watch: Timer?
-    /// How quickly the spring pulls, a second: most of the way in a tenth
-    /// of a second, within a point of its place in a fifth. At 20, a slide
-    /// took 0.4 s, and at 26 a third of a second: it felt slow, and the
-    /// next stroke often had to wait for it.
-    private static let pull: Double = 34
+    private static let span: Double = Motion.spaceSpan
 
     private init(_ browser: Browser, to: CGFloat, speed: CGFloat?, land: (() -> CGFloat)?,
                  halfway: (() -> Void)?, done: @escaping () -> Void) {
@@ -1030,19 +1023,10 @@ final class SwipeGlide: NSObject {
         let began = self.began ?? now
         self.began = began
         let t = now - began
-        // How far from its place, and how fast it closes in: x(t) =
-        // (x0 + (v0 + ωx0)t)e^(−ωt), its speed (v0 − ω(v0 + ωx0)t)e^(−ωt).
-        // Not set off by the fingers (⌃1–⌃9, the menu, the mouse's
-        // buttons): under way at once, gently. From rest, the first moment
-        // barely moved and the key seemed not to have been taken; at the
-        // spring's whole pace, the rows whipped off.
-        let w = Self.pull, x0 = Double(from - to), v0 = speed.map(Double.init) ?? -0.5 * w * x0
-        let fade = exp(-w * t)
-        var x = (x0 + (v0 + w * x0) * t) * fade
-        let v = (v0 - w * (v0 + w * x0) * t) * fade
-        // A flick faster than the spring would have it goes all the way and
-        // stops there, rather than past its place and back.
-        if x * x0 < 0 { x = 0 }
+        let x0 = Double(from - to)
+        let u = min(1, t / Self.span)
+        let rest = 1 - u
+        let x = x0 * rest * rest * rest * rest
         if abs(x) <= abs(x0) / 2, let halfway {
             self.halfway = nil
             halfway()
@@ -1052,7 +1036,7 @@ final class SwipeGlide: NSObject {
             to = land()
         }
         browser.spaceSwipe = to + CGFloat(x)
-        guard x == 0 || (abs(x) < 1 && abs(v) < 30) || t > 0.8 else { return }
+        guard u >= 1 || abs(x) < 0.5 else { return }
         end()
         if Self.current === self { Self.current = nil }
         finish()

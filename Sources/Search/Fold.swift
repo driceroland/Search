@@ -280,7 +280,33 @@ extension Browser {
 
     /// The folded column out over the page, or back in.
     func peek(_ out: Bool) {
-        moveColumn(out: out) { self.peeking = out }
+        var still = Transaction()
+        still.disablesAnimations = true
+        if out {
+            peekMove = 1
+            fadeTicket += 1
+            withTransaction(still) {
+                leavingPeek = false
+                fadeHeld = false
+                peeking = true
+            }
+            return
+        }
+        peekMove = -1
+        if Motion.reduced || Motion.fadesColumn {
+            moveColumn(out: false) { self.peeking = false }
+            return
+        }
+        fadeTicket += 1
+        let ticket = fadeTicket
+        withAnimation(.easeIn(duration: 0.18)) {
+            leavingPeek = true
+            peeking = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self, ticket == self.fadeTicket else { return }
+            withTransaction(still) { self.leavingPeek = false }
+        }
     }
 
     /// A page filling the screen in front of this window. With
@@ -451,6 +477,7 @@ struct Fold: View {
                         .animation(Motion.fadesColumn ? .easeInOut(duration: Motion.fade) : nil) { column in
                             column.opacity(lightsOff && Motion.fadesColumn ? 0 : 1)
                         }
+                        .opacity(browser.leavingPeek ? 0 : 1)
                         .offset(x: lightsOff && !browser.fadeHeld ? (onRight ? prefs.columnWidth : -prefs.columnWidth) : 0)
                         .allowsHitTesting(!lightsOff)
                         .transition(.move(edge: onRight ? .trailing : .leading))
@@ -717,10 +744,12 @@ struct Fold: View {
             bar.isHidden = false
             return
         }
+        let move = browser.peekMove
+        browser.peekMove = 0
         if prefs.sidebar {
-            Fold.slide(bar, off: lightsOff, by: prefs.columnWidth, right: onRight)
+            Fold.slide(bar, off: lightsOff, by: prefs.columnWidth, right: onRight, peek: move)
         } else {
-            Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true)
+            Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true, peek: move)
         }
     }
 
@@ -748,10 +777,15 @@ struct Fold: View {
     /// wherever they are, when the pointer turns back halfway. `up` sends
     /// the strip's lights off the top edge.
     static func slide(_ bar: NSView, off: Bool, by width: CGFloat, up: Bool = false,
-                      right: Bool = false) {
+                      right: Bool = false, peek: Int = 0) {
         slides += 1
         let turn = slides
         guard let layer = bar.layer else {
+            bar.isHidden = off
+            return
+        }
+        if peek > 0 {
+            layer.removeAnimation(forKey: "fold")
             bar.isHidden = off
             return
         }
@@ -807,7 +841,11 @@ struct Fold: View {
             return
         }
         let spring: CABasicAnimation
-        if let slide = Motion.slide(out: !off) {
+        if peek < 0 {
+            spring = CABasicAnimation(keyPath: path)
+            spring.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            spring.duration = 0.18
+        } else if let slide = Motion.slide(out: !off) {
             // The column's eased slide (Slide the column in and out).
             spring = CABasicAnimation(keyPath: path)
             spring.timingFunction = CAMediaTimingFunction(name: off ? .easeIn : .easeOut)

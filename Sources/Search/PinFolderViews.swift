@@ -159,10 +159,12 @@ struct PinFolderHeading: View {
         if folder.isLive {
             Button("Refresh") { LiveFolders.refresh(folder.id, in: browser.spaceID) }
         } else {
-            Button("New Folder Inside") { browser.newPinFolder(in: folder.id) }
-                .disabled(!PinTree.canMake(in: folder.id, in: folders))
-            Button("New Live Folder Inside…") { LiveFolders.ask(for: browser, in: folder.id) }
-                .disabled(!PinTree.canMake(in: folder.id, in: folders))
+            Menu("New Inside") {
+                Button("Folder") { browser.newPinFolder(in: folder.id) }
+                    .disabled(!PinTree.canMake(in: folder.id, in: folders))
+                Button("Live Folder…") { LiveFolders.ask(for: browser, in: folder.id) }
+                    .disabled(!PinTree.canMake(in: folder.id, in: folders))
+            }
         }
         Menu("Move Folder To") {
             Button("Top of Pinned Rows") { browser.movePinFolder(folder.id, into: nil) }

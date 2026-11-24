@@ -729,6 +729,8 @@ struct ContentView: View {
         } else if browser.prefs.homeTheme != .off {
             HomeBackground(theme: browser.prefs.homeTheme, tuning: browser.prefs.homeTuning,
                            image: browser.prefs.homeThemeImage, shuffle: browser.prefs.homeShuffle)
+        } else if browser.prefs.clearEmpty {
+            Color.clear
         } else {
             Palette.ground
         }
@@ -741,7 +743,7 @@ struct ContentView: View {
     private var chrome: CGSize {
         let bar = barShown ? BookmarksBar.height : 0
         if cards {
-            return CGSize(width: sidebar ? sideWidth : Metrics.cardGap,
+            return CGSize(width: sidebar ? sideWidth + max(Metrics.cardGap - Metrics.columnRowInset, 0) : Metrics.cardGap,
                           height: barShown ? bar : Metrics.cardGap)
         }
         return CGSize(width: sidebar ? sideWidth : 0, height: band + bar)
@@ -1199,7 +1201,7 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 15)
                 .padding(.vertical, 9)
-                .background(Palette.ground, in: Capsule())
+                .pillGlass(Capsule())
                 .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
                 .shadow(color: .black.opacity(0.10), radius: 18, y: 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1374,11 +1376,11 @@ struct ContentView: View {
         // its three doors sit on the lights' line.
         let edges = self.edges
         Lights.keep(window, centreX: { window in
-            let lead = browser.prefs.iconColumn ? Metrics.iconColumn / 2 - 20 : Lights.centre.x
+            let lead = browser.prefs.iconColumn ? Metrics.iconColumn / 2 : Lights.centre.x
             return browser.prefs.sidebar && browser.prefs.sidePosition == .right
                 ? window.frame.width - (edges.side ?? browser.prefs.columnWidth) + lead
                 : lead
-        }, vertical: { _ in false }) { measureLights() }
+        }, vertical: { _ in browser.prefs.iconColumn }) { measureLights() }
         DispatchQueue.main.async { measureLights() }
 
         // The traffic lights are drawn — measured, they paint themselves — but

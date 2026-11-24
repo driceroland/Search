@@ -642,7 +642,7 @@ extension Browser {
             return switchSpace(to: id)
         }
         // Its colour from the click, while its rows are still on their way.
-        withAnimation(Motion.quick) { spaceHeading = id }
+        withAnimation(Motion.space) { spaceHeading = id }
         SpaceSwipe.shared.bring(self, id, step: to > here ? 1 : -1)
     }
 
@@ -869,8 +869,8 @@ struct SpaceWash: View {
             }
         }
         .allowsHitTesting(false)
-        .animation(Motion.quick, value: look)
-        .animation(Motion.quick, value: strength)
+        .animation(Motion.space, value: look)
+        .animation(Motion.space, value: strength)
     }
 }
 
@@ -1088,7 +1088,7 @@ enum SpaceMenu {
 
     /// The menu itself, for show() to pop up, and for the bench to read.
     static func flat(_ menu: NSMenu) -> [NSMenuItem] {
-        menu.items.flatMap { item in [item] + (item.title.hasPrefix("Edit “") ? item.submenu?.items ?? [] : []) }
+        menu.items.flatMap { item in [item] + ((item.representedObject as? String) == "space-edit" ? item.submenu?.items ?? [] : []) }
     }
 
     static func perform(_ item: NSMenuItem) {
@@ -1106,6 +1106,76 @@ enum SpaceMenu {
                 (profile.name, profile.id == browser.profileID ? browser.spaces : Spaces.read(profile: profile.id))
             }
             : [(nil, browser.spaces)]
+        // What a space's row opens when it is hovered: its own edits.
+        func editMenu(for here: Space) -> NSMenu {
+            let edit = NSMenu()
+            edit.addItem(item("Rename…") {
+                Ask.name("Rename Space", placeholder: here.name, initial: here.name, confirm: "Rename") { browser.renameSpace(here.id, to: $0) }
+            })
+            edit.addItem(item("Icon…") {
+                DispatchQueue.main.async {
+                    if browser.spaceID != here.id { browser.goToSpace(here.id) }
+                    SpaceIconPopover.show(for: browser)
+                }
+            })
+            edit.addItem(item("Colour…") {
+                DispatchQueue.main.async {
+                    if browser.spaceID != here.id { browser.goToSpace(here.id) }
+                    SpaceLookPopover.show(for: browser)
+                }
+            })
+            if let at = browser.spaces.firstIndex(where: { $0.id == here.id }) {
+                var moves: [NSMenuItem] = []
+                if at > 0 {
+                    moves.append(item("Move Left") { browser.moveSpace(here.id, to: at - 1) })
+                } else if browser.profileBeyond(-1) != nil {
+                    moves.append(item("Move Left") { Profiles.shared.move(browser.profileID, by: -1) })
+                }
+                if at < browser.spaces.count - 1 {
+                    moves.append(item("Move Right") { browser.moveSpace(here.id, to: at + 1) })
+                } else if browser.profileBeyond(1) != nil {
+                    moves.append(item("Move Right") { Profiles.shared.move(browser.profileID, by: 1) })
+                }
+                moves.forEach(edit.addItem)
+            }
+            let folder = here.downloads.map { URL(fileURLWithPath: $0).lastPathComponent }
+            let places = NSMenu()
+            places.addItem(item("Same as Settings", checked: folder == nil) { browser.setSpaceDownloads(here.id, to: nil) })
+            if let folder {
+                places.addItem(item("“\(folder)”", checked: true) {})
+            }
+            places.addItem(.separator())
+            places.addItem(item("Choose Folder…") { Ask.folder { browser.setSpaceDownloads(here.id, to: $0) } })
+            let downloads = NSMenuItem(title: "Downloads Folder", action: nil, keyEquivalent: "")
+            downloads.submenu = places
+            edit.addItem(downloads)
+            if browser.canDeleteSpace(here.id) {
+                edit.addItem(.separator())
+                // Signed in with the others, it has no cookies of its own to erase.
+                let own = Spaces.ownsStore(here.id)
+                edit.addItem(item("Delete…") {
+                    Ask.sure("Delete “\(here.name)”?",
+                             detail: own ? "Its tabs close, and its cookies and sign-ins are erased from this Mac. History and bookmarks stay."
+                                         : "Its tabs and pins close. Your sign-ins, history and bookmarks stay.",
+                             confirm: "Delete") {
+                        browser.deleteSpace(here.id)
+                    }
+                })
+            } else if browser.spaces.count == 1, browser.profileID != Profile.personalID {
+                // A profile's last space goes with the profile.
+                let profile = Profiles.shared.profile(browser.profileID)
+                edit.addItem(.separator())
+                edit.addItem(item("Delete Profile “\(profile.name)”…") {
+                    Ask.sure("Delete “\(profile.name)”?",
+                             detail: "“\(here.name)” is its last space. The profile's windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac.",
+                             confirm: "Delete", returnCancels: true) {
+                        Profiles.shared.delete(profile.id)
+                    }
+                })
+            }
+        edit.title = "Edit"
+        return edit
+        }
         var index = 0
         let headed = lists.contains { $0.spaces.count > 1 }
         for list in lists where !list.spaces.isEmpty {
@@ -1115,81 +1185,14 @@ enum SpaceMenu {
                     browser.goToSpace(space.id)
                 }
                 entry.image = image(space.symbol, tint: space.tint)
+                // Hovering a space of this window's own shows what can be done to it.
+                if browser.spaces.contains(where: { $0.id == space.id }) {
+                    entry.submenu = editMenu(for: space)
+                    entry.representedObject = "space-edit"
+                }
                 menu.addItem(entry)
                 index += 1
             }
-        }
-        menu.addItem(.separator())
-        menu.addItem(item("New Space…") { browser.askForSpace() })
-        let here = browser.space
-        let edit = NSMenu()
-        edit.addItem(item("Rename…") {
-            Ask.name("Rename Space", placeholder: here.name, initial: here.name, confirm: "Rename") { browser.renameSpace(here.id, to: $0) }
-        })
-        let icons = NSMenu()
-        for (symbol, name) in zip(Spaces.icons, Spaces.iconNames) {
-            let choice = item(name, checked: here.symbol == symbol) { browser.setSpaceIcon(here.id, to: symbol) }
-            choice.image = NSImage(systemSymbolName: symbol, accessibilityDescription: name)
-            icons.addItem(choice)
-        }
-        let icon = NSMenuItem(title: "Icon", action: nil, keyEquivalent: "")
-        icon.submenu = icons
-        edit.addItem(icon)
-        edit.addItem(item("Colour…") {
-            DispatchQueue.main.async { SpaceLookPopover.show(for: browser) }
-        })
-        if let at = browser.spaces.firstIndex(where: { $0.id == here.id }) {
-            var moves: [NSMenuItem] = []
-            if at > 0 {
-                moves.append(item("Move Left") { browser.moveSpace(here.id, to: at - 1) })
-            } else if browser.profileBeyond(-1) != nil {
-                moves.append(item("Move Left") { Profiles.shared.move(browser.profileID, by: -1) })
-            }
-            if at < browser.spaces.count - 1 {
-                moves.append(item("Move Right") { browser.moveSpace(here.id, to: at + 1) })
-            } else if browser.profileBeyond(1) != nil {
-                moves.append(item("Move Right") { Profiles.shared.move(browser.profileID, by: 1) })
-            }
-            if !moves.isEmpty {
-                edit.addItem(.separator())
-                moves.forEach(edit.addItem)
-            }
-        }
-        let folder = here.downloads.map { URL(fileURLWithPath: $0).lastPathComponent }
-        let places = NSMenu()
-        places.addItem(item("Same as Settings", checked: folder == nil) { browser.setSpaceDownloads(here.id, to: nil) })
-        if let folder {
-            places.addItem(item("“\(folder)”", checked: true) {})
-        }
-        places.addItem(.separator())
-        places.addItem(item("Choose Folder…") { Ask.folder { browser.setSpaceDownloads(here.id, to: $0) } })
-        let downloads = NSMenuItem(title: "Downloads Folder", action: nil, keyEquivalent: "")
-        downloads.submenu = places
-        edit.addItem(.separator())
-        edit.addItem(downloads)
-        if browser.canDeleteSpace(here.id) {
-            edit.addItem(.separator())
-            // Signed in with the others, it has no cookies of its own to erase.
-            let own = Spaces.ownsStore(here.id)
-            edit.addItem(item("Delete…") {
-                Ask.sure("Delete “\(here.name)”?",
-                         detail: own ? "Its tabs close, and its cookies and sign-ins are erased from this Mac. History and bookmarks stay."
-                                     : "Its tabs and pins close. Your sign-ins, history and bookmarks stay.",
-                         confirm: "Delete") {
-                    browser.deleteSpace(here.id)
-                }
-            })
-        } else if browser.spaces.count == 1, browser.profileID != Profile.personalID {
-            // A profile's last space goes with the profile.
-            let profile = Profiles.shared.profile(browser.profileID)
-            edit.addItem(.separator())
-            edit.addItem(item("Delete Profile “\(profile.name)”…") {
-                Ask.sure("Delete “\(profile.name)”?",
-                         detail: "“\(here.name)” is its last space. The profile's windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac.",
-                         confirm: "Delete", returnCancels: true) {
-                    Profiles.shared.delete(profile.id)
-                }
-            })
         }
         if browser.prefs.usesTabGroups, !browser.tabGroups.isEmpty {
             let fold = item("Fold All Groups") { browser.foldAllGroups(true) }
@@ -1200,11 +1203,10 @@ enum SpaceMenu {
             menu.addItem(.separator())
             menu.addItem(fold)
             menu.addItem(unfold)
-            menu.addItem(.separator())
         }
-        let holder = NSMenuItem(title: "Edit “\(here.name)”", action: nil, keyEquivalent: "")
-        holder.submenu = edit
-        menu.addItem(holder)
+        // New Space… always lands last.
+        menu.addItem(.separator())
+        menu.addItem(item("New Space…") { browser.askForSpace() })
         return menu
     }
 }
@@ -1353,5 +1355,92 @@ struct SpaceFloatRequest {
         guard pending == id else { return false }
         pending = nil
         return true
+    }
+}
+
+
+/// A space's icon, shown by the icon where its menu was opened: the current
+/// one, with a disclosure that unfolds the choices in a grid.
+@MainActor
+enum SpaceIconPopover {
+    private static var shown: NSPopover?
+
+    static func show(for browser: Browser) {
+        guard ProcessInfo.processInfo.environment["SEARCH_PROBE"] == nil,
+              let window = browser.window, window.isVisible, let content = window.contentView else { return }
+        shown?.close()
+        let host = NSHostingController(rootView: SpaceIconPicker(browser: browser, id: browser.space.id) { shown?.close() })
+        host.sizingOptions = .preferredContentSize
+        let popover = NSPopover()
+        popover.contentViewController = host
+        popover.behavior = .transient
+        popover.animates = !Motion.instant
+        shown = popover
+        var spot = NSRect(x: content.bounds.midX, y: content.bounds.midY, width: 2, height: 2)
+        if let anchor = SpaceLookPopover.anchor {
+            let point = content.convert(window.convertPoint(fromScreen: anchor), from: nil)
+            if content.bounds.contains(point) { spot = NSRect(x: point.x - 1, y: point.y - 1, width: 2, height: 2) }
+        }
+        let edge: NSRectEdge = browser.prefs.sidebar
+            ? (browser.prefs.sidePosition == .right ? .minX : .maxX)
+            : (content.isFlipped ? .maxY : .minY)
+        popover.show(relativeTo: spot, of: content, preferredEdge: edge)
+    }
+}
+
+struct SpaceIconPicker: View {
+    @ObservedObject var browser: Browser
+    let id: UUID
+    let done: () -> Void
+    @State private var open = false
+
+    private var symbol: String { browser.spaces.first { $0.id == id }?.symbol ?? "square" }
+    private var name: String {
+        Spaces.icons.firstIndex(of: symbol).map { Spaces.iconNames[$0] } ?? "Icon"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Button { withAnimation(Motion.quick) { open.toggle() } } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: symbol).font(.system(size: 15)).frame(width: 22)
+                    Text(name).font(.system(size: 13, weight: .medium))
+                    Spacer(minLength: 24)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Palette.muted)
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                }
+                .foregroundStyle(Palette.ink)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Icon: \(name)")
+            .accessibilityHint(open ? "Hide the choices" : "Show the choices")
+            if open {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(34), spacing: 6), count: 6), spacing: 6) {
+                    ForEach(Spaces.icons.indices, id: \.self) { index in
+                        let choice = Spaces.icons[index]
+                        Button {
+                            browser.setSpaceIcon(id, to: choice)
+                        } label: {
+                            Image(systemName: choice)
+                                .font(.system(size: 14))
+                                .frame(width: 34, height: 34)
+                                .foregroundStyle(choice == symbol ? Palette.ground : Palette.ink)
+                                .background(choice == symbol ? Palette.ink : Palette.wash,
+                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .help(Spaces.iconNames[index])
+                        .accessibilityLabel(Spaces.iconNames[index])
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .padding(16)
+        .frame(width: open ? 276 : 220)
+        .popoverGround()
     }
 }

@@ -102,7 +102,7 @@ struct SideBar: View {
     private var stripUp: Bool { strip && prefs.doorsUp }
     /// The foot's doors one above the other, and the margin under them.
     private var stackedDoors: CGFloat {
-        CGFloat(SideFoot.doors(prefs, browser.fetches, hanging: browser.downloadsHanging, spaces: SpaceButtons.count(prefs, browser.spaces))) * 34 + 14
+        CGFloat(SideFoot.doors(prefs, browser.fetches, hanging: browser.downloadsHanging, spaces: SpaceButtons.count(prefs, browser.spaces))) * 34 + 14 + 10
     }
     /// With icons only, the band the stacked lights take: gone in full
     /// screen, with them.
@@ -110,7 +110,7 @@ struct SideBar: View {
     /// What sits above the pins: the lights' band, and with icons only the
     /// three doors under it.
     private var top: CGFloat {
-        !icons ? Metrics.strip : !strip ? lightsBand + (prefs.helmDoors > 0 ? 26 + 8 : 0) : lightsBand + (stripUp ? stackedDoors : 0)
+        !icons ? Metrics.strip : !strip ? lightsBand + (prefs.helmDoors > 0 ? 26 + 8 + 8 : 0) : lightsBand + (stripUp ? stackedDoors : 0)
     }
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
 
@@ -215,8 +215,9 @@ struct SideBar: View {
     /// downloads counted whether running or not, so a download starting
     /// doesn't send them all back down.
     @MainActor static func doorsUp(_ prefs: Preferences, width: CGFloat, fullScreen: Bool, spaces: Int = 0) -> Bool {
-        prefs.doorsUp && prefs.sidebar && !prefs.iconColumn
-            && beyondHelm(width, fullScreen: fullScreen, fold: folds(prefs, width: width, fullScreen: fullScreen), prefs: prefs) >= SideFoot.keptWidth(prefs, spaces: spaces)
+        // A wide column keeps its buttons at the foot: they no longer jump
+        // up to the lights' row as it is pulled out.
+        false
     }
 
     var body: some View {
@@ -265,6 +266,7 @@ struct SideBar: View {
                         SmartNav(browser: browser)
                             .modifier(IconNavPeek(browser: browser))
                             .frame(maxWidth: .infinity)
+                            .padding(.top, 8)
                             .padding(.bottom, 8)
                     }
                 } else {
@@ -459,10 +461,15 @@ struct SideBar: View {
     /// it, a small pill shows in the middle (see Grip) so the edge says it
     /// can be taken before it is. Edge to edge, the pill sits on the page's
     /// hairline; as cards, in the gap before the page.
+    private var gripShift: CGFloat {
+        let extra = max(Metrics.cardGap - Metrics.columnRowInset, 0)
+        return extra / 2 + 2
+    }
+
     private var edge: some View {
         EdgeGrip(lit: onEdge || grabbed != nil)
-            .offset(x: onFrame ? 0 : onRight ? -4 : 4)
-            .frame(width: 9)
+            .offset(x: onFrame ? (onRight ? -gripShift : gripShift) : onRight ? -6 : 6)
+            .frame(width: 14)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
             .onHover { over in
@@ -614,7 +621,6 @@ struct SideBar: View {
                         Spacer(minLength: 0)
                         NewSpaceCard(browser: browser)
                         Spacer(minLength: 0)
-                        Spacer(minLength: 0)
                     }
                     .frame(maxHeight: .infinity)
                 }
@@ -622,7 +628,7 @@ struct SideBar: View {
                 VStack(alignment: .leading, spacing: 0) {
                     if !browser.squarePins.isEmpty || ghostSquare != nil {
                         pinned
-                            .padding(.bottom, 10)
+                            .padding(.bottom, (icons && !browser.squarePins.isEmpty ? 14 : 10) + (browser.squarePins.isEmpty ? 0 : 8))
                             // A square carried down over the rows passes
                             // over them, not under.
                             .zIndex(carriedPin ? 1 : 0)
@@ -803,7 +809,8 @@ struct SideBar: View {
                         }
                     }
                 }
-                .padding(.bottom, 10)
+                .modifier(PinBox(on: icons, fill: greys.tile))
+                .padding(.bottom, icons ? 22 : 18)
             }
             if showsMarks {
                 SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons)
@@ -894,15 +901,17 @@ struct SideBar: View {
         }
         for drawn in groups {
             let top = y
+            if icons && !drawn.group.collapsed { y += Self.folderPad }
             // A folded group showing none of its tabs still has its empty
             // stack under its heading, and the gap after it.
-            add("heading-\(drawn.group.id)", .heading(drawn.group), heading, after: drawn.tabs.isEmpty ? 2 * SideBar.gap : SideBar.gap)
+            add("heading-\(drawn.group.id)", .heading(drawn.group), heading, after: icons && !drawn.group.collapsed ? Self.folderPad : drawn.tabs.isEmpty ? 2 * SideBar.gap : SideBar.gap)
             for tab in drawn.tabs {
                 add(tab.id, .tab(tab, group: drawn.group), lines(tab) * rowHeight, front: tab.id == front)
             }
             if let colour = drawn.group.colour, let last = out.last {
                 tints.append(PreviewTint(id: drawn.group.id, colour: colour, top: top, bottom: last.y + last.height))
             }
+            if icons && !drawn.group.collapsed { y += Self.folderPad }
         }
         if keeps { add("keep", .keep, KeepLine.height) }
         for tab in rest { add(tab.id, .tab(tab), lines(tab) * rowHeight, front: tab.id == front) }
@@ -957,7 +966,7 @@ struct SideBar: View {
     /// frame late, and for one frame the whole column would drag the window.
     private var rowsEnd: CGFloat {
         let pins = browser.squarePins.count
-        let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + 10
+        let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + (icons ? 30 : 18)
         return top + pinBlock + marksHeight + rowsHeight
     }
 
@@ -986,8 +995,10 @@ struct SideBar: View {
         let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
         // A folded group showing none of its tabs still has its empty stack
         // of them under its heading, and the gap after it.
+        let open = icons ? browser.tabGroups.filter { !$0.collapsed }.count : 0
         let headings = CGFloat(grouped.count) * (heading + SideBar.gap)
             + CGFloat(grouped.filter(\.isEmpty).count) * SideBar.gap
+            + CGFloat(open) * (2 * Self.folderPad + Self.folderPad - SideBar.gap)
         let loose = CGFloat(rows.count) * (rowHeight + SideBar.gap) + CGFloat(pairs) * rowHeight + headings
         return listBlock + loose + rowHeight + 8
     }
@@ -1165,6 +1176,7 @@ struct SideBar: View {
         } }
         .coordinateSpace(name: "pins")
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.grid = $0 }
+        .modifier(PinBox(on: icons && !tabs.isEmpty, fill: greys.tile))
     }
 
     // MARK: - the rows
@@ -1373,14 +1385,19 @@ struct SideBar: View {
                 ForEach(browser.tabGroups) { group in
                     let members = browser.visibleTabs(in: group)
                     let ghost = crossing?.target == .group(group.id) ? crossingTab : nil
-                    VStack(spacing: SideBar.gap) {
+                    VStack(spacing: icons && !group.collapsed ? Self.folderPad : SideBar.gap) {
                         GroupHeading(browser: browser, group: group, dragSpace: "rows", compact: icons)
                         groupRows(group, members: members, ghost: ghost)
                     }
+                    .padding(.vertical, icons && !group.collapsed ? Self.folderPad : 0)
                     .background(alignment: .top) {
-                        groupWash(group.colour)
-                            .frame(height: members.isEmpty && ghost == nil
-                                   ? (icons ? GroupHeading.compactHeight : GroupHeading.height) : nil)
+                        if icons && !group.collapsed {
+                            folderBox(group.colour)
+                        } else {
+                            groupWash(group.colour)
+                                .frame(height: members.isEmpty && ghost == nil
+                                       ? (icons ? GroupHeading.compactHeight : GroupHeading.height) : nil)
+                        }
                     }
                 }
             }
@@ -1479,6 +1496,19 @@ struct SideBar: View {
         }
     }
 
+    private static let folderPad: CGFloat = 4
+
+    private func folderBox(_ colour: Int?) -> some View {
+        let tint = colour.flatMap { index in
+            Spaces.wash(index, dark: colourScheme == .dark).map { Spaces.colours[index].opacity($0) }
+        }
+        return RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+            .fill(tint ?? greys.tile)
+            .frame(width: Metrics.iconTile + 16)
+            .frame(maxWidth: .infinity)
+            .allowsHitTesting(false)
+    }
+
     private func groupRows(_ group: TabGroup, members: [Tab], ghost: Tab?) -> some View {
         let memberSteps = steps(members)
         let inset = groupRowInset(group)
@@ -1507,8 +1537,11 @@ struct SideBar: View {
         }
         // With icons only, the group's tiles held by a thin bracket in the
         // margin, rather than set in under a name.
-        .overlay(alignment: .leading) {
-            if icons && !members.isEmpty { IconGroupBracket(folded: group.collapsed).offset(x: -6) }
+        .overlay(alignment: onRight ? .trailing : .leading) {
+            if icons && !members.isEmpty {
+                IconGroupBracket(folded: group.collapsed, rows: members.count + (ghost == nil ? 0 : 1), onRight: onRight)
+                    .offset(x: (onRight ? -1 : 1) * ((width - 20 - Metrics.iconTile) / 2 - 5))
+            }
         }
     }
 
@@ -1738,15 +1771,19 @@ private struct SideFoot: View {
 
     var body: some View {
         if vertical {
-            VStack(spacing: 8) {
-                // An agent connected in this window: a click on it is Stop.
-                AgentStatus(browser: browser, style: .icon)
-                FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
-                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0, puzzle: !prefs.hidesExtensionsDoor)
-                if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
-                SpaceButtons(browser: browser, vertical: true)
-                if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
-                if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
+            VStack(spacing: 0) {
+                VStack(spacing: 6) {
+                    AgentStatus(browser: browser, style: .icon)
+                    FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
+                    ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0, puzzle: !prefs.hidesExtensionsDoor)
+                    if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
+                }
+                VStack(spacing: 6) {
+                    SpaceButtons(browser: browser, vertical: true)
+                    if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
+                    if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
+                }
+                .padding(.top, 10)
             }
             .frame(maxWidth: .infinity)
             .padding(.bottom, 14)
@@ -1829,6 +1866,27 @@ private struct SideFoot: View {
 /// can't take them along: folded with ⌘S and brought back, the squares stood
 /// in place while the column came in beneath them. A dozen squares need no
 /// laziness.
+private struct PinBox: ViewModifier {
+    let on: Bool
+    let fill: Color
+
+    func body(content: Content) -> some View {
+        if on {
+            content
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+                        .fill(fill)
+                        .frame(width: Metrics.iconTile + 16)
+                        .allowsHitTesting(false)
+                }
+        } else {
+            content
+        }
+    }
+}
+
 private struct PinGrid: Layout {
     /// Each square's place, worked out by the column (see pinCells).
     let cells: [CGRect]
@@ -2403,7 +2461,7 @@ struct Quiet: View {
 /// draws it over its Today tabs, with Clear at its end under the pointer:
 /// the tabs below it closed, everything above it left as it was.
 struct KeepLine: View {
-    static let height: CGFloat = 18
+    static let height: CGFloat = 26
     /// How many are drawn in the column, for the bench (`columnscroll`):
     /// not the map's (inSpaceMap). Test runs only.
     @MainActor static var drawn = 0
@@ -2419,16 +2477,12 @@ struct KeepLine: View {
         HStack(spacing: compact ? 4 : 6) {
             Rectangle()
                 .fill(Palette.hairline)
-                .frame(height: 1)
+                .frame(height: 1 / (NSScreen.main?.backingScaleFactor ?? 2))
             if clears && hovering {
                 Button(action: act) {
                     HStack(spacing: 3) {
-                        Image(systemName: "arrow.down")
-                            .font(.system(size: 8, weight: .semibold))
-                        if !compact {
-                            Text("Clear")
-                                .font(.system(size: 11))
-                        }
+                        Image(systemName: "trash")
+                            .font(.system(size: 10, weight: .medium))
                     }
                     .foregroundStyle(Palette.muted)
                     .contentShape(Rectangle())
@@ -2438,7 +2492,7 @@ struct KeepLine: View {
                 .transition(.opacity)
             }
         }
-        .padding(.horizontal, compact ? 4 : 10)
+        .padding(.horizontal, compact ? 14 : 10)
         .frame(height: KeepLine.height)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

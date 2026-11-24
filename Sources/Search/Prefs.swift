@@ -431,7 +431,10 @@ final class Preferences: ObservableObject {
     @Published var hidesExtensionsDoor: Bool { didSet { store.set(hidesExtensionsDoor, forKey: "foot.extensions.hidden") } }
     @Published var hidesBookmarksDoor: Bool { didSet { store.set(hidesBookmarksDoor, forKey: "foot.bookmarks.hidden") } }
     @Published var fitsPins: Bool { didSet { store.set(fitsPins, forKey: "pins.fit") } }
+    @Published var foldersArrowOnHover: Bool { didSet { store.set(foldersArrowOnHover, forKey: "folders.arrowHover") } }
     @Published var iconPeeks: Bool { didSet { store.set(iconPeeks, forKey: "icons.peek") } }
+    /// With no tab open, the main part is left clear: the window's glass shows.
+    @Published var clearEmpty: Bool { didSet { store.set(clearEmpty, forKey: "empty.clear") } }
     @Published var clearPanels: Bool { didSet { store.set(clearPanels, forKey: "panels.clear") } }
     @Published var hidesProfileDoor: Bool { didSet { store.set(hidesProfileDoor, forKey: "foot.profile.hidden") } }
     /// The profile's badge is drawn: several profiles, and not hidden.
@@ -1303,8 +1306,10 @@ final class Preferences: ObservableObject {
         hidesExtensionsDoor = store.bool(forKey: "foot.extensions.hidden")
         hidesBookmarksDoor = store.bool(forKey: "foot.bookmarks.hidden")
         fitsPins = store.bool(forKey: "pins.fit")
+        foldersArrowOnHover = store.object(forKey: "folders.arrowHover") as? Bool ?? false
         iconPeeks = store.object(forKey: "icons.peek") as? Bool ?? true
         clearPanels = store.bool(forKey: "panels.clear")
+        clearEmpty = store.bool(forKey: "empty.clear")
         hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen

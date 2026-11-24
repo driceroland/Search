@@ -679,15 +679,22 @@ final class PageFind {
     }
 
     // The selection alone is drawn pale grey while the find bar has the keys,
-    // so every match is painted too: yellow, the current one orange. Matches
+    // so every match is painted too: pale white, the current one brighter with a white underline. Matches
     // in fields keep only their selection.
     // Each window gets its two highlights once; after that they are only
     // cleared and added to. A highlight repaints the ranges it gains or
     // loses, whereas one set into or deleted from `CSS.highlights` could
     // stay on screen, or stay off it, until something else was drawn.
+    const findRules = "::highlight(search-find-match) { background-color: rgba(255, 255, 255, 0.28); text-decoration: none; }"
+        + "::highlight(search-find-current) { background-color: rgba(255, 255, 255, 0.55); color: inherit; text-decoration: underline 2px #fff; text-underline-offset: 3px; }"
+        + "@media (prefers-color-scheme: light) { ::highlight(search-find-match) { background-color: rgba(0, 0, 0, 0.12); }"
+        + " ::highlight(search-find-current) { background-color: rgba(0, 0, 0, 0.22); text-decoration: underline 2px #000; } }";
+    const quietSelection = "::selection { background-color: transparent; }";
+
     function unpaint() {
         for (const highlights of state.painted) {
             try { highlights.all.clear(); highlights.current.clear(); } catch (_) {}
+            try { highlights.sheet.replaceSync(findRules); } catch (_) {}
         }
         state.painted = [];
     }
@@ -697,10 +704,7 @@ final class PageFind {
         let highlights = state.highlights.get(win);
         if (!highlights) {
             const sheet = new win.CSSStyleSheet();
-            sheet.replaceSync(
-                "::highlight(search-find-match) { background-color: #ffff00; color: #000; }"
-                + "::highlight(search-find-current) { background-color: #ff9632; color: #000; }"
-            );
+            sheet.replaceSync(findRules);
             const current = new win.Highlight();
             current.priority = 1;
             highlights = { sheet, all: new win.Highlight(), current };
@@ -746,6 +750,9 @@ final class PageFind {
         const current = state.matches[state.index];
         if (current?.kind === "range") {
             try { painted.get(current.win)?.current.add(current.range); } catch (_) {}
+            for (const highlights of state.painted) {
+                try { highlights.sheet.replaceSync(findRules + quietSelection); } catch (_) {}
+            }
         }
     }
 

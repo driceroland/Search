@@ -370,6 +370,8 @@ final class Browser: NSObject, ObservableObject {
         didSet { if folded != oldValue, !isPopup { Browsers.saveSoon() } }
     }
     @Published var peeking = false
+    @Published var leavingPeek = false
+    var peekMove = 0
     /// ⌘S on its way to folding the column: the page already has the room,
     /// the column has not moved yet (see Browser.toggleFold).
     @Published var foldingAway = false

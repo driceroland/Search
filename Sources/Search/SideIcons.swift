@@ -18,13 +18,13 @@ import SwiftUI
 // a thin bracket.
 
 extension Metrics {
-    /// The column of icons: a tile's 32 and 10 either side.
-    static let iconColumn: CGFloat = 76
+    /// The column of icons: a tile's 32 and 20 either side.
+    static let iconColumn: CGFloat = 72
     /// One tab's tile in it, and one pinned square's.
     static let iconTile: CGFloat = 32
     /// The band the three traffic lights take, stacked, at its top
     /// (Lights.stackTop and their own spacing, and the same air under them).
-    static let iconLights: CGFloat = 52
+    static let iconLights: CGFloat = 86
 }
 
 /// What the tiles say, for the bench (`icons`): where each one is, its
@@ -337,13 +337,20 @@ struct IconPair: View {
 /// its menu and drop as the heading's (GroupHeading).
 struct IconGroupBracket: View {
     let folded: Bool
+    let rows: Int
+    var onRight = false
+
+    private var height: CGFloat {
+        CGFloat(max(rows, 1)) * Metrics.iconTile + CGFloat(max(rows - 1, 0)) * 2
+    }
 
     var body: some View {
         // The bracket down the tiles' leading edge, from the heading to the
         // last of them: thin, the hairline's grey a little darker.
         Capsule()
             .fill(Palette.ink.opacity(0.18))
-            .frame(width: 2)
+            .frame(width: 2, height: height)
+            .frame(maxHeight: .infinity, alignment: .top)
             .opacity(folded ? 0 : 1)
             .allowsHitTesting(false)
     }
@@ -447,7 +454,7 @@ struct IconLabelLayer: View {
     private func pill(_ shown: IconLabel.Shown) -> some View {
         switch shown.kind {
         case .tab(let tab):
-            TabName(tab: tab, height: max(shown.frame.height, Metrics.iconTile), ground: AnyView(ground))
+            TabName(tab: tab, putAway: browser.putsAway(tab) && tab.asleep, height: max(shown.frame.height, Metrics.iconTile), ground: AnyView(ground))
                 .allowsHitTesting(false)
         case .nav:
             Helm(browser: browser)
@@ -463,22 +470,23 @@ struct IconLabelLayer: View {
         ZStack {
             browser.asCards ? Palette.frame : Palette.ground
             SpaceWash(look: browser.wash)
-            (browser.asCards ? Greys.frame : Greys.white).wash
+            (browser.asCards ? Greys.frame : Greys.white).hover
         }
     }
 
     private struct TabName: View {
         @ObservedObject var tab: Tab
+        let putAway: Bool
         let height: CGFloat
         let ground: AnyView
 
         var body: some View {
             HStack(spacing: 10) {
-                Mark(icon: tab.icon, letter: tab.monogram, size: 16)
+                Mark(icon: tab.icon, letter: tab.monogram, size: 16, dim: tab.asleep)
                     .frame(width: Metrics.iconTile)
                 Text(tab.label.isEmpty ? "New Tab" : tab.label)
                     .font(.system(size: 13))
-                    .foregroundStyle(Palette.ink)
+                    .foregroundStyle(tab.asleep ? Palette.ink.opacity(putAway ? 0.45 : 0.7) : Palette.ink)
                     .lineLimit(1)
                     .frame(maxWidth: 240, alignment: .leading)
             }

@@ -20,6 +20,7 @@ final class FieldState: ObservableObject {
 /// shivers and says so, rather than quietly handing your keystrokes to a
 /// search engine.
 struct Omnibox: View {
+    @Environment(\.colorScheme) private var scheme
     @ObservedObject var browser: Browser
     @ObservedObject private var typing: FieldState
     /// Raised over a page by ⌘L, rather than standing on an empty tab.
@@ -91,7 +92,7 @@ struct Omnibox: View {
                 if over {
                     // The page is still there, just out of the way.
                     Rectangle()
-                        .fill(Palette.ground.opacity(0.5))
+                        .fill(scheme == .dark ? Color.black.opacity(0.28) : Color.white.opacity(0.4))
                         .ignoresSafeArea(.all, edges: fitted ? [] : .all)
                         .onTapGesture { browser.dismiss() }
                         .transition(.opacity)
@@ -130,6 +131,10 @@ struct Omnibox: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var isPrivate: Bool {
+        (tab.flatMap { id in browser.tabs.first { $0.id == id } } ?? browser.active)?.shy == true
+    }
+
     private var field: some View {
         HStack(spacing: 8) {
             if let site = browser.siteChip {
@@ -137,6 +142,15 @@ struct Omnibox: View {
                     .transition(.scale(scale: 0.9, anchor: .leading).combined(with: .opacity))
             }
             AddressField(browser: browser, tab: tab)
+            // A private tab says so, at the field's far end.
+            if isPrivate {
+                Image(systemName: "eyeglasses")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .help("Private tab")
+                    .accessibilityLabel("Private tab")
+                    .transition(.opacity)
+            }
         }
             .animation(Motion.quick, value: browser.siteChip)
             .frame(height: 22)
@@ -164,7 +178,7 @@ struct Omnibox: View {
                     )
                     .allowsHitTesting(false)
             )
-            .shadow(color: .black.opacity(over ? 0.14 : 0.06), radius: over ? 32 : 24, y: over ? 12 : 8)
+            .shadow(color: Palette.lift(light: over ? 0.08 : 0.035, dark: over ? 0.14 : 0.06), radius: over ? 32 : 24, y: over ? 12 : 8)
             .modifier(Shake(travel: shake))
             .onAppear {
                 shake = 0
@@ -214,7 +228,7 @@ struct Omnibox: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.07), radius: 20, y: 6)
+        .shadow(color: Palette.lift(light: 0.04, dark: 0.07), radius: 20, y: 6)
         .transition(.scale(scale: 0.98, anchor: .top).combined(with: .opacity))
     }
 
@@ -296,10 +310,10 @@ struct Omnibox: View {
             .padding(.vertical, 9)
             .background {
                 if picked {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Palette.wash)
                 } else if hovering {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Palette.hover)
                 }
             }

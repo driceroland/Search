@@ -34,7 +34,7 @@ struct TabBar: View {
     /// the address when it is in sight. The badge was left out, and the row
     /// was laid out 28 points wider than the window gave it.
     private var leading: CGFloat {
-        (browser.prefs.navigationLeft && browser.prefs.helmDoors > 0 ? Door.width + Metrics.tabGap : 0)
+        (browser.prefs.helmDoors > 0 ? Metrics.helmDoors(browser.prefs) + Metrics.tabGap : 0)
             + (browser.prefs.addressLine ? browser.prefs.addressWidth.width + AddressLine.after + Metrics.tabGap : 0)
     }
     /// How much wider the run's tabs were laid out than they were worked out
@@ -72,7 +72,7 @@ struct TabBar: View {
 
                 HStack(spacing: Metrics.tabGap) {
                     // Back, forward and reload by the lights, when asked.
-                    if browser.prefs.navigationLeft, browser.prefs.helmDoors > 0 { SmartNav(browser: browser) }
+                    if browser.prefs.helmDoors > 0 { Helm(browser: browser) }
                     // The page's address, when it is to be in sight: before the tabs.
                     if browser.prefs.addressLine {
                         AddressLine(browser: browser)
@@ -128,6 +128,7 @@ struct TabBar: View {
                                                             GroupBand(group: group, piece: group.id, first: true, last: members.isEmpty)
                                                         }
                                                     }
+                                                    .padding(.leading, banded ? GroupBand.Air.space : 0)
                                                 let memberSteps = steps(members, each: each)
                                                 ForEach(Array(members.enumerated()), id: \.element.id) { index, tab in
                                                     topTab(tab, index: index, steps: memberSteps,
@@ -263,15 +264,12 @@ struct TabBar: View {
                         // Only while a download is running, and a moment after.
                         FetchDoor(browser: browser, fetches: browser.fetches)
                         ExtensionSlot(browser: browser, puzzle: !browser.prefs.hidesExtensionsDoor)
-                        if !browser.prefs.navigationLeft, browser.prefs.helmDoors > 0 {
-                            SmartNav(browser: browser).padding(.trailing, 8)
-                        }
                         if !browser.prefs.hidesBookmarksDoor {
                             BookmarkDoor(browser: browser, arrowEdge: .bottom)
                         }
                         SpaceButtons(browser: browser)
-                        if browser.prefs.usesSpaces && !browser.prefs.showsSpaceButtons { SpaceDot(browser: browser).zIndex(1) }
                         if browser.prefs.showsProfileDoor { ProfileBadge(browser: browser) }
+                        if browser.prefs.usesSpaces && !browser.prefs.showsSpaceButtons { SpaceDot(browser: browser).zIndex(1) }
                     }
                     .background {
                         GeometryReader { box in
@@ -385,10 +383,12 @@ struct TabBar: View {
             let looseShown = loose.filter { fit.contains($0.id) }
             HStack(spacing: Metrics.tabGap) {
                 if groupsOn {
-                    ForEach(pinsShown) { tab in
+                    ForEach(Array(pinsShown.enumerated()), id: \.element.id) { index, tab in
                         rowItem(tab, in: row.tabs, splits: row.splits, activeID: row.active,
                                 width: each, room: strip - lights - 12,
                                 height: Metrics.strip, interactive: false, pill: pill)
+                            .padding(.leading, index == 0 ? TabBar.pinLead : 0)
+                            .padding(.trailing, TabBar.pinAir)
                     }
                     if line { PinLine() }
                     let spaced = GroupBand.spaced(groupsShown.map(\.group), looseAfter: !looseShown.isEmpty)
@@ -400,6 +400,7 @@ struct TabBar: View {
                             .background {
                                 if banded { GroupBand(group: drawn.group, piece: drawn.group.id, first: true, last: members.isEmpty) }
                             }
+                            .padding(.leading, banded ? GroupBand.Air.space : 0)
                         ForEach(members) { tab in
                             rowItem(tab, in: row.tabs, splits: row.splits, activeID: row.active,
                                     width: each, room: strip - lights - 12,
@@ -407,6 +408,7 @@ struct TabBar: View {
                                 .background {
                                     if banded { GroupBand(group: drawn.group, piece: tab.id, last: tab.id == members.last?.id) }
                                 }
+                                .environment(\.tabInBand, banded)
                         }
                         if spaced.contains(drawn.group.id) { GroupBand.Air() }
                     }
@@ -421,6 +423,8 @@ struct TabBar: View {
                         rowItem(tab, in: row.tabs, splits: row.splits, activeID: row.active,
                                 width: each, room: strip - lights - 12,
                                 height: Metrics.strip, interactive: false, pill: pill)
+                            .padding(.leading, tab.pin != nil && index == 0 ? TabBar.pinLead : 0)
+                            .padding(.trailing, tab.pin != nil ? TabBar.pinAir : 0)
                     }
                 }
             }
@@ -484,8 +488,17 @@ struct TabBar: View {
             .background {
                 if let band { GroupBand(group: band, piece: tab.id, last: last) }
             }
+            .environment(\.tabInBand, band != nil)
             .modifier(RecordsItem(id: tab.id))
             .id(tab.id)
+            .padding(.leading, tab.pin != nil && index == 0 ? TabBar.pinLead : 0)
+            .padding(.trailing, tab.pin != nil ? TabBar.pinAir : 0)
+    }
+
+    static let pinAir: CGFloat = 4
+    static let pinLead: CGFloat = 8
+    static func pinExtra(_ pins: Int) -> CGFloat {
+        pins > 0 ? CGFloat(pins) * pinAir + pinLead : 0
     }
 
     /// Each place in a run: a pin's width, a pair's or a tab's, and the gap.
@@ -494,7 +507,7 @@ struct TabBar: View {
             ? Dictionary(browser.splits.filter { $0.left != $0.right }.map { ($0.left, $0.tabs.count) }, uniquingKeysWith: { first, _ in first })
             : [:]
         return run.map { tab in
-            (tab.pin != nil ? Metrics.pinWidth : pairs[tab.id].map { splitItemWidth(base: each, pages: $0) } ?? each) + Metrics.tabGap
+            (tab.pin != nil ? Metrics.pinWidth + TabBar.pinAir : pairs[tab.id].map { splitItemWidth(base: each, pages: $0) } ?? each) + Metrics.tabGap
         }
     }
 
@@ -605,7 +618,8 @@ struct TabBar: View {
     private var bandAir: CGFloat {
         guard browser.prefs.usesTabGroups else { return 0 }
         let loose = browser.displayedTabs.contains { $0.pin == nil && browser.group(of: $0) == nil }
-        return CGFloat(GroupBand.spaced(browser.tabGroups, looseAfter: loose).count) * GroupBand.Air.space
+        let open = CGFloat(browser.tabGroups.filter { !$0.collapsed }.count)
+        return CGFloat(GroupBand.spaced(browser.tabGroups, looseAfter: loose).count) * GroupBand.Air.space + open * GroupBand.Air.space
     }
 
     /// Whether this window's own run carries the line.
@@ -632,7 +646,7 @@ struct TabBar: View {
         let headingWidth = browser.prefs.usesTabGroups
             ? browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name, numbered: browser.prefs.showsTabShortcuts && $1.collapsed) } : 0
         let shown = Int(pinned + loose + headers)
-        var total = pinned * Metrics.pinWidth + loose * each + extra
+        var total = pinned * Metrics.pinWidth + TabBar.pinExtra(Int(pinned)) + loose * each + extra
             + headingWidth + CGFloat(max(0, shown - 1)) * Metrics.tabGap
             + (pinLine ? PinLine.space : 0) + bandAir
         if let id = browser.editingTab, let tab = browser.tabs.first(where: { $0.id == id }) {
@@ -649,14 +663,16 @@ struct TabBar: View {
     /// until they have been, the helm and the bookmarks stand in for them —
     /// unless the helm leads, when nothing at the far end may be a real zero.
     private func room(in strip: CGFloat) -> CGFloat {
-        let far = doors > 0 || browser.prefs.navigationLeft ? doors : Door.width + 8 + Door.width
+        let far = doors > 0 ? doors : Door.width + 8 + Door.width
         return max(0, strip - lights - dot - leading - 12 - Metrics.plusWidth - Metrics.tabRowHold - far - 3 * Metrics.tabGap)
     }
 
     /// What the space's dot takes before the tabs, when there are spaces.
     /// With a button per space, nothing: they are among the doors at the
     /// far end (SpaceButtons), measured with them.
-    private var dot: CGFloat { 0 }
+    private var dot: CGFloat {
+        0
+    }
 
     /// Every loose tab is the same width, so the cross is always in the same
     /// place. Past a dozen or so they start giving ground; too narrow for a
@@ -673,7 +689,7 @@ struct TabBar: View {
             let count = items.count
             guard count > 0 else { return Metrics.tabWidth }
             let extra = pairWidthExtra(in: items, base: Metrics.tabMinWidth, splits: browser.splits)
-            let spent = CGFloat(pins) * Metrics.pinWidth + extra
+            let spent = CGFloat(pins) * Metrics.pinWidth + TabBar.pinExtra(pins) + extra
                 + browser.tabGroups.reduce(CGFloat.zero) { $0 + GroupHeading.width(for: $1.name, numbered: browser.prefs.showsTabShortcuts && $1.collapsed) }
                 + CGFloat(max(0, pins + count + browser.tabGroups.count - 1)) * Metrics.tabGap
                 + (pinLine ? PinLine.space : 0) + bandAir
@@ -688,7 +704,7 @@ struct TabBar: View {
         let loose = CGFloat(looseTabs.count)
         guard loose > 0 else { return Metrics.tabWidth }
         let extra = pairWidthExtra(in: looseTabs, base: Metrics.tabMinWidth, splits: splits)
-        let spent = pinned * Metrics.pinWidth
+        let spent = pinned * Metrics.pinWidth + TabBar.pinExtra(Int(pinned))
             + extra + CGFloat(max(0, tabs.count - 1)) * Metrics.tabGap
             + (TabBar.showsPinLine(tabs) ? PinLine.space : 0)
         return max(Metrics.tabMinWidth, min(Metrics.tabWidth, (room(in: strip) - spent) / loose))
@@ -939,6 +955,7 @@ private struct TabPill: View, Equatable {
     @Environment(\.liquidTabs) private var liquid
     @Environment(\.greys) private var greys
     @Environment(\.rowCarrying) private var rowCarrying
+    @Environment(\.tabInBand) private var inBand
     let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
@@ -1067,7 +1084,7 @@ private struct TabPill: View, Equatable {
                 // What its page counts as waiting (UnreadBadge): a pin shows
                 // no title to say it in.
                 .unreadBadge(prefs.showsPinCounts && !lettering && shortcutNumbers[tab.id] == nil ? tab.unread : nil, icon: 16,
-                             ring: live ? greys.pinLive : selected ? greys.wash : hovering ? greys.hover : greys.tile)
+                             ring: live ? greys.pinLive : selected ? greys.wash : hovering ? greys.hover : greys.wash)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 6)
                 .frame(width: span)
@@ -1258,7 +1275,7 @@ private struct TabPill: View, Equatable {
         }
         .padding(.leading, Metrics.tabLead)
         .padding(.trailing, editing ? Metrics.tabLead : Metrics.tabTrail)
-        .padding(.vertical, 6)
+        .padding(.vertical, inBand ? 3 : 6)
         .frame(width: span, alignment: .leading)
         .animation(Motion.quick, value: speaker)
         .animation(Motion.quick, value: tab.blockedPopups.isEmpty)
@@ -1306,7 +1323,7 @@ private struct TabPill: View, Equatable {
             // its left under it too, and the half left showing was nothing,
             // so it seemed gone until the hand moved on (#898).
             RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
-                .fill(greys.tile)
+                .fill(pinned ? greys.wash : greys.tile)
         }
     }
 
@@ -1955,6 +1972,7 @@ struct TabMenu: View {
                 }
             }
         } else {
+            Menu("Pinned Tab") {
             // A split pinned whole is rows only.
             if rows && browser.pinnedPair(of: tab) == nil {
                 Button(tab.listed ? "Show as Square" : "Show as Row") { browser.setListed(tab, !tab.listed) }
@@ -2002,6 +2020,7 @@ struct TabMenu: View {
                     if tab.everywhere { browser.keepHere(tab) } else { browser.shareEverywhere(tab) }
                 }
             }
+            }
             Button("Unpin") { browser.unpin(tab) }
             // Away for good in one go, where Unpin, finding the row and its
             // × took three (#834); ⇧⌘T brings it back as a tab. A pinned
@@ -2017,6 +2036,34 @@ struct TabMenu: View {
                 }
             }
         }
+        if browser.prefs.splitView {
+            if let pair = browser.split(for: tab) {
+              Menu("Split View") {
+                Button("Swap Pages") {
+                    browser.focusPane(tab)
+                    browser.swapSplit()
+                }
+                if pair.tabs.count > 2 {
+                    // This page alone out of it; the others stay together.
+                    Button("Remove from Split View") { browser.leaveSplit(tab) }
+                }
+                Button("Separate Split Tabs") { browser.detachSplit(tab) }
+                Button(pair.tabs.count > 2 ? "Close All Pages" : "Close Both Pages") {
+                    browser.focusPane(tab)
+                    browser.closeSplit()
+                }
+              }
+            } else {
+                // Beside the page on screen; on that page itself, an empty
+                // page beside it. On a split with room, one more page in it.
+                let current = browser.active
+                let adding = browser.activeSplit != nil && current?.id != tab.id
+                Button(adding ? "Add to Split View" : "Open in Split View") { browser.openInSplit(tab) }
+                    .disabled(tab.bench || (adding && current.map { !browser.canJoin(tab, beside: $0) } ?? true))
+            }
+        }
+        if browser.prefs.usesSpaces || (tab.pin == nil && !tab.bench) {
+            Menu("Move To") {
         // A shared pin is in every space already: nowhere to move it.
         if browser.prefs.usesSpaces, !tab.bench, !tab.everywhere,
            tab.address.flatMap({ Browser.extensionHost(of: $0) }) == nil {
@@ -2050,30 +2097,6 @@ struct TabMenu: View {
                 Button("Always Open \(site) in \(space.name)") { SpaceRoutes.set(site, to: space.id) }
             }
         }
-        if browser.prefs.splitView {
-            if let pair = browser.split(for: tab) {
-                Button("Swap Pages") {
-                    browser.focusPane(tab)
-                    browser.swapSplit()
-                }
-                if pair.tabs.count > 2 {
-                    // This page alone out of it; the others stay together.
-                    Button("Remove from Split View") { browser.leaveSplit(tab) }
-                }
-                Button("Separate Split Tabs") { browser.detachSplit(tab) }
-                Button(pair.tabs.count > 2 ? "Close All Pages" : "Close Both Pages") {
-                    browser.focusPane(tab)
-                    browser.closeSplit()
-                }
-            } else {
-                // Beside the page on screen; on that page itself, an empty
-                // page beside it. On a split with room, one more page in it.
-                let current = browser.active
-                let adding = browser.activeSplit != nil && current?.id != tab.id
-                Button(adding ? "Add to Split View" : "Open in Split View") { browser.openInSplit(tab) }
-                    .disabled(tab.bench || (adding && current.map { !browser.canJoin(tab, beside: $0) } ?? true))
-            }
-        }
         if tab.pin == nil, !tab.bench {
             // Another window, or a new one (see Browser.moveToWindow).
             let others = Browsers.all.filter { $0 !== browser && $0.isOpen && !$0.isPopup && $0.profileID == browser.profileID }
@@ -2095,6 +2118,8 @@ struct TabMenu: View {
                     .disabled(!browser.liftable(tab))
             }
         }
+            }
+        }
         Divider()
         Button("Rename") { browser.beginTabRename(tab) }
         Button("Duplicate") {
@@ -2108,6 +2133,7 @@ struct TabMenu: View {
             browser.beginTabEdit(tab, card: true)
         }
         .disabled(tab.isBlank || tab.address == nil || tab.pin != nil)
+        Menu("Copy") {
         Button("Copy Address") {
             browser.select(tab)
             browser.copyAddress()
@@ -2123,6 +2149,7 @@ struct TabMenu: View {
             browser.copyCleanLink()
         }
         .disabled(!tab.isWeb)
+        }
         if browser.prefs.sitesInPanel {
             Button("Open in Side Panel") { browser.openInSidePanel(tab) }
                 .disabled(!tab.isWeb || tab.shy)
@@ -2621,5 +2648,16 @@ struct PinField: NSViewRepresentable {
             let browser = browser
             DispatchQueue.main.async { browser.endPinEdit() }
         }
+    }
+}
+
+private struct TabInBandKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var tabInBand: Bool {
+        get { self[TabInBandKey.self] }
+        set { self[TabInBandKey.self] = newValue }
     }
 }
