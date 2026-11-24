@@ -4,10 +4,7 @@ A small, quiet web browser for the Mac: your tabs down the side, the page beside
 
 This is a personal fork of [driceroland/Search](https://github.com/driceroland/Search) by [Office Commun](https://officecommun.com). It has been slimmed down — no updater, no sync, no spaces or profiles, no password manager of its own — and you build it yourself with `./build.sh`.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/main-dark.png">
-  <img alt="Search: tabs in a column on the left, a Wikipedia page beside them" src=".github/main-light.png">
-</picture>
+![Search with a pink window colour: tabs in a column on the left under the address bar, a Wikipedia page beside them](.github/main.png)
 
 macOS 14 or later · built from source (see [Building it](#building-it))
 
@@ -21,7 +18,8 @@ It uses **WebKit**, the engine already inside every Mac (the one Safari runs on)
 
 ## What it does
 
-- **One field.** Type an address and you go there; type words and you search. Addresses are finished from your own history and bookmarks; nothing you type leaves the Mac until you press Return. Type the start of a site's name and press Tab to search that site directly.
+- **One field**, at the top of the column. Type an address and you go there; type words and you search. Addresses are finished from your own history and bookmarks, and your search engine suggests searches as you type (Settings › Browsing turns that off, and then nothing you type leaves the Mac until you press Return). Type the start of a site's name and press Tab to search that site directly. `⌘T` raises the field over the page you are on, and typing `settings` or `new tab` there goes straight to that part of the app.
+- **From any app.** `⌥⇧^` (the key left of 1) brings up the same field over whatever app you are in.
 - **Tabs in a column.** On the left or the right, or narrowed to icons. `⌘S` folds it away, or let it hide itself until the pointer reaches the edge. Tabs from your last session come back instantly and cost nothing until you click them. `⌘K` finds an open tab by name, `⌃Tab` shows your recent ones.
 - **Pins.** Keep the sites you use all day as pinned squares or rows, in folders if you like. A pin keeps its site: links elsewhere open over it, and `⌘W` takes it back home.
 - **Tab groups.** Right-click a tab › Add to New Group.
@@ -32,9 +30,11 @@ It uses **WebKit**, the engine already inside every Mac (the one Safari runs on)
 - **Ads blocked** before they load.
 - **Video that follows you.** `⇧⌘P` lifts a video into a small window that stays above everything.
 - **Translate pages** on your Mac: right-click a page › Translate Page. Nothing is sent anywhere.
-- **Light, dark or automatic**, and a **theme**: Settings › Appearance › Theme gives the new tab a colour, gradient or image, and can carry the colour across the whole window.
+- **Light, dark or automatic**, and a **theme**: a new install starts with the whole window in pink. Settings › Appearance › Theme changes it to another colour, a gradient or an image, or turns it off.
 - **Bookmarks, history, downloads** — each a panel, each searchable, each one keystroke away.
 - **Chrome extensions, without Chrome.** Paste a Chrome Web Store link in Settings › Extensions, or open the extension's page and press Add. They run on WebKit's own extension engine, and where Chrome has APIs WebKit doesn't, Search fills them in. Use your password manager's extension (Proton Pass, 1Password, Bitwarden) for passwords and passkeys. Unpacked extensions load from a folder, as in Chrome's developer mode. macOS 15.4 or later.
+
+![A new tab: one field in the middle of the window, which is coloured all over by the theme](.github/newtab.png)
 
 A search field at the top of Settings finds any option, and resting the pointer on a row explains what it does.
 

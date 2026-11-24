@@ -20,10 +20,12 @@ final class LauncherTests: XCTestCase {
         Self.keys.forEach { Store.settings.removeObject(forKey: $0) }
     }
 
-    func testOffUntilAskedForAndNoKeyTaken() {
+    func testOnForANewInstallWithTheStandardKey() {
         let prefs = Preferences()
-        XCTAssertFalse(prefs.launcher)
-        XCTAssertNil(prefs.launcherKey)
+        XCTAssertTrue(prefs.launcher)
+        XCTAssertEqual(prefs.launcherKey, .standard)
+        XCTAssertEqual(LauncherKey.standard.combo.display, "⌥⇧^")
+        XCTAssertNil(Store.settings.object(forKey: "launcher.on"), "nothing written just for reading it")
     }
 
     func testChosenKeyIsKeptAndTakenAway() {
@@ -34,13 +36,13 @@ final class LauncherTests: XCTestCase {
         XCTAssertTrue(again.launcher)
         XCTAssertEqual(again.launcherKey, LauncherKey(combo: KeyCombo("k", option: true), code: 40))
         prefs.launcherKey = nil
-        XCTAssertNil(Preferences().launcherKey)
+        XCTAssertEqual(Preferences().launcherKey, .standard, "taken away, the standard key is back")
         XCTAssertNil(Store.settings.data(forKey: "launcher.key"))
     }
 
-    func testAnUnreadableKeyIsNone() {
+    func testAnUnreadableKeyIsTheStandardOne() {
         Store.settings.set(Data("not a key".utf8), forKey: "launcher.key")
-        XCTAssertNil(Preferences().launcherKey)
+        XCTAssertEqual(Preferences().launcherKey, .standard)
     }
 
     func testOfferedKeyIsShiftCommandSpaceAndOursToGive() {

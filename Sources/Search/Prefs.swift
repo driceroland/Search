@@ -872,22 +872,22 @@ final class Preferences: ObservableObject {
     @Published var switcherKeys = true
     /// "settings", "new tab" and the like, typed alone in the address field,
     /// reach that part of the app instead of asking a search engine for the
-    /// word; part of one is offered (see AddressCommands.swift). Off unless
-    /// asked for.
+    /// word; part of one is offered (see AddressCommands.swift). On for a
+    /// new install.
     @Published var commandBar: Bool {
         didSet { store.set(commandBar, forKey: "commandbar") }
     }
     /// ⌘T raises the field over the page you are on, as in Arc, and a tab is
     /// only made once Return sends it somewhere. Escape, ⌘W or a click
-    /// outside puts the field away and leaves you where you were. Off unless
-    /// asked for.
+    /// outside puts the field away and leaves you where you were. On for a
+    /// new install.
     @Published var floatingNewTab: Bool {
         didSet { store.set(floatingNewTab, forKey: "newtab.floating") }
     }
     /// The address field from any app, as Spotlight's comes: a key of your
     /// own raises it over the app in front, and Return opens what was typed
-    /// in Search (see Launcher.swift). Off unless asked for, and no key
-    /// taken from the Mac until one is chosen (#783).
+    /// in Search (see Launcher.swift). On for a new install, on
+    /// LauncherKey.standard until another key is chosen.
     @Published var launcher: Bool {
         didSet { store.set(launcher, forKey: "launcher.on") }
     }
@@ -897,7 +897,7 @@ final class Preferences: ObservableObject {
     @Published var launcherLittle: Bool {
         didSet { store.set(launcherLittle, forKey: "launcher.little") }
     }
-    /// The key it is on, chosen in Settings. None until then.
+    /// The key it is on, chosen in Settings; LauncherKey.standard until then.
     @Published var launcherKey: LauncherKey? {
         didSet {
             if let launcherKey, let data = try? JSONEncoder().encode(launcherKey) {
@@ -942,10 +942,10 @@ final class Preferences: ObservableObject {
         let chosen = store.string(forKey: "look").flatMap(Look.init) ?? .system
         look = chosen
         Preferences.migrateHomeTheme(in: store)
-        browserTheme = BrowserTheme.read(store.string(forKey: "browser.theme")) ?? BrowserTheme()
-        homeTheme = store.string(forKey: "home.theme").flatMap(HomeTheme.init(rawValue:)) ?? .off
+        browserTheme = BrowserTheme.read(store.string(forKey: "browser.theme")) ?? .standard
+        homeTheme = store.string(forKey: "home.theme").flatMap(HomeTheme.init(rawValue:)) ?? .solid
         homeThemeImage = store.string(forKey: "home.theme.image")
-        homeTuning = HomeTuning.read(store.string(forKey: "home.tuning")) ?? HomeTuning()
+        homeTuning = HomeTuning.read(store.string(forKey: "home.tuning")) ?? .standard
         // Before the first window, and not deferred: the window that is about
         // to be made should be made in the right appearance. Through `shared`
         // rather than `NSApp`: on macOS 14 SwiftUI builds this before it has
@@ -956,7 +956,7 @@ final class Preferences: ObservableObject {
         Preferences.migrateSidebarLayout(in: store)
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
-        slidesColumn = store.bool(forKey: Motion.slidesKey)
+        slidesColumn = store.object(forKey: Motion.slidesKey) as? Bool ?? true
         doorsUp = store.bool(forKey: "sidebar.doorsUp")
         foldButton = store.bool(forKey: "sidebar.foldButton")
         sideIcons = store.bool(forKey: "sidebar.icons")
@@ -968,9 +968,9 @@ final class Preferences: ObservableObject {
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
         cardsInFullScreen = store.bool(forKey: "layout.cardsFullScreen")
-        addressLine = store.bool(forKey: "address.shown")
+        addressLine = store.object(forKey: "address.shown") as? Bool ?? true
         liquidTabs = store.bool(forKey: "tabs.liquid")
-        glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
+        glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .icons
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
         shiftEngine = store.string(forKey: "search.shift").flatMap(Engine.init)
@@ -983,7 +983,7 @@ final class Preferences: ObservableObject {
         popupSites = Set(store.stringArray(forKey: "privacy.popupSites") ?? [])
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         dimsSleepingTabs = store.bool(forKey: "tabs.sleep.dim")
-        tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
+        tabLife = (store.object(forKey: "tabs.close.after") as? Int).flatMap(TabLife.init) ?? .day
         sleepPace = SleepPace.chosen
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
@@ -997,13 +997,13 @@ final class Preferences: ObservableObject {
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
         confirmsQuit = store.bool(forKey: Preferences.confirmQuitKey)
-        engineSuggests = store.bool(forKey: "search.suggest")
+        engineSuggests = store.object(forKey: "search.suggest") as? Bool ?? true
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
         showsTabShortcuts = store.bool(forKey: "tabs.shortcuts")
         let reading = store.bool(forKey: "tabs.reading")
         showsReading = reading
         ScrollRelay.reading = reading
-        highContrastText = store.bool(forKey: "tabs.highContrast")
+        highContrastText = store.object(forKey: "tabs.highContrast") as? Bool ?? true
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
         // Security's advice); a choice made before stands.
         showsAddress = store.object(forKey: "tabs.address") as? Bool ?? true
@@ -1051,11 +1051,11 @@ final class Preferences: ObservableObject {
         ai = AI.shipped && store.bool(forKey: "ai")
         aiProvider = store.string(forKey: "ai.provider").flatMap(AIProvider.init(rawValue:))
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
-        commandBar = store.bool(forKey: "commandbar")
-        floatingNewTab = store.bool(forKey: "newtab.floating")
-        launcher = store.bool(forKey: "launcher.on")
+        commandBar = store.object(forKey: "commandbar") as? Bool ?? true
+        floatingNewTab = store.object(forKey: "newtab.floating") as? Bool ?? true
+        launcher = store.object(forKey: "launcher.on") as? Bool ?? true
         launcherLittle = store.bool(forKey: "launcher.little")
-        launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
+        launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) } ?? .standard
         recentInNewTab = store.bool(forKey: "newtab.recent")
         arcTabPopup = store.bool(forKey: "newtab.arc")
         // On for everyone who never touched it (24 Oct 2026).
@@ -1115,7 +1115,7 @@ final class Preferences: ObservableObject {
         // 2026), which changes nothing on battery.
         let fast = store.string(forKey: "pages.120.mode").flatMap(FastPages.init)
             ?? (store.object(forKey: "pages.120") as? Bool).map { $0 ? FastPages.always : .never }
-            ?? .onPower
+            ?? .never
         fastPages = fast
         FrameRate.mode = fast
         lightMotion = store.bool(forKey: Motion.lightKey)
@@ -1210,14 +1210,14 @@ final class Preferences: ObservableObject {
     func reread() {
         Preferences.migrateHomeTheme(in: store)
         take(\.look, "look", store.string(forKey: "look").flatMap(Look.init), or: .system)
-        take(\.browserTheme, "browser.theme", BrowserTheme.read(store.string(forKey: "browser.theme")), or: BrowserTheme())
-        take(\.homeTheme, "home.theme", store.string(forKey: "home.theme").flatMap(HomeTheme.init(rawValue:)), or: .off)
+        take(\.browserTheme, "browser.theme", BrowserTheme.read(store.string(forKey: "browser.theme")), or: .standard)
+        take(\.homeTheme, "home.theme", store.string(forKey: "home.theme").flatMap(HomeTheme.init(rawValue:)), or: .solid)
         take(\.homeThemeImage, store.string(forKey: "home.theme.image"))
-        take(\.homeTuning, "home.tuning", HomeTuning.read(store.string(forKey: "home.tuning")), or: HomeTuning())
+        take(\.homeTuning, "home.tuning", HomeTuning.read(store.string(forKey: "home.tuning")), or: .standard)
         take(\.sidePosition, "sidebar.position", store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init),
              or: .left)
         take(\.sideHides, store.bool(forKey: "sidebar.hides"))
-        take(\.slidesColumn, store.bool(forKey: Motion.slidesKey))
+        take(\.slidesColumn, Motion.slidesKey, store.object(forKey: Motion.slidesKey) as? Bool, or: true)
         take(\.doorsUp, store.bool(forKey: "sidebar.doorsUp"))
         take(\.foldButton, store.bool(forKey: "sidebar.foldButton"))
         take(\.sideIcons, store.bool(forKey: "sidebar.icons"))
@@ -1230,11 +1230,11 @@ final class Preferences: ObservableObject {
             .flatMap { Preferences.sidePanelWidths.contains($0) ? $0 : nil }, or: 380)
         take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)
         take(\.cardsInFullScreen, store.bool(forKey: "layout.cardsFullScreen"))
-        take(\.addressLine, store.bool(forKey: "address.shown"))
+        take(\.addressLine, "address.shown", store.object(forKey: "address.shown") as? Bool, or: true)
         take(\.liquidTabs, store.bool(forKey: "tabs.liquid"))
         take(\.bounces, store.bool(forKey: "pages.bounce"))
         Swipe.bounces = bounces
-        take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
+        take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .icons)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
         take(\.instantMotion, store.bool(forKey: Motion.instantKey))
         take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))

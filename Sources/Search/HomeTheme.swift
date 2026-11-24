@@ -120,6 +120,14 @@ struct HomeTuning: Codable, Equatable, Hashable {
 
     init() {}
 
+    /// What a new install's new tab starts with: the same pink as the
+    /// window (BrowserTheme.standard).
+    static let standard: HomeTuning = {
+        var tuning = HomeTuning()
+        tuning.solid = "#ED7DFF"
+        return tuning
+    }()
+
     /// Tolerant: a line from another build with fewer or more knobs is read
     /// as far as it goes, and the rest is the default.
     init(from decoder: Decoder) throws {

@@ -73,10 +73,10 @@ final class SettingsIndexTests: XCTestCase {
         fresh {
             let prefs = Preferences()
             XCTAssertTrue(prefs.pinsKeepSite)
-            XCTAssertEqual(prefs.fastPages, .onPower)
+            XCTAssertEqual(prefs.fastPages, .never)
             XCTAssertTrue(prefs.holdsHistory)
             XCTAssertTrue(prefs.showsAddress)
-            XCTAssertEqual(prefs.sleepChoice, .normal)
+            XCTAssertEqual(prefs.sleepChoice, .later)
             XCTAssertEqual(prefs.floatOwn, .tabs)
             XCTAssertEqual(prefs.peekChoice, .shift)
             // Nothing written just for reading them.
@@ -142,6 +142,7 @@ final class SettingsIndexTests: XCTestCase {
             let prefs = Preferences()
             prefs.tabsLayout = .right
             prefs.pinsKeepSite = false
+            prefs.floatingNewTab = false
             let before = prefs.arcSnapshot
             XCTAssertFalse(prefs.looksLikeArc)
             XCTAssertEqual(prefs.setUpLikeArc().count, 4)
