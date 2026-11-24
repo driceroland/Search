@@ -11,7 +11,8 @@ import SwiftUI
 // At rest it says where the page is from, as the tab at rest does
 // (AtRestLine): the site in ink, not the whole address in grey, which read
 // as a text box nobody meant you to touch. It answers the pointer as a
-// button does: a little brighter under it, a little smaller held down.
+// button does: a little brighter under it, and lifted off the column once
+// clicked.
 //
 // A click there is ⌘L's editing, in place: the same field, the address in
 // it to type over, and the same suggestions hanging under the line rather
@@ -70,7 +71,6 @@ struct AddressLine: View {
         @State private var options = ViewAnchor.Box()
 
         @State private var hovering = false
-        @State private var pressed = false
 
         private var url: URL? { tab.page?.url ?? tab.address }
         private var rest: AtRest? { AtRest.of(url) }
@@ -117,16 +117,11 @@ struct AddressLine: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Palette.hairline, lineWidth: editing ? 1 : 0)
             }
-            .scaleEffect(pressed && !editing ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: lit)
-            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: pressed)
             .animation(.easeOut(duration: 0.15), value: editing)
             .background(ViewAnchor(box: line))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
-            .simultaneousGesture(DragGesture(minimumDistance: 0)
-                .onChanged { _ in if !pressed { pressed = true } }
-                .onEnded { _ in pressed = false })
             .onTapGesture { if !browser.editing { browser.edit(); browser.inlineEdit = true } }
             .shortcutHelp("Type an address or a search", "file.openAddress")
             // ⌘L's suggestions, hanging under the line at its width.
