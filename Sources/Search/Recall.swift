@@ -461,11 +461,6 @@ struct DownloadsPanel: View {
             }
         }
 
-        private var failed: Bool {
-            if case .failed = entry.state { return true }
-            return false
-        }
-
         private func status(_ text: String) -> some View {
             Text(text)
                 .font(.system(size: 11.5))
@@ -521,14 +516,13 @@ struct DownloadsPanel: View {
                             .foregroundStyle(Palette.muted)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
-                        // Three buttons beside the text left it a few letters
-                        // wide; under the reason they read as its way out.
-                        controls
-                            .padding(.top, 4)
                     }
+                    // Beside the text, the buttons left it a few letters
+                    // wide; under it, the name and status read whole.
+                    controls
+                        .padding(.top, 4)
                 }
-                Spacer(minLength: failed ? 0 : 4)
-                if !failed { controls }
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
