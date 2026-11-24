@@ -4,10 +4,7 @@ A small, quiet web browser for the Mac: your tabs down the side, the page beside
 
 This is a personal fork of [driceroland/Search](https://github.com/driceroland/Search) by [Office Commun](https://officecommun.com). It has been slimmed down — no updater, no sync, no spaces or profiles, no password manager of its own — and you build it yourself with `./build.sh`.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/main-dark.png">
-  <img alt="Search: tabs in a column on the left, a Wikipedia page beside them" src=".github/main-light.png">
-</picture>
+![Search with a pink window colour: tabs in a column on the left under the address bar, a Wikipedia page beside them](.github/main.png)
 
 macOS 14 or later · built from source (see [Building it](#building-it))
 
@@ -35,6 +32,8 @@ It uses **WebKit**, the engine already inside every Mac (the one Safari runs on)
 - **Light, dark or automatic**, and a **theme**: Settings › Appearance › Theme gives the new tab a colour, gradient or image, and can carry the colour across the whole window.
 - **Bookmarks, history, downloads** — each a panel, each searchable, each one keystroke away.
 - **Chrome extensions, without Chrome.** Paste a Chrome Web Store link in Settings › Extensions, or open the extension's page and press Add. They run on WebKit's own extension engine, and where Chrome has APIs WebKit doesn't, Search fills them in. Use your password manager's extension (Proton Pass, 1Password, Bitwarden) for passwords and passkeys. Unpacked extensions load from a folder, as in Chrome's developer mode. macOS 15.4 or later.
+
+![A new tab: one field in the middle of the window, which is coloured all over by the theme](.github/newtab.png)
 
 A search field at the top of Settings finds any option, and resting the pointer on a row explains what it does.
 
