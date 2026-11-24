@@ -125,6 +125,10 @@ enum DeveloperResourceFilter {
 /// http(s), never with a Cookie or Authorization header, and, when asked,
 /// only within the first address's origin.
 enum DeveloperResourceRequest {
+    /// The most a page can make the tools read: a map past it is refused
+    /// as it arrives, not after it filled memory (DeveloperSourceMaps.byteLimit).
+    static let byteLimit = 64 << 20
+
     @MainActor
     static func data(for request: URLRequest, sameOriginRedirects: Bool = false) async throws -> (Data, URLResponse) {
         guard let session = DevHost.host?.ephemeralSession() else { throw URLError(.cancelled) }
@@ -133,7 +137,27 @@ enum DeveloperResourceRequest {
         request.setValue(nil, forHTTPHeaderField: "Cookie")
         request.setValue(nil, forHTTPHeaderField: "Authorization")
         let redirects = Redirects(origin: sameOriginRedirects ? origin(of: request.url) : nil)
-        return try await session.data(for: request, delegate: redirects)
+        let (bytes, response) = try await session.bytes(for: request, delegate: redirects)
+        if response.expectedContentLength > Int64(byteLimit) { bytes.task.cancel(); throw URLError(.dataLengthExceedsMaximum) }
+        let started = Date()
+        var data = Data()
+        var chunk = [UInt8]()
+        chunk.reserveCapacity(1 << 16)
+        for try await byte in bytes {
+            chunk.append(byte)
+            if chunk.count == 1 << 16 {
+                data.append(contentsOf: chunk)
+                chunk.removeAll(keepingCapacity: true)
+                // A server that never stops, or trickles forever, is cut off.
+                if data.count > byteLimit || Date().timeIntervalSince(started) > 60 {
+                    bytes.task.cancel()
+                    throw URLError(.dataLengthExceedsMaximum)
+                }
+            }
+        }
+        data.append(contentsOf: chunk)
+        guard data.count <= byteLimit else { throw URLError(.dataLengthExceedsMaximum) }
+        return (data, response)
     }
 
     /// scheme://host[:port], the port left out where it is the scheme's own.

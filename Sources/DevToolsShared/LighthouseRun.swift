@@ -203,9 +203,21 @@ struct Robots: Equatable {
         guard let url = parts.url else { return nil }
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
-        guard let (data, response) = try? await session.data(for: request),
+        // Read up to the first 500 kB only: a server that never stops
+        // can't fill memory.
+        guard let (bytes, response) = try? await session.bytes(for: request),
               let http = response as? HTTPURLResponse else { return nil }
-        return Robots(status: http.statusCode, body: String(decoding: data.prefix(500_000), as: UTF8.self))
+        var data = [UInt8]()
+        do {
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count >= 500_000 { break }
+            }
+        } catch {
+            return nil
+        }
+        bytes.task.cancel()
+        return Robots(status: http.statusCode, body: String(decoding: data, as: UTF8.self))
     }
 
     /// Lines that aren't a known directive, by line number.

@@ -571,6 +571,7 @@ final class DevToolsHostBridge: NSObject, SearchDevToolsHost {
             configuration.urlCache = nil
             configuration.urlCredentialStorage = nil
             configuration.timeoutIntervalForRequest = 10
+            configuration.timeoutIntervalForResource = 60
             ProxyNetwork.stamp(configuration)
             return URLSession(configuration: configuration, delegate: DevToolsRedirects.shared, delegateQueue: nil)
         }
