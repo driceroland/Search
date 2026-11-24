@@ -73,6 +73,10 @@ final class SidebarSplitDragTests: XCTestCase {
         let (browser, t, window) = try await setUp()
         let start = rowPoint(2, in: window)
         try await send(.leftMouseDown, at: start, in: window)
+        // The press opens the tab on the main queue; on a loaded Mac (the
+        // full suite beside probes) that can take longer than one event's
+        // 30 ms, so wait for it, as a hand would, before carrying.
+        try await until(2) { browser.activeID == t[2].id }
         XCTAssertEqual(browser.activeID, t[2].id, "opened as the button goes down")
         for distance in stride(from: CGFloat(4), through: 40, by: 4) {
             try await send(.leftMouseDragged, at: NSPoint(x: start.x, y: start.y - distance), in: window)
@@ -167,6 +171,12 @@ final class SidebarSplitDragTests: XCTestCase {
     /// Still for longer than the split waits for.
     private func rest() async throws {
         try await Task.sleep(for: .milliseconds(300))
+    }
+
+    /// Polls `done` every 20 ms for up to `seconds`.
+    private func until(_ seconds: Double, _ done: () -> Bool) async throws {
+        let end = Date().addingTimeInterval(seconds)
+        while !done(), Date() < end { try await Task.sleep(for: .milliseconds(20)) }
     }
 
     private func settle() async throws {
