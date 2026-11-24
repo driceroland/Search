@@ -54,7 +54,7 @@ PinDef        { id: UUID, letter: String, home: String, title: String, name: Str
 Bookmark      { id: UUID, title: String, url: String?, children: [Bookmark]? }   // url nil = folder
 Space         { id: UUID, name: String, colour: Int, icon: String?, ... }        // the Mac's Space
 DeviceTabs    { name: String, platform: "ios" | "macos", at: Date, tabs: [{ url: String, title: String }] }
-SharedSettings{ engine: String?, custom: String?, look: String? }                // Engine / Look raw values
+SharedSettings{ engine: String?, custom: String?, suggest: String?, look: String? } // Engine / Look raw values
 ```
 
 - Dates are JSONEncoder's default (seconds since 2001, a number).
@@ -79,6 +79,9 @@ SharedSettings{ engine: String?, custom: String?, look: String? }               
   from the page's current title.
 - Engine values: `google duckduckgo bing ecosia startpage kagi brave qwant
   custom`. Look values: `light dark system`. An unknown value is ignored.
+- `SharedSettings.suggest`: a custom engine's suggestions address, optional:
+  https, with `%s` where the words go. Empty or absent, and a custom engine
+  has none, as before. It may be on a different host than `custom`.
 
 ## Rules
 
@@ -152,5 +155,5 @@ SharedSettings{ engine: String?, custom: String?, look: String? }               
 `settings`:
 
 ```json
-{"custom":"","engine":"duckduckgo","look":"system"}
+{"custom":"","engine":"duckduckgo","look":"system","suggest":""}
 ```

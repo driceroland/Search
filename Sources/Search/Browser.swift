@@ -7992,7 +7992,8 @@ final class Browser: NSObject, ObservableObject {
         } else if Keyword.match(typed, in: prefs.keywords) != nil {
             return nil
         }
-        return EngineSuggest.url(for: words, engine: prefs.engine, test: EngineSuggest.testEndpoint)
+        return EngineSuggest.url(for: words, engine: prefs.engine, custom: prefs.customSuggest,
+                                 test: EngineSuggest.testEndpoint)
     }
 
     /// Where a suggestion taken from the list goes: the site in the field,

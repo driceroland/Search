@@ -57,7 +57,7 @@ final class ICloudSyncTests: XCTestCase {
         func close() {}
     }
 
-    /// This Mac: one or two spaces, their pins, bookmarks, three settings,
+    /// This Mac: one or two spaces, their pins, bookmarks, four settings,
     /// open tabs.
     final class FakeMac: ICloudLocal {
         var deviceName = "Test Mac"
@@ -66,7 +66,7 @@ final class ICloudSyncTests: XCTestCase {
         var pinList: [UUID: [PinDef]] = [:]
         var folderList: [UUID: [PinFolder]] = [:]
         var marks: [Bookmark] = []
-        var shared = SharedSettings(engine: "google", custom: "", look: "system")
+        var shared = SharedSettings(engine: "google", custom: "", suggest: "", look: "system")
         var adopted: [String] = []
         var removedSpaces = false
 
@@ -177,16 +177,33 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertEqual(Space.firstID.uuidString, "00000000-0000-0000-0000-000000000001")
     }
 
-    func testOnlyTheThreeSettingsGo() throws {
-        let data = json(SharedSettings(engine: "duckduckgo", custom: "https://x.example/?q=%s", look: "dark"))
+    func testOnlyTheFourSettingsGo() throws {
+        let data = json(SharedSettings(engine: "duckduckgo", custom: "https://x.example/?q=%s",
+                                       suggest: "https://suggest.example/complete?q=%s", look: "dark"))
         let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any]).keys.sorted()
-        XCTAssertEqual(keys, ["custom", "engine", "look"])
+        XCTAssertEqual(keys, ["custom", "engine", "look", "suggest"])
         // Values this build doesn't know are passed over, not guessed at.
         let prefs = Shared.prefs
-        let engine = prefs.engine, look = prefs.look
-        ICloudMerge.apply(SharedSettings(engine: "altavista", custom: nil, look: "sepia"), to: prefs)
+        let engine = prefs.engine, look = prefs.look, suggest = prefs.customSuggest
+        defer { prefs.customSuggest = suggest }
+        ICloudMerge.apply(SharedSettings(engine: "altavista", custom: nil, suggest: "https://s.example/?q=%s",
+                                         look: "sepia"), to: prefs)
         XCTAssertEqual(prefs.engine, engine)
         XCTAssertEqual(prefs.look, look)
+        XCTAssertEqual(prefs.customSuggest, "https://s.example/?q=%s")
+    }
+
+    func testASuggestionsAddressComesAndGoesWithTheSettings() {
+        let prefs = Shared.prefs
+        let was = prefs.customSuggest
+        defer { prefs.customSuggest = was }
+        ICloudMerge.apply(SharedSettings(engine: nil, custom: nil, suggest: "https://s.example/?q=%s", look: nil), to: prefs)
+        XCTAssertEqual(prefs.customSuggest, "https://s.example/?q=%s")
+        ICloudMerge.apply(SharedSettings(engine: nil, custom: nil, suggest: "", look: nil), to: prefs)
+        XCTAssertEqual(prefs.customSuggest, "", "an empty address clears it")
+        prefs.customSuggest = "https://kept.example/?q=%s"
+        ICloudMerge.apply(SharedSettings(engine: nil, custom: nil, suggest: nil, look: nil), to: prefs)
+        XCTAssertEqual(prefs.customSuggest, "https://kept.example/?q=%s", "a record without one leaves it as it was")
     }
 
     // MARK: - SYNC.md's examples, as written there (its "…" ids made whole)
@@ -203,7 +220,7 @@ final class ICloudSyncTests: XCTestCase {
         ("spaces",
          #"[{"id":"00000000-0000-0000-0000-000000000001","name":"Personal","colour":0,"icon":"house"},"#
          + #"{"id":"5BAC0000-0000-4000-8000-000000000008","name":"Work","colour":3,"icon":"briefcase"}]"#),
-        ("settings", #"{"custom":"","engine":"duckduckgo","look":"system"}"#),
+        ("settings", #"{"custom":"","engine":"duckduckgo","look":"system","suggest":""}"#),
     ]
 
     private func object(_ data: Data?) -> NSObject? {
@@ -260,7 +277,7 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertEqual(spaces[1].icon, "briefcase")
 
         let settings = try JSONDecoder().decode(SharedSettings.self, from: get("settings"))
-        XCTAssertEqual(settings, SharedSettings(engine: "duckduckgo", custom: "", look: "system"))
+        XCTAssertEqual(settings, SharedSettings(engine: "duckduckgo", custom: "", suggest: "", look: "system"))
         XCTAssertNotNil(Engine(rawValue: settings.engine!))
         XCTAssertNotNil(Look(rawValue: settings.look!))
     }
@@ -289,7 +306,8 @@ final class ICloudSyncTests: XCTestCase {
         space.gradient = SpaceGradient(colours: ["#000000", "#FFFFFF"])
         space.strength = .vivid
         XCTAssertEqual(try keys(space), ICloudMerge.known[.spaces])
-        XCTAssertEqual(try keys(SharedSettings(engine: "e", custom: "c", look: "l")), ICloudMerge.known[.settings])
+        XCTAssertEqual(try keys(SharedSettings(engine: "e", custom: "c", suggest: "s", look: "l")),
+                       ICloudMerge.known[.settings])
         let folder = ICloudMerge.CloudFolder(id: UUID(), name: "n", parent: UUID(), feed: URL(string: "https://f.example/feed"))
         XCTAssertEqual(try keys(folder), ICloudMerge.known[.folders])
     }

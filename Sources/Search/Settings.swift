@@ -932,7 +932,9 @@ struct SettingsPanel: View {
     private func after(_ item: SettingsItem, searched: Bool) -> some View {
         switch item.id {
         case "search.engine":
-            if prefs.engine == .custom { templateField($prefs.customEngine) }
+            if prefs.engine == .custom {
+                templateField($prefs.customEngine, suggest: $prefs.customSuggest)
+            }
         case "search.shift":
             if prefs.shiftEngine == .custom { templateField($prefs.shiftCustom) }
         case "search.keywords":
@@ -992,11 +994,29 @@ struct SettingsPanel: View {
         }
     }
 
-    /// A custom engine's address, under the row that chose Custom.
-    private func templateField(_ text: Binding<String>) -> some View {
+    /// A custom engine's address, under the row that chose Custom; and, under
+    /// it, where its suggestions may come from (EngineSuggest.swift).
+    private func templateField(_ text: Binding<String>, suggest: Binding<String>? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            addressField(text, placeholder: "https://example.com/search?q=%s")
+            if let suggest {
+                Text("Suggestions address (optional)")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.leading, 10)
+                    .padding(.top, 2)
+                addressField(suggest, placeholder: "https://example.com/suggest?q=%s")
+            }
+        }
+        .padding(.leading, SettingsPanel.textInset)
+        .padding(.trailing, 14)
+        .padding(.bottom, 11)
+    }
+
+    private func addressField(_ text: Binding<String>, placeholder: String) -> some View {
         ZStack(alignment: .leading) {
             if text.wrappedValue.isEmpty {
-                Text("https://example.com/search?q=%s")
+                Text(placeholder)
                     .foregroundStyle(Palette.muted.opacity(0.8))
             }
             TextField("", text: text)
@@ -1007,9 +1027,6 @@ struct SettingsPanel: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .padding(.leading, SettingsPanel.textInset)
-        .padding(.trailing, 14)
-        .padding(.bottom, 11)
     }
 
     @ViewBuilder
@@ -1111,10 +1128,14 @@ struct SettingsPanel: View {
 
     /// Said plainly: turned on, what you type leaves the Mac as you type it.
     private var suggestDetail: String {
-        let name = prefs.engine.name(custom: prefs.customEngine)
-        guard EngineSuggest.endpoint(for: prefs.engine) != nil else {
-            return "A custom engine has no suggestions to give, so nothing is sent"
+        guard EngineSuggest.endpoint(for: prefs.engine, custom: prefs.customSuggest) != nil else {
+            guard prefs.engine == .custom else { return "No suggestions address is set, so nothing is sent" }
+            return prefs.customSuggest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "A custom engine has no suggestions until you give it an address, so nothing is sent"
+                : "A custom engine's suggestions need an https address with %s, so nothing is sent"
         }
+        if prefs.engine == .custom { return "What you type is sent to the suggestions address as you type" }
+        let name = prefs.engine.name(custom: prefs.customEngine)
         return "What you type is sent to \(name) as you type"
     }
 
