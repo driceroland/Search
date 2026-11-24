@@ -1375,31 +1375,36 @@ struct SideBar: View {
                 // 60 loose tabs took about 1 ms a row in the pass that takes
                 // it (Tests/space_pace.py: 85–95 ms with 60 tabs, 31–41 ms
                 // with 5), every row out of sight included (idea 1051).
-                LazyVStack(spacing: SideBar.gap) {
-                    ForEach(rows) { row in
-                        let index = row.index, tab = row.tab
-                        if ghost == index, let carried = crossingTab {
-                            RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
-                        }
-                        rowItem(tab, tabs: browser.tabs, splits: browser.splits,
-                                activeID: browser.activeID, interactive: true, pill: pill,
-                                close: { browser.closeTab(tab) })
-                        // Positions here are among the loose rows; the pinned block
-                        // sits in front of them in the real list.
-                        .modifier(Carried(index: index, steps: looseSteps, vertical: true,
-                                          space: "rows", onDropTab: { source, point in drop(source, at: point) },
-                                          groupDestination: { source, point in destination(source, at: point) },
-                                          loose: prefs.usesTabGroups ? looseFrames : nil,
-                                          outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
-                                          cross: { cross(tab, $0, from: .rows) },
-                                          land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
-                            if prefs.usesTabGroups {
-                                browser.move(tab, within: nil, to: $0)
-                            } else {
-                                browser.moveDisplayedTab(tab, to: $0 + browser.pinnedCount)
+                VStack(spacing: SideBar.gap) {
+                    LazyVStack(spacing: SideBar.gap) {
+                        ForEach(rows) { row in
+                            let index = row.index, tab = row.tab
+                            if ghost == index, let carried = crossingTab {
+                                RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
                             }
-                        })
+                            rowItem(tab, tabs: browser.tabs, splits: browser.splits,
+                                    activeID: browser.activeID, interactive: true, pill: pill,
+                                    close: { browser.closeTab(tab) })
+                            // Positions here are among the loose rows; the pinned block
+                            // sits in front of them in the real list.
+                            .modifier(Carried(index: index, steps: looseSteps, vertical: true,
+                                              space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                                              groupDestination: { source, point in destination(source, at: point) },
+                                              loose: prefs.usesTabGroups ? looseFrames : nil,
+                                              outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
+                                              cross: { cross(tab, $0, from: .rows) },
+                                              land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
+                                if prefs.usesTabGroups {
+                                    browser.move(tab, within: nil, to: $0)
+                                } else {
+                                    browser.moveDisplayedTab(tab, to: $0 + browser.pinnedCount)
+                                }
+                            })
+                        }
                     }
+                    // Past the last row, out of the lazy stack: in it, the
+                    // empty place still took a gap, and the rows ended 2
+                    // points lower than the map draws them.
                     if let ghost, ghost >= loose.count, let carried = crossingTab {
                         RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
                     }
