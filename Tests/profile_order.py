@@ -41,7 +41,7 @@ def main():
         st = sv.cmd({"do": "space"})
         t.ok("Move Right moves the profile: School first", st["every"] == ["School", "Personal"], st["every"])
         heads = [m["title"] for m in st["menu"] if m["header"]]
-        t.ok("the menu's sections follow", heads == ["School", "Personal"], heads)
+        t.ok("one space each: no section headers", heads == [], heads)
         keyed = {m["title"]: m["key"] for m in st["menu"] if m["key"]}
         t.ok("⌃1 is School's space now", keyed.get("School") == "1" and keyed.get("Personal") == "2", keyed)
         t.ok("kept in profiles.json", saved() == ["School", "Personal"], saved())

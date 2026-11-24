@@ -113,8 +113,8 @@ def main():
         print("— the space's menu")
         s = space("list")
         menu = [(m["title"], m["key"], m["header"]) for m in s["menu"]]
-        t.ok("every profile's spaces, under each profile's name",
-             menu[:4] == [("Personal", "", True), ("Personal", "1", False), ("Raycast", "", True), ("Raycast", "2", False)], menu[:6])
+        t.ok("every profile's spaces, without headers while each has one",
+             menu[:2] == [("Personal", "1", False), ("Raycast", "2", False)], menu[:6])
         t.ok("⌃ keys count through them all", s["every"] == ["Personal", "Raycast"], s["every"])
 
         print("— a space of another profile")

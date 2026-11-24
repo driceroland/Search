@@ -343,6 +343,9 @@ enum ProfileMenu {
         actions = []
         let menu = NSMenu()
         for entry in items(for: browser) { menu.addItem(entry) }
+        if browser.prefs.usesSpaces {
+            menu.addItem(item("New Space…") { browser.askForSpace() })
+        }
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 

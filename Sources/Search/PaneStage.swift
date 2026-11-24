@@ -82,7 +82,7 @@ final class PaneStage: NSView {
 
     /// Between the pages: room for the divider, and to keep it off the left
     /// page's scroll bar.
-    static let gutter: CGFloat = 7
+    static let gutter: CGFloat = 12
     /// Narrower than this, a page is no use: the pair shows the focused page
     /// alone until there is room again, and stays a pair.
     static let narrowest: CGFloat = 250
@@ -338,8 +338,8 @@ final class PaneStage: NSView {
                 shadow.cornerCurve = .continuous
                 shadow.shadowColor = NSColor.black.cgColor
                 shadow.shadowOpacity = Swift.Float(CardEdge.shadow)
-                shadow.shadowRadius = 6
-                shadow.shadowOffset = CGSize(width: 0, height: 1)
+                shadow.shadowRadius = CardEdge.blur
+                shadow.shadowOffset = CGSize(width: 0, height: 2)
             }
         }
     }

@@ -115,7 +115,6 @@ struct IconTile: View {
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(Palette.muted)
                     .frame(width: 15, height: 15)
-                    .background(Palette.ink.opacity(0.07), in: Circle())
             } else if interactive, let number = shortcutNumbers[tab.id] {
                 TabShortcutNumber(number: number)
             } else if tab.loading {

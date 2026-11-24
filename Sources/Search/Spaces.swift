@@ -1107,8 +1107,9 @@ enum SpaceMenu {
             }
             : [(nil, browser.spaces)]
         var index = 0
+        let headed = lists.contains { $0.spaces.count > 1 }
         for list in lists where !list.spaces.isEmpty {
-            if let name = list.name { menu.addItem(.sectionHeader(title: name)) }
+            if headed, let name = list.name { menu.addItem(.sectionHeader(title: name)) }
             for space in list.spaces {
                 let entry = item(space.name, key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
                     browser.goToSpace(space.id)
@@ -1120,17 +1121,6 @@ enum SpaceMenu {
         }
         menu.addItem(.separator())
         menu.addItem(item("New Space…") { browser.askForSpace() })
-        // The profiles, once there is more than one (see Profiles.swift).
-        // It switches the window's profile, the one ticked; it doesn't move
-        // the space, so it isn't named like one of the space's own settings.
-        if Profiles.shared.several {
-            menu.addItem(.separator())
-            let profiles = NSMenu()
-            for entry in ProfileMenu.items(for: browser) { profiles.addItem(entry) }
-            let holder = NSMenuItem(title: "Switch to Profile", action: nil, keyEquivalent: "")
-            holder.submenu = profiles
-            menu.addItem(holder)
-        }
         let here = browser.space
         let edit = NSMenu()
         edit.addItem(item("Rename…") {
@@ -1202,16 +1192,16 @@ enum SpaceMenu {
             })
         }
         if browser.prefs.usesTabGroups, !browser.tabGroups.isEmpty {
-            menu.addItem(.separator())
             let fold = item("Fold All Groups") { browser.foldAllGroups(true) }
             fold.isEnabled = browser.canFoldAllGroups
             let unfold = item("Unfold All Groups") { browser.foldAllGroups(false) }
             unfold.isEnabled = browser.canUnfoldAllGroups
             menu.autoenablesItems = false
+            menu.addItem(.separator())
             menu.addItem(fold)
             menu.addItem(unfold)
+            menu.addItem(.separator())
         }
-        menu.addItem(.separator())
         let holder = NSMenuItem(title: "Edit “\(here.name)”", action: nil, keyEquivalent: "")
         holder.submenu = edit
         menu.addItem(holder)

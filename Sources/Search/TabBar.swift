@@ -1090,7 +1090,7 @@ private struct TabPill: View, Equatable {
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(Palette.muted)
                         .frame(width: 15, height: 15)
-                        .background(Palette.ink.opacity(0.07), in: Circle())
+                        .contentShape(Rectangle())
                         .help(crossHelp)
                         .transition(.opacity)
                 } else if let number = shortcutNumbers[tab.id] {
@@ -1182,7 +1182,7 @@ private struct TabPill: View, Equatable {
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(Palette.muted)
                             .frame(width: 15, height: 15)
-                            .background(Palette.ink.opacity(0.07), in: Circle())
+                            .contentShape(Rectangle())
                             .help(crossHelp)
                             .transition(.opacity)
                     } else if tab.loading {

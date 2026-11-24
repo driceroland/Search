@@ -32,7 +32,8 @@ struct Plate<Content: View, Foot: View>: View {
     @Environment(\.asTab) private var asTab
 
     var body: some View {
-        if asTab { page } else { card }
+        Group { if asTab { page } else { card } }
+            .environment(\.rulesHidden, true)
     }
 
     /// In a tab of its own (see InternalPages.swift): the same title and
@@ -70,28 +71,28 @@ struct Plate<Content: View, Foot: View>: View {
                 Spacer(minLength: 0)
                 Door(icon: "xmark", help: "Done   esc", act: close)
             }
-            .padding(.horizontal, 22)
-            .padding(.top, 18)
-            .padding(.bottom, 14)
+            .padding(.horizontal, 28)
+            .padding(.top, 22)
+            .padding(.bottom, 18)
 
             content()
-                .padding(.horizontal, 22)
+                .padding(.horizontal, 28)
 
             if Foot.self != EmptyView.self {
                 Rectangle().fill(Palette.hairline).frame(height: 1)
                     .padding(.top, 18)
                 foot()
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 14)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 16)
             } else {
-                Color.clear.frame(height: 20)
+                Color.clear.frame(height: 28)
             }
         }
         .frame(width: width, alignment: .leading)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.16), radius: 34, y: 12)
@@ -116,9 +117,9 @@ struct Card<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) { content() }
             .background(Palette.ground)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                     .strokeBorder(Palette.hairline, lineWidth: 1)
             )
     }
@@ -129,9 +130,18 @@ struct Card<Content: View>: View {
 struct Rule: View {
     var inset: CGFloat? = nil
     @Environment(\.ruleInset) private var standard
+    @Environment(\.rulesHidden) private var hidden
     var body: some View {
-        Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, inset ?? standard)
+        if hidden {
+            Rectangle().fill(Palette.hairline.opacity(0.55)).frame(height: 1).padding(.leading, inset ?? standard).padding(.trailing, 16)
+        } else {
+            Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, inset ?? standard)
+        }
     }
+}
+
+private struct RulesHiddenKey: EnvironmentKey {
+    static let defaultValue = false
 }
 
 private struct RuleInsetKey: EnvironmentKey {
@@ -139,6 +149,11 @@ private struct RuleInsetKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
+    var rulesHidden: Bool {
+        get { self[RulesHiddenKey.self] }
+        set { self[RulesHiddenKey.self] = newValue }
+    }
+
     /// Where a Rule without an inset of its own starts. Settings sets 0, so
     /// every hairline in its cards runs from edge to edge, those drawn by
     /// the lists it borrows from other panels too. A list drawn further in
@@ -179,7 +194,7 @@ struct Line<Control: View>: View {
             control()
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.vertical, 13)
     }
 }
 
@@ -225,9 +240,9 @@ struct Hunt: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 14)
+        .frame(height: 32)
+        .background(Palette.wash, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
     }
 }
 
@@ -268,7 +283,7 @@ struct Quick: View {
                 .fixedSize()
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Palette.wash, in: Capsule())
+                .background(Palette.wash, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
         }
         .buttonStyle(.plain)
     }

@@ -1130,7 +1130,7 @@ struct TranslateTargetPicker: View {
     @State private var languages: [String] = []
 
     var body: some View {
-        Picker("Translation language", selection: $prefs.translateTarget) {
+        PillMenu(selection: $prefs.translateTarget, title: prefs.translateTarget.isEmpty ? "System Default" : PageTranslator.name(prefs.translateTarget)) {
             Text("System Default").tag("")
             if !prefs.translateTarget.isEmpty && !languages.contains(prefs.translateTarget) {
                 Text(PageTranslator.name(prefs.translateTarget)).tag(prefs.translateTarget)
@@ -1139,9 +1139,6 @@ struct TranslateTargetPicker: View {
                 Text(PageTranslator.name(code)).tag(code)
             }
         }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .fixedSize()
         .task {
             if #available(macOS 15, *) {
                 let supported = await LanguageAvailability().supportedLanguages

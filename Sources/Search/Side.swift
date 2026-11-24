@@ -174,7 +174,14 @@ struct SideBar: View {
 
     /// `prefs`: back, forward and reload as Settings leaves them (idea 815).
     @MainActor static func beyondHelm(_ width: CGFloat, fullScreen: Bool, fold: Bool = false, prefs: Preferences) -> CGFloat {
-        width - 20 - lights(width, fullScreen: fullScreen, fold: fold, prefs: prefs) - foldDoor(fold) - Metrics.helm(prefs)
+        width - 20 - lights(width, fullScreen: fullScreen, fold: fold, prefs: prefs) - foldDoor(fold) - helmWidth(width, fullScreen: fullScreen, fold: fold, prefs: prefs)
+    }
+
+    @MainActor static func helmWidth(_ width: CGFloat, fullScreen: Bool, fold: Bool, prefs: Preferences) -> CGFloat {
+        let n = CGFloat(prefs.helmDoors)
+        guard n > 0 else { return 0 }
+        let doors = n * helmDoorWidth(width, fullScreen: fullScreen, fold: fold, prefs: prefs) + (n - 1) * 4
+        return min(doors + 8, max(0, width - 20 - lights(width, fullScreen: fullScreen, fold: fold, prefs: prefs) - foldDoor(fold)))
     }
     /// The room left of the fold door, or of back, forward and reload, for
     /// the window's buttons: what the row has after the doors, up to
@@ -182,7 +189,17 @@ struct SideBar: View {
     /// column's end once narrowed, and the column, centred, slid its rows
     /// off the left and the door under the zoom button (idea 1010).
     @MainActor static func lights(_ width: CGFloat, fullScreen: Bool, fold: Bool, prefs: Preferences) -> CGFloat {
-        fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - Metrics.helmDoors(prefs) - foldDoor(fold)))
+        let n = CGFloat(prefs.helmDoors)
+        let doors = n == 0 ? 0 : n * helmDoorWidth(width, fullScreen: fullScreen, fold: fold, prefs: prefs) + (n - 1) * 4
+        return fullScreen ? 0 : max(0, min(Metrics.sideLights, width - 20 - doors - foldDoor(fold)))
+    }
+
+    @MainActor static func helmDoorWidth(_ width: CGFloat, fullScreen: Bool, fold: Bool, prefs: Preferences) -> CGFloat {
+        let n = CGFloat(prefs.helmDoors)
+        guard n > 0 else { return Door.width }
+        let lead: CGFloat = fullScreen ? 0 : Metrics.sideLightsLeast - 4
+        let fits = (width - 20 - lead - foldDoor(fold) - (n - 1) * 4) / n
+        return min(Door.width, max(22, fits.rounded(.down)))
     }
     /// The fold door, when asked for, only where it fits clear of the zoom
     /// button (Metrics.sideLightsLeast): narrower, it goes, as Safari's does,
@@ -203,7 +220,7 @@ struct SideBar: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .topLeading) {
             // Not under the card for a new space: it isn't made of views that
             // would take the click first.
             // A right-click anywhere in the column with nothing of its own
@@ -225,8 +242,8 @@ struct SideBar: View {
                         .frame(width: 10 + lights)
                     // Back, forward and reload's, as tall as they are: above
                     // and below them the band is still title bar.
-                    DragStrip(reserved: SideBar.foldDoor(fold) + Metrics.helm(prefs), band: 30, menu: columnMenu)
-                        .frame(width: SideBar.foldDoor(fold) + Metrics.helm(prefs))
+                    DragStrip(reserved: SideBar.foldDoor(fold) + SideBar.helmWidth(width, fullScreen: browser.fullScreen, fold: fold, prefs: prefs), band: 30, menu: columnMenu)
+                        .frame(width: SideBar.foldDoor(fold) + SideBar.helmWidth(width, fullScreen: browser.fullScreen, fold: fold, prefs: prefs))
                     // The doors, when they are up here, at its far end.
                     DragStrip(trailing: doorsTop ? upRoom + 10 : 0, menu: columnMenu)
                 }
@@ -257,6 +274,7 @@ struct SideBar: View {
                                 .padding(.trailing, SideBar.foldDoor(true) - 26)
                         }
                         Helm(browser: browser)
+                            .environment(\.doorWidth, SideBar.helmDoorWidth(width, fullScreen: browser.fullScreen, fold: fold, prefs: prefs))
                         Spacer(minLength: 0)
                     }
                     .frame(height: Metrics.strip)
@@ -360,7 +378,7 @@ struct SideBar: View {
             drawnUp = nil
         }
         .environment(\.greys, greys)
-        .frame(width: width)
+        .frame(width: width, alignment: .topLeading)
         .frame(maxHeight: .infinity)
         // ⌘S to icons only while the edge is held takes the edge away, and
         // its gesture ends without onEnded: let go of the held width too.
@@ -1719,10 +1737,7 @@ private struct SideFoot: View {
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
                 SpaceButtons(browser: browser, vertical: true)
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
-                if prefs.showsProfileDoor {
-                    Rectangle().fill(Palette.muted.opacity(0.3)).frame(width: 14, height: 1).padding(.vertical, 3)
-                    ProfileBadge(browser: browser)
-                }
+                if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
             }
             .frame(maxWidth: .infinity)
             .padding(.bottom, 8)
@@ -1732,10 +1747,7 @@ private struct SideFoot: View {
             // instead (Browser.switchSpace): beside the dot it would lie
             // over the helm.
             HStack(spacing: 2) {
-                if prefs.showsProfileDoor {
-                    ProfileBadge(browser: browser)
-                    Rectangle().fill(Palette.muted.opacity(0.3)).frame(width: 1, height: 14).padding(.horizontal, 3)
-                }
+                if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser, names: false) }
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom, live: live)
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: .bottom) }
@@ -1744,10 +1756,7 @@ private struct SideFoot: View {
             }
         } else {
             HStack(spacing: 2) {
-                if prefs.showsProfileDoor {
-                    ProfileBadge(browser: browser)
-                    Rectangle().fill(Palette.muted.opacity(0.3)).frame(width: 1, height: 14).padding(.horizontal, 3)
-                }
+                if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
                 ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room, puzzle: !prefs.hidesExtensionsDoor)
                 SpaceButtons(browser: browser, squeezes: true)
@@ -1787,7 +1796,7 @@ private struct SideFoot: View {
         if !prefs.hidesBookmarksDoor { kept += 1 }
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
         if prefs.showsProfileDoor { kept += 1 }
-        return CGFloat(kept) * (Door.width + 2) - 2 + (prefs.showsProfileDoor ? 7 : 0)
+        return CGFloat(kept) * (Door.width + 2) - 2
     }
 
     /// How many pinned extensions fit beside the doors that stay. Every door
@@ -1801,7 +1810,7 @@ private struct SideFoot: View {
         if prefs.showsProfileDoor { kept += 1 }
         // Up, downloads keep their place whether running or not.
         if up || FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
-        let free = (up ? width : width - 2 * 10) + 2 - CGFloat(kept) * door - (prefs.showsProfileDoor ? 7 : 0)
+        let free = (up ? width : width - 2 * 10) + 2 - CGFloat(kept) * door
         return max(0, Int((free / door).rounded(.down)))
     }
 }
@@ -1975,11 +1984,11 @@ private struct PinSquare: View, Equatable {
                     // Darker than the resting squares' grey by as much as a live
                     // row is darker than the white it sits on (Drice: the live
                     // pin barely showed among the others).
-                    RoundedRectangle(cornerRadius: scale * 12 / 34, style: .continuous)
+                    RoundedRectangle(cornerRadius: scale * Metrics.rowRadius / 34, style: .continuous)
                         .fill(greys.pinLive)
                         .modifier(LiveMatch(id: LivePill.id(browser), in: pill))
                 } else {
-                    RoundedRectangle(cornerRadius: scale * 12 / 34, style: .continuous)
+                    RoundedRectangle(cornerRadius: scale * Metrics.rowRadius / 34, style: .continuous)
                         .fill(selected ? greys.wash :
                               hovering ? greys.hover : greys.tile)
                 }
@@ -1988,7 +1997,7 @@ private struct PinSquare: View, Equatable {
         }
         .overlay {
             if selected {
-                RoundedRectangle(cornerRadius: scale * 12 / 34, style: .continuous)
+                RoundedRectangle(cornerRadius: scale * Metrics.rowRadius / 34, style: .continuous)
                     .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
                     .allowsHitTesting(false)
             }
@@ -2001,7 +2010,7 @@ private struct PinSquare: View, Equatable {
             }
         }
         .animation(Motion.quick, value: peek?.id)
-        .contentShape(RoundedRectangle(cornerRadius: scale * 12 / 34, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: scale * Metrics.rowRadius / 34, style: .continuous))
         .modifier(TabPress(enabled: !lettering && !pickedAmongOthers, active: live, selected: $selectedOnPress) {
             browser.clearTabSelection()
             browser.select(tab)
@@ -2240,7 +2249,7 @@ private struct SideRow: View, Equatable {
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(Palette.muted)
                             .frame(width: 15, height: 15)
-                            .background(Palette.ink.opacity(0.07), in: Circle())
+                            .contentShape(Rectangle())
                             .transition(.opacity)
                     }
                 }
@@ -2318,13 +2327,13 @@ private struct SideRow: View, Equatable {
                     }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
             .modifier(LiveMatch(id: LivePill.id(browser), in: pill, tab: tab.id))
         } else if selected {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                 .fill(greys.wash)
         } else if hovering {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                 .fill(greys.hover)
         }
     }
@@ -2441,8 +2450,7 @@ struct Speaker: View {
                 .font(.system(size: 8))
                 .foregroundStyle(Palette.muted)
                 .frame(width: 15, height: 15)
-                .background(Palette.ink.opacity(hovering ? 0.07 : 0), in: Circle())
-                .contentShape(Circle())
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -2452,9 +2460,21 @@ struct Speaker: View {
 }
 
 /// A small square holding one symbol. Lit when what it opens is open.
+private struct DoorWidthKey: EnvironmentKey {
+    static let defaultValue: CGFloat = Door.width
+}
+
+extension EnvironmentValues {
+    var doorWidth: CGFloat {
+        get { self[DoorWidthKey.self] }
+        set { self[DoorWidthKey.self] = newValue }
+    }
+}
+
 struct Door: View {
     static let width: CGFloat = 32
     @Environment(\.greys) private var greys
+    @Environment(\.doorWidth) private var doorWidth
     let icon: String
     var on = false
     var help = ""
@@ -2482,7 +2502,7 @@ struct Door: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(on ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
                 .offset(x: nudge)
-                .frame(width: Door.width, height: 26)
+                .frame(width: doorWidth, height: 26)
                 .background(
                     Capsule()
                         .fill(on ? greys.wash : (hovering ? greys.hover : .clear))

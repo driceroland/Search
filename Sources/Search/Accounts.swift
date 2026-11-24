@@ -221,7 +221,6 @@ struct AccountList: View {
                         .font(.system(size: 7.5, weight: .semibold))
                         .foregroundStyle(Palette.faint)
                         .frame(width: 16, height: 16)
-                        .background(Palette.ink.opacity(onCross ? 0.07 : 0), in: Circle())
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)

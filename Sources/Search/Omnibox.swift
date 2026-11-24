@@ -24,7 +24,6 @@ struct Omnibox: View {
     @ObservedObject private var typing: FieldState
     /// Raised over a page by ⌘L, rather than standing on an empty tab.
     let over: Bool
-    @Environment(\.accessibilityReduceTransparency) private var reducesTransparency
 
     /// The field's own height — the 22 of text and 14 of air above and below it
     /// that `field` lays out — so the list can sit below it without being
@@ -92,8 +91,7 @@ struct Omnibox: View {
                 if over {
                     // The page is still there, just out of the way.
                     Rectangle()
-                        .fill(Palette.ground.opacity(reducesTransparency ? 0.74 : 0.32))
-                        .background { if !reducesTransparency { Rectangle().fill(.ultraThinMaterial) } }
+                        .fill(Palette.ground.opacity(0.5))
                         .ignoresSafeArea(.all, edges: fitted ? [] : .all)
                         .onTapGesture { browser.dismiss() }
                         .transition(.opacity)

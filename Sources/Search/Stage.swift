@@ -372,17 +372,25 @@ final class StageView: NSView {
     /// the corners by this view's own layer, which a clip of SwiftUI's isn't
     /// always carried down to.
     var corner: CGFloat = 0 {
-        didSet {
-            guard corner != oldValue else { return }
-            wantsLayer = true
-            layer?.cornerRadius = corner
-            layer?.cornerCurve = .continuous
-            layer?.masksToBounds = corner > 0
-        }
+        didSet { round() }
+    }
+
+    private func round() {
+        wantsLayer = true
+        guard let layer else { return }
+        if layer.cornerRadius != corner { layer.cornerRadius = corner }
+        if layer.cornerCurve != .continuous { layer.cornerCurve = .continuous }
+        if layer.masksToBounds != (corner > 0) { layer.masksToBounds = corner > 0 }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        round()
     }
 
     override func layout() {
         super.layout()
+        round()
         settle()
     }
 

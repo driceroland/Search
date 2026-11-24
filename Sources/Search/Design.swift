@@ -171,6 +171,7 @@ enum Metrics {
     /// this round.
     static let cardGap: CGFloat = 8
     static let cardRadius: CGFloat = 10
+    static let rowRadius: CGFloat = 10
     /// Where the first tab starts. The traffic lights run from 19 to 79 —
     /// measured, not guessed — so this leaves them the same air on their right
     /// that the window gives them on their left.
@@ -564,7 +565,7 @@ struct CardEdge: ViewModifier {
             .background {
                 CardShape(on: on)
                     .fill(on ? Palette.ground : .clear)
-                    .shadow(color: .black.opacity(on ? CardEdge.shadow : 0), radius: 6, y: 1)
+                    .shadow(color: .black.opacity(on ? CardEdge.shadow : 0), radius: CardEdge.blur, y: 2)
             }
             .overlay {
                 CardShape(on: on)
@@ -574,8 +575,9 @@ struct CardEdge: ViewModifier {
     }
 
     /// How dark the shadow and the edge are, for the stage's own cards too.
-    static let shadow: Double = 0.07
-    static let edge: Double = 0.08
+    static let shadow: Double = 0.24
+    static let blur: CGFloat = 10
+    static let edge: Double = 0
 }
 
 /// The card's outline: round at its corners, or, off, a rectangle reaching
