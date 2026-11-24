@@ -2057,11 +2057,8 @@ struct TabMenu: View {
         }
         .disabled(!tab.isWeb)
         // The card a click on the tab you are on shows under its address.
-        Button("Site Information…") {
-            if browser.activeID != tab.id { browser.select(tab) }
-            browser.beginTabEdit(tab, card: true)
-        }
-        .disabled(tab.isBlank || tab.address == nil || tab.pin != nil)
+        Button("Site Information…") { browser.showSiteInformation(tab) }
+            .disabled(!Browser.offersSiteInformation(tab))
         Button("Copy Address") {
             browser.select(tab)
             browser.copyAddress()

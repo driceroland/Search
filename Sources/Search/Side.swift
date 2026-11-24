@@ -2016,6 +2016,7 @@ private struct PinSquare: View, Equatable {
         .overlay { MiddleClick { browser.close(tab) } }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
+        .background { if !inMap { SiteCardPanel.Square(id: tab.id) } }
         .help(tab.label)
         .animation(nil, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))

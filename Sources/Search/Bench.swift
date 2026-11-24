@@ -1336,6 +1336,7 @@ final class Bench {
                             "windowFullScreen": (browser.window ?? Links.window)?.styleMask.contains(.fullScreen) ?? false]
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
             out["siteCard"] = SiteCardPanel.isShown
+            out["siteCardTab"] = SiteCardPanel.shownTab.map { String($0.id.uuidString.prefix(8)).lowercased() } ?? ""
             out["siteCardFrames"] = SiteCardPanel.geometry(browser)
             // The row across the top: its tabs as laid out, the run shown
             // (narrower only when it scrolls), and whether it scrolls.
@@ -5521,7 +5522,19 @@ final class Bench {
             // into nothing yet, the site card under it.
             if request["opentab"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab) }
             // The tab's menu › Site Information… on the tab on screen.
-            if request["siteinfo"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab, card: true) }
+            // `siteinfoid`: on that tab (a pin, say), as its own menu does.
+            if request["siteinfo"] as? Bool == true,
+               let tab = (request["siteinfoid"] as? String).flatMap({ id in browser.tabs.first { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) } }) ?? browser.active {
+                if Browser.offersSiteInformation(tab) { browser.showSiteInformation(tab) }
+                else { answer(["error": "Site Information… isn't offered for that tab"]); return }
+            }
+            // The card's Block Ads and Trackers line, switched as a click on
+            // its switch does: the setting for the site, the page reloaded.
+            if let on = request["cardblocker"] as? Bool, let tab = SiteCardPanel.shownTab,
+               let host = SiteCard.blockerHost(tab, browser) {
+                Shield.shared.pause(host, !on)
+                tab.reload()
+            }
             // Rename, as the tab's right-click menu and Tabs › Rename Tab begin it.
             if request["renametab"] as? Bool == true, let tab = browser.active { browser.beginTabRename(tab) }
             if request["finishedit"] as? Bool == true { browser.finishTabEdit() }

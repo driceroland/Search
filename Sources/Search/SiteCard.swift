@@ -22,6 +22,49 @@ enum SiteCardPanel {
     private static var resign: Any?
 
     static var isShown: Bool { panel != nil }
+    /// The tab the card that is up is about.
+    private(set) static weak var shownTab: Tab?
+
+    // MARK: - a pin's square
+
+    /// A pin drawn as a square has no address to open, so the card hangs
+    /// from the square itself (idea 1081): each square on screen, by its tab.
+    private static let squares = NSMapTable<NSString, NSView>.strongToWeakObjects()
+
+    static func square(for id: Tab.ID) -> NSView? {
+        guard let view = squares.object(forKey: id.uuidString as NSString),
+              view.window != nil, !view.isHiddenOrHasHiddenAncestor else { return nil }
+        return view
+    }
+
+    /// Put behind a pin's square: where its card hangs from. Never hit, so
+    /// the square's clicks stay the square's.
+    struct Square: NSViewRepresentable {
+        let id: Tab.ID
+        func makeNSView(context: Context) -> NSView {
+            let view = Spot()
+            squares.setObject(view, forKey: id.uuidString as NSString)
+            return view
+        }
+        func updateNSView(_ view: NSView, context: Context) {
+            squares.setObject(view, forKey: id.uuidString as NSString)
+        }
+        private final class Spot: NSView {
+            override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        }
+    }
+
+    /// The card under a pin's square, from its menu's Site Information…;
+    /// a click anywhere but the card puts it away, as the address bar's
+    /// button's does.
+    static func show(for tab: Tab, in browser: Browser, square: NSView) {
+        // After the edit any other tab had is let go of (follow hides the
+        // card as an edit ends), so this card isn't put away with it.
+        DispatchQueue.main.async {
+            guard square.window != nil else { return }
+            toggle(for: tab, in: browser, under: square, button: square)
+        }
+    }
 
     /// Where the card is and the field with the caret it should hang from,
     /// on the screen, for the bench: [x, y, width, height] each.
@@ -163,6 +206,7 @@ enum SiteCardPanel {
     private static func show(for tab: Tab, in browser: Browser, under field: NSView) {
         guard let window = field.window else { return }
         hide()
+        shownTab = tab
         let card = SiteCard(browser: browser, tab: tab) {
             SiteCardPanel.hide()
             browser.cancelTabEdit()
@@ -226,6 +270,7 @@ enum SiteCardPanel {
     }
 
     static func hide() {
+        shownTab = nil
         follower?.invalidate()
         follower = nil
         if let resign { NotificationCenter.default.removeObserver(resign) }
@@ -424,11 +469,17 @@ struct SiteCard: View {
     /// and not in a private tab, which remembers nothing. The page reloads,
     /// as the blocker is decided for a page as it starts (#861).
     @ViewBuilder private var blocker: some View {
-        if !tab.shy, browser.prefs.shielded, Shield.shared.trouble == nil,
-           let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased()),
-           let host = browser.curtain.host(of: url) {
+        if let host = Self.blockerHost(tab, browser) {
             Blocker(host: host) { tab.reload() }
         }
+    }
+
+    /// The site the blocker line is about, when the card has that line.
+    static func blockerHost(_ tab: Tab, _ browser: Browser) -> String? {
+        guard !tab.shy, browser.prefs.shielded, Shield.shared.trouble == nil,
+              let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased())
+        else { return nil }
+        return browser.curtain.host(of: url)
     }
 
     /// Whether the site may play sound by itself (see Autoplay), a switch at
@@ -838,5 +889,27 @@ enum MenuMetrics {
     static let edge = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             ? NSColor.white.withAlphaComponent(0.18) : NSColor.black.withAlphaComponent(0.26)
+    }
+}
+
+extension Browser {
+    /// Whether a tab's menu offers Site Information…: a tab with a page,
+    /// a pin's too (idea 1081), whose blocker and the rest were out of reach.
+    static func offersSiteInformation(_ tab: Tab) -> Bool {
+        !tab.isBlank && tab.address != nil
+    }
+
+    /// The tab's menu › Site Information…: the card a click on the tab you
+    /// are on shows under its address. A pin drawn as a square has no
+    /// address to open, and its own click goes back to its page: the card
+    /// hangs from the square instead.
+    func showSiteInformation(_ tab: Tab) {
+        if activeID != tab.id { select(tab) }
+        if tab.pin != nil, let square = SiteCardPanel.square(for: tab.id) {
+            if editingTab != nil { cancelTabEdit() }
+            SiteCardPanel.show(for: tab, in: self, square: square)
+        } else {
+            beginTabEdit(tab, card: true)
+        }
     }
 }
