@@ -63,10 +63,12 @@ enum DeveloperResponseMedia {
     }
 
     /// Only while a preview plays: each file goes when its preview does,
-    /// and the folder when the tools close (or, after a crash, when the
-    /// package next starts).
+    /// and the folder when the tools close, when the package is removed
+    /// (Search deletes the package's temporary folder, named for its
+    /// identifier) or, after a crash, when the package next starts.
     private static let folder = FileManager.default.temporaryDirectory
-        .appendingPathComponent("Search Network Preview", isDirectory: true)
+        .appendingPathComponent("com.officecommun.search.devtools.full", isDirectory: true)
+        .appendingPathComponent("Network Preview", isDirectory: true)
 
     static func clear() { try? FileManager.default.removeItem(at: folder) }
 
@@ -153,8 +155,10 @@ struct DeveloperFontPreview: View {
     }
 }
 
-/// An audio or video response in a player: the body from a temporary
-/// file, or the request's address when WebKit kept no body.
+/// An audio or video response in a player, from a temporary file of the
+/// body WebKit kept. Never fetched again from its address (the player
+/// would go round Search's proxy and the tab's own store), and never
+/// written down for a private tab.
 struct DeveloperMediaPreview: View {
     let data: Data?
     let url: String
@@ -183,11 +187,9 @@ struct DeveloperMediaPreview: View {
         .task(id: url + ":\(data?.count ?? -1)") {
             DeveloperResponseMedia.remove(written)
             written = nil
-            if let data, !data.isEmpty {
+            if let data, !data.isEmpty, !DevHost.isPrivate(DeveloperTools.shared.session?.web) {
                 written = DeveloperResponseMedia.write(data, fileExtension: DeveloperResponseMedia.fileExtension(mimeType: mimeType, url: url))
                 file = written
-            } else if let remote = URL(string: url), ["http", "https"].contains(remote.scheme?.lowercased() ?? "") {
-                file = remote
             } else {
                 file = nil
             }

@@ -151,6 +151,12 @@ final class DevToolsPackages: ObservableObject {
 
     static var folder: URL { Store.folder.appendingPathComponent("DevTools", isDirectory: true) }
 
+    /// Where a package keeps temporary files (Developer Tools Full's
+    /// media previews): named for its identifier, deleted on Remove.
+    nonisolated static func temporaryFolder(_ id: String) -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(identifierPrefix + id, isDirectory: true)
+    }
+
     // MARK: - installed
 
     struct Installed {
@@ -582,7 +588,14 @@ final class DevToolsPackages: ObservableObject {
         } else {
             states[id] = .idle
         }
-        try? FileManager.default.removeItem(at: Self.folder.appendingPathComponent(id, isDirectory: true))
+        let files = FileManager.default
+        try? files.removeItem(at: Self.folder.appendingPathComponent(id, isDirectory: true))
+        // An install cut short (a crash, a quit) leaves its staging folder;
+        // and the package's temporary files, under its identifier.
+        for left in (try? files.contentsOfDirectory(atPath: Self.folder.path)) ?? [] where left.hasPrefix(".staging-") {
+            try? files.removeItem(at: Self.folder.appendingPathComponent(left, isDirectory: true))
+        }
+        try? files.removeItem(at: Self.temporaryFolder(id))
         // Its settings go too, from memory and from disk.
         let suite = DevToolsHostBridge.suite(id)
         bridges[id]?.defaults.removePersistentDomain(forName: suite)

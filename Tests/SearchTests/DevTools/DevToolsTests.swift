@@ -218,8 +218,18 @@ final class DevToolsTests: XCTestCase {
         try await importChecks()
 
         // Removed: every file goes; loaded this run, it says to restart.
+        // An install cut short left its staging folder, and the package
+        // has temporary files: both go too.
+        let files = FileManager.default
+        let staging = DevToolsPackages.folder.appendingPathComponent(".staging-\(UUID().uuidString)")
+        try files.createDirectory(at: staging.appendingPathComponent("out"), withIntermediateDirectories: true)
+        let temporary = DevToolsPackages.temporaryFolder("lite")
+        try files.createDirectory(at: temporary, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: temporary.appendingPathComponent("preview.mp4"))
         packages.remove("lite")
         XCTAssertFalse(FileManager.default.fileExists(atPath: DevToolsPackages.folder.appendingPathComponent("lite").path))
+        XCTAssertFalse(files.fileExists(atPath: staging.path), "a staging folder left over goes")
+        XCTAssertFalse(files.fileExists(atPath: temporary.path), "the package's temporary folder goes")
         XCTAssertEqual(packages.states["lite"], .removedLoaded)
         XCTAssertNil(packages.primary, "no Developer menu")
         XCTAssertTrue(packages.installed.isEmpty, "after a restart, nothing is there to load")

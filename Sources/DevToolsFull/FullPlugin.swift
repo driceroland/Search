@@ -56,6 +56,7 @@ public final class FullPlugin: NSObject, SearchDevToolsPlugin, DevToolsOwner {
 
     public func shutdown() {
         DeveloperTools.shared.close()
+        DeveloperResponseMedia.clear()
         for session in shared.values {
             session.end()
             if let web = session.web { host?.rearm(web); host?.keepAwake(false, webView: web) }
