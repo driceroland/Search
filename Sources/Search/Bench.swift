@@ -508,6 +508,9 @@ final class Bench {
             }
             else if request["off"] as? Bool == true { browser.unpin(tab) }
             else if request["home"] as? Bool == true { browser.goHome(tab) }
+            // "icon": a click on a pinned row's icon (PinIconHome), as the
+            // icon's own tap does; "took" says whether it was armed.
+            else if request["icon"] as? Bool == true { taken = PinIconHome.clicked(tab, in: browser) }
             // "rehome": Replace Pinned Page with Current URL, as the pin's
             // menu does.
             else if request["rehome"] as? Bool == true { browser.rehome(tab) }
@@ -520,7 +523,10 @@ final class Bench {
             else { browser.pin(tab, listed: request["listed"] as? Bool ?? false) }
             answer(["pin": tab.pin ?? "", "listed": tab.listed, "everywhere": tab.everywhere, "pinned": browser.pinnedCount, "home": tab.home?.absoluteString ?? "",
                     "address": tab.address?.absoluteString ?? "", "editingLetter": browser.editingPin == tab.id,
-                    "taken": taken.map { $0 as Any } ?? NSNull()])
+                    "taken": taken.map { $0 as Any } ?? NSNull(),
+                    // A pinned row's icon while it takes the pin home
+                    // (PinIconHome): its centre, from the window's top left.
+                    "icon": PinIconHome.centre(of: tab.id).map { $0 as Any } ?? NSNull()])
 
         case "select":
             // Picking a tab takes the window over, which the bench never does
