@@ -8,12 +8,18 @@ import SwiftUI
 // at the top of the column, as tall as a tab and in line with them, or
 // before the tabs across the top, Small or Medium.
 //
+// At rest it says where the page is from, as the tab at rest does
+// (AtRestLine): the site in ink, not the whole address in grey, which read
+// as a text box nobody meant you to touch. It answers the pointer as a
+// button does: a little brighter under it, a little smaller held down, and
+// a button to copy the link beside the site card's.
+//
 // A click there is ⌘L's editing, in place: the same field, the address in
 // it to type over, and the same suggestions hanging under the line rather
-// than in the middle of the page (Browser.inlineEdit). ⌘L itself still
-// raises its field over the page. A click anywhere else puts it away, as
-// Escape does. Search's own pages show their own address, and a tab with
-// nothing in it what to type.
+// than in the middle of the page (Browser.inlineEdit). The line lifts off
+// the column while it is typed in. ⌘L itself still raises its field over
+// the page. A click anywhere else puts it away, as Escape does. Search's own
+// pages show their own address, and a tab with nothing in it what to type.
 
 enum AddressWidth: String, CaseIterable, Identifiable {
     case small, medium
@@ -43,6 +49,9 @@ struct AddressLine: View {
     /// The room after it, before the tabs across the top.
     static let after: CGFloat = 8
 
+    /// The bench pictures the line as it is under the pointer.
+    @MainActor static var benchHovering = false
+
     var body: some View {
         // The tab says when its address changes; the browser only which tab.
         if let tab = browser.active {
@@ -61,20 +70,37 @@ struct AddressLine: View {
         @State private var line = ViewAnchor.Box()
         @State private var options = ViewAnchor.Box()
 
-        private var address: String { tab.page?.url.absoluteString ?? tab.address?.absoluteString ?? "" }
+        @State private var hovering = false
+        @State private var pressed = false
+        @State private var copied = false
+
+        private var url: URL? { tab.page?.url ?? tab.address }
+        private var rest: AtRest? { AtRest.of(url) }
+        private var lit: Bool { hovering || AddressLine.benchHovering }
+        private var editing: Bool { browser.editingInline }
 
         var body: some View {
             HStack(spacing: 6) {
-                if browser.editingInline {
+                if editing {
                     AddressField(browser: browser, size: 12)
                 } else {
-                    Text(address.isEmpty ? "Search or enter address" : address)
-                        .foregroundStyle(address.isEmpty ? Palette.faint : Palette.muted)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    if let rest {
+                        AtRestLine(rest: rest, size: 12.5, ink: Palette.ink, dim: Palette.muted)
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                        Text("Search or enter address")
+                            .foregroundStyle(Palette.muted)
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: 0)
-                    // The site card (#1240), for a page on the web.
                     if tab.isWeb {
+                        if lit {
+                            button(copied ? "checkmark" : "link", help: "Copy Link") { copy() }
+                                .transition(.opacity)
+                        }
+                        // The site card (#1240), for a page on the web.
                         button("slider.horizontal.3", help: "Site Settings") {
                             guard let under = line.view, let from = options.view else { return }
                             SiteCardPanel.toggle(for: tab, in: browser, under: under, button: from)
@@ -83,19 +109,35 @@ struct AddressLine: View {
                     }
                 }
             }
-            .font(.system(size: 12))
+            .font(.system(size: 12.5))
             .padding(.leading, 10)
-            .padding(.trailing, browser.editingInline || !tab.isWeb ? 10 : 4)
+            .padding(.trailing, editing || !tab.isWeb ? 10 : 4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: height)
-            .background(greys.hover, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(editing ? Palette.ground : lit ? greys.wash : greys.hover)
+                    .shadow(color: .black.opacity(editing ? 0.14 : 0), radius: 8, y: 2)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Palette.hairline, lineWidth: editing ? 1 : 0)
+            }
+            .scaleEffect(pressed && !editing ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: lit)
+            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: pressed)
+            .animation(.easeOut(duration: 0.15), value: editing)
             .background(ViewAnchor(box: line))
             .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .simultaneousGesture(DragGesture(minimumDistance: 0)
+                .onChanged { _ in if !pressed { pressed = true } }
+                .onEnded { _ in pressed = false })
             .onTapGesture { if !browser.editing { browser.edit(); browser.inlineEdit = true } }
             .shortcutHelp("Type an address or a search", "file.openAddress")
             // ⌘L's suggestions, hanging under the line at its width.
             .overlay(alignment: .topLeading) {
-                if browser.editingInline {
+                if editing {
                     Omnibox(browser: browser, over: false, listOnly: frame.width)
                         .offset(y: height + 4)
                 }
@@ -103,6 +145,13 @@ struct AddressLine: View {
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
             .onChange(of: browser.editingInline, initial: true) { _, on in watch(on) }
             .onDisappear { watch(false) }
+        }
+
+        /// The link copied, and the button says so a moment.
+        private func copy() {
+            browser.copyAddress()
+            copied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
         }
 
         /// While it is being typed in, a click anywhere but the line and its
