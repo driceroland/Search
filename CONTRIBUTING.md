@@ -26,7 +26,7 @@ Fixes and things every browser is expected to do (Tab moving between a form's fi
 
 - **Small, focused changes.** One thing per pull request, easy to read start to finish.
 - **No new dependencies.** The whole point of this app is staying small; a browser this size doesn't need a package for something Foundation or WebKit already does.
-- **Matches the existing style.** Comments here explain *why*, not *what the next line does* — read a couple of existing files before adding a new one. No force-unwraps on anything that can plausibly fail (a network response, a file read, a keychain lookup).
+- **Matches the existing style.** Comments here explain *why*, not *what the next line does* — read a couple of existing files before adding a new one. No force-unwraps on anything that can plausibly fail (a network response, a file read).
 - **Builds clean.** `swift build` with zero warnings you introduced.
 
 ## What doesn't
@@ -38,7 +38,7 @@ Fixes and things every browser is expected to do (Tab moving between a form's fi
 
 ## Review
 
-Pull requests are reviewed by Drice, usually with Claude Code doing a first pass on the diff before a human look. That means a review can be fast even when nobody's watching the repo in real time, but it isn't a guarantee of a same-day answer — this isn't anyone's full-time job. Pinging a stale PR after a couple of weeks is completely fine.
+Pull requests are reviewed by the maintainer, usually with Claude Code doing a first pass on the diff before a human look. That means a review can be fast even when nobody's watching the repo in real time, but it isn't a guarantee of a same-day answer — this isn't anyone's full-time job. Pinging a stale PR after a couple of weeks is completely fine.
 
 ## Reporting a bug
 

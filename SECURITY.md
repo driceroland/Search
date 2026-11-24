@@ -1,6 +1,6 @@
 # Security
 
-Search handles your passwords, your history and every page you open, so a
+Search handles your history, your cookies and every page you open, so a
 hole in it matters more than most bugs. If you find one, please tell us
 privately first.
 
@@ -20,18 +20,18 @@ spelling out the attack, is fine.
 ## What happens next
 
 - You get an answer from the person who makes Search, not a form.
-- The fix goes into the next version. Search updates itself, so a fix
-  reaches people within a day of its release.
+- The fix goes into `main`; this fork has no updater, so people get it
+  by pulling and building again.
 - Once it is out, you're thanked by name in the changelog, unless you'd
   rather not be.
 
 ## What counts
 
 Anything that lets a web page, an extension, another app or someone on the
-network do more than they should: read files, passwords, cookies or
+network do more than they should: read files, cookies or
 history, get around a permission, open another app without asking, or
-change the app itself. Search's own update, its keychain items, its
-extensions layer and `./bench` are all in scope.
+change the app itself. The extensions layer, `./bench`, `./bench-mcp` and
+`./search-mcp` are all in scope.
 
 A site that doesn't work, or an extension that behaves differently from
 Chrome, is a bug rather than a security problem: open an
