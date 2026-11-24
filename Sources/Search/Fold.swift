@@ -361,6 +361,7 @@ struct Fold: View {
     /// The pointer is over the column.
     @State private var inside = false
     @State private var pointer = Pointer()
+    @Environment(\.displayScale) private var displayScale
 
     /// How near the edge the pointer has to be.
     static let edge: CGFloat = 6
@@ -463,13 +464,23 @@ struct Fold: View {
                         .frame(maxHeight: .infinity, alignment: .top)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
                                              strength: browser.folded && browser.peeking ? 1 : 0,
-                                             ground: !browser.glassUnder))
+                                             ground: !browser.glassUnder, corner: floating ? Metrics.cardRadius : 0))
+                        // Folded away beside a page that is a card, the
+                        // page has the whole window, and the column comes
+                        // out over it as a card of its own, as Arc's does:
+                        // clear of the window's edges, its corners round.
+                        .padding(onRight ? .trailing : .leading, floating ? Metrics.cardGap : 0)
+                        .padding(.vertical, floating ? Metrics.cardGap : 0)
                         // Faded rather than slid under Reduce Motion with
                         // Slide the column in and out on (Browser.moveColumn).
                         .animation(Motion.fadesColumn ? .easeInOut(duration: Motion.fade) : nil) { column in
                             column.opacity(lightsOff && Motion.fadesColumn ? 0 : 1)
                         }
-                        .offset(x: lightsOff && !browser.fadeHeld ? (onRight ? prefs.columnWidth : -prefs.columnWidth) : 0)
+                        .modifier(PixelOffset(offset: CGSize(width: columnOffset, height: 0), scale: displayScale))
+                        // The window's buttons ride the column's own frames:
+                        // on an animation of Core Animation's they ran ahead
+                        // of it by a frame or two each way (see LightsRide).
+                        .modifier(LightsRide(offset: columnOffset, away: columnAway, rides: ridesLights))
                         .allowsHitTesting(!lightsOff)
                         .transition(.move(edge: onRight ? .trailing : .leading))
                 }
@@ -498,7 +509,10 @@ struct Fold: View {
             pointer.window = window
             watch()
         })
-        .onChange(of: lightsOff) { _, _ in hideLights() }
+        // Slid with the column, they are placed frame by frame there
+        // (LightsRide): placed here as well, they stood at the slide's end
+        // for its first frame.
+        .onChange(of: lightsOff) { _, _ in if !ridesLights { hideLights() } }
         // Into full screen, the buttons are given back to macOS; out of it,
         // they go the way the fold says again.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
@@ -570,6 +584,34 @@ struct Fold: View {
         browser.folded && !browser.peeking
     }
 
+    /// The column out over the page as a floating card (see body).
+    private var floating: Bool {
+        folding && browser.asCards
+    }
+
+    /// How far the column is slid off the window's edge: all of it, the
+    /// floating card's gap included.
+    private var columnOffset: CGFloat {
+        guard lightsOff, !browser.fadeHeld else { return 0 }
+        return columnAway
+    }
+
+    /// The column's offset wholly off the window's edge.
+    private var columnAway: CGFloat {
+        let away = prefs.columnWidth + (floating ? Metrics.cardGap : 0)
+        return onRight ? away : -away
+    }
+
+    /// The lights slide with the column, frame by frame (LightsRide): with
+    /// the column down the side, out of full screen, where it slides.
+    private var ridesLights: Bool {
+        prefs.sidebar && !Motion.fadesColumn && !inFullScreen
+    }
+
+    private var inFullScreen: Bool {
+        browser.window?.styleMask.contains(.fullScreen) == true
+    }
+
     private var onRight: Bool {
         prefs.sidebar && prefs.sidePosition == .right
     }
@@ -623,7 +665,7 @@ struct Fold: View {
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
             let onWindow = top == window.windowNumber
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
-            let reach = prefs.sidebar ? prefs.columnWidth : Metrics.strip
+            let reach = prefs.sidebar ? prefs.columnWidth + (floating ? Metrics.cardGap : 0) : Metrics.strip
             // An extension's popup hangs from its button in the column: the
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).
@@ -727,11 +769,16 @@ struct Fold: View {
         // missing from it, or out of reach behind the column (#241).
         if browser.window?.styleMask.contains(.fullScreen) == true {
             bar.layer?.removeAnimation(forKey: "fold")
-            bar.isHidden = false
+            LightsRide.place(bar, offset: 0, hidden: false)
             return
         }
         if prefs.sidebar {
-            Fold.slide(bar, off: lightsOff, by: prefs.columnWidth, right: onRight)
+            // Ridden frame by frame with the column (LightsRide), unless it fades.
+            if Motion.fadesColumn {
+                Fold.slide(bar, off: lightsOff, by: prefs.columnWidth, right: onRight)
+            } else {
+                LightsRide.place(bar, offset: columnOffset, hidden: lightsOff)
+            }
         } else {
             Fold.slide(bar, off: lightsOff, by: Metrics.strip, up: true)
         }
@@ -750,7 +797,7 @@ struct Fold: View {
     static func reset(_ bar: NSView, hidden: Bool) {
         slides += 1
         bar.layer?.removeAnimation(forKey: "fold")
-        bar.isHidden = hidden
+        LightsRide.place(bar, offset: 0, hidden: hidden)
     }
 
     /// The lights ride with the column, as everything else in its corner
@@ -852,6 +899,64 @@ struct Fold: View {
     }
 }
 
+/// The window's buttons, slid off the window's edge with the column and back
+/// on the column's own frames. Slid by an animation of Core Animation's of
+/// their own on the same spring, they started a frame or two ahead of the
+/// column each way, measured frame by frame (Bench foldframes "track"): the
+/// column moves on SwiftUI's frames, worked out on the main thread, and
+/// Core Animation's ran on without it. Here each frame of the column's
+/// offset puts the buttons there too, in the same pass, so they are on
+/// screen together, and a stalled frame holds both.
+private struct LightsRide: ViewModifier, Animatable {
+    var offset: CGFloat
+    /// The offset wholly off the window's edge, where they are hidden.
+    let away: CGFloat
+    let rides: Bool
+
+    var animatableData: CGFloat {
+        get { offset }
+        set { offset = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.background(LightsRider(offset: offset, hidden: abs(offset) >= abs(away) - 0.5, rides: rides))
+    }
+
+    /// The buttons' bar at `offset`, out of sight once wholly off the edge.
+    @MainActor static func place(_ bar: NSView, offset: CGFloat, hidden: Bool) {
+        guard let layer = bar.layer else {
+            bar.isHidden = hidden
+            return
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.removeAnimation(forKey: "fold")
+        layer.setAffineTransform(offset == 0 ? .identity : CGAffineTransform(translationX: offset, y: 0))
+        CATransaction.commit()
+        if bar.isHidden != hidden { bar.isHidden = hidden }
+    }
+}
+
+/// Where LightsRide reaches the window: updated with every frame of the
+/// offset it is handed.
+private struct LightsRider: NSViewRepresentable {
+    let offset: CGFloat
+    let hidden: Bool
+    let rides: Bool
+
+    func makeNSView(context: Context) -> NSView { Rider() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        guard rides, let window = view.window, !window.styleMask.contains(.fullScreen),
+              let bar = window.standardWindowButton(.closeButton)?.superview else { return }
+        LightsRide.place(bar, offset: offset, hidden: hidden)
+    }
+
+    private final class Rider: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
 /// The shadow the column or the strip casts over the page while it is out.
 /// It draws past their edge, where a slide by their own size doesn't take
 /// it: sliding away, the column was gone and its shadow still lay along the
@@ -872,11 +977,17 @@ private struct FoldShadow: ViewModifier {
     var strength: Double = 1
     /// Left out where the window's glass is to show through (see Glass.swift).
     var ground = true
+    /// Round, for the column floating over the page as a card.
+    var corner: CGFloat = 0
 
     func body(content: Content) -> some View {
         let color = Color.black.opacity(0.14 * strength)
         if behind {
-            content.background { (ground ? Palette.ground : Color.clear).shadow(color: color, radius: 20, x: x, y: y) }
+            content.background {
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(ground ? Palette.ground : Color.clear)
+                    .shadow(color: color, radius: 20, x: x, y: y)
+            }
         } else {
             content.shadow(color: color, radius: 20, x: x, y: y)
         }
