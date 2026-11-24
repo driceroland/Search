@@ -2938,6 +2938,15 @@ final class Browser: NSObject, ObservableObject {
     /// of a second later. Published, unlike spaceComing, which a swipe sets
     /// at every step; this changes once a switch.
     @Published var spaceHeading: UUID?
+    /// The space this window was just brought to from another profile's
+    /// window (OneWindow.join), and when: arriving there is a change of
+    /// profile, not of space, so its name isn't put up as a switch's is —
+    /// the profile's badge says whose it is (idea 1114).
+    var quietArrival: (space: UUID, at: Date)?
+    func arrivedQuietly(at space: UUID) -> Bool {
+        guard let quiet = quietArrival, quiet.space == space else { return false }
+        return Date().timeIntervalSince(quiet.at) < 1
+    }
     /// Where it lies in the map, in pages from this space: next to the
     /// space it came from, wherever it is among the spaces (mapSlot).
     var comingSlot = 0

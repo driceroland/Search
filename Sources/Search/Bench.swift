@@ -5408,6 +5408,8 @@ final class Bench {
                     "spaces": browser.spaces.map(\.name),
                     "badge": profiles.several,
                     "erasing": Store.settings.stringArray(forKey: "spaces.erasing") ?? [],
+                    // The space names the dot has shown after a switch, in order.
+                    "namesShown": SpaceDot.namesShown,
                 ])
             }
 
