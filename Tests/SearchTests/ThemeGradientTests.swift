@@ -174,12 +174,14 @@ final class ThemeGradientTests: XCTestCase {
         XCTAssertEqual(Tints.toned(2, .full, dark: false), Tints.colours[2])
 
         // Dark mode deepens bright colours when darkenInDark is on, and keeps them raw when off.
+        XCTAssertTrue(BrowserTheme.standard.darkenInDark)
         XCTAssertTrue(saved.darkenInDark)
         XCTAssertEqual(saved.strength.opacity(dark: true), 1)
         let darkStops = gradient.stops(strength: saved.strength, dark: true, darken: true)
         let darkPink = try XCTUnwrap(OKLab(hex: try XCTUnwrap(darkStops.first?.color.hex)))
-        XCTAssertLessThan(darkPink.L, 0.25)
-        XCTAssertGreaterThan(darkPink.chroma, 0.05)
+        XCTAssertLessThan(darkPink.L, 0.42)
+        XCTAssertGreaterThan(darkPink.L, 0.30)
+        XCTAssertGreaterThan(darkPink.chroma, 0.10)
 
         let rawDarkStops = gradient.stops(strength: saved.strength, dark: true, darken: false)
         XCTAssertEqual(rawDarkStops.first?.color.hex, "#ED7DFF")
@@ -192,7 +194,7 @@ final class ThemeGradientTests: XCTestCase {
         func lin(_ v: Double) -> Double { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
         func lum(_ c: (Double, Double, Double)) -> Double { 0.2126 * lin(c.0) + 0.7152 * lin(c.1) + 0.0722 * lin(c.2) }
         let inkLum = lum((0.93, 0.93, 0.93))
-        for hex in ["#ED7DFF", "#FF00FF", "#FFFFFF", "#F59E33", "#4285F5", "#2B2B2E"] {
+        for hex in ["#ED7DFF", "#5B8CFF", "#34C78A", "#FF8A3D", "#FF4D6D", "#8B5CF6", "#38BDF8", "#E8DFD0", "#FFFFFF", "#2B2B2E"] {
             let toned = try XCTUnwrap(OKLab(hex: hex)).darkFull
             let ratio = (max(inkLum, lum(toned.srgb)) + 0.05) / (min(inkLum, lum(toned.srgb)) + 0.05)
             XCTAssertGreaterThan(ratio, 7, "AAA ink contrast in dark mode for \(hex)")

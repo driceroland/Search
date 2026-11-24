@@ -221,7 +221,7 @@ struct ThemesPage: View {
     // MARK: - families
 
     private var solid: some View {
-        let swatches = ["#E8DFD0", "#F3D9CF", "#D9E4D3", "#D3DFEA", "#E4D8EC"]
+        let swatches = ["#ED7DFF", "#5B8CFF", "#34C78A", "#FF8A3D", "#FF4D6D", "#8B5CF6", "#38BDF8", "#E8DFD0"]
         return HStack(spacing: 10) {
             ForEach(swatches, id: \.self) { hex in
                 Button {
