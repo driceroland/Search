@@ -19,6 +19,7 @@ final class DeveloperNetworkTools: ObservableObject {
         var resourceSize: Int?
         var source: String?
         var requestHeaders: [String] = []
+        var requestHeaderValues: [String: String] = [:]
         var responseHeaders: [String] = []
         /// The response headers' values by lowercased name, for the list's
         /// header columns.
@@ -235,6 +236,41 @@ final class DeveloperNetworkTools: ObservableObject {
             if blockPatterns.contains(where: { $0.throttling != nil }) { syncBlocking() }
         }
     }
+    /// Nil uses WebKit's defaults; an empty selection requests identity.
+    @Published var acceptedEncodings: Set<ContentEncoding>? {
+        didSet { if acceptedEncodings != oldValue { syncBlocking() } }
+    }
+    @Published var disabledImageFormats: Set<ImageFormat> = [] {
+        didSet { if disabledImageFormats != oldValue { syncBlocking() } }
+    }
+
+    enum ContentEncoding: String, CaseIterable, Identifiable {
+        case deflate, gzip, br, zstd
+        var id: Self { self }
+    }
+
+    enum ImageFormat: String, CaseIterable, Identifiable {
+        case avif = "image/avif"
+        case jpegXL = "image/jxl"
+        case webP = "image/webp"
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .avif: "AVIF"
+            case .jpegXL: "JPEG XL"
+            case .webP: "WebP"
+            }
+        }
+    }
+
+    static func acceptEncoding(_ encodings: Set<ContentEncoding>?) -> String? {
+        guard let encodings else { return nil }
+        let names = ContentEncoding.allCases.filter(encodings.contains).map(\.rawValue)
+        return names.isEmpty ? "identity" : names.joined(separator: ", ")
+    }
+
     @Published private(set) var activeProfile: ThrottlingProfile.ID?
     /// Whether `Network.setEmulatedConditions` exists in this WebKit.
     @Published private(set) var bandwidthThrottling = false
@@ -242,6 +278,7 @@ final class DeveloperNetworkTools: ObservableObject {
     /// The page's frames, read for Group by frame.
     @Published private(set) var frames: [DeveloperToolsSession.ResourceFrame] = []
     var imported: [String: DeveloperRequestDetails] = [:]
+    private var importedFrames: [String: [Frame]] = [:]
     /// Capture screenshots' frames, observed by the filmstrip alone so a
     /// new screenshot doesn't redraw the list.
     let filmstrip: DeveloperNetworkFilmstrip
@@ -252,6 +289,7 @@ final class DeveloperNetworkTools: ObservableObject {
     private var version = 0
     private var installed = false
     private var bandwidthApplied = false
+    private var pendingInterception: Task<Void, Never>?
 
     init(session: DeveloperToolsSession) {
         self.session = session
@@ -312,6 +350,7 @@ final class DeveloperNetworkTools: ObservableObject {
             extra.resourceSize = row["decoded"] as? Int ?? extra.resourceSize
             extra.source = row["source"] as? String ?? extra.source
             extra.requestHeaders = row["requestHeaders"] as? [String] ?? extra.requestHeaders
+            extra.requestHeaderValues = row["requestHeaderValues"] as? [String: String] ?? extra.requestHeaderValues
             extra.responseHeaders = row["responseHeaders"] as? [String] ?? extra.responseHeaders
             extra.responseHeaderValues = row["responseHeaderValues"] as? [String: String] ?? extra.responseHeaderValues
             extra.initiatorLine = row["initiatorLine"] as? Int ?? extra.initiatorLine
@@ -384,6 +423,7 @@ final class DeveloperNetworkTools: ObservableObject {
     func clear() {
         extras = [:]
         imported = [:]
+        importedFrames = [:]
         domContentLoaded = nil
         load = nil
         Task { _ = try? await call("searchNetwork.clear(); return true;") }
@@ -391,21 +431,30 @@ final class DeveloperNetworkTools: ObservableObject {
 
     // MARK: Request blocking
 
-    private var blockingOptions: [String: Any] {
-        Self.blockingOptions(enabled: blockingEnabled, patterns: blockPatterns, profiles: profiles)
+    var blockingOptions: [String: Any] {
+        var options = Self.blockingOptions(enabled: blockingEnabled, patterns: blockPatterns, profiles: profiles)
+        options["acceptEncoding"] = Self.acceptEncoding(acceptedEncodings) ?? NSNull()
+        options["disabledImageTypes"] = disabledImageFormats.map(\.rawValue).sorted()
+        return options
     }
 
     private func syncBlocking() {
-        let options = blockingOptions
-        Task {
+        let previous = pendingInterception
+        pendingInterception = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
             do {
-                let result = try await call("return await searchNetwork.setBlocking(options);", ["options": options])
+                let result = try await call("return await searchNetwork.setBlocking(options);", ["options": blockingOptions])
                 blockingActive = (result as? [String: Any])?["active"] as? Bool == true
             } catch ToolError.unavailable {
             } catch {
                 message = error.localizedDescription
             }
         }
+    }
+
+    func waitForInterceptionSettings() async {
+        await pendingInterception?.value
     }
 
     func pattern(_ text: String) -> BlockPattern? {
@@ -517,6 +566,7 @@ final class DeveloperNetworkTools: ObservableObject {
     // MARK: WebSocket and EventSource messages
 
     func frames(for id: String, after count: Int) async -> (count: Int, frames: [Frame]) {
+        if let retained = importedFrames[id] { return (retained.count, Array(retained.dropFirst(max(0, count)))) }
         guard let raw = try? await call("return searchNetwork.frames(id, after);", ["id": id, "after": count])
             as? [String: Any] else { return (count, []) }
         let list = raw["frames"] as? [[String: Any]] ?? []
@@ -592,14 +642,23 @@ final class DeveloperNetworkTools: ObservableObject {
         }
         let clock = requests.compactMap { $0.ended ?? $0.started }.max() ?? 0
         var entries: [[String: Any]] = []
+        var messageBytesRemaining = 4 * 1024 * 1024
         for request in requests {
-            if let entry = built[request.id] {
-                entries.append(entry)
+            var entry: [String: Any]
+            if let archived = built[request.id] {
+                entry = archived
             } else if let details = await session.requestDetails(request.id) {
-                entries.append(DeveloperHAR.entry(request, details: details, clock: clock))
+                entry = DeveloperHAR.entry(request, details: details, clock: clock)
+            } else { continue }
+            if !sanitize, request.type == "WebSocket", messageBytesRemaining > 0 {
+                let messages = await frames(for: request.id, after: 0).frames.prefix(200).prefix { frame in
+                    messageBytesRemaining -= frame.data.utf8.count
+                    return messageBytesRemaining >= 0
+                }
+                if !messages.isEmpty { entry["_webSocketMessages"] = DeveloperHAR.socketMessages(Array(messages)) }
             }
+            entries.append(sanitize ? DeveloperHAR.sanitized(entry) : entry)
         }
-        if sanitize { entries = entries.map(DeveloperHAR.sanitized) }
         log["entries"] = entries
         return try? JSONSerialization.data(withJSONObject: ["log": log],
                                            options: [.prettyPrinted, .withoutEscapingSlashes])
@@ -665,7 +724,14 @@ final class DeveloperNetworkTools: ObservableObject {
         var extra = extras
         for item in log {
             imported[item.request.id] = item.details
+            if !item.frames.isEmpty { importedFrames[item.request.id] = item.frames }
             var row = item.extra
+            for header in item.details.requestHeaders {
+                let name = header.name.lowercased()
+                if Self.showsRequestHeader(name), row.requestHeaderValues[name] == nil {
+                    row.requestHeaderValues[name] = String(header.value.prefix(300))
+                }
+            }
             for header in item.details.responseHeaders where row.responseHeaderValues[header.name.lowercased()] == nil {
                 row.responseHeaderValues[header.name.lowercased()] = header.value
             }
@@ -673,6 +739,14 @@ final class DeveloperNetworkTools: ObservableObject {
         }
         extras = extra
         session.addImportedRequests(log.map(\.request))
+    }
+
+    private static func showsRequestHeader(_ name: String) -> Bool {
+        !["cookie", "authorization", "proxy-authorization"].contains(name)
+    }
+
+    var requestHeaderNames: [String] {
+        Set(extras.values.flatMap { $0.requestHeaderValues.keys }).sorted()
     }
 
     // MARK: Request actions

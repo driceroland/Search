@@ -49,6 +49,8 @@ struct DeveloperPerformanceView: View {
     @State private var stopAfterLoad = false
     @State private var sawLoading = false
     @State private var input = DeveloperPerformanceInput()
+    @State private var captureSettingsShown = false
+    @AppStorage(DeveloperPerformanceCapture.samplesKey, store: DevDefaults.store) private var jsSamplesDisabled = false
     @State private var screenshots = DeveloperPerformanceScreenshots.enabled
     @State private var addingAnnotation = false
     @State private var annotationLabel = ""
@@ -254,6 +256,43 @@ struct DeveloperPerformanceView: View {
 
     // MARK: Toolbar
 
+    /// Capture settings shared with Network.
+    private var captureSettings: some View {
+        HStack(spacing: DeveloperToolsStyle.controlSpacing * 2) {
+            Toggle("Disable JavaScript samples", isOn: $jsSamplesDisabled)
+                .toggleStyle(.developerCheckbox).font(.system(size: 11))
+                .help("Reduce recording overhead by turning off sampled JavaScript call frames.")
+                .accessibilityIdentifier("developer-performance-disable-js-samples")
+            .disabled(session.recordingTimeline)
+            HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+                Image(systemName: "wifi").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("Network:").font(.system(size: 11)).foregroundStyle(.secondary)
+                Menu {
+                    ForEach(DeveloperToolsSession.NetworkCondition.allCases) { condition in
+                        Button {
+                            session.networkTools.apply(condition)
+                        } label: {
+                            if session.networkTools.activeProfile == nil && session.throttle == condition {
+                                Label(condition.rawValue, systemImage: "checkmark")
+                            } else {
+                                Text(condition.rawValue)
+                            }
+                        }
+                    }
+                } label: {
+                    Text(session.networkTools.activeProfileName ?? session.throttle.rawValue).font(.system(size: 11))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(!session.requestInterception)
+                .accessibilityLabel("Network throttling")
+            }
+            .fixedSize()
+            Spacer(minLength: 0)
+        }
+        .developerToolbarRow()
+    }
+
     private var toolbar: some View {
         VStack(spacing: 0) {
             HStack(spacing: DeveloperToolsStyle.controlSpacing) {
@@ -314,9 +353,15 @@ struct DeveloperPerformanceView: View {
                     }
                 }
                 Spacer(minLength: 0)
+                DeveloperPanelIcon(symbol: "gearshape", title: captureSettingsShown ? "Hide capture settings" : "Capture settings",
+                                   active: captureSettingsShown || jsSamplesDisabled || session.throttle != .unrestricted) {
+                    captureSettingsShown.toggle()
+                }
+                .accessibilityIdentifier("developer-performance-capture-settings")
             }
             .developerToolbarRow()
             Divider()
+            if captureSettingsShown { captureSettings }
         }
     }
 
@@ -339,20 +384,22 @@ struct DeveloperPerformanceView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if profile.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                DeveloperLiveMetricsView(session: session)
-                    .padding(.bottom, 10)
-                landing("record.circle", "Click Record or press ⌘E to start a new recording.")
-                landing("arrow.clockwise", "Click Start profiling and reload page or press ⇧⌘E to record the page load.")
-                landing("arrow.up.to.line", "Click Load profile or press ⌘O to open a saved profile, from Search or Chrome.")
-                HStack {
-                    Button("Record") { record() }
-                    Button("Record and reload") { reloadAndRecord() }
-                    Button("Load profile…") { loadProfile() }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    DeveloperLiveMetricsView(session: session)
+                        .padding(.bottom, 10)
+                    landing("record.circle", "Click Record or press ⌘E to start a new recording.")
+                    landing("arrow.clockwise", "Click Start profiling and reload page or press ⇧⌘E to record the page load.")
+                    landing("arrow.up.to.line", "Click Load profile or press ⌘O to open a saved profile, from Search or Chrome.")
+                    HStack {
+                        Button("Record") { record() }
+                        Button("Record and reload") { reloadAndRecord() }
+                        Button("Load profile…") { loadProfile() }
+                    }
+                    .padding(.top, 4)
                 }
-                .padding(.top, 4)
+                .padding(24)
             }
-            .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             HStack(spacing: 0) {
@@ -1576,7 +1623,7 @@ struct DeveloperPerformanceView: View {
         guard !session.recordingTimeline, entry.id != timelineKey else { return }
         history.history.update(timelineKey, annotations: session.timelineAnnotations)
         cleared = nil
-        session.loadTimeline(entry.timings, annotations: entry.annotations)
+        session.loadTimeline(entry.timings, annotations: entry.annotations, scripts: entry.scripts)
     }
 
     // MARK: Files
@@ -1624,7 +1671,7 @@ struct DeveloperPerformanceView: View {
         // Each recording shown joins the session's history, newest first.
         if !session.timeline.isEmpty {
             history.history.add(session.timeline, annotations: session.timelineAnnotations,
-                                url: session.address?.absoluteString)
+                                url: session.address?.absoluteString, scripts: session.timelineScripts)
         }
     }
 
@@ -1634,21 +1681,42 @@ struct DeveloperPerformanceView: View {
 /// buttons and keys and for the command menu.
 @MainActor
 enum DeveloperPerformanceFiles {
+    private static let includeScriptsKey = "developerTools.performance.includeScripts"
+
     static func save(_ session: DeveloperToolsSession) {
         let timings = session.timeline
         guard !timings.isEmpty, !session.recordingTimeline else { return }
         let annotations = session.timelineAnnotations
         let address = session.address?.absoluteString
+        let loaded = session.timelineScripts
+        let include = NSButton(checkboxWithTitle: "Include script content and source maps", target: nil, action: nil)
+        include.isEnabled = !DevHost.isPrivate(session.web)
+        include.state = include.isEnabled && DevDefaults.store.bool(forKey: includeScriptsKey) ? .on : .off
+        let accessory = NSStackView(views: [include])
+        accessory.edgeInsets = NSEdgeInsets(top: 4, left: 12, bottom: 4, right: 12)
         let panel = NSSavePanel()
         panel.nameFieldStringValue = DeveloperPerformanceTrace.fileName()
         panel.allowedContentTypes = [.json]
         panel.canCreateDirectories = true
+        panel.accessoryView = accessory
         let saveTo = { (url: URL) in
-            do {
-                let data = try DeveloperPerformanceTrace.export(timings, url: address, annotations: annotations)
-                try data.write(to: url, options: .atomic)
-            } catch {
-                report(error)
+            let including = include.isEnabled && include.state == .on
+            if include.isEnabled { DevDefaults.store.set(including, forKey: includeScriptsKey) }
+            Task { @MainActor in
+                var scripts: [DeveloperPerformanceScript]?
+                if including {
+                    if let loaded { scripts = loaded }
+                    // Saving is asynchronous. Still showing the same recording?
+                    else if session.timeline.last?.id == timings.last?.id, !session.recordingTimeline {
+                        scripts = await DeveloperPerformanceScript.captured(session, timings: timings)
+                    }
+                }
+                do {
+                    let data = try DeveloperPerformanceTrace.export(timings, url: address, annotations: annotations, scripts: scripts)
+                    try data.write(to: url, options: .atomic)
+                } catch {
+                    report(error)
+                }
             }
         }
         if let window = NSApp.keyWindow {
@@ -1671,7 +1739,7 @@ enum DeveloperPerformanceFiles {
             do {
                 let data = try Data(contentsOf: url)
                 let recording = try DeveloperPerformanceTrace.recording(from: data)
-                session.loadTimeline(recording.timings, annotations: recording.annotations)
+                session.loadTimeline(recording.timings, annotations: recording.annotations, scripts: recording.scripts)
             } catch {
                 report(error)
             }

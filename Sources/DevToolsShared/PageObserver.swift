@@ -34,6 +34,27 @@ enum PageObserver {
     const later = setTimeout.bind(window);
     const rectOf = Element.prototype.getBoundingClientRect;
     const byTag = Element.prototype.getElementsByTagName;
+    const HTML = window.HTMLElement;
+    const offset = (name) => Object.getOwnPropertyDescriptor(HTML.prototype, name).get;
+    const [offsetLeft, offsetTop, offsetWidth, offsetHeight, offsetParent] =
+        ["offsetLeft", "offsetTop", "offsetWidth", "offsetHeight", "offsetParent"].map(offset);
+    // An element's layout box, transforms left out: document coordinates,
+    // or the viewport's for a fixed element (whose chain ends short of the
+    // body), as that's where it stays put. Other elements (SVG) by their
+    // bounding box.
+    const boxOf = (element, sx, sy) => {
+        if (!(element instanceof HTML)) {
+            const rect = rectOf.call(element);
+            return {x: rect.left + sx, y: rect.top + sy, w: rect.width, h: rect.height, vx: rect.left, vy: rect.top};
+        }
+        let x = 0, y = 0, node = element, last = element;
+        while (node) { x += offsetLeft.call(node); y += offsetTop.call(node); last = node; node = offsetParent.call(node); }
+        // A chain ends at the body, unless it ends at a fixed element.
+        const fixed = last !== document.body && last !== document.documentElement;
+        return fixed
+            ? {x, y, w: offsetWidth.call(element), h: offsetHeight.call(element), vx: x, vy: y}
+            : {x, y, w: offsetWidth.call(element), h: offsetHeight.call(element), vx: x - sx, vy: y - sy};
+    };
     const listen = EventTarget.prototype.addEventListener;
     const unlisten = EventTarget.prototype.removeEventListener;
     const previous = new WeakMap();
@@ -58,15 +79,16 @@ enum PageObserver {
             const all = byTag.call(root, "*");
             for (let i = 0; i < all.length && i < 1500; i++) {
                 const element = all[i];
-                const rect = rectOf.call(element);
-                if (rect.width === 0 && rect.height === 0) { previous.delete(element); continue; }
-                const current = {x: rect.left + sx, y: rect.top + sy, w: rect.width, h: rect.height};
+                const current = boxOf(element, sx, sy);
+                if (current.w === 0 && current.h === 0) { previous.delete(element); continue; }
                 const before = previous.get(element);
                 previous.set(element, current);
                 if (!before) continue;
                 const dx = current.x - before.x, dy = current.y - before.y;
                 if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
-                moved.push([before.x - sx, before.y - sy, before.w, before.h], [rect.left, rect.top, rect.width, rect.height]);
+                // The old box where it would be in today's viewport.
+                moved.push([before.x - (current.x - current.vx), before.y - (current.y - current.vy), before.w, before.h],
+                           [current.vx, current.vy, current.w, current.h]);
                 elements.add(element);
                 distance = Math.max(distance, Math.abs(dx), Math.abs(dy));
                 if (moved.length >= 200) break;
@@ -159,6 +181,8 @@ enum PageObserver {
     // and of them the worst, less one for every 50 interactions.
     let interactionCount = 0;
     const interactionsSeen = new Map();
+    const recent = [];
+    let shiftLogFrom = 0;
     let worst = [];
     const interaction = (entry) => {
         const id = entry.interactionId;
@@ -174,6 +198,13 @@ enum PageObserver {
         }
         if (known !== undefined && known >= entry.duration) return;
         interactionsSeen.set(id, entry.duration);
+        const record = {id, name: entry.name, target: hold(entry.target), duration: entry.duration, time: entry.startTime};
+        const logged = recent.findIndex((item) => item.id === id);
+        if (logged >= 0) recent[logged] = record;
+        else {
+            recent.push(record);
+            if (recent.length > 50) recent.shift();
+        }
         worst = worst.filter((item) => item.id !== id);
         worst.push({id, duration: entry.duration, name: entry.name, target: hold(entry.target)});
         worst.sort((a, b) => b.duration - a.duration);
@@ -348,7 +379,19 @@ enum PageObserver {
                 inpSupported: eventSupported,
                 inp: inp(),
                 interactions: interactionCount,
+                interactionLog: recent.map((entry) => ({
+                    name: entry.name, target: describe(release(entry.target)), duration: entry.duration, time: entry.time,
+                })),
+                shiftLog: shifts.slice(Math.max(0, shiftLogFrom - shiftBase)).slice(-50).map((shift) => ({
+                    time: shift.time, value: shift.value,
+                    elements: shift.elements.map((node) => describe(release(node))).filter(Boolean),
+                })),
             };
+        },
+        clearLogs() {
+            recent.length = 0;
+            shiftLogFrom = shiftBase + shifts.length;
+            return true;
         },
         lcpNode() { return release(lcpElement); },
         shiftNode(index, node) {

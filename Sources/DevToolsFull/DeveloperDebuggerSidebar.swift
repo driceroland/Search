@@ -7,7 +7,7 @@ import SwiftUI
 struct DeveloperDebuggerSidebar: View {
     @ObservedObject var session: DeveloperToolsSession
     @ObservedObject var debugger: DeveloperDebugger
-    @State private var collapsed: Set<Pane> = [.watch, .xhr, .dom, .events, .csp]
+    @State private var collapsed: Set<Pane> = [.watch, .xhr, .dom, .events, .globals, .csp]
     @State private var addingWatch = false
     @State private var newWatch = ""
     @State private var editingWatch: DeveloperDebugger.Watch.ID?
@@ -29,7 +29,7 @@ struct DeveloperDebuggerSidebar: View {
     enum Pane: String, CaseIterable {
         case watch = "Watch", breakpoints = "Breakpoints", scope = "Scope", threads = "Threads", callStack = "Call Stack"
         case xhr = "XHR/fetch breakpoints", dom = "DOM breakpoints", events = "Event listener breakpoints"
-        case csp = "CSP violation breakpoints"
+        case globals = "Global Listeners", csp = "CSP violation breakpoints"
     }
 
     var body: some View {
@@ -45,6 +45,7 @@ struct DeveloperDebuggerSidebar: View {
                 PaneView(sidebar: self, pane: .xhr)
                 PaneView(sidebar: self, pane: .dom)
                 PaneView(sidebar: self, pane: .events)
+                PaneView(sidebar: self, pane: .globals)
                 PaneView(sidebar: self, pane: .csp)
             }
         }
@@ -82,6 +83,7 @@ struct DeveloperDebuggerSidebar: View {
             case .xhr: sidebar.pane(.xhr, actions: { sidebar.xhrActions }) { sidebar.xhrPane }
             case .dom: sidebar.pane(.dom) { sidebar.domPane }
             case .events: sidebar.pane(.events) { sidebar.eventsPane }
+            case .globals: sidebar.pane(.globals) { DeveloperGlobalListenersPane(session: session) }
             case .csp: sidebar.pane(.csp) { sidebar.cspPane }
             }
         }

@@ -16,9 +16,28 @@ final class DeveloperDOMTreeModel: ObservableObject {
         /// The element's only child, a short text node, shown on this row
         /// (`<li>text</li>`) instead of as a row of its own.
         var inline: String? = nil
-        var id: Int { node.id }
+        /// Set on the rows for a root's adoptedStyleSheets, which aren't
+        /// nodes: `node` is then the document or shadow root they belong to.
+        var sheet: AdoptedSheet? = nil
+        var id: Int { sheet?.id ?? node.id }
         /// Has children to open: not one already shown inline.
-        var expandable: Bool { node.count > 0 && inline == nil }
+        var expandable: Bool { sheet.map { $0.index == nil } ?? (node.count > 0 && inline == nil) }
+    }
+
+    /// Chrome's `#adopted-style-sheets` row under a document or shadow root
+    /// (index nil), or one of its sheets, shown as `<style>` with its rules.
+    struct AdoptedSheet: Hashable {
+        let root: Int
+        let index: Int?
+        var rules: [String]? = nil
+        /// Below every node id (they are positive), and apart per root and sheet.
+        var id: Int { -(root * 1024 + (index ?? -1) + 2) }
+        /// The sheet's row: `<style>` and its rules on one line.
+        var label: String {
+            guard let index else { return "#adopted-style-sheets" }
+            guard let rules else { return "<style> sheet \(index + 1), rules not readable" }
+            return "<style>" + String(DeveloperToolsSession.DOMNode.collapsed(rules.joined(separator: " ")).prefix(400)) + "</style>"
+        }
     }
 
     /// Rows in tree order; replaced only when they differ.
@@ -32,7 +51,8 @@ final class DeveloperDOMTreeModel: ObservableObject {
     /// doesn't measure rows it hasn't built).
     private(set) var deepest = 0
     private(set) var widest: (depth: Int, columns: Int) = (0, 0)
-    /// How many times the rows were flattened, for tests and diagnostics.
+
+    /// How many times the rows were flattened, for diagnostics.
     private(set) var rebuilds = 0
 
     /// A safety cap far above any page DevTools is used on; Chrome itself
@@ -54,6 +74,8 @@ final class DeveloperDOMTreeModel: ObservableObject {
         self.session = session
         subscription = nil
         lines = [:]
+        adoptedRevision = nil
+        loadingSheets = []
         guard let session else {
             rows = []
             index = [:]
@@ -63,10 +85,12 @@ final class DeveloperDOMTreeModel: ObservableObject {
         // the next main-queue turn sees the new values, and debounce folds a
         // burst of edits (a mutation-heavy page's drain, an expand and its
         // details) into one rebuild per frame.
-        subscription = Publishers.Merge3(
+        subscription = Publishers.Merge5(
             session.$nodes.map { _ in () },
             session.$root.map { _ in () },
-            session.$expanded.map { _ in () }
+            session.$expanded.map { _ in () },
+            session.elements.$adoptedSheets.map { _ in () },
+            session.elements.$adoptedOpen.map { _ in () }
         )
         .debounce(for: .milliseconds(16), scheduler: DispatchQueue.main)
         .sink { [weak self] in self?.rebuild() }
@@ -76,8 +100,11 @@ final class DeveloperDOMTreeModel: ObservableObject {
     /// Rebuilds now, without waiting for the next frame.
     func rebuild() {
         guard let session else { return }
+        let elements = session.elements
         let next = Self.flatten(nodes: session.nodes, root: session.root, expanded: session.expanded,
-                                comments: DeveloperElementsSettings.showHTMLComments)
+                                comments: DeveloperElementsSettings.showHTMLComments,
+                                adopted: elements.adoptedSheets, adoptedOpen: elements.adoptedOpen)
+        loadAdoptedSheets(next, session)
         rebuilds += 1
         guard next != rows else { return }
         var positions: [Int: Int] = [:]
@@ -102,23 +129,66 @@ final class DeveloperDOMTreeModel: ObservableObject {
         }
     }
 
+    /// Open documents' and shadow roots' adoptedStyleSheets, read once each
+    /// is open and forgotten when it closes (opening it reads them again)
+    /// or the document changes.
+    private var adoptedRevision: Int?
+    private var loadingSheets = Set<Int>()
+
+    private func loadAdoptedSheets(_ rows: [Row], _ session: DeveloperToolsSession) {
+        let elements = session.elements
+        let revision = session.domRevision
+        if revision != adoptedRevision {
+            adoptedRevision = revision
+            loadingSheets = []
+            if !elements.adoptedSheets.isEmpty { elements.adoptedSheets = [:] }
+        }
+        let roots = Set(rows.lazy.filter { $0.sheet == nil && $0.expanded && ($0.node.type == 9 || $0.node.shadowRootType != nil) }.map(\.id))
+        let kept = elements.adoptedSheets.filter { roots.contains($0.key) }
+        if kept.count != elements.adoptedSheets.count { elements.adoptedSheets = kept }
+        for root in roots where elements.adoptedSheets[root] == nil && loadingSheets.insert(root).inserted {
+            Task { [weak self, weak session] in
+                guard let session else { return }
+                let sheets = (try? await session.adoptedSheets(of: root)) ?? []
+                guard let self, self.session === session, revision == session.domRevision, !session.isClosed,
+                      self.loadingSheets.remove(root) != nil, session.expanded.contains(root) else { return }
+                session.elements.adoptedSheets[root] = sheets
+            }
+        }
+    }
+
     /// Visible rows, depth first, without recursion (a deep page can't
     /// overflow the stack) and without blank text nodes (nor comments, with
-    /// Settings › Preferences › Elements › "Show HTML comments" off).
+    /// Settings › Preferences › Elements › "Show HTML comments" off). An
+    /// open root with `adopted` sheets ends with its `#adopted-style-sheets`
+    /// row, and that row's sheets while it is in `adoptedOpen`.
     static func flatten(nodes: [Int: DeveloperToolsSession.DOMNode], root: Int?,
-                        expanded: Set<Int>, comments: Bool = true) -> [Row] {
+                        expanded: Set<Int>, comments: Bool = true,
+                        adopted: [Int: [[String]?]] = [:], adoptedOpen: Set<Int> = []) -> [Row] {
         guard let root, nodes[root] != nil else { return [] }
         var rows: [Row] = []
         var visited = Set<Int>()
-        var stack: [(id: Int, depth: Int)] = [(root, 0)]
+        var stack: [(id: Int, depth: Int, sheets: Bool)] = [(root, 0, false)]
         while let item = stack.popLast(), rows.count < rowLimit {
             let id = item.id, depth = item.depth
+            if item.sheets, let node = nodes[id], let sheets = adopted[id] {
+                let open = adoptedOpen.contains(id)
+                rows.append(Row(node: node, depth: depth, expanded: open, sheet: AdoptedSheet(root: id, index: nil)))
+                guard open else { continue }
+                for (index, rules) in sheets.prefix(rowLimit - rows.count).enumerated() {
+                    rows.append(Row(node: node, depth: depth + 1, expanded: false,
+                                    sheet: AdoptedSheet(root: id, index: index, rules: rules)))
+                }
+                continue
+            }
             guard let node = nodes[id], visited.insert(id).inserted, comments || node.type != 8 else { continue }
             let inline = node.inlineText(in: nodes)
             let open = inline == nil && expanded.contains(id)
             if !isBlank(node) { rows.append(Row(node: node, depth: depth, expanded: open, inline: inline)) }
             if open, depth < depthLimit {
-                for child in node.children.reversed() { stack.append((child, depth + 1)) }
+                // Pushed first, so it comes after the children.
+                if adopted[id]?.isEmpty == false { stack.append((id, depth + 1, true)) }
+                for child in node.children.reversed() { stack.append((child, depth + 1, false)) }
             }
         }
         return rows
@@ -205,7 +275,6 @@ final class DeveloperDOMTreeModel: ObservableObject {
         let kind: String?
         let text: String
         let attributes: [String]
-        let closed: Bool
         let inline: String?
     }
 
@@ -217,10 +286,9 @@ final class DeveloperDOMTreeModel: ObservableObject {
         let node = row.node
         let key = LineKey(type: node.type, name: node.name, kind: node.pseudoType ?? node.shadowRootType,
                           text: node.type == 1 ? "" : node.text,
-                          attributes: node.type == 1 ? node.attributes : [],
-                          closed: false, inline: row.inline)
+                          attributes: node.type == 1 ? node.attributes : [], inline: row.inline)
         if let cached = lines[node.id], cached.key == key { return cached.text }
-        let text = Self.styledLine(node, closed: key.closed, inline: row.inline)
+        let text = Self.styledLine(node, closed: false, inline: row.inline)
         lines[node.id] = (key, text)
         return text
     }
@@ -230,6 +298,7 @@ final class DeveloperDOMTreeModel: ObservableObject {
     /// a closing tag. A text node's line is cut at 400, as long text is a
     /// line no one reads sideways.
     static func columns(_ row: Row) -> Int {
+        if let sheet = row.sheet { return sheet.label.count }
         let node = row.node
         guard node.type == 1 else { return min(400, node.type == 3 ? node.text.count + 2 : node.text.count + 9) }
         var count = node.name.count * 2 + 6
@@ -247,6 +316,26 @@ final class DeveloperDOMTreeModel: ObservableObject {
     static func closedTag(for row: Row) -> String? {
         guard row.node.type == 1, row.node.pseudoType == nil, row.expandable, !row.expanded else { return nil }
         return "</\(row.node.name)>"
+    }
+
+    /// Where an element's issue underlines fall in its line, in columns:
+    /// an attribute's name (one of the 12 shown), else the tag name.
+    static func issueSpans(_ node: DeveloperToolsSession.DOMNode,
+                           _ marks: [DeveloperIssueMark]) -> [(start: Int, length: Int, marks: [DeveloperIssueMark])] {
+        guard node.type == 1, node.pseudoType == nil, !marks.isEmpty else { return [] }
+        let indexes = Array(stride(from: 0, to: max(0, node.attributes.count - 1), by: 2).prefix(12))
+        let shown = Set(indexes.map { node.attributes[$0].lowercased() })
+        var spans: [(start: Int, length: Int, marks: [DeveloperIssueMark])] = []
+        let tag = marks.filter { !shown.contains($0.attribute ?? "") }
+        if !tag.isEmpty { spans.append((1, node.name.count, tag)) }
+        var column = 1 + node.name.count  // `<name`, then ` name="value"` each
+        for index in indexes {
+            let name = node.attributes[index]
+            let own = marks.filter { $0.attribute == name.lowercased() }
+            if !own.isEmpty { spans.append((column + 1, name.count, own)) }
+            column += name.count + node.attributes[index + 1].count + 4
+        }
+        return spans
     }
 
     static func styledLine(_ node: DeveloperToolsSession.DOMNode, closed: Bool,
@@ -300,6 +389,8 @@ struct DeveloperDOMRowActions {
     /// An anchor-positioned element's anchor badge clicked: its anchor
     /// is selected.
     var anchor: (Int) -> Void = { _ in }
+    /// An issue underline's link: the issue opened in Issues.
+    var issue: (String) -> Void = { _ in }
 }
 
 /// A row that isn't selected or being edited: its cached text in one Text,
@@ -317,6 +408,8 @@ struct DeveloperDOMPlainRow<Menu: View>: View, Equatable {
     let badges: [String]
     /// The container and scroll-snap overlays shown for this node.
     var pageOverlays: Set<String> = []
+    /// The node's issues, underlined (DeveloperIssuesModel.marks).
+    var issues: [DeveloperIssueMark] = []
     let overlayShown: Bool
     let dropTarget: Bool
     let wraps: Bool
@@ -345,6 +438,7 @@ struct DeveloperDOMPlainRow<Menu: View>: View, Equatable {
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.row == rhs.row && lhs.line == rhs.line && lhs.found == rhs.found && lhs.hidden == rhs.hidden
             && lhs.layout == rhs.layout && lhs.badges == rhs.badges && lhs.pageOverlays == rhs.pageOverlays
+            && lhs.issues == rhs.issues
             && lhs.overlayShown == rhs.overlayShown
             && lhs.dropTarget == rhs.dropTarget && lhs.wraps == rhs.wraps && lhs.width == rhs.width
     }
@@ -382,23 +476,21 @@ struct DeveloperDOMPlainRow<Menu: View>: View, Equatable {
             if row.node.type == 1 { actions.hover(inside ? row.id : nil) }
         }
         .contextMenu { menu() }
-        .draggable("search-node:\(row.id)") {
-            Text(row.node.display).font(DeveloperToolsStyle.code).padding(4)
-        }
-        .dropDestination(for: String.self) { items, location in
-            actions.target(row.id, false)
-            guard let item = items.first, item.hasPrefix("search-node:"),
-                  let id = Int(item.dropFirst("search-node:".count)) else { return false }
-            actions.drop(id, row.node, location.y < height / 2)
-            return true
-        } isTargeted: { inside in
-            actions.target(row.id, inside)
-        }
+        .developerDOMRowDrag(row, target: actions.target, drop: actions.drop)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.node.display)
     }
 
     private var height: CGFloat { DeveloperDOMTreeView.rowHeight }
+
+    /// Wrapped, only a line that fits on one is underlined: where a longer
+    /// one breaks isn't known here.
+    private var issueSpans: [(start: Int, length: Int, marks: [DeveloperIssueMark])] {
+        let room = DeveloperDOMTreeView.wrappedWidth(depth: row.depth, visible: width) - DeveloperDOMTreeView.leading(row.depth)
+            - height - DeveloperToolsStyle.gutter
+        guard !wraps || CGFloat(DeveloperDOMTreeModel.columns(row)) * DeveloperDOMTreeView.characterWidth <= room else { return [] }
+        return DeveloperDOMTreeModel.issueSpans(row.node, issues)
+    }
 
     private var fill: Color {
         if found { return Color.yellow.opacity(0.18) }
@@ -433,6 +525,7 @@ struct DeveloperDOMPlainRow<Menu: View>: View, Equatable {
         Text(shown)
             .font(DeveloperToolsStyle.code)
             .lineLimit(wraps ? nil : 1)
+            .developerIssueWaves(issueSpans, open: actions.issue)
             .frame(minHeight: height, alignment: .topLeading)
             .opacity(hidden ? 0.5 : 1)
         if !wraps, let closing {
@@ -455,12 +548,8 @@ struct DeveloperDOMPlainRow<Menu: View>: View, Equatable {
     @ViewBuilder
     private var layoutBadge: some View {
         if let layout, row.node.type == 1 {
-            Button { actions.overlay(row.id, !overlayShown) } label: {
-                Text(layout).developerBadgeCapsule(on: overlayShown)
-            }
-            .buttonStyle(.plain)
-            .frame(height: height)
-            .help(overlayShown ? "Hide the \(layout) overlay" : "Show the \(layout) overlay")
+            DeveloperDOMOverlayBadge(name: layout, on: overlayShown) { actions.overlay(row.id, !overlayShown) }
+                .frame(height: height)
         }
     }
 
@@ -474,6 +563,70 @@ struct DeveloperDOMPlainRow<Menu: View>: View, Equatable {
                 .frame(height: height)
         } else {
             DeveloperDOMBadge(name: name).frame(height: height)
+        }
+    }
+}
+
+/// Chrome's wavy underline under a tag name or attribute with an issue:
+/// red for a page error, else amber. Hovered a moment, it shows the
+/// issues' titles, each a link that opens it in Issues.
+struct DeveloperDOMIssueWave: View {
+    let marks: [DeveloperIssueMark]
+    let open: (String) -> Void
+    @State private var hovering = false
+    @State private var shown = false
+
+    private struct Wave: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+            for (step, x) in stride(from: rect.minX + 2, through: rect.maxX, by: 2).enumerated() {
+                path.addLine(to: CGPoint(x: x, y: step.isMultiple(of: 2) ? rect.minY : rect.maxY))
+            }
+            return path
+        }
+    }
+
+    var body: some View {
+        Wave().stroke(marks.contains { $0.kind == .pageError } ? ConsoleTheme.errorText : ConsoleTheme.warningIcon, lineWidth: 1)
+            .frame(height: 2)
+            // The text's lower half answers the pointer: the upper half
+            // still takes a double-click to edit, on the selected row.
+            .padding(.top, 5)
+            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .onHover { inside in
+                hovering = inside
+                guard inside else { return }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    if hovering { shown = true }
+                }
+            }
+            .popover(isPresented: $shown, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(marks, id: \.self) { mark in
+                        Button(mark.title) { shown = false; open(mark.group) }.buttonStyle(.link)
+                    }
+                }
+                .font(.system(size: 11))
+                .padding(8)
+            }
+            .accessibilityLabel(marks.map(\.title).joined(separator: ", "))
+    }
+}
+
+extension View {
+    /// Issue underlines over a line of tree text, at their columns.
+    func developerIssueWaves(_ spans: [(start: Int, length: Int, marks: [DeveloperIssueMark])],
+                             open: @escaping (String) -> Void) -> some View {
+        overlay(alignment: .topLeading) {
+            ForEach(spans.indices, id: \.self) { index in
+                DeveloperDOMIssueWave(marks: spans[index].marks, open: open)
+                    .frame(width: CGFloat(spans[index].length) * DeveloperDOMTreeView.characterWidth,
+                           height: DeveloperDOMTreeView.rowHeight - 2)
+                    .offset(x: CGFloat(spans[index].start) * DeveloperDOMTreeView.characterWidth)
+            }
         }
     }
 }
@@ -527,6 +680,23 @@ struct DeveloperDOMOverlayBadge: View {
 }
 
 extension View {
+    /// A tree row dragged by its node, and another row's node dropped on
+    /// it: `drop` gets the node, the row's, and whether it landed on the
+    /// row's upper half; `target` hears the drag enter and leave.
+    func developerDOMRowDrag(_ row: DeveloperDOMTreeModel.Row, target: @escaping (Int, Bool) -> Void,
+                             drop: @escaping (Int, DeveloperToolsSession.DOMNode, Bool) -> Void) -> some View {
+        draggable("search-node:\(row.id)") {
+            Text(row.node.display).font(DeveloperToolsStyle.code).padding(4)
+        }
+        .dropDestination(for: String.self) { items, location in
+            target(row.id, false)
+            guard let item = items.first, item.hasPrefix("search-node:"),
+                  let id = Int(item.dropFirst("search-node:".count)) else { return false }
+            drop(id, row.node, location.y < DeveloperDOMTreeView.rowHeight / 2)
+            return true
+        } isTargeted: { target(row.id, $0) }
+    }
+
     /// The capsule every badge in the tree is drawn in.
     func developerBadgeCapsule(ink: Color, fill: Color) -> some View {
         font(.system(size: 9, weight: .medium))

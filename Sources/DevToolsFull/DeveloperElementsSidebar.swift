@@ -191,9 +191,12 @@ struct DeveloperStylesPane: View {
                     for name in newClass.split(whereSeparator: \.isWhitespace) { session.setClass(String(name), on: true, for: node) }
                     newClass = ""
                 }
-            FlowingChecks(names: current + off.filter { !current.contains($0) }) { name in
-                Toggle(name, isOn: Binding(get: { current.contains(name) }, set: { session.setClass(name, on: $0, for: node) }))
-                    .toggleStyle(.developerCheckbox)
+            // In rows of three.
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), spacing: 3) {
+                ForEach(current + off.filter { !current.contains($0) }, id: \.self) { name in
+                    Toggle(name, isOn: Binding(get: { current.contains(name) }, set: { session.setClass(name, on: $0, for: node) }))
+                        .toggleStyle(.developerCheckbox)
+                }
             }
         }
         .font(.system(size: 11))
@@ -202,26 +205,23 @@ struct DeveloperStylesPane: View {
     }
 
     private var classes: [String] {
-        guard let item = session.nodes[node] else { return [] }
-        let value = stride(from: 0, to: max(0, item.attributes.count - 1), by: 2)
-            .first { item.attributes[$0] == "class" }.map { item.attributes[$0 + 1] } ?? ""
-        return value.split(whereSeparator: \.isWhitespace).map(String.init)
+        (session.nodes[node]?.attribute("class") ?? "").split(whereSeparator: \.isWhitespace).map(String.init)
     }
 
-    private func matches(_ text: String) -> Bool {
-        filter.isEmpty || text.localizedCaseInsensitiveContains(filter)
-    }
+    private func matches(_ text: String) -> Bool { DeveloperStyleFilter.matches(text, filter) }
 }
 
-/// Checkboxes laid out in rows of three, as the .cls pane lists classes.
-private struct FlowingChecks<Content: View>: View {
-    let names: [String]
-    @ViewBuilder let content: (String) -> Content
-
-    var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), spacing: 3) {
-            ForEach(names, id: \.self) { content($0) }
+/// The Styles and Computed filters, as in Chrome: plain text, or `/pattern/`
+/// as a case-insensitive regular expression (plain text again when it
+/// doesn't compile).
+enum DeveloperStyleFilter {
+    static func matches(_ text: String, _ filter: String) -> Bool {
+        if filter.isEmpty { return true }
+        if filter.count > 2, filter.hasPrefix("/"), filter.hasSuffix("/"),
+           let regex = try? NSRegularExpression(pattern: String(filter.dropFirst().dropLast()), options: .caseInsensitive) {
+            return regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
         }
+        return text.localizedCaseInsensitiveContains(filter)
     }
 }
 
@@ -331,7 +331,7 @@ struct DeveloperComputedPane: View {
             .filter { showAll || set[$0.name] != nil }
             .filter { property in
                 if let exact, exact == filter { return property.name == exact }
-                return filter.isEmpty || (property.name + " " + property.value).localizedCaseInsensitiveContains(filter)
+                return DeveloperStyleFilter.matches(property.name + " " + property.value, filter)
             }
             .sorted { a, b in
                 let ap = a.name.hasPrefix("-"), bp = b.name.hasPrefix("-")
@@ -519,10 +519,13 @@ struct DeveloperBoxModel: View {
     }
 
     private func start(_ property: String) {
-        draft = display(property) == "-" ? "0" : display(property)
+        draft = firstDraft(property)
         written = false
         editing = property
     }
+
+    /// What a side's editor opens with: its value, 0 for "-".
+    private func firstDraft(_ property: String) -> String { display(property) == "-" ? "0" : display(property) }
 
     private func handle(_ key: DeveloperStyleField.Key, property: String, text: String,
                         selection: NSRange) -> DeveloperStyleField.Reply {
@@ -542,13 +545,9 @@ struct DeveloperBoxModel: View {
         case .tab, .backtab:
             let order = DeveloperStyleEditing.boxOrder(positioned: positioned(value("position")))
             let next = order.firstIndex(of: property).map { order[($0 + (key == .tab ? 1 : -1) + order.count) % order.count] }
-            let nextDraft = next.map { display($0) == "-" ? "0" : display($0) }
+            let nextDraft = next.map(firstDraft)
             commit(property)
-            if let next, let nextDraft {
-                draft = nextDraft
-                written = false
-                editing = next
-            }
+            if let next, let nextDraft { draft = nextDraft; written = false; editing = next }
             return .handled
         case .enter:
             commit(property)
@@ -758,6 +757,7 @@ struct DeveloperColorSwatch: View {
     var contrast: DeveloperStyleContrast? = nil
     var onChange: ((String) -> Void)? = nil
     @State private var contrastShown = false
+    @AppStorage(DeveloperContrastFix.apcaKey, store: DevDefaults.store) private var apca = false
 
     var body: some View {
         if let token = DeveloperColor.tokens(in: value).first, let color = DeveloperColor.nsColor(token) {
@@ -768,7 +768,7 @@ struct DeveloperColorSwatch: View {
                                                        blue: rgb.blueComponent * 255, alpha: rgb.alphaComponent)
                     // As in Chrome's color picker: the ratio opens the AA
                     // and AAA lines, each failing one with a fix.
-                    Button { contrastShown = true } label: { contrastBadge(contrast.measure(foreground)) }
+                    Button { contrastShown = true } label: { contrastBadge(foreground, contrast) }
                         .buttonStyle(.plain)
                         .popover(isPresented: $contrastShown, arrowEdge: .bottom) {
                             DeveloperContrastDetails(foreground: foreground, contrast: contrast, apply: applyFix(token))
@@ -787,21 +787,31 @@ struct DeveloperColorSwatch: View {
         }
     }
 
-    private func contrastBadge(_ result: DeveloperStyleContrast.Result) -> some View {
-        let ratio = DeveloperCSSOverview.ratioLabel(result.ratio) + ":1"
-        let aa = result.aa ? "AA passes" : "AA fails"
-        let aaa = result.aaa ? "AAA passes" : "AAA fails"
+    /// The ratio and its AA and AAA marks, or APCA's Lc and its mark.
+    private func contrastBadge(_ foreground: DeveloperCSSColor, _ contrast: DeveloperStyleContrast) -> some View {
+        let score: String
+        let marks: [(String, Bool)]
+        if apca {
+            let lc = DeveloperContrastFix.apca(foreground, contrast.background)
+            score = DeveloperContrastFix.apcaLabel(lc)
+            marks = [("APCA", abs(lc) >= DeveloperContrastFix.apcaThreshold(large: contrast.largeText))]
+        } else {
+            let result = contrast.measure(foreground)
+            score = DeveloperCSSOverview.ratioLabel(result.ratio) + ":1"
+            marks = [("AA", result.aa), ("AAA", result.aaa)]
+        }
+        let summary = marks.map { "\($0.0) \($0.1 ? "passes" : "fails")." }.joined(separator: " ")
+        let description = "\(apca ? "APCA contrast" : "Contrast ratio") \(score). \(summary)"
         return HStack(spacing: 4) {
-            Text(ratio).monospacedDigit()
-            contrastMark("AA", passes: result.aa)
-            contrastMark("AAA", passes: result.aaa)
+            Text(score).monospacedDigit()
+            ForEach(marks.indices, id: \.self) { contrastMark(marks[$0].0, passes: marks[$0].1) }
         }
         .font(.system(size: 9))
         .foregroundStyle(.secondary)
         .fixedSize()
-        .help("Contrast ratio \(ratio). \(aa). \(aaa).")
+        .help(description)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Contrast ratio \(ratio). \(aa). \(aaa).")
+        .accessibilityLabel(description)
     }
 
     private func contrastMark(_ title: String, passes: Bool) -> some View {
@@ -840,19 +850,16 @@ struct DeveloperColorSwatch: View {
         .contextMenu {
             if let onChange {
                 let options = DeveloperColorFormats.options(for: color, original: token)
-                ForEach(options.filter { $0.section == 0 }, id: \.self) { option in
-                    Button(option.text) { onChange(value.replacingOccurrences(of: token, with: option.text)) }
-                }
-                Divider()
-                ForEach(options.filter { $0.section == 1 }, id: \.self) { option in
-                    Button(option.text) { onChange(value.replacingOccurrences(of: token, with: option.text)) }
-                }
-                Divider()
-                Menu("color()") {
-                    ForEach(options.filter { $0.section == 2 }, id: \.self) { option in
+                let section = { (number: Int) in
+                    ForEach(options.filter { $0.section == number }, id: \.self) { option in
                         Button(option.text) { onChange(value.replacingOccurrences(of: token, with: option.text)) }
                     }
                 }
+                section(0)
+                Divider()
+                section(1)
+                Divider()
+                Menu("color()") { section(2) }
             }
         }
     }
@@ -865,8 +872,14 @@ final class DeveloperColorPicking: NSObject {
     private var handler: ((NSColor) -> Void)?
     private var pending: DispatchWorkItem?
 
+    /// The colour the panel opened with: setting it sends the panel's
+    /// action, which isn't a pick, so `#888` isn't rewritten as `#888888`
+    /// just by opening the picker, as Chrome leaves it.
+    private var opened: NSColor?
+
     func open(_ color: NSColor, onChange: @escaping (NSColor) -> Void) {
         handler = nil
+        opened = color
         let panel = NSColorPanel.shared
         panel.showsAlpha = true
         panel.setTarget(self)
@@ -876,11 +889,25 @@ final class DeveloperColorPicking: NSObject {
         panel.orderFront(nil)
     }
 
+    /// The same colour to the 8-bit sRGB channels CSS writes.
+    static func same(_ a: NSColor, _ b: NSColor) -> Bool {
+        guard let a = a.usingColorSpace(.sRGB), let b = b.usingColorSpace(.sRGB) else { return false }
+        func bytes(_ c: NSColor) -> [Int] {
+            [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent].map { Int(($0 * 255).rounded()) }
+        }
+        return bytes(a) == bytes(b)
+    }
+
     @objc private func changed(_ panel: NSColorPanel) {
         let color = panel.color
         // Dragging in the panel sends many changes; write the last of each burst.
         pending?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.handler?(color) }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if let opened, Self.same(opened, color) { return }
+            opened = nil
+            handler?(color)
+        }
         pending = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
     }

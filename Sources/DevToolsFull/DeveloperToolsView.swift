@@ -171,7 +171,7 @@ struct DeveloperToolsView: View {
     }
 
     /// Chrome's ⋮ "Customize and control DevTools": dock side, the drawer,
-    /// More tools, Settings and Shortcuts.
+    /// Search, Focus page, More tools, Settings, Shortcuts and Help.
     private var customizeMenu: some View {
         Menu {
             Picker("Dock side", selection: $tools.dockPosition) {
@@ -183,6 +183,13 @@ struct DeveloperToolsView: View {
             Button("Run command  ⌥⇧⌘P") { shell.showCommandMenu(">") }
             Button("Open file  ⌥⌘O") { context.perform(.commandMenu("")) }
             Button(shell.drawerOpen ? "Hide console drawer  Esc" : "Show console drawer  Esc") { shell.toggleDrawer() }
+            Button("Search") { context.perform(.searchAllFiles) }
+            Button("Focus page") {
+                guard let web = session.web, let window = web.window else { return }
+                window.makeKeyAndOrderFront(nil)
+                window.makeFirstResponder(web)
+            }
+            .disabled(session.web?.window == nil)
             Menu("More tools") {
                 ForEach(DeveloperDrawerTool.allCases) { tool in
                     Button { shell.showDrawer(.tool(tool)) } label: { Label(tool.title, systemImage: tool.icon) }
@@ -200,6 +207,11 @@ struct DeveloperToolsView: View {
             Divider()
             Button("Settings  F1") { shell.settingsSection = .preferences; shell.settingsShown = true }
             Button("Shortcuts") { shell.settingsSection = .shortcuts; shell.settingsShown = true }
+            Menu("Help") {
+                Button("Documentation") {
+                    if let url = URL(string: "https://developer.chrome.com/docs/devtools/") { DevHost.open(url) }
+                }
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .rotationEffect(.degrees(90))
@@ -428,6 +440,8 @@ struct DeveloperToolsView: View {
     private var sources: some View {
         VStack(spacing: 0) {
             toolbar {
+                icon("sidebar.left", shell.sourcesNavigatorHidden ? "Show navigator (⇧⌘Y)" : "Hide navigator (⇧⌘Y)",
+                     active: !shell.sourcesNavigatorHidden) { shell.sourcesNavigatorHidden.toggle() }
                 icon("arrow.clockwise", "Refresh loaded sources", action: session.refresh)
                 search("Filter sources")
                 Divider().frame(height: 14)
@@ -441,23 +455,12 @@ struct DeveloperToolsView: View {
                 DeveloperDeactivateBreakpointsButton(debugger: session.debugger)
                 Spacer()
                 if session.paused { Text("Paused").foregroundStyle(DeveloperToolsStyle.tint) }
+                icon("sidebar.right", shell.sourcesDebuggerHidden ? "Show debugger (⇧⌘H)" : "Hide debugger (⇧⌘H)",
+                     active: !shell.sourcesDebuggerHidden) { shell.sourcesDebuggerHidden.toggle() }
             }
             GeometryReader { space in
-                if space.size.width >= 640, space.size.width < 900 {
-                    // As Chrome's auto layout at this width: the debugger
-                    // goes under the editor, which keeps a readable width.
-                    HSplitView {
-                        if !shell.sourcesNavigatorHidden {
-                            sourceList.frame(minWidth: 125, idealWidth: 167, maxWidth: 230)
-                        }
-                        VSplitView {
-                            sourceEditor.frame(minWidth: 200, minHeight: 120)
-                            if !shell.sourcesDebuggerHidden {
-                                debuggerSidebar.frame(minHeight: 60, idealHeight: 200)
-                            }
-                        }
-                    }
-                } else if space.size.width >= 900 {
+                let wide = space.size.width >= 640
+                if space.size.width >= 900 {
                     // ⇧⌘Y and ⇧⌘H put the navigator and the debugger away.
                     HSplitView {
                         if !shell.sourcesNavigatorHidden {
@@ -466,6 +469,23 @@ struct DeveloperToolsView: View {
                         sourceEditor.frame(minWidth: 200)
                         if !shell.sourcesDebuggerHidden {
                             debuggerSidebar.frame(minWidth: 160, idealWidth: 240, maxWidth: 360)
+                        }
+                    }
+                } else if wide || !shell.sourcesNavigatorHidden {
+                    // As Chrome's auto layout at this width: the debugger
+                    // goes under the navigator and editor, across the full
+                    // width; narrower, the navigator still stays beside the editor.
+                    VSplitView {
+                        HSplitView {
+                            if !shell.sourcesNavigatorHidden {
+                                sourceList.frame(minWidth: wide ? 125 : 110, idealWidth: wide ? 167 : 150,
+                                                 maxWidth: wide ? 230 : 200)
+                            }
+                            sourceEditor.frame(minWidth: wide ? 200 : 160)
+                        }
+                        .frame(minHeight: 120)
+                        if !shell.sourcesDebuggerHidden {
+                            debuggerSidebar.frame(minHeight: 60, idealHeight: wide ? 200 : 170)
                         }
                     }
                 } else {

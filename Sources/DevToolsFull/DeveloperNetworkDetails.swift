@@ -283,7 +283,7 @@ struct DeveloperRequestDetailsView: View {
             pair("Request Method", request.method)
             statusPair
             if let address = details?.remoteAddress { pair("Remote Address", address) }
-            if let policy = details?.requestHeaders.first(where: { $0.name.caseInsensitiveCompare("referrer-policy") == .orderedSame })?.value
+            if let policy = request.referrerPolicy ?? details?.requestHeaders.first(where: { $0.name.caseInsensitiveCompare("referrer-policy") == .orderedSame })?.value
                 ?? details?.responseHeaders.first(where: { $0.name.caseInsensitiveCompare("referrer-policy") == .orderedSame })?.value {
                 pair("Referrer Policy", policy)
             }

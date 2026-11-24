@@ -1029,21 +1029,6 @@ return sameDocument() ? { ...result, documentID } : { changed: true };
         return Number.isFinite(result.nodeId) ? result.nodeId : null;
     }
 
-    // A statement such as `{a: 1}` reads as an object literal, as in
-    // Chrome. Building the function only checks the syntax; it is never
-    // called, and this runs in the inspector, not in the page.
-    function wrapObjectLiteral(source) {
-        const trimmed = source.trim();
-        if (!/^\{[\s\S]*\}$/.test(trimmed))
-            return source;
-        try {
-            new Function("return (" + trimmed + "\n)");
-            return "(" + trimmed + "\n)";
-        } catch {
-            return source;
-        }
-    }
-
     // Where the prompt runs, as in Chrome DevTools: the selected call
     // frame while the debugger is paused (Debugger.evaluateOnCallFrame,
     // which sees the frame's locals and closures), else the JavaScript
@@ -1174,11 +1159,11 @@ return sameDocument() ? { ...result, documentID } : { changed: true };
         return {result: {type: "undefined"}};
     }
 
-    async function evaluate(expression, nodes, userGesture, targetId, where) {
+    async function evaluate(expression, nodes, userGesture, targetId, where, awaited = false) {
         const history = Array.isArray(nodes) ? nodes.filter(Number.isFinite) : [];
         if (history.length)
             await command("DOM.setInspectedNode", {nodeId: history[0]}, null).catch(() => {});
-        let source = wrapObjectLiteral(String(expression));
+        let source = String(expression);
         const monitorCall = /^\s*(un)?monitor\s*\(([\s\S]+)\)\s*;?\s*$/.exec(source);
         const debugCall = /^\s*(un)?debug\s*\(([\s\S]+)\)\s*;?\s*$/.exec(source);
         let result;
@@ -1193,8 +1178,16 @@ return sameDocument() ? { ...result, documentID } : { changed: true };
                 ? await withNodeHistory(source, history.length ? history : [], targetId, where)
                 : await run({
                     expression: source, objectGroup: "console", includeCommandLineAPI: true,
-                    generatePreview: true, saveResult: true, emulateUserGesture: userGesture !== false,
+                    generatePreview: true, saveResult: !awaited, emulateUserGesture: userGesture !== false,
                 }, targetId, where);
+            if (awaited && !result.wasThrown && result.result?.objectId) {
+                const target = result.contextReset ? targetId : place(where).targetId ?? targetId;
+                const settled = await command("Runtime.awaitPromise", {
+                    promiseObjectId: result.result.objectId, generatePreview: true, saveResult: true,
+                }, target).catch(() => null);
+                if (settled)
+                    result = {...settled, contextReset: result.contextReset};
+            }
         }
         return {value: remote(result.result), wasThrown: result.wasThrown === true, contextReset: result.contextReset === true};
     }
@@ -2445,12 +2438,16 @@ if (!globalThis.searchElements && globalThis.searchInspector) {
     }
 
     function style(selector, origin, source, extra) {
-        const styleId = source?.styleId && typeof source.styleId.styleSheetId === "string"
+        // A user agent or user sheet's rules aren't editable, and WebKit
+        // sends their properties without source text: they are kept by
+        // name and value, as Chrome lists them under "user agent stylesheet".
+        const editable = origin !== "user-agent" && origin !== "user";
+        const styleId = editable && source?.styleId && typeof source.styleId.styleSheetId === "string"
             ? {styleSheetId: source.styleId.styleSheetId, ordinal: source.styleId.ordinal ?? 0} : null;
         return {
             selector: String(selector).slice(0, 350), origin: String(origin ?? "").slice(0, 60),
-            styleId: origin === "user-agent" || origin === "user" ? null : styleId,
-            properties: (source?.cssProperties ?? []).filter((item) =>
+            styleId,
+            properties: agentProperties(editable, source).filter((item) =>
                 typeof item.name === "string" && typeof item.value === "string" &&
                 item.implicit !== true && (typeof item.text === "string" || item.status === "disabled" || !styleId)
             ).slice(0, 120).map((item) => ({
@@ -2464,6 +2461,23 @@ if (!globalThis.searchElements && globalThis.searchInspector) {
             })),
             ...extra,
         };
+    }
+
+    // A user agent rule's properties as written: WebKit sends `margin: 8px`
+    // as its longhands with the shorthand in shorthandEntries, and Chrome
+    // shows the shorthand.
+    function agentProperties(editable, source) {
+        const properties = source?.cssProperties ?? [];
+        const shorthands = editable ? [] : (source?.shorthandEntries ?? [])
+            .filter((entry) => typeof entry.name === "string" && typeof entry.value === "string" && entry.value);
+        if (!shorthands.length)
+            return properties;
+        const covered = new Set(shorthands.flatMap((entry) => longhands(entry.name, entry.value).map((item) => item.name)));
+        if (!covered.size)
+            return properties;
+        const shown = shorthands.filter((entry) => longhands(entry.name, entry.value).length)
+            .map((entry) => ({name: entry.name, value: entry.value, priority: entry.priority ?? ""}));
+        return [...shown, ...properties.filter((item) => !covered.has(item.name))];
     }
 
     function fromRule(rule, extra) {
@@ -3274,13 +3288,16 @@ if (!globalThis.searchIssues) {
         return Object.keys(names ?? {}).slice(0, 200).map((name) => name.toLowerCase());
     }
 
-    // Values by lowercased name, for the list's response header columns.
-    function headerValues(headers) {
+    // The request list leaves credentials in the request's detail pane.
+    function headerValues(headers, request = false) {
         const result = {};
         for (const name of Object.keys(headers ?? {}).slice(0, 200)) {
+            const key = name.toLowerCase();
+            if (request && ["cookie", "authorization", "proxy-authorization"].includes(key))
+                continue;
             const value = headers[name];
             if (typeof value === "string")
-                result[name.toLowerCase()] = value.slice(0, 300);
+                result[key] = value.slice(0, 300);
         }
         return result;
     }
@@ -3362,6 +3379,7 @@ if (!globalThis.searchIssues) {
             const item = row(data.requestId);
             const headers = data.request?.headers;
             item.requestHeaders = lower(headers);
+            item.requestHeaderValues = headerValues(headers, true);
             item.cookies = cookieNames(headerValue(headers, "cookie"));
             item.requestCookies = cookiePairs(headerValue(headers, "cookie"));
             item.frameId = data.frameId ?? null;
@@ -3405,6 +3423,7 @@ if (!globalThis.searchIssues) {
                 item.decoded = metrics.responseBodyDecodedSize;
             if (metrics.requestHeaders) {
                 item.requestHeaders = lower(metrics.requestHeaders);
+                item.requestHeaderValues = headerValues(metrics.requestHeaders, true);
                 item.cookies = cookieNames(headerValue(metrics.requestHeaders, "cookie"));
                 item.requestCookies = cookiePairs(headerValue(metrics.requestHeaders, "cookie"));
             }
@@ -3452,6 +3471,7 @@ if (!globalThis.searchIssues) {
         case "Target.didCommitProvisionalTarget":
             setTimeout(() => {
                 syncBlocking().catch(() => {});
+                syncImages().catch(() => {});
                 syncHeaders().catch(() => {});
             }, 0);
             break;
@@ -3493,10 +3513,11 @@ if (!globalThis.searchIssues) {
                 typeof target.NetworkAgent?.[name]?.invoke === "function"));
     }
 
+    const hasRequestConditions = () => blockingEnabled && (matchers.length > 0 || throttles.length > 0);
     let syncing = Promise.resolve();
     function syncBlocking() {
         const next = syncing.then(async () => {
-            const wanted = blockingEnabled && (matchers.length > 0 || throttles.length > 0);
+            const wanted = hasRequestConditions() || rewritesRequests();
             const target = wanted ? interceptionTarget() : null;
             if (blockRule && (blockRule !== target || !wanted)) {
                 const previous = blockRule;
@@ -3519,8 +3540,11 @@ if (!globalThis.searchIssues) {
         return next;
     }
 
-    function setBlocking({enabled = true, patterns: list = [], throttled: delays = []} = {}) {
+    function setBlocking({enabled = true, patterns: list = [], throttled: delays = [], acceptEncoding: encoding = null,
+                          disabledImageTypes: types = []} = {}) {
         blockingEnabled = !!enabled;
+        acceptEncoding = typeof encoding === "string" && encoding.trim() ? encoding.trim() : null;
+        disabledImageTypes = (Array.isArray(types) ? types : []).filter((type) => imageFormats.includes(type));
         patterns = (Array.isArray(list) ? list : []).filter((item) => typeof item === "string" && item.trim())
             .slice(0, 200);
         matchers = patterns.map((pattern) => {
@@ -3536,7 +3560,133 @@ if (!globalThis.searchIssues) {
                 return null;
             }
         }).filter(Boolean);
-        return syncBlocking();
+        return Promise.all([syncBlocking(), syncImages()]).then(([request]) => ({active: request.active && hasRequestConditions()}));
+    }
+
+    // Network conditions' Accepted Content-Encodings: the Accept-Encoding
+    // each request goes out with, or null for the browser's own.
+    let acceptEncoding = null;
+
+    // Rendering's Disable AVIF / JPEG XL / WebP image format, as Chrome does
+    // it: image requests stop offering the type, and a response in it is
+    // answered with no bytes, so the image fails to decode.
+    const imageFormats = ["image/avif", "image/jxl", "image/webp"];
+    let disabledImageTypes = [];
+    const imageStage = "response";
+    // Case-insensitive, stage response: no other rule has this key.
+    const imageInterception = {url: "^https?://", stage: imageStage, isRegex: true, caseSensitive: false};
+    let imageRule = null;
+
+    function rewritesRequests() {
+        return acceptEncoding !== null || disabledImageTypes.length > 0;
+    }
+
+    // The Accept header without the disabled image types.
+    function acceptWithout(value) {
+        if (typeof value !== "string" || !disabledImageTypes.length)
+            return value;
+        return value.split(",").filter((part) =>
+            !disabledImageTypes.includes(part.split(";")[0].trim().toLowerCase())).join(",");
+    }
+
+    let imageSyncing = Promise.resolve();
+    function syncImages() {
+        const next = imageSyncing.then(async () => {
+            const wanted = disabledImageTypes.length > 0;
+            const target = wanted ? headerTarget() : null;
+            if (imageRule && (imageRule !== target || !wanted)) {
+                const previous = imageRule;
+                imageRule = null;
+                if (!previous.isDestroyed)
+                    await previous.NetworkAgent.removeInterception.invoke(imageInterception).catch(() => {});
+            }
+            if (!wanted || !target || imageRule === target)
+                return {active: !!imageRule};
+            if (WI.networkManager && WI.networkManager.interceptionEnabled === false)
+                WI.networkManager.interceptionEnabled = true;
+            await target.NetworkAgent.addInterception.invoke(imageInterception).catch((error) => {
+                if (!/already exists/i.test(String(error?.message ?? error)))
+                    throw error;
+            });
+            imageRule = target;
+            return {active: true};
+        });
+        imageSyncing = next.catch(() => {});
+        return next;
+    }
+
+    function imageIntercepted(message, target) {
+        if (message?.method !== "Network.responseIntercepted" || !disabledImageTypes.length || !target?.NetworkAgent)
+            return false;
+        const {requestId, response} = message.params ?? {};
+        const url = response?.url;
+        if (typeof requestId !== "string" || typeof url !== "string" ||
+            hasLocalOverride(url, blockStage, imageStage))
+            return false;
+        let type = typeof response.mimeType === "string" ? response.mimeType : "";
+        if (!type) {
+            for (const [name, value] of Object.entries(response.headers ?? {})) {
+                if (name.toLowerCase() === "content-type")
+                    type = String(value);
+            }
+        }
+        type = type.split(";")[0].trim().toLowerCase();
+        if (!disabledImageTypes.includes(type))
+            return false;
+        const headers = Object.create(null);
+        for (const [name, value] of Object.entries(response.headers ?? {})) {
+            if (!["content-encoding", "content-length", "cache-control"].includes(name.toLowerCase()))
+                headers[name] = value;
+        }
+        headers["Cache-Control"] = "no-store";
+        target.NetworkAgent.interceptWithResponse.invoke({
+            requestId, content: "", base64Encoded: true, mimeType: type,
+            status: Number.isFinite(response.status) ? response.status : 200,
+            statusText: typeof response.statusText === "string" ? response.statusText : "OK", headers,
+        }).catch(() => target.NetworkAgent.interceptContinue.invoke({requestId, stage: imageStage}).catch(() => {}));
+        return true;
+    }
+
+    // Lets an intercepted request go, with the chosen Accept-Encoding and
+    // without the disabled image types.
+    async function release(target, requestId, request) {
+        if (rewritesRequests() && request && typeof request.headers === "object"
+            && typeof target.NetworkAgent?.interceptWithRequest?.invoke === "function") {
+            const headers = Object.create(null);
+            for (const [name, value] of Object.entries(request.headers ?? {})) {
+                const lower = name.toLowerCase();
+                if (lower === "accept-encoding" && acceptEncoding !== null)
+                    continue;
+                headers[name] = lower === "accept" ? acceptWithout(value) : value;
+            }
+            if (acceptEncoding !== null)
+                headers["Accept-Encoding"] = acceptEncoding;
+            return target.NetworkAgent.interceptWithRequest.invoke({requestId, headers})
+                .catch(() => target.NetworkAgent.interceptContinue.invoke({requestId, stage: blockStage}));
+        }
+        return target.NetworkAgent.interceptContinue.invoke({requestId, stage: blockStage});
+    }
+
+    function hasLocalOverride(url, ...stages) {
+        const overrides = WI.networkManager?.localResourceOverridesForURL?.(url) ?? [];
+        return overrides.some((override) => !override.disabled && stages.includes(override.networkStage));
+    }
+
+    // A request neither blocked nor held, sent on with the chosen encodings.
+    function encodeIntercepted(message, target) {
+        if (message?.method !== "Network.requestIntercepted" || !rewritesRequests())
+            return false;
+        const {requestId, request} = message.params ?? {};
+        if (typeof requestId !== "string" || !/^https?:/i.test(request?.url ?? ""))
+            return false;
+        // Let WebKit serve any explicit request-stage Local Override.
+        if (hasLocalOverride(request.url, blockStage))
+            return false;
+        // The page-wide condition owns the hold and also fails offline requests.
+        if (globalThis.searchInspector?.isConditionedRequest?.(message, target, release))
+            return true;
+        release(target, requestId, request).catch(() => {});
+        return true;
     }
 
     // The first throttling condition whose pattern matches, as Chrome
@@ -3558,7 +3708,8 @@ if (!globalThis.searchIssues) {
         if (typeof requestId !== "string" || throttled.has(requestId))
             return false;
         const rule = throttleFor(request?.url);
-        if (!rule)
+        const conditions = globalThis.searchInspector?.conditionFor?.(target);
+        if (!rule || conditions?.offline || (rewritesRequests() && hasLocalOverride(request.url, blockStage)))
             return false;
         if (throttled.size >= 128) {
             // A busy page should not leave a large backlog of paused loads.
@@ -3568,8 +3719,8 @@ if (!globalThis.searchIssues) {
         throttled.set(requestId, setTimeout(() => {
             throttled.delete(requestId);
             if (!target.isDestroyed)
-                target.NetworkAgent.interceptContinue.invoke({requestId, stage: blockStage}).catch(() => {});
-        }, rule.latency));
+                release(target, requestId, request).catch(() => {});
+        }, Math.max(rule.latency, conditions?.latency ?? 0)));
         return true;
     }
 
@@ -4007,8 +4158,10 @@ if (!globalThis.searchIssues) {
     }
 
     function state(since = 0) {
-        if (blockingEnabled && (matchers.length || throttles.length) && blockRule !== interceptionTarget())
+        if ((hasRequestConditions() || rewritesRequests()) && blockRule !== interceptionTarget())
             syncBlocking().catch(() => {});
+        if (disabledImageTypes.length && imageRule !== headerTarget())
+            syncImages().catch(() => {});
         if (headerRules.length && headerRule !== headerTarget())
             syncHeaders().catch(() => {});
         const changed = [];
@@ -4016,7 +4169,7 @@ if (!globalThis.searchIssues) {
             if (item.version > since)
                 changed.push(item);
         }
-        return {version, page, rows: changed.slice(-rowLimit), blockingActive: !!blockRule};
+        return {version, page, rows: changed.slice(-rowLimit), blockingActive: !!blockRule && hasRequestConditions()};
     }
 
     function frames(id, after = 0) {
@@ -4042,6 +4195,12 @@ if (!globalThis.searchIssues) {
                 // WebKit's frontend releases the response.
             }
             try {
+                if (imageIntercepted(message, this.target))
+                    return;
+            } catch {
+                // WebKit's frontend releases the response.
+            }
+            try {
                 if (blockIntercepted(message, this.target))
                     return;
             } catch {
@@ -4052,6 +4211,12 @@ if (!globalThis.searchIssues) {
                     return;
             } catch {
                 // The page-wide throttling or WebKit's frontend releases it.
+            }
+            try {
+                if (encodeIntercepted(message, this.target))
+                    return;
+            } catch {
+                // Fall back to the inspector's normal handling.
             }
             try {
                 observe(message, this.target);
@@ -4558,7 +4723,7 @@ return { rows };
         return networkCall(target, "interceptContinue", {requestId, stage: requestStage});
     }
 
-    function isConditionedRequest(message, target) {
+    function isConditionedRequest(message, target, release = continueRequest) {
         if (!condition || condition.target !== target ||
             message?.method !== "Network.requestIntercepted")
             return false;
@@ -4575,14 +4740,23 @@ return { rows };
                 .catch(() => continueRequest(target, requestId)).catch(() => {});
         } else if (mode.held.size >= 128) {
             // A busy page should not leave a large backlog of paused loads.
-            continueRequest(target, requestId).catch(() => {});
+            release(target, requestId, request).catch(() => {});
         } else if (!mode.held.has(requestId)) {
-            mode.held.set(requestId, setTimeout(() => {
+            const resume = () => release(target, requestId, request);
+            const timer = setTimeout(() => {
                 mode.held.delete(requestId);
-                continueRequest(target, requestId).catch(() => {});
-            }, mode.latency));
+                resume().catch(() => {});
+            }, mode.latency);
+            mode.held.set(requestId, {timer, resume});
         }
         return true;
+    }
+
+    // The page-wide condition on a target, for the Network tools' own
+    // interception, which releases requests itself and has to keep it.
+    function conditionFor(target) {
+        const mode = condition;
+        return mode && mode.target === target ? {latency: mode.latency, offline: mode.offline} : null;
     }
 
     async function clearConditions() {
@@ -4591,10 +4765,10 @@ return { rows };
         if (!mode)
             return;
         const requests = [];
-        for (const [requestId, timer] of mode.held) {
+        for (const {timer, resume} of mode.held.values()) {
             clearTimeout(timer);
             if (!mode.target.isDestroyed)
-                requests.push(continueRequest(mode.target, requestId));
+                requests.push(resume());
         }
         mode.held.clear();
         if (mode.target.isDestroyed)
@@ -4604,7 +4778,7 @@ return { rows };
             if (mode.addedRule)
                 await networkCall(mode.target, "removeInterception", conditionRule);
         } finally {
-            if (mode.enabledInterception)
+            if (mode.enabledInterception && WI.networkManager?.interceptionEnabled === false)
                 await networkCall(mode.target, "setInterceptionEnabled", {enabled: false});
         }
     }
@@ -4890,7 +5064,7 @@ return { rows };
             return {frame: urlFields(fields(data.frame, "id parentId loaderId name mimeType"), data.frame, "url", true)};
         case "Network.requestWillBeSent": {
             const event = urlFields(fields(data, "requestId frameId loaderId timestamp walltime type targetId"), data, "documentURL");
-            event.request = {...urlFields(fields(data.request, "method"), data.request, "url", true), headers: headers(data.request?.headers)};
+            event.request = {...urlFields(fields(data.request, "method referrerPolicy"), data.request, "url", true), headers: headers(data.request?.headers)};
             if (data.initiator)
                 event.initiator = urlFields(fields(data.initiator, "type lineNumber nodeId"), data.initiator, "url", true);
             if (data.redirectResponse)
@@ -5339,7 +5513,7 @@ return { rows };
     }
 
     globalThis.searchInspector = Object.freeze({
-        command, supports, drain, setDomains, capabilities, networkConditions, nodePath,
+        command, supports, drain, setDomains, capabilities, networkConditions, conditionFor, isConditionedRequest, nodePath,
         requestDetails, clearRequestDetails: () => details.clear(), setStyleText, eventListeners,
         scriptLocation, pauseOnExceptions, workers, setWorkerBreakpoints, mark,
     });

@@ -153,8 +153,7 @@ struct DeveloperDrawerView: View {
     }
 }
 
-/// Chrome's Network conditions drawer tool: caching, throttling and the
-/// user agent for the inspected tab.
+/// Network conditions for the inspected tab.
 struct DeveloperNetworkConditionsView: View {
     @ObservedObject var session: DeveloperToolsSession
     @ObservedObject var tools: DeveloperNetworkTools
@@ -214,6 +213,41 @@ struct DeveloperNetworkConditionsView: View {
                     }
                 }
                 .onAppear { draft = session.userAgentOverride ?? "" }
+                section("Accepted Content-Encodings") {
+                    Toggle("Use browser default", isOn: Binding(
+                        get: { tools.acceptedEncodings == nil },
+                        set: { tools.acceptedEncodings = $0 ? nil : Set(DeveloperNetworkTools.ContentEncoding.allCases) }))
+                        .toggleStyle(.developerCheckbox)
+                    if tools.acceptedEncodings != nil {
+                        HStack(spacing: DeveloperToolsStyle.controlSpacing) {
+                            ForEach(DeveloperNetworkTools.ContentEncoding.allCases) { encoding in
+                                Toggle(encoding.rawValue, isOn: Binding(
+                                    get: { tools.acceptedEncodings?.contains(encoding) == true },
+                                    set: { on in
+                                        guard var next = tools.acceptedEncodings else { return }
+                                        if on { next.insert(encoding) } else { next.remove(encoding) }
+                                        tools.acceptedEncodings = next
+                                    }))
+                                    .toggleStyle(.developerCheckbox)
+                            }
+                        }
+                        Text("An empty selection requests an uncompressed response.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(!session.requestInterception)
+                section("Image formats") {
+                    ForEach(DeveloperNetworkTools.ImageFormat.allCases) { format in
+                        Toggle("Disable " + format.title, isOn: Binding(
+                            get: { tools.disabledImageFormats.contains(format) },
+                            set: { on in
+                                if on { tools.disabledImageFormats.insert(format) }
+                                else { tools.disabledImageFormats.remove(format) }
+                            }))
+                            .toggleStyle(.developerCheckbox)
+                    }
+                }
+                .disabled(!session.requestInterception)
             }
             .padding(DeveloperToolsStyle.gutter)
             .frame(maxWidth: .infinity, alignment: .leading)

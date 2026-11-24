@@ -80,6 +80,24 @@ struct DeveloperLiveMetrics: Equatable {
     var inpEvent: String?
     var inpTarget: String?
     var interactions = 0
+    /// The live view's Interactions log, as Chrome's: the latest, each at
+    /// its longest event, oldest first.
+    var interactionLog: [Interaction] = []
+    /// And its Layout shifts log.
+    var shiftLog: [Shift] = []
+
+    struct Interaction: Equatable, Hashable {
+        var name: String
+        var target: String?
+        var duration: Double
+        var time: Double
+    }
+
+    struct Shift: Equatable, Hashable {
+        var time: Double
+        var value: Double
+        var elements: [String]
+    }
 
     init() {}
 
@@ -99,6 +117,15 @@ struct DeveloperLiveMetrics: Equatable {
             inpTarget = inp["target"] as? String
         }
         interactions = (raw["interactions"] as? NSNumber)?.intValue ?? 0
+        interactionLog = (raw["interactionLog"] as? [[String: Any]] ?? []).suffix(50).compactMap { item in
+            guard let duration = number(item["duration"]), let time = number(item["time"]),
+                  let name = item["name"] as? String else { return nil }
+            return Interaction(name: name, target: item["target"] as? String, duration: duration, time: time)
+        }
+        shiftLog = (raw["shiftLog"] as? [[String: Any]] ?? []).suffix(50).compactMap { item in
+            guard let value = number(item["value"]), let time = number(item["time"]) else { return nil }
+            return Shift(time: time, value: value, elements: item["elements"] as? [String] ?? [])
+        }
     }
 
     func reading(_ vital: DeveloperWebVital) -> Reading {
@@ -222,6 +249,13 @@ final class DeveloperLiveMetricsModel: ObservableObject {
     func stopPolling() {
         poll?.cancel()
         poll = nil
+    }
+
+    func clearLogs() {
+        guard let session, let web = session.web, !session.paused, !session.recordingTimeline else { return }
+        metrics?.interactionLog = []
+        metrics?.shiftLog = []
+        Task { _ = await Self.call(web, "api.clearLogs()") }
     }
 
     private func tick() async {
@@ -489,6 +523,7 @@ struct DeveloperLiveMetricsView: View {
                 HStack(alignment: .top, spacing: 10) { cards }
                 VStack(alignment: .leading, spacing: 10) { cards }
             }
+            DeveloperLiveLogs(model: model)
         }
         .onAppear { model.startPolling() }
         .onDisappear { model.stopPolling() }
@@ -555,5 +590,81 @@ struct DeveloperLiveMetricsView: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
         }
+    }
+}
+
+/// Under the live metrics, as Chrome's: the page's interactions (event,
+/// element, duration, coloured by INP's thresholds) and layout shifts
+/// (score and the elements that moved), latest first, with Clear.
+struct DeveloperLiveLogs: View {
+    @ObservedObject var model: DeveloperLiveMetricsModel
+    @State private var tab = Tab.interactions
+
+    enum Tab: String, CaseIterable { case interactions = "Interactions", shifts = "Layout shifts" }
+
+    var body: some View {
+        let metrics = model.metrics ?? DeveloperLiveMetrics()
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                ForEach(Tab.allCases, id: \.self) { item in
+                    Button(item.rawValue) { tab = item }
+                        .buttonStyle(.plain)
+                        .fontWeight(tab == item ? .semibold : .regular)
+                        .foregroundStyle(tab == item ? Palette.ink : .secondary)
+                }
+                Spacer(minLength: 0)
+                DeveloperPanelIcon(symbol: "nosign", title: "Clear logs", action: model.clearLogs)
+            }
+            .font(.system(size: 11))
+            .padding(.vertical, 4)
+            Divider()
+            switch tab {
+            case .interactions:
+                if metrics.interactionLog.isEmpty {
+                    empty("Interact with the page to measure interactions.")
+                }
+                ForEach(Array(metrics.interactionLog.reversed().enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 8) {
+                        Text(item.name).frame(width: 90, alignment: .leading)
+                        Text(item.target ?? "").font(DeveloperToolsStyle.code).foregroundStyle(DeveloperToolsStyle.tint)
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 4)
+                        Text(Self.milliseconds(item.duration)).monospacedDigit()
+                            .foregroundStyle(Self.inpColor(item.duration))
+                    }
+                    .frame(height: DeveloperToolsStyle.rowHeight)
+                }
+            case .shifts:
+                if metrics.shiftLog.isEmpty {
+                    empty("Layout shifts are logged as the page's elements move.")
+                }
+                ForEach(Array(metrics.shiftLog.reversed().enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 8) {
+                        Text(String(format: "%.4f", item.value)).monospacedDigit().frame(width: 60, alignment: .leading)
+                        Text(item.elements.joined(separator: ", ")).font(DeveloperToolsStyle.code)
+                            .foregroundStyle(DeveloperToolsStyle.tint).lineLimit(1).truncationMode(.tail)
+                        Spacer(minLength: 4)
+                        Text(Self.milliseconds(item.time)).monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    .frame(height: DeveloperToolsStyle.rowHeight)
+                }
+            }
+        }
+        .font(.system(size: 11))
+        .frame(maxWidth: 720, alignment: .leading)
+        .accessibilityIdentifier("developer-performance-live-logs")
+    }
+
+    private func empty(_ text: String) -> some View {
+        Text(text).foregroundStyle(.secondary).padding(.vertical, 6)
+    }
+
+    static func milliseconds(_ value: Double) -> String {
+        value >= 1000 ? String(format: "%.2f s", value / 1000) : "\(Int(value.rounded())) ms"
+    }
+
+    /// INP's thresholds: good to 200 ms, poor past 500 ms.
+    static func inpColor(_ duration: Double) -> Color {
+        duration <= 200 ? .green : duration <= 500 ? .orange : .red
     }
 }

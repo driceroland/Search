@@ -397,7 +397,11 @@ struct DeveloperCommandMenuView: View {
             VStack(spacing: 0) {
                 TextField(mode == .commands ? "Run a command" : "Search files or type ? for help", text: Binding(
                     get: { shell.commandMenu?.query ?? "" },
-                    set: { shell.commandMenu = DeveloperCommandMenuState(query: $0) }))
+                    // Focus loss writes back the field's text after a command closes it.
+                    set: { query in
+                        guard shell.commandMenu != nil else { return }
+                        shell.commandMenu = DeveloperCommandMenuState(query: query)
+                    }))
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .focused($focused)

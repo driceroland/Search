@@ -20,6 +20,8 @@ private typealias PageTab = Search.Tab
 /// DevToolsLite-<arch>-<version>.zip and DevToolsLite.entry.json, as
 /// `SEARCH_SIGN_IDENTITY=- ./build.sh release devtools` makes in build/devtools.
 /// The package, once loaded, stays for the run: the tests are in order.
+// Run this suite in its own process (swift test --filter DevToolsTests).
+// A process that already loaded Full cannot test the initially idle state.
 @MainActor
 final class DevToolsTests: XCTestCase {
     override class func setUp() {
@@ -184,7 +186,7 @@ final class DevToolsTests: XCTestCase {
         packages.offered = [lite]
         packages.install("lite")
         try await waitUntil(timeout: 30) { self.packages.states["lite"] == .idle && self.packages.installed["lite"] != nil }
-        let place = DevToolsPackages.folder.appendingPathComponent("lite/1")
+        let place = DevToolsPackages.folder.appendingPathComponent("lite/\(lite.version)")
         XCTAssertTrue(FileManager.default.fileExists(atPath: place.appendingPathComponent("DevToolsLite.bundle/Contents/MacOS/DevToolsLite").path))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: DevToolsPackages.folder.path).filter { $0.hasPrefix(".staging") }, [])
         XCTAssertEqual(packages.primary?.offer.menu.map(\.title), ["Lighthouse", "Recorder", "Device Toolbar"])
@@ -318,6 +320,7 @@ final class DevToolsTests: XCTestCase {
         try await waitUntil {
             (try? await tab.web.evaluateJavaScript("getComputedStyle(document.documentElement).filter")) as? String == "url(\"#search-developer-vision\")"
         }
+        try await renderingOverrides(tab)
         XCTAssertTrue(DevToolsPackages.busy(tab), "kept awake while open")
 
         _ = try await perform("close", [:], tab)
@@ -329,6 +332,53 @@ final class DevToolsTests: XCTestCase {
         try await waitUntil { (try? await tab.web.evaluateJavaScript("matchMedia('(prefers-color-scheme: dark)').matches")) as? Bool == false }
         XCTAssertFalse(DevToolsPackages.busy(tab))
         window.contentView = nil
+    }
+
+    private func renderingOverrides(_ tab: PageTab) async throws {
+        _ = try await perform("device.set", ["vision": "none"], tab)
+        let filter = "getComputedStyle(document.documentElement).filter"
+        try await waitUntil { (try? await tab.web.evaluateJavaScript(filter)) as? String == "none" }
+
+        _ = try await tab.web.evaluateJavaScript(#"""
+            const authored = document.createElement("style");
+            authored.id = "local-font-probe";
+            authored.textContent =
+                '@font-face { font-family: Probe; src: local("Courier"), url("data:font/woff2;base64,"); }';
+            document.head.appendChild(authored);
+            document.documentElement.style.backgroundColor = "white";
+            document.documentElement.style.filter = "grayscale(0.2)";
+            true
+            """#)
+        let source = "document.querySelector('#local-font-probe').sheet.cssRules[0].style.getPropertyValue('src')"
+        let before = try await tab.web.evaluateJavaScript(source) as? String
+        XCTAssertTrue(before?.contains("local(") == true)
+
+        _ = try await perform("device.set", ["colorScheme": "light", "autoDark": true, "noLocalFonts": true], tab)
+        try await waitUntil {
+            let effect = try? await tab.web.evaluateJavaScript(filter) as? String
+            let fonts = try? await tab.web.evaluateJavaScript(source) as? String
+            return effect?.contains("invert(") == true
+                && fonts?.contains("data:font/woff2") == true && fonts?.contains("local(") == false
+        }
+        try await waitUntil {
+            (try? await tab.web.evaluateJavaScript("matchMedia('(prefers-color-scheme: dark)').matches")) as? Bool == true
+        }
+
+        // A page that darkens itself regains its own filter, even while emulation is on.
+        _ = try await tab.web.evaluateJavaScript("document.documentElement.style.backgroundColor = '#111'; true")
+        try await waitUntil { (try? await tab.web.evaluateJavaScript(filter)) as? String == "grayscale(0.2)" }
+        _ = try await perform("device.set", ["autoDark": false, "noLocalFonts": false], tab)
+        try await waitUntil { (try? await tab.web.evaluateJavaScript(source)) as? String == before }
+        try await waitUntil {
+            (try? await tab.web.evaluateJavaScript("matchMedia('(prefers-color-scheme: light)').matches")) as? Bool == true
+        }
+
+        _ = try await tab.web.evaluateJavaScript("""
+            document.querySelector('#local-font-probe').remove();
+            document.documentElement.style.removeProperty('background-color');
+            document.documentElement.style.removeProperty('filter');
+            true
+            """)
     }
 
     private func hostilePage() async throws {

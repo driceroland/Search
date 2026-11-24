@@ -47,6 +47,13 @@ final class DeveloperElementsState: ObservableObject {
     /// Accessibility › Show source order: the element whose descendants
     /// the page numbers, nil when off.
     @Published var sourceOrder: SourceOrder?
+    /// Documents' and shadow roots' adoptedStyleSheets by root node id, read
+    /// when the root is expanded: each sheet's rules, nil where unreadable.
+    @Published var adoptedSheets: [Int: [[String]?]] = [:]
+    /// Roots whose `#adopted-style-sheets` row is open.
+    @Published var adoptedOpen = Set<Int>()
+    /// The adopted sheet (or group) row selected in place of a node.
+    @Published var adoptedSelection: DeveloperDOMTreeModel.AdoptedSheet?
 
     struct SourceOrder: Equatable {
         let node: Int
@@ -222,6 +229,9 @@ final class DeveloperElementsState: ObservableObject {
     }
 
     func reset() {
+        adoptedSheets = [:]
+        adoptedOpen = []
+        adoptedSelection = nil
         hidden = []
         layout = [:]
         containers = []
@@ -272,32 +282,10 @@ final class DeveloperElementsState: ObservableObject {
         guard !word.isEmpty else { return [] }
         return Array(propertyNames.filter { $0.hasPrefix(word) && $0 != word }.prefix(limit))
     }
-
-    /// The typed text with its last word replaced by a completion.
-    static func complete(_ typed: String, with completion: String) -> String {
-        if let colon = typed.firstIndex(of: ":") {
-            let head = typed[...colon]
-            var words = typed[typed.index(after: colon)...].split(separator: " ", omittingEmptySubsequences: false).map(String.init)
-            if words.isEmpty { words = [""] }
-            words[words.count - 1] = completion
-            let joined = words.joined(separator: " ")
-            return head + (joined.hasPrefix(" ") ? joined : " " + joined)
-        }
-        return completion + ": "
-    }
 }
 
 extension DeveloperToolsSession {
-    enum CopyKind: String, CaseIterable, Identifiable {
-        case outerHTML = "Copy outerHTML"
-        case selector = "Copy selector"
-        case jsPath = "Copy JS path"
-        case styles = "Copy styles"
-        case xpath = "Copy XPath"
-        case fullXPath = "Copy full XPath"
-        case element = "Copy element"
-        var id: Self { self }
-    }
+    enum CopyKind { case outerHTML, selector, jsPath, styles, xpath, fullXPath, element }
 
     private var target: Any { domTargetID as Any? ?? NSNull() }
 
@@ -396,12 +384,8 @@ extension DeveloperToolsSession {
 
     /// tag#id.class, as DevTools writes a node in links and breadcrumbs.
     static func label(_ node: DOMNode) -> String {
-        func attribute(_ name: String) -> String? {
-            stride(from: 0, to: max(0, node.attributes.count - 1), by: 2)
-                .first { node.attributes[$0] == name }.map { node.attributes[$0 + 1] }
-        }
-        let classes = attribute("class")?.split(whereSeparator: \.isWhitespace) ?? []
-        return node.name + (attribute("id").map { $0.isEmpty ? "" : "#" + $0 } ?? "")
+        let classes = node.attribute("class")?.split(whereSeparator: \.isWhitespace) ?? []
+        return node.name + (node.attribute("id").map { $0.isEmpty ? "" : "#" + $0 } ?? "")
             + classes.map { "." + $0 }.joined()
     }
 
@@ -460,9 +444,9 @@ extension DeveloperToolsSession {
 
     // MARK: Editing (each a step ⌘Z can take back)
 
-    private func edit(_ change: @escaping @MainActor (DeveloperToolsSession, Any) async throws -> Void) {
+    private func edit(_ change: @escaping @MainActor (DeveloperToolsSession) async throws -> Void) {
         run(inCurrentDocument: true) { session in
-            try await change(session, session.target)
+            try await change(session)
             _ = try? await session.command("DOM.markUndoableState", targetID: session.domTargetID)
         }
     }
@@ -476,7 +460,7 @@ extension DeveloperToolsSession {
     func setOuterHTML(_ id: Int, _ html: String) {
         guard let node = nodes[id], let parent = node.parent else { return }
         let index = nodes[parent]?.children.firstIndex(of: id)
-        edit { session, _ in
+        edit { session in
             _ = try await session.command("DOM.setOuterHTML", ["nodeId": id, "outerHTML": html], targetID: session.domTargetID)
             await session.reloadChildren(of: parent)
             let children = session.nodes[parent]?.children ?? []
@@ -492,7 +476,7 @@ extension DeveloperToolsSession {
         // DevTools selects the next sibling, else the previous one, else the parent.
         let next = siblings.indices.contains(index + 1) ? siblings[index + 1]
             : index > 0 ? siblings[index - 1] : parent
-        edit { session, _ in
+        edit { session in
             _ = try await session.command("DOM.removeNode", ["nodeId": id], targetID: session.domTargetID)
             await session.reloadChildren(of: parent)
             if session.selectedNode == id || session.selectedNode == nil { session.selectNode(next) }
@@ -501,7 +485,7 @@ extension DeveloperToolsSession {
 
     func duplicate(_ id: Int) {
         guard let parent = nodes[id]?.parent else { return }
-        edit { session, _ in
+        edit { session in
             let html = try await session.outerHTML(of: id)
             _ = try await session.command("DOM.insertAdjacentHTML", ["nodeId": id, "position": "afterend", "html": html],
                                           targetID: session.domTargetID)
@@ -512,7 +496,7 @@ extension DeveloperToolsSession {
     func setTagName(_ id: Int, _ name: String) {
         let name = name.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty, let node = nodes[id], node.name != name.lowercased(), let parent = node.parent else { return }
-        edit { session, _ in
+        edit { session in
             let reply = try await session.command("DOM.setNodeName", ["nodeId": id, "name": name], targetID: session.domTargetID)
             await session.reloadChildren(of: parent)
             if let new = reply["nodeId"] as? Int { session.selectNode(new) }
@@ -524,7 +508,7 @@ extension DeveloperToolsSession {
     func setAttributeText(_ id: Int, original: String?, text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard original != nil || !text.isEmpty else { return }
-        edit { session, _ in
+        edit { session in
             if text.isEmpty, let original {
                 _ = try await session.command("DOM.removeAttribute", ["nodeId": id, "name": original], targetID: session.domTargetID)
             } else {
@@ -537,14 +521,14 @@ extension DeveloperToolsSession {
     }
 
     func removeAttribute(_ id: Int, name: String) {
-        edit { session, _ in
+        edit { session in
             _ = try await session.command("DOM.removeAttribute", ["nodeId": id, "name": name], targetID: session.domTargetID)
             await session.refreshAttributes(id)
         }
     }
 
     func setText(_ id: Int, _ text: String) {
-        edit { session, _ in
+        edit { session in
             _ = try await session.command("DOM.setNodeValue", ["nodeId": id, "value": text], targetID: session.domTargetID)
             session.nodes[id]?.text = String(text.prefix(300))
         }
@@ -567,7 +551,7 @@ extension DeveloperToolsSession {
             if current == id { return }
             ancestor = nodes[current]?.parent
         }
-        edit { session, _ in
+        edit { session in
             var params: [String: Any] = ["nodeId": id, "targetNodeId": parent]
             if let before { params["insertBeforeNodeId"] = before }
             let reply = try await session.command("DOM.moveTo", params, targetID: session.domTargetID)
@@ -623,8 +607,7 @@ extension DeveloperToolsSession {
     func copy(_ kind: CopyKind, of id: Int) {
         run(inCurrentDocument: true) { session in
             let text = try await session.copyText(kind, of: id)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
+            Self.copyToPasteboard(text)
         }
     }
 
@@ -710,17 +693,12 @@ extension DeveloperToolsSession {
     /// Chromium's DOMNode.simpleSelector, for a new rule's selector.
     func simpleSelector(_ id: Int) -> String {
         guard let node = nodes[id], node.type == 1 else { return nodes[id]?.name ?? "" }
-        func attribute(_ name: String) -> String? {
-            stride(from: 0, to: max(0, node.attributes.count - 1), by: 2)
-                .first { node.attributes[$0] == name }.map { node.attributes[$0 + 1] }
+        if node.name == "input", let type = node.attribute("type"), node.attribute("id") == nil, node.attribute("class") == nil {
+            return "input[type=\"\(Self.cssEscape(type))\"]"
         }
-        let escape = { (text: String) in Self.cssEscape(text) }
-        if node.name == "input", let type = attribute("type"), attribute("id") == nil, attribute("class") == nil {
-            return "input[type=\"\(escape(type))\"]"
-        }
-        if let id = attribute("id"), !id.isEmpty { return node.name + "#" + escape(id) }
-        if let classes = attribute("class")?.split(whereSeparator: \.isWhitespace), !classes.isEmpty {
-            return (node.name == "div" ? "" : node.name) + "." + classes.map { escape(String($0)) }.joined(separator: ".")
+        if let id = node.attribute("id"), !id.isEmpty { return node.name + "#" + Self.cssEscape(id) }
+        if let classes = node.attribute("class")?.split(whereSeparator: \.isWhitespace), !classes.isEmpty {
+            return (node.name == "div" ? "" : node.name) + "." + classes.map { Self.cssEscape(String($0)) }.joined(separator: ".")
         }
         return node.name
     }
@@ -938,9 +916,7 @@ extension DeveloperToolsSession {
     /// The .cls pane: a class switched on or off, or added.
     func setClass(_ name: String, on: Bool, for id: Int) {
         guard let node = nodes[id] else { return }
-        let current = stride(from: 0, to: max(0, node.attributes.count - 1), by: 2)
-            .first { node.attributes[$0] == "class" }.map { node.attributes[$0 + 1] } ?? ""
-        var classes = current.split(whereSeparator: \.isWhitespace).map(String.init)
+        var classes = (node.attribute("class") ?? "").split(whereSeparator: \.isWhitespace).map(String.init)
         var off = elements.offClasses[id, default: []]
         if on {
             off.removeAll { $0 == name }
@@ -950,7 +926,7 @@ extension DeveloperToolsSession {
             if !off.contains(name) { off.append(name) }
         }
         elements.offClasses[id] = off.isEmpty ? nil : off
-        edit { session, _ in
+        edit { session in
             _ = try await session.command("DOM.setAttributeValue", [
                 "nodeId": id, "name": "class", "value": classes.joined(separator: " "),
             ], targetID: session.domTargetID)
@@ -1171,6 +1147,31 @@ extension DeveloperToolsSession {
         return DeveloperStyleContrast(background: background, largeText: largeText)
     }
 
+    /// The var() hover's lines, as in Chrome: a reference followed through
+    /// each custom property to its value, by the winning declarations of
+    /// the selected element's styles (each with where it is declared),
+    /// else the computed value.
+    func variableChain(_ reference: String) -> [String] {
+        typealias Declared = DeveloperStyleEditing.Declared
+        return DeveloperStyleEditing.variableChain(reference) { name -> Declared? in
+            for rule in matchedStyles {
+                if let found = rule.properties.first(where: { $0.name == name && $0.enabled && !$0.overridden }) {
+                    let location = rule.inline ? "" : rule.location(document: address)
+                    return Declared(value: found.value, place: rule.selector + (location.isEmpty ? "" : " (\(location))"))
+                }
+            }
+            return styles.first(where: { $0.name == name }).map { Declared(value: $0.value, place: "computed") }
+        }
+    }
+
+    /// Each math step (DeveloperStyleEditing.mathSteps) as `property`
+    /// computes it on the node, nil where it isn't valid there.
+    func styleMathResults(of id: Int, property: String, steps: [String]) async -> [String?] {
+        guard let raw = (try? await inspectElementValue(id, function: Self.mathStepsScript,
+                                                       arguments: [property, steps])) as? [Any] else { return [] }
+        return raw.map { $0 as? String }
+    }
+
     // MARK: Cut, copy, paste
 
     func cut(_ id: Int) {
@@ -1191,7 +1192,7 @@ extension DeveloperToolsSession {
             move(clip.node, into: id, before: nil)
             return
         }
-        edit { session, _ in
+        edit { session in
             let html = try await session.outerHTML(of: clip.node)
             _ = try await session.command("DOM.insertAdjacentHTML", ["nodeId": id, "position": "beforeend", "html": html],
                                           targetID: session.domTargetID)
@@ -1258,12 +1259,11 @@ extension DeveloperToolsSession.StyleRule {
         }
         func declaration(_ item: [String: Any]) -> DeveloperToolsSession.Detail? {
             guard let name = item["name"] as? String, let value = item["value"] as? String else { return nil }
-            var detail = DeveloperToolsSession.Detail(name: name, value: value, enabled: item["enabled"] as? Bool ?? true,
-                                                      important: item["important"] as? Bool == true,
-                                                      parsed: item["parsed"] as? Bool ?? true)
-            detail.overridden = item["inactive"] as? Bool == true
-            detail.inheritable = item["inheritable"] as? Bool ?? true
-            detail.longhands = (item["longhands"] as? [[String: Any]] ?? []).compactMap(declaration)
+            var detail = DeveloperToolsSession.Detail(name: name, value: value, enabled: item.bool("enabled") ?? true,
+                                                      important: item.flag("important"), parsed: item.bool("parsed") ?? true)
+            detail.overridden = item.flag("inactive")
+            detail.inheritable = item.bool("inheritable") ?? true
+            detail.longhands = (item.objects("longhands") ?? []).compactMap(declaration)
             return detail
         }
         self.init(id: id, selector: selector, origin: raw["origin"] as? String ?? "",
@@ -1354,9 +1354,17 @@ extension DeveloperToolsSession.PseudoState {
     /// shown for links as Chromium does. WebKit's CSS.forcePseudoState
     /// takes none of the form states (:enabled, :valid, …).
     static func specific(for node: DeveloperToolsSession.DOMNode?) -> [Self] {
-        guard let node, ["a", "area", "link"].contains(node.name),
-              stride(from: 0, to: max(0, node.attributes.count - 1), by: 2).contains(where: { node.attributes[$0] == "href" })
-        else { return [] }
+        guard let node, ["a", "area", "link"].contains(node.name), node.attribute("href") != nil else { return [] }
         return [.visited]
+    }
+}
+
+extension DeveloperToolsSession.DOMNode {
+    /// The attribute names in order (`attributes` alternates name, value).
+    var attributeNames: [String] { stride(from: 0, to: max(0, attributes.count - 1), by: 2).map { attributes[$0] } }
+
+    /// The value of the first attribute called `name`; nil when there is none.
+    func attribute(_ name: String) -> String? {
+        stride(from: 0, to: max(0, attributes.count - 1), by: 2).first { attributes[$0] == name }.map { attributes[$0 + 1] }
     }
 }

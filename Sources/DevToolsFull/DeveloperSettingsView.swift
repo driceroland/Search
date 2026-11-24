@@ -6,8 +6,8 @@ import SwiftUI
 enum DeveloperSettingsSection: String, CaseIterable, Identifiable {
     case preferences = "Preferences"
     case workspace = "Workspace"
-    case throttling = "Throttling"
     case ignoreList = "Ignore list"
+    case throttling = "Throttling"
     case shortcuts = "Shortcuts"
 
     var id: Self { self }
@@ -391,20 +391,23 @@ private struct DeveloperPreferencesSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             group("Appearance") {
-                Picker("Theme", selection: $theme.theme) {
-                    ForEach(DeveloperToolsTheme.allCases) { Text($0.title).tag($0) }
-                }
-                .fixedSize()
-                .help("System preference follows the browser’s light or dark appearance.")
-                Picker("Panel layout", selection: $tools.dockPosition) {
-                    ForEach(DeveloperDockPosition.allCases) { Text($0.title).tag($0) }
-                }
-                .fixedSize()
-                HStack {
-                    Text("Zoom: \(Int((shell.scale * 100).rounded()))%")
-                    Button("−") { shell.zoom(by: -1) }
-                    Button("+") { shell.zoom(by: 1) }
-                    Button("Reset") { shell.zoom(by: 0) }.disabled(shell.scale == 1)
+                dropdown("Theme", selection: $theme.theme,
+                         options: DeveloperToolsTheme.allCases.map { ($0, $0.title) })
+                    .help("System preference follows the browser’s light or dark appearance.")
+                dropdown("Panel layout", selection: $tools.dockPosition,
+                         options: DeveloperDockPosition.allCases.map { ($0, $0.title) })
+                row("Zoom") {
+                    HStack(spacing: 4) {
+                        Button("−") { shell.zoom(by: -1) }
+                            .accessibilityLabel("Zoom out")
+                        Text("\(Int((shell.scale * 100).rounded()))%").monospacedDigit()
+                            .frame(minWidth: 40)
+                        Button("+") { shell.zoom(by: 1) }
+                            .accessibilityLabel("Zoom in")
+                        Spacer(minLength: 0)
+                        Button("Reset") { shell.zoom(by: 0) }.disabled(shell.scale == 1)
+                            .accessibilityLabel("Reset zoom")
+                    }
                 }
             }
             group("Global") {
@@ -444,12 +447,8 @@ private struct DeveloperPreferencesSettings: View {
                 Toggle("Display variable values inline while debugging", isOn: $inlineValues)
                 Toggle("Enable CSS source maps", isOn: $cssSourceMaps)
                 Toggle("Allow scrolling past end of file", isOn: $scrollPastEnd)
-                Picker("Default indentation", selection: $defaultIndentation) {
-                    ForEach(DeveloperSourcesPreferences.indentationChoices) { choice in
-                        Text(choice.title).tag(choice.value)
-                    }
-                }
-                .fixedSize()
+                dropdown("Default indentation", selection: $defaultIndentation,
+                         options: DeveloperSourcesPreferences.indentationChoices.map { ($0.value, $0.title) })
             }
             .onChange(of: javaScriptSourceMaps) { _, _ in session.sourceMaps.settingsChanged() }
             .onChange(of: cssSourceMaps) { _, _ in session.sourceMaps.settingsChanged() }
@@ -465,11 +464,9 @@ private struct DeveloperPreferencesSettings: View {
                 Toggle("Color-code resource types", isOn: $colorCodeTypes)
             }
             group("Performance") {
-                Picker("Flamechart mouse wheel action", selection: $flameNavigation) {
-                    ForEach(DeveloperFlameChartNavigation.allCases) { Text($0.title).tag($0) }
-                }
-                .fixedSize()
-                .help("Modern: scroll moves, ⌘-scroll zooms. Classic: scroll zooms, Shift-scroll moves up and down.")
+                dropdown("Flamechart mouse wheel action", selection: $flameNavigation,
+                         options: DeveloperFlameChartNavigation.allCases.map { ($0, $0.title) })
+                    .help("Modern: scroll moves, ⌘-scroll zooms. Classic: scroll zooms, Shift-scroll moves up and down.")
             }
         }
         .toggleStyle(.developerCheckbox)
@@ -481,6 +478,65 @@ private struct DeveloperPreferencesSettings: View {
             DeveloperSettingsHeading(title)
             content()
         }
+    }
+
+    private func dropdown<Value: Hashable>(_ label: String, selection: Binding<Value>,
+                                           options: [(Value, String)]) -> some View {
+        row(label) {
+            DeveloperSettingsDropdown(label: label, selection: selection, options: options)
+        }
+    }
+
+    /// Keep controls on one trailing edge across the Preferences groups.
+    private func row<Control: View>(_ label: String, @ViewBuilder _ control: () -> Control) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+            Spacer(minLength: 12)
+            control()
+                .frame(maxWidth: .infinity)
+                .frame(width: 180, alignment: .trailing)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// A menu whose label fills its column and marks exactly one item as selected.
+struct DeveloperSettingsDropdown<Value: Hashable>: View {
+    let label: String
+    @Binding var selection: Value
+    let options: [(Value, String)]
+
+    private var selectedTitle: String { options.first { $0.0 == selection }?.1 ?? "" }
+
+    var body: some View {
+        Menu {
+            ForEach(options, id: \.0) { option in
+                Toggle(option.1, isOn: isOn(option.0))
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(selectedTitle)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, minHeight: 22)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Palette.wash))
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .accessibilityLabel(label)
+        .accessibilityValue(selectedTitle)
+    }
+
+    func isOn(_ value: Value) -> Binding<Bool> {
+        Binding(get: { selection == value }, set: { if $0 { selection = value } })
     }
 }
 

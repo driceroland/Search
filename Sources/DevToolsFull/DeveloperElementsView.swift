@@ -5,6 +5,8 @@ import WebKit
 struct DeveloperElementsView: View {
     @ObservedObject var session: DeveloperToolsSession
     @State private var sidebar = Sidebar.styles
+    /// An adopted style sheet selected in the tree, shown in the sidebar.
+    @State private var adoptedSelection: DeveloperDOMTreeModel.AdoptedSheet?
 
     enum Sidebar: String, CaseIterable {
         case styles = "Styles", computed = "Computed", layout = "Layout", listeners = "Event Listeners"
@@ -38,6 +40,7 @@ struct DeveloperElementsView: View {
             }
             session.elements.requestedSidebar = nil
         }
+        .onReceive(session.elements.$adoptedSelection) { adoptedSelection = $0 }
     }
 
     private var inspection: some View {
@@ -49,8 +52,10 @@ struct DeveloperElementsView: View {
                 if section == .layout { session.loadLayout() }
             }), title: \.rawValue)
             Divider()
-            if sidebar == .breakpoints {
-                ScrollView { DeveloperDOMBreakpointsPane(session: session, elements: session.elements) }
+            if let sheet = adoptedSelection, sheet.index != nil {
+                DeveloperAdoptedSheetPane(session: session, elements: session.elements, sheet: sheet)
+            } else if sidebar == .breakpoints {
+                ScrollView { DeveloperDOMBreakpointsPane(session: session, debugger: session.debugger) }
                     .font(DeveloperToolsStyle.code)
             } else if sidebar == .layout {
                 // The page's grid and flex containers, whatever is selected.
@@ -62,9 +67,6 @@ struct DeveloperElementsView: View {
                     DeveloperStylesPane(session: session, elements: session.elements, node: selected)
                 case .computed:
                     DeveloperComputedPane(session: session, elements: session.elements, node: selected)
-                case .breakpoints:
-                    ScrollView { DeveloperDOMBreakpointsPane(session: session, elements: session.elements) }
-                        .font(DeveloperToolsStyle.code)
                 case .properties:
                     DeveloperPropertiesPane(session: session, node: selected).font(DeveloperToolsStyle.code)
                 case .accessibility:
@@ -87,6 +89,8 @@ struct DeveloperElementsView: View {
 struct DeveloperDOMTreeView: View {
     @ObservedObject var session: DeveloperToolsSession
     @ObservedObject var elements: DeveloperElementsState
+    /// Its issues, underlined on their elements' rows.
+    @ObservedObject private var issues: DeveloperIssuesModel
     @State private var editing: Edit?
     @State private var draft = ""
     /// Tab is moving the edit to the next field: the one going away losing
@@ -132,6 +136,7 @@ struct DeveloperDOMTreeView: View {
     init(session: DeveloperToolsSession, elements: DeveloperElementsState) {
         _session = ObservedObject(wrappedValue: session)
         _elements = ObservedObject(wrappedValue: elements)
+        _issues = ObservedObject(wrappedValue: DeveloperIssuesModel.model(for: session))
         _tree = StateObject(wrappedValue: DeveloperDOMTreeModel(session: session))
     }
 
@@ -227,6 +232,9 @@ struct DeveloperDOMTreeView: View {
             tree.attach(session)
             DeveloperElementsKeys.actions = keyActions
         }
+        .onChange(of: session.selectedNode) { _, id in
+            if id != nil { elements.adoptedSelection = nil }
+        }
         .onChange(of: focus) { _, now in
             DeveloperElementsKeys.treeFocused = now == .tree
             if now == .editor { switching = false }
@@ -251,7 +259,14 @@ struct DeveloperDOMTreeView: View {
     private func treeRow(_ row: Row, found: Bool) -> some View {
         let live: Bool = session.selectedNode == row.id || editing?.node == row.id
             || (row.inline != nil && editing?.node == row.node.children.first)
-        if live {
+        if let sheet = row.sheet {
+            // Not a node: none of the node rows' selection, editing or drag.
+            DeveloperAdoptedSheetRow(row: row, line: sheet.label, selected: elements.adoptedSelection?.id == row.id,
+                                     wraps: wrapLines, width: viewportWidth,
+                                     toggle: { elements.adoptedOpen.formSymmetricDifference([sheet.root]) },
+                                     select: { selectSheet(sheet) })
+                .id(row.id)
+        } else if live {
             interactiveRow(row).id(row.id)
         } else {
             plainRow(row, found: found).equatable().id(row.id)
@@ -420,6 +435,14 @@ struct DeveloperDOMTreeView: View {
         session.selectNode(matches[match])
     }
 
+    /// An adopted sheet's row selected in place of a node.
+    private func selectSheet(_ sheet: DeveloperDOMTreeModel.AdoptedSheet) {
+        session.deselectNode()
+        session.highlightNode(nil)
+        elements.adoptedSelection = sheet
+        focus = .tree
+    }
+
     private func clickSelect(_ id: Int) {
         clicked = id
         session.selectNode(id)
@@ -427,7 +450,7 @@ struct DeveloperDOMTreeView: View {
     }
 
     private var selectedInTree: Int? {
-        session.selectedNode.flatMap { session.nodes[$0]?.id }
+        session.selectedNode.flatMap { session.nodes[$0]?.id } ?? elements.adoptedSelection?.id
     }
 
     private typealias Row = DeveloperDOMTreeModel.Row
@@ -444,6 +467,7 @@ struct DeveloperDOMTreeView: View {
             hidden: elements.hidden.contains(row.id), layout: layoutBadge(row),
             badges: badges(for: row.node),
             pageOverlays: Self.pageOverlays(for: row.id, in: elements.pageOverlays),
+            issues: issues.marks[row.id] ?? [],
             overlayShown: elements.containers.contains { $0.id == row.id && $0.showing },
             dropTarget: dropTarget == row.id, wraps: wrapLines, width: viewportWidth,
             actions: DeveloperDOMRowActions(
@@ -452,11 +476,10 @@ struct DeveloperDOMTreeView: View {
                 hover: { session.highlightNode($0) },
                 overlay: { session.setOverlay($0, on: $1) },
                 drop: { drop($0, on: $1, upper: $2) },
-                target: { id, inside in
-                    if inside { dropTarget = id } else if dropTarget == id { dropTarget = nil }
-                },
+                target: setDropTarget,
                 pageOverlay: { session.setPageOverlay($0, kind: $1, on: $2) },
-                anchor: { session.revealAnchor(of: $0) }
+                anchor: { session.revealAnchor(of: $0) },
+                issue: { issues.reveal(issue: $0) }
             ),
             menu: { menu(for: row.node) }
         )
@@ -509,18 +532,7 @@ struct DeveloperDOMTreeView: View {
             if row.node.type == 1 { session.highlightNode(inside ? row.id : nil) }
         }
         .contextMenu { menu(for: row.node) }
-        .draggable("search-node:\(row.id)") {
-            Text(row.node.display).font(DeveloperToolsStyle.code).padding(4)
-        }
-        .dropDestination(for: String.self) { items, location in
-            dropTarget = nil
-            guard let item = items.first, item.hasPrefix("search-node:"),
-                  let id = Int(item.dropFirst("search-node:".count)) else { return false }
-            drop(id, on: row.node, upper: location.y < Self.rowHeight / 2)
-            return true
-        } isTargeted: { inside in
-            if inside { dropTarget = row.id } else if dropTarget == row.id { dropTarget = nil }
-        }
+        .developerDOMRowDrag(row, target: setDropTarget) { drop($0, on: $1, upper: $2) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.node.display)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -537,6 +549,9 @@ struct DeveloperDOMTreeView: View {
                 content(row.node, inline: row.inline)
                     .font(DeveloperToolsStyle.code)
                     .lineLimit(wrapLines ? nil : 1)
+                    .developerIssueWaves(wrapLines || editing?.node == row.id ? []
+                                         : DeveloperDOMTreeModel.issueSpans(row.node, issues.marks[row.id] ?? []),
+                                         open: { issues.reveal(issue: $0) })
                     .frame(minHeight: Self.rowHeight)
                     .opacity(elements.hidden.contains(row.id) ? 0.5 : 1)
             }
@@ -582,6 +597,11 @@ struct DeveloperDOMTreeView: View {
         } else {
             DeveloperDOMBadge(name: name).frame(height: Self.rowHeight)
         }
+    }
+
+    /// A dragged node over (or leaving) a row.
+    private func setDropTarget(_ id: Int, _ inside: Bool) {
+        if inside { dropTarget = id } else if dropTarget == id { dropTarget = nil }
     }
 
     /// Dropped on a row's upper half: before it. Lower half: inside it when
@@ -667,14 +687,7 @@ struct DeveloperDOMTreeView: View {
 
     private func badge(_ kind: String, for id: Int) -> some View {
         let on = elements.containers.first { $0.id == id }?.showing == true
-        return Button {
-            session.setOverlay(id, on: !on)
-        } label: {
-            Text(kind).developerBadgeCapsule(on: on)
-        }
-        .buttonStyle(.plain)
-        .help(on ? "Hide the \(kind) overlay" : "Show the \(kind) overlay")
-        .accessibilityLabel("\(kind) overlay")
+        return DeveloperDOMOverlayBadge(name: kind, on: on) { session.setOverlay(id, on: !on) }
     }
 
     @ViewBuilder
@@ -805,7 +818,7 @@ struct DeveloperDOMTreeView: View {
     /// attribute, Tab opens another only once something was typed in it.
     static func nextEdit(after edit: Edit, in node: DeveloperToolsSession.DOMNode, backwards: Bool,
                          typedSomething: Bool) -> Edit? {
-        let names = stride(from: 0, to: max(0, node.attributes.count - 1), by: 2).prefix(12).map { node.attributes[$0] }
+        let names = node.attributeNames.prefix(12)
         let order: [Edit] = [.tag(node.id)] + names.map { .attribute(node.id, $0) } + [.newAttribute(node.id)]
         guard let at = order.firstIndex(of: edit) else { return nil }
         if edit == .newAttribute(node.id), !backwards { return typedSomething ? .newAttribute(node.id) : nil }
@@ -817,10 +830,7 @@ struct DeveloperDOMTreeView: View {
     static func draft(for edit: Edit, in node: DeveloperToolsSession.DOMNode) -> String {
         switch edit {
         case .tag: return node.name
-        case .attribute(_, let name):
-            let value = stride(from: 0, to: max(0, node.attributes.count - 1), by: 2)
-                .first { node.attributes[$0] == name }.map { node.attributes[$0 + 1] } ?? ""
-            return "\(name)=\"\(value)\""
+        case .attribute(_, let name): return "\(name)=\"\(node.attribute(name) ?? "")\""
         default: return ""
         }
     }
@@ -938,10 +948,7 @@ struct DeveloperDOMTreeView: View {
     private func linkItems(_ link: URL) -> some View {
         let address: String = link.absoluteString
         Button("Open in new tab") { DevHost.open(link) }
-        Button("Copy link address") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(address, forType: .string)
-        }
+        Button("Copy link address") { DeveloperToolsSession.copyToPasteboard(address) }
         if session.resources.contains(where: { $0.url == address }) {
             Button("Reveal in Sources panel") { session.revealSource(url: address, line: 1) }
         }
@@ -969,15 +976,12 @@ struct DeveloperDOMTreeView: View {
     @ViewBuilder
     private func editAttributeMenu(_ node: DeveloperToolsSession.DOMNode) -> some View {
         let id: Int = node.id
-        let names: [String] = stride(from: 0, to: max(0, node.attributes.count - 1), by: 2).map { node.attributes[$0] }
+        let names: [String] = node.attributeNames
         if !names.isEmpty {
             Menu("Edit attribute") {
                 ForEach(names, id: \.self) { name in
                     Button(name) {
-                        let value: String = session.nodes[id].flatMap { item in
-                            stride(from: 0, to: max(0, item.attributes.count - 1), by: 2)
-                                .first { item.attributes[$0] == name }.map { item.attributes[$0 + 1] }
-                        } ?? ""
+                        let value: String = session.nodes[id]?.attribute(name) ?? ""
                         start(.attribute(id, name), "\(name)=\"\(value)\"")
                     }
                 }
@@ -1019,13 +1023,19 @@ struct DeveloperDOMTreeView: View {
         guard editing == nil, press.modifiers.isDisjoint(with: [.command, .control]) else { return .ignored }
         let option = press.modifiers.contains(.option)
         if !option, let move = DeveloperDOMTreeModel.Move(press.key) {
-            let current = session.selectedNode.flatMap { tree.index[$0] }
+            let current = (session.selectedNode ?? elements.adoptedSelection?.id).flatMap { tree.index[$0] }
             let page = Int(viewport / Self.rowHeight) - 1
             guard let next = DeveloperDOMTreeModel.target(move, from: current, count: tree.rows.count, page: page)
             else { return .ignored }
+            if let sheet = tree.rows[next].sheet { selectSheet(sheet); return .handled }
             let id = tree.rows[next].id
             if id != session.selectedNode { session.selectNode(id) }
             session.highlightNode(tree.rows[next].node.type == 1 ? id : nil)
+            return .handled
+        }
+        if let sheet = elements.adoptedSelection, sheet.index == nil, !option,
+           press.key == .leftArrow || press.key == .rightArrow {
+            if press.key == .rightArrow { elements.adoptedOpen.insert(sheet.root) } else { elements.adoptedOpen.remove(sheet.root) }
             return .handled
         }
         guard let selected = session.selectedNode, let node = session.nodes[selected] else { return .ignored }
@@ -1108,13 +1118,9 @@ struct DeveloperDOMTreeView: View {
 
     /// As DevTools' breadcrumbs: tag, then #id and .classes.
     private func crumb(_ node: DeveloperToolsSession.DOMNode) -> Text {
-        func attribute(_ name: String) -> String? {
-            stride(from: 0, to: max(0, node.attributes.count - 1), by: 2)
-                .first { node.attributes[$0] == name }.map { node.attributes[$0 + 1] }
-        }
         var text = Text(node.name).foregroundStyle(DeveloperToolsStyle.tint)
-        if let id = attribute("id"), !id.isEmpty { text = text + Text("#" + id) }
-        let classes = attribute("class")?.split(whereSeparator: \.isWhitespace) ?? []
+        if let id = node.attribute("id"), !id.isEmpty { text = text + Text("#" + id) }
+        let classes = node.attribute("class")?.split(whereSeparator: \.isWhitespace) ?? []
         if !classes.isEmpty { text = text + Text("." + classes.joined(separator: ".")).foregroundStyle(.secondary) }
         return text
     }
