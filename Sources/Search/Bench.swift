@@ -2732,7 +2732,15 @@ final class Bench {
             }
             // "entitled": the signature carries the container and CloudKit,
             // read from the process alone; nothing asks CloudKit.
-            answer(["on": icloud.on, "available": icloud.available, "entitled": ICloudSync.entitled,
+            // The open tabs as this Mac's device record would carry them,
+            // groups and all (idea 1093), whether or not sync is on.
+            let side = MacSide()
+            let pages = side.openTabs()
+            let record = DeviceTabs(name: "probe", platform: "macos", at: Date(timeIntervalSinceReferenceDate: 0),
+                                    tabs: pages, groups: side.openGroups(for: pages))
+            let published = ICloudMerge.outgoing(record, over: nil, shape: .device).map { String(decoding: $0, as: UTF8.self) } ?? ""
+            answer(["published": published,
+                    "on": icloud.on, "available": icloud.available, "entitled": ICloudSync.entitled,
                     "scheduled": icloud.isScheduled,
                     "engine": icloud.engine != nil, "joined": icloud.joined, "folderSync": Sync.shared.on,
                     "stored": Store.settings.object(forKey: ICloudSync.onKey) != nil,

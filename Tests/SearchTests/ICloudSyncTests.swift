@@ -71,6 +71,8 @@ final class ICloudSyncTests: XCTestCase {
         var removedSpaces = false
 
         func openTabs() -> [DeviceTabs.Page] { tabs }
+        var groupList: [DeviceTabs.Group]?
+        func openGroups(for pages: [DeviceTabs.Page]) -> [DeviceTabs.Group]? { groupList }
         func spaces() -> [Space] { spaceList }
         func adopt(spaces: [Space], removing: Bool) { spaceList = spaces; removedSpaces = removing; adopted.append("spaces") }
         func pins(_ space: UUID) -> [PinDef] { pinList[space] ?? [] }
@@ -406,6 +408,98 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertEqual(sync.offers(for: "s"), [], "one letter is too little to go looking")
         sync.removed("device.PHONE-1")
         XCTAssertTrue(sync.others.isEmpty)
+    }
+
+    // MARK: - tab groups with the open tabs (idea 1093)
+
+    func testTabGroupsGoUpWithTheirTabsInOrder() throws {
+        let work = TabGroup(id: UUID(), name: "Work", collapsed: true, colour: 3)
+        let read = TabGroup(id: UUID(), name: "Read", collapsed: false)
+        let unused = TabGroup(id: UUID(), name: "Empty", collapsed: false)
+        let pages = ICloudMerge.pages([
+            (url: URL(string: "https://b.example/"), title: "B", shy: false, pinned: false, group: read.id),
+            (url: URL(string: "https://a.example/"), title: "A", shy: false, pinned: false, group: work.id),
+            (url: URL(string: "https://secret.example/"), title: "Private", shy: true, pinned: false, group: work.id),
+            (url: URL(string: "https://c.example/"), title: "C", shy: false, pinned: false, group: work.id),
+            (url: URL(string: "https://d.example/"), title: "D", shy: false, pinned: false, group: nil),
+        ])
+        XCTAssertEqual(pages.map(\.group), [read.id, work.id, work.id, nil], "a private tab never goes, grouped or not")
+        let groups = try XCTUnwrap(ICloudMerge.groups([work, read, unused, work], for: pages))
+        XCTAssertEqual(groups, [DeviceTabs.Group(id: read.id, name: "Read", colour: nil, collapsed: nil),
+                                DeviceTabs.Group(id: work.id, name: "Work", colour: 3, collapsed: true)],
+                       "in the order the tabs name them, once each, none left empty")
+        XCTAssertNil(ICloudMerge.groups([work], for: [DeviceTabs.Page(url: "https://x.example/", title: "X")]))
+    }
+
+    func testWithoutGroupsTheRecordIsTheJSONItAlwaysWas() throws {
+        let tabs = DeviceTabs(name: "Mac", platform: "macos", at: Date(timeIntervalSinceReferenceDate: 100),
+                              tabs: [DeviceTabs.Page(url: "https://a.example/", title: "A")])
+        let out = text(ICloudMerge.outgoing(tabs, over: nil, shape: .device))
+        XCTAssertEqual(out, #"{"at":100,"name":"Mac","platform":"macos","tabs":[{"title":"A","url":"https://a.example/"}]}"#)
+    }
+
+    /// What a Search from before groups (and the iPhone) has: the old shape.
+    struct OldDeviceTabs: Codable, Equatable {
+        struct Page: Codable, Equatable { var url: String; var title: String }
+        var name: String; var platform: String; var at: Date; var tabs: [Page]
+    }
+
+    func testGroupsGoFromOneMacToAnotherAndAnOlderOneStillReadsTheTabs() async throws {
+        // This Mac: two groups and a loose tab.
+        let work = UUID(), read = UUID()
+        let a = FakeMac(), cloudA = FakeEngine()
+        a.deviceName = "Studio"
+        a.tabs = [DeviceTabs.Page(url: "https://w1.example/", title: "W1", group: work),
+                  DeviceTabs.Page(url: "https://w2.example/", title: "W2", group: work),
+                  DeviceTabs.Page(url: "https://r1.example/", title: "R1", group: read),
+                  DeviceTabs.Page(url: "https://loose.example/", title: "Loose")]
+        a.groupList = [DeviceTabs.Group(id: work, name: "Work", colour: 2, collapsed: true),
+                       DeviceTabs.Group(id: read, name: "Read")]
+        let syncA = await joined(a, cloudA)
+        let sent = try XCTUnwrap(syncA.outgoing(syncA.ledger.deviceKey)?.data)
+
+        // The other Mac fetches it.
+        let b = FakeMac(), cloudB = FakeEngine()
+        let otherSuite = "icloud-tests-\(UUID().uuidString)"
+        let otherDefaults = try XCTUnwrap(UserDefaults(suiteName: otherSuite))
+        defer { otherDefaults.removePersistentDomain(forName: otherSuite) }
+        let syncB = make(b, cloudB, defaults: otherDefaults)
+        syncB.turnOn()
+        await syncB.join()
+        XCTAssertTrue(syncB.joined)
+        XCTAssertNotEqual(syncB.ledger.deviceKey, syncA.ledger.deviceKey, "two devices")
+        let id = String(syncA.ledger.deviceKey.dropFirst("device.".count))
+        syncB.arrived(syncA.ledger.deviceKey, data: sent, at: Date(), fields: nil)
+        let seen = try XCTUnwrap(syncB.others[id])
+        let sections = seen.sections
+        XCTAssertEqual(sections.map { $0.group?.name }, ["Work", "Read", nil])
+        XCTAssertEqual(sections.map { $0.pages.map(\.title) }, [["W1", "W2"], ["R1"], ["Loose"]], "each group's tabs in order")
+        XCTAssertEqual(sections[0].group?.colour, 2)
+        XCTAssertEqual(sections[0].group?.collapsed, true)
+        XCTAssertEqual(sections[1].group?.collapsed, nil, "open")
+
+        // A Search from before groups, or the iPhone, reads the same record:
+        // every tab, in one list.
+        let old = try JSONDecoder().decode(OldDeviceTabs.self, from: sent)
+        XCTAssertEqual(old.tabs.map(\.title), ["W1", "W2", "R1", "Loose"])
+        // And its own record, without them, reads here as tabs in no group.
+        let older = try JSONEncoder().encode(OldDeviceTabs(name: "Old Mac", platform: "macos", at: Date(),
+                                                           tabs: [.init(url: "https://o.example/", title: "O")]))
+        syncB.arrived("device.OLD", data: older, at: Date(), fields: nil)
+        XCTAssertEqual(syncB.others["OLD"]?.sections.map { $0.group?.name }, [nil])
+
+        // A group renamed, nothing else changed: it goes up again.
+        cloudA.saved = []
+        a.groupList?[1].name = "Reading"
+        syncA.publish()
+        XCTAssertEqual(cloudA.saved, [syncA.ledger.deviceKey])
+        cloudA.saved = []
+        syncA.publish()
+        XCTAssertEqual(cloudA.saved, [], "the same groups a moment later are not a change")
+        // A page naming a group the list doesn't have is in none.
+        var stray = seen
+        stray.groups = nil
+        XCTAssertEqual(stray.sections.map { $0.pages.count }, [4])
     }
 
     // MARK: - joining

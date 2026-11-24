@@ -24,6 +24,18 @@ struct SearchApp: App {
     /// What the menus act on: the window in front's browser.
     private var browser: Browser { front.browser ?? SceneSlot.shared.browser }
 
+    /// A page open on another device, as History's menu lists it.
+    @ViewBuilder
+    private func elsewhere(_ page: DeviceTabs.Page) -> some View {
+        if let url = URL(string: page.url) {
+            Button {
+                browser.open(url, foreground: true)
+            } label: {
+                MenuLine(title: page.title.isEmpty ? Address.withoutWWW(page.url) : page.title, url: url)
+            }
+        }
+    }
+
     init() {
         // AppKit's guess at password fields (#1458): every time a native
         // field takes the keyboard (the address field, ⌘L, ⌘T…), it walks
@@ -438,14 +450,25 @@ struct SearchApp: App {
                 if icloud.on, !icloud.devices.isEmpty {
                     Section("Tabs on Your Other Devices") {
                         ForEach(icloud.devices, id: \.id) { device in
+                            // Its tab groups first, a menu each, as they
+                            // are on that device (idea 1093), then the rest.
                             Menu(ICloudSync.title(device.tabs)) {
-                                ForEach(device.tabs.tabs, id: \.self) { page in
-                                    if let url = URL(string: page.url) {
-                                        Button {
-                                            browser.open(url, foreground: true)
-                                        } label: {
-                                            MenuLine(title: page.title.isEmpty ? Address.withoutWWW(page.url) : page.title, url: url)
+                                ForEach(Array(device.tabs.sections.enumerated()), id: \.offset) { _, section in
+                                    if let group = section.group {
+                                        Menu(group.name.isEmpty ? "Group" : group.name) {
+                                            ForEach(section.pages, id: \.self) { page in elsewhere(page) }
+                                            if browser.prefs.usesTabGroups {
+                                                Divider()
+                                                Button("Open All in Tab Group") {
+                                                    let urls = section.pages.compactMap { URL(string: $0.url) }
+                                                    if let id = browser.openInTabGroup(urls, named: group.name), let colour = group.colour {
+                                                        browser.setTabGroupColour(id, to: colour)
+                                                    }
+                                                }
+                                            }
                                         }
+                                    } else {
+                                        ForEach(section.pages, id: \.self) { page in elsewhere(page) }
                                     }
                                 }
                             }

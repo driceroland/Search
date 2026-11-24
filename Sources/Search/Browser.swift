@@ -6860,8 +6860,9 @@ final class Browser: NSObject, ObservableObject {
     /// tab's menu opens with its name ready to be typed; this one is named
     /// already, so it doesn't. Used, for one, by the bookmarks bar's Open All
     /// in Tab Group.
-    func openInTabGroup(_ urls: [URL], named name: String) {
-        guard prefs.usesTabGroups, !urls.isEmpty else { return }
+    @discardableResult
+    func openInTabGroup(_ urls: [URL], named name: String) -> UUID? {
+        guard prefs.usesTabGroups, !urls.isEmpty else { return nil }
         let opened = urls.enumerated().map { index, url in
             open(url, foreground: index == 0, atEnd: true, mayWait: true)
         }
@@ -6869,6 +6870,7 @@ final class Browser: NSObject, ObservableObject {
         renameTabGroup(id, to: name)
         editingGroupID = nil
         for tab in opened.dropFirst() { move(tab, toGroup: id) }
+        return id
     }
 
     /// ⌘⇧N. A tab that keeps nothing — its own cookies, its own sign-ins, no
