@@ -89,7 +89,7 @@ struct Plate<Content: View, Foot: View>: View {
             }
         }
         .frame(width: width, alignment: .leading)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Shared.prefs.clearPanels ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Palette.ground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -131,8 +131,11 @@ struct Rule: View {
     var inset: CGFloat? = nil
     @Environment(\.ruleInset) private var standard
     @Environment(\.rulesHidden) private var hidden
+    @Environment(\.rulesGone) private var gone
     var body: some View {
-        if hidden {
+        if gone {
+            Color.clear.frame(height: 0)
+        } else if hidden {
             Rectangle().fill(Palette.hairline.opacity(0.55)).frame(height: 1).padding(.leading, inset ?? standard).padding(.trailing, 16)
         } else {
             Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, inset ?? standard)
@@ -144,11 +147,19 @@ private struct RulesHiddenKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct RulesGoneKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 private struct RuleInsetKey: EnvironmentKey {
     static let defaultValue: CGFloat = 14
 }
 
 extension EnvironmentValues {
+    var rulesGone: Bool {
+        get { self[RulesGoneKey.self] }
+        set { self[RulesGoneKey.self] = newValue }
+    }
     var rulesHidden: Bool {
         get { self[RulesHiddenKey.self] }
         set { self[RulesHiddenKey.self] = newValue }

@@ -19,12 +19,12 @@ import SwiftUI
 
 extension Metrics {
     /// The column of icons: a tile's 32 and 10 either side.
-    static let iconColumn: CGFloat = 52
+    static let iconColumn: CGFloat = 76
     /// One tab's tile in it, and one pinned square's.
     static let iconTile: CGFloat = 32
     /// The band the three traffic lights take, stacked, at its top
     /// (Lights.stackTop and their own spacing, and the same air under them).
-    static let iconLights: CGFloat = 80
+    static let iconLights: CGFloat = 52
 }
 
 /// What the tiles say, for the bench (`icons`): where each one is, its
@@ -100,6 +100,7 @@ struct IconTile: View {
     @State private var pressed = false
     /// This tile, for the bench's list of them (IconTiles).
     @State private var me = UUID()
+    @State private var place: CGRect = .zero
 
     private var rest: AtRest? { live ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
     private var tip: String { IconTiles.tip(tab, address: rest) }
@@ -178,7 +179,11 @@ struct IconTile: View {
         .modifier(ModifiedTabClick { if interactive { browser.extendTabSelection(to: tab, modifiers: $0) } })
         .modifier(OptionClick { if interactive { browser.optionClick(tab) } })
         .overlay { if interactive { MiddleClick(act: close) } }
-        .onHover { over in hovering = over }
+        .onHover { over in
+            hovering = over
+            if interactive { IconLabel.shared.hover(over, id: tab.id, browser: browser, frame: place, kind: .tab(tab)) }
+        }
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { place = $0 }
         .onAppear {
             guard interactive else { return }
             Bench.rowAppeared(tab.id, hover: { hovering = $0 })
@@ -229,13 +234,13 @@ struct IconTile: View {
     @ViewBuilder
     private var ground: some View {
         if live {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                 .fill(greys.pinLive)
                 .modifier(LiveMatch(id: LivePill.id(browser), in: pill))
         } else if browser.selectedTabIDs.contains(tab.id) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(greys.wash)
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).fill(greys.wash)
         } else if hovering {
-            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(greys.hover)
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).fill(greys.hover)
         }
     }
 }
@@ -341,5 +346,146 @@ struct IconGroupBracket: View {
             .frame(width: 2)
             .opacity(folded ? 0 : 1)
             .allowsHitTesting(false)
+    }
+}
+
+@MainActor
+final class IconLabel: ObservableObject {
+    static let shared = IconLabel()
+
+    enum Kind {
+        case tab(Tab)
+        case nav
+    }
+
+    struct Shown {
+        let id: AnyHashable
+        let browser: ObjectIdentifier
+        let frame: CGRect
+        let kind: Kind
+    }
+
+    @Published private(set) var shown: Shown?
+    private var arrival: DispatchWorkItem?
+    private var leaving: DispatchWorkItem?
+    var overPill = false {
+        didSet { if overPill { leaving?.cancel() } else if case .nav = shown?.kind { leave(after: 0.3) } }
+    }
+
+    func hover(_ over: Bool, id: AnyHashable, browser: Browser, frame: CGRect, kind: Kind) {
+        guard browser.prefs.iconPeeks else { return }
+        arrival?.cancel()
+        if over {
+            leaving?.cancel()
+            if shown != nil {
+                show(id: id, browser: browser, frame: frame, kind: kind)
+                return
+            }
+            let next = DispatchWorkItem { [weak self] in self?.show(id: id, browser: browser, frame: frame, kind: kind) }
+            arrival = next
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: next)
+        } else if shown?.id == id {
+            if case .nav = kind { leave(after: 0.3) } else { leave(after: 0) }
+        }
+    }
+
+    private func show(id: AnyHashable, browser: Browser, frame: CGRect, kind: Kind) {
+        withAnimation(Motion.quick) { shown = Shown(id: id, browser: ObjectIdentifier(browser), frame: frame, kind: kind) }
+    }
+
+    private func leave(after delay: TimeInterval) {
+        leaving?.cancel()
+        let next = DispatchWorkItem { [weak self] in
+            guard let self, !self.overPill else { return }
+            withAnimation(Motion.quick) { self.shown = nil }
+        }
+        leaving = next
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: next)
+    }
+
+    func clear() {
+        arrival?.cancel()
+        leaving?.cancel()
+        overPill = false
+        shown = nil
+    }
+}
+
+struct IconNavPeek: ViewModifier {
+    let browser: Browser
+    @State private var place: CGRect = .zero
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { place = $0 }
+            .onHover { over in
+                IconLabel.shared.hover(over, id: "nav-\(ObjectIdentifier(browser).hashValue)", browser: browser, frame: place, kind: .nav)
+            }
+    }
+}
+
+struct IconLabelLayer: View {
+    @ObservedObject var browser: Browser
+    let onRight: Bool
+    @ObservedObject private var label = IconLabel.shared
+
+    var body: some View {
+        GeometryReader { geo in
+            if let shown = label.shown, shown.browser == ObjectIdentifier(browser) {
+                let origin = geo.frame(in: .global).origin
+                pill(shown)
+                    .fixedSize()
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: onRight ? .topTrailing : .topLeading)
+                    .offset(x: onRight ? shown.frame.maxX - origin.x - geo.size.width : shown.frame.minX - origin.x, y: shown.frame.minY - origin.y)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: onRight ? .trailing : .leading)))
+            }
+        }
+        .onDisappear { label.clear() }
+    }
+
+    @ViewBuilder
+    private func pill(_ shown: IconLabel.Shown) -> some View {
+        switch shown.kind {
+        case .tab(let tab):
+            TabName(tab: tab, height: max(shown.frame.height, Metrics.iconTile), ground: AnyView(ground))
+                .allowsHitTesting(false)
+        case .nav:
+            Helm(browser: browser)
+                .padding(.horizontal, 4)
+                .frame(height: max(shown.frame.height, 30))
+                .background(ground.clipShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)))
+                .shadow(color: .black.opacity(0.22), radius: 10, y: 3)
+                .onHover { IconLabel.shared.overPill = $0 }
+        }
+    }
+
+    private var ground: some View {
+        ZStack {
+            browser.asCards ? Palette.frame : Palette.ground
+            SpaceWash(look: browser.wash)
+            (browser.asCards ? Greys.frame : Greys.white).wash
+        }
+    }
+
+    private struct TabName: View {
+        @ObservedObject var tab: Tab
+        let height: CGFloat
+        let ground: AnyView
+
+        var body: some View {
+            HStack(spacing: 10) {
+                Mark(icon: tab.icon, letter: tab.monogram, size: 16)
+                    .frame(width: Metrics.iconTile)
+                Text(tab.label.isEmpty ? "New Tab" : tab.label)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                    .frame(maxWidth: 240, alignment: .leading)
+            }
+            .padding(.trailing, 14)
+            .frame(height: height)
+            .background(ground.clipShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)))
+            .shadow(color: .black.opacity(0.22), radius: 10, y: 3)
+        }
     }
 }

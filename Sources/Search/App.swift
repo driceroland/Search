@@ -1374,10 +1374,11 @@ struct ContentView: View {
         // its three doors sit on the lights' line.
         let edges = self.edges
         Lights.keep(window, centreX: { window in
-            browser.prefs.sidebar && browser.prefs.sidePosition == .right
-                ? window.frame.width - (edges.side ?? browser.prefs.columnWidth) + Lights.centre.x
-                : Lights.centre.x
-        }, vertical: { _ in browser.prefs.iconColumn }) { measureLights() }
+            let lead = browser.prefs.iconColumn ? Metrics.iconColumn / 2 - 20 : Lights.centre.x
+            return browser.prefs.sidebar && browser.prefs.sidePosition == .right
+                ? window.frame.width - (edges.side ?? browser.prefs.columnWidth) + lead
+                : lead
+        }, vertical: { _ in false }) { measureLights() }
         DispatchQueue.main.async { measureLights() }
 
         // The traffic lights are drawn — measured, they paint themselves — but

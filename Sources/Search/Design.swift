@@ -242,7 +242,7 @@ enum Metrics {
     static let tabMinWidth: CGFloat = 36
     static let tabGap: CGFloat = 2
     /// A pinned tab is a square the height of the row, holding one letter.
-    static let pinWidth: CGFloat = 30
+    static let pinWidth: CGFloat = 34
     /// The square at the end of the row that opens a new page.
     static let plusWidth: CGFloat = 30
     /// What a full row of tabs still leaves past the plus to take the window

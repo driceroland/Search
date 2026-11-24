@@ -34,8 +34,7 @@ struct TabBar: View {
     /// the address when it is in sight. The badge was left out, and the row
     /// was laid out 28 points wider than the window gave it.
     private var leading: CGFloat {
-        (browser.prefs.navigationLeft && browser.prefs.helmDoors > 0 ? Metrics.helm(browser.prefs) - 8 + Metrics.tabGap : 0)
-            + (browser.prefs.showsProfileDoor ? ProfileBadge.width + Metrics.tabGap : 0)
+        (browser.prefs.navigationLeft && browser.prefs.helmDoors > 0 ? Door.width + Metrics.tabGap : 0)
             + (browser.prefs.addressLine ? browser.prefs.addressWidth.width + AddressLine.after + Metrics.tabGap : 0)
     }
     /// How much wider the run's tabs were laid out than they were worked out
@@ -73,12 +72,7 @@ struct TabBar: View {
 
                 HStack(spacing: Metrics.tabGap) {
                     // Back, forward and reload by the lights, when asked.
-                    if browser.prefs.navigationLeft, browser.prefs.helmDoors > 0 { Helm(browser: browser) }
-                    // The space on screen, first, when there are spaces.
-                    // Above the tabs, for the name it shows over them a moment
-                    // after a switch.
-                    // The profile, once there is more than one (see Profiles.swift).
-                    if browser.prefs.showsProfileDoor { ProfileBadge(browser: browser) }
+                    if browser.prefs.navigationLeft, browser.prefs.helmDoors > 0 { SmartNav(browser: browser) }
                     // The page's address, when it is to be in sight: before the tabs.
                     if browser.prefs.addressLine {
                         AddressLine(browser: browser)
@@ -86,7 +80,6 @@ struct TabBar: View {
                             .padding(.trailing, AddressLine.after)
                             .zIndex(2)
                     }
-                    if browser.prefs.usesSpaces && !browser.prefs.showsSpaceButtons { SpaceDot(browser: browser).zIndex(1) }
 
                     // The tabs, in a run of their own. While they fit, it is
                     // exactly as wide as they are and nothing about the row
@@ -271,12 +264,14 @@ struct TabBar: View {
                         FetchDoor(browser: browser, fetches: browser.fetches)
                         ExtensionSlot(browser: browser, puzzle: !browser.prefs.hidesExtensionsDoor)
                         if !browser.prefs.navigationLeft, browser.prefs.helmDoors > 0 {
-                            Helm(browser: browser).padding(.trailing, 8)
+                            SmartNav(browser: browser).padding(.trailing, 8)
                         }
                         if !browser.prefs.hidesBookmarksDoor {
                             BookmarkDoor(browser: browser, arrowEdge: .bottom)
                         }
                         SpaceButtons(browser: browser)
+                        if browser.prefs.usesSpaces && !browser.prefs.showsSpaceButtons { SpaceDot(browser: browser).zIndex(1) }
+                        if browser.prefs.showsProfileDoor { ProfileBadge(browser: browser) }
                     }
                     .background {
                         GeometryReader { box in
@@ -654,16 +649,14 @@ struct TabBar: View {
     /// until they have been, the helm and the bookmarks stand in for them —
     /// unless the helm leads, when nothing at the far end may be a real zero.
     private func room(in strip: CGFloat) -> CGFloat {
-        let far = doors > 0 || browser.prefs.navigationLeft ? doors : Metrics.helm(browser.prefs) + Door.width
+        let far = doors > 0 || browser.prefs.navigationLeft ? doors : Door.width + 8 + Door.width
         return max(0, strip - lights - dot - leading - 12 - Metrics.plusWidth - Metrics.tabRowHold - far - 3 * Metrics.tabGap)
     }
 
     /// What the space's dot takes before the tabs, when there are spaces.
     /// With a button per space, nothing: they are among the doors at the
     /// far end (SpaceButtons), measured with them.
-    private var dot: CGFloat {
-        browser.prefs.usesSpaces && !browser.prefs.showsSpaceButtons ? SpaceDot.width + Metrics.tabGap : 0
-    }
+    private var dot: CGFloat { 0 }
 
     /// Every loose tab is the same width, so the cross is always in the same
     /// place. Past a dozen or so they start giving ground; too narrow for a
@@ -751,12 +744,14 @@ struct PinLine: View {
     /// What it takes out of the run: itself, and the gap the stack puts
     /// before it. The widths have to count it, or every tab is laid out as
     /// though the line weren't there and the run runs a line's width over.
-    static let space: CGFloat = PinLine.width + Metrics.tabGap
+    static let air: CGFloat = 6
+    static let space: CGFloat = PinLine.width + 2 * PinLine.air + Metrics.tabGap
 
     var body: some View {
         Rectangle()
             .fill(Palette.hairline)
-            .frame(width: PinLine.width, height: 20)
+            .frame(width: PinLine.width, height: 18)
+            .padding(.horizontal, PinLine.air)
     }
 }
 
@@ -846,7 +841,60 @@ struct Helm: View {
 /// there, however many steps away. Read when the menu opens, so it is never
 /// a page behind.
 @MainActor
+struct SmartNav: View {
+    @ObservedObject var browser: Browser
+
+    var body: some View {
+        if let tab = browser.active {
+            Live(browser: browser, tab: tab)
+        } else {
+            Door(icon: "chevron.left") {}
+                .opacity(0.3)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private struct Live: View {
+        let browser: Browser
+        @ObservedObject var tab: Tab
+
+        var body: some View {
+            let back = !tab.isBlank && tab.canGoBack
+            let forward = !tab.isBlank && tab.canGoForward
+            let shows = back || !forward
+            Door(icon: shows ? "chevron.left" : "chevron.right", help: shows ? "Back" : "Forward",
+                 shortcut: shows ? "tabs.back" : "tabs.forward", held: { Rewind.both(tab, browser: browser) }) {
+                if back { browser.back() } else if forward { browser.forward() }
+            }
+            .opacity(back || forward ? 1 : 0.3)
+            .animation(Motion.quick, value: shows)
+        }
+    }
+}
+
+@MainActor
 enum Rewind {
+    static func both(_ tab: Tab, browser: Browser) -> NSMenu? {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for (back, title) in [(true, "Back"), (false, "Forward")] {
+            guard let part = Rewind.menu(tab, back: back) else { continue }
+            if !menu.items.isEmpty { menu.addItem(.separator()) }
+            menu.addItem(.sectionHeader(title: title))
+            for item in part.items {
+                part.removeItem(item)
+                menu.addItem(item)
+            }
+        }
+        if tab.isWeb {
+            if !menu.items.isEmpty { menu.addItem(.separator()) }
+            menu.addItem(Pick(title: tab.loading ? "Stop" : "Reload") { [weak browser, weak tab] in
+                if tab?.loading == true { tab?.stop() } else { browser?.reload() }
+            })
+        }
+        return menu.items.isEmpty ? nil : menu
+    }
+
     static func menu(_ tab: Tab, back: Bool) -> NSMenu? {
         let pages = tab.pages(back: back)
         guard !pages.isEmpty else { return nil }
@@ -1236,13 +1284,13 @@ private struct TabPill: View, Equatable {
                     ReadingFill(meter: tab.meter, width: span)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
             .modifier(LiveMatch(id: "live", in: pill, tab: pinned ? nil : tab.id))
         } else if selected {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                 .fill(greys.wash)
         } else if hovering {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                 .fill(greys.hover)
         } else if pinned || compact || rowCarrying {
             // A letter with nothing behind it reads as debris. A pinned tab
@@ -1257,7 +1305,7 @@ private struct TabPill: View, Equatable {
             // tab just passed lies half under the one carried, its title at
             // its left under it too, and the half left showing was nothing,
             // so it seemed gone until the hand moved on (#898).
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                 .fill(greys.tile)
         }
     }

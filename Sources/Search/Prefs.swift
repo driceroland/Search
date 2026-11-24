@@ -431,6 +431,8 @@ final class Preferences: ObservableObject {
     @Published var hidesExtensionsDoor: Bool { didSet { store.set(hidesExtensionsDoor, forKey: "foot.extensions.hidden") } }
     @Published var hidesBookmarksDoor: Bool { didSet { store.set(hidesBookmarksDoor, forKey: "foot.bookmarks.hidden") } }
     @Published var fitsPins: Bool { didSet { store.set(fitsPins, forKey: "pins.fit") } }
+    @Published var iconPeeks: Bool { didSet { store.set(iconPeeks, forKey: "icons.peek") } }
+    @Published var clearPanels: Bool { didSet { store.set(clearPanels, forKey: "panels.clear") } }
     @Published var hidesProfileDoor: Bool { didSet { store.set(hidesProfileDoor, forKey: "foot.profile.hidden") } }
     /// The profile's badge is drawn: several profiles, and not hidden.
     var showsProfileDoor: Bool { Profiles.shared.several && !hidesProfileDoor }
@@ -1301,6 +1303,8 @@ final class Preferences: ObservableObject {
         hidesExtensionsDoor = store.bool(forKey: "foot.extensions.hidden")
         hidesBookmarksDoor = store.bool(forKey: "foot.bookmarks.hidden")
         fitsPins = store.bool(forKey: "pins.fit")
+        iconPeeks = store.object(forKey: "icons.peek") as? Bool ?? true
+        clearPanels = store.bool(forKey: "panels.clear")
         hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen

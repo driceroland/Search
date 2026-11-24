@@ -102,7 +102,7 @@ struct SideBar: View {
     private var stripUp: Bool { strip && prefs.doorsUp }
     /// The foot's doors one above the other, and the margin under them.
     private var stackedDoors: CGFloat {
-        CGFloat(SideFoot.doors(prefs, browser.fetches, hanging: browser.downloadsHanging, spaces: SpaceButtons.count(prefs, browser.spaces))) * 28 + 8
+        CGFloat(SideFoot.doors(prefs, browser.fetches, hanging: browser.downloadsHanging, spaces: SpaceButtons.count(prefs, browser.spaces))) * 34 + 14
     }
     /// With icons only, the band the stacked lights take: gone in full
     /// screen, with them.
@@ -110,7 +110,7 @@ struct SideBar: View {
     /// What sits above the pins: the lights' band, and with icons only the
     /// three doors under it.
     private var top: CGFloat {
-        !icons ? Metrics.strip : !strip ? lightsBand + Metrics.helmDoorsTall(prefs) + 8 : lightsBand + (stripUp ? stackedDoors : 0)
+        !icons ? Metrics.strip : !strip ? lightsBand + (prefs.helmDoors > 0 ? 26 + 8 : 0) : lightsBand + (stripUp ? stackedDoors : 0)
     }
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
 
@@ -261,8 +261,9 @@ struct SideBar: View {
                     Color.clear.frame(height: lightsBand)
                     if stripUp {
                         foot
-                    } else if !strip {
-                        Helm(browser: browser, vertical: true)
+                    } else if !strip, prefs.helmDoors > 0 {
+                        SmartNav(browser: browser)
+                            .modifier(IconNavPeek(browser: browser))
                             .frame(maxWidth: .infinity)
                             .padding(.bottom, 8)
                     }
@@ -925,6 +926,7 @@ struct SideBar: View {
             if icons {
                 IconTile(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
                          pill: pill, close: {}, interactive: false)
+                    .frame(maxWidth: .infinity)
             } else {
                 SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
                         pill: pill, close: {}, interactive: false)
@@ -1023,9 +1025,11 @@ struct SideBar: View {
                 IconPair(browser: browser, prefs: prefs, pages: pages,
                          live: activeID.map { pair.contains($0) } ?? false,
                          focusedID: activeID, interactive: interactive, pill: pill)
+                    .frame(maxWidth: .infinity)
             } else {
                 IconTile(browser: browser, prefs: prefs, tab: tab, live: tab.id == activeID,
                          pill: pill, close: close, interactive: interactive)
+                    .frame(maxWidth: .infinity)
             }
         } else if let pair, pages.count >= 2 {
             SplitTabItem(browser: browser, prefs: prefs, pages: pages,
@@ -1097,6 +1101,11 @@ struct SideBar: View {
     /// turns into a wide, short button rather than a bigger icon.
     private func pinCells(_ count: Int) -> [CGRect] {
         let room = width - 20
+        if icons {
+            let side = Metrics.iconTile
+            let x = ((room - side) / 2).rounded(.down)
+            return (0..<count).map { CGRect(x: x, y: CGFloat($0) * (side + SideBar.pinGap), width: side, height: side) }
+        }
         let gap = SideBar.pinGap
         let fits = Int((room + gap) / (SideBar.square + gap))
         let narrow = Int((room + gap) / (SideBar.narrowSquare + gap))
@@ -1383,7 +1392,7 @@ struct SideBar: View {
             // Under the groups: Clear keeps them, as it keeps the pins, so
             // everything above the line is what stays.
             if showsLine(kept: keptCount, listed: browser.listedPins.count, loose: loose.filter { !$0.isBlank }.count) {
-                KeepLine(clears: !loose.isEmpty) { browser.clearTabs() }
+                KeepLine(clears: !loose.isEmpty, compact: icons) { browser.clearTabs() }
             }
             let ghost: Int? = if case .loose(let at)? = crossing?.target { at } else { nil }
             // In a stack of their own, measured, for where a pin carried
@@ -1729,7 +1738,7 @@ private struct SideFoot: View {
 
     var body: some View {
         if vertical {
-            VStack(spacing: 2) {
+            VStack(spacing: 8) {
                 // An agent connected in this window: a click on it is Stop.
                 AgentStatus(browser: browser, style: .icon)
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
@@ -1740,7 +1749,7 @@ private struct SideFoot: View {
                 if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
             }
             .frame(maxWidth: .infinity)
-            .padding(.bottom, 8)
+            .padding(.bottom, 14)
         } else if up {
             // The foot's order: the space first, the puzzle at the far end.
             // The space's name, after a switch, goes to the foot of the page
@@ -2375,13 +2384,14 @@ struct Quiet: View {
             }
             .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : greys.faint)
             .padding(.leading, centred ? 0 : 10)
-            .frame(height: height)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: centred ? height : nil, height: height)
+            .frame(maxWidth: centred ? nil : .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                     .fill(hovering ? greys.hover : .clear)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+            .frame(maxWidth: centred ? .infinity : nil)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -2400,12 +2410,13 @@ struct KeepLine: View {
     @Environment(\.inSpaceMap) private var inMap
     /// Whether there is anything under it to clear.
     let clears: Bool
+    var compact = false
     let act: () -> Void
 
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: compact ? 4 : 6) {
             Rectangle()
                 .fill(Palette.hairline)
                 .frame(height: 1)
@@ -2414,8 +2425,10 @@ struct KeepLine: View {
                     HStack(spacing: 3) {
                         Image(systemName: "arrow.down")
                             .font(.system(size: 8, weight: .semibold))
-                        Text("Clear")
-                            .font(.system(size: 11))
+                        if !compact {
+                            Text("Clear")
+                                .font(.system(size: 11))
+                        }
                     }
                     .foregroundStyle(Palette.muted)
                     .contentShape(Rectangle())
@@ -2425,7 +2438,7 @@ struct KeepLine: View {
                 .transition(.opacity)
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, compact ? 4 : 10)
         .frame(height: KeepLine.height)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

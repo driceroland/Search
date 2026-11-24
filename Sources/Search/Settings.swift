@@ -146,7 +146,7 @@ struct SettingsPanel: View {
             content
         }
         .frame(width: SettingsPanel.width, height: SettingsPanel.height)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Shared.prefs.clearPanels ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Palette.ground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
@@ -396,10 +396,15 @@ struct SettingsPanel: View {
 
     private func rows(_ items: [SettingsItem], searched: Bool) -> some View {
         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-            if index > 0 { Rule() }
+            if index > 0, !belongs(item, to: items[index - 1]) { Rule() }
             row(item)
             after(item, searched: searched)
         }
+    }
+
+    private func belongs(_ item: SettingsItem, to previous: SettingsItem) -> Bool {
+        guard let parent = item.parent else { return false }
+        return parent == previous.id || parent == previous.parent
     }
 
     private func row(_ item: SettingsItem) -> some View {
@@ -418,7 +423,7 @@ struct SettingsPanel: View {
             control(item)
         }
         .disabled(!counts)
-        .opacity(counts ? 1 : 0.5)
+        .opacity(counts ? 1 : 0.35)
         .id(item.id)
     }
 
@@ -834,6 +839,8 @@ struct SettingsPanel: View {
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
         case "pins.fit": Switch(on: $prefs.fitsPins)
+        case "icons.peek": Switch(on: $prefs.iconPeeks)
+        case "panels.clear": Switch(on: $prefs.clearPanels)
         case "pins.folders": Switch(on: $prefs.pinFolders)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
@@ -1236,6 +1243,7 @@ private extension View {
     func under() -> some View {
         padding(.leading, SettingsPanel.listInset)
             .environment(\.ruleInset, SettingsPanel.textInset - SettingsPanel.listInset)
+            .environment(\.rulesGone, true)
     }
 }
 
@@ -1302,8 +1310,8 @@ struct SettingRow<Control: View>: View {
                       let range = Range(found, in: text),
                       let lower = AttributedString.Index(range.lowerBound, within: out),
                       let upper = AttributedString.Index(range.upperBound, within: out) else { break }
-                out[lower..<upper].backgroundColor = Color.accentColor.opacity(0.28)
-                out[lower..<upper].foregroundColor = Palette.ink
+                out[lower..<upper].backgroundColor = Color(nsColor: .findHighlightColor)
+                out[lower..<upper].foregroundColor = .black
                 from = found.location + found.length
             }
         }
@@ -1342,17 +1350,18 @@ struct SettingRow<Control: View>: View {
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if open, let more {
-                        Text(more)
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 3)
-                            .transition(.opacity)
-                    }
                 }
                 Spacer(minLength: 8)
                 if !wide { control() }
+            }
+            if open, let more {
+                Text(more)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 34)
+                    .padding(.top, -6)
+                    .transition(.opacity)
             }
             if wide {
                 control()
@@ -1690,7 +1699,7 @@ struct Switch: View {
 
     var body: some View {
         Capsule()
-            .fill(on ? Palette.ink : Palette.faint)
+            .fill(on ? Palette.ink : Palette.muted.opacity(0.55))
             .frame(width: 30, height: 18)
             .overlay(alignment: on ? .trailing : .leading) {
                 Circle()

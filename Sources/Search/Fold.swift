@@ -458,6 +458,11 @@ struct Fold: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity,
                    alignment: onRight ? .trailing : .leading)
+            .overlay {
+                if prefs.sidebar, prefs.iconColumn, prefs.iconPeeks {
+                    IconLabelLayer(browser: browser, onRight: onRight)
+                }
+            }
             // As the page beside it moves (see ContentView).
             .animation(Motion.glide, value: prefs.sidebar)
             .animation(Motion.glide, value: prefs.sidePosition)
