@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A sleeping tab in a tab group brightens under the pointer in the sidebar, as other tabs there do: only its row's background lit up, its title and icon stayed dimmed.
 - The Passwords app's verification codes come up in more code boxes: one labelled in Catalan, Spanish, Italian, Portuguese, German, Dutch, the Nordic languages, Polish, Czech or Turkish ("codi de verificació", "codice di verifica", "Bestätigungscode"…), one whose only label is the line written above it, and a bare box for a few digits alone on a sign-in page. A Catalan university's sign-in asked for its code and nothing came up. Discount, voucher and postal-code boxes in those languages stay out. `swift test --filter FormFieldCorpusTests` (reported by email, idea 1346)
 - After pausing a video in Search, the Play key resumes it while Search is the app you're using, however long it has been paused: ten seconds after the pause, the keys went back to the app before, and Play opened Music. With Search in the background, a paused tab still hands them back after ten seconds, so Spotify or Music get them. `swift test --filter MediaKeysKeeperTests` (reported by email, idea 1350)
 - ⌘⌫ in the address field, and in the launcher's, deletes to the start of the line at once while the field offers the rest of an address after what you typed: it only took the offered ending, which the field put straight back, so nothing happened until a letter was deleted with ⌫. `swift test --filter AddressDeleteLineTests` (reported by email, idea 1334)
