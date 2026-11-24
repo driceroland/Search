@@ -48,6 +48,34 @@ struct Bookmark: Codable, Identifiable, Hashable {
     }
 }
 
+private struct LoadedBookmarks: Sendable {
+    var roots: [Bookmark] = []
+    var kept: Set<String> = []
+    var corrupt = false
+}
+
+private final class BookmarksLoad: @unchecked Sendable {
+    private let group = DispatchGroup()
+    private let lock = NSLock()
+    private var loaded = LoadedBookmarks()
+
+    init() { group.enter() }
+
+    func finish(_ result: LoadedBookmarks) {
+        lock.lock()
+        loaded = result
+        lock.unlock()
+        group.leave()
+    }
+
+    func result() -> LoadedBookmarks {
+        group.wait()
+        lock.lock()
+        defer { lock.unlock() }
+        return loaded
+    }
+}
+
 /// Observable: only what reads the list hears it change, the Bookmarks
 /// menu's first item included (Tests/bookmark_menu_title.py), not every row.
 @MainActor @Observable
@@ -55,7 +83,7 @@ final class Bookmarks {
     private(set) var roots: [Bookmark] = [] {
         didSet {
             revision &+= 1
-            kept = preparedKept ?? Set(Bookmarks.urls(roots).map(\.absoluteString))
+            kept = preparedKept ?? Set(Bookmarks.urlStrings(roots))
             preparedKept = nil
             sites = nil
         }
@@ -63,6 +91,7 @@ final class Bookmarks {
     // Kept for the list's own work, read by no view.
     @ObservationIgnored private var revision = 0
     @ObservationIgnored private var preparedKept: Set<String>?
+    @ObservationIgnored private var loading: BookmarksLoad?
 
     /// Every address kept, for `contains` — asked on every redraw of the
     /// button, which fills in on a page that is kept.
@@ -71,12 +100,24 @@ final class Bookmarks {
     /// Its file: bookmarks.json, or another for a test.
     private let fileName: String
 
-    /// The one the browser keeps.
-    static let shared = Bookmarks()
+    /// The one the browser keeps. Loaded off the main thread so a large
+    /// bookmark tree never delays the first frame.
+    static let shared = Bookmarks(file: "bookmarks.json", async: true)
 
-    init(file: String = "bookmarks.json") {
+    init(file: String = "bookmarks.json", async: Bool = false) {
         fileName = file
-        load()
+        if async {
+            loadAsync()
+        } else {
+            load()
+        }
+    }
+
+    /// Completes an in-flight background load if any caller needs the list
+    /// synchronously before the first main-queue turn delivers it.
+    func ensureLoaded() {
+        guard let job = loading else { return }
+        loaded(job)
     }
 
     var isEmpty: Bool { roots.isEmpty }
@@ -86,6 +127,22 @@ final class Bookmarks {
 
     nonisolated static func count(_ nodes: [Bookmark]) -> Int {
         nodes.reduce(0) { $0 + ($1.isFolder ? count($1.children ?? []) : 1) }
+    }
+
+    /// Raw URL strings without allocating `URL` for every node.
+    nonisolated static func urlStrings(_ nodes: [Bookmark]) -> [String] {
+        var out: [String] = []
+        func walk(_ list: [Bookmark]) {
+            for node in list {
+                if node.isFolder {
+                    if let kids = node.children { walk(kids) }
+                } else if let url = node.url {
+                    out.append(url)
+                }
+            }
+        }
+        walk(nodes)
+        return out
     }
 
     /// Every site in the list, in order, folders opened.
@@ -109,6 +166,7 @@ final class Bookmarks {
     /// with the folders it sits in — the same rule chrome.bookmarks.search
     /// keeps (see ExtensionShims.swift).
     func matches(_ text: String) -> [(node: Bookmark, path: [String])] {
+        ensureLoaded()
         let words = text.lowercased().split(separator: " ").map(String.init)
         guard !words.isEmpty else { return [] }
         func walk(_ nodes: [Bookmark], _ path: [String]) -> [(node: Bookmark, path: [String])] {
@@ -149,6 +207,7 @@ final class Bookmarks {
     /// field finishes a single letter only towards a site you have been to.
     /// Those found only through a typo come apart, in `slips`.
     func places(for typed: String, limit: Int) -> (found: [Suggestion], slips: [Suggestion]) {
+        ensureLoaded()
         let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
         let words = needle.split(whereSeparator: \.isWhitespace).map(String.init)
         guard needle.count >= 2, let first = words.first else { return ([], []) }
@@ -194,6 +253,7 @@ final class Bookmarks {
     /// The folders `id` sits in, outermost first; empty at the top level,
     /// nil when it isn't here at all.
     func path(to id: Bookmark.ID) -> [Bookmark]? {
+        ensureLoaded()
         func walk(_ nodes: [Bookmark], _ above: [Bookmark]) -> [Bookmark]? {
             for node in nodes {
                 if node.id == id { return above }
@@ -226,6 +286,7 @@ final class Bookmarks {
     }
 
     private func first(where test: (Bookmark) -> Bool) -> Bookmark? {
+        ensureLoaded()
         func walk(_ nodes: [Bookmark]) -> Bookmark? {
             for node in nodes {
                 if test(node) { return node }
@@ -268,6 +329,7 @@ final class Bookmarks {
     /// where it gets another name or a folder.
     @discardableResult
     func add(_ url: URL, title: String) -> Bookmark? {
+        ensureLoaded()
         guard !contains(url) else { return nil }
         let made = Bookmark.site(title, url)
         roots.append(made)
@@ -276,10 +338,12 @@ final class Bookmarks {
     }
 
     func contains(_ url: URL) -> Bool {
-        kept.contains(url.absoluteString)
+        ensureLoaded()
+        return kept.contains(url.absoluteString)
     }
 
     func remove(_ id: Bookmark.ID) {
+        ensureLoaded()
         roots = Bookmarks.prune(id, from: roots)
         save()
     }
@@ -301,6 +365,7 @@ final class Bookmarks {
     /// children is refused rather than allowed to erase it by looping it
     /// inside itself; moving it onto itself is simply nothing to do.
     func move(_ id: Bookmark.ID, into folderID: Bookmark.ID?, at index: Int? = nil) {
+        ensureLoaded()
         guard id != folderID else { return }
         var index = index
         if let at = index, let from = siblings(of: folderID).firstIndex(where: { $0.id == id }), from < at {
@@ -387,6 +452,7 @@ final class Bookmarks {
     /// The same, and which bookmarks and folders it added — every one, so
     /// they can be taken back out exactly (see ImportRecord).
     func takeNoting(_ nodes: [Bookmark], from name: String) -> (added: Int, already: Int, ids: [Bookmark.ID]) {
+        ensureLoaded()
         guard !nodes.isEmpty else { return (0, 0, []) }
         var added = 0, already = 0
         var ids: [Bookmark.ID] = []
@@ -415,6 +481,7 @@ final class Bookmarks {
     /// Prepare a potentially large file merge away from the UI thread. A live
     /// edit wins: if bookmarks changed while preparing, merge a fresh snapshot.
     func takeFile(_ incoming: [Bookmark], from name: String, control: ImportFile.Control) async throws -> (added: Int, already: Int) {
+        ensureLoaded()
         guard !incoming.isEmpty else { return (0, 0) }
         while true {
             try control.checkCancellation()
@@ -474,6 +541,7 @@ final class Bookmarks {
     /// with that in it. Returns how many bookmarks went.
     @discardableResult
     func withdraw(_ ids: [Bookmark.ID]) -> Int {
+        ensureLoaded()
         let ours = Set(ids)
         var gone = 0
         func strip(_ nodes: [Bookmark]) -> [Bookmark] {
@@ -621,6 +689,7 @@ final class Bookmarks {
     /// chrome.bookmarks.create does.
     @discardableResult
     func insert(_ node: Bookmark, into parent: Bookmark.ID?, at index: Int? = nil) -> Bookmark {
+        ensureLoaded()
         var nodes = roots
         if !Bookmarks.place(node, in: parent, at: index, nodes: &nodes) {
             Bookmarks.place(node, in: nil, at: index, nodes: &nodes)
@@ -689,6 +758,7 @@ final class Bookmarks {
     /// A new title or address for one that is kept. chrome.bookmarks.update,
     /// and Rename… in the list's right-click menu.
     func update(_ id: Bookmark.ID, title: String?, url: String?) {
+        ensureLoaded()
         func walk(_ nodes: inout [Bookmark]) -> Bool {
             for i in nodes.indices {
                 if nodes[i].id == id {
@@ -720,6 +790,37 @@ final class Bookmarks {
         roots = list
     }
 
+    private func loadAsync() {
+        let job = BookmarksLoad()
+        loading = job
+        let file = file
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var result = LoadedBookmarks()
+            if let data = try? Data(contentsOf: file) {
+                if let list = try? JSONDecoder().decode([Bookmark].self, from: data) {
+                    result.roots = list
+                    result.kept = Set(Bookmarks.urlStrings(list))
+                } else {
+                    result.corrupt = true
+                }
+            }
+            job.finish(result)
+            DispatchQueue.main.async { [weak self] in self?.loaded(job) }
+        }
+    }
+
+    private func loaded(_ job: BookmarksLoad) {
+        guard loading === job else { return }
+        let result = job.result()
+        loading = nil
+        if result.corrupt {
+            Store.quarantine(file)
+            return
+        }
+        preparedKept = result.kept
+        roots = result.roots
+    }
+
     private func save() {
         let snapshot = roots
         // One after another, the newest last (see Disk).
@@ -728,6 +829,7 @@ final class Bookmarks {
 
     /// Replace the full bookmark tree.
     func adopt(_ nodes: [Bookmark]) {
+        loading = nil
         guard nodes != roots else { return }
         roots = nodes
         save()
@@ -1599,16 +1701,9 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
     static let shared = BookmarkMenu()
 
     private weak var browser: Browser?
-    private var watch: [Any] = []
-    /// Looks after each turn of the run loop: see `start`.
-    private var looking: CFRunLoopObserver?
-    /// The menu bar is in use: from the moment it is clicked (or reached
-    /// from the keyboard) until it is let go of.
-    private var tracking = false
-    private let relay = Relay()
     /// What each folder's submenu holds, until it opens.
     private var folders: [ObjectIdentifier: [Bookmark]] = [:]
-    /// The items put in here, among SwiftUI's own.
+    /// The items put in here, below the Bookmarks menu's fixed commands.
     fileprivate static let mark = 0x5EAC
     /// A folder's Open All, and the line above it.
     private static let foot = 0x5EAD
@@ -1616,55 +1711,6 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
     func start(for browser: Browser) {
         guard self.browser == nil else { return }
         self.browser = browser
-        relay.after = { [weak self] menu in
-            guard let self, tracking else { return }
-            fill(menu)
-        }
-        // SwiftUI puts its own delegate back whenever it updates the menu
-        // bar, which is whenever anything in the window changes — a tab's
-        // title too, which arrives from the page and not from an event, so
-        // looking only after each event left SwiftUI's delegate in place
-        // until the next one. And it may put a new menu in the old one's
-        // place. So: at every turn of the run loop, menus open or not, the
-        // menu there now is wrapped; while the menu bar is in use, it holds
-        // the bookmarks, put back as soon as a turn finds them gone. A
-        // lookup among a dozen items, and nothing more while all is well.
-        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 0) { [weak self] _, _ in
-            MainActor.assumeIsolated { self?.look() }
-        }
-        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
-        looking = observer
-        let centre = NotificationCenter.default
-        watch = [
-            // As the menu bar starts to be used, before any of its menus
-            // opens: the bookmarks go in now, not a turn later.
-            centre.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { [weak self] note in
-                MainActor.assumeIsolated {
-                    guard let self, (note.object as? NSMenu) === NSApp.mainMenu else { return }
-                    self.tracking = true
-                    self.look()
-                }
-            },
-            // However the menu bar is let go of.
-            centre.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: nil) { [weak self] note in
-                MainActor.assumeIsolated {
-                    guard (note.object as? NSMenu) === NSApp.mainMenu else { return }
-                    self?.tracking = false
-                }
-            },
-        ]
-        wrap()
-    }
-
-    /// The menu there now wrapped, and, while the menu bar is in use,
-    /// holding the bookmarks. An open menu is updated by SwiftUI itself,
-    /// straight through its own delegate, whenever anything it shows could
-    /// have changed — a tab's title, every second on a download page — and
-    /// that took the bookmarks out from under the pointer.
-    private func look() {
-        guard let menu else { return }
-        wrap(menu)
-        if tracking, !menu.items.contains(where: { $0.tag == Self.mark }) { fill(menu) }
     }
 
     private var menu: NSMenu? { NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu }
@@ -1672,18 +1718,9 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
     /// The window in front's.
     private var shown: Browser? { Browsers.front.flatMap { !$0.isPopup ? $0 : nil } ?? browser }
 
-    private func wrap(_ menu: NSMenu? = nil) {
-        guard let menu = menu ?? self.menu, menu.delegate !== relay
-        else { return }
-        relay.inner = menu.delegate
-        menu.delegate = relay
-    }
-
-    /// SwiftUI's own update of the menu, without ours after it: what it
-    /// does by itself to a menu that is open. For the bench.
+    /// Rebuilds the Bookmarks menu in place (for the bench).
     func swiftUIUpdate() {
-        guard let menu else { return }
-        relay.inner?.menuNeedsUpdate?(menu)
+        MainMenu.shared.refreshBookmarks()
     }
 
     /// How many items this has put in the menu, for the bench.
@@ -1691,11 +1728,12 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
         menu?.items.filter { $0.tag == Self.mark }.count ?? 0
     }
 
-    /// The top of the list, after SwiftUI's items, in place of any left
+    /// The top of the list, after the menu's fixed items, in place of any left
     /// from the last time.
-    private func fill(_ menu: NSMenu) {
+    func fill(_ menu: NSMenu) {
         for item in menu.items where item.tag == Self.mark { menu.removeItem(item) }
         folders = [:]
+        shown?.bookmarks.ensureLoaded()
         guard let roots = shown?.bookmarks.roots, !roots.isEmpty else { return }
         let line = NSMenuItem.separator()
         line.tag = Self.mark
@@ -1820,29 +1858,5 @@ final class BookmarkMenu: NSObject, NSMenuDelegate {
     @objc private func openAll(_ item: NSMenuItem) {
         guard let urls = item.representedObject as? [URL], let browser = shown else { return }
         for url in urls { browser.open(url, foreground: false, atEnd: true, from: browser.active, mayWait: true) }
-    }
-
-    /// SwiftUI's delegate, with the bookmarks put in after its update.
-    /// Everything else it answers goes straight to it.
-    private final class Relay: NSObject, NSMenuDelegate {
-        weak var inner: NSMenuDelegate?
-        var after: ((NSMenu) -> Void)?
-
-        func menuNeedsUpdate(_ menu: NSMenu) {
-            inner?.menuNeedsUpdate?(menu)
-            MainActor.assumeIsolated { after?(menu) }
-        }
-
-        /// Only for its own items: the bookmarks aren't SwiftUI's to know.
-        func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
-            guard item?.tag != BookmarkMenu.mark else { return }
-            inner?.menu?(menu, willHighlight: item)
-        }
-
-        override func responds(to selector: Selector!) -> Bool {
-            super.responds(to: selector) || (inner?.responds(to: selector) ?? false)
-        }
-
-        override func forwardingTarget(for selector: Selector!) -> Any? { inner }
     }
 }

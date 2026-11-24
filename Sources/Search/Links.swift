@@ -142,36 +142,35 @@ final class Links: NSObject, NSApplicationDelegate {
     /// window is asked for here instead; started hidden, it stays hidden
     /// with the app until the app is shown.
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // SwiftUI opens its window at launch, a link's launch included, and
-        // asks nobody first (applicationShouldOpenUntitledFile isn't
-        // consulted). A launch made for a small window came to read it alone
-        // (see little), so the browser's windows are put away as they come:
-        // here, before the first is drawn, once more a turn later, and as
-        // each is dressed. Open, with their tabs, and written down as they
-        // were, until one is wanted (see Browsers.keepAway).
-        MainActor.assumeIsolated { Browsers.putAway() }
+        MainActor.assumeIsolated {
+            Browsers.openPrimary(show: !NSApp.isHidden)
+            MainMenu.shared.install(on: NSApp)
+            Browsers.putAway()
+        }
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 Browsers.putAway()
                 Links.launched = true
+                // Start loading history in the background and arm auxiliary
+                // watchers once the first frame has committed.
+                _ = History.shared
+                Trim.start()
+                Shared.prefs.followFile()
+                // The address field from any app, once asked for (Launcher.swift).
+                Launcher.shared.start()
             }
         }
         // What an import left in the temporary folder when Search stopped
         // in the middle of it — a Safari export's passwords in the clear
         // among it — goes (Security).
         DispatchQueue.global(qos: .utility).async { ImportFile.sweepScratch() }
-        Trim.start()
+    }
+
+    func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
         MainActor.assumeIsolated {
-            Shared.prefs.followFile()
-            // The address field from any app, once asked for (Launcher.swift).
-            Launcher.shared.start()
+            Browsers.openPrimary(show: !NSApp.isHidden)
         }
-        let plain = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
-        guard !plain else { return }
-        DispatchQueue.main.async {
-            guard !NSApp.windows.contains(where: { $0.contentView != nil && !($0 is NSPanel) }) else { return }
-            Links.summon()
-        }
+        return true
     }
 
     @objc private func handle(getURL event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {

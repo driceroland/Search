@@ -111,6 +111,31 @@ struct KeyCombo: Codable, Hashable {
         return KeyboardShortcut(equivalent, modifiers: modifiers)
     }
 
+    /// The same key for an AppKit NSMenuItem.
+    var appKit: (key: String, modifiers: NSEvent.ModifierFlags)? {
+        let equivalent: String
+        switch key {
+        case "left": equivalent = String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+        case "right": equivalent = String(UnicodeScalar(NSRightArrowFunctionKey)!)
+        case "up": equivalent = String(UnicodeScalar(NSUpArrowFunctionKey)!)
+        case "down": equivalent = String(UnicodeScalar(NSDownArrowFunctionKey)!)
+        case "return": equivalent = "\r"
+        case "delete": equivalent = String(UnicodeScalar(NSBackspaceCharacter)!)
+        case "space": equivalent = " "
+        case "tab": equivalent = "\t"
+        case "escape": equivalent = "\u{1b}"
+        default:
+            if isFunctionKey, let n = Int(key.dropFirst()), let scalar = UnicodeScalar(NSF1FunctionKey + n - 1) {
+                equivalent = String(scalar)
+            } else if key.count == 1 {
+                equivalent = key
+            } else {
+                return nil
+            }
+        }
+        return (equivalent, flags)
+    }
+
     /// macOS's own, the ones every text field relies on, and the ones Search
     /// keeps for itself: ⌘1–⌘9 for tabs, Tab alone, with ⇧ or with ⌘, and
     /// Escape with anything. Not ours to give, and so never taken from the

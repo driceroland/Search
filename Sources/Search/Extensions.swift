@@ -59,10 +59,17 @@ final class Extensions: NSObject, ObservableObject {
         ExtensionWorkerRecovery.shared.attach(configuration.userContentController)
     }
 
-    let controller: WKWebExtensionController
+    private var _controller: WKWebExtensionController?
+    /// Built lazily on first need (when the first web view is made or an
+    /// extension loads) so startup never pays for WebKit's extension controller
+    /// before the first frame.
+    var controller: WKWebExtensionController {
+        if let _controller { return _controller }
+        return makeController()
+    }
     /// When `controller` was made: WebKit counts its first five seconds as
     /// the browser starting (see `installReason`).
-    private let controllerMade: Date
+    private var controllerMade: Date?
     @Published private(set) var installed: [Installed] = []
     /// The loaded ones, by id.
     @Published private(set) var contexts: [String: WKWebExtensionContext] = [:]
@@ -181,6 +188,11 @@ final class Extensions: NSObject, ObservableObject {
     }
 
     private override init() {
+        super.init()
+        installed = (try? JSONDecoder().decode([Installed].self, from: Data(contentsOf: Extensions.list))) ?? []
+    }
+
+    private func makeController() -> WKWebExtensionController {
         WKWebExtension.MatchPattern.registerCustomURLScheme(Extensions.scheme)
         // A test run keeps its extensions' storage apart, as it does its
         // cookies and passwords.
@@ -220,11 +232,17 @@ final class Extensions: NSObject, ObservableObject {
         ExtensionCapture.mockDevices(views.preferences)
         Web.backspaceStays(views.preferences)
         configuration.webViewConfiguration = views
-        controller = WKWebExtensionController(configuration: configuration)
+        let made = WKWebExtensionController(configuration: configuration)
+        _controller = made
         controllerMade = Date()
-        super.init()
-        controller.delegate = self
-        installed = (try? JSONDecoder().decode([Installed].self, from: Data(contentsOf: Extensions.list))) ?? []
+        made.delegate = self
+        for browser in Browsers.all where following[ObjectIdentifier(browser)] != nil {
+            made.didOpenWindow(window(of: browser))
+        }
+        if let front = Browsers.front, following[ObjectIdentifier(front)] != nil {
+            made.didFocusWindow(window(of: front))
+        }
+        return made
     }
 
     // MARK: - starting
@@ -415,7 +433,7 @@ final class Extensions: NSObject, ObservableObject {
     func attach(_ browser: Browser) {
         let key = ObjectIdentifier(browser)
         guard following[key] == nil else { return }
-        controller.didOpenWindow(window(of: browser))
+        _controller?.didOpenWindow(window(of: browser))
         following[key] = [
             browser.$tabs
                 .receive(on: DispatchQueue.main)
@@ -454,14 +472,14 @@ final class Extensions: NSObject, ObservableObject {
             watching[id] = nil
             leftSite(id, to: nil)
         }
-        if let window = windows.removeValue(forKey: key) { controller.didCloseWindow(window) }
+        if let window = windows.removeValue(forKey: key) { _controller?.didCloseWindow(window) }
         ExtensionWatch.groups.changed()
     }
 
     /// A window came to the front (windows.onFocusChanged).
     func focused(_ browser: Browser) {
         guard following[ObjectIdentifier(browser)] != nil else { return }
-        controller.didFocusWindow(window(of: browser))
+        _controller?.didFocusWindow(window(of: browser))
     }
 
     private func follow(_ tabs: [Tab], in browser: Browser) {
@@ -1116,7 +1134,7 @@ final class Extensions: NSObject, ObservableObject {
         save()
         // Loaded in WebKit's first five seconds, a new extension would be
         // told the browser started, and never that it was installed.
-        let early = 5.5 - Date().timeIntervalSince(controllerMade)
+        let early = 5.5 - Date().timeIntervalSince(controllerMade ?? Date())
         if early > 0 { try? await Task.sleep(for: .seconds(early)) }
         guard installed.contains(where: { $0.id == id }) else { return }
         installing.insert(id)

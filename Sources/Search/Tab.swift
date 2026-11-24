@@ -307,14 +307,23 @@ final class Tab: ObservableObject, Identifiable {
     /// view's `configuration` is a copy made afresh at every reading, which
     /// cost more than everything else done at a link followed.
     private(set) var contentController: WKUserContentController?
-    private var configuration: WKWebViewConfiguration
+    private var storedConfiguration: WKWebViewConfiguration?
+    private var configuration: WKWebViewConfiguration {
+        if let storedConfiguration { return storedConfiguration }
+        let made = Web.configuration(shy: shy)
+        storedConfiguration = made
+        return made
+    }
     let extensionReturn = ExtensionReturnNavigation()
 
     /// Whether its page was made with the extension controller in it — every
     /// ordinary tab, and a private one only when extensions were allowed
     /// there as it was made (a controller can't be added to a page later).
     @available(macOS 15.4, *)
-    var carriesExtensions: Bool { configuration.webExtensionController != nil }
+    var carriesExtensions: Bool {
+        if let storedConfiguration { return storedConfiguration.webExtensionController != nil }
+        return !shy
+    }
     /// Where its cookies and sign-ins are kept.
     var store: WKWebsiteDataStore { configuration.websiteDataStore }
     /// Whoever handles navigation and windows for this page; applied when
@@ -331,7 +340,7 @@ final class Tab: ObservableObject, Identifiable {
 
     private func uiDelegate(_ delegate: (WKNavigationDelegate & WKUIDelegate)?) -> WKUIDelegate? {
         guard #available(macOS 15.4, *), let pages = MainActor.assumeIsolated({ Extensions.pages }),
-              configuration.userContentController === pages else { return delegate }
+              storedConfiguration?.userContentController === pages else { return delegate }
         let made = pageDelegate as? ExtensionPageDelegate ?? ExtensionPageDelegate()
         made.next = delegate
         pageDelegate = made
@@ -910,7 +919,7 @@ final class Tab: ObservableObject, Identifiable {
     init(shy: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil) {
         self.shy = shy
         self.bench = bench
-        self.configuration = configuration ?? Web.configuration(shy: shy)
+        self.storedConfiguration = configuration
         if Store.testing { Tab.live.add(self) }
     }
 
@@ -1436,7 +1445,7 @@ final class Tab: ObservableObject, Identifiable {
     /// and nothing fetched.
     /// Given `state`, a closed tab's keepsake, the view built to wake it
     /// opens with that history, as a tab that slept does.
-    func restore(url: URL, title: String, name: String? = nil, state: Any? = nil) {
+    func restore(url: URL, title: String, name: String? = nil, state: Any? = nil, adoptIcon loadIcon: Bool = true) {
         if let own = InternalPage(url: url) {
             self.name = name
             show(own)
@@ -1447,7 +1456,7 @@ final class Tab: ObservableObject, Identifiable {
         self.name = name
         pending = url
         memory = state
-        adoptIcon()
+        if loadIcon { adoptIcon() }
     }
 
     /// True for a tab that has a place and an address but is holding no page —
@@ -1503,7 +1512,7 @@ final class Tab: ObservableObject, Identifiable {
     /// WebKit fixes it then — and its next page follows through its own
     /// autoplay policy (see Autoplay.apply).
     func playbackChanged() {
-        configuration.mediaTypesRequiringUserActionForPlayback = Web.playback
+        storedConfiguration?.mediaTypesRequiringUserActionForPlayback = Web.playback
     }
 
     /// A document without hand-edited fields (including a PDF or image) has nothing to ask.

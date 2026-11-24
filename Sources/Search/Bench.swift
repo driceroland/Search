@@ -2930,6 +2930,7 @@ final class Bench {
             view?.update()
             // ⌘[ and ⌘] as this keyboard types them, beside which the two sit.
             let tabsMenu = NSApp.mainMenu?.items.first(where: { $0.title == "Tabs" })?.submenu
+            tabsMenu?.delegate?.menuNeedsUpdate?(tabsMenu!)
             let brackets = ["Back", "Forward"].map { title in tabsMenu?.items.first { $0.title == title }?.keyEquivalent ?? "" }
             answer(["viewItems": items(view), "brackets": brackets,
                     "on": browser.prefs.usesTabGroups, "groups": browser.tabGroups.map { group in
