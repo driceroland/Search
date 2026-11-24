@@ -52,6 +52,27 @@ final class PairSeparation: ObservableObject {
     private init() {}
 }
 
+/// A tab carried down the column and held over the middle of another tab:
+/// let go, the two become a split, side by side in one row. Which half the
+/// carried tab takes is where the hand is across the row, the left half or
+/// the right, and it can be moved from one to the other before letting go.
+/// Apart from TabDrag for the same reason as PairSeparation: only the rows'
+/// hints watch it.
+@MainActor
+final class TabMerge: ObservableObject {
+    static let shared = TabMerge()
+
+    struct Shown: Equatable {
+        let browserID: ObjectIdentifier
+        let targetID: Tab.ID
+        let sourceID: Tab.ID
+        let onLeft: Bool
+    }
+
+    @Published fileprivate(set) var shown: Shown?
+    private init() {}
+}
+
 /// Only the Stage observes `preview`; the browser's tab row stays still while
 /// the pointer moves across a page. A marker is weakly kept and checked in
 /// the source window before it can become a target.
@@ -72,6 +93,8 @@ final class TabDrag: ObservableObject {
     enum Drop {
         case stage(Tab, onLeft: Bool)
         case strip(Tab?)
+        /// Onto another tab in the column: the two side by side.
+        case onto(Tab, onLeft: Bool)
         case outside
         case cancelled
     }
@@ -110,6 +133,8 @@ final class TabDrag: ObservableObject {
     /// was before the press when tabs opened on letting go.
     private var putAway: Tab.ID?
     private var escapeMonitor: Any?
+    /// The drag is down the column, where tabs can be dropped onto tabs.
+    private var inColumn = false
 
     /// Only a page's edges split it, a band of either side about a quarter
     /// of its width, and no narrower than this: carried across the middle
@@ -130,6 +155,11 @@ final class TabDrag: ObservableObject {
     /// How long after the press that opened it a drag still counts as that
     /// press's: a hand may hold a tab a while before it sets off.
     static let pressed: TimeInterval = 10
+    /// The middle of a row down the column, this share of its height above
+    /// and below its centre, is what takes a tab onto it; the rest of the row
+    /// is where the carried tab goes past it to move a place (see
+    /// Carried.slot(pointer:)), which waits for the hand to be through it.
+    static let ontoShare: CGFloat = 0.25
 
     /// Where the pointer has been lately, for whether it has settled.
     private var trail: [(point: NSPoint, at: TimeInterval)] = []
@@ -146,7 +176,9 @@ final class TabDrag: ObservableObject {
         markers[ObjectIdentifier(view)] = nil
     }
 
-    func update(browser: Browser, tab: Tab, translation: CGSize) -> Bool {
+    /// `column`: carried down the column, where a tab held over the middle of
+    /// another becomes a split with it (see TabMerge).
+    func update(browser: Browser, tab: Tab, translation: CGSize, column: Bool = false) -> Bool {
         guard browser.prefs.splitView else { return false }
         if sourceBrowser !== browser || gestureTab !== tab {
             let pointer = pointer(in: browser)
@@ -160,6 +192,7 @@ final class TabDrag: ObservableObject {
         let now = ProcessInfo.processInfo.systemUptime
         trail.append((point, now))
         trail.removeAll { now - $0.at > 0.5 }
+        inColumn = column
         return look(browser: browser, at: point)
     }
 
@@ -168,6 +201,37 @@ final class TabDrag: ObservableObject {
     @discardableResult
     private func look(browser: Browser, at point: NSPoint) -> Bool {
         guard let sourceTab else { return false }
+        if inColumn, let onto = ontoRow(browser: browser, source: sourceTab, at: point) {
+            if over != nil { over = nil }
+            if preview != nil { preview = nil }
+            if separation != nil { showSeparation(nil) }
+            target = .onto(onto.tab, onLeft: onto.onLeft)
+            let wanted = TabMerge.Shown(browserID: ObjectIdentifier(browser), targetID: onto.tab.id,
+                                        sourceID: sourceTab.id, onLeft: onto.onLeft)
+            let merge = TabMerge.shared
+            if merge.shown == wanted { return true }
+            // Already shown on this tab: the other half follows the hand at
+            // once, with no wait.
+            if merge.shown?.targetID == wanted.targetID && merge.shown?.sourceID == wanted.sourceID {
+                merge.shown = wanted
+                return true
+            }
+            if merge.shown != nil { merge.shown = nil }
+            guard settled(at: point) else {
+                recheck?.cancel()
+                let work = DispatchWorkItem { [weak self, weak browser] in
+                    guard let self, let browser, self.sourceBrowser === browser else { return }
+                    self.look(browser: browser, at: self.pointer(in: browser))
+                }
+                recheck = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + TabDrag.still, execute: work)
+                return true
+            }
+            merge.shown = wanted
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            return true
+        }
+        if TabMerge.shared.shown != nil { TabMerge.shared.shown = nil }
         let page = splittablePage(browser: browser, source: sourceTab, at: point)
         let now = page.map { Over(browserID: ObjectIdentifier(browser), targetID: $0.id) }
         if over != now { over = now }
@@ -249,8 +313,15 @@ final class TabDrag: ObservableObject {
         var result: Drop
         if cancelledID == tab.id {
             result = .cancelled
+        } else if sourceBrowser === browser && gestureTab === tab,
+                  let shown = TabMerge.shared.shown, shown.sourceID == source.id,
+                  shown.browserID == ObjectIdentifier(browser),
+                  let onto = browser.tabs.first(where: { $0.id == shown.targetID }) {
+            // Onto a tab only where that was shown, on the side shown.
+            result = .onto(onto, onLeft: shown.onLeft)
         } else if sourceBrowser === browser && gestureTab === tab {
             result = match(browser: browser, source: source, at: point)
+            if case .onto = result { result = .outside }
             // A split only where one was shown.
             if case .stage(let page, let onLeft) = result,
                preview != Preview(browserID: ObjectIdentifier(browser), targetID: page.id, side: onLeft ? .left : .right, sourceID: sourceTab?.id) {
@@ -335,6 +406,7 @@ final class TabDrag: ObservableObject {
         cancelledID = gestureTab.id
         preview = nil
         over = nil
+        TabMerge.shared.shown = nil
         showSeparation(nil)
         target = .cancelled
         removeMonitor()
@@ -363,6 +435,8 @@ final class TabDrag: ObservableObject {
         trail = []
         preview = nil
         over = nil
+        if TabMerge.shared.shown != nil { TabMerge.shared.shown = nil }
+        inColumn = false
         showSeparation(nil)
         sourceBrowser = nil
         gestureTab = nil
@@ -421,6 +495,27 @@ final class TabDrag: ObservableObject {
         }) { return .outside }
         if candidates.contains(where: { $0.kind == .strip && $0.tab == nil }) { return .strip(nil) }
         return .outside
+    }
+
+    /// The tab in the column whose middle the hand is over, that the carried
+    /// one could go beside, and which half of it the hand is on. Not the
+    /// carried tab, nor a page of its own split, nor a pin: a pin's row is
+    /// the pins' to move along (see SideBar's pinned rows).
+    private func ontoRow(browser: Browser, source: Tab, at point: NSPoint) -> (tab: Tab, onLeft: Bool)? {
+        guard let window = browser.window, source.pin == nil else { return nil }
+        let own = browser.split(for: source)?.tabs ?? [source.id]
+        markers = markers.filter { $0.value.view != nil }
+        for view in markers.values.compactMap(\.view) {
+            guard view.kind == .strip, view.browser === browser, view.window === window,
+                  !view.isHiddenOrHasHiddenAncestor, let tab = view.tab,
+                  !own.contains(tab.id), tab.pin == nil,
+                  browser.canJoin(source, beside: tab) else { continue }
+            let frame = window.convertToScreen(view.convert(view.bounds, to: nil))
+            let middle = frame.height * TabDrag.ontoShare
+            guard frame.contains(point), abs(point.y - frame.midY) <= middle else { continue }
+            return (tab, point.x < frame.midX)
+        }
+        return nil
     }
 
     private func sourceHalf(browser: Browser, gesture: Tab, at point: NSPoint) -> Tab {

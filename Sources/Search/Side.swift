@@ -837,9 +837,8 @@ struct SideBar: View {
                               keeps: Bool) -> ([PreviewLine], [PreviewTint]) {
         let front = row.splits.first { pair in row.active.map(pair.tabs.contains) ?? false }?.left ?? row.active
         let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
-        let lines: (Tab) -> CGFloat = { tab in
-            CGFloat(self.prefs.splitView ? (row.splits.first { $0.left == tab.id }?.tabs.count ?? 1) : 1)
-        }
+        // A split is one line, its pages side by side (see SplitTabItem).
+        let lines: (Tab) -> CGFloat = { _ in 1 }
         var out: [PreviewLine] = []
         var tints: [PreviewTint] = []
         var y: CGFloat = 0
@@ -944,15 +943,12 @@ struct SideBar: View {
         let rows = prefs.usesTabGroups
             ? displayed.filter { $0.pin == nil && browser.group(of: $0) == nil } + grouped.flatMap { $0 }
             : displayed.filter { $0.pin == nil }
-        // A split is a line for each page (see SplitTabItem): the lines
-        // past the first.
-        let pairs = rows.reduce(0) { $0 + max(0, (browser.split(for: $1)?.tabs.count ?? 1) - 1) }
         let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
         // A folded group showing none of its tabs still has its empty stack
         // of them under its heading, and the gap after it.
         let headings = CGFloat(grouped.count) * (heading + SideBar.gap)
             + CGFloat(grouped.filter(\.isEmpty).count) * SideBar.gap
-        let loose = CGFloat(rows.count) * (rowHeight + SideBar.gap) + CGFloat(pairs) * rowHeight + headings
+        let loose = CGFloat(rows.count) * (rowHeight + SideBar.gap) + headings
         return listBlock + loose + rowHeight + 8
     }
 
@@ -1008,12 +1004,9 @@ struct SideBar: View {
     }
 
     /// Each row's place down the column, the gap under it included: a pair
-    /// stands as two lines (see Carried). Worked out once for the list.
+    /// is one line too, its pages side by side (see SplitTabItem).
     private func steps(_ rows: [Tab]) -> [CGFloat] {
-        let pairs = prefs.splitView
-            ? Dictionary(browser.splits.filter { $0.left != $0.right }.map { ($0.left, $0.tabs.count) }, uniquingKeysWith: { first, _ in first })
-            : [:]
-        return rows.map { rowHeight * CGFloat(pairs[$0.id] ?? 1) + SideBar.gap }
+        rows.map { _ in rowHeight + SideBar.gap }
     }
 
     // MARK: - the pinned squares
@@ -1144,7 +1137,7 @@ struct SideBar: View {
         let lineSteps = lines.map { line -> CGFloat in
             switch line {
             case .folder: return heading + SideBar.gap
-            case .pin(let tab, _): return rowHeight * CGFloat(browser.split(for: tab)?.tabs.count ?? 1) + SideBar.gap
+            case .pin: return rowHeight + SideBar.gap
             case .item: return rowHeight + SideBar.gap
             }
         }
@@ -1539,7 +1532,8 @@ struct SideBar: View {
             let loose = looseTabs
             guard !loose.isEmpty, let top = frames.loose?.minY else { return .loose(0) }
             let ghost: (Int, CGFloat)? = if case .loose(let at)? = crossing?.target { (at, rowHeight) } else { nil }
-            let heights = loose.map { browser.split(for: $0) != nil ? rowHeight * 2 : rowHeight }
+            // A pair is one line, its pages side by side (see SplitTabItem).
+            let heights = loose.map { _ in rowHeight }
             return .loose(PinDrop.rowSlot(y: point.y - top, heights: heights, gap: SideBar.gap, ghost: ghost))
         }
     }
@@ -2246,11 +2240,8 @@ private struct SideRow: View, Equatable {
             Bench.rowAppeared(now, hover: hover)
         }
         .contextMenu { if interactive { TabMenu(browser: browser, tab: tab, close: close) } }
-        .background {
-            if interactive && prefs.splitView {
-                SplitDropZone(browser: browser, tab: tab, kind: .strip)
-            }
-        }
+        .modifier(SplitDropMarks(browser: browser, tab: tab, on: interactive && prefs.splitView,
+                                 hint: tab.pin == nil))
         .animation(nil, value: hovering)
         .animation(Motion.glide, value: editing)
         .animation(Motion.quick, value: dim)

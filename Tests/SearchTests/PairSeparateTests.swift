@@ -40,15 +40,17 @@ final class PairSeparateTests: XCTestCase {
         try await super.tearDown()
     }
 
-    // The rows: one 0–28, the pair 30–86 (two 30–58, three 58–86), four
-    // 88–116, five 118–146. "three" is held 4 points above the pair's foot
-    // and carried 12 down: past the pair's edge, over "four".
+    // The rows: one 0–28, the pair 30–58 (two on the left, three on the
+    // right, side by side), four 60–88, five 90–118. "three" is held 4
+    // points above the pair's foot, on its right half, and carried 12 down:
+    // past the pair's edge, over the top of "four" (its middle would take
+    // the tab onto it, TabMerge).
 
     func testCarriedOnWithoutStoppingStaysAPair() async throws {
         let (browser, t, window) = try await setUpColumn()
-        try await carry(from: 82, to: 94, in: window)
+        try await carry(from: 54, to: 66, in: window)
         XCTAssertNil(PairSeparation.shared.leaving, "nothing shown")
-        try await send(.leftMouseUp, at: 94, in: window)
+        try await send(.leftMouseUp, at: 66, in: window)
         try await settle()
         XCTAssertNotNil(browser.split(for: t[1]), "still a pair")
         XCTAssertEqual(browser.tabs.map(\.id), t.map(\.id))
@@ -56,10 +58,10 @@ final class PairSeparateTests: XCTestCase {
 
     func testAtRestOverAnotherTabShowsItThenSeparates() async throws {
         let (browser, t, window) = try await setUpColumn()
-        try await carry(from: 82, to: 94, in: window)
+        try await carry(from: 54, to: 66, in: window)
         try await Task.sleep(for: .milliseconds(500))
         XCTAssertEqual(PairSeparation.shared.leaving, t[2].id, "the half held is the one leaving")
-        try await send(.leftMouseUp, at: 94, in: window)
+        try await send(.leftMouseUp, at: 66, in: window)
         try await settle()
         XCTAssertNil(browser.split(for: t[1]), "apart, as shown")
         XCTAssertNil(PairSeparation.shared.leaving, "nothing shown once let go")
@@ -67,14 +69,14 @@ final class PairSeparateTests: XCTestCase {
 
     func testBackOverItsOwnPlaceTakesTheSeparationBack() async throws {
         let (browser, t, window) = try await setUpColumn()
-        try await carry(from: 82, to: 94, in: window)
+        try await carry(from: 54, to: 66, in: window)
         try await Task.sleep(for: .milliseconds(500))
         XCTAssertEqual(PairSeparation.shared.leaving, t[2].id)
-        for y in stride(from: CGFloat(90), through: 78, by: -4) {
+        for y in stride(from: CGFloat(62), through: 50, by: -4) {
             try await send(.leftMouseDragged, at: y, in: window)
         }
         XCTAssertNil(PairSeparation.shared.leaving, "taken back")
-        try await send(.leftMouseUp, at: 78, in: window)
+        try await send(.leftMouseUp, at: 50, in: window)
         try await settle()
         XCTAssertNotNil(browser.split(for: t[1]), "still a pair")
     }
@@ -85,24 +87,24 @@ final class PairSeparateTests: XCTestCase {
     /// is down.
     func testEscapedStaysPutDownUntilLetGo() async throws {
         let (browser, t, window) = try await setUpColumn()
-        try await carry(from: 82, to: 94, in: window)
+        try await carry(from: 54, to: 66, in: window)
         XCTAssertEqual(CarryGuard.count, 1, "carried")
         TabDrag.shared.cancel()
         try await settle()
-        for y in stride(from: CGFloat(98), through: 106, by: 4) {
+        for y in stride(from: CGFloat(70), through: 78, by: 4) {
             try await send(.leftMouseDragged, at: y, in: window)
         }
         XCTAssertEqual(CarryGuard.count, 0, "not picked up again")
-        try await send(.leftMouseUp, at: 106, in: window)
+        try await send(.leftMouseUp, at: 78, in: window)
         try await settle()
         XCTAssertNotNil(browser.split(for: t[1]), "still a pair")
         XCTAssertEqual(browser.tabs.map(\.id), t.map(\.id))
 
         // The next carry is its own, not the cancelled one.
-        try await carry(from: 82, to: 94, in: window)
+        try await carry(from: 54, to: 66, in: window)
         try await Task.sleep(for: .milliseconds(500))
         XCTAssertEqual(PairSeparation.shared.leaving, t[2].id)
-        try await send(.leftMouseUp, at: 94, in: window)
+        try await send(.leftMouseUp, at: 66, in: window)
         try await settle()
         XCTAssertNil(browser.split(for: t[1]), "apart, as shown")
     }
@@ -117,11 +119,11 @@ final class PairSeparateTests: XCTestCase {
             view.cacheDisplay(in: view.bounds, to: rep)
             try rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(folder)/\(name).png"))
         }
-        try await carry(from: 82, to: 94, in: window)
+        try await carry(from: 54, to: 66, in: window)
         try shoot("carried")
         try await Task.sleep(for: .milliseconds(500))
         try shoot("shown")
-        try await send(.leftMouseUp, at: 94, in: window)
+        try await send(.leftMouseUp, at: 66, in: window)
         try await settle()
         try shoot("after")
     }
@@ -178,7 +180,8 @@ final class PairSeparateTests: XCTestCase {
 
     /// `y` down the rows from their top.
     private func send(_ type: NSEvent.EventType, at y: CGFloat, in window: NSWindow) async throws {
-        let point = NSPoint(x: 70, y: window.frame.height - Metrics.strip - y)
+        // On the pair's right half, "three".
+        let point = NSPoint(x: window.frame.width * 0.75, y: window.frame.height - Metrics.strip - y)
         TabDrag.testPointer = window.convertToScreen(NSRect(origin: point, size: .zero)).origin
         let event = try XCTUnwrap(NSEvent.mouseEvent(
             with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,

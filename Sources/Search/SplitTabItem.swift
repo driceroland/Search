@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// A split's one place in the row. In the column its pages are lines, one
-/// under the other — two, three or four — joined by hairlines: halves side
-/// by side in 232 points would cut most titles to a dozen letters. Across the top they sit side by
-/// side, with a single cross at the end for the half under the pointer — two
+/// A split's one place in the row. In the column its pages share one line,
+/// side by side as they are on the stage, each an even share of the
+/// column's width, joined by hairlines, each with its own cross at its end
+/// while the pointer is on it. Across the top they sit side by side too,
+/// with a single cross at the end for the half under the pointer — two
 /// crosses next to each other are two chances to close the wrong page.
 ///
 /// The page the keys go to wears the live grey, the same one that glides
@@ -43,25 +44,21 @@ struct SplitTabItem: View {
     var body: some View {
         Group {
             if stacked {
-                VStack(spacing: 0) {
+                HStack(spacing: 0) {
                     ForEach(pages.indices, id: \.self) { index in
+                        if index > 0 {
+                            // A line between each two, gone while either is lit.
+                            Rectangle()
+                                .fill(Palette.hairline)
+                                .frame(width: 1)
+                                .padding(.vertical, 7)
+                                .opacity(lit(pages[index - 1]) || lit(pages[index]) ? 0 : 1)
+                                .allowsHitTesting(false)
+                        }
                         half(at: index)
                     }
                 }
-                .overlay(alignment: .top) {
-                    // A line between each two, gone while either is lit.
-                    ZStack(alignment: .top) {
-                        ForEach(1..<max(1, pages.count), id: \.self) { index in
-                            Rectangle()
-                                .fill(Palette.hairline)
-                                .frame(height: 1)
-                                .padding(.horizontal, 10)
-                                .offset(y: CGFloat(index) * height - 0.5)
-                                .opacity(lit(pages[index - 1]) || lit(pages[index]) ? 0 : 1)
-                        }
-                    }
-                    .allowsHitTesting(false)
-                }
+                .frame(height: height)
             } else {
                 HStack(spacing: 0) {
                     ForEach(pages.indices, id: \.self) { index in
@@ -261,6 +258,7 @@ private struct SplitTabHalf: View {
                     SplitDropZone(browser: browser, tab: tab, kind: .strip)
                 }
             }
+            .overlay { if interactive && stacked && browser.prefs.splitView { MergeHint(browser: browser, tab: tab) } }
     }
 
     var body: some View {
@@ -282,9 +280,8 @@ private struct SplitTabHalf: View {
         // beside one that isn't.
         let before: CGFloat = !first && joinedBefore ? 0 : round
         let after: CGFloat = !last && joinedAfter ? 0 : round
-        let radii: RectangleCornerRadii = stacked
-            ? .init(topLeading: before, bottomLeading: after, bottomTrailing: after, topTrailing: before)
-            : .init(topLeading: before, bottomLeading: before, bottomTrailing: after, topTrailing: after)
+        // Side by side, in the column as across the top.
+        let radii = RectangleCornerRadii(topLeading: before, bottomLeading: before, bottomTrailing: after, topTrailing: after)
         return UnevenRoundedRectangle(cornerRadii: radii, style: .continuous)
     }
 

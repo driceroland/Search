@@ -95,8 +95,9 @@ final class OptionClickTests: XCTestCase {
         browser.focusPane(t[0])
         let window = makeColumn(browser)
         try await settle()
-        // The pair is two lines, 0–28 and 28–56: its lower half is t[1].
-        try await click(NSPoint(x: 70, y: window.frame.height - Metrics.strip - 42), in: window, option: true)
+        // The pair is one line, 0–28, its halves side by side: its right
+        // half is t[1].
+        try await click(NSPoint(x: window.frame.width * 0.75, y: window.frame.height - Metrics.strip - 14), in: window, option: true)
         XCTAssertTrue(browser.splits.isEmpty, "apart")
         XCTAssertEqual(browser.activeID, t[0].id, "the other page stays on screen")
         XCTAssertEqual(browser.tabs.map(\.id), t.map(\.id), "both stay, in place")
@@ -110,8 +111,8 @@ final class OptionClickTests: XCTestCase {
         browser.select(t[0])
         let window = makeColumn(browser)
         try await settle()
-        // Rows: t[0] 0–28, the pair 30–86 (t[1] 30–58, t[2] 58–86).
-        try await click(NSPoint(x: 70, y: window.frame.height - Metrics.strip - 72), in: window, option: true)
+        // Rows: t[0] 0–28, the pair 30–58 (t[1] on the left, t[2] on the right).
+        try await click(NSPoint(x: window.frame.width * 0.75, y: window.frame.height - Metrics.strip - 44), in: window, option: true)
         XCTAssertEqual(browser.split(for: t[2])?.tabs, [t[0].id, t[2].id], "out of its pair, beside the page")
         XCTAssertNil(browser.split(for: t[1]), "its old partner is a tab of its own")
     }

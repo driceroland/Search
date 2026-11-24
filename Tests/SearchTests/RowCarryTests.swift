@@ -64,8 +64,8 @@ final class RowCarryTests: XCTestCase {
 
     // MARK: - the real gesture
 
-    /// "four" carried up past the pair and let go just over "one": it
-    /// lands between "one" and the pair. With one step for every row it
+    /// "four" carried up past the pair and let go just over the pair's top:
+    /// it lands between "one" and the pair. With one step for every row it
     /// counted the pair as one line, ran a line ahead of the hand, and
     /// landed above "one".
     func testRowCarriedPastAPairLandsWhereItWasLetGo() async throws {
@@ -75,13 +75,14 @@ final class RowCarryTests: XCTestCase {
         browser.select(t[4])
         let window = makeWindow(browser)
         try await settle()
-        // one 0–28, the pair 30–86, four 88–116, five 118–146.
-        let grab: CGFloat = 102
+        // one 0–28, the pair 30–58 (its halves side by side), four 60–88,
+        // five 90–118.
+        let grab: CGFloat = 74
         try await send(.leftMouseDown, at: point(y: grab, in: window), in: window)
-        for y in stride(from: grab - 2, through: grab - 60, by: -2) {
+        for y in stride(from: grab - 2, through: grab - 42, by: -2) {
             try await send(.leftMouseDragged, at: point(y: y, in: window), in: window)
         }
-        try await send(.leftMouseUp, at: point(y: grab - 60, in: window), in: window)
+        try await send(.leftMouseUp, at: point(y: grab - 42, in: window), in: window)
         try await settle()
         XCTAssertEqual(browser.tabs.map(\.id), [t[0], t[3], t[1], t[2], t[4]].map(\.id))
         XCTAssertNotNil(browser.split(for: t[1]), "the pair stays a pair")
@@ -207,12 +208,13 @@ final class RowCarryTests: XCTestCase {
         let window = makeWindow(browser)
         browser.window = window
         try await settle()
-        // The pair 30–86: its second half from 58.
-        let y: CGFloat = 72
-        TabDrag.testPointer = NSPoint(x: window.frame.minX + 70, y: window.frame.minY + point(y: y, in: window).y)
+        // The pair 30–58, side by side: its second half on the right.
+        let y: CGFloat = 44
+        let x = browser.prefs.columnWidth * 0.75
+        TabDrag.testPointer = NSPoint(x: window.frame.minX + x, y: window.frame.minY + point(y: y, in: window).y)
         defer { TabDrag.testPointer = nil }
-        try await send(.leftMouseDown, at: point(y: y, in: window), in: window)
-        for x in stride(from: CGFloat(73), through: browser.prefs.columnWidth + 30, by: 3) {
+        try await send(.leftMouseDown, at: NSPoint(x: x, y: point(y: y, in: window).y), in: window)
+        for x in stride(from: x + 3, through: browser.prefs.columnWidth + 30, by: 3) {
             try await send(.leftMouseDragged, at: NSPoint(x: x, y: point(y: y, in: window).y), in: window)
         }
         XCTAssertEqual(TabLift.shared.shown, t[2].id)

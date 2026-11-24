@@ -1332,6 +1332,8 @@ struct Carried: ViewModifier {
     /// Cancelled with Escape: put down until the hand lets go, not picked
     /// up again by its next move.
     @State private var escaped = false
+    /// Over another tab, to be put beside it (TabMerge).
+    @State private var merging = false
 
     func body(content: Content) -> some View {
         // What it has travelled, less the ground its new place has already
@@ -1383,7 +1385,9 @@ struct Carried: ViewModifier {
             .transaction { if held { $0.animation = nil } }
             .zIndex(held ? 1 : 0)
             .shadow(color: .black.opacity(held ? 0.14 : 0), radius: 12, y: 4)
-            .opacity(held && (faded || lifted) ? 0.4 : 1)
+            // Over another tab's middle the row there shows it, in the
+            // half it would take (MergeHint): not twice.
+            .opacity(held && merging ? 0 : held && (faded || lifted) ? 0.4 : 1)
             .gesture(
                 DragGesture(minimumDistance: 5, coordinateSpace: .named(space))
                     .updating($carrying) { _, carrying, _ in carrying = true }
@@ -1403,7 +1407,8 @@ struct Carried: ViewModifier {
                         var splitting = false
                         if let browser, let tab, browser.prefs.splitView {
                             splitting = TabDrag.shared.update(browser: browser, tab: tab,
-                                                              translation: value.translation)
+                                                              translation: value.translation,
+                                                              column: vertical)
                         }
                         // After the update, which works out the half of a
                         // pair that was picked up.
@@ -1414,7 +1419,16 @@ struct Carried: ViewModifier {
                         // than moving along the row as it goes.
                         if let browser, let tab, browser.prefs.usesTabGroups, tab.pin == nil,
                            browser.group(of: tab) != nil || groupDestination?(tab, value.location) != nil { return }
-                        let target = Carried.slot(at: start + travel, carrying: index, in: steps)
+                        // Down the column with splits on, the hand goes
+                        // through a tab's middle, where letting go puts the
+                        // two side by side (TabMerge), before passing it.
+                        let target: Int
+                        if vertical, let browser, browser.prefs.splitView, tab?.pin == nil {
+                            let grab = origin.map { value.startLocation.y - $0 } ?? (steps.indices.contains(index) ? steps[index] / 2 : 0)
+                            target = Carried.slot(pointer: start + grab + travel, carrying: index, in: steps)
+                        } else {
+                            target = Carried.slot(at: start + travel, carrying: index, in: steps)
+                        }
                         if target != index {
                             reordered = true
                             withAnimation(Motion.settle) { move(target) }
@@ -1437,6 +1451,10 @@ struct Carried: ViewModifier {
                                 switch finished.drop {
                                 case .stage(let target, let onLeft):
                                     browser.pair(source, with: target, onLeft: onLeft)
+                                case .onto(let target, let onLeft):
+                                    // The pair stands where the tab it was
+                                    // let go on is (Browser.pair).
+                                    browser.pair(source, with: target, onLeft: onLeft)
                                 case .strip(let target):
                                     if let destination = groupDestination?(source, value.location) {
                                         // Resolve before detaching: the old pair still owns its frame.
@@ -1445,6 +1463,7 @@ struct Carried: ViewModifier {
                                         browser.dropTabIntoStrip(source, before: target)
                                     }
                                 case .outside:
+                                    catchUp(browser: browser, at: value.location)
                                     if !browser.dragOut(source, at: finished.point) {
                                         if let onDropTab { onDropTab(source, value.location) }
                                         else if source.id == tab.id { onDrop?(value.location) }
@@ -1472,6 +1491,13 @@ struct Carried: ViewModifier {
             // Its row gone with the button still down, by closing it or by
             // the drop itself: nothing here will hear the rest of the drag.
             .onDisappear { if lifted { TabLift.shared.put() } }
+            // Held over another tab's middle: the split it would make is
+            // drawn on that row (see MergeHint).
+            .onReceive(TabMerge.shared.$shown) { shown in
+                guard held || merging else { return }
+                let now = held && shown != nil && shown?.sourceID == (tab.flatMap { TabDrag.shared.source(of: $0)?.id } ?? tab?.id)
+                if now != merging { merging = now }
+            }
             .onReceive(TabDrag.shared.$cancelledID) { id in
                 guard id == tab?.id, held else { return }
                 CarryGuard.close(ticket)
@@ -1507,6 +1533,42 @@ struct Carried: ViewModifier {
             slot += 1
         }
         while slot > 0, edge < before - others[slot - 1] / 2 {
+            slot -= 1
+            before -= others[slot]
+        }
+        return slot
+    }
+
+    /// Let go in the column on nothing in particular, the middle of a tab
+    /// included when no split was shown there: the tab goes where the half
+    /// step rule puts it, as it did before the hand had to be through a tab
+    /// to pass it. A quick drag a row and a bit lands a row and a bit on.
+    private func catchUp(browser: Browser, at location: CGPoint) {
+        guard vertical, held, !lifted, browser.prefs.splitView, let tab, tab.pin == nil else { return }
+        if browser.prefs.usesTabGroups,
+           browser.group(of: tab) != nil || groupDestination?(tab, location) != nil { return }
+        let target = Carried.slot(at: start + travel, carrying: index, in: steps)
+        if target != index { move(target) }
+    }
+
+    /// The place for the item at `index` with the hand at `pointer` along
+    /// the row (in the same measure as `steps`): past a neighbour only once
+    /// the hand is through its middle, the part of it that takes the tab
+    /// onto it (TabDrag.ontoShare), so there is a moment over each where
+    /// letting go would split the two.
+    static func slot(pointer: CGFloat, carrying index: Int, in steps: [CGFloat]) -> Int {
+        guard steps.indices.contains(index) else { return index }
+        var others = steps
+        let own = others.remove(at: index)
+        let through = 0.5 + TabDrag.ontoShare
+        var slot = index
+        // Where the carried item's place starts, among the others.
+        var before = leading(of: slot, in: others)
+        while slot < others.count, pointer > before + own + others[slot] * through {
+            before += others[slot]
+            slot += 1
+        }
+        while slot > 0, pointer < before - others[slot - 1] * through {
             slot -= 1
             before -= others[slot]
         }
