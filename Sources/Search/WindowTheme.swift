@@ -50,7 +50,9 @@ struct ThemeGradient: Codable, Equatable, Hashable {
     /// `count` stops, evenly spaced. SwiftUI blends between neighbours,
     /// which are close enough that how it blends doesn't show.
     func stops(count: Int = 24, strength: ThemeStrength = .subtle, dark: Bool = false) -> [Gradient.Stop] {
-        let lab = strength == .full ? sourceColours : drawn.map { strength.tone($0, dark: dark) }
+        let lab = strength == .full
+            ? (dark ? sourceColours.map(\.darkFull) : sourceColours)
+            : drawn.map { strength.tone($0, dark: dark) }
         guard lab.count >= 2 else { return [] }
         return (0..<count).map { step in
             let t = Double(step) / Double(count - 1)
@@ -322,6 +324,17 @@ struct OKLab: Equatable {
         return OKLab(L: lightness, a: a * scale, b: b * scale)
     }
 
+    /// Deepened for a dark window at full strength: keeps the hue and enough
+    /// chroma to read as the chosen colour, while holding lightness and
+    /// saturation where light ink and dark pages sit cleanly together.
+    var darkFull: OKLab {
+        let lightness = min(L, 0.19 + 0.10 * L)
+        let c = chroma
+        let wanted = min(c * 0.48, 0.085)
+        let scale = c > 1e-9 ? wanted / c : 1
+        return OKLab(L: lightness, a: a * scale, b: b * scale)
+    }
+
     /// Between `self` and `other` at t: straight across OKLab for the hue,
     /// with the chroma going evenly from one end's to the other's, so the
     /// middle is no greyer than the ends.
@@ -505,9 +518,11 @@ enum Tints {
     /// Colour COLOUR as STRENGTH washes with it (ThemeStrength.tone): the
     /// colour itself at Subtle, so that wash is exactly as it always was.
     static func toned(_ colour: Int, _ strength: ThemeStrength, dark: Bool) -> Color {
-        guard strength != .subtle, strength != .full, colours.indices.contains(colour),
-              let c = NSColor(colours[colour]).usingColorSpace(.sRGB) else { return colours.indices.contains(colour) ? colours[colour] : .clear }
-        let (r, g, b) = strength.tone(OKLab(r: c.redComponent, g: c.greenComponent, b: c.blueComponent), dark: dark).srgb
+        guard colours.indices.contains(colour) else { return .clear }
+        if strength == .subtle || (strength == .full && !dark) { return colours[colour] }
+        guard let c = NSColor(colours[colour]).usingColorSpace(.sRGB) else { return colours[colour] }
+        let lab = OKLab(r: c.redComponent, g: c.greenComponent, b: c.blueComponent)
+        let (r, g, b) = (strength == .full ? lab.darkFull : strength.tone(lab, dark: dark)).srgb
         return Color(.sRGB, red: r, green: g, blue: b)
     }
 }

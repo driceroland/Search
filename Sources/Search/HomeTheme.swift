@@ -187,7 +187,7 @@ enum HomeRender {
         if let image = made[key] { return image }
         let ground = groundColour(dark: dark)
         let canvas = Canvas { context, size in
-            HomeBackground.paint(theme, tuning, in: &context, size: size, ground: ground, calm: calm)
+            HomeBackground.paint(theme, tuning, in: &context, size: size, ground: ground, dark: dark, calm: calm)
         }
         .frame(width: size.width, height: size.height)
         let renderer = ImageRenderer(content: canvas)
@@ -317,21 +317,27 @@ struct HomeBackground: View {
         return (Double((n >> 16) & 255) / 255, Double((n >> 8) & 255) / 255, Double(n & 255) / 255)
     }
 
+    private static func colour(_ hex: String, dark: Bool) -> Color {
+        guard dark, let lab = OKLab(hex: hex) else { return Color(hex: hex) }
+        let (r, g, b) = lab.darkFull.srgb
+        return Color(.sRGB, red: r, green: g, blue: b)
+    }
+
     fileprivate static func paint(_ theme: HomeTheme, _ t: HomeTuning, in context: inout GraphicsContext,
-                                  size: CGSize, ground: Color, calm: Bool) {
+                                  size: CGSize, ground: Color, dark: Bool, calm: Bool) {
         guard size.width > 1, size.height > 1 else { return }
         let m = min(size.width, size.height)
         let whole = CGRect(origin: .zero, size: size)
         switch theme {
         case .solid:
-            context.fill(Path(whole), with: .color(Color(hex: t.solid)))
+            context.fill(Path(whole), with: .color(colour(t.solid, dark: dark)))
         case .gradient:
             let a = t.angle * .pi / 180
             let d = CGPoint(x: cos(a), y: sin(a))
             let half = (abs(size.width * d.x) + abs(size.height * d.y)) / 2
             let mid = CGPoint(x: size.width / 2, y: size.height / 2)
             context.fill(Path(whole), with: .linearGradient(
-                Gradient(colors: [Color(hex: t.gradientA), Color(hex: t.gradientB)]),
+                Gradient(colors: [colour(t.gradientA, dark: dark), colour(t.gradientB, dark: dark)]),
                 startPoint: CGPoint(x: mid.x - d.x * half, y: mid.y - d.y * half),
                 endPoint: CGPoint(x: mid.x + d.x * half, y: mid.y + d.y * half)))
         case .off, .custom:

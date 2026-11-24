@@ -22,6 +22,14 @@ enum Palette {
     /// bookmarks bar and the gaps share it, a touch off the page's white, so
     /// the card reads as one (see CardEdge).
     static let frame = Color(nsColor: NS.frame)
+    /// Cards and inputs over the ground: white in light mode, subtly lifted in dark.
+    static let surface = Color(nsColor: NS.surface)
+    /// Recessed chrome (settings rail, segmented tracks): softly shaded in light,
+    /// deeper than the ground in dark.
+    static let recessed = Color(nsColor: NS.recessed)
+    /// Selected items lifted off a recessed surface: white in light, clearly
+    /// elevated in dark.
+    static let lifted = Color(nsColor: NS.lifted)
     /// The only two that aren't grey: a connection nobody can read on the
     /// way, and one anybody can (see SiteCard.swift).
     static let safe = Color(nsColor: NS.safe)           // green-700 · green-400
@@ -38,6 +46,9 @@ enum Palette {
         static let wash = pair(0.937, 0.175)
         static let hover = pair(0.965, 0.15)
         static let frame = pair(0.955, 0.075)
+        static let surface = pair(1.0, 0.14)
+        static let recessed = pair(0.97, 0.088)
+        static let lifted = pair(1.0, 0.21)
         /// The resting traffic lights, drawn by hand when the app is behind.
         static let resting = pair(0.80, 0.30)
         static let safe = tint(light: (0.08, 0.50, 0.24), dark: (0.29, 0.87, 0.50))
@@ -506,6 +517,7 @@ private struct PopoverGround: ViewModifier {
 /// card each, drawn by the stage that holds them (see PaneStage).
 struct CardEdge: ViewModifier {
     let on: Bool
+    @Environment(\.colorScheme) private var scheme
 
     // One shape of view, on or off: a page whose view were rebuilt as the
     // card comes and goes (the tabs across the top, a video taking the
@@ -513,12 +525,13 @@ struct CardEdge: ViewModifier {
     // full screen window. Off, the clip reaches far past the page and cuts
     // nothing, and the edge and shadow are clear.
     func body(content: Content) -> some View {
+        let shadowAlpha = scheme == .dark ? CardEdge.shadowDark : CardEdge.shadow
         content
             .clipShape(CardShape(on: on))
             .background {
                 CardShape(on: on)
                     .fill(on ? Palette.ground : .clear)
-                    .shadow(color: .black.opacity(on ? CardEdge.shadow : 0), radius: 6, y: 1)
+                    .shadow(color: .black.opacity(on ? shadowAlpha : 0), radius: 6, y: 1)
             }
             .overlay {
                 CardShape(on: on)
@@ -529,6 +542,7 @@ struct CardEdge: ViewModifier {
 
     /// How dark the shadow and the edge are, for the stage's own cards too.
     static let shadow: Double = 0.07
+    static let shadowDark: Double = 0.26
     static let edge: Double = 0.08
 }
 

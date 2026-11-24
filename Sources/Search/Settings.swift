@@ -196,7 +196,7 @@ struct SettingsPanel: View {
         .animation(slide, value: page)
         .frame(width: SettingsPanel.rail, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Palette.wash.opacity(0.45), in: Rectangle())
+        .background(Palette.recessed, in: Rectangle())
     }
 
     /// The white's move: the tab column's glide, a touch longer and with a
@@ -244,7 +244,7 @@ struct SettingsPanel: View {
             }
             .padding(.horizontal, 9)
             .frame(height: 32)
-            .background(Palette.ground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
         }
     }
@@ -283,8 +283,8 @@ struct SettingsPanel: View {
                 .background {
                     if on {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Palette.ground)
-                            .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
+                            .fill(Palette.lifted)
+                            .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
                             .matchedGeometryEffect(id: "chosen", in: chosen)
                     } else if hovering {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -1347,8 +1347,10 @@ struct Segmented<Option: Hashable>: View {
     var wide = false
 
     @Namespace private var slide
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        let track = scheme == .dark ? Palette.recessed : Palette.wash
         HStack(spacing: 2) {
             ForEach(options, id: \.0) { option, title in
                 Text(title)
@@ -1362,7 +1364,7 @@ struct Segmented<Option: Hashable>: View {
                     .background {
                         if option == selection {
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(Palette.ground)
+                                .fill(Palette.lifted)
                                 .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
                                 .matchedGeometryEffect(id: "chosen", in: slide)
                         }
@@ -1374,7 +1376,7 @@ struct Segmented<Option: Hashable>: View {
             }
         }
         .padding(2)
-        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(track, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .animation(Motion.settle, value: selection)
     }
 }
@@ -1382,14 +1384,27 @@ struct Segmented<Option: Hashable>: View {
 /// On or off, in ink rather than in blue.
 struct Switch: View {
     @Binding var on: Bool
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        let dark = scheme == .dark
+        let track: Color = dark
+            ? (on ? Color(white: 0.90) : Color(white: 0.22))
+            : (on ? Palette.ink : Palette.faint)
+        let knob: Color = dark
+            ? (on ? Color(white: 0.12) : Color(white: 0.78))
+            : Palette.ground
         Capsule()
-            .fill(on ? Palette.ink : Palette.faint)
+            .fill(track)
+            .overlay {
+                if dark && !on {
+                    Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                }
+            }
             .frame(width: 30, height: 18)
             .overlay(alignment: on ? .trailing : .leading) {
                 Circle()
-                    .fill(Palette.ground)
+                    .fill(knob)
                     .shadow(color: .black.opacity(0.18), radius: 1.5, y: 1)
                     .padding(2)
             }
