@@ -27,8 +27,6 @@ struct ThemesPage: View {
             .pickerStyle(.segmented)
 
             switch family {
-            case .off:
-                EmptyView()
             case .solid:
                 solid
             case .gradient:
@@ -37,7 +35,7 @@ struct ThemesPage: View {
                 image
             }
 
-            if family != .off && (family != .image || HomeBackground.load(prefs.homeThemeImage) != nil) {
+            if prefs.homeTheme != .off && (family != .image || HomeBackground.load(prefs.homeThemeImage) != nil) {
                 sliders
             }
 
@@ -55,6 +53,15 @@ struct ThemesPage: View {
                     .frame(maxWidth: 300)
                 }
                 .help("Colour strength for the sidebar, bars and window frame. Full uses the selected colours at 100%.")
+
+                HStack(spacing: 10) {
+                    Text("Darken in Dark Mode")
+                        .font(.system(size: 13)).foregroundStyle(Palette.ink)
+                    Spacer(minLength: 0)
+                    Switch(on: Binding(get: { prefs.browserTheme.darkenInDark },
+                                       set: { prefs.browserTheme.darkenInDark = $0 }))
+                }
+                .help("Deepen full-strength theme colours in Dark Mode so text stays readable.")
             }
         }
         .onAppear(perform: follow)
@@ -146,6 +153,7 @@ struct ThemesPage: View {
 
             tabs
         }
+        .environment(\.washDarken, prefs.browserTheme.darkenInDark)
         .frame(maxWidth: 480)
         .frame(height: 240)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -169,12 +177,13 @@ struct ThemesPage: View {
     private func choose(_ next: HomeTheme.Family) {
         family = next
         switch next {
-        case .off: prefs.homeTheme = .off
         case .image:
             // On the wall only once there is a picture to put there.
             if HomeBackground.load(prefs.homeThemeImage) != nil { prefs.homeTheme = .custom }
-        default:
-            if prefs.homeTheme.family != next { prefs.homeTheme = next.first }
+        case .solid:
+            if prefs.homeTheme != .off && prefs.homeTheme != .solid { prefs.homeTheme = .solid }
+        case .gradient:
+            if prefs.homeTheme != .gradient { prefs.homeTheme = .gradient }
         }
     }
 
@@ -212,7 +221,7 @@ struct ThemesPage: View {
     // MARK: - families
 
     private var solid: some View {
-        let swatches = ["#E8DFD0", "#F3D9CF", "#D9E4D3", "#D3DFEA", "#E4D8EC", "#2B2B2E"]
+        let swatches = ["#E8DFD0", "#F3D9CF", "#D9E4D3", "#D3DFEA", "#E4D8EC"]
         return HStack(spacing: 10) {
             ForEach(swatches, id: \.self) { hex in
                 Button {
@@ -226,6 +235,16 @@ struct ThemesPage: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Colour \(hex)")
             }
+            Button {
+                prefs.homeTheme = .off
+            } label: {
+                Circle().fill(Color.black).frame(width: 24, height: 24)
+                    .overlay(Circle().strokeBorder(prefs.homeTheme == .off
+                                                   ? Palette.ink : Palette.hairline, lineWidth: 1.5))
+            }
+            .buttonStyle(.plain)
+            .help("Black")
+            .accessibilityLabel("Black")
             ColorPicker("Colour", selection: Binding(
                 get: { Color(hex: prefs.homeTuning.solid) },
                 set: { prefs.homeTuning.solid = $0.hex; prefs.homeTheme = .solid }), supportsOpacity: false)

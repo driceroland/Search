@@ -10,11 +10,10 @@ enum HomeTheme: String, CaseIterable, Identifiable {
 
     /// The groups the Themes page offers, each with its own presets.
     enum Family: String, CaseIterable, Identifiable {
-        case off, solid, gradient, image
+        case solid, gradient, image
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .off: return "Off"
             case .solid: return "Solid colour"
             case .gradient: return "Gradient"
             case .image: return "Image"
@@ -23,7 +22,6 @@ enum HomeTheme: String, CaseIterable, Identifiable {
         /// What choosing the family alone puts on the wall.
         var first: HomeTheme {
             switch self {
-            case .off: return .off
             case .solid: return .solid
             case .gradient: return .gradient
             case .image: return .custom
@@ -33,8 +31,7 @@ enum HomeTheme: String, CaseIterable, Identifiable {
 
     var family: Family {
         switch self {
-        case .off: return .off
-        case .solid: return .solid
+        case .off, .solid: return .solid
         case .gradient: return .gradient
         case .custom: return .image
         }
@@ -174,20 +171,20 @@ extension Color {
 enum HomeRender {
     private struct Key: Hashable {
         let theme: HomeTheme, tuning: HomeTuning, width: Int, height: Int
-        let dark: Bool, scale: CGFloat, calm: Bool
+        let dark: Bool, darken: Bool, scale: CGFloat, calm: Bool
     }
     private static var made: [Key: NSImage] = [:]
     private static var order: [Key] = []
 
     static func image(_ theme: HomeTheme, _ tuning: HomeTuning, size: CGSize,
-                      dark: Bool, scale: CGFloat, calm: Bool) -> NSImage? {
+                      dark: Bool, darken: Bool = true, scale: CGFloat, calm: Bool) -> NSImage? {
         guard size.width >= 1, size.height >= 1 else { return nil }
         let key = Key(theme: theme, tuning: tuning, width: Int(size.width), height: Int(size.height),
-                      dark: dark, scale: scale, calm: calm)
+                      dark: dark, darken: darken, scale: scale, calm: calm)
         if let image = made[key] { return image }
         let ground = groundColour(dark: dark)
         let canvas = Canvas { context, size in
-            HomeBackground.paint(theme, tuning, in: &context, size: size, ground: ground, dark: dark, calm: calm)
+            HomeBackground.paint(theme, tuning, in: &context, size: size, ground: ground, dark: dark && darken, calm: calm)
         }
         .frame(width: size.width, height: size.height)
         let renderer = ImageRenderer(content: canvas)
@@ -223,6 +220,7 @@ struct HomeBackground: View {
     /// the address field sits on.
     var thumbnail = false
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.washDarken) private var darken
     @Environment(\.displayScale) private var scale
 
     var body: some View {
@@ -245,7 +243,7 @@ struct HomeBackground: View {
                     }
                 default:
                     if let made = HomeRender.image(theme, shown, size: drawn(box.size),
-                                                   dark: scheme == .dark, scale: pixels(box.size), calm: !thumbnail) {
+                                                   dark: scheme == .dark, darken: darken, scale: pixels(box.size), calm: !thumbnail) {
                         Image(nsImage: made)
                             .resizable()
                             .interpolation(.high)

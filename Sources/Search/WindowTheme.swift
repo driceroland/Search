@@ -49,9 +49,9 @@ struct ThemeGradient: Codable, Equatable, Hashable {
     /// What the gradient is drawn with: its colours mixed in OKLab at
     /// `count` stops, evenly spaced. SwiftUI blends between neighbours,
     /// which are close enough that how it blends doesn't show.
-    func stops(count: Int = 24, strength: ThemeStrength = .subtle, dark: Bool = false) -> [Gradient.Stop] {
+    func stops(count: Int = 24, strength: ThemeStrength = .subtle, dark: Bool = false, darken: Bool = true) -> [Gradient.Stop] {
         let lab = strength == .full
-            ? (dark ? sourceColours.map(\.darkFull) : sourceColours)
+            ? (dark && darken ? sourceColours.map(\.darkFull) : sourceColours)
             : drawn.map { strength.tone($0, dark: dark) }
         guard lab.count >= 2 else { return [] }
         return (0..<count).map { step in
@@ -190,6 +190,7 @@ struct BrowserTheme: Codable, Equatable {
     var colour = 0
     var gradient: ThemeGradient?
     var strength = ThemeStrength.subtle
+    var darkenInDark = true
 
     init() {}
 
@@ -200,7 +201,7 @@ struct BrowserTheme: Codable, Equatable {
         ##"{"colour":0,"gradient":{"angle":135,"colours":["#ED7DFF","#ED7DFF"],"grain":false},"strength":"full"}"##
     ) ?? BrowserTheme()
 
-    private enum CodingKeys: String, CodingKey { case colour, gradient, strength }
+    private enum CodingKeys: String, CodingKey { case colour, gradient, strength, darkenInDark }
 
     /// Never fails: what doesn't read is no colour at all.
     init(from decoder: Decoder) throws {
@@ -208,6 +209,7 @@ struct BrowserTheme: Codable, Equatable {
         colour = (try? fields?.decodeIfPresent(Int.self, forKey: .colour)) ?? 0
         gradient = (try? fields?.decodeIfPresent(ThemeGradient.self, forKey: .gradient)) ?? nil
         strength = (try? fields?.decodeIfPresent(ThemeStrength.self, forKey: .strength)) ?? .subtle
+        darkenInDark = (try? fields?.decodeIfPresent(Bool.self, forKey: .darkenInDark)) ?? true
     }
 
     var look: ThemeLook? {
@@ -328,9 +330,9 @@ struct OKLab: Equatable {
     /// chroma to read as the chosen colour, while holding lightness and
     /// saturation where light ink and dark pages sit cleanly together.
     var darkFull: OKLab {
-        let lightness = min(L, 0.19 + 0.10 * L)
+        let lightness = min(L, 0.16 + 0.08 * L)
         let c = chroma
-        let wanted = min(c * 0.48, 0.085)
+        let wanted = min(c * 0.42, 0.072)
         let scale = c > 1e-9 ? wanted / c : 1
         return OKLab(L: lightness, a: a * scale, b: b * scale)
     }
@@ -369,6 +371,11 @@ private struct WashStrengthKey: EnvironmentKey {
     static let defaultValue = ThemeStrength.subtle
 }
 
+/// Whether full-strength window colours deepen in Dark Mode.
+private struct WashDarkenKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
 extension EnvironmentValues {
     var washRoom: CGSize {
         get { self[WashRoomKey.self] }
@@ -379,6 +386,11 @@ extension EnvironmentValues {
         get { self[WashStrengthKey.self] }
         set { self[WashStrengthKey.self] = newValue }
     }
+
+    var washDarken: Bool {
+        get { self[WashDarkenKey.self] }
+        set { self[WashDarkenKey.self] = newValue }
+    }
 }
 
 /// The window's gradient, at the wash's strength, and its grain.
@@ -386,6 +398,7 @@ struct GradientWash: View {
     let gradient: ThemeGradient
     let strength: ThemeStrength
     @Environment(\.washRoom) private var room
+    @Environment(\.washDarken) private var darken
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -393,7 +406,7 @@ struct GradientWash: View {
             let ends = gradient.points(frame: geo.frame(in: .global), room: room)
             let dark = scheme == .dark
             ZStack {
-                LinearGradient(stops: gradient.stops(strength: strength, dark: dark), startPoint: ends.start, endPoint: ends.end)
+                LinearGradient(stops: gradient.stops(strength: strength, dark: dark, darken: darken), startPoint: ends.start, endPoint: ends.end)
                     .opacity(strength.opacity(dark: dark))
                 if gradient.grain {
                     Image(nsImage: Grain.tile)
@@ -517,9 +530,9 @@ enum Tints {
 
     /// Colour COLOUR as STRENGTH washes with it (ThemeStrength.tone): the
     /// colour itself at Subtle, so that wash is exactly as it always was.
-    static func toned(_ colour: Int, _ strength: ThemeStrength, dark: Bool) -> Color {
+    static func toned(_ colour: Int, _ strength: ThemeStrength, dark: Bool, darken: Bool = true) -> Color {
         guard colours.indices.contains(colour) else { return .clear }
-        if strength == .subtle || (strength == .full && !dark) { return colours[colour] }
+        if strength == .subtle || (strength == .full && !(dark && darken)) { return colours[colour] }
         guard let c = NSColor(colours[colour]).usingColorSpace(.sRGB) else { return colours[colour] }
         let lab = OKLab(r: c.redComponent, g: c.greenComponent, b: c.blueComponent)
         let (r, g, b) = (strength == .full ? lab.darkFull : strength.tone(lab, dark: dark)).srgb
@@ -532,13 +545,14 @@ struct ThemeWash: View {
     @Environment(\.colorScheme) private var scheme
     /// Set for the whole window (see washStrength).
     @Environment(\.washStrength) private var strength
+    @Environment(\.washDarken) private var darken
 
     var body: some View {
         ZStack {
             switch look {
             case .colour(let colour)?:
                 if Tints.wash(colour, dark: scheme == .dark) != nil {
-                    Tints.toned(colour, strength, dark: scheme == .dark).opacity(strength.opacity(dark: scheme == .dark))
+                    Tints.toned(colour, strength, dark: scheme == .dark, darken: darken).opacity(strength.opacity(dark: scheme == .dark))
                 }
             case .gradient(let gradient)?:
                 // One gradient for another crossfades, as a colour does.
@@ -552,6 +566,7 @@ struct ThemeWash: View {
         .allowsHitTesting(false)
         .animation(Motion.quick, value: look)
         .animation(Motion.quick, value: strength)
+        .animation(Motion.quick, value: darken)
     }
 }
 
@@ -562,4 +577,7 @@ extension Browser {
 
     /// How strongly the wash is drawn.
     var washStrength: ThemeStrength { wash == nil ? .subtle : prefs.browserTheme.strength }
+
+    /// Whether full-strength colours deepen in Dark Mode.
+    var washDarken: Bool { prefs.browserTheme.darkenInDark }
 }
