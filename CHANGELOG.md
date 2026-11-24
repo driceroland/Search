@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- Arc's spaces brought over (Settings › Spaces & Pins › Bring Arc's spaces and pins over, or the import sheet) show at once, before or after Set Up Like Arc: the spaces that came were left empty beside the one on screen, for the swipe and the map, until Spaces was turned off and on. `python3 Tests/arc_spaces_show.py` (reported by email, idea 1109)
+
 ### Held back
 
 Not in this version, kept on main for a later one:

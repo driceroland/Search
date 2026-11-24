@@ -3985,6 +3985,12 @@ final class Browser: NSObject, ObservableObject {
            isUntouched(home) {
             deleteSpace(home)
         }
+        // The spaces that came, made ahead of time as at launch, so a swipe
+        // or the map shows their rows at once (idea 1109). Spaces turned on
+        // above told the window while the list was still the old one, and
+        // with Spaces already on (Set Up Like Arc first) nothing told it at
+        // all: they stood empty beside this one until Spaces went off and on.
+        if prefs.usesSpaces { preloadSpaces() }
         adoptIcons(for: brought, from: source, profile: profile)
         return (made, pins, added)
     }
