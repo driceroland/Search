@@ -1645,6 +1645,83 @@ final class Bench {
                         "coveredAfter": web.subviews.filter { $0 is FoldCover }.count])
             }
 
+        case "perfwatch":
+            // Tests/perf_many_tabs.py: the main run loop's passes for
+            // `seconds`, summed up, with the app's CPU over them, what is
+            // built and alive, and PerfLog's record from the launch on.
+            // Test runs only.
+            guard Store.testing else { answer(["error": "perfwatch is for test runs"]); return }
+            let seconds = min(20, request["seconds"] as? Double ?? 3)
+            let cpu0 = PerfLog.cpuMs()
+            let done = Bench.timePasses(for: seconds, from: CFAbsoluteTimeGetCurrent())
+            done { passes in
+                let pages = Web.pages.allObjects
+                let pids = Set(pages.compactMap { $0.value(forKey: "_webProcessIdentifier") as? Int }.filter { $0 > 0 })
+                let ask: (NSObject?, String) -> Int = { object, name in
+                    guard let object, object.responds(to: NSSelectorFromString(name)) else { return 0 }
+                    return object.value(forKey: name) as? Int ?? 0
+                }
+                var out = PerfLog.summary(passes)
+                out["cpuMs"] = ((PerfLog.cpuMs() - cpu0) * 10).rounded() / 10
+                out["seconds"] = seconds
+                out["webPids"] = pids.sorted()
+                out["gpu"] = pages.map { ask($0, "_gpuProcessIdentifier") }.first { $0 > 0 } ?? 0
+                out["network"] = pages.map { ask($0.configuration.websiteDataStore, "_networkProcessIdentifier") }.first { $0 > 0 } ?? 0
+                out["tabs"] = browser.tabs.count
+                out["inRows"] = Browsers.all.reduce(0) { $0 + $1.tabs.count + $1.parkedTabs.count }
+                out["built"] = Browsers.all.reduce(0) { $0 + ($1.tabs + $1.parkedTabs).filter { $0.built != nil }.count }
+                out["asleep"] = Browsers.all.reduce(0) { $0 + ($1.tabs + $1.parkedTabs).filter { $0.asleep }.count }
+                out["log"] = PerfLog.state()
+                answer(out)
+            }
+
+        case "perftimed":
+            // Another bench command ("inner"), with the main run loop's
+            // passes from just before it for `seconds`: how long the call
+            // held the main thread, and what it set off after. Test runs only.
+            guard Store.testing else { answer(["error": "perftimed is for test runs"]); return }
+            guard let inner = request["inner"] as? [String: Any] else { answer(["error": "perftimed needs inner"]); return }
+            let seconds = min(10, request["seconds"] as? Double ?? 0.8)
+            let cpu0 = PerfLog.cpuMs()
+            let start = CFAbsoluteTimeGetCurrent()
+            let done = Bench.timePasses(for: seconds, from: start)
+            var reply: [String: Any] = [:]
+            var call = 0.0
+            handle(inner) { r in
+                reply = r
+                call = ((CFAbsoluteTimeGetCurrent() - start) * 10000).rounded() / 10
+            }
+            done { passes in
+                var out = PerfLog.summary(passes)
+                out["callMs"] = call
+                out["cpuMs"] = ((PerfLog.cpuMs() - cpu0) * 10).rounded() / 10
+                out["reply"] = reply
+                answer(out)
+            }
+
+        case "perfselect":
+            // The Nth tab of the row (loose or pinned, as the row has them)
+            // picked, timed as perftimed times a command. Test runs only.
+            guard Store.testing else { answer(["error": "perfselect is for test runs"]); return }
+            let index = request["index"] as? Int ?? 0
+            guard browser.tabs.indices.contains(index) else { answer(["error": "no tab \(index)", "tabs": browser.tabs.count]); return }
+            let tab = browser.tabs[index]
+            let wasBuilt = tab.built != nil
+            let seconds = min(10, request["seconds"] as? Double ?? 0.8)
+            let cpu0 = PerfLog.cpuMs()
+            let start = CFAbsoluteTimeGetCurrent()
+            let done = Bench.timePasses(for: seconds, from: start)
+            browser.select(tab)
+            let call = ((CFAbsoluteTimeGetCurrent() - start) * 10000).rounded() / 10
+            done { passes in
+                var out = PerfLog.summary(passes)
+                out["callMs"] = call
+                out["cpuMs"] = ((PerfLog.cpuMs() - cpu0) * 10).rounded() / 10
+                out["wasBuilt"] = wasBuilt
+                out["pinned"] = tab.pin != nil
+                answer(out)
+            }
+
         case "spacetime":
             // ⌃N to the Nth space, timed as foldtime times ⌘S: the switch
             // itself, then each pass of the main run loop for the next 1.8 s
