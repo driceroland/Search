@@ -1486,13 +1486,30 @@ struct SideBar: View {
         // scrolled to. The band in sight is the window's own (ColumnWindow):
         // as the scroll moves it on, only the window is drawn again, not the
         // column around it and every space's page of the map.
-        return ColumnWindow(plan: plan, space: browser.spaceID, active: activeRect(plan), whole: fits, room: room) { unit in
-            if case .row(let row) = unit.kind {
-                // Placed by Carried, which holds it at the hand.
-                looseRow(row, steps: plan.steps, place: unit.y)
-            } else {
-                columnUnit(unit, plan: plan)
-                    .alignmentGuide(.top) { _ in -unit.y }
+        let active = activeRect(plan)
+        return ZStack(alignment: .top) {
+            ColumnWindow(plan: plan, space: browser.spaceID, active: active, whole: fits, room: room) { unit in
+                if case .row(let row) = unit.kind {
+                    // Placed by Carried, which holds it at the hand.
+                    looseRow(row, steps: plan.steps, place: unit.y)
+                } else {
+                    columnUnit(unit, plan: plan)
+                        .alignmentGuide(.top) { _ in -unit.y }
+                }
+            }
+            // Where the scroll goes for the tab in front (scroll): its rows
+            // are not all made. Here, not in the window: drawn with the
+            // column, it is where the new tab in front is when the column's
+            // onChange scrolls to it. In the window, drawn after, the first
+            // scroll went to the last space's tab and the column jumped a
+            // frame later (space_switch).
+            if let active {
+                Color.clear
+                    .frame(height: active.height)
+                    .alignmentGuide(.top) { _ in -active.minY }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .id(SideBar.activeMark)
             }
         }
         .coordinateSpace(name: "rows")
@@ -1547,16 +1564,6 @@ struct SideBar: View {
             return ZStack(alignment: .top) {
                 Color.clear.frame(height: plan.total)
                 ForEach(drawn) { unit($0) }
-                // Where the scroll goes for the tab in front (scroll): its
-                // rows are not all made.
-                if let active {
-                    Color.clear
-                        .frame(height: active.height)
-                        .alignmentGuide(.top) { _ in -active.minY }
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                        .id(SideBar.activeMark)
-                }
             }
             // How far down the run the scroll is: the band of it drawn, told
             // only as it moves a step on (windowStep).
