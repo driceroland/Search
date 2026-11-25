@@ -18,6 +18,7 @@ in [ROADMAP.md](ROADMAP.md).
 - ⌘T and ⇧⌘N with every window closed bring the window back with the new tab, where the tab waited unseen until a click on the Dock icon. `python3 Tests/closed_window_new_tab.py` (idea 1183)
 - A tab in a group can be closed on its own with ⌘W: the first ⌘W still puts its page away, keeping its row in the group, and going back to it and pressing ⌘W again now closes it, where it put it away again for ever. Its menu has Put Away and a Close Tab that closes it at once. `python3 Tests/close_in_group_again.py` (idea 1189)
 - Hide Elements on a page that builds its content after it loads, such as a grocery site's list of products beside its cart: what you hid stays hidden on later visits, even when the page lays it out in another place or order, and nothing else is hidden in its place, where a product in the cart could disappear instead. Search now remembers what the hidden thing was and only hides it once it sees that same thing again; rules saved before keep working as they did. `python3 Tests/hide_elements_dynamic.py` (idea 1194)
+- A download no longer closes the tab it came from when that tab's page had come in while you were in another space, as a page a link opened and still loading when you switched spaces: only a tab opened just for the file closes, as in Safari and Chrome. `python3 Tests/download_keeps_tab.py` (idea 1060)
 
 ### Added
 

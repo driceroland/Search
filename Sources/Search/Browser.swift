@@ -9411,7 +9411,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// tab, and so does a window's only tab: closing it would close the
     /// window.
     private func dropEmpty(_ webView: WKWebView) {
-        guard let tab = tab(for: webView), tab.committed == nil, tab.pin == nil else { return }
+        // Judged by WebKit's own list too: a tab with any page behind it,
+        // however its address was kept, is never one opened for a file.
+        guard let tab = tab(for: webView), tab.committed == nil, tab.pin == nil,
+              webView.backForwardList.currentItem == nil else { return }
         // Without its address, it is not offered back by ⇧⌘T either.
         tab.forget()
         guard let opener = tab.opener, tabs.count > 1 else { return }
@@ -9858,6 +9861,11 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         if websitePopup { cancelCapture() }
         popupTab(for: webView)?.popupGesture.clear()
         guard let tab = tab(for: webView) else {
+            // A page that arrived in a tab of another space, a link's still
+            // loading as you went there: the tab's page is this one all the
+            // same. Left without its address, its first download later took
+            // it for a tab opened just for the file, and closed it.
+            parkedTabs.first { $0.built === webView }?.didCommit()
             // A small window's page came: what failed before it is over.
             littleTab(for: webView)?.failure = nil
             // A peek or a small window opens at the size the site has, or
