@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- The "is sharing your screen" pill a website puts up (Google Meet's) has a ✕ that hides it. The share goes on; a new share shows the pill again. An extension's recording keeps no ✕. `python3 Tests/recording_pill.py`
+
 ### Held back
 
 Not in this version, kept on main for a later one:

@@ -2128,6 +2128,7 @@ final class Bench {
             func state(_ extra: [String: Any] = [:]) -> [String: Any] {
                 var out: [String: Any] = [
                     "lines": pill.lines.map { [$0.id, $0.name, $0.what] },
+                    "shown": pill.shown.map(\.id),
                     "recordingTabs": browser.tabs.filter(\.recording).map { Bench.short($0) },
                     "onScreen": NSApp.windows.contains { $0 is NSPanel && $0.isVisible && $0.contentView?.subviews.contains { $0 is NSHostingView<PillView> } == true },
                 ]
@@ -2139,13 +2140,17 @@ final class Bench {
                 let names = request["names"] as? [String] ?? ["Loom"]
                 let what = request["what"] as? String ?? "is recording your screen"
                 let page = find(request, in: browser)?.built
-                pill.update(names.map { RecordingLine(id: $0.lowercased(), name: $0, what: what) }, pages: page.map { [$0] } ?? [])
+                let site = request["site"] as? Bool ?? false
+                pill.update(names.map { RecordingLine(id: $0.lowercased(), name: $0, what: what, dismissible: site) }, pages: page.map { [$0] } ?? [])
                 answer(state())
             case "stop":
                 var stopped = ""
                 pill.onStop = { stopped = $0 }
                 pill.stop(request["name"] as? String ?? "")
                 answer(state(["stopped": stopped]))
+            case "dismiss":
+                pill.dismiss(request["name"] as? String ?? "")
+                answer(state())
             case "clear": pill.update([]); answer(state())
             case "host", "release":
                 guard let tab = find(request, in: browser), let web = tab.built else { answer(missing(request)); return }
