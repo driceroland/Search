@@ -5240,9 +5240,12 @@ final class Browser: NSObject, ObservableObject {
     /// Whether Close Tab puts this tab away rather than closing it: a page
     /// open in a group, with groups on. Not an empty tab, which has nothing
     /// to come back to, nor one already put away or asleep: that one goes.
+    /// Nor one put away, gone back to, and still at that page: ⌘W reaches
+    /// only the tab on screen, so it put that tab away again each time, and
+    /// a grouped tab could be closed only out of its group (idea 1189).
     func putsAway(_ tab: Tab) -> Bool {
         prefs.usesTabGroups && group(of: tab) != nil && !tab.asleep && !tab.isBlank && !tab.bench
-            && tab.address != nil
+            && tab.address != nil && !(tab.putAwayAt.map { Browser.samePage($0, tab.address) } ?? false)
     }
 
     /// A grouped tab's page let go where it stands, as a pin is put down:
@@ -5260,6 +5263,7 @@ final class Browser: NSObject, ObservableObject {
         dropCertificateAsks(for: tab.id)
         forgetCertificates(for: tab.id)
         if floating == tab.id { land(covering: false) }
+        tab.putAwayAt = tab.address
         tab.rest()
         if activeID == tab.id { leave(tab) }
         writeSession(now: true)

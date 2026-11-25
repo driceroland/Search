@@ -1696,6 +1696,10 @@ final class Tab: ObservableObject, Identifiable {
     /// brought back from the last session, or put down with ⌘W while pinned.
     var asleep: Bool { pending != nil }
 
+    /// Where a grouped tab was when its page was put away (Browser.putAway):
+    /// gone back to and still there, Close Tab closes it for real.
+    var putAwayAt: URL?
+
     /// ⌘W on a pinned tab. The letter keeps its place in the row and the
     /// address is remembered; everything the page was holding is let go, so a
     /// pin you are not reading costs a line in a file and nothing else.

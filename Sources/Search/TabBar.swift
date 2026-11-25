@@ -2133,7 +2133,14 @@ struct TabMenu: View {
         }
         .disabled(browser.awake(because: tab) != nil)
         Divider()
-        Button("Close Tab", action: close)
+        if browser.putsAway(tab) {
+            // A grouped tab's page: put away, as its minus does, or closed
+            // for real, out of the group (idea 1189).
+            Button("Put Away") { browser.putAway(tab) }
+            Button("Close Tab") { browser.close(tab) }
+        } else {
+            Button("Close Tab", action: close)
+        }
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }
             .disabled(browser.tabs.count < 2)
         Button(browser.prefs.sidebar ? "Close Tabs Below" : "Close Tabs to the Right") { browser.closeTabsBelow(tab) }

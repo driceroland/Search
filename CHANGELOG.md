@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- A tab in a group can be closed on its own with ⌘W: the first ⌘W still puts its page away, keeping its row in the group, and going back to it and pressing ⌘W again now closes it, where it put it away again for ever. Its menu has Put Away and a Close Tab that closes it at once. `python3 Tests/close_in_group_again.py` (idea 1189)
+
 ### Changed
 
 - On by default now, for everyone who never touched the switch as well as for new installs, and each can still be turned off in Settings: Try HTTPS first, sized pop-ups in small windows, links opened in front go beside their page, address bar commands, ⌘Z reopens a closed tab, space and arrow keys control videos, swipe back closes a tab a link opened, smooth scrolling with a mouse wheel, reading mode follows light and dark, Capture pages, your own style for a site, the Home bookmarks on a new tab, a loading line with the tabs hidden, save power in Low Power Mode, minimize the floating video, folders in pinned rows, what's playing in other tabs, and counts on pins. Show inline predictions follows the Mac's own setting until you choose in Edit › Spelling and Grammar. The What's New card no longer offers these switches.
