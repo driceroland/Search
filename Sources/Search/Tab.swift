@@ -321,7 +321,25 @@ final class Tab: ObservableObject, Identifiable {
     /// view's `configuration` is a copy made afresh at every reading, which
     /// cost more than everything else done at a link followed.
     private(set) var contentController: WKUserContentController?
-    private var configuration: WKWebViewConfiguration
+    /// How its page is to be made. A tab brought back from the last
+    /// session has none until it is built: each configuration is a few
+    /// WebKit objects (preferences, a content controller, the page's own
+    /// preferences), and with hundreds of tabs that sleep all day they were
+    /// most of what a tab cost. Only the store is decided at once, because
+    /// it says where the tab's sign-ins are (see `store`).
+    private var made: WKWebViewConfiguration?
+    private var configuration: WKWebViewConfiguration {
+        get {
+            if let made { return made }
+            let config = Web.configuration(shy: shy, store: store)
+            made = config
+            return config
+        }
+        set {
+            made = newValue
+            store = newValue.websiteDataStore
+        }
+    }
     let extensionReturn = ExtensionReturnNavigation()
 
     /// Whether its page was made with the extension controller in it — every
@@ -330,7 +348,7 @@ final class Tab: ObservableObject, Identifiable {
     @available(macOS 15.4, *)
     var carriesExtensions: Bool { configuration.webExtensionController != nil }
     /// Where its cookies and sign-ins are kept.
-    var store: WKWebsiteDataStore { configuration.websiteDataStore }
+    private(set) var store: WKWebsiteDataStore
     /// Whoever handles navigation and windows for this page; applied when
     /// the page is built, whenever that is.
     weak var delegate: (WKNavigationDelegate & WKUIDelegate)? {
@@ -344,8 +362,8 @@ final class Tab: ObservableObject, Identifiable {
     private var pageDelegate: NSObject?
 
     private func uiDelegate(_ delegate: (WKNavigationDelegate & WKUIDelegate)?) -> WKUIDelegate? {
-        guard #available(macOS 15.4, *), let pages = MainActor.assumeIsolated({ Extensions.pages }),
-              configuration.userContentController === pages else { return delegate }
+        guard #available(macOS 15.4, *), let config = made, let pages = MainActor.assumeIsolated({ Extensions.pages }),
+              config.userContentController === pages else { return delegate }
         let made = pageDelegate as? ExtensionPageDelegate ?? ExtensionPageDelegate()
         made.next = delegate
         pageDelegate = made
@@ -1004,7 +1022,19 @@ final class Tab: ObservableObject, Identifiable {
     init(shy: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil) {
         self.shy = shy
         self.bench = bench
-        self.configuration = configuration ?? Web.configuration(shy: shy)
+        let configuration = configuration ?? Web.configuration(shy: shy)
+        made = configuration
+        store = configuration.websiteDataStore
+        if Store.testing { Tab.live.add(self) }
+    }
+
+    /// A tab of space `space` whose configuration is made only when its
+    /// page is: one brought back from the last session, most of which are
+    /// never opened before the next quit.
+    init(space: UUID) {
+        shy = false
+        bench = false
+        store = Spaces.store(for: space)
         if Store.testing { Tab.live.add(self) }
     }
 
@@ -1772,7 +1802,8 @@ final class Tab: ObservableObject, Identifiable {
     /// WebKit fixes it then — and its next page follows through its own
     /// autoplay policy (see Autoplay.apply).
     func playbackChanged() {
-        configuration.mediaTypesRequiringUserActionForPlayback = Web.playback
+        // One not made yet is made with what Settings says then.
+        made?.mediaTypesRequiringUserActionForPlayback = Web.playback
     }
 
     /// A document without hand-edited fields (including a PDF or image) has nothing to ask.
