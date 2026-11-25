@@ -549,6 +549,10 @@ struct AddressField: NSViewRepresentable {
         let field = Field()
         Self.shown.setObject(field, forKey: browser)
         field.delegate = context.coordinator
+        field.wanted = { [weak coordinator = context.coordinator, weak field] in
+            guard let coordinator, let field else { return false }
+            return coordinator.wantsKeys(field)
+        }
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
@@ -674,14 +678,64 @@ struct AddressField: NSViewRepresentable {
         var arrived: (() -> Void)?
         /// Where the caret was as the field last let go of the keys.
         var leftAt: NSRange?
+        /// How the selection looked then, for the keys given back.
+        private var leftLook: [NSAttributedString.Key: Any]?
+        /// Whether this is still the field that should have the keys: the
+        /// one on show, over the page in front. Set by its coordinator.
+        var wanted: (() -> Bool)?
+        /// The field is being moved, in its own window, with the keys.
+        private var movingWithKeys = false
 
         override func textDidEndEditing(_ note: Notification) {
-            if let editor = note.object as? NSTextView { leftAt = editor.selectedRange() }
+            if let editor = note.object as? NSTextView {
+                leftAt = editor.selectedRange()
+                leftLook = editor.selectedTextAttributes
+            }
             super.textDidEndEditing(note)
+            DispatchQueue.main.async { [weak self] in self?.takeKeysBack() }
+        }
+
+        // SwiftUI draws the field inside a view of its own while the field's
+        // open animation runs, and when it ends it moves the field out of it,
+        // within the same window (DisplayList.ViewUpdater, addSubview). On
+        // macOS 27 that move ends the field's editing and leaves the keys
+        // with the window, about 0.35 s after ⌘T or ⌘L, with the open
+        // animation: what was typed from then on went nowhere until a click
+        // in the field (idea 1099). Moved with the keys, or let go of them
+        // with nobody taking them, the field takes them back, the caret
+        // where it was. A click, Tab or a page that takes the keys leaves
+        // them with what took them, and a field put away is not wanted.
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            movingWithKeys = newWindow != nil && newWindow === window && currentEditor() != nil
+            // A test run can have the move drop the keys, as macOS 27 does,
+            // on a Mac whose macOS keeps them (Tests/field_keeps_keys.py).
+            if movingWithKeys, Self.dropsKeysOnMove { window?.makeFirstResponder(nil) }
+            super.viewWillMove(toWindow: newWindow)
+        }
+
+        static var dropsKeysOnMove: Bool {
+            Store.testing && Store.settings.bool(forKey: "test.fieldDropsKeysOnMove")
+        }
+
+        /// The keys back, if the field lost them to nobody: the window holds
+        /// them itself, and the field is still the one wanted.
+        func takeKeysBack() {
+            guard let window, currentEditor() == nil, window.firstResponder === window,
+                  !isHiddenOrHasHiddenAncestor, let leftAt, wanted?() == true else { return }
+            window.makeFirstResponder(self)
+            guard let editor = currentEditor() as? NSTextView else { return }
+            if let leftLook { editor.selectedTextAttributes = leftLook }
+            let length = (editor.string as NSString).length
+            let start = min(leftAt.location, length)
+            editor.selectedRange = NSRange(location: start, length: min(leftAt.length, length - start))
         }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            if movingWithKeys {
+                movingWithKeys = false
+                takeKeysBack()
+            }
             guard window != nil, let arrived else { return }
             self.arrived = nil
             arrived()
@@ -706,6 +760,13 @@ struct AddressField: NSViewRepresentable {
 
         init(browser: Browser) {
             self.browser = browser
+        }
+
+        /// Whether `field` should have the keys: the one on show, over the
+        /// page in front, with no tab being renamed.
+        @MainActor func wantsKeys(_ field: Field) -> Bool {
+            (tab == nil || tab == browser.activeID) && browser.fieldShowing && browser.editingTab == nil
+                && AddressField.shown.object(forKey: browser) === field
         }
 
         /// The keys to the field, now if it is in a window, or the moment it is.

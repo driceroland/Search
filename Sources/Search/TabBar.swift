@@ -279,6 +279,8 @@ struct TabBar: View {
                         // A coding agent allowed in this window: its pill and
                         // Stop, here rather than over the page (AgentBanner).
                         AgentStatus(browser: browser, style: .door)
+                        // A newer Search waiting (UpdateNotice).
+                        UpdateNoticePill(prefs: browser.prefs)
                         // Only while a download is running, and a moment after.
                         FetchDoor(browser: browser, fetches: browser.fetches)
                         ExtensionSlot(browser: browser, puzzle: !browser.prefs.hidesExtensionsDoor)
@@ -1883,18 +1885,16 @@ struct TabMenu: View {
             // a drag onto a group takes them (see carried).
             let moving = browser.carried(with: tab)
             Menu("Move to Group") {
-                Button("New Group") {
-                    let id = browser.addTabGroup(containing: tab)
-                    for other in moving where other !== tab { browser.move(other, toGroup: id) }
-                }
+                // All of them at once, in their order: one step for ⌘Z.
+                Button("New Group") { browser.addTabGroup(containing: [tab] + moving.filter { $0 !== tab }) }
                 if !browser.tabGroups.isEmpty { Divider() }
                 ForEach(browser.tabGroups) { group in
-                    Button(group.name) { for each in moving { browser.move(each, toGroup: group.id) } }
+                    Button(group.name) { browser.move(moving, toGroup: group.id) }
                         .disabled(moving.allSatisfy { $0.groupID == group.id })
                 }
                 if moving.contains(where: { $0.groupID != nil }) {
                     Divider()
-                    Button("Remove from Group") { for each in moving { browser.move(each, toGroup: nil) } }
+                    Button("Remove from Group") { browser.move(moving, toGroup: nil) }
                 }
             }
         }
@@ -1915,6 +1915,7 @@ struct TabMenu: View {
             }
         } else if picked.allSatisfy({ $0.pin != nil }) {
             Button("Unpin \(count) Tabs") { for each in picked { browser.unpin(each) } }
+            pickedFolderMenu(picked)
         }
         if browser.prefs.usesSpaces, picked.allSatisfy({ !$0.bench && !$0.everywhere
                && $0.address.flatMap({ Browser.extensionHost(of: $0) }) == nil }) {
@@ -1969,6 +1970,32 @@ struct TabMenu: View {
             .disabled(browser.tabs.count <= count)
     }
 
+    /// Picked pinned rows, all of them into a folder, in their order (idea
+    /// 1092): only when every one of them can go in one.
+    @ViewBuilder
+    private func pickedFolderMenu(_ picked: [Tab]) -> some View {
+        if browser.prefs.showsPinFolders && picked.allSatisfy({ browser.takesFolder($0) }), let first = picked.first {
+            Button("New Folder with \(picked.count) Pins") {
+                browser.undoableMove {
+                    if let made = browser.newPinFolder(holding: first) { browser.movePins(picked, into: made) }
+                }
+            }
+            let folders = browser.pinFolders
+            if !folders.isEmpty {
+                Menu("Move to Folder") {
+                    ForEach(PinFolderMenu.entries(folders), id: \.folder.id) { entry in
+                        Button(entry.title) { browser.movePins(picked, into: entry.folder.id) }
+                            .disabled(picked.allSatisfy { $0.pinFolder == entry.folder.id })
+                    }
+                    if picked.contains(where: { $0.pinFolder != nil }) {
+                        Divider()
+                        Button("Remove from Folder") { browser.movePins(picked, into: nil) }
+                    }
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var singleMenu: some View {
         groupMenu
@@ -2000,7 +2027,7 @@ struct TabMenu: View {
                 Button("New Live Folder…") { LiveFolders.ask(for: browser, in: nil) }
             }
             if browser.prefs.showsPinFolders && browser.takesFolder(tab) {
-                Button("New Folder") { browser.newPinFolder(holding: tab) }
+                Button("New Folder") { browser.undoableMove { browser.newPinFolder(holding: tab) } }
                 Button("New Live Folder…") { LiveFolders.ask(for: browser, in: tab.pinFolder) }
                 let folders = browser.pinFolders
                 if !folders.isEmpty {
@@ -2143,11 +2170,8 @@ struct TabMenu: View {
         }
         .disabled(!tab.isWeb)
         // The card a click on the tab you are on shows under its address.
-        Button("Site Information…") {
-            if browser.activeID != tab.id { browser.select(tab) }
-            browser.beginTabEdit(tab, card: true)
-        }
-        .disabled(tab.isBlank || tab.address == nil || tab.pin != nil)
+        Button("Site Information…") { browser.showSiteInformation(tab) }
+            .disabled(!Browser.offersSiteInformation(tab))
         Menu("Copy") {
         Button("Copy Address") {
             browser.select(tab)

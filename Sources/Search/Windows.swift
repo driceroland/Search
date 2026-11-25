@@ -149,6 +149,9 @@ enum Browsers {
         // now, or closing it would retire it.
         if browser.tucked, browser.mergeID == nil { OneWindow.untuck(browser) }
         register(browser)
+        // In the Window menu and the Dock icon's, where ⌘` finds it too:
+        // SwiftUI leaves its own window out of both (idea 1047).
+        if !browser.tucked, let window = browser.window, window.isExcludedFromWindowsMenu { window.isExcludedFromWindowsMenu = false }
         browser.shut = false
         Front.shared.set(browser)
         Spaces.current = browser.spaceID
@@ -210,6 +213,33 @@ enum Browsers {
         let kept = all.first { $0.shut && !$0.isPopup } ?? all.first ?? SceneSlot.shared.browser
         show(kept)
         return kept
+    }
+
+    /// Whether a click on the Dock icon brings a browser window, given
+    /// whether AppKit counts any window of the app as shown (`anyShown`).
+    /// The small window on screen counts as one to macOS, and so do the
+    /// floating video's, a download's and a recording's: with the browser's
+    /// windows minimised, covered or on another Space, the click did
+    /// nothing, the browser nowhere to be seen (idea 1047). So one comes
+    /// whenever none is in sight; one already in sight is macOS's to bring
+    /// forward with the app.
+    static func reopening(anyShown: Bool) -> Bool {
+        if !anyShown || keptAway { return true }
+        return !all.contains { browser in
+            guard browser.isOpen, !browser.isPopup, let window = browser.window, !isAway(window) else { return false }
+            return !window.isMiniaturized && window.occlusionState.contains(.visible)
+        }
+    }
+
+    /// The Dock icon clicked with no browser window in sight (see
+    /// reopening): the one in front comes, out of the Dock if it is there.
+    /// AppKit takes one out of the Dock itself only when nothing of the app
+    /// is shown.
+    static func reopen(anyShown: Bool) {
+        let browser = ensureWindow()
+        guard anyShown, !browser.isPopup, let window = browser.window else { return }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
     }
 
     /// A window showing the space `id`, found from the one ensureWindow

@@ -26,7 +26,13 @@ enum Stuck {
     private static let key = "_webProcessIdentifier"
 
     static func watch(_ web: WKWebView) {
-        guard let pid = process(of: web), let start = cpu(pid) else { return }
+        // An extension's page runs in that extension's own process, with
+        // its background page, popup and offscreen documents, none of which
+        // are in Web.pages: busy there is the extension at work, not a
+        // page left behind.
+        if #available(macOS 15.4, *), let pages = Extensions.pages,
+           web.configuration.userContentController === pages { return }
+        guard let pid = process(of: web), let born = started(pid), let start = cpu(pid) else { return }
         weak let gone = web
         DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
             MainActor.assumeIsolated {
@@ -37,6 +43,10 @@ enum Stuck {
                 // one is still somebody's.
                 let shared = Web.pages.allObjects.contains { $0 !== gone && process(of: $0) == pid }
                 guard !shared else { return }
+                // The number could have gone to another process since: end
+                // only the one that was there when the view went. Its parent
+                // can't tell, as launchd starts every page process.
+                guard started(pid) == born else { return }
                 kill(pid, SIGKILL)
             }
         }
@@ -65,8 +75,16 @@ enum Stuck {
         return ticks.multipliedReportingOverflow(by: UInt64(base.numer)).partialValue / UInt64(base.denom)
     }
 
-    /// The number could have gone to another process in the meantime: end
-    /// only a WebKit page process.
+    /// When the process started, in microseconds: with its number, which
+    /// process it is.
+    private static func started(_ pid: pid_t) -> UInt64? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return info.pbi_start_tvsec &* 1_000_000 &+ info.pbi_start_tvusec
+    }
+
+    /// End only a WebKit page process.
     private static func isPage(_ pid: pid_t) -> Bool {
         var path = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
         let length = proc_pidpath(pid, &path, UInt32(path.count))

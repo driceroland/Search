@@ -41,6 +41,10 @@ final class FollowFileTests: XCTestCase {
             "bookmarksInSidebar",
             // A click on the tab you're on edits its address only (idea 951).
             "tabClickAddressOnly",
+            // The bookmarks bar only on new tabs (idea 1082).
+            "bookmarksNewTabOnly",
+            // A click on the tab you're on keeps its name (idea 1076).
+            "tabClickKeepsName",
             // Icons only on the bookmarks bar (idea 980).
             "bookmarksIconsOnly",
         ])

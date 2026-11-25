@@ -104,7 +104,93 @@ MINIMUM="14.0"
 # 0.41 ms either way, measured interleaved on 1.0.4 (27 Sep 2026).
 SWIFTFLAGS=(-c "$CONFIG" --arch "$ARCH")
 [ "$CONFIG" = "release" ] && SWIFTFLAGS+=(-Xswiftc -Osize)
-swift build "${SWIFTFLAGS[@]}"
+
+# Developer tools packages (DevToolsPackages.swift): never in the app, each
+# a bundle Search downloads when asked, built for this chip like the app
+# and signed the same way (Developer ID with the hardened runtime, or
+# ad-hoc), for its own identifier, which Search checks before every load.
+# Each is a SwiftPM dynamic library product with a package.json beside its
+# sources (what the feed says of it); this makes, under $OUT/devtools/,
+# <Product>.bundle, its ZIP and <Product>.entry.json, the feed entry less
+# its address (write_devtools adds that). `./build.sh release devtools`
+# makes only these.
+DEVTOOLS_PACKAGES=(DevToolsLite DevToolsFull)
+build_devtools() {
+  local PRODUCT="$1"
+  local META="Sources/$PRODUCT/package.json"
+  local ID PVERSION API IDENT LIB DEST BUNDLE ZIP SIGNER
+  ID="$(plutil -extract id raw -o - "$META")"
+  PVERSION="$(plutil -extract version raw -o - "$META")"
+  API="$(plutil -extract api raw -o - "$META")"
+  IDENT="com.officecommun.search.devtools.$ID"
+  swift build "${SWIFTFLAGS[@]}" --product "$PRODUCT"
+  LIB="$(swift build "${SWIFTFLAGS[@]}" --show-bin-path)/lib$PRODUCT.dylib"
+  [ "$(lipo -archs "$LIB")" = "$ARCH" ] || { echo "$LIB is not a $ARCH library" >&2; exit 1; }
+  DEST="$OUT/devtools"
+  BUNDLE="$DEST/$PRODUCT.bundle"
+  rm -rf "$BUNDLE" "$DEST/$PRODUCT"-*.zip "$DEST/$PRODUCT.entry.json"
+  mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
+  cp "$LIB" "$BUNDLE/Contents/MacOS/$PRODUCT"
+  if [ "$CONFIG" = "release" ]; then
+    dsymutil "$LIB" -o "$DEST/$PRODUCT.bundle.dSYM" 2>/dev/null || true
+    strip -x "$BUNDLE/Contents/MacOS/$PRODUCT"
+  fi
+  cp THIRD_PARTY_NOTICES.md "$BUNDLE/Contents/Resources/"
+  cat > "$BUNDLE/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>$IDENT</string>
+  <key>CFBundleExecutable</key><string>$PRODUCT</string>
+  <key>CFBundleName</key><string>$PRODUCT</string>
+  <key>CFBundlePackageType</key><string>BNDL</string>
+  <key>CFBundleShortVersionString</key><string>$(plutil -extract display raw -o - "$META")</string>
+  <key>CFBundleVersion</key><string>$PVERSION</string>
+  <key>LSMinimumSystemVersion</key><string>$MINIMUM</string>
+  <key>NSPrincipalClass</key><string>$(plutil -extract principal raw -o - "$META" 2>/dev/null || echo SearchDevToolsLite)</string>
+  <key>SearchDevToolsAPI</key><integer>$API</integer>
+</dict>
+</plist>
+PLIST
+  SIGNER="${SEARCH_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"' || true)}"
+  # A release package is the Developer ID's or nothing: an ad-hoc one only
+  # when asked for by name (SEARCH_SIGN_IDENTITY=-, for the tests), never
+  # because no certificate was found. (A `release dmg` on a Mac without one
+  # stays a local try, unsigned feed and all, as the app beside it.)
+  if [ "$CONFIG" = "release" ] && [ "$STEP" != "dmg" ] && [ -z "$SIGNER" ]; then
+    echo "no Developer ID Application certificate for $PRODUCT — SEARCH_SIGN_IDENTITY=- for an ad-hoc test package" >&2
+    exit 1
+  fi
+  if [ -n "$SIGNER" ] && [ "$SIGNER" != "-" ]; then
+    codesign --force --timestamp --options runtime --identifier "$IDENT" --sign "$SIGNER" "$BUNDLE"
+  else
+    codesign --force --identifier "$IDENT" --sign - "$BUNDLE"
+  fi
+  codesign --verify --strict "$BUNDLE"
+  ZIP="$DEST/$PRODUCT-$ARCH-$PVERSION.zip"
+  # No resource forks, attributes or ACLs: Search refuses a package with
+  # any hidden entry, AppleDouble "._" files included.
+  ditto -c -k --norsrc --noextattr --noacl --keepParent "$BUNDLE" "$ZIP"
+  cp "$META" "$DEST/$PRODUCT.entry.json"
+  plutil -remove principal "$DEST/$PRODUCT.entry.json" 2>/dev/null || true
+  plutil -insert file -string "$(basename "$ZIP")" "$DEST/$PRODUCT.entry.json"
+  plutil -insert sha256 -string "$(shasum -a 256 "$ZIP" | cut -d' ' -f1)" "$DEST/$PRODUCT.entry.json"
+  plutil -insert size -integer "$(stat -f%z "$ZIP")" "$DEST/$PRODUCT.entry.json"
+  plutil -insert binary -string "$(shasum -a 256 "$BUNDLE/Contents/MacOS/$PRODUCT" | cut -d' ' -f1)" "$DEST/$PRODUCT.entry.json"
+  echo "devtools: $ZIP ($(stat -f%z "$ZIP") bytes)"
+  BUILT_DEVTOOLS="$BUILT_DEVTOOLS $PRODUCT "
+}
+# The packages built by this run: the feed only ever names those, never an
+# entry.json left in build/ by an earlier one.
+BUILT_DEVTOOLS=""
+if [ "$STEP" = "devtools" ]; then
+  for PACKAGE in "${DEVTOOLS_PACKAGES[@]}"; do build_devtools "$PACKAGE"; done
+  exit 0
+fi
+
+swift build "${SWIFTFLAGS[@]}" --product Search
 BINARY="$(swift build "${SWIFTFLAGS[@]}" --show-bin-path)/Search"
 [ "$(lipo -archs "$BINARY")" = "$ARCH" ] || { echo "$BINARY is not a $ARCH binary" >&2; exit 1; }
 
@@ -433,10 +519,34 @@ write_engine() {
   \"ai\": {\"engine\": {\"version\": $SEARCH_AI_ENGINE_VERSION, \"url\": \"$BASE/ai/$FILE\", \"sha256\": \"$(shasum -a 256 "$ENGINE" | cut -d' ' -f1)\", \"size\": $(stat -f%z "$ENGINE")}}"
   echo "engine: $OUT/ai/$FILE"
 }
+# The developer tools packages for this chip, built and signed by
+# build_devtools, each served from devtools/ beside the other files, with
+# its hash, size and its executable's hash in the feed. As for the engine,
+# the feed's signature vouches for them; Search checks each package's own
+# signature before every load.
+DEVBLOCK=""
+write_devtools() {
+  local ENTRIES="" PACKAGE ENTRY
+  for PACKAGE in "${DEVTOOLS_PACKAGES[@]}"; do
+    case "$BUILT_DEVTOOLS" in *" $PACKAGE "*) ;; *) build_devtools "$PACKAGE" ;; esac
+    ENTRY="$OUT/devtools/$PACKAGE.entry.json.feed"
+    cp "$OUT/devtools/$PACKAGE.entry.json" "$ENTRY"
+    plutil -insert url -string "$BASE/devtools/$(plutil -extract file raw -o - "$ENTRY")" "$ENTRY"
+    plutil -remove file "$ENTRY"
+    plutil -convert json -r "$ENTRY"
+    ENTRIES="$ENTRIES${ENTRIES:+,}
+$(cat "$ENTRY")"
+    rm -f "$ENTRY"
+  done
+  [ -n "$ENTRIES" ] && DEVBLOCK=",
+  \"devtools\": [$ENTRIES]"
+  echo "devtools: ${#DEVTOOLS_PACKAGES[@]} package(s) in the feed"
+}
 write_appcast() {
   local DMGSHA
   DMGSHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
   write_engine
+  write_devtools
   cat > "$OUT/appcast.json" <<JSON
 {
   "version": "$VERSION",
@@ -446,7 +556,7 @@ write_appcast() {
   "sha256": "$SHA",
   "dmgSha256": "$DMGSHA",
   "notes": "$NOTES",
-  "minimumSystemVersion": "$MINIMUM"$AIBLOCK
+  "minimumSystemVersion": "$MINIMUM"$AIBLOCK$DEVBLOCK
 }
 JSON
   echo "wrote: $OUT/appcast.json ($VERSION, $ARCH, build $BUILD)"
@@ -471,7 +581,8 @@ if [ "$STEP" = "dmg" ]; then write_appcast; exit 0; fi
 # so it opens on a Mac that has never seen this app and is offline; the ZIP
 # is fetched by an app that already trusts it, and is left as hashed.
 [ -z "$IDENTITY" ] && { echo "can't ship without a Developer ID certificate" >&2; exit 1; }
-for FILE in "$DMG" "$ZIP"; do
+for PACKAGE in "${DEVTOOLS_PACKAGES[@]}"; do build_devtools "$PACKAGE"; done
+for FILE in "$DMG" "$ZIP" "$OUT"/devtools/*.zip; do
   xcrun notarytool submit "$FILE" --keychain-profile "${SEARCH_NOTARY_PROFILE:-search}" --wait
 done
 xcrun stapler staple "$DMG"

@@ -64,8 +64,16 @@ final class TabGroupDropTests: XCTestCase {
         XCTAssertEqual(browser.tabs.first?.id, tabs[1].id)
         XCTAssertEqual(browser.tabs.last?.id, tabs[0].id)
         XCTAssertNil(browser.split(for: tabs[1]))
-        let saved = try XCTUnwrap(browser.record.rows[browser.spaceID.uuidString])
-        let restored = Browser(record: browser.record)
+        // Its row as saved, wherever this window keeps it: its own record,
+        // or the session files when no other window holds them (as when
+        // this test runs alone). A window made from it reads it back from
+        // the same place.
+        browser.writeSession(now: true)
+        let saved = browser.readRow(browser.spaceID)
+        XCTAssertFalse(saved.tabs.isEmpty, "the row was saved")
+        var record = browser.record
+        record.rows[browser.spaceID.uuidString] = saved
+        let restored = Browser(record: record)
         XCTAssertEqual(restored.tabs.map { $0.address?.absoluteString }, saved.tabs.map { Optional($0.url) })
         XCTAssertEqual(restored.tabs.map(\.groupID), saved.tabs.map(\.groupID))
     }

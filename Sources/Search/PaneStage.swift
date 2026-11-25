@@ -64,9 +64,58 @@ final class PaneStage: NSView {
             needsLayout = true
         }
     }
-    /// The shadow under each page's card, a layer of the stage's own behind
-    /// the page — never the page's, which is cut to its corners.
+    /// The ground under each page's card, a layer of the stage's own behind
+    /// the page — never the page's, which is cut to its corners. It cast a
+    /// soft shadow round the card, which read as a blurred grey ring where
+    /// the white of the page met the window's grey: the card's edge is the
+    /// slot's own hairline, one pixel wide, and nothing soft.
     private var shadows: [CALayer] = []
+
+    /// The window's card as ⌘S moves the column (ContentView's CardClip):
+    /// how much smaller it is than this stage, across and down from the
+    /// top left, and its corners. The pages are laid out once at their new
+    /// size and cut to the card on each frame, so their edges never run
+    /// past the window's.
+    private var cardSize: (() -> CGSize)?
+    private var cardCorner: CGFloat?
+
+    func clip(card: (() -> CGSize)?, corner: CGFloat) {
+        cardSize = card
+        cardCorner = corner
+        // In this pass's layout, once the stage is where this frame has it
+        // (see StageView.clip).
+        needsLayout = true
+    }
+
+    /// Each page cut to the card, and its ground, edge and corners with it.
+    private func applyCard() {
+        guard let corner = cardCorner else { return }
+        let cardShort = cardSize.map { size in
+            let card = size()
+            return CGSize(width: max(0, bounds.width - card.width), height: max(0, bounds.height - card.height))
+        } ?? .zero
+        let card = CGRect(x: 0, y: 0, width: max(0, bounds.width - cardShort.width),
+                          height: max(0, bounds.height - cardShort.height))
+        let whole = cardShort.width < 0.25 && cardShort.height < 0.25
+        let hairline = 1 / max(1, window?.backingScaleFactor ?? 2)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (index, slot) in slots.enumerated() {
+            let seen = slot.frame.intersection(card)
+            let short = seen.isNull ? .zero
+                : CGSize(width: slot.frame.width - seen.width, height: slot.frame.height - seen.height)
+            slot.clip(short: short, corner: corner)
+            // The edge would be cut on the card's far sides: none while
+            // the card is short of the page.
+            slot.layer?.borderWidth = corner > 0 && whole ? hairline : 0
+            if index < shadows.count {
+                let shadow = shadows[index]
+                if !seen.isNull { shadow.frame = seen }
+                shadow.cornerRadius = corner
+            }
+        }
+        CATransaction.commit()
+    }
     var onCommit: ((UUID, [Double]) -> Void)?
     var onFocus: ((Tab) -> Void)?
     /// Where each page is, from the top left, each time that changes — never
@@ -327,8 +376,9 @@ final class PaneStage: NSView {
             let edge = NSColor.labelColor.withAlphaComponent(CardEdge.edge).cgColor
             let ground = Palette.NS.ground.cgColor
             layer?.backgroundColor = card ? NSColor.clear.cgColor : ground
+            let hairline = 1 / max(1, window?.backingScaleFactor ?? 2)
             for slot in slots {
-                slot.layer?.borderWidth = card ? 1 : 0
+                slot.layer?.borderWidth = card ? hairline : 0
                 slot.layer?.borderColor = edge
             }
             for shadow in shadows {
@@ -336,10 +386,6 @@ final class PaneStage: NSView {
                 shadow.backgroundColor = ground
                 shadow.cornerRadius = corner
                 shadow.cornerCurve = .continuous
-                shadow.shadowColor = NSColor.black.cgColor
-                shadow.shadowOpacity = Swift.Float(CardEdge.shadow)
-                shadow.shadowRadius = CardEdge.blur
-                shadow.shadowOffset = CGSize(width: 0, height: 2)
             }
         }
     }
@@ -445,6 +491,7 @@ final class PaneStage: NSView {
             // edge, it read as a stray frame on one page of two (Drice,
             // 18 Nov 2026). The page clicked last is the one they go to.
         }
+        applyCard()
         // A window made too narrow for two takes the other page off, and
         // gives it back once there is room.
         feed()
@@ -1175,7 +1222,7 @@ struct FromTopLeft<Content: View>: View {
 /// weren't there — the sign-in box itself above all.
 /// The code card's host: as large as the page, but only the card takes a
 /// click; the rest of the page is the page's.
-private final class PairingHost: NSHostingView<FromTopLeft<ApplePairingCard>> {
+final class PairingHost: NSHostingView<FromTopLeft<ApplePairingCard>> {
     /// The sign-in box, from the page's top-left (Browser.ApplePairing.spot).
     var spot = CGRect.zero
 
@@ -1188,7 +1235,7 @@ private final class PairingHost: NSHostingView<FromTopLeft<ApplePairingCard>> {
     }
 }
 
-private final class AccountHost: NSHostingView<FromTopLeft<AccountList>> {
+final class AccountHost: NSHostingView<FromTopLeft<AccountList>> {
     /// The sign-in box, from the page's top-left (Browser.Suggesting.spot).
     var spot = CGRect.zero
     /// Where the card is drawn, from the host's top-left (AccountList.onFrame).
@@ -1212,6 +1259,77 @@ private final class AccountHost: NSHostingView<FromTopLeft<AccountList>> {
         // Only the card, where it really is.
         return RoundedRectangle(cornerRadius: 10, style: .continuous).path(in: card).contains(inside)
             ? super.hitTest(point) : nil
+    }
+}
+
+/// The accounts under a sign-in box and Apple Passwords' code card over a
+/// page that isn't on a PaneStage: a site's sized pop-up (PopupWindowView).
+/// Drawn by SwiftUI over the page, they were under WebKit's page there, as
+/// they once were over the stage (#667): the list was up, nobody saw it,
+/// and a click under the box went to the page (idea 1107). Each is a host
+/// of its own, laid over the page as large as it, taking a click only on
+/// its card.
+struct CardsOverPage: View {
+    @ObservedObject var browser: Browser
+    let tab: Tab.ID
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if let asked = browser.suggesting, asked.tab == tab {
+                AccountsOver(browser: browser, asked: asked)
+            }
+            if let pairing = browser.applePairing, pairing.tab == tab {
+                PairingOver(browser: browser, pairing: pairing)
+            }
+        }
+    }
+}
+
+private struct AccountsOver: NSViewRepresentable {
+    let browser: Browser
+    let asked: Browser.Suggesting
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: AccountHost, context: Context) -> CGSize? {
+        guard let width = proposal.width, let height = proposal.height, width.isFinite, height.isFinite else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
+    func makeNSView(context: Context) -> AccountHost {
+        let host = AccountHost(rootView: FromTopLeft(content: AccountList(browser: browser, asked: asked)))
+        host.sizingOptions = []
+        return host
+    }
+
+    func updateNSView(_ host: AccountHost, context: Context) {
+        var view = AccountList(browser: browser, asked: asked)
+        view.onFrame = { [weak host] in host?.card = $0 }
+        host.spot = asked.spot
+        host.rootView = FromTopLeft(content: view)
+    }
+}
+
+private struct PairingOver: NSViewRepresentable {
+    let browser: Browser
+    let pairing: Browser.ApplePairing
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: PairingHost, context: Context) -> CGSize? {
+        guard let width = proposal.width, let height = proposal.height, width.isFinite, height.isFinite else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
+    func makeNSView(context: Context) -> PairingHost {
+        let host = PairingHost(rootView: FromTopLeft(content: card))
+        host.sizingOptions = []
+        return host
+    }
+
+    func updateNSView(_ host: PairingHost, context: Context) {
+        host.rootView = FromTopLeft(content: card)
+        host.spot = pairing.spot
+    }
+
+    private var card: ApplePairingCard {
+        ApplePairingCard(browser: browser, apple: browser.applePasswords, pairing: pairing)
     }
 }
 

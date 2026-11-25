@@ -740,6 +740,7 @@ struct SettingsPanel: View {
         case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
         case "bookmarks.iconsOnly": Switch(on: $prefs.bookmarksIconsOnly)
+        case "bookmarks.newTabOnly": Switch(on: $prefs.bookmarksNewTabOnly)
         case "bookmarks.side":
             Switch(on: Binding(
                 get: { prefs.bookmarksInSidebar },
@@ -762,6 +763,7 @@ struct SettingsPanel: View {
                 Text(prefs.sidebar ? "Bottom" : "Rightmost").tag(NewTabPlace.end)
             }
         case "tabs.newAfterLast": Switch(on: $prefs.newTabAfterLast)
+        case "tabs.keepWindow": Switch(on: $prefs.keepWindowAfterLast)
         case "tabs.closeGoesBack": Switch(on: $prefs.closeGoesBack)
         case "home.grid": Switch(on: $prefs.homeGrid)
         case "tabs.undoReopens": Switch(on: $prefs.undoReopensTab)
@@ -794,6 +796,7 @@ struct SettingsPanel: View {
                 set: { on in withAnimation(Motion.glide) { prefs.showsAddress = on } }
             ))
         case "tabs.clickAddressOnly": Switch(on: $prefs.tabClickAddressOnly)
+        case "tabs.clickKeepsName": Switch(on: $prefs.tabClickKeepsName)
         case "note.groups", "note.awake": Always()
         default: EmptyView()
         }
@@ -838,6 +841,7 @@ struct SettingsPanel: View {
                 .frame(maxWidth: 340)
         case "float.minimize": Switch(on: $prefs.floatMinimizes)
         case "media.click": Switch(on: $prefs.waitsForPlay)
+        case "video.keys": Switch(on: $prefs.videoKeys)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
         case "fullscreen.keepsWindow": Switch(on: $prefs.keepsWindow)
         case "translate.target":
@@ -893,6 +897,7 @@ struct SettingsPanel: View {
         case "find.dim": Switch(on: $prefs.findDims)
         case "pins.folders": Switch(on: $prefs.pinFolders)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
+        case "pins.linksNewTab": Switch(on: $prefs.pinLinksOpenTabs)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
         case "field.window": Switch(on: $prefs.fieldOnWindow)
         case "newtab.recent": Switch(on: $prefs.recentInNewTab)
@@ -965,6 +970,7 @@ struct SettingsPanel: View {
         case "note.switcher": Always()
         case "updates.version": versionControl
         case "updates.auto": Switch(on: $prefs.installsUpdates)
+        case "updates.notice": Switch(on: $prefs.showsUpdateReady)
         case "about.feedback": Pill("Send Feedback") { Links.writeFeedback() }
         case "about.notes": Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
         case "bench": Switch(on: $prefs.bench)
@@ -984,7 +990,9 @@ struct SettingsPanel: View {
     private func after(_ item: SettingsItem, searched: Bool) -> some View {
         switch item.id {
         case "search.engine":
-            if prefs.engine == .custom { templateField($prefs.customEngine) }
+            if prefs.engine == .custom {
+                templateField($prefs.customEngine, suggest: $prefs.customSuggest)
+            }
         case "search.shift":
             if prefs.shiftEngine == .custom { templateField($prefs.shiftCustom) }
         case "search.keywords":
@@ -1021,6 +1029,8 @@ struct SettingsPanel: View {
             }
         case "agents":
             if !searched, prefs.agents { RememberedAgents() }
+        case "devtools":
+            DevToolsPackageList().under()
         case "passwords.apple":
             ApplePasswordsCard(prefs: prefs, bare: true)
                 .under()
@@ -1044,11 +1054,29 @@ struct SettingsPanel: View {
         }
     }
 
-    /// A custom engine's address, under the row that chose Custom.
-    private func templateField(_ text: Binding<String>) -> some View {
+    /// A custom engine's address, under the row that chose Custom; and, under
+    /// it, where its suggestions may come from (EngineSuggest.swift).
+    private func templateField(_ text: Binding<String>, suggest: Binding<String>? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            addressField(text, placeholder: "https://example.com/search?q=%s")
+            if let suggest {
+                Text("Suggestions address (optional)")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.leading, 10)
+                    .padding(.top, 2)
+                addressField(suggest, placeholder: "https://example.com/suggest?q=%s")
+            }
+        }
+        .padding(.leading, SettingsPanel.textInset)
+        .padding(.trailing, 14)
+        .padding(.bottom, 11)
+    }
+
+    private func addressField(_ text: Binding<String>, placeholder: String) -> some View {
         ZStack(alignment: .leading) {
             if text.wrappedValue.isEmpty {
-                Text("https://example.com/search?q=%s")
+                Text(placeholder)
                     .foregroundStyle(Palette.muted.opacity(0.8))
             }
             TextField("", text: text)
@@ -1059,9 +1087,6 @@ struct SettingsPanel: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .padding(.leading, SettingsPanel.textInset)
-        .padding(.trailing, 14)
-        .padding(.bottom, 11)
     }
 
     @ViewBuilder
@@ -1163,10 +1188,14 @@ struct SettingsPanel: View {
 
     /// Said plainly: turned on, what you type leaves the Mac as you type it.
     private var suggestDetail: String {
-        let name = prefs.engine.name(custom: prefs.customEngine)
-        guard EngineSuggest.endpoint(for: prefs.engine) != nil else {
-            return "A custom engine has no suggestions to give, so nothing is sent"
+        guard EngineSuggest.endpoint(for: prefs.engine, custom: prefs.customSuggest) != nil else {
+            guard prefs.engine == .custom else { return "No suggestions address is set, so nothing is sent" }
+            return prefs.customSuggest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "A custom engine has no suggestions until you give it an address, so nothing is sent"
+                : "A custom engine's suggestions need an https address with %s, so nothing is sent"
         }
+        if prefs.engine == .custom { return "What you type is sent to the suggestions address as you type" }
+        let name = prefs.engine.name(custom: prefs.customEngine)
         return "What you type is sent to \(name) as you type"
     }
 

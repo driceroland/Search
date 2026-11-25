@@ -530,7 +530,7 @@ extension Browser {
         // Beside the space's icon when the tabs are on screen (SpaceDot);
         // folded away, or with the icon up beside the helm, at the bottom.
         // With a button per space there is no dot to say it: at the bottom.
-        if prefs.showsSpaceButtons || folded && !peeking
+        if !arrivedQuietly(at: id), prefs.showsSpaceButtons || folded && !peeking
             || SideBar.doorsUp(prefs, width: prefs.columnWidth, fullScreen: fullScreen, spaces: SpaceButtons.count(prefs, spaces)) {
             announce(space.name)
         }
@@ -881,6 +881,7 @@ struct SpaceWash: View {
 
 struct SpaceDot: View {
     @ObservedObject var browser: Browser
+    @Environment(\.greys) private var greys
     @State private var hovering = false
     /// What is drawn, a step behind the browser: the space changes in a
     /// frame with nothing animated (see SpaceSwipe.slide), and the icon
@@ -910,7 +911,8 @@ struct SpaceDot: View {
             ZStack {
                 Image(systemName: shown?.symbol ?? symbol)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(tint ?? (hovering ? Palette.ink : Palette.muted))
+                    // Hovered as the doors beside it are (Door, idea 1034).
+                    .foregroundStyle(tint ?? (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
                     .id(shown?.key ?? key)
                     // The way the tabs go: sideways in the column; in the bar
                     // across the top, up for the next space, down going back.
@@ -924,7 +926,7 @@ struct SpaceDot: View {
                 // A coloured space's dot sits on a wash of its colour, enough
                 // to tell spaces apart at the edge of the eye.
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(tint.map { $0.opacity(hovering ? 0.24 : 0.14) } ?? (hovering ? Palette.hover : .clear))
+                    .fill(tint.map { $0.opacity(hovering ? 0.24 : 0.14) } ?? (hovering ? greys.hover : .clear))
             )
             .contentShape(Rectangle())
         }
@@ -939,7 +941,9 @@ struct SpaceDot: View {
                 withAnimation(Motion.reduced ? nil : .easeOut(duration: 0.22)) { shown = (now, symbol) }
             }
         }
-        .onChange(of: browser.spaceID) { _, _ in if names { name() } }
+        // Not where another profile's window brought you: that is a change
+        // of profile, which the badge beside it shows (idea 1114).
+        .onChange(of: browser.spaceID) { _, now in if names, !browser.arrivedQuietly(at: now) { name() } }
         // The name, beside the icon that stands for it, the moment you get
         // there — right of it in the bar, over the first tabs (below, the
         // page would cover it), above it at the column's foot — and
@@ -966,11 +970,15 @@ struct SpaceDot: View {
         .animation(Motion.quick, value: named)
     }
 
+    /// Every name shown so, on a test run, for a probe to read.
+    @MainActor static var namesShown: [String] = []
+
     private func name() {
         guard !browser.makingSpace else { return }
         naming += 1
         let turn = naming
         named = browser.space.name
+        if Store.testing { Self.namesShown.append(browser.space.name) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             guard turn == naming else { return }
             named = nil
@@ -1014,6 +1022,7 @@ struct SpaceButtons: View {
 }
 
 private struct SpaceButton: View {
+    @Environment(\.greys) private var greys
     let browser: Browser
     let space: Space
     let index: Int
@@ -1030,15 +1039,16 @@ private struct SpaceButton: View {
                 // Its colour only while it's the one on screen: the others
                 // all grey alike, coloured or not, so a coloured space's
                 // button didn't read as the one you're in.
-                .foregroundStyle(current ? (space.tint ?? Palette.ink) : hovering ? Palette.ink : Palette.muted)
+                // Hovered as the doors beside it are (Door, idea 1034).
+                .foregroundStyle(current ? (space.tint ?? Palette.ink) : hovering ? Palette.ink.opacity(0.7) : Palette.muted)
                 .opacity(current || hovering ? 1 : 0.75)
                 .frame(minWidth: squeezes ? 20 : 26, idealWidth: 26, maxWidth: 26, minHeight: 26, maxHeight: 26)
                 .background(
                     // The one on screen on a wash, of its colour if it has one.
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(current
-                              ? (space.tint.map { $0.opacity(0.18) } ?? Palette.hover)
-                              : (hovering ? Palette.hover : .clear))
+                              ? (space.tint.map { $0.opacity(0.18) } ?? greys.wash)
+                              : (hovering ? greys.hover : .clear))
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }

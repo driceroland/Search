@@ -599,8 +599,8 @@ extension KeyCombo {
 extension View {
     /// The command's key as it stands, or none (see ShortcutStore).
     @MainActor
-    func shortcut(_ id: String) -> some View {
-        keyboardShortcut(ShortcutStore.shared.key(for: id)?.swiftUI)
+    func shortcut(_ id: String?) -> some View {
+        keyboardShortcut(id.flatMap { ShortcutStore.shared.key(for: $0)?.swiftUI })
     }
 
     /// A button's tooltip with its command's key as it stands, "Downloads

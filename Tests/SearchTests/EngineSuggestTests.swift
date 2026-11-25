@@ -58,6 +58,30 @@ final class EngineSuggestTests: XCTestCase {
                        "https://api.qwant.com/api/suggest/?q=x%20y&client=opensearch")
     }
 
+    func testACustomEngineCanBeGivenItsOwnAddress() throws {
+        XCTAssertNil(EngineSuggest.endpoint(for: .custom), "none unless given")
+        XCTAssertNil(EngineSuggest.endpoint(for: .custom, custom: "  "))
+        for bad in ["http://suggest.example/?q=%s", "ftp://suggest.example/?q=%s", "file:///tmp/%s",
+                    "https://suggest.example/", "not a url", "javascript://alert(%s)"] {
+            XCTAssertNil(EngineSuggest.endpoint(for: .custom, custom: bad), bad)
+            XCTAssertNil(EngineSuggest.url(for: "a", engine: .custom, custom: bad), bad)
+        }
+        let template = "https://suggest.example/complete?q=%s"
+        XCTAssertEqual(EngineSuggest.endpoint(for: .custom, custom: template), template)
+        let url = try XCTUnwrap(EngineSuggest.url(for: "café crème", engine: .custom, custom: template))
+        XCTAssertEqual(url.scheme, "https")
+        XCTAssertEqual(url.host(), "suggest.example")
+        XCTAssertTrue(url.absoluteString.contains("caf%C3%A9%20cr%C3%A8me"), url.absoluteString)
+        // As they come from another browser, or typed without a scheme.
+        XCTAssertEqual(EngineSuggest.endpoint(for: .custom, custom: "https://x.example/?q={searchTerms}"),
+                       "https://x.example/?q=%s")
+        XCTAssertEqual(EngineSuggest.endpoint(for: .custom, custom: "x.example/?q=%s"),
+                       "https://x.example/?q=%s")
+        // Only a test run may ask this Mac's fake engine over http.
+        XCTAssertNotNil(EngineSuggest.url(for: "a", engine: .custom, custom: "http://127.0.0.1:9/s?q=%s"))
+        XCTAssertNil(EngineSuggest.url(for: "a", engine: .custom, custom: "http://suggest.example/?q=%s"))
+    }
+
     func testOnlyHTTPSOrATestRunsLoopback() {
         XCTAssertNotNil(EngineSuggest.url(for: "a", engine: .google, test: "http://127.0.0.1:9/s?q=%s"))
         XCTAssertNotNil(EngineSuggest.url(for: "a", engine: .google, test: "http://localhost:9/s?q=%s"))
@@ -112,6 +136,7 @@ final class EngineSuggestTests: XCTestCase {
         let browser = Browser(record: WindowRecord())
         defer {
             browser.prefs.engineSuggests = false
+            browser.prefs.customSuggest = ""
             browser.closeAll()
         }
         browser.prefs.engine = .duckduckgo
@@ -125,7 +150,11 @@ final class EngineSuggestTests: XCTestCase {
         XCTAssertNil(browser.engineQuestion(for: fakeToken))
 
         browser.prefs.engine = .custom
-        XCTAssertNil(browser.engineQuestion(for: "coffee"), "a custom engine has nowhere to ask")
+        XCTAssertNil(browser.engineQuestion(for: "coffee"), "a custom engine has nowhere to ask until given one")
+        browser.prefs.customSuggest = "https://suggest.example/?q=%s"
+        XCTAssertEqual(browser.engineQuestion(for: "coffee")?.host(), "suggest.example",
+                       "a custom engine given an address is asked")
+        browser.prefs.customSuggest = ""
         browser.prefs.engine = .duckduckgo
 
         browser.newShyTab()

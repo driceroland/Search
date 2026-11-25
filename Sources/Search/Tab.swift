@@ -358,7 +358,29 @@ final class Tab: ObservableObject, Identifiable {
     /// opened this tab can write into it while the address it asked for is
     /// still loading, and that address must not vouch for what it wrote.
     /// A tab with no view (asleep, restored) has only its address to say.
-    var restAddress: URL? { built == nil ? address : committed }
+    var restAddress: URL? {
+        if failure != nil, let failedAt { return failedAt }
+        return built == nil ? address : committed
+    }
+
+    /// Where the last load was going when it failed before arriving — a
+    /// refused connection, a host that isn't there, a broken certificate —
+    /// as WebKit's error names it (NSURLErrorFailingURLErrorKey), never as
+    /// the page says it. WebKit puts its own address back to the page still
+    /// underneath; the tab says, copies and reloads this one instead, as
+    /// Safari and Chrome do (idea 1080): an OAuth code sent to a localhost
+    /// port nothing listens on can be copied out. Only while the failure is
+    /// up over the page: anything else that moves the tab lets it go.
+    private(set) var failedAt: URL? {
+        didSet { steps() }
+    }
+
+    /// The failure that `Browser.fail` has just put up was a load to `url`.
+    func failed(at url: URL?) {
+        guard let url, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
+        failedAt = url
+        address = url
+    }
 
     private(set) var documentGeneration: UInt64 = 0
 
@@ -384,6 +406,11 @@ final class Tab: ObservableObject, Identifiable {
         // A link followed out of an article is a page, not an article: ⇧⌘R
         // reads it rather than reloading it, and the article's corner goes.
         reader = false
+        // Whatever failed before it, this page is the one on screen now.
+        if failedAt != nil {
+            failedAt = nil
+            if let url = built?.url, url.absoluteString != "about:blank" { address = url }
+        }
         // A page arrived after all: the address is its own again.
         if held != nil, let url = built?.url, url.absoluteString != "about:blank" {
             held = nil
@@ -413,7 +440,12 @@ final class Tab: ObservableObject, Identifiable {
     /// connection, a process that kept dying. Shown in place of the page
     /// rather than in a dialog.
     @Published var failure: String? {
-        didSet { if failure == nil { dead = false } }
+        didSet {
+            if failure == nil {
+                dead = false
+                if failedAt != nil { failedAt = nil }
+            }
+        }
     }
     /// How far down the page you are, nought to one. The tab's own pill fills
     /// with it. Kept apart from the rest of the tab (see Reading): it changes
@@ -922,7 +954,7 @@ final class Tab: ObservableObject, Identifiable {
 
     /// Back and Forward as this tab has them now.
     private func steps() {
-        let back = page != nil ? !trail.isEmpty : (built?.canGoBack ?? false) || behind != nil
+        let back = page != nil ? !trail.isEmpty : (built?.canGoBack ?? false) || behind != nil || (failedAt != nil && committed != nil)
         let forward = page != nil ? !ahead.isEmpty : built?.canGoForward ?? false
         if canGoBack != back { canGoBack = back }
         if canGoForward != forward { canGoForward = forward }
@@ -1060,6 +1092,14 @@ final class Tab: ObservableObject, Identifiable {
                         if fresh == self.heldOver { return }
                         self.held = nil
                     }
+                    // WebKit going back to the page underneath a failed load
+                    // is not a move: the tab keeps saying where it failed.
+                    // Anything else — a new load, the page's own pushState —
+                    // is, and the failed address goes.
+                    if self.failedAt != nil {
+                        if fresh == self.committed { return }
+                        self.failedAt = nil
+                    }
                     // By site, port included: localhost:3000 to localhost:5173
                     // is another project, with another icon. Another path on
                     // the same host may be another app, with one of its own.
@@ -1196,6 +1236,10 @@ final class Tab: ObservableObject, Identifiable {
         if AutoScroll.on {
             add(AutoScroll.script, .atDocumentEnd, mainFrameOnly: true, in: Web.world)
         }
+        // Every frame: an embedded video takes its keys in its own document.
+        if VideoKeys.on {
+            add(VideoKeys.script, .atDocumentStart, mainFrameOnly: false, in: Web.world)
+        }
         // Every frame: a swipe over an embedded map is the map's, and only the
         // map's own document can say so.
         add(Swipe.watch, .atDocumentStart, mainFrameOnly: false, in: Web.world)
@@ -1275,6 +1319,9 @@ final class Tab: ObservableObject, Identifiable {
         if let kept = KeptSession.script(for: self) {
             add(kept, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
+        // Only while a developer tools package has a tool open on this tab
+        // (DevToolsPackages.swift).
+        scripts += DevToolsPackages.scripts(for: self)
         // The same scripts as the document before's, the usual case, are
         // left where they are: taken out and put back, every one was sent to
         // the page's process again on every link followed.
@@ -1282,6 +1329,9 @@ final class Tab: ObservableObject, Identifiable {
         controller.removeAllUserScripts()
         scripts.forEach(controller.addUserScript)
     }
+
+    /// The next document's scripts again, as they now stand.
+    func rearm() { arm(hiding: veils) }
 
     /// The same stylesheet, for the page that is already up.
     func applyVeils(_ css: String) {
@@ -2029,6 +2079,13 @@ final class Tab: ObservableObject, Identifiable {
         // the reload.
         guard !wake() else { return }
         reader = false
+        // Try again where it failed, not the page underneath (idea 1080).
+        // The failure stays up until that load arrives or fails again.
+        if let failedAt, failure != nil, built != nil {
+            loadGeneration &+= 1
+            web.open(failedAt)
+            return
+        }
         // Try again on a page that kept crashing: its process is gone, so
         // the address, checked as recoverFromCrash checks it.
         if dead, let address {
@@ -2062,6 +2119,13 @@ final class Tab: ObservableObject, Identifiable {
             title = last.title
             adoptIcon()
             steps()
+            return
+        }
+        // Back from a load that failed: the page it left, still underneath,
+        // with its own address — as Safari's error page steps back to it.
+        if failedAt != nil, failure != nil, let there = committed {
+            failure = nil
+            address = there
             return
         }
         // At the first web page after one of Search's own: back to it.
@@ -2205,6 +2269,7 @@ final class Tab: ObservableObject, Identifiable {
         // What the player paused went with the page: nothing to play again.
         stilled = false
         guard let web = built else { return }
+        DevToolsPackages.unload(web)
         (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
         // A process too busy to hear the view go would outlive it (#1264).
@@ -2622,6 +2687,7 @@ final class PageView: WKWebView {
         // View menu. Handed on, and then the coat, if one was asked for.
         if let item = menu.items.first(where: { $0.identifier?.rawValue == "WKMenuItemIdentifierInspectElement" }) {
             inspectItem = (item.target, item.action)
+            inspectPoint = convert(event.locationInWindow, from: nil)
             item.target = self
             item.action = #selector(inspectFromPage(_:))
         }
@@ -2677,8 +2743,13 @@ final class PageView: WKWebView {
 
     /// WebKit's Inspect Element, handed on so the inspector's coat follows.
     private var inspectItem: (target: AnyObject?, action: Selector?) = (nil, nil)
+    /// Where the menu was opened, for a developer tools package that
+    /// inspects (DevToolsPackages.inspect).
+    private var inspectPoint: NSPoint?
 
     @objc private func inspectFromPage(_ item: NSMenuItem) {
+        if let point = inspectPoint, let browser, DevToolsPackages.inspect(at: point, in: self, browser: browser) { return }
+        DevToolsPackages.yieldInspector(self)
         guard let action = inspectItem.action else { return }
         NSApp.sendAction(action, to: inspectItem.target, from: item)
         browser?.dressInspector(of: self)
@@ -2829,7 +2900,7 @@ final class PageView: WKWebView {
         // A press that reaches the page under a peek is a press beside the
         // panel, which puts the peek away (see Peek.swift); under the column
         // it is nobody's.
-        if underCover(event) {
+        if underCover(event, press: true) {
             if let browser, browser.peekInFront, browser.peekTab?.built !== self { browser.closePeek() }
             return
         }
@@ -2887,10 +2958,13 @@ final class PageView: WKWebView {
         return Browsers.all.first { $0.window === window }
     }
 
-    /// Whether the event is under cover, and if so, the page told so.
-    private func underCover(_ event: NSEvent) -> Bool {
+    /// Whether the event is under cover, and if so, the page told so. A
+    /// `press` is under cover only where something lies on the page: the
+    /// column's edge while it is away, and the column sliding back in,
+    /// hold back the pointer's moves alone (Browser.covers).
+    private func underCover(_ event: NSEvent, press: Bool = false) -> Bool {
         guard let window, event.window == nil || event.window === window,
-              browser?.covers(self, at: event.locationInWindow) == true
+              browser?.covers(self, at: event.locationInWindow, press: press) == true
         else {
             covered = false
             return false
@@ -2990,7 +3064,7 @@ final class PageView: WKWebView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        if underCover(event) { return }
+        if underCover(event, press: true) { return }
         super.rightMouseDown(with: event)
     }
 
@@ -3000,7 +3074,7 @@ final class PageView: WKWebView {
     /// drivers settled on regardless, so it's what a mouse's own firmware
     /// is tuned to send.
     override func otherMouseDown(with event: NSEvent) {
-        if underCover(event) { return }
+        if underCover(event, press: true) { return }
         switch event.buttonNumber {
         case 3 where canGoBack: goBack()
         case 4 where canGoForward: goForward()

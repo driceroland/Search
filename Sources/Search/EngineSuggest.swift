@@ -18,8 +18,9 @@ enum EngineSuggest {
 
     /// Where each engine answers, OpenSearch's JSON ["words", ["…", …]],
     /// each checked with a real request on 20 Oct 2026. A custom engine has
-    /// none we could know, and so shows nothing.
-    static func endpoint(for engine: Engine) -> String? {
+    /// none we could know unless one is given in Settings › Browsing ›
+    /// Search with (`custom`), and shows nothing until then.
+    static func endpoint(for engine: Engine, custom: String = "") -> String? {
         switch engine {
         case .google: return "https://suggestqueries.google.com/complete/search?client=firefox&q=%s"
         case .duckduckgo: return "https://duckduckgo.com/ac/?q=%s&type=list"
@@ -29,20 +30,39 @@ enum EngineSuggest {
         case .kagi: return "https://kagi.com/api/autosuggest?q=%s"
         case .brave: return "https://search.brave.com/api/suggest?q=%s"
         case .qwant: return "https://api.qwant.com/api/suggest/?q=%s&client=opensearch"
-        case .custom: return nil
+        case .custom: return customEndpoint(custom)
         }
+    }
+
+    /// A custom engine's address as given in Settings, when it is one the
+    /// field may ask: https, and with %s where the words go. Empty, or
+    /// anything else, and it has no suggestions. In a test run this Mac's
+    /// fake engine on loopback is allowed too, as the test address is.
+    private static func customEndpoint(_ custom: String) -> String? {
+        let written = Engine.written(custom)
+        guard Engine.accepts(written) else { return nil }
+        if written.lowercased().hasPrefix("https://") { return written }
+        guard Store.testing, written.lowercased().hasPrefix("http://"),
+              let host = URLComponents(string: written.replacingOccurrences(of: "%s", with: "x"))?.host?.lowercased(),
+              ["127.0.0.1", "localhost"].contains(host)
+        else { return nil }
+        return written
     }
 
     /// The question for these words, or nil when there is nowhere to ask.
     /// Only ever https — except, in a test run, a fake engine on this Mac
-    /// (`suggest.testURL` in the test world's settings).
-    static func url(for words: String, engine: Engine, test: String? = nil) -> URL? {
-        let template = test ?? endpoint(for: engine)
+    /// (`suggest.testURL`, or a custom engine's own address, in the test
+    /// world's settings).
+    static func url(for words: String, engine: Engine, custom: String = "", test: String? = nil) -> URL? {
+        let template = test ?? endpoint(for: engine, custom: custom)
         guard let template, let url = Engine.url(for: words, template: template),
               let scheme = url.scheme?.lowercased()
         else { return nil }
+        let loopback = ["127.0.0.1", "localhost"].contains(url.host() ?? "")
         if scheme == "https" { return url }
-        if test != nil, scheme == "http", ["127.0.0.1", "localhost"].contains(url.host() ?? "") { return url }
+        if test != nil, scheme == "http", loopback { return url }
+        // customEndpoint has already said this one may be asked.
+        if engine == .custom, Store.testing, scheme == "http", loopback { return url }
         return nil
     }
 

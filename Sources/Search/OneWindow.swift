@@ -163,7 +163,10 @@ extension Browsers {
         }
         let next = sibling(of: current, in: profile, at: id)
         bring(next, over: current)
-        if next.prefs.usesSpaces { next.enter(id) }
+        if next.prefs.usesSpaces {
+            next.quietArrival = (id, Date())
+            next.enter(id)
+        }
     }
 
     /// Another profile chosen in `current` (its badge, the Profile menu):

@@ -419,6 +419,15 @@ enum Motion {
         out ? (0.14, 0.86) : (0.13, 1)
     }
 
+    /// How long the folded column takes to slide back in, or fade, and
+    /// is still over the page: the spring's response (Motion.fold) runs a
+    /// little past it.
+    static var columnAway: TimeInterval {
+        if reduced { return 0 }
+        if fadesColumn { return fade }
+        return slide(out: false) ?? 0.2
+    }
+
     static func folding(out: Bool) -> Animation? {
         if reduced { return nil }
         if let slide = slide(out: out) {
@@ -592,6 +601,16 @@ private struct PopoverGround: ViewModifier {
 /// card each, drawn by the stage that holds them (see PaneStage).
 struct CardEdge: ViewModifier {
     let on: Bool
+    /// Where the card lies in the view, for a card drawn over a page laid
+    /// out larger than it (the window's page as ⌘S moves the column): the
+    /// clip, ground and edge follow these, animated, and the page doesn't.
+    var insets = EdgeInsets()
+    var corner: CGFloat = Metrics.cardRadius
+    /// The screen's scale, for the window's page: its edges on whole
+    /// pixels, a hairline one pixel wide and no soft shadow around it, so
+    /// the white of the page meets the window's grey on a sharp line. Zero
+    /// keeps the soft card other cards are (the side panel, downloads).
+    var scale: CGFloat = 0
 
     // One shape of view, on or off: a page whose view were rebuilt as the
     // card comes and goes (the tabs across the top, a video taking the
@@ -599,16 +618,23 @@ struct CardEdge: ViewModifier {
     // full screen window. Off, the clip reaches far past the page and cuts
     // nothing, and the edge and shadow are clear.
     func body(content: Content) -> some View {
+        let shape = CardShape(on: on, insets: insets, corner: corner, scale: scale)
+        let crisp = scale > 0
         content
-            .clipShape(CardShape(on: on))
+            .clipShape(shape)
             .background {
-                CardShape(on: on)
-                    .fill(on ? Palette.ground : .clear)
-                    .shadow(color: .black.opacity(on ? CardEdge.shadow : 0), radius: CardEdge.blur, y: 2)
+                if crisp {
+                    shape.fill(on ? Palette.ground : .clear)
+                } else {
+                    shape
+                        .fill(on ? Palette.ground : .clear)
+                        .shadow(color: .black.opacity(on ? CardEdge.shadow : 0), radius: CardEdge.blur, y: 2)
+                }
             }
             .overlay {
-                CardShape(on: on)
-                    .strokeBorder(Color.primary.opacity(on ? CardEdge.edge : 0), lineWidth: 1)
+                shape
+                    .strokeBorder(Color.primary.opacity(on && corner > 0 ? CardEdge.edge : 0),
+                                  lineWidth: crisp ? 1 / scale : 1)
                     .allowsHitTesting(false)
             }
     }
@@ -623,17 +649,123 @@ struct CardEdge: ViewModifier {
 /// far past the page on every side.
 private struct CardShape: InsettableShape {
     let on: Bool
+    var insets = EdgeInsets()
+    var corner: CGFloat = Metrics.cardRadius
+    var scale: CGFloat = 0
     var inset: CGFloat = 0
+
+    var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<AnimatablePair<CGFloat, CGFloat>, CGFloat>> {
+        get { .init(.init(insets.top, insets.leading), .init(.init(insets.bottom, insets.trailing), corner)) }
+        set {
+            insets = EdgeInsets(top: newValue.first.first, leading: newValue.first.second,
+                                bottom: newValue.second.first.first, trailing: newValue.second.first.second)
+            corner = newValue.second.second
+        }
+    }
 
     func path(in rect: CGRect) -> Path {
         guard on else { return Path(rect.insetBy(dx: -10_000, dy: -10_000)) }
-        return RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous)
-            .path(in: rect.insetBy(dx: inset, dy: inset))
+        func pixel(_ x: CGFloat) -> CGFloat { scale > 0 ? (x * scale).rounded() / scale : x }
+        let card = CGRect(x: pixel(rect.minX + insets.leading), y: pixel(rect.minY + insets.top),
+                          width: pixel(rect.width - insets.leading - insets.trailing),
+                          height: pixel(rect.height - insets.top - insets.bottom))
+        return RoundedRectangle(cornerRadius: max(0, corner), style: .continuous)
+            .path(in: card.insetBy(dx: inset, dy: inset))
     }
 
     func inset(by amount: CGFloat) -> CardShape {
         var shape = self
         shape.inset += amount
         return shape
+    }
+}
+
+/// An offset kept to the screen's pixels while it animates, so what it
+/// moves is never drawn between two of them, resampled and soft.
+struct PixelOffset: GeometryEffect {
+    var offset: CGSize
+    var scale: CGFloat
+
+    var animatableData: CGSize.AnimatableData {
+        get { offset.animatableData }
+        set { offset.animatableData = newValue }
+    }
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        func pixel(_ x: CGFloat) -> CGFloat { scale > 0 ? (x * scale).rounded() / scale : x }
+        return ProjectionTransform(CGAffineTransform(translationX: pixel(offset.width), y: pixel(offset.height)))
+    }
+}
+
+/// The window's page cut to its card on every frame the card moves (see
+/// StageView.clip): what the card is short of the page laid out under it,
+/// across and down, and its corners, handed on as SwiftUI works each frame
+/// out, so the page's edge and the card's are one.
+struct CardClip: ViewModifier, Animatable {
+    var card: EdgeInsets
+    var corner: CGFloat
+    let scale: CGFloat
+    let on: Bool
+
+    var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<AnimatablePair<CGFloat, CGFloat>, CGFloat>> {
+        get { .init(.init(card.top, card.leading), .init(.init(card.bottom, card.trailing), corner)) }
+        set {
+            card = EdgeInsets(top: newValue.first.first, leading: newValue.first.second,
+                              bottom: newValue.second.first.first, trailing: newValue.second.first.second)
+            corner = newValue.second.second
+        }
+    }
+
+    func body(content: Content) -> some View {
+        func pixel(_ x: CGFloat) -> CGFloat { scale > 0 ? (x * scale).rounded() / scale : x }
+        let across = CGSize(width: pixel(card.leading + card.trailing), height: pixel(card.top + card.bottom))
+        return content.background(Rider(across: on ? across : nil, corner: on ? max(0, corner) : 0))
+    }
+
+    /// The card, measured in the window: the room it leaves across and
+    /// down, inside this view's own size. Read as the stage lays itself
+    /// out, so the two are always of the same moment: handed a size worked
+    /// out before the stage had grown, the card was cut short for a frame.
+    private struct Rider: NSViewRepresentable {
+        let across: CGSize?
+        let corner: CGFloat
+
+        func makeNSView(context: Context) -> NSView { Unseen() }
+
+        func updateNSView(_ view: NSView, context: Context) {
+            guard let unseen = view as? Unseen, let window = view.window else { return }
+            // The window's stage: two pages' (PaneStage), or the one page's.
+            if unseen.stage?.window !== window {
+                unseen.stage = Self.find(in: window.contentView)
+            }
+            let card: (() -> CGSize)? = across.map { across in
+                { [weak unseen] in
+                    guard let unseen else { return .zero }
+                    return CGSize(width: unseen.bounds.width - across.width, height: unseen.bounds.height - across.height)
+                }
+            }
+            switch unseen.stage {
+            case let panes as PaneStage: panes.clip(card: card, corner: corner)
+            case let one as StageView: one.clip(card: card, corner: corner)
+            default: break
+            }
+        }
+
+        private static func find(in view: NSView?) -> NSView? {
+            guard let view else { return nil }
+            if view is PaneStage || view is StageView { return view }
+            for sub in view.subviews { if let found = find(in: sub) { return found } }
+            return nil
+        }
+
+        private final class Unseen: NSView {
+            weak var stage: NSView?
+            override func hitTest(_ point: NSPoint) -> NSView? { nil }
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                // The first frame's update may come before the window does.
+                needsLayout = true
+            }
+        }
     }
 }

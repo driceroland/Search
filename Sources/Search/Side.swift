@@ -19,10 +19,15 @@ struct SideBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject private var agents = AgentControl.shared
+    @ObservedObject private var updater = Updater.shared
     @Environment(\.colorScheme) private var colourScheme
     /// On the window's ground, beside the page's card (see CardEdge): the
     /// ground's colour and no edge of its own, the card's edge being the line.
     var onFrame = false
+    /// Round, folded out over the page as a floating card (see Fold): the
+    /// column's own ground cut to it. Only the ground is cut, not the
+    /// column, whose edge to pull stands just past it.
+    var corner: CGFloat = 0
     /// The greys for that ground, handed down to every row, pin and door.
     private var greys: Greys { onFrame ? .frame : .white }
 
@@ -319,21 +324,29 @@ struct SideBar: View {
                 $0.modifier(EndInset(bottom: footHeight))
             }
             .padding(.bottom, (browser.player == nil ? 0 : rowHeight + SideBar.playerGap)
-                     + (agentHere && !icons ? SideBar.agentRow + SideBar.playerGap : 0))
+                     + (agentHere && !icons ? agentCard + SideBar.playerGap : 0)
+                     + (updateHere ? rowHeight + SideBar.playerGap : 0))
 
             VStack(spacing: 0) {
                 Spacer()
-                // A coding agent allowed in this window: its pill and Stop,
+                // A coding agent allowed in this window: its card and Stop,
                 // in the column rather than over the page (AgentBanner).
                 if agentHere, !icons {
                     AgentStatus(browser: browser, style: .row)
-                        .frame(height: SideBar.agentRow)
                         .padding(.horizontal, 10)
                         .padding(.bottom, SideBar.playerGap)
                         .transition(.opacity)
                 }
                 if let tab = browser.player {
                     PlayerRow(browser: browser, prefs: prefs, tab: tab)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, SideBar.playerGap)
+                        .transition(.opacity)
+                }
+                // A newer Search waiting: "Update ready" and Restart, just
+                // above the doors (UpdateNotice).
+                if updateHere {
+                    UpdateNoticeRow(prefs: prefs)
                         .padding(.horizontal, 10)
                         .padding(.bottom, SideBar.playerGap)
                         .transition(.opacity)
@@ -416,6 +429,7 @@ struct SideBar: View {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         }
         // A fixed width with icons only: nothing to pull. The strip keeps
         // its edge, to be pulled back out to titles.
@@ -1736,8 +1750,11 @@ struct SideBar: View {
     }
     /// Between what plays in another tab and the foot's doors.
     private static let playerGap: CGFloat = 4
-    /// The agent's quiet line at the column's foot.
-    private static let agentRow: CGFloat = 30
+    /// The agent's card at the column's foot (AgentStatus).
+    private var agentCard: CGFloat { AgentStatus.cardHeight(row: rowHeight, auto: agents.session?.auto == true) }
+    /// "Update ready" is showing at the foot (UpdateNotice); not in the
+    /// column of icons, where there is no room for its words.
+    private var updateHere: Bool { !icons && UpdateNotice.shown(updater, prefs) != nil }
     /// An agent's pill is showing in this window (AgentControl).
     private var agentHere: Bool { agents.shownIn == ObjectIdentifier(browser) }
 
@@ -1811,7 +1828,7 @@ private struct SideFoot: View {
                 VStack(spacing: 6) {
                     AgentStatus(browser: browser, style: .icon)
                     FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
-                    ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0, puzzle: !prefs.hidesExtensionsDoor)
+                    ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0, puzzle: !prefs.hidesExtensionsDoor, live: live)
                     if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
                 }
                 VStack(spacing: 6) {
@@ -1834,13 +1851,13 @@ private struct SideFoot: View {
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom, live: live)
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: .bottom) }
                 SpaceButtons(browser: browser)
-                ExtensionSlot(browser: browser, edge: .bottom, room: room, puzzle: !prefs.hidesExtensionsDoor)
+                ExtensionSlot(browser: browser, edge: .bottom, room: room, puzzle: !prefs.hidesExtensionsDoor, live: live)
             }
         } else {
             HStack(spacing: 2) {
                 if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
-                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room, puzzle: !prefs.hidesExtensionsDoor)
+                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room, puzzle: !prefs.hidesExtensionsDoor, live: live)
                 SpaceButtons(browser: browser, squeezes: true)
                 // Only while a download is running, and a moment after.
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
@@ -2108,6 +2125,7 @@ private struct PinSquare: View, Equatable {
         .overlay { MiddleClick { browser.close(tab) } }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
+        .background { if !inMap { SiteCardPanel.Square(id: tab.id) } }
         .help(tab.label)
         .animation(nil, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -2234,6 +2252,9 @@ private struct SideRow: View, Equatable {
                             // A coding agent at work here: a dot on the
                             // icon's corner, the row as it was.
                             .overlay(alignment: .bottomTrailing) { AgentMark(tab: tab) }
+                            // A pinned row away from its page: the icon takes
+                            // it back (PinIconHome).
+                            .modifier(PinIconHome(browser: browser, tab: tab, enabled: interactive))
                     }
                     if tab.bench, !tab.agent {
                         // A script's tab, not yours.
@@ -2261,15 +2282,15 @@ private struct SideRow: View, Equatable {
                     TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
                                 size: prefs.sideTitle, colour: colour, roomy: true, dim: dim)
                 }
-                Spacer(minLength: 0)
             }
+            // Pushed to the leading edge by its frame, not a Spacer: the
+            // row's spacing before a Spacer kept the title 8 points further
+            // from the right edge than the icon is from the left, and a long
+            // title's ellipsis further still (idea 1032).
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 10)
             .padding(.trailing, status || peeking ? 0 : 10)
             .frame(height: prefs.sideRow)
-            // Stop, under the pointer, on the row the agent is working in.
-            .overlay(alignment: .trailing) {
-                if hovering, tab.agentWorking, !editing { AgentRowStop().padding(.trailing, 4) }
-            }
             .contentShape(Rectangle())
             .modifier(TabPress(enabled: interactive && !editing && !pickedAmongOthers, active: live, selected: $selectedOnPress, pressing: $pressed) {
                 browser.clearTabSelection()

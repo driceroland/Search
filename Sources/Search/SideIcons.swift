@@ -215,6 +215,8 @@ struct IconTile: View {
             if interactive, let frame = IconTiles.frame(of: me) { IconTiles.seen(tab.id, tile: me, frame: frame, tip: tip) }
         }
         .contextMenu { if interactive { TabMenu(browser: browser, tab: tab, close: close) } }
+        // A pin's tile has no address to open either (idea 1081).
+        .background { if interactive && tab.pin != nil { SiteCardPanel.Square(id: tab.id) } }
         .background {
             if interactive && prefs.splitView && !half {
                 SplitDropZone(browser: browser, tab: tab, kind: .strip)

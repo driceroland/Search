@@ -35,7 +35,7 @@ import Combine
 // never a private tab, never a pinned one (pins travel as pins). History,
 // passwords, cookies and site data never sync.
 //
-// The folder sync (Sync.swift, "Sync with your other Macs") is the other way
+// The folder sync (Sync.swift, "Sync Macs through a folder") is the other way
 // to do part of this. The two are never on together: each switch is off
 // limits while the other is on, so they can't take turns undoing each
 // other's changes.
@@ -53,6 +53,20 @@ struct DeviceTabs: Codable, Equatable {
     struct Page: Codable, Equatable, Hashable {
         var url: String
         var title: String
+        /// The tab group it is in on that device (idea 1093), one of
+        /// `groups`. Absent for a tab in none, and from a device that has
+        /// no groups or a Search from before them, which reads it as none.
+        var group: UUID? = nil
+    }
+
+    /// A tab group on that device: its tabs are the pages that name it, in
+    /// the order `tabs` has them.
+    struct Group: Codable, Equatable, Hashable {
+        var id: UUID
+        var name: String
+        /// Its colour's number, as the Mac's TabGroup keeps it; absent: none.
+        var colour: Int? = nil
+        var collapsed: Bool? = nil
     }
 
     var name: String
@@ -60,6 +74,20 @@ struct DeviceTabs: Codable, Equatable {
     var platform: String
     var at: Date
     var tabs: [Page]
+    /// Absent while no tab is in a group (or groups are off there), so a
+    /// device without them writes the same JSON it always has.
+    var groups: [Group]? = nil
+
+    /// The pages by group, in the groups' order, then those in none; a
+    /// page naming a group the list doesn't have is in none.
+    var sections: [(group: Group?, pages: [Page])] {
+        let known = groups ?? []
+        let ids = Set(known.map(\.id))
+        let grouped = known.map { group in (group: Optional(group), pages: tabs.filter { $0.group == group.id }) }
+            .filter { !$0.pages.isEmpty }
+        let loose = tabs.filter { $0.group.map { !ids.contains($0) } ?? true }
+        return grouped + (loose.isEmpty ? [] : [(group: nil, pages: loose)])
+    }
 }
 
 /// The settings every device shares, and only these.
@@ -68,6 +96,9 @@ struct SharedSettings: Codable, Equatable {
     var engine: String?
     /// The custom engine's template.
     var custom: String?
+    /// The custom engine's suggestions address: https, with %s where the
+    /// words go. Nil or empty, and it has none, as before.
+    var suggest: String? = nil
     /// Look's raw value.
     var look: String?
 }
@@ -164,7 +195,7 @@ enum ICloudMerge {
         .folders: ["id", "name", "parent", "feed"],
         .bookmarks: ["id", "title", "url", "children"],
         .spaces: ["id", "name", "colour", "icon", "sharesSignIns", "downloads", "profile", "gradient", "strength"],
-        .settings: ["engine", "custom", "look"],
+        .settings: ["engine", "custom", "suggest", "look"],
     ]
 
     /// JSON as both apps compare it: sorted keys, by one writer, so what was
@@ -228,14 +259,33 @@ enum ICloudMerge {
     /// The tabs that go up: ordinary web pages, no pin, never a private tab,
     /// each address once.
     static func pages(_ tabs: [(url: URL?, title: String, shy: Bool, pinned: Bool)]) -> [DeviceTabs.Page] {
+        pages(tabs.map { (url: $0.url, title: $0.title, shy: $0.shy, pinned: $0.pinned, group: nil) })
+    }
+
+    /// The same, each with the group it is in (idea 1093).
+    static func pages(_ tabs: [(url: URL?, title: String, shy: Bool, pinned: Bool, group: UUID?)]) -> [DeviceTabs.Page] {
         var seen = Set<String>()
         return tabs.compactMap { tab in
             guard !tab.shy, !tab.pinned, let url = tab.url,
                   let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
                   seen.insert(url.absoluteString).inserted
             else { return nil }
-            return DeviceTabs.Page(url: url.absoluteString, title: tab.title)
+            return DeviceTabs.Page(url: url.absoluteString, title: tab.title, group: tab.group)
         }
+    }
+
+    /// The groups that go up with the pages: those a page that goes up is
+    /// in, in the order the pages first name them, each once. Nil when
+    /// there is none, so the record is the same JSON as before groups.
+    static func groups(_ all: [TabGroup], for pages: [DeviceTabs.Page]) -> [DeviceTabs.Group]? {
+        let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var seen = Set<UUID>()
+        let out = pages.compactMap(\.group).compactMap { id -> DeviceTabs.Group? in
+            guard seen.insert(id).inserted, let group = byID[id] else { return nil }
+            return DeviceTabs.Group(id: group.id, name: group.name, colour: group.colour,
+                                    collapsed: group.collapsed ? true : nil)
+        }
+        return out.isEmpty ? nil : out
     }
 
     /// Joining: iCloud's pins, then each of ours not already there by id or
@@ -353,14 +403,16 @@ enum ICloudMerge {
     }
 
     @MainActor static func settings(_ prefs: Preferences) -> SharedSettings {
-        SharedSettings(engine: prefs.engine.rawValue, custom: prefs.customEngine, look: prefs.look.rawValue)
+        SharedSettings(engine: prefs.engine.rawValue, custom: prefs.customEngine,
+                       suggest: prefs.customSuggest, look: prefs.look.rawValue)
     }
 
-    /// iCloud's settings here: only the three, and only values this build
+    /// iCloud's settings here: only the four, and only values this build
     /// knows.
     @MainActor static func apply(_ settings: SharedSettings, to prefs: Preferences) {
         if let raw = settings.engine, let engine = Engine(rawValue: raw), engine != prefs.engine { prefs.engine = engine }
         if let custom = settings.custom, custom != prefs.customEngine { prefs.customEngine = custom }
+        if let suggest = settings.suggest, suggest != prefs.customSuggest { prefs.customSuggest = suggest }
         if let raw = settings.look, let look = Look(rawValue: raw), look != prefs.look { prefs.look = look }
     }
 }
@@ -386,6 +438,8 @@ protocol ICloudEngine: AnyObject {
 protocol ICloudLocal: AnyObject {
     var deviceName: String { get }
     func openTabs() -> [DeviceTabs.Page]
+    /// The groups the open tabs are in (see ICloudMerge.groups).
+    func openGroups(for pages: [DeviceTabs.Page]) -> [DeviceTabs.Group]?
     func spaces() -> [Space]
     /// `removing`: spaces here and not in `spaces` are deleted, as Delete
     /// Space does.
@@ -401,6 +455,11 @@ protocol ICloudLocal: AnyObject {
     func adopt(bookmarks: [Bookmark])
     func settings() -> SharedSettings
     func adopt(settings: SharedSettings)
+}
+
+extension ICloudLocal {
+    /// None, for a stand-in that has no groups.
+    func openGroups(for pages: [DeviceTabs.Page]) -> [DeviceTabs.Group]? { nil }
 }
 
 // MARK: - sync
@@ -701,9 +760,11 @@ final class ICloudSync: ObservableObject {
         // The tabs, stamped only when the list itself changed: the stamp in
         // the JSON would otherwise make every look a change.
         let pages = local.openTabs()
+        let groups = local.openGroups(for: pages)
         let last = ledger.values[ledger.deviceKey].flatMap { ICloudMerge.decode(DeviceTabs.self, $0) }
-        if last?.tabs != pages || last?.name != local.deviceName || last?.platform != "macos",
-           let data = ICloudMerge.outgoing(DeviceTabs(name: local.deviceName, platform: "macos", at: now, tabs: pages),
+        if last?.tabs != pages || last?.groups != groups || last?.name != local.deviceName || last?.platform != "macos",
+           let data = ICloudMerge.outgoing(DeviceTabs(name: local.deviceName, platform: "macos", at: now, tabs: pages,
+                                                      groups: groups),
                                            over: nil, shape: .device),
            ledger.offer(ledger.deviceKey, data, now: now) {
             due.append(ledger.deviceKey)
@@ -987,7 +1048,7 @@ final class ICloudSync: ObservableObject {
             // A signed build in a test run is a build that could: it says so.
             return Store.testing && ICloudSync.entitled ? "Off in a test run" : "Needs a build of Search signed for iCloud"
         }
-        if folderSyncOn && !on { return "Turn off Sync with your other Macs first" }
+        if folderSyncOn && !on { return "Turn off Sync Macs through a folder first" }
         guard on else { return offReason ?? otherwise }
         switch account {
         case .signedOut: return "Not signed in to iCloud: System Settings › Apple Account"
@@ -1023,12 +1084,31 @@ final class MacSide: ICloudLocal {
     var deviceName: String { Sync.macName }
 
     func openTabs() -> [DeviceTabs.Page] {
+        // Each tab's group while groups are on (idea 1093); off, none, and
+        // the record is as it was before groups.
+        let grouped = Shared.prefs.usesTabGroups
         let windows = Browsers.all.filter { $0.profileID == Profile.personalID && !$0.isPopup }
-        return ICloudMerge.pages(windows.flatMap { browser in
-            (browser.tabs + browser.parkedTabs).filter { !$0.bench }.map { tab in
-                (url: tab.address, title: tab.title, shy: tab.shy, pinned: tab.pin != nil)
+        var rows: [(url: URL?, title: String, shy: Bool, pinned: Bool, group: UUID?)] = []
+        for browser in windows {
+            for tab in browser.tabs + browser.parkedTabs where !tab.bench {
+                let group: UUID? = grouped && tab.pin == nil ? tab.groupID : nil
+                rows.append((url: tab.address, title: tab.title, shy: tab.shy, pinned: tab.pin != nil, group: group))
             }
-        })
+        }
+        return ICloudMerge.pages(rows)
+    }
+
+    /// Every group of every window's spaces, the one on screen and the
+    /// parked ones.
+    func openGroups(for pages: [DeviceTabs.Page]) -> [DeviceTabs.Group]? {
+        guard Shared.prefs.usesTabGroups else { return nil }
+        let windows = Browsers.all.filter { $0.profileID == Profile.personalID && !$0.isPopup }
+        var all: [TabGroup] = []
+        for browser in windows {
+            all += browser.tabGroups
+            for (space, row) in browser.parked { all += row.groups ?? browser.readRow(space).groups ?? [] }
+        }
+        return ICloudMerge.groups(all, for: pages)
     }
 
     func spaces() -> [Space] { Spaces.read(profile: Profile.personalID) }

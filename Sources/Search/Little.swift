@@ -82,7 +82,10 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         // Never a test run's in front: a probe started hidden stays off every screen.
         guard front, !Store.testing else { return }
         little.window.makeKeyAndOrderFront(nil)
-        if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
+        // Asked again if the app in front didn't hand the front over: the
+        // address field from any app is a panel that never made Search the
+        // app in front, so a plain activate() left the window behind (#1494).
+        Links.comeForward()
     }
 
     /// The small windows open now, newest last — for the bench.
@@ -165,7 +168,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         guard !Store.testing else { return LittleWindow.fronted = tab.id }
         if window.isMiniaturized { window.deminiaturize(nil) }
         window.makeKeyAndOrderFront(nil)
-        if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
+        Links.comeForward()
     }
 
     /// The card the switcher is on, or the one clicked: a small window
@@ -530,6 +533,10 @@ struct LittleView: View {
     /// Its window's line at the foot; an extension's popup has none.
     var note: LittleNote? = nil
     let keep: (() -> Void)?
+    /// The browser whose window this is, for the accounts under a sign-in
+    /// box and the code card, laid over the page (CardsOverPage); none for
+    /// a window that has no such list.
+    var cards: Browser? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -556,6 +563,7 @@ struct LittleView: View {
             .frame(height: 34)
             ZStack {
                 WebStage(page: tab.built ?? tab.web)
+                if let cards { CardsOverPage(browser: cards, tab: tab.id) }
                 // A page that never came says so, with Try again, as in a tab.
                 if let failure = tab.failure {
                     Trouble(message: failure) { tab.reload() }
@@ -643,12 +651,7 @@ struct PopupWindowView: View {
 
     var body: some View {
         if let tab = browser.active {
-            LittleView(tab: tab, keep: nil).id(tab.id)
-                .overlay(alignment: .topLeading) {
-                    if let asked = browser.suggesting, asked.tab == tab.id {
-                        AccountList(browser: browser, asked: asked, top: 34)
-                    }
-                }
+            LittleView(tab: tab, keep: nil, cards: browser).id(tab.id)
                 .overlay(alignment: .bottom) {
                     VStack(spacing: 8) {
                         if let ask = browser.asking {

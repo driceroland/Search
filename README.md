@@ -4,7 +4,7 @@ A small, fast, quiet web browser for the Mac, by [Office Commun](https://officec
 
 ![Search, with its tabs down the left and a page taking the rest of the window](.github/screenshot.png)
 
-**[Download for macOS →](https://searchbrowser.app)** · macOS 14 or later · free · about 10 MB
+**[Download for macOS →](https://searchbrowser.app)** · macOS 14 or later · free · about 14 MB
 
 Or with [Homebrew](https://brew.sh): `brew install --cask driceroland/tap/search`
 
@@ -14,7 +14,7 @@ Or with [Homebrew](https://brew.sh): `brew install --cask driceroland/tap/search
 
 Search is a browser with nothing in the way. A row of tabs — down the left, or across the top if you prefer — and the page. There is no toolbar, no start page, no sidebar of suggestions, no account to sign into, nothing that wants your attention. You type an address or a few words in one field and you are on the page.
 
-It uses **WebKit**, the engine already inside every Mac (it is what Safari runs on). That is why the whole app is about 10 MB on disk and opens instantly: there is no second copy of Chromium to download, update and keep in memory.
+It uses **WebKit**, the engine already inside every Mac (it is what Safari runs on). That is why the whole app is about 14 MB on disk and opens instantly: there is no second copy of Chromium to download, update and keep in memory.
 
 It was built by a design studio that spends its whole day in a browser and was tired of the ones that had become products. This one is a tool.
 
@@ -53,7 +53,7 @@ On purpose:
 | Cookies and site data | WebKit's own store for the app | The sites that set them, as in any browser. |
 | Extensions | Unpacked in `~/Library/Application Support/Search/Extensions/`, their data in WebKit's extension store | Each extension, within the permissions you accepted when adding it. |
 | News by email, the iPhone beta | Only if you type your email and press Join or Ask (the What's New card, the welcome, Settings › About): one HTTPS POST to searchbrowser.app with the address, where you pressed (`app-whats-new`, `app-welcome`, `app-settings`), which Mac download you have and, if ticked, that you want the iPhone beta. Your Mac keeps two yes/no flags, never the address. See `OptIn.swift`. | Office Commun, to send those emails through Resend; every one has a link to stop them, and hello@searchbrowser.app removes the address. |
-| Sync with iCloud | While it is on (Settings › General; on for a new install from the moment you leave the welcome, off for a Search you had before until you turn it on): open tabs, pins, spaces, bookmarks, your search engine and look, in Search's own zone of your private iCloud database, their contents end to end encrypted. Never private tabs, history, passwords, cookies or sign-ins. See `SYNC.md` and `ICloudSync.swift`. | You, on your devices signed in to your Apple Account. Not Office Commun: there is no server of ours. |
+| Sync with iCloud | While it is on (Settings › General; on for a new install from the moment you leave the welcome, off for a Search you had before until you turn it on): open tabs, pins, spaces, bookmarks, your search engine (and its suggestions address) and look, in Search's own zone of your private iCloud database, their contents end to end encrypted. Never private tabs, history, passwords, cookies or sign-ins. See `SYNC.md` and `ICloudSync.swift`. | You, on your devices signed in to your Apple Account. Not Office Commun: there is no server of ours. |
 | Handoff | While it is on (Settings › General; on for a new install from the moment you leave the welcome, off for a Search you had before until you turn it on): the address and title of the page in front, handed to macOS, which offers it to your iPhone, iPad and other Macs. Never a private tab. See `Handoff.swift`. | Your devices signed in to your Apple Account, through Apple's Handoff. |
 | Anything else | Nowhere. There is no server. | — |
 
