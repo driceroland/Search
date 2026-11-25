@@ -1724,6 +1724,14 @@ final class Bench {
                         "coveredAfter": web.subviews.filter { $0 is FoldCover }.count])
             }
 
+        case "bodies":
+            // How many times each counted body was drawn (Bench.count) since
+            // the last ask, and cleared. Test runs only.
+            guard Store.testing else { answer(["error": "bodies is for test runs"]); return }
+            let counts = Bench.bodies
+            Bench.bodies = [:]
+            answer(["bodies": counts])
+
         case "perfwatch":
             // Tests/perf_many_tabs.py: the main run loop's passes for
             // `seconds`, summed up, with the app's CPU over them, what is
