@@ -37,32 +37,47 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
     (function () {
       if (window.__officeImages) return;
       window.__officeImages = true;
+      // A right-click on a picture: what this script makes of it, for the
+      // listeners below and for the probe (picture_link_menu.py), in
+      // Search's world only. Nothing when it isn't one worth a menu.
+      function decide(e) {
+        var el = e.target;
+        while (el && el.tagName !== 'IMG') el = el.parentElement;
+        if (!el) return null;
+        // Only an address this menu will act on takes WebKit's own menu
+        // away; any other scheme keeps it, rather than getting nothing.
+        var src = el.currentSrc && el.naturalWidth >= 2 && /^(https?|data|blob):/i.test(el.currentSrc) ? el.currentSrc : '';
+        return { src: src, linked: linked(e), keep: !!window.__officeImagesKeep };
+      }
+      Object.defineProperty(window, '__officeImagesDecide', { value: decide });
       document.addEventListener('contextmenu', function (e) {
         // A right-click of yours only: a page can dispatch one itself, and
         // would open this menu whenever it liked — under your next click.
         if (!e.isTrusted) return;
-        var el = e.target;
-        while (el && el.tagName !== 'IMG') el = el.parentElement;
-        if (!el) return;
+        var said = decide(e);
+        if (!said) return;
         // WebKit's own menu only steps aside when there is a way to ask for
         // this one — otherwise a right-click shows nothing at all.
         var relay = window.webkit && webkit.messageHandlers && webkit.messageHandlers.officeImages;
         if (!relay) return;
-        // Only an address this menu will act on takes WebKit's own menu
-        // away; any other scheme keeps it, rather than getting nothing.
-        var src = el.currentSrc && el.naturalWidth >= 2 && /^(https?|data|blob):/i.test(el.currentSrc) ? el.currentSrc : '';
-        // A picture that is also a link keeps WebKit's own menu, which has
-        // the link's items as well as the picture's: a grid of posts is all
-        // pictures, and every one of them a link to open in a new tab. Its
-        // Copy Image and Download Image are told which picture they are for,
-        // to be this app's (PageView), or that there is none.
-        // An extension with right-click items keeps WebKit's menu too: its
-        // items for a picture are only ever in WebKit's (see keepMenu).
-        if (src && !linked(e) && !window.__officeImagesKeep) {
-          e.preventDefault();
-          relay.postMessage({ src: src });
-        } else {
-          relay.postMessage({ src: src, kept: true });
+        // WebKit's own menu comes up, told which picture it is over: its
+        // own hit test, not this script's, says whether that picture is
+        // also a link (idea 1208). The event's path can't see a link inside
+        // a closed shadow root, and a picture there lost Open Link in New
+        // Tab to this app's picture menu. A picture that isn't a link has
+        // its menu made this app's there (PageView.willOpenMenu); one that
+        // is keeps WebKit's, with Copy Image and Download Image told which
+        // picture they are for, to be this app's. So does every picture
+        // while an extension may have right-click items (see keepMenu).
+        relay.postMessage({ src: said.src, kept: true, keep: said.keep });
+        // A page that keeps its own right-click from its pictures leaves
+        // WebKit's menu out: this app's picture menu then comes up itself,
+        // as it always did, after the page's own listeners have had their
+        // say. Never over a link, which WebKit's menu would have offered.
+        if (said.src && !said.linked && !said.keep) {
+          window.addEventListener('contextmenu', function late(e2) {
+            if (e2 === e && e.defaultPrevented) relay.postMessage({ src: said.src });
+          }, { once: true });
         }
       }, true);
       // As the middle button finds a link (MiddleRelay): on the path, so one
@@ -87,16 +102,17 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
         _ controller: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
-        // WebKit's own menu, over a picture it keeps it for (see watch): the
-        // picture its Copy Image and Download Image are to act on, or none.
+        // WebKit's own menu, coming up over a picture (see watch): the
+        // picture it is to act on, or none, and whether it stays WebKit's.
         if let body = message.body as? [String: Any], body["kept"] as? Bool == true {
             let url = (body["src"] as? String).flatMap(URL.init(string:)).flatMap {
                 ["http", "https", "data", "blob"].contains($0.scheme?.lowercased() ?? "") ? $0 : nil
             }
+            let keep = body["keep"] as? Bool == true
             MainActor.assumeIsolated { [weak self] in
                 guard let self, let tab else { return }
                 frame = message.frameInfo
-                tab.built?.keptImage = url
+                tab.built?.keepPicture(url, keep: keep)
             }
             return
         }
@@ -112,8 +128,57 @@ final class ImageRelay: NSObject, WKScriptMessageHandler {
         MainActor.assumeIsolated { [weak self] in
             guard let self, let tab else { return }
             frame = message.frameInfo
+            // No WebKit menu came for it: the page kept it away.
+            tab.built?.keepPicture(nil, keep: false)
             tab.onImageMenu?(tab, url)
         }
+    }
+}
+
+/// Over a picture, WebKit's menu or this app's: WebKit's hit test decides
+/// (idea 1208). Its menu over a picture that is also a link has the link's
+/// items, which it keeps; over a picture alone, the picture's items only,
+/// which become this app's (see ImageMenu.swift's head for why). And while
+/// an extension may have right-click items, WebKit's, which alone has them.
+enum PictureMenu {
+    static let linkItems: Set<String> = [
+        "WKMenuItemIdentifierOpenLink", "WKMenuItemIdentifierOpenLinkInNewWindow",
+        "WKMenuItemIdentifierDownloadLinkedFile", "WKMenuItemIdentifierCopyLink",
+    ]
+    static let pictureItems: Set<String> = [
+        "WKMenuItemIdentifierOpenImageInNewWindow", "WKMenuItemIdentifierDownloadImage", "WKMenuItemIdentifierCopyImage",
+    ]
+
+    /// Whether WebKit's menu, its items' identifiers in order, gives way to
+    /// this app's picture menu.
+    static func replaces(_ identifiers: [String], keep: Bool) -> Bool {
+        !keep && identifiers.contains(where: pictureItems.contains) && !identifiers.contains(where: linkItems.contains)
+    }
+
+    /// How long a picture WebKit's menu was told of stays its own: the menu
+    /// comes up at once, and a page that kept it away leaves nothing to
+    /// pass on to the next one.
+    static let fresh: TimeInterval = 1
+
+    /// WebKit's menu over a picture made what it is to be: this app's
+    /// picture items in place of WebKit's (true), or WebKit's own with Copy
+    /// Image and Download Image done by this app (`retarget`).
+    @MainActor
+    static func shape(_ menu: NSMenu, picture url: URL?, keep: Bool, items: (URL) -> [NSMenuItem],
+                      retarget: (NSMenuItem) -> Void) -> Bool {
+        let identifiers = menu.items.compactMap { $0.identifier?.rawValue }
+        if let url, replaces(identifiers, keep: keep) {
+            let own = items(url)
+            if !own.isEmpty {
+                menu.removeAllItems()
+                own.forEach(menu.addItem)
+                return true
+            }
+        }
+        for item in menu.items where ["WKMenuItemIdentifierCopyImage", "WKMenuItemIdentifierDownloadImage"].contains(item.identifier?.rawValue ?? "") {
+            if url != nil { retarget(item) }
+        }
+        return false
     }
 }
 
@@ -149,6 +214,20 @@ extension Browser {
         guard let webView = tab.built else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
+        pictureItems(for: tab, at: url).forEach(menu.addItem)
+
+        let screen = NSEvent.mouseLocation
+        guard let window = webView.window else { return }
+        let atWindow = window.convertPoint(fromScreen: screen)
+        let atView = webView.convert(atWindow, from: nil)
+        menu.popUp(positioning: nil, at: atView, in: webView)
+    }
+
+    /// The picture menu's items: in a menu of their own (showImageMenu), or
+    /// in place of WebKit's over a picture that is no link (PageView).
+    func pictureItems(for tab: Tab, at url: URL) -> [NSMenuItem] {
+        guard let webView = tab.built else { return [] }
+        let menu = NSMenu()
         menu.addItem(ImageMenuItem("Open Image in New Tab") { [weak self] in
             self?.open(url, foreground: true, from: tab)
         })
@@ -173,12 +252,9 @@ extension Browser {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(url.absoluteString, forType: .string)
         })
-
-        let screen = NSEvent.mouseLocation
-        guard let window = webView.window else { return }
-        let atWindow = window.convertPoint(fromScreen: screen)
-        let atView = webView.convert(atWindow, from: nil)
-        menu.popUp(positioning: nil, at: atView, in: webView)
+        let items = menu.items
+        menu.removeAllItems()
+        return items
     }
 
     /// Fetched once, written as an actual image rather than a reference to

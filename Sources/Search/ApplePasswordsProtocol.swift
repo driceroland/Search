@@ -409,7 +409,26 @@ struct AppleLogin: Identifiable, Equatable, Hashable {
     let user: String
     /// The sites the helper keeps it for, as it says.
     let sites: [String]
+    /// The entry's own title in the Passwords app, when the helper gives one.
+    var title: String? = nil
     var id: String { "apple\u{1}" + user }
+
+    /// The row's second line under a sign-in box (idea 1206): the entry's
+    /// title, else the site it is kept for, as a keychain row shows its
+    /// host, then where it comes from. Every row read "Apple Passwords"
+    /// alone before, so two accounts were told apart by name only.
+    var detail: String {
+        let named = title.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
+            ?? sites.lazy.map(AppleLogin.site).first { !$0.isEmpty }
+        return named.map { "\($0) · Apple Passwords" } ?? "Apple Passwords"
+    }
+
+    /// A site as the helper names it, by its host when it is an address.
+    private static func site(_ text: String) -> String {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.contains("://"), let host = URL(string: text)?.host(), !host.isEmpty { return host }
+        return text
+    }
 }
 
 enum AppleMessages {
@@ -573,7 +592,8 @@ enum AppleMessages {
         case 0:
             return entries(answer).compactMap { entry in
                 guard let user = entry["USR"] as? String, user != "Passwords not saved" else { return nil }
-                return AppleLogin(user: user, sites: entry["sites"] as? [String] ?? [])
+                let title = (entry["title"] as? String) ?? (entry["customTitle"] as? String)
+                return AppleLogin(user: user, sites: entry["sites"] as? [String] ?? [], title: title)
             }
         case 3: return []
         case let status: throw ApplePasswordsError.status(status ?? -1)
