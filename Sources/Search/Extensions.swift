@@ -2113,6 +2113,12 @@ extension Extensions: WKWebExtensionControllerDelegate {
     func webExtensionController(_ controller: WKWebExtensionController, openNewTabUsing configuration: WKWebExtension.TabConfiguration, for extensionContext: WKWebExtensionContext) async throws -> (any WKWebExtensionTab)? {
         // In the window asked for, or the one in front.
         guard let browser = (configuration.window as? ExtensionWindow)?.browser ?? browser else { return nil }
+        // No address is Chrome's New Tab page, ⌘T's blank tab here. Vimium C
+        // asks this way when its New tab URL is about:newtab.
+        if configuration.url == nil, configuration.shouldBeActive, !configuration.shouldBePinned, !browser.websitePopup {
+            browser.newTab()
+            return browser.active.map { adapter(for: $0) }
+        }
         let url = configuration.url ?? URL(string: "about:blank")!
         try Extensions.mayOpen(url)
         let tab = browser.open(url, foreground: configuration.shouldBeActive, atEnd: true)
