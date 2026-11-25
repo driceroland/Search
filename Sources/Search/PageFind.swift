@@ -688,8 +688,8 @@ final class PageFind {
     // cleared and added to. A highlight repaints the ranges it gains or
     // loses, whereas one set into or deleted from `CSS.highlights` could
     // stay on screen, or stay off it, until something else was drawn.
-    const findRules = "::highlight(search-find-match) { background-color: #ffe14d; color: #000; text-decoration: none; text-shadow: none; }"
-        + "::highlight(search-find-current) { background-color: #ffaa00; color: #000; text-decoration: none; text-shadow: none; }";
+    const findRules = "::highlight(search-find-match) { background-color: #ffff00; color: #000; text-decoration: none; text-shadow: none; }"
+        + "::highlight(search-find-current) { background-color: #ff9632; color: #000; text-decoration: none; text-shadow: none; }";
     const quietSelection = "::selection { background-color: transparent; }";
 
     // Where Settings asks for it, the page is under a faint veil while
