@@ -77,6 +77,10 @@ final class Browser: NSObject, ObservableObject {
             }
             guard oldValue != activeID else { return }
             cameFrom = (oldValue, ProcessInfo.processInfo.systemUptime)
+            // A Meet call left gets Meet's own little window, as in Chrome;
+            // the one come back to loses it (see MeetPiP.swift).
+            MeetPiP.switched(from: oldValue.flatMap { id in tabs.first { $0.id == id } },
+                             to: activeID.flatMap { id in tabs.first { $0.id == id } })
             followPeek()
             // Going to another tab ends a page's run of links (see
             // placeForLink) — but with links opened in front beside their
@@ -3568,6 +3572,22 @@ final class Browser: NSObject, ObservableObject {
                 for tab in tabs + parkedTabs {
                     tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
                     tab.built?.evaluateInSearch(on ? AutoScroll.script : AutoScroll.off)
+                }
+            }
+            .store(in: &bag)
+
+        // Google Meet's own little window: its scripts from the next page
+        // on, as the switch now says (MeetPiP.on is set after this runs);
+        // off, the windows open now close.
+        prefs.$meetPiP
+            .dropFirst()
+            .sink { [weak self] on in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if !on { MeetPiPWindow.all.forEach { $0.close() } }
+                    for tab in self.tabs + self.parkedTabs {
+                        tab.arm(hiding: self.curtain.css(on: self.curtain.host(of: tab.address)))
+                    }
                 }
             }
             .store(in: &bag)
@@ -7325,6 +7345,8 @@ final class Browser: NSObject, ObservableObject {
     /// existing because you went to look something up.
     private func leaving(spaceRequest: UUID? = nil) {
         guard prefs.floatsOnLeave, spaceFloat.pending == nil || spaceFloat.pending == spaceRequest else { return }
+        // A Meet call gets Meet's own window instead (MeetPiP.switched).
+        if let active, active.meetPiPArmed, MeetPiP.applies(active.built?.url) { return }
         lift(active, quietly: true, otherwise: otherPane, spaceRequest: spaceRequest)
     }
 
@@ -9066,6 +9088,13 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         guard let opener = popupTab(for: webView) else { return nil }
+        // Google Meet's own little window, which its page asked for just
+        // now, on a click or Search's tab switch: a floating panel, not a
+        // tab (see MeetPiP.swift).
+        if let pip = MeetPiP.take(for: opener, from: webView, action: action, features: windowFeatures,
+                                  configuration: configuration, browser: self) {
+            return pip
+        }
         let clicked = opener.popupGesture.take(origin: PopupGesture.origin(action.sourceFrame), mainFrame: action.sourceFrame.isMainFrame)
         if !clicked {
             // A second window for a click that already had its one: the

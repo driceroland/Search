@@ -30,7 +30,7 @@ enum Web {
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name, MediaKeys.name,
                      StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name, DuskRelay.name,
-                     TranslateRelay.name, PageDrafts.name] {
+                     TranslateRelay.name, PageDrafts.name, MeetPiPRelay.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
@@ -749,6 +749,13 @@ final class Tab: ObservableObject, Identifiable {
     private let iconChanges = IconRelay()
     private let middles = MiddleRelay()
     private let dusk = DuskRelay()
+    private let meetPiP = MeetPiPRelay()
+    /// Google Meet's own little window (MeetPiP.swift): the page gave
+    /// mediaSession the handler Chrome calls on a tab switch; it asked for
+    /// its window just now; and when Search's tab switch asked for one.
+    var meetPiPArmed = false
+    var meetPiPAsk: (at: TimeInterval, width: Double, height: Double)?
+    var meetPiPAuto: TimeInterval?
     var popupGesture = PopupGesture()
     /// Windows this page asked for and was refused, newest last, a few at
     /// most: the quiet sign beside its title offers them (BlockedPopups.swift).
@@ -1083,6 +1090,8 @@ final class Tab: ObservableObject, Identifiable {
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
         controller.add(dusk, contentWorld: Web.world, name: DuskRelay.name)
         controller.add(translateRelay, contentWorld: Web.world, name: TranslateRelay.name)
+        meetPiP.tab = self
+        controller.add(meetPiP, contentWorld: Web.world, name: MeetPiPRelay.name)
         PopupGestureRelay.install(on: controller)
         Shield.shared.protect(controller)
         built = web
@@ -1286,6 +1295,12 @@ final class Tab: ObservableObject, Identifiable {
         // Every frame, in the page's own world and ahead of its scripts: a
         // live player's speed nudges go through it (see LiveRate.swift).
         add(LiveRate.script, .atDocumentStart, mainFrameOnly: false, in: .page)
+        // Only on Meet, with Settings › Videos › Google Meet's own mini
+        // window on: Chrome's little window for a call (see MeetPiP.swift).
+        if MeetPiP.applies(url ?? pageAddress) {
+            add(MeetPiP.page, .atDocumentStart, mainFrameOnly: true, in: .page)
+            add(MeetPiP.bridge, .atDocumentStart, mainFrameOnly: true, in: Web.world)
+        }
         // Every frame, in the page's own world: a page an extension lists
         // reaches it as chrome.runtime (see ExtensionExternal.swift).
         if let external = ExtensionExternal.script {
