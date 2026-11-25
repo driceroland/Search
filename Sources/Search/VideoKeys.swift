@@ -8,7 +8,7 @@
 // only a <video> or <audio> showing the browser's controls, holding the focus,
 // and a key the page left unused, with no ⌘, ⌃ or ⌥.
 //
-// Off unless turned on in Settings › Videos. Done in Search's own world, which
+// On unless turned off in Settings › Videos. Done in Search's own world, which
 // sees the page's events but none of its scripts.
 
 enum VideoKeys {

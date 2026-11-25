@@ -83,7 +83,9 @@ def case_reachable(t):
     t.ok("results carry section and group", found and all(i["page"] and i["groupTitle"] for i in found), found)
     t.ok("…in Browsing › Video", any(i["page"] == "browsing" and i["groupTitle"] == "Video" for i in found))
     shown = [i for i in items if not i["findOnly"]]
-    t.ok("about a hundred and forty rows in the sections", 105 <= len(shown) <= 150, len(shown))
+    # A budget, not a rule: raised from 150 on 25 Nov when Developer Mode,
+    # Screenshots in Downloads and Preview pins on hover took it to 154.
+    t.ok("about a hundred and sixty rows in the sections", 105 <= len(shown) <= 175, len(shown))
     t.ok("eleven sections, Themes among them (#1318)", len(every["pages"]) == 11 and "themes" in every["pages"], every["pages"])
     # Old addresses land in the new sections.
     sv.cmd({"do": "ui", "show": "search://settings/shortcuts"}); time.sleep(0.6)
@@ -168,8 +170,11 @@ def case_merged(t):
          v["arc"] and v["tabs.layout"] == "left" and read("spaces") == "1" and read("pins.list") == "1"
          and read("newtab.floating") == "1" and v["pins.keep"], v)
     t.ok("…and Arc's habits: tabs close after 12 hours, the video floats on leaving a tab, swipe back closes, Shift-click peeks",
-         (read("tabs.close.after"), read("float.leave"), read("float.away"), read("tabs.swipeBackCloses"),
-          read("links.peek"), read("links.peekClick")) == ("12", "1", "0", "1", "1", "shift")
+         (read("tabs.close.after"), read("float.leave"), read("float.away"),
+          read("links.peek"), read("links.peekClick")) == ("12", "1", "0", "1", "shift")
+         # Swipe back closes: on with no line since 25 Nov 2026, so Set Up
+         # finds it on and writes nothing.
+         and read("tabs.swipeBackCloses") in ("1", None)
          and v["float.own"] == "tabs" and v["links.peek"] == "shift", {k: read(k) for k in keys})
     v = put("arc.undo", True)
     now = {k: read(k) for k in keys}

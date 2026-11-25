@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """View › Capture…, in a hidden probe.
 
-Build first (`./build.sh`), then `python3 Tests/capture.py`. Off by default;
+Build first (`./build.sh`), then `python3 Tests/capture.py`. On by default;
 an area, an element and the whole page, the last on a page 5,000 points tall
 whose last 200 are red, so a whole-page picture that only drew the screen
 shows white at its foot. Then the layer itself, as a hand works it: a
@@ -74,7 +74,7 @@ try:
     sv.setup(); sv.launch()
     tall = sv.page("tall")
     state = sv.cmd({"do": "snap", "id": tall, "mode": "state"})
-    t.ok("off by default", state.get("on") is False, state)
+    t.ok("on by default (25 Nov 2026)", state.get("on") is True, state)
     sv.cmd({"do": "ui", "captures": True})
     st = sv.cmd({"do": "snap", "id": tall, "mode": "start"})
     t.ok("start: the bar is on the page", st.get("live") is True, st)
