@@ -2329,6 +2329,10 @@ extension Extensions: WKWebExtensionControllerDelegate {
             try ExtensionWatch.connect(port, from: extensionContext)
             return
         }
+        if port.applicationIdentifier == ExtensionProxyAuth.name {
+            try ExtensionProxyAuth.connect(port, from: extensionContext)
+            return
+        }
         // The port a worker's shim opens only to find what ports share; it
         // lets go at once.
         if port.applicationIdentifier == ExtensionShims.application { return }

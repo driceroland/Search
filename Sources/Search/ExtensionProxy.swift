@@ -1,6 +1,7 @@
 import Foundation
 import JavaScriptCore
 import Network
+import WebKit
 
 // chrome.proxy.settings, acted on.
 //
@@ -921,5 +922,126 @@ final class Once: @unchecked Sendable {
     private var done = false
     func run(_ work: () -> Void) {
         if lock.withLock({ defer { done = true }; return !done }) { work() }
+    }
+}
+
+// MARK: - sign-ins, asked of the extension
+
+/// The port an extension's worker opens while it has a blocking
+/// webRequest.onAuthRequired listener, and the questions asked on it.
+@available(macOS 15.4, *)
+@MainActor
+enum ExtensionProxyAuth {
+    static let name = ExtensionShims.application + ".proxyauth"
+
+    private final class Ear {
+        let extensionID: String
+        let port: WKWebExtension.MessagePort
+        var listening = false
+        var worker = false
+        init(extensionID: String, port: WKWebExtension.MessagePort) {
+            self.extensionID = extensionID
+            self.port = port
+        }
+    }
+
+    private static var ears: [ObjectIdentifier: Ear] = [:]
+    private static var pending: [String: CheckedContinuation<ProxyCredentials?, Never>] = [:]
+    private static var number = 0
+
+    /// Starts an extension's worker that isn't running, so it can be asked.
+    static var wake: (String) -> Void = { _ in }
+
+    /// A blocking onAuthRequired is for an extension that asked for it, as
+    /// in Chrome's MV3: webRequestAuthProvider, or MV2's webRequestBlocking.
+    static func connect(_ port: WKWebExtension.MessagePort, from context: WKWebExtensionContext) throws {
+        let id = context.uniqueIdentifier
+        let allowed = ExtensionShims.allowed(id, context: context)
+        guard allowed.contains("webRequestAuthProvider") || allowed.contains("webRequestBlocking") else {
+            throw ExtensionShims.Unsupported(what: "The extension never asked for \u{201C}webRequestAuthProvider\u{201D}")
+        }
+        for (key, ear) in ears where ear.port.isDisconnected { ears[key] = nil }
+        let ear = Ear(extensionID: id, port: port)
+        let key = ObjectIdentifier(ear)
+        ears[key] = ear
+        port.messageHandler = { message, _ in
+            MainActor.assumeIsolated {
+                guard let message = message as? [String: Any] else { return }
+                if message["listen"] as? Bool == true {
+                    ear.listening = true
+                    ear.worker = message["worker"] as? Bool == true
+                    if !port.isDisconnected { port.sendMessage(["listening": true], completionHandler: nil) }
+                    return
+                }
+                guard let answer = message["answer"] as? String, let waiting = pending.removeValue(forKey: answer) else { return }
+                if message["cancel"] as? Bool == true { waiting.resume(returning: nil); return }
+                let given = message["authCredentials"] as? [String: Any]
+                if let user = given?["username"] as? String, let password = given?["password"] as? String {
+                    waiting.resume(returning: ProxyCredentials(username: user, password: password))
+                } else {
+                    waiting.resume(returning: nil)
+                }
+            }
+        }
+        port.disconnectHandler = { _ in
+            MainActor.assumeIsolated { _ = ears.removeValue(forKey: key) }
+        }
+        port.sendMessage(["ready": true], completionHandler: nil)
+    }
+
+    static func workerGone(of extensionID: String) {
+        for (key, ear) in ears where ear.extensionID == extensionID && ear.worker {
+            ears[key] = nil
+            if !ear.port.isDisconnected { ear.port.disconnect() }
+        }
+    }
+
+    private static func listening(_ extensionID: String) -> [Ear] {
+        ears.values.filter { $0.extensionID == extensionID && $0.listening && !$0.port.isDisconnected }
+    }
+
+    /// Asks the extension in control first, then any other that listens, as
+    /// Chrome asks every extension with a listener; the first sign-in given
+    /// is the one used. An extension whose worker isn't running is woken and
+    /// given a few seconds to start listening.
+    static func ask(_ challenge: ProxyChallenge, controller: String?) async -> ProxyCredentials? {
+        var order = [String]()
+        if let controller { order.append(controller) }
+        for ear in ears.values where ear.listening && !order.contains(ear.extensionID) { order.append(ear.extensionID) }
+        for id in order {
+            if listening(id).isEmpty, id == controller {
+                wake(id)
+                for _ in 0..<30 where listening(id).isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
+            }
+            for ear in listening(id) {
+                if let given = await ask(ear, challenge) { return given }
+            }
+        }
+        return nil
+    }
+
+    private static func ask(_ ear: Ear, _ challenge: ProxyChallenge) async -> ProxyCredentials? {
+        number += 1
+        let question = "\(number)"
+        let details: [String: Any] = [
+            "requestId": question, "url": challenge.url, "method": challenge.method,
+            "frameId": -1, "parentFrameId": -1, "tabId": -1, "type": "other",
+            "timeStamp": Date().timeIntervalSince1970 * 1000,
+            "statusCode": 407, "statusLine": "HTTP/1.1 407 Proxy Authentication Required",
+            "isProxy": true, "scheme": challenge.scheme, "realm": challenge.realm,
+            "challenger": ["host": challenge.proxyHost, "port": Int(challenge.proxyPort)],
+        ]
+        return await withCheckedContinuation { done in
+            pending[question] = done
+            ear.port.sendMessage(["ask": question, "details": details]) { error in
+                guard error != nil else { return }
+                MainActor.assumeIsolated { pending.removeValue(forKey: question)?.resume(returning: nil) }
+            }
+            // A listener that never calls back is no answer.
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(10))
+                pending.removeValue(forKey: question)?.resume(returning: nil)
+            }
+        }
     }
 }

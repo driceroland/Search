@@ -4588,6 +4588,91 @@ enum ExtensionShims {
         });
       }
 
+      // A proxy's sign-in (ExtensionProxy.swift). WebKit never asks a
+      // blocking onAuthRequired listener, and a proxy an extension set goes
+      // through Search's relay, which WebKit doesn't see. So the listeners
+      // that asked to block are kept here, and while there are any a port
+      // is open to the browser, which asks them when a proxy answers 407:
+      // the answer goes back on the same port. Tailchrome waits on exactly
+      // this before it lets a page through its helper.
+      if (background && chrome.webRequest && runtime && typeof runtime.connectNative === "function") {
+        const web = chrome.webRequest;
+        let auth = web.onAuthRequired;
+        if (!auth || typeof auth.addListener !== "function") {
+          auth = event();
+          try { put(web, "onAuthRequired", auth); } catch (e) {}
+        }
+        const askers = [];
+        const addAuth = auth.addListener.bind(auth);
+        const removeAuth = typeof auth.removeListener === "function" ? auth.removeListener.bind(auth) : () => {};
+        let authPort = null;
+        const respond = async (to, question, details) => {
+          let url = null;
+          try { url = new URL(details.url); } catch (e) {}
+          let result = {};
+          for (const entry of askers.slice()) {
+            const filter = entry.filter || {};
+            if (url && Array.isArray(filter.urls) && !filter.urls.some((p) => patternMatches(p, url))) continue;
+            let got = {};
+            try {
+              got = await new Promise((resolve) => {
+                let done = false;
+                const finish = (r) => { if (!done) { done = true; resolve(r || {}); } };
+                const r = entry.listener({ ...details }, entry.async ? finish : undefined);
+                if (!entry.async) {
+                  if (r && typeof r.then === "function") r.then(finish, () => finish({})); else finish(r);
+                } else if (r && typeof r.then === "function") r.then((v) => { if (v) finish(v); }, () => {});
+              });
+            } catch (e) { setTimeout(() => { throw e; }); }
+            if (got && (got.authCredentials || got.cancel)) { result = got; break; }
+          }
+          const given = result.authCredentials;
+          try {
+            to.postMessage({ answer: question, cancel: !!result.cancel,
+              authCredentials: given ? { username: String(given.username), password: String(given.password) } : null });
+          } catch (e) {}
+        };
+        const openAuth = () => {
+          if (authPort) return;
+          let mine;
+          try { mine = runtime.connectNative("search.proxyauth"); } catch (e) { return; }
+          authPort = mine;
+          let answered = false, tries = 0;
+          const greet = () => { try { mine.postMessage({ listen: true, worker }); } catch (e) {} };
+          const again = () => {
+            if (answered || authPort !== mine || tries++ >= 20) return;
+            greet();
+            setTimeout(again, 100 * Math.min(tries, 5));
+          };
+          mine.onMessage.addListener((m) => {
+            // Its own messages, come back to it (see watching).
+            if (authPort !== mine || !m || typeof m !== "object" || m.listen || m.answer !== undefined) return;
+            if (m.ready) { if (!answered) greet(); return; }
+            answered = true;
+            if (typeof m.ask === "string") respond(mine, m.ask, m.details || {});
+          });
+          mine.onDisconnect.addListener(() => { if (authPort === mine) authPort = null; });
+          again();
+        };
+        put(auth, "addListener", (listener, filter, spec) => {
+          const blocks = Array.isArray(spec) && (spec.includes("blocking") || spec.includes("asyncBlocking"));
+          if (blocks && typeof listener === "function" && !askers.some((e) => e.listener === listener)) {
+            askers.push({ listener, filter, async: spec.includes("asyncBlocking") });
+            openAuth();
+          }
+          try { return addAuth(listener, filter, spec); } catch (e) {}
+        });
+        put(auth, "removeListener", (listener) => {
+          for (let i = askers.length - 1; i >= 0; i--) if (askers[i].listener === listener) askers.splice(i, 1);
+          if (!askers.length && authPort) {
+            const old = authPort;
+            authPort = null;
+            try { old.disconnect(); } catch (e) {}
+          }
+          try { return removeAuth(listener); } catch (e) {}
+        });
+      }
+
       // Tabs as Chrome describes them. Every tab has a groupId, which code
       // tests before anything else: -1 when in no group, and the group's
       // number, asked of the browser, for an extension that asked for
