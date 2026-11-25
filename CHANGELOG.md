@@ -40,6 +40,7 @@ in [ROADMAP.md](ROADMAP.md).
 - An extension opening a tab with no address, as Vimium C does when its New tab URL is `about:newtab`, gets the blank tab ⌘T makes, as Chrome gives its New Tab page, instead of an empty about:blank page. Thanks [@xav-ie](https://github.com/xav-ie) ([#1555](https://github.com/driceroland/Search/pull/1555))
 - A home background (Settings › Appearance › Home) and a blank tab's wall are cut to the window's rounded corners, as Search's own pages are, instead of drawing square corners past them. Thanks [@ojowwalker77](https://github.com/ojowwalker77) ([#1531](https://github.com/driceroland/Search/pull/1531))
 - A download that has had nothing come in for 10 seconds says Stalled instead of Downloading, and Downloading again as soon as more arrives: a server gone quiet or a connection dropped without an error looked like it was still coming, for as long as WebKit took to give up. `swift test --filter FetchEntryTests`. ([#1292](https://github.com/driceroland/Search/issues/1292), idea 884) Thanks [@jolly-0806](https://github.com/jolly-0806) ([#1557](https://github.com/driceroland/Search/pull/1557))
+- The Downloads list fades at its head once scrolled, as it does at its foot, instead of cutting "Current downloads" and the rows straight across under the title line. ([#1292](https://github.com/driceroland/Search/issues/1292), idea 884) Thanks [@jolly-0806](https://github.com/jolly-0806) ([#1554](https://github.com/driceroland/Search/pull/1554))
 
 ### Held back
 
