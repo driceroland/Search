@@ -747,6 +747,16 @@ final class Bench {
                     "sites": mode.sites, "address": tab.pageAddress?.absoluteString ?? "",
                     "command": Command.named("view.developerMode") != nil])
 
+        case "screenshots":
+            // Screenshots in Downloads (Screenshots.swift): what is watched,
+            // whether it was refused. Test runs only, on a folder of the
+            // test's (downloads.screenshots.folder), never the Mac's.
+            guard Store.testing else { answer(["error": "screenshots only works on a --test run"]); return }
+            if let on = request["set"] as? Bool { browser.prefs.screenshotsInDownloads = on }
+            answer(["on": browser.prefs.screenshotsInDownloads, "folder": Screenshots.shared.folder?.path ?? "",
+                    "refused": Screenshots.shared.refused?.path ?? "",
+                    "completed": browser.loot.kept.map { ["name": $0.name, "from": $0.from, "path": $0.path] }])
+
         case "kept":
             // A sleeping tab's picture, as kept for its waking, written to a
             // file: its size in pixels, what NSImage makes of it, and the

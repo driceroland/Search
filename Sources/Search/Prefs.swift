@@ -570,6 +570,14 @@ final class Preferences: ObservableObject {
     @Published var developerLocal: Bool {
         didSet { store.set(developerLocal, forKey: DevMode.localKey) }
     }
+    /// The Mac's screenshots listed in Downloads as they are taken
+    /// (Screenshots.swift). Off unless turned on: it reads a folder of yours.
+    @Published var screenshotsInDownloads: Bool {
+        didSet {
+            store.set(screenshotsInDownloads, forKey: Screenshots.key)
+            Screenshots.shared.watch(screenshotsInDownloads)
+        }
+    }
     /// Tab titles in full ink (black or white) instead of the soft greys
     /// used for tabs that aren't the one you're on. Off unless asked for.
     @Published var highContrastText: Bool {
@@ -1422,6 +1430,7 @@ final class Preferences: ObservableObject {
         // On by default, but off in test runs unless a test asks, so no
         // other probe's pages on 127.0.0.1 wear the bar.
         developerLocal = store.object(forKey: DevMode.localKey) as? Bool ?? !Store.testing
+        screenshotsInDownloads = store.bool(forKey: Screenshots.key)
         highContrastText = store.bool(forKey: "tabs.highContrast")
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
         // Security's advice); a choice made before stands.

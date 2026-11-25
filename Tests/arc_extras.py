@@ -76,7 +76,12 @@ def screenshot(folder, name, marked):
 def main():
     t = sv.T()
     try:
-        sv.setup(**{"developer.local": True})
+        sv.setup(**{"developer.local": True, "downloads.screenshots": True})
+        shots = Path(sv.SUPPORT) / "Screenshots"
+        shots.mkdir(parents=True)
+        subprocess.run(["defaults", "write", sv.SUITE, "downloads.screenshots.folder", "-string", str(shots)], check=True)
+        # Already there before: never listed.
+        screenshot(shots, "Screenshot 2026-11-25 at 08.00.00.png", True)
         sv.launch()
 
         # --- Developer Mode -------------------------------------------------
@@ -108,6 +113,27 @@ def main():
         t.ok("dev: with the cache off, ⌘R's reload skips it (no-cache)",
              fresh and "no-cache" in fresh[0][1] + fresh[0][2], fresh)
         sv.cmd({"do": "devmode", "id": local, "cache": False})
+
+        # --- Screenshots in Downloads ---------------------------------------
+        r = wait(lambda: (lambda s: s if s["folder"] else None)(sv.cmd({"do": "screenshots"})), 5)
+        t.ok("shots: watching the world's folder, not refused",
+             r and Path(r["folder"]).resolve() == shots.resolve() and not r["refused"], r)
+        screenshot(shots, "Screenshot 2026-11-25 at 23.00.00.png", True)
+        screenshot(shots, "holiday.png", None)
+        screenshot(shots, "Screenshot 2026-11-25 at 23.01.00.png", False)
+        r = wait(lambda: (lambda s: s if any(c["name"].endswith("23.00.00.png") for c in s["completed"]) else None)(
+            sv.cmd({"do": "screenshots"})), 5) or sv.cmd({"do": "screenshots"})
+        names = [c["name"] for c in r["completed"]]
+        time.sleep(0.8)
+        names = [c["name"] for c in sv.cmd({"do": "screenshots"})["completed"]]
+        t.ok("shots: the new screenshot is listed", "Screenshot 2026-11-25 at 23.00.00.png" in names, names)
+        t.ok("shots: … as a Screenshot", any(c["from"] == "Screenshot" for c in r["completed"]), r["completed"])
+        t.ok("shots: nothing else (old one, other picture, one marked not a capture)", len(names) == 1, names)
+        r = sv.cmd({"do": "screenshots", "set": False})
+        screenshot(shots, "Screenshot 2026-11-25 at 23.05.00.png", True)
+        time.sleep(1)
+        names = [c["name"] for c in sv.cmd({"do": "screenshots"})["completed"]]
+        t.ok("shots: off, nothing more", len(names) == 1 and not r["on"], names)
 
     finally:
         sv.finish()
