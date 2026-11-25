@@ -7775,6 +7775,7 @@ final class Browser: NSObject, ObservableObject {
             picking = nil
         }
         tab.onImageMenu = { [weak self] tab, url in self?.showImageMenu(for: tab, at: url) }
+        tab.onPictureItems = { [weak self] tab, url in self?.pictureItems(for: tab, at: url) ?? [] }
         tab.onImageItem = { [weak self] tab, url, copy in
             guard let self, let web = tab.built else { return }
             if copy { copyImage(at: url, in: tab) } else { downloadImage(at: url, from: web) }

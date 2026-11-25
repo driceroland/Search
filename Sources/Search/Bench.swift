@@ -1204,6 +1204,29 @@ final class Bench {
                         "activeBlank": browser.active?.isBlank ?? false])
             }
 
+        case "picturemenu":
+            // The right-click menu over a picture, as PageView makes it from
+            // WebKit's (PictureMenu.shape), from a menu of WebKit's that is
+            // only described — "items": its items' identifiers, in order —
+            // never shown. "src": the picture's address, "keep": an
+            // extension's right-click items are about. The titles it ends
+            // with, and whether it became this app's. Test runs only.
+            guard Store.testing else { answer(["error": "picturemenu only works on a --test run"]); return }
+            guard let tab = page(request, in: browser), let ids = request["items"] as? [String] else { answer(missing(request)); return }
+            house(tab)
+            let menu = NSMenu()
+            for id in ids {
+                let item = NSMenuItem(title: id.replacingOccurrences(of: "WKMenuItemIdentifier", with: ""), action: nil, keyEquivalent: "")
+                item.identifier = NSUserInterfaceItemIdentifier(id)
+                menu.addItem(item)
+            }
+            let url = (request["src"] as? String).flatMap(URL.init(string:))
+            let web = tab.web
+            let replaced = PictureMenu.shape(menu, picture: url, keep: request["keep"] as? Bool == true,
+                                             items: { web.pictureItems?($0) ?? [] }, retarget: { $0.representedObject = url })
+            answer(["replaced": replaced, "titles": menu.items.filter { !$0.isSeparatorItem }.map(\.title),
+                    "retargeted": menu.items.filter { $0.representedObject != nil }.map(\.title)])
+
         case "linkmenu":
             // A right-click at X Y of a tab's page (its own points from the
             // top left), and the item named "pick" chosen from the menu that
@@ -6011,7 +6034,7 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "devtools", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "picturemenu", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "devtools", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
 
                 "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "devtools", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
