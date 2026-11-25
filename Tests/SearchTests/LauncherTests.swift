@@ -89,4 +89,54 @@ final class LauncherTests: XCTestCase {
         XCTAssertFalse(Launcher.standsAside(active: false, windowShowing: true))
         XCTAssertFalse(Launcher.standsAside(active: false, windowShowing: false))
     }
+
+    func testReturnTakesTopSuggestionInGlobalField() throws {
+        let page = try XCTUnwrap(URL(string: "https://global-field.example/"))
+        _ = NSApplication.shared
+        let activationPolicy = NSApp.activationPolicy()
+        NSApp.setActivationPolicy(.prohibited)
+        let browser = Browser(record: WindowRecord())
+        let window = NSWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        browser.window = window
+        let previous = Front.shared.browser
+        let prefs = browser.prefs
+        let saved = (prefs.launcher, prefs.launcherLittle, prefs.bench, prefs.returnTakesTop)
+        let launcher = Launcher()
+        let query = "kettlebell symposium"
+        browser.history.record(page, title: "Kettlebell symposium")
+        Front.shared.set(browser)
+        defer {
+            launcher.dismiss(keeping: false)
+            (prefs.launcher, prefs.launcherLittle, prefs.bench, prefs.returnTakesTop) = saved
+            Front.shared.set(previous)
+            browser.history.forget(History.identity(for: page))
+            browser.closeAll()
+            window.close()
+            NSApp.setActivationPolicy(activationPolicy)
+        }
+        prefs.launcher = true
+        prefs.launcherLittle = false
+        prefs.bench = true
+        prefs.returnTakesTop = false
+        launcher.show()
+        launcher.type(query)
+        XCTAssertEqual(launcher.offers.first?.url, page)
+        XCTAssertNil(launcher.ending)
+        XCTAssertNil(launcher.picked)
+
+        prefs.returnTakesTop = true
+        launcher.type(query)
+        XCTAssertEqual(launcher.picked, 0)
+        XCTAssertEqual(launcher.completed, query)
+        launcher.walk(-1)
+        XCTAssertNil(launcher.picked)
+
+        launcher.type("https://global-field.example/")
+        XCTAssertNil(launcher.picked)
+
+        launcher.type(query)
+        launcher.submit()
+        XCTAssertEqual(browser.active?.address, page)
+    }
 }

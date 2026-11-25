@@ -100,6 +100,24 @@ struct PopupGesture {
         time = now
     }
 
+    /// Whether a main-frame navigation leaves the page's document, which
+    /// takes the interaction with it. A jump to a #fragment of the same
+    /// address stays in the document, as in Safari and Chrome: a page that
+    /// sets location.hash on a click and then opens its sign-in window had
+    /// the window refused (idea 1200, Teams' "sign in again" banner did
+    /// nothing). A reload or a POST to the same address is a new document.
+    nonisolated static func leavesDocument(to url: URL?, from current: URL?, reload: Bool, method: String?) -> Bool {
+        guard !reload, (method ?? "GET").uppercased() == "GET",
+              let url, let current, url.fragment != nil else { return true }
+        func bare(_ u: URL) -> String? {
+            var parts = URLComponents(url: u, resolvingAgainstBaseURL: false)
+            parts?.fragment = nil
+            return parts?.string
+        }
+        guard let to = bare(url), let from = bare(current) else { return true }
+        return to != from
+    }
+
     static func origin(_ info: WKFrameInfo) -> String? {
         let origin = info.securityOrigin
         if let key = originKey(scheme: origin.protocol, host: origin.host, port: origin.port) { return key }

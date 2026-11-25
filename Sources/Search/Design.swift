@@ -331,9 +331,9 @@ enum Motion {
     /// slowed Mac takes time from first, and every frame it misses shows as a
     /// stutter. 0.16 s is 10 frames, and is over before a missed one shows.
     /// Read at the moment something moves, so it follows the switch at once.
-    /// Only once it is turned on in Settings › General (Preferences.lightMotion).
+    /// Unless it is turned off in Settings › General (Preferences.lightMotion).
     static var light: Bool {
-        guard Store.settings.bool(forKey: lightKey) else { return false }
+        guard lightOn else { return false }
         return lowPowerMode || ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
     }
 
@@ -342,7 +342,13 @@ enum Motion {
     /// since what a sleeping tab gives back is mostly memory, and a hot Mac
     /// has enough of that.
     static var savingPower: Bool {
-        Store.settings.bool(forKey: lightKey) && lowPowerMode
+        lightOn && lowPowerMode
+    }
+
+    /// The switch itself: on for everyone who never touched it (Drice, 25
+    /// Nov 2026), as Preferences reads it.
+    private static var lightOn: Bool {
+        Store.settings.object(forKey: lightKey) as? Bool ?? true
     }
 
     nonisolated static let lightKey = "motion.light"

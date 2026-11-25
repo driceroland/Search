@@ -23,7 +23,9 @@ def loose(state, pins):
 
 
 def run(t, place, sidebar=True):
-    sv.setup(sidebar=sidebar, **{"tabs.groups": True, "splitView": True})
+    # Pages opened in front go to the end here: beside their page is on by
+    # default since 25 Nov 2026 (front_links_beside.py).
+    sv.setup(sidebar=sidebar, **{"tabs.groups": True, "splitView": True, "tabs.frontBeside": False})
     if place != "next":
         subprocess.run(["defaults", "write", sv.SUITE, "tabs.newPlace", place], check=True)
     sv.launch()

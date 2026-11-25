@@ -5,7 +5,7 @@ import AppKit
 // a few frames. A trackpad or a mouse that scrolls in points is smooth
 // already and is left alone.
 //
-// Off unless turned on in Settings › Keyboard & Mouse. Each notch is taken
+// On unless turned off in Settings › Keyboard & Mouse. Each notch is taken
 // from the page and given back as small steps in points, one per frame,
 // eased out over about a sixth of a second; a notch during the glide adds to
 // what is left, and one the other way starts afresh. The page sees those
