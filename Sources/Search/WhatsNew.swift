@@ -55,6 +55,15 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Backspace goes back", detail: "⌫ goes back a page and ⇧⌫ forward, when you aren't typing in a field.",
+               since: "1.0.21", get: { $0.backspaceGoesBack }, set: { $0.backspaceGoesBack = $1 }),
+
+        Toggle(title: "Hide the page behind the field", detail: "⌘T's and ⌘L's field over a plain ground, the page out of sight instead of dimmed.",
+               since: "1.0.21", get: { $0.fieldHidesPage }, set: { $0.fieldHidesPage = $1 }),
+
+        Toggle(title: "Return takes the top suggestion", detail: "Return goes to the place on top of the field's list as you type, as in Arc's command bar; ↑ lets go of it.",
+               since: "1.0.21", get: { $0.returnTakesTop }, set: { $0.returnTakesTop = $1 }),
+
         Toggle(title: "Links from pins open in a new tab", detail: "A link clicked in a pinned tab opens in a tab of its own, and the pin stays on its page.",
                since: "1.0.20", get: { $0.pinLinksOpenTabs }, set: { $0.pinLinksOpenTabs = $1 }),
 
@@ -222,6 +231,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.21"),
         Release(version: "1.0.20"),
         Release(version: "1.0.19"),
         Release(version: "1.0.18"),
@@ -304,6 +314,42 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.21", date: "25 November 2026",
+            headline: "Your fixes, from NordPass to YouTube's sign-in.",
+            new: [
+                "Backspace can go back a page, and ⇧⌫ forward, when you aren't typing, in Settings › Keyboard & Mouse.",
+                "The page can be hidden behind ⌘T's and ⌘L's field, over a plain ground, in Settings › Spaces & Pins.",
+                "Return can take the top suggestion as you type, as in Arc's command bar, in Settings › Browsing.",
+            ],
+            better: [
+                "Hide Elements names exactly what you picked, so on later visits it hides that one thing, not everything that looks like it, and it goes at once from every open page of the site.",
+                "A slept tab wakes where you were in a page that scrolls inside itself, as a long Google Doc does.",
+                "A column folded with ⌘S comes out when the pointer is flung past the window's side.",
+                "Zen's open tabs come into the space of their Zen space's name, and come at all when Zen keeps them only in its own file.",
+                "Darken pages keeps pictures drawn in SVG as they are, and leaves Google Docs, Sheets and Slides as they are.",
+                "Extensions that ask for chrome.identity.AccountStatus find it, as Fathom AI Note Taker does before every request.",
+                "A download with nothing coming in says Stalled, and the Downloads list keeps each row's buttons under its text and fades at its head once scrolled.",
+                "Closing tabs across the top one after another: the next tab's cross comes to where the last one was.",
+                "When Apple Passwords asks for its code again, the log says why the last pairing ended, and the log says why an extension's connection to its app on the Mac closed.",
+            ],
+            fixed: [
+                "NordPass freezing, its popup an empty dark box.",
+                "YouTube signing you out every few weeks when you mostly watch: the floating video's and the sidebar player's controls now count as using the site.",
+                "Saved passwords and passkeys not showing in a site's sized pop-up window, as Gmail's Add another account opens.",
+                "Saved passwords not offered in sign-ins that mark every box as new, as some crew portals do.",
+                "A page closing itself in a small window leaving the window open.",
+                "An extension update waiting for your OK being dropped while Search was in the background; it now shows in Settings › Extensions.",
+                "A pinned tab's Site Information… doing nothing on the pin you were on, one put down with ⌘W, pins brought back at launch, and in the column of icons.",
+                "Arc's spaces brought over staying empty until Spaces was turned off and on.",
+                "With profiles in one window, a space's name popping up on nearly every profile switch.",
+                "Two Macs set up one from the other with Migration Assistant sharing one sync id and taking each other's tabs for their own.",
+                "The floating video's return arrow bringing forward another window instead of the video's own.",
+                "With Liquid Glass, the buttons beside the tabs and a tab's letter fading into what is behind the window, and the glass not following the tab when the column scrolls.",
+                "An extension's new tab opening as an empty page instead of ⌘T's blank tab, and the home background drawn past the window's rounded corners.",
+                "LOCALHOST and other local names typed in capitals not opening over HTTP.",
+            ]
+        ),
         Notes(
             version: "1.0.20", date: "24 November 2026",
             headline: "Your fixes, from the Dock to extension popups.",
