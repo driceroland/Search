@@ -1424,12 +1424,13 @@ final class Preferences: ObservableObject {
         foldersArrowOnHover = store.object(forKey: "folders.arrowHover") as? Bool ?? false
         iconPeeks = store.object(forKey: "icons.peek") as? Bool ?? true
         iconPeekDelay = store.object(forKey: "icons.peek.delay") as? Double ?? 0.6
-        let motion = (store.string(forKey: "spaces.motion")).flatMap(SpaceMotion.init(rawValue:)) ?? .smooth
+        let motion = (store.string(forKey: "spaces.motion")).flatMap(SpaceMotion.init(rawValue:))
+            ?? (NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? .none : .smooth)
         spaceMotion = motion
         Motion.spaceMotion = motion
         animatesField = store.object(forKey: "field.animates") as? Bool ?? true
         clearPanels = store.bool(forKey: "panels.clear")
-        findDims = (store.object(forKey: "find.dim") as? Bool) ?? true
+        findDims = (store.object(forKey: "find.dim") as? Bool) ?? false
         clearEmpty = store.bool(forKey: "empty.clear")
         hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never

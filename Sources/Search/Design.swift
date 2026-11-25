@@ -403,7 +403,7 @@ enum Motion {
 
     static var spaceSpan: Double { spaceMotion.span }
 
-    static var slides: Bool { !reduced && spaceMotion != .none }
+    static var slides: Bool { !instant && spaceMotion != .none }
 
     static var space: Animation? {
         slides ? .spring(response: spaceSpan, dampingFraction: 1) : nil
