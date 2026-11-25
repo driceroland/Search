@@ -272,6 +272,10 @@ def want(name):
 def measure(n, rnd):
     out = {"n": n, "round": rnd}
     sv.setup(sidebar=True, spaces=True, **{"tabs.groups": True})
+    if want("keyspace"):
+        keys = {"spaces.next": {"key": {"key": "k", "command": True, "shift": False, "option": True, "control": False}},
+                "spaces.previous": {"key": {"key": "j", "command": True, "shift": False, "option": True, "control": False}}}
+        subprocess.run(["defaults", "write", sv.SUITE, "shortcuts", "-data", json.dumps(keys).encode().hex()], check=True)
     world(n)
     sockMs = launch()
     sv.cmd({"do": "resize", "width": 1280, "height": 820, "steps": 1})
@@ -318,12 +322,19 @@ def measure(n, rnd):
         # switched at once as a hidden window does and with the slide a
         # window on screen makes; and Next/Previous Space as its command runs.
         ks = {}
-        for name, extra in (("key", {}), ("keyGlide", {"glide": True}), ("step", None)):
+        # Next / Previous Space on ⌥⌘K / ⌥⌘J (written before launch, see
+        # measure): pressed, as a person runs them, beside "step", the
+        # command run inside the bench's own pass.
+        nextkey = {"code": 40, "chars": "k", "mods": ["cmd", "opt"]}
+        prevkey = {"code": 38, "chars": "j", "mods": ["cmd", "opt"]}
+        for name, extra in (("key", {}), ("keyGlide", {"glide": True}), ("step", None), ("stepKey", "keys")):
             rs = []
             for j in range(5):
                 req = {"do": "perfkeyspace", "seconds": 2}
                 if extra is None:
                     req["step"] = 1 if j % 2 == 0 else -1
+                elif extra == "keys":
+                    req |= nextkey if j % 2 == 0 else prevkey
                 else:
                     req |= extra | {"index": 2 if j % 2 == 0 else 1}
                 rs.append(sv.cmd(req))
