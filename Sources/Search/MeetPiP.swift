@@ -210,18 +210,18 @@ enum MeetPiP {
             } catch (e) { err('enter', e); }
           });
 
-          // Chrome resolves these; WebKit may refuse them, and Meet then turns
-          // the camera off. Refusals are logged and swallowed.
+          // Meet, as Chrome, tells the browser whether its camera and
+          // microphone are on (setCameraActive / setMicrophoneActive); Chrome
+          // only shows it. WebKit acts on it — mutes the capture, and won't
+          // turn it back on without a click — so Meet's own camera and
+          // microphone buttons turned each other off. Here they are what
+          // they are in Chrome: noted, nothing done.
           try {
             ['setCameraActive', 'setMicrophoneActive'].forEach(function (name) {
-              var mp = window.MediaSession && MediaSession.prototype, f = mp && mp[name];
-              if (typeof f !== 'function') return;
+              var mp = window.MediaSession && MediaSession.prototype;
+              if (!mp || typeof mp[name] !== 'function') return;
               Object.defineProperty(mp, name, {
-                value: function () {
-                  var r;
-                  try { r = f.apply(this, arguments); } catch (e) { err(name, e); return Promise.resolve(); }
-                  return Promise.resolve(r).catch(function (e) { err(name, e); });
-                }, writable: true, configurable: true
+                value: function () { return Promise.resolve(); }, writable: true, configurable: true
               });
             });
           } catch (e) {}
