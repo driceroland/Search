@@ -9619,6 +9619,13 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             else if CaptureChoices.mediaDecision(.microphone, origin: site) == true { wants = "camera" }
         }
         let revision = CaptureChoices.revision(for: "capture." + key)
+        // Once answered, pages of the site asking navigator.permissions hear
+        // of it (a 'change' event), as in Chrome: Meet's camera and
+        // microphone buttons go by that.
+        let decisionHandler: (WKPermissionDecision) -> Void = { decision in
+            decisionHandler(decision)
+            if !shy, !Browser.extensionScheme(asker.protocol) { Browser.capturePermissionChanged(type, origin: origin) }
+        }
         ask(from: webView, show: { [weak self] in
             guard let self else { return decisionHandler(.deny) }
             guard shy || revision == CaptureChoices.revision(for: "capture." + key) else { return decisionHandler(.deny) }
@@ -9633,6 +9640,43 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             askedRevision = shy ? nil : revision
             asking = CaptureAsk(host: host, wants: wants)
         }, drop: { decisionHandler(.deny) })
+    }
+
+    /// navigator.permissions.query({name: 'camera' | 'microphone'}): what
+    /// Search would do if the page asked now — granted only when the site's
+    /// remembered choice would let it in without a question, denied when it
+    /// would be refused, prompt otherwise. Unanswered, WebKit says "prompt"
+    /// for a site Search lets straight in, and a site that reads it (Google
+    /// Meet, told it is Chrome) showed its camera and microphone as
+    /// waiting for permission and flashed "Click Allow". WebKit itself still
+    /// says "granted" after a grant in the same page, and never tells a page
+    /// "denied" it hasn't been refused in. Any other permission: prompt, as
+    /// before.
+    @objc(_webView:queryPermission:forOrigin:completionHandler:)
+    func webView(_ webView: WKWebView, queryPermission name: String, forOrigin origin: WKSecurityOrigin,
+                 completionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let kind: CaptureChoices.Kind? = name == "camera" ? .camera : name == "microphone" ? .microphone : nil
+        guard let kind, !origin.host.isEmpty, !Browser.extensionScheme(origin.protocol),
+              tab(for: webView)?.agent != true,
+              webView.configuration.websiteDataStore.isPersistent, !(popupTab(for: webView)?.shy ?? false)
+        else { return completionHandler(.prompt) }
+        let site = "\(origin.protocol)://\(origin.host)" + (origin.port == 0 ? "" : ":\(origin.port)")
+        switch CaptureChoices.mediaDecision(kind, origin: site) {
+        case true?: completionHandler(.grant)
+        case false?: completionHandler(.deny)
+        case nil: completionHandler(.prompt)
+        }
+    }
+
+    /// Tells the pages of `origin` that what navigator.permissions says of
+    /// the camera or microphone may have changed: WebKit asks again
+    /// (queryPermission above) and fires 'change' where it did.
+    static func capturePermissionChanged(_ type: WKMediaCaptureType, origin: WKSecurityOrigin) {
+        let selector = NSSelectorFromString("_permissionChanged:forOrigin:")
+        let web: AnyObject = WKWebView.self
+        guard web.responds(to: selector) else { return }
+        let names: [String] = type == .camera ? ["camera"] : type == .microphone ? ["microphone"] : ["camera", "microphone"]
+        for name in names { _ = web.perform(selector, with: name as NSString, with: origin) }
     }
 
     /// WebKit's private delegate lets Search ask before opening the system picker.

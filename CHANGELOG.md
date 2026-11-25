@@ -18,6 +18,7 @@ in [ROADMAP.md](ROADMAP.md).
 ### Fixed
 
 - Google Meet with its mini window on: background blur and other camera effects work again. Told it was Chrome, Meet's effects took Chrome's way, which WebKit hasn't got, and failed with "Something went wrong and the visual effect can't be applied. Your camera is now off."; they now take the way they take in Safari.
+- A site's camera and microphone permission, as pages read it (navigator.permissions): "granted" where Search lets the site straight in, and updated as soon as you answer Search's question. Pages had been told "prompt" every time; Google Meet with its mini window on showed its camera and microphone buttons with a warning and flashed "Click Allow" on joining.
 
 ### Held back
 
