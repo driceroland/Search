@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Settings › Tabs › In the tab bar › Double click to rename, off unless turned on: a click on the tab you're on opens its name to type over, as Rename in its right-click menu does, instead of its address. It takes the click over from "Clicking the tab you're on keeps its name" and "edits its address only", which hide while it is on; Site Information… and ⌘L still edit the address, and the column of icons, with no title to type over, still opens the address. `python3 Tests/tab_click_renames.py`
+
 ### Fixed
 
 - An extension's popup that is empty until its worker answers, as NordPass's is, no longer shrinks to a speck a second after it loads and starts as one at every opening after: it stays at its size until its content comes. `python3 Tests/extension_popup_slow.py` (idea 1179)
