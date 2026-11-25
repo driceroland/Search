@@ -58,6 +58,9 @@ final class FindStageTests: XCTestCase {
         let window = makeWindow(stage)
         defer { browser.closeFind(); window.close() }
         let web = tab.web
+        try await waitUntil("the initial navigation finishes") {
+            !web.isLoading && web.url?.absoluteString == "about:blank"
+        }
         web.loadHTMLString("""
             <body style="margin:0;min-height:100vh" onclick="window.pageClicks++">
             orchid orchid orchid
@@ -105,6 +108,112 @@ final class FindStageTests: XCTestCase {
         XCTAssertNil(browser.findStatus)
         let clicks = try await web.evaluateJavaScript("window.pageClicks")
         XCTAssertEqual(clicks as? Int, 0)
+    }
+
+    func testControlMatchesKeepFindFieldFocusAndCaret() async throws {
+        _ = NSApplication.shared
+        let browser = Browser(record: WindowRecord())
+        let tab = browser.benchOpen(URL(string: "about:blank")!)
+        browser.activeID = tab.id
+        let stage = PaneStage(frame: CGRect(x: 0, y: 0, width: 600, height: 400))
+        stage.show([tab], split: nil, focused: tab.id)
+        let window = makeWindow(stage)
+        defer { browser.closeFind(); window.close() }
+        let web = tab.web
+        try await waitUntil("the initial navigation finishes") {
+            !web.isLoading && web.url?.absoluteString == "about:blank"
+        }
+        web.loadHTMLString("""
+            <input id="input" value="a this.word b">
+            <textarea id="area">a this.word b</textarea>
+            <script>window.findFixtureReady = true;</script>
+            """, baseURL: URL(string: "https://find-stage.invalid/"))
+        try await waitUntil("the fixture page loads") {
+            (try? await web.evaluateJavaScript("window.findFixtureReady")) as? Bool == true
+        }
+        browser.openFind()
+        stage.showFind(browser)
+        stage.layoutSubtreeIfNeeded()
+        let bar = try XCTUnwrap(stage.subviews.compactMap { $0 as? NSHostingView<FindBar> }.first)
+        let field = try XCTUnwrap(textField(in: bar))
+        window.makeFirstResponder(field)
+        let editor = try XCTUnwrap(field.currentEditor())
+        editor.insertText(".word")
+        try await waitUntil("Find selects the input match") {
+            !browser.findBusy && browser.findStatus == "1 of 2"
+        }
+        XCTAssertTrue(window.firstResponder === field.currentEditor())
+        let caret = NSRange(location: 2, length: 1)
+        field.currentEditor()?.selectedRange = caret
+        browser.look(forward: true)
+        try await waitUntil("Next selects the textarea match") {
+            !browser.findBusy && browser.findStatus == "2 of 2"
+        }
+        XCTAssertTrue(window.firstResponder === field.currentEditor())
+        XCTAssertEqual(field.currentEditor()?.selectedRange, caret)
+        XCTAssertEqual(browser.needle, ".word")
+        let selected = try await web.evaluateJavaScript("[document.activeElement.id, area.selectionStart, area.selectionEnd, area.value]") as? [Any]
+        XCTAssertEqual(selected?[0] as? String, "area")
+        XCTAssertEqual(selected?[1] as? Int, 6)
+        XCTAssertEqual(selected?[2] as? Int, 11)
+        XCTAssertEqual(selected?[3] as? String, "a this.word b")
+        browser.closeFind()
+        try await waitUntil("Clear restores page focus") {
+            (try await web.evaluateJavaScript("document.activeElement === document.body")) as? Bool == true
+        }
+    }
+
+    func testLeavingControlMatchDoesNotRefocusPreviousPane() async throws {
+        _ = NSApplication.shared
+        let browser = Browser(record: WindowRecord())
+        let savedSplit = browser.prefs.splitView
+        browser.prefs.splitView = true
+        let left = try XCTUnwrap(browser.tabs.last)
+        left.restore(url: URL(string: "about:blank#left")!, title: "Left")
+        browser.newTab()
+        let right = try XCTUnwrap(browser.tabs.last)
+        right.restore(url: URL(string: "about:blank#right")!, title: "Right")
+        browser.editing = false
+        browser.pair(right, with: left, onLeft: false)
+        browser.focusPane(left)
+        let pair = try XCTUnwrap(browser.activeSplit)
+        let stage = PaneStage(frame: CGRect(x: 0, y: 0, width: 800, height: 400))
+        stage.show([left, right], split: pair, focused: left.id)
+        let window = makeWindow(stage)
+        defer { browser.closeFind(); window.close(); browser.prefs.splitView = savedSplit }
+        for tab in [left, right] {
+            try await waitUntil("the pane's initial navigation finishes") {
+                !tab.web.isLoading && tab.web.url?.scheme == "about"
+            }
+            tab.web.loadHTMLString("""
+                <input id="prior" value="original caret">
+                <textarea id="area">a this.word b</textarea>
+                <script>window.findFixtureReady = true;</script>
+                """, baseURL: URL(string: "https://find-stage.invalid/"))
+            try await waitUntil("the pane fixture loads") {
+                (try? await tab.web.evaluateJavaScript("window.findFixtureReady")) as? Bool == true
+            }
+        }
+        _ = try await left.web.evaluateJavaScript("prior.focus()")
+        browser.openFind()
+        stage.showFind(browser)
+        stage.layoutSubtreeIfNeeded()
+        let bar = try XCTUnwrap(stage.subviews.compactMap { $0 as? NSHostingView<FindBar> }.first)
+        let field = try XCTUnwrap(textField(in: bar))
+        window.makeFirstResponder(field)
+        try XCTUnwrap(field.currentEditor()).insertText(".word")
+        try await waitUntil("Find selects the left textarea") {
+            !browser.findBusy && browser.findStatus == "1 of 1"
+        }
+        browser.focusPane(right)
+        stage.show([left, right], split: pair, focused: right.id)
+        try await waitUntil("Find selects the right textarea") {
+            guard !browser.findBusy, browser.findStatus == "1 of 1" else { return false }
+            return (try await right.web.evaluateJavaScript("document.activeElement.id")) as? String == "area"
+        }
+        XCTAssertEqual(browser.activeID, right.id)
+        XCTAssertTrue(window.firstResponder === field.currentEditor())
+        XCTAssertEqual(browser.needle, ".word")
     }
 
     private func makeWindow(_ stage: PaneStage) -> NSWindow {

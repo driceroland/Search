@@ -757,7 +757,8 @@ final class Browser: NSObject, ObservableObject {
 
     private func clearFind(on web: WKWebView) {
         let generation = findGeneration
-        Task { [pageFind] in _ = await pageFind.clear(on: web, generation: generation) }
+        let restoresFocus = active?.built === web
+        Task { [pageFind] in _ = await pageFind.clear(on: web, generation: generation, restoresFocus: restoresFocus) }
     }
 
     private func resetFindState() {

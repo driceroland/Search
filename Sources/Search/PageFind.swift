@@ -50,6 +50,7 @@ final class PageFind {
                 on: web,
                 arguments: [
                     "query": query,
+                    "restoresFocus": true,
                     "matchCase": matchCase,
                     "wholeWords": wholeWords,
                     "steps": steps,
@@ -103,13 +104,14 @@ final class PageFind {
         }
     }
 
-    func clear(on web: WKWebView, generation: UInt64) async -> Result {
+    func clear(on web: WKWebView, generation: UInt64, restoresFocus: Bool = true) async -> Result {
         newestGeneration = max(newestGeneration, generation)
         do {
             _ = try await evaluate(
                 on: web,
                 arguments: [
                     "query": "",
+                    "restoresFocus": restoresFocus,
                     "matchCase": false,
                     "wholeWords": false,
                     "steps": 0,
@@ -124,12 +126,35 @@ final class PageFind {
     }
 
     private func evaluate(on web: WKWebView, arguments: [String: Any]) async throws -> Any {
-        try await withCheckedThrowingContinuation { continuation in
+        let window = web.window
+        let editor = window?.firstResponder as? NSTextView
+        let responder = editor?.isFieldEditor == true ? editor?.delegate as? NSView : window?.firstResponder as? NSView
+        let selection = editor?.selectedRange()
+        let value: Any = try await withCheckedThrowingContinuation { continuation in
             web.callAsyncJavaScript(Self.script, arguments: arguments, in: nil, in: Web.world) {
                 (result: Swift.Result<Any, Error>) in
                 continuation.resume(with: result)
             }
         }
+        if let responder, responder.window === window,
+           let current = window?.firstResponder as? NSView,
+           current !== responder, current.isDescendant(of: web) {
+            window?.makeFirstResponder(responder)
+            if let selection, let field = responder as? NSTextField {
+                field.currentEditor()?.selectedRange = selection
+            }
+            _ = try await web.callAsyncJavaScript(
+                """
+                const state = globalThis.__searchPageFindState_v2;
+                if (state?.generation === Number(generation) && state.current?.kind === "control"
+                    && state.current.control.getRootNode().activeElement === state.current.control) {
+                    state.current.control.setSelectionRange(state.current.start, state.current.end);
+                }
+                """,
+                arguments: arguments, in: nil, contentWorld: Web.world
+            )
+        }
+        return value
     }
 
     private func nativeFind(
@@ -201,7 +226,7 @@ final class PageFind {
 
     // Puts back whatever the page had selected before the find took over,
     // unless the page has since selected something else itself.
-    function unmarkCurrent() {
+    function unmarkCurrent(restoresFocus = true) {
         if (!state.current) return;
         if (state.current.kind === "range") {
             try {
@@ -219,6 +244,16 @@ final class PageFind {
                 if (control.selectionStart === state.current.start
                     && control.selectionEnd === state.current.end) {
                     control.setSelectionRange(state.current.savedStart, state.current.savedEnd, state.current.savedDirection);
+                    if (control.getRootNode().activeElement === control && state.current.savedFocus !== control) {
+                        control.blur();
+                        if (restoresFocus) state.current.savedFocus?.focus({ preventScroll: true });
+                        const selection = state.current.win.getSelection();
+                        const saved = state.savedSelections.find(item => item.win === state.current.win);
+                        if (selection && saved) {
+                            selection.removeAllRanges();
+                            for (const range of saved.ranges) selection.addRange(range);
+                        }
+                    }
                 }
             } catch (_) {}
         }
@@ -231,7 +266,7 @@ final class PageFind {
     }
 
     function clearState() {
-        unmarkCurrent();
+        unmarkCurrent(restoresFocus);
         unpaint();
         state.savedSelections = [];
         state.matches = [];
@@ -671,7 +706,9 @@ final class PageFind {
             } catch (_) {}
         } else {
             try {
+                match.savedFocus = match.control.getRootNode().activeElement;
                 match.control.setSelectionRange(match.start, match.end);
+                match.control.focus({ preventScroll: true });
                 match.control.scrollIntoView({ block: "center", inline: "nearest" });
             } catch (_) {}
         }

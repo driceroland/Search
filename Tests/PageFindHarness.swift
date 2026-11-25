@@ -17,6 +17,7 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
     private let finder = PageFind()
     private var web: WKWebView!
     private var window: NSWindow!
+    private let findField = NSTextField()
     private var generation: UInt64 = 0
     private var spec: Spec?
     private var checks = 0
@@ -27,13 +28,18 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         configuration.websiteDataStore = .nonPersistent()
         web = WKWebView(frame: NSRect(x: 0, y: 0, width: 460, height: 380), configuration: configuration)
         window = NSWindow(
-            contentRect: NSRect(x: -20_000, y: -20_000, width: 460, height: 380),
+            contentRect: NSRect(x: -20_000, y: -20_000, width: 460, height: 420),
             styleMask: .borderless,
             backing: .buffered,
             defer: false
         )
         window.isReleasedWhenClosed = false
-        window.contentView = web
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 420))
+        web.frame.origin.y = 40
+        content.addSubview(web)
+        findField.frame = NSRect(x: 10, y: 5, width: 300, height: 30)
+        content.addSubview(findField)
+        window.contentView = content
         // WebKit needs a sized view attached to a window to lay out the page.
         // The probe lives well outside every screen so it never covers the user's work.
         window.orderFrontRegardless()
@@ -190,6 +196,7 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         await checkSameQuerySelectionCleanup()
         await checkFrameAndSelectionRestoration()
         await checkControlsAndMutation()
+        await checkVisibleControlMatches()
         await checkDOMMutationBeforeNext()
         await checkStaleRequestsAndClear()
         await checkHorizontalHitScrollsIntoView()
@@ -293,9 +300,9 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         expect(mainHit, count: 3, index: 1, "The same query has one main, one input, and one iframe hit")
         let inputHit = await update("sharedmark")
         expect(inputHit, count: 3, index: 2, "Next moves from the main document into the input")
-        let restoredMain = (try? await evaluate("window.getSelection().toString()")) as? String
+        let selectedControl = (try? await evaluate("window.getSelection().toString()")) as? String
         let inputRange = (try? await evaluate("[document.querySelector('#sharedcontrol').selectionStart, document.querySelector('#sharedcontrol').selectionEnd]")) as? [Int]
-        check(restoredMain == "mainoriginal", "Next restores the main document's prior selection when entering a control")
+        check(selectedControl == "sharedmark", "The focused control exposes the selected match")
         check(inputRange == [0, 10], "The current control hit is selected")
 
         let frameHit = await update("sharedmark")
@@ -339,6 +346,61 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         let newAfterEdit = await update("newpivot")
         expect(newAfterEdit, count: 1, index: 1, "Next sees a newly entered control value")
         _ = await clear()
+    }
+
+    private func checkVisibleControlMatches() async {
+        _ = try? await evaluate("document.querySelector('#field').value = document.querySelector('#area').value = 'a this.word b'")
+        for selector in ["#field", "#area"] {
+            _ = await clear()
+            _ = try? await evaluate("""
+            (() => {
+                const control = document.querySelector('\(selector)');
+                control.blur();
+                control.setSelectionRange(2, 4);
+                control.scrollIntoView({ block: 'center' });
+            })()
+            """)
+            findField.stringValue = ".word"
+            window.makeFirstResponder(findField)
+            do {
+                let before = try await controlSnapshot(selector)
+                var hit = await update(".word")
+                if selector == "#area" { hit = await update(".word") }
+                expect(hit, count: 2, index: selector == "#field" ? 1 : 2,
+                       "A literal substring in \(selector) is found")
+                let after = try await controlSnapshot(selector)
+                let selection = (try? await evaluate("""
+                    (() => { const c = document.querySelector('\(selector)');
+                    return [c.selectionStart, c.selectionEnd]; })()
+                    """)) as? [Int]
+                check(selection == [6, 11], "Only .word is selected in \(selector), not the whole field")
+                check(window.firstResponder === findField.currentEditor(),
+                      "Find keeps keyboard focus after selecting \(selector)")
+                _ = try? await evaluate("document.querySelector('\(selector)').setSelectionRange(11, 11)")
+                let collapsed = try await controlSnapshot(selector)
+                check(after != collapsed, "The selected text in \(selector) has a visible highlight")
+                _ = try? await evaluate("document.querySelector('\(selector)').setSelectionRange(6, 11)")
+                _ = await clear()
+                let cleared = try await controlSnapshot(selector)
+                check(before == cleared, "Clearing Find removes the visible selection in \(selector)")
+            } catch {
+                check(false, "Could not capture \(selector): \(error)")
+            }
+        }
+    }
+
+    private func controlSnapshot(_ selector: String) async throws -> Data {
+        try await Task.sleep(for: .milliseconds(100))
+        let value = try await evaluate("""
+            (() => { const r = document.querySelector('\(selector)').getBoundingClientRect();
+            return [r.x, r.y, r.width, r.height]; })()
+            """)
+        guard let box = value as? [Double], box.count == 4 else { throw CocoaError(.coderInvalidValue) }
+        let configuration = WKSnapshotConfiguration()
+        configuration.rect = CGRect(x: box[0], y: box[1], width: box[2], height: box[3])
+        let image = try await web.takeSnapshot(configuration: configuration)
+        guard let pixels = image.tiffRepresentation else { throw CocoaError(.coderInvalidValue) }
+        return pixels
     }
 
     private func checkDOMMutationBeforeNext() async {
