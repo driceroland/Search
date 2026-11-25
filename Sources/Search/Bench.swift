@@ -2663,6 +2663,23 @@ final class Bench {
                         "total": browser.bookmarks.count, "top": browser.bookmarks.roots.map(\.title), "saved": browser.saved.count])
             }
 
+        case "export-spaces":
+            // File › Export Spaces… without its panel: the file is .json or
+            // a bookmarks page by its name. With no path, only the spaces as
+            // they would be written. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "export-spaces only works on a --test run"]); return }
+            var out: [String: Any] = [:]
+            if let path = request["path"] as? String { out["said"] = browser.exportSpaces(to: URL(fileURLWithPath: path)) }
+            out["spaces"] = (try? JSONSerialization.jsonObject(with: SpacesExport.json(SpacesExport.gather()))) ?? [:]
+            answer(out)
+
+        case "import-spaces-file":
+            // Bring Things Over › File… given a Search spaces file.
+            guard Store.testing else { answer(["error": "import-spaces-file only works on a --test run"]); return }
+            guard let path = request["path"] as? String else { answer(["error": "import-spaces-file needs a path"]); return }
+            answer(["said": browser.takeSpacesFile(URL(fileURLWithPath: path)) ?? "not a spaces file",
+                    "names": browser.spaces.map(\.name), "usesSpaces": browser.prefs.usesSpaces])
+
         case "remove-folder":
             // The bookmarks list's Remove on a top-level folder, question and
             // all: the real sheet, which `press` with "sheet" answers. Only on

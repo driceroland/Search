@@ -108,6 +108,10 @@ struct SearchApp: App {
                 // other way in opens too.
                 Button("Bring Things Over…") { browser.bringingIn = "" }
                     .shortcut("file.import")
+                // Every space, its pins and its tabs, to a file any browser
+                // imports, or Search's own (SpacesExport.swift).
+                Button("Export Spaces…") { browser.exportSpaces() }
+                    .shortcut("file.exportSpaces")
                 Divider()
                 Button("Close Tab") { browser.closeFront() }
                     .shortcut("file.closeTab")

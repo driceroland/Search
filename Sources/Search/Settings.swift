@@ -565,6 +565,8 @@ struct SettingsPanel: View {
             // Coming from another browser, now or any time later: the same
             // page as File › Bring Things Over… and the Welcome's.
             Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
+        case "general.exportSpaces":
+            Pill("Export Spaces…") { browser.exportSpaces() }
         case "sync":
             // On asks for the folder first; cancelled, it stays off.
             // Never with Sync with iCloud: the two would undo each other.

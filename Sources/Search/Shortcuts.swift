@@ -219,6 +219,7 @@ struct Command: Identifiable {
         Command("file.closeTab", "Close Tab", .file, KeyCombo("w")) { $0.closeFront() },
         Command("file.closeWindow", "Close Window", .file, KeyCombo("w", shift: true)) { $0.closeWindow() },
         Command("file.import", "Bring Things Over…", .file, nil) { $0.bringingIn = "" },
+        Command("file.exportSpaces", "Export Spaces…", .file, nil) { $0.exportSpaces() },
         Command("file.share", "Share…", .file, nil) { $0.share() },
         Command("file.savePage", "Save Page As…", .file, nil) { $0.savePage() },
         Command("file.exportPDF", "Export as PDF…", .file, nil) { $0.exportPDF() },
