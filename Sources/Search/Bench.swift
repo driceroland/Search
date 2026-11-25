@@ -1819,6 +1819,28 @@ final class Bench {
             SpaceSwipe.glidesHidden = request["glide"] as? Bool ?? false
             if let step = request["step"] as? Int {
                 browser.stepSpace(step)
+            } else if let code = request["code"] as? Int, let chars = request["chars"] as? String {
+                // Any key, as `press` posts it: Next / Previous Space on a
+                // key of its own, the way a person runs it.
+                var flags: NSEvent.ModifierFlags = []
+                for name in request["mods"] as? [String] ?? [] {
+                    switch name {
+                    case "cmd": flags.insert(.command)
+                    case "shift": flags.insert(.shift)
+                    case "ctrl": flags.insert(.control)
+                    case "opt": flags.insert(.option)
+                    default: break
+                    }
+                }
+                for type in [NSEvent.EventType.keyDown, .keyUp] {
+                    if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags,
+                                                    timestamp: ProcessInfo.processInfo.systemUptime,
+                                                    windowNumber: browser.window?.windowNumber ?? 0, context: nil,
+                                                    characters: chars, charactersIgnoringModifiers: chars,
+                                                    isARepeat: false, keyCode: UInt16(code)) {
+                        NSApp.postEvent(event, atStart: false)
+                    }
+                }
             } else {
                 let n = max(1, min(9, request["index"] as? Int ?? 2))
                 let codes: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
