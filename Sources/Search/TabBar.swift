@@ -46,6 +46,12 @@ struct TabBar: View {
     /// The space whose run was last brought to its tab: another one is a
     /// space coming in, not a tab picked (see reveal).
     @State private var revealedSpace: UUID?
+    /// The width the tabs had when one was closed from the row. The ones
+    /// left keep it for a moment, so the next cross comes to where the last
+    /// one was and tabs can be closed one after another without chasing it
+    /// (see hold). Made wide again once the closing stops.
+    @State private var held: CGFloat?
+    @State private var holding = 0
 
     var body: some View {
         // A GeometryReader is only here to measure the width. Its content is
@@ -531,7 +537,19 @@ struct TabBar: View {
         } else {
             TabPill(browser: browser, prefs: browser.prefs, tab: tab,
                     live: tab.id == activeID, width: width, room: room, pill: pill,
-                    close: interactive ? { browser.closeTab(tab) } : {})
+                    close: interactive ? { hold(width); browser.closeTab(tab) } : {})
+        }
+    }
+
+    /// Keeps the tabs at `width` until half a second passes with nothing
+    /// more closed from the row, then lets them take the room again.
+    private func hold(_ width: CGFloat) {
+        if held == nil { held = width }
+        holding += 1
+        let ticket = holding
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            guard ticket == holding else { return }
+            withAnimation(Motion.settle) { held = nil }
         }
     }
 
@@ -572,7 +590,8 @@ struct TabBar: View {
     /// seemed to fit it didn't scroll either (#1295). What was missed is
     /// added, so the run either holds them all or scrolls.
     private func measures(in strip: CGFloat) -> Measures {
-        let each = width(in: strip)
+        // Never wider than they were held at, nor than the room allows now.
+        let each = min(width(in: strip), held ?? .infinity)
         return Measures(each: each, room: room(in: strip), content: content(in: strip, each: each) + unaccounted)
     }
 

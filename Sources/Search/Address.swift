@@ -60,7 +60,7 @@ enum Address {
         guard !head.contains("@") else { return nil }   // an email address
         // This Mac by its IPv6 address, [::1]:3000, is a place too.
         if head.hasPrefix("[::1]") { return URL(string: "http://" + text) }
-        let host = head.split(separator: ":").first.map(String.init) ?? String(head)
+        let host = (head.split(separator: ":").first ?? head).lowercased()
         guard looksLikeHost(host) else { return nil }
 
         // A local server almost never has a certificate, so https there is a

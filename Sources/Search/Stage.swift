@@ -40,7 +40,12 @@ struct Page: View {
             // A blank tab owns no page to paint over this, and a tab that
             // gets one is no longer blank, so the wall goes with the load.
             // Split panes draw their layers through here too.
-            if tab.isBlank { BlankWall() }
+            // Cut to the card's corners itself, as Search's own pages are:
+            // the card's clip doesn't reach under the page's AppKit view.
+            if tab.isBlank {
+                BlankWall()
+                    .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            }
             // A tab put down with ⌘W has no view, and asking for one here
             // would build an empty one a frame before the stage moves on.
             //

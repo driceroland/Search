@@ -41,6 +41,10 @@ struct Installed: Codable, Identifiable, Equatable {
     /// it came in. Reload then copies only while that app's signature still
     /// holds (SafariApps.still).
     var fromApp: String? = nil
+    /// A store update waiting for an OK to more access (or a different
+    /// description of it): its version. Shown in Settings › Extensions until
+    /// it is taken in, so one held can't go unseen (idea 1147).
+    var heldUpdate: String? = nil
 
     /// Whether Reload may copy from `source` under this id: a link put on
     /// the way since would bring in another folder, which has another id.
@@ -1478,7 +1482,10 @@ final class Extensions: NSObject, ObservableObject {
               let version = check.range(of: #"\bversion="([^"]+)""#, options: .regularExpression)
                 .map({ String(check[$0].dropFirst(9).dropLast()) }),
               version != item.version
-        else { return true }
+        else {
+            setHeld(item.id, nil)
+            return true
+        }
         let staged = Extensions.stagingFolder(for: item.id)
         var keepStaged = false
         defer { if !keepStaged { try? FileManager.default.removeItem(at: staged) } }
@@ -1493,6 +1500,9 @@ final class Extensions: NSObject, ObservableObject {
             // allowed when it was added or last asked about.
             let wants = Set(Extensions.grants(found, in: staged))
             guard wants.isSubset(of: Set(current.permissions)) else {
+                // Shown until it is answered yes: with no window to ask on,
+                // or a no, it would otherwise wait a day unseen, every day.
+                setHeld(item.id, version)
                 // The answer can take days; the round doesn't wait for it.
                 handedOn = true
                 keepStaged = true
@@ -1517,6 +1527,18 @@ final class Extensions: NSObject, ObservableObject {
         }
     }
 
+    private func setHeld(_ id: String, _ version: String?) {
+        guard let index = installed.firstIndex(where: { $0.id == id }), installed[index].heldUpdate != version else { return }
+        installed[index].heldUpdate = version
+        save()
+    }
+
+    /// Settings › Extensions' Review Update…: asks again now, with a window there to ask on.
+    func reviewUpdate(_ id: String) {
+        guard let item = installed.first(where: { $0.id == id }), item.fromStore else { return }
+        Task { await update(item) }
+    }
+
     private func swapIn(_ item: Installed, staged: URL, found: WKWebExtension, version: String, wants: Set<String>, permissions: [String]) async throws {
         guard let index = installed.firstIndex(where: { $0.id == item.id }), installed[index].fromStore,
               installed[index].version == item.version,
@@ -1528,6 +1550,7 @@ final class Extensions: NSObject, ObservableObject {
         workersChanged()
         installed[index].version = found.version ?? version
         installed[index].permissions = wants.sorted()
+        installed[index].heldUpdate = nil
         save()
         if installed[index].enabled { await load(installed[index]) }
     }
@@ -2090,6 +2113,12 @@ extension Extensions: WKWebExtensionControllerDelegate {
     func webExtensionController(_ controller: WKWebExtensionController, openNewTabUsing configuration: WKWebExtension.TabConfiguration, for extensionContext: WKWebExtensionContext) async throws -> (any WKWebExtensionTab)? {
         // In the window asked for, or the one in front.
         guard let browser = (configuration.window as? ExtensionWindow)?.browser ?? browser else { return nil }
+        // No address is Chrome's New Tab page, ⌘T's blank tab here. Vimium C
+        // asks this way when its New tab URL is about:newtab.
+        if configuration.url == nil, configuration.shouldBeActive, !configuration.shouldBePinned, !browser.websitePopup {
+            browser.newTab()
+            return browser.active.map { adapter(for: $0) }
+        }
         let url = configuration.url ?? URL(string: "about:blank")!
         try Extensions.mayOpen(url)
         let tab = browser.open(url, foreground: configuration.shouldBeActive, atEnd: true)

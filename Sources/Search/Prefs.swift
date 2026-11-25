@@ -841,6 +841,17 @@ final class Preferences: ObservableObject {
     @Published var optionClickSplits: Bool {
         didSet { store.set(optionClickSplits, forKey: "links.optionSplit") }
     }
+    /// ⌫ goes back a page and ⇧⌫ forward, as Safari once had it: only when
+    /// no field or editable text has the keys and nothing else is held,
+    /// which WebKit decides (see Web.backspace). Off unless asked for, as
+    /// in Safari (#1161; idea 1120).
+    @Published var backspaceGoesBack: Bool {
+        didSet {
+            store.set(backspaceGoesBack, forKey: Preferences.backspaceKey)
+            Web.backspaceEverywhere()
+        }
+    }
+    nonisolated static let backspaceKey = "keys.backspaceBack"
     /// Pins as in Arc: a link from a pinned tab to another site opens in a
     /// peek, so the pin stays on its page (see Peek.swift), and ⌘W takes it
     /// back to the page it was pinned at. Half of "Pins keep their site"
@@ -1232,6 +1243,12 @@ final class Preferences: ObservableObject {
     @Published var fieldOnWindow: Bool {
         didSet { store.set(fieldOnWindow, forKey: "field.window") }
     }
+    /// The page behind ⌘T's and ⌘L's field covered whole, rather than
+    /// dimmed and still showing through: for whoever finds it busy. A plain
+    /// cover, nothing worked out from the page. Off unless asked for.
+    @Published var fieldHidesPage: Bool {
+        didSet { store.set(fieldHidesPage, forKey: "field.hidesPage") }
+    }
     /// The address field from any app, as Spotlight's comes: a key of your
     /// own raises it over the app in front, and Return opens what was typed
     /// in Search (see Launcher.swift). Off unless asked for, and no key
@@ -1470,6 +1487,7 @@ final class Preferences: ObservableObject {
         handoff = store.bool(forKey: "handoff")
         floatingNewTab = store.bool(forKey: "newtab.floating")
         fieldOnWindow = store.bool(forKey: "field.window")
+        fieldHidesPage = store.bool(forKey: "field.hidesPage")
         launcher = store.bool(forKey: "launcher.on")
         launcherLittle = store.bool(forKey: "launcher.little")
         launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
@@ -1504,6 +1522,7 @@ final class Preferences: ObservableObject {
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")
         optionClickSplits = store.bool(forKey: "links.optionSplit")
+        backspaceGoesBack = store.bool(forKey: Preferences.backspaceKey)
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
         readerFollowsLook = store.bool(forKey: "reader.follows")

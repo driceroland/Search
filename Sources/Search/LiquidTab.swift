@@ -131,8 +131,19 @@ final class LensMotion: NSObject, ObservableObject {
     /// How much it is moving, nought to one: how much of the pane over the
     /// rows shows.
     @Published private(set) var moving = 0.0
-    /// The pane's own view, for a clock from the screen it is on.
-    weak var view: NSView?
+    /// The pane's own view, for a clock from the screen it is on. A pane
+    /// made anew mid-glide (the rows grown into a scroll) takes the clock
+    /// along once it is in the window: left on the old pane, gone from the
+    /// window, it never ticked again, and the glass waited on it for good,
+    /// standing where it was while the rows scrolled under it (#1514).
+    weak var view: NSView? {
+        didSet {
+            guard view !== oldValue, link != nil else { return }
+            link?.invalidate()
+            link = nil
+            start()
+        }
+    }
 
     private var tab: AnyHashable?
     private var space: AnyHashable?
@@ -246,19 +257,32 @@ private struct LiquidPaneView: NSViewRepresentable {
     let motion: LensMotion?
     var light = false
 
-    func makeNSView(context: Context) -> NSGlassEffectView {
-        let view = NSGlassEffectView()
+    func makeNSView(context: Context) -> Glass {
+        let view = Glass()
         view.style = .clear
         view.cornerRadius = cornerRadius
         view.tintColor = light ? LiquidPaneView.lightTint : nil
-        motion?.view = view
+        view.motion = motion
         return view
     }
 
-    func updateNSView(_ view: NSGlassEffectView, context: Context) {
+    func updateNSView(_ view: Glass, context: Context) {
         view.cornerRadius = cornerRadius
         view.tintColor = light ? LiquidPaneView.lightTint : nil
-        motion?.view = view
+        view.motion = motion
+    }
+
+    /// The pane lends itself to the spring as it comes into the window, not
+    /// as it is made or updated: a new pane is made before it is in one,
+    /// and the old one, still there a moment longer, was updated after it
+    /// and took the clock back with it as it went.
+    final class Glass: NSGlassEffectView {
+        weak var motion: LensMotion?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil { motion?.view = self }
+        }
     }
 
     /// A breath of grey, under the glass's own light: the tab stands out of
