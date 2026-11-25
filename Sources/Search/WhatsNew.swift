@@ -60,6 +60,10 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Double click to rename", detail: "Click on the tab you're on to rename it, as Rename in its menu does, instead of editing its address.",
+               since: "1.0.22", get: { $0.tabClickRenames }, set: { $0.tabClickRenames = $1 },
+               shown: { !$0.iconColumn }),
+
         Toggle(title: "Backspace goes back", detail: "⌫ goes back a page and ⇧⌫ forward, when you aren't typing in a field.",
                since: "1.0.21", get: { $0.backspaceGoesBack }, set: { $0.backspaceGoesBack = $1 }),
 
@@ -77,7 +81,7 @@ enum WhatsNew {
 
         Toggle(title: "Clicking the tab you're on keeps its name", detail: "With the address bar always shown, the address is edited there or with ⌘L.",
                since: "1.0.20", get: { $0.tabClickKeepsName }, set: { $0.tabClickKeepsName = $1 },
-               shown: { $0.addressLine && !$0.iconColumn }),
+               shown: { $0.addressLine && !$0.iconColumn && !$0.tabClickRenames }),
 
         Toggle(title: "Fade scroll bars", detail: "Thin bars over the page that come up as it scrolls and fade when it stops, even with a mouse.",
                since: "1.0.20", get: { $0.scrollbarsFade }, set: { $0.scrollbarsFade = $1 }),
@@ -93,8 +97,9 @@ enum WhatsNew {
                since: "1.0.19", get: { $0.bookmarksInSidebar }, set: { $0.bookmarksInSidebar = $1 }),
         Toggle(title: "The field in the middle of the window", detail: "⌘T's and ⌘L's field centred on the window and higher up, as in Arc.",
                since: "1.0.19", get: { $0.fieldOnWindow }, set: { $0.fieldOnWindow = $1 }),
-        Toggle(title: "Click the tab you're on to edit its address", detail: "Without the site card; Site Information… stays on the right-click.",
-               since: "1.0.19", get: { $0.tabClickAddressOnly }, set: { $0.tabClickAddressOnly = $1 }),
+        Toggle(title: "Click the tab you're on to edit its address", detail: "Without the site card.",
+               since: "1.0.19", get: { $0.tabClickAddressOnly }, set: { $0.tabClickAddressOnly = $1 },
+               shown: { $0.iconColumn || !($0.tabClickRenames || $0.tabClickKeepsName && $0.addressLine) }),
         Toggle(title: "Touch ID before filling a password", detail: "Touch ID, or your Mac's password, before a saved password goes into a page.",
                since: "1.0.19", get: { $0.asksBeforeFilling }, set: { $0.asksBeforeFilling = $1 }),
         Toggle(title: "Icons only on the bookmarks bar", detail: "Each bookmark its site's icon, its name on hover. Folders keep their names.",

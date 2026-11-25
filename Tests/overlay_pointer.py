@@ -116,9 +116,9 @@ def main():
         t.ok("column in: the page hears the pointer there again", heard(100, 400))
 
         # Away, the edge that brings it out holds the page's hover back
-        # (idea 1048): 6 points folded by ⌘S, 10 hidden for good. Presses
+        # (idea 1048): 6 points folded by ⌘S, 28 hidden for good. Presses
         # there are the page's still, and the next move off the edge is too.
-        for hides, zone in [(False, 6), (True, 10)]:
+        for hides, zone in [(False, 6), (True, 28)]:
             sv.cmd({"do": "ui", "hides": hides}); time.sleep(0.6)
             p = sv.cmd({"do": "probe"})
             t.ok(f"edge ({zone}): still folded, column away", p.get("folded") is True and p.get("peeking") is False, p)

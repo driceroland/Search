@@ -4425,17 +4425,35 @@ enum ExtensionShims {
       // webRequest listeners with options WebKit doesn't take — blocking
       // needs a policy-installed extension in Chrome's MV3 too; extra headers
       // WebKit reports anyway — are added with the options it does take.
+      // WebKit's statusLine is the reason alone, "OK"; Chrome's is the whole
+      // line, "HTTP/1.1 200 OK". Neat Download Manager reads the code out of
+      // it, got 0 for every response, and so never offered a video.
+      const chromeLine = new WeakMap();
+      const lined = (listener) => {
+        if (typeof listener !== "function") return listener;
+        if (!chromeLine.has(listener)) chromeLine.set(listener, function (details, ...rest) {
+          if (details && typeof details.statusLine === "string" && details.statusCode && !/^HTTP\//.test(details.statusLine)) {
+            details = { ...details, statusLine: ("HTTP/1.1 " + details.statusCode + " " + details.statusLine).trim() };
+          }
+          return listener.call(this, details, ...rest);
+        });
+        return chromeLine.get(listener);
+      };
       if (chrome.webRequest) for (const key of Object.keys(chrome.webRequest)) {
         const target = chrome.webRequest[key];
         if (!/^on[A-Z]/.test(key) || !target || typeof target.addListener !== "function") continue;
         const add = target.addListener.bind(target);
         const own = ownRequests[key];
-        if (own && typeof target.removeListener === "function") {
+        if (typeof target.removeListener === "function") {
           const remove = target.removeListener.bind(target);
           put(target, "removeListener", (listener) => {
-            for (let i = own.length - 1; i >= 0; i--) if (own[i].listener === listener) own.splice(i, 1);
-            return remove(listener);
+            if (own) for (let i = own.length - 1; i >= 0; i--) if (own[i].listener === listener) own.splice(i, 1);
+            return remove(chromeLine.get(listener) || listener);
           });
+        }
+        if (typeof target.hasListener === "function") {
+          const has = target.hasListener.bind(target);
+          put(target, "hasListener", (listener) => has(chromeLine.get(listener) || listener));
         }
         put(target, "addListener", (listener, filter, spec) => {
           // WebKit can't read ws:// and wss:// patterns, and refuses the
@@ -4465,10 +4483,11 @@ enum ExtensionShims {
           if (own && typeof listener === "function" && !own.some((e) => e.listener === listener)) {
             own.push({ listener, filter, spec: Array.isArray(spec) ? spec.slice() : [] });
           }
+          const heard = lined(listener);
           try {
-            if (!Array.isArray(spec)) return add(listener, filter);
+            if (!Array.isArray(spec)) return add(heard, filter);
             const kept = spec.filter((s) => s === "requestHeaders" || s === "responseHeaders" || s === "requestBody");
-            try { return add(listener, filter, kept); } catch (e) { if (/startup/i.test(String(e && e.message))) throw e; return add(listener, filter); }
+            try { return add(heard, filter, kept); } catch (e) { if (/startup/i.test(String(e && e.message))) throw e; return add(heard, filter); }
           } catch (e) { late(e); }
         });
       }

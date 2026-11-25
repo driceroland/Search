@@ -24,7 +24,7 @@ final class PasteAndGoTests: XCTestCase {
         XCTAssertTrue(addressEditor.isFieldEditor)
         XCTAssertTrue(window.makeFirstResponder(ordinary))
         let ordinaryEditor = try XCTUnwrap(ordinary.currentEditor() as? NSTextView)
-        XCTAssertFalse(addressEditor === ordinaryEditor, "Paste & Go belongs to the address editor, not the shared editor")
+        XCTAssertFalse(addressEditor === ordinaryEditor, "Paste and Go belongs to the address editor, not the shared editor")
     }
 
     func testNativeMenuPreservesPasteAndOnlyNavigatesOnAction() throws {
@@ -39,7 +39,7 @@ final class PasteAndGoTests: XCTestCase {
             let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
             let menu = try XCTUnwrap(editor.menu(for: click))
             XCTAssertTrue(menu.items.contains { $0.action == #selector(NSText.paste(_:)) })
-            let item = try XCTUnwrap(menu.items.first { $0.title == "Paste & Go" })
+            let item = try XCTUnwrap(menu.items.first { $0.title == "Paste and Go" })
             XCTAssertEqual(item.keyEquivalent, "")
             XCTAssertEqual(reads, 1)
             XCTAssertTrue(visited.isEmpty)
@@ -67,7 +67,6 @@ final class PasteAndGoTests: XCTestCase {
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: ContentView(browser: browser))
-        window.orderFrontRegardless()
         defer {
             ContentView.forget(browser)
             window.contentView = nil
@@ -90,7 +89,7 @@ final class PasteAndGoTests: XCTestCase {
                                                    context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
         let menu = try XCTUnwrap(editor.menu(for: click))
         XCTAssertTrue(tab.isBlank)
-        let item = try XCTUnwrap(menu.item(withTitle: "Paste & Go"))
+        let item = try XCTUnwrap(menu.item(withTitle: "Paste and Go"))
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
         XCTAssertTrue(browser.active === tab)
         XCTAssertEqual(tab.address, url)
@@ -101,13 +100,13 @@ final class PasteAndGoTests: XCTestCase {
         try withAddressField { field, board, click in
             let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
             field.pasteAndGo = { _ in XCTFail("Menu request must never navigate") }
-            XCTAssertNil(editor.menu(for: click)?.item(withTitle: "Paste & Go"))
+            XCTAssertNil(editor.menu(for: click)?.item(withTitle: "Paste and Go"))
             for text in ["words to look up", "todo", "1.2.3", "name@example.test", "search://settings",
                          "file:///tmp/file", "javascript:alert(1)", "about:blank", "https:///path",
                          "https://example.test\nhttps://other.test", "https://example.test and words"] {
                 board.clearContents()
                 XCTAssertTrue(board.setString(text, forType: .string))
-                XCTAssertNil(editor.menu(for: click)?.item(withTitle: "Paste & Go"), text)
+                XCTAssertNil(editor.menu(for: click)?.item(withTitle: "Paste and Go"), text)
             }
         }
     }
@@ -118,7 +117,7 @@ final class PasteAndGoTests: XCTestCase {
             field.pasteAndGo = { visited = $0 }
             XCTAssertTrue(board.setString("example.test/path?q=go#here", forType: .string))
             let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
-            let item = try XCTUnwrap(editor.menu(for: click)?.item(withTitle: "Paste & Go"))
+            let item = try XCTUnwrap(editor.menu(for: click)?.item(withTitle: "Paste and Go"))
             XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
             XCTAssertEqual(visited?.absoluteString, "https://example.test/path?q=go#here")
         }
@@ -130,7 +129,7 @@ final class PasteAndGoTests: XCTestCase {
             field.pasteAndGo = { _ in XCTFail("An invalid or stale action must not navigate") }
             XCTAssertTrue(board.setString(" \nhttps://example.test/path\n", forType: .string))
             let menu = try XCTUnwrap(editor.menu(for: click))
-            let item = try XCTUnwrap(menu.item(withTitle: "Paste & Go"))
+            let item = try XCTUnwrap(menu.item(withTitle: "Paste and Go"))
             let action = try XCTUnwrap(item.action)
             board.clearContents()
             XCTAssertTrue(board.setString("not a website", forType: .string))

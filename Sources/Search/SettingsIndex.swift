@@ -405,6 +405,11 @@ enum SettingsIndex {
               keys: ["tabs.clickKeepsName"],
               words: ["click", "tab name", "title", "keep name", "address bar", "edit address", "url", "sidebar", "rename", "arc"],
               parent: "address.shown"),
+        .init(id: "tabs.clickRenames", group: "tabbar", icon: "pencil",
+              title: "Double click to rename", detail: "A click on the tab you're on opens its name to type over, not its address",
+              more: "A click on the tab you're on opens its name to type over, as Rename in its right-click menu does, instead of its address. Edit its address with ⌘L.",
+              keys: ["tabs.clickRenames"],
+              words: ["rename", "name", "title", "double click", "click", "tab name"]),
         .init(id: "tabs.mirror", group: "tabwindows", icon: "rectangle.on.rectangle",
               title: "Same tabs in every window", detail: "Each window lists the same open tabs in a space, as it lists the same pins",
               more: "A tab opened, closed, moved, grouped or renamed in one window is so in the others. Each window shows the page on its own, so the same tab can be open in two windows at once. Private tabs stay in their window, and closing a window leaves its tabs in the others.",
@@ -513,8 +518,8 @@ enum SettingsIndex {
               parent: "spaces"),
         .init(id: "profiles", group: "spaces", icon: "person.2",
               title: "Profiles", detail: "Spaces with their own sign-ins, history and bookmarks",
-              more: "In windows of their own, unless Profiles in one window is on. Extensions, passwords and settings are shared.",
-              words: ["profile", "accounts", "work", "personal"]),
+              more: "In windows of their own, unless Profiles in one window is on. Extensions, passwords and settings are shared. The arrows beside each profile change their order, which the numbered shortcuts follow.",
+              words: ["profile", "accounts", "work", "personal", "reorder", "order", "shortcuts"]),
         .init(id: "profiles.oneWindow", group: "spaces", icon: "macwindow",
               title: "Profiles in one window", detail: "Every profile's spaces in one window, switched in place",
               more: "Choosing a space of another profile brings that profile's window into this one's place, so each keeps its own sign-ins. Closing it closes them all.",
@@ -845,9 +850,10 @@ enum SettingsIndex {
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
         case "address.width": return prefs.addressLine && !prefs.sidebar
-        case "tabs.clickKeepsName": return prefs.addressLine && !prefs.iconColumn
-        // A click that edits nothing has no card to leave out.
-        case "tabs.clickAddressOnly": return !(prefs.tabClickKeepsName && prefs.addressLine && !prefs.iconColumn)
+        case "tabs.clickKeepsName": return prefs.addressLine && !prefs.iconColumn && !prefs.tabClickRenames
+        // A click that edits nothing, or edits the name, has no card to leave out.
+        case "tabs.clickAddressOnly": return prefs.iconColumn || !(prefs.tabClickRenames || prefs.tabClickKeepsName && prefs.addressLine)
+        case "tabs.clickRenames": return !prefs.iconColumn
         case "tabs.liquid": return LiquidTab.available && !(prefs.sidebar && prefs.sideIcons)
         case "window.glass.style": return prefs.glass && GlassStyle.liquidAvailable
         // With spaces on they are in the space's Colour…, beside its colour.
@@ -882,8 +888,9 @@ enum SettingsIndex {
         case "window.glass.clear", "window.glass.grain": return "With spaces on, in the space's menu › Colour…"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "icloud.erase": return "Only while Sync with iCloud is on"
-        case "tabs.clickKeepsName": return "Only with the address bar always shown, and titles in the column or tabs across the top"
-        case "tabs.clickAddressOnly": return "Has no effect while Clicking the tab you're on keeps its name is on"
+        case "tabs.clickKeepsName": return "Only with the address bar always shown, titles in the column or tabs across the top, and Double click to rename off"
+        case "tabs.clickAddressOnly": return "Has no effect while Double click to rename or Clicking the tab you're on keeps its name is on"
+        case "tabs.clickRenames": return "Only with titles in the column or tabs across the top"
         case "profiles.oneWindow": return "Only with more than one profile"
         case "spaces.links", "links.ask", "spaces.buttons": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"

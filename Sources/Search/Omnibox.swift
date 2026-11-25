@@ -942,7 +942,7 @@ private final class AddressEditor: NSTextView {
         else { return native }
 
         let menu = native.copy() as! NSMenu
-        let item = NSMenuItem(title: "Paste & Go", action: #selector(go(_:)), keyEquivalent: "")
+        let item = NSMenuItem(title: "Paste and Go", action: #selector(go(_:)), keyEquivalent: "")
         item.target = self
         if let paste = menu.items.firstIndex(where: { $0.action == #selector(NSText.paste(_:)) }) {
             menu.insertItem(item, at: paste + 1)
