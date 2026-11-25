@@ -25,6 +25,10 @@ Not in this version, kept on main for a later one:
 - Settings › Spaces & Pins › Hide the page behind the field, off unless turned on: ⌘T's and ⌘L's field comes over a plain ground, the page out of sight, instead of the page dimmed and showing through, which some find busy. With The field in the middle of the window too. A plain cover, nothing worked out from the page, so it costs nothing while the page moves. (idea 1061)
 - Settings › Browsing › Return takes the top suggestion, off unless turned on: the place on top of the address field's list is picked as you type, as in Arc's command bar, so Return goes to it instead of searching for the words, with no ↓ first. A page found by a word from its title or the middle of its address was listed on top and still searched. The field keeps what was typed; ↑ lets go of the row and Return searches. A search or a command on top, an address typed out, and one the grey ending finishes go where they went before. In ⌘L, ⌘T, a blank tab and the address in the tab. `swift test --filter ReturnTakesTopTests`, `python3 Tests/return_takes_top.py` ([#1556](https://github.com/driceroland/Search/issues/1556)) Thanks [@danicrg](https://github.com/danicrg) ([#1558](https://github.com/driceroland/Search/pull/1558))
 
+### Changed
+
+- A sidebar hidden until the pointer reaches the edge is easier to catch: the edge that brings it is 28 points wide instead of 10. A press there still goes to the page until the column is out; the column folded with ⌘S keeps its 6-point edge. `python3 Tests/overlay_pointer.py` ([#1279](https://github.com/driceroland/Search/issues/1279))
+
 ### Fixed
 
 - The floating video's return arrow brings back the window the video came from, with its tab in front (in its space, if it had been left), and no other. It brought forward the app's first window, whichever it was: another browser window, another profile's, or one already closed, which looked like a new window opening. With the tab gone, the little window just closes. `python3 Tests/float_return.py` (idea 1177)
