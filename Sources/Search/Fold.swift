@@ -465,15 +465,21 @@ struct Fold: View {
                         onDrag(width)
                     })
                         .frame(maxHeight: .infinity, alignment: .top)
+                        .overlay {
+                            if browser.peekInFront, prefs.peekDims, prefs.peekDimsSide {
+                                Color.black.opacity(0.4)
+                                    .clipShape(RoundedRectangle(cornerRadius: floating ? Metrics.cardRadius : 0, style: .continuous))
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { browser.closePeek() }
+                                    .transition(.opacity)
+                            }
+                        }
+                        .animation(Motion.quick, value: browser.peekInFront)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
                                              strength: browser.folded && browser.peeking ? 1 : 0,
                                              ground: !browser.glassUnder, corner: floating ? Metrics.cardRadius : 0))
-                        // Folded away beside a page that is a card, the
-                        // page has the whole window, and the column comes
-                        // out over it as a card of its own, as Arc's does:
-                        // clear of the window's edges, its corners round.
-                        .padding(onRight ? .trailing : .leading, floating ? Metrics.cardGap : 0)
-                        .padding(.vertical, floating ? Metrics.cardGap : 0)
+                        .padding(onRight ? .trailing : .leading, floating ? Metrics.floatGap : 0)
+                        .padding(.vertical, floating ? Metrics.floatGap : 0)
                         // Faded rather than slid under Reduce Motion with
                         // Slide the column in and out on (Browser.moveColumn).
                         .animation(Motion.fadesColumn ? .easeInOut(duration: Motion.fade) : nil) { column in

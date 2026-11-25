@@ -961,6 +961,8 @@ struct SettingsPanel: View {
                 }
             }
         case "links.peek.stays": Switch(on: $prefs.peekStays)
+        case "links.peek.dim": Switch(on: $prefs.peekDims)
+        case "links.peek.dimSide": Switch(on: $prefs.peekDimsSide)
         case "links.optionSplit": Switch(on: $prefs.optionClickSplits)
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "wheel.smooth": Switch(on: $prefs.wheelGlides)

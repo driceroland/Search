@@ -865,6 +865,14 @@ final class Preferences: ObservableObject {
     @Published var peekStays: Bool {
         didSet { store.set(peekStays, forKey: "links.peek.stays") }
     }
+    /// The page darkens behind a peek, so the panel stands out. On unless
+    /// turned off.
+    @Published var peekDims: Bool {
+        didSet { store.set(peekDims, forKey: "links.peek.dim") }
+    }
+    @Published var peekDimsSide: Bool {
+        didSet { store.set(peekDimsSide, forKey: "links.peek.dimSide") }
+    }
     /// ⌥-click on a link opens it in Split View, as its menu's Open Link in
     /// Split View does (see Browser.openLinkBeside). Safari's ⌥-click
     /// downloads the link instead, so off unless asked for; off, a ⌥-click
@@ -1539,6 +1547,8 @@ final class Preferences: ObservableObject {
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")
+        peekDims = (store.object(forKey: "links.peek.dim") as? Bool) ?? true
+        peekDimsSide = store.bool(forKey: "links.peek.dimSide")
         optionClickSplits = store.bool(forKey: "links.optionSplit")
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
