@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import os
 
 // Google Meet's own little window, as Chrome shows it.
 //
@@ -34,6 +35,9 @@ import WebKit
 // source, never hidden (see LiveRate.swift).
 
 enum MeetPiP {
+    /// What happened, for `log show --predicate 'category == "MeetPiP"'`.
+    static let log = Logger(subsystem: "com.officecommun.search", category: "MeetPiP")
+
     /// Settings › Videos. On unless turned off.
     @MainActor static var on = false
 
@@ -81,6 +85,23 @@ enum MeetPiP {
           } catch (e) {}
 
           var current = null, handler = null, constructing = false;
+
+          // Diagnostics for the prototype: the page's errors, cut short, to
+          // Search's log (category MeetPiP). At most 40.
+          var errs = 0;
+          function err(where, x) {
+            if (errs++ > 40) return;
+            var text = '';
+            try { text = (x && (x.stack || x.message)) || String(x); } catch (e) {}
+            say({ kind: 'err:' + where + ':' + text.replace(/\s+/g, ' ').slice(0, 300) });
+          }
+          listen.call(window, 'error', function (e) { err('error', e.error || e.message); });
+          listen.call(window, 'unhandledrejection', function (e) { err('reject', e.reason); });
+          try {
+            var ce = console.error, cw = console.warn;
+            console.error = function () { try { err('console', Array.prototype.map.call(arguments, String).join(' ')); } catch (e) {} return ce.apply(this, arguments); };
+            console.warn = function () { try { err('warn', Array.prototype.map.call(arguments, String).join(' ')); } catch (e) {} return cw.apply(this, arguments); };
+          } catch (e) {}
 
           function DocumentPictureInPictureEvent(type, init) {
             if (!(this instanceof DocumentPictureInPictureEvent)) throw new TypeError("Constructor requires 'new'");
@@ -150,8 +171,9 @@ enum MeetPiP {
 
           listen.call(window, 'pagehide', function () { if (current && !current.closed) current.close(); });
 
+          var told = false;
           try {
-            Object.defineProperty(window, 'documentPictureInPicture', { get: function () { return pip; }, enumerable: true, configurable: true });
+            Object.defineProperty(window, 'documentPictureInPicture', { get: function () { if (!told) { told = true; say({ kind: 'read' }); } return pip; }, enumerable: true, configurable: true });
             window.DocumentPictureInPicture = DocumentPictureInPicture;
             window.DocumentPictureInPictureEvent = DocumentPictureInPictureEvent;
           } catch (e) {}
@@ -164,6 +186,7 @@ enum MeetPiP {
             if (set) {
               Object.defineProperty(proto, 'setActionHandler', {
                 value: function setActionHandler(action, h) {
+                  say({ kind: 'action:' + String(action).slice(0, 40) + (typeof h === 'function' ? '' : ':null') });
                   if (action === 'enterpictureinpicture') {
                     handler = typeof h === 'function' ? h : null;
                     say({ kind: handler ? 'armed' : 'disarmed' });
@@ -194,7 +217,7 @@ enum MeetPiP {
         var m;
         try { m = JSON.parse(e.detail); } catch (x) { return; }
         if (!m || typeof m.kind !== 'string') return;
-        h.postMessage({ kind: m.kind, width: +m.width || 0, height: +m.height || 0 });
+        h.postMessage({ kind: m.kind.slice(0, 400), width: +m.width || 0, height: +m.height || 0 });
       });
     })();
     """
@@ -211,6 +234,9 @@ enum MeetPiP {
         features: WKWindowFeatures, configuration: WKWebViewConfiguration, browser: Browser
     ) -> WKWebView? {
         let now = ProcessInfo.processInfo.systemUptime
+        if webView.url?.host()?.contains("meet.google") == true {
+            log.notice("window.open from Meet: target=\(action.request.url?.absoluteString ?? "", privacy: .public) asked=\(opener.meetPiPAsk != nil, privacy: .public) auto=\(opener.meetPiPAuto != nil, privacy: .public)")
+        }
         guard on, action.sourceFrame.isMainFrame, applies(webView.url),
               let asked = opener.meetPiPAsk, now - asked.at < 2
         else { return nil }
@@ -238,6 +264,9 @@ enum MeetPiP {
         if let now {
             MeetPiPWindow.all.filter { $0.openerID == now.id && $0.auto }.forEach { $0.close() }
         }
+        if let left, let web = left.built, web.url?.host()?.contains("meet.google") == true {
+            log.notice("switch away: on=\(on, privacy: .public) armed=\(left.meetPiPArmed, privacy: .public) applies=\(applies(web.url), privacy: .public) onCall=\(StageView.onCall(web), privacy: .public) cam=\(web.cameraCaptureState.rawValue, privacy: .public) mic=\(web.microphoneCaptureState.rawValue, privacy: .public) open=\(MeetPiPWindow.all.count, privacy: .public)")
+        }
         guard on, let left, left.meetPiPArmed, let web = left.built, applies(web.url),
               StageView.onCall(web),
               !MeetPiPWindow.all.contains(where: { $0.openerID == left.id })
@@ -260,6 +289,7 @@ final class MeetPiPRelay: NSObject, WKScriptMessageHandler {
         let width = (body["width"] as? Double) ?? 0, height = (body["height"] as? Double) ?? 0
         MainActor.assumeIsolated {
             guard let tab, let web = message.webView, web === tab.built else { return }
+            MeetPiP.log.notice("page said \(kind, privacy: .public) on \(web.url?.host() ?? "-", privacy: .public)")
             switch kind {
             case "fresh":
                 tab.meetPiPArmed = false
