@@ -1283,6 +1283,12 @@ final class Preferences: ObservableObject {
     @Published var arcTabPopup: Bool {
         didSet { store.set(arcTabPopup, forKey: "newtab.arc") }
     }
+    /// Return in the address field goes to the row on top of its list, as
+    /// Arc's command bar does, instead of searching for the words typed
+    /// (Browser.pickTop, #1556). Off unless asked for.
+    @Published var returnTakesTop: Bool {
+        didSet { store.set(returnTakesTop, forKey: "field.top") }
+    }
 
     init() {
         // First of all: whether this is a new install, before anything here
@@ -1487,6 +1493,7 @@ final class Preferences: ObservableObject {
         launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
         recentInNewTab = store.bool(forKey: "newtab.recent")
         arcTabPopup = store.bool(forKey: "newtab.arc")
+        returnTakesTop = store.bool(forKey: "field.top")
         // On for everyone who never touched it (24 Oct 2026).
         let history = store.object(forKey: "swipe.history") as? Bool ?? true
         holdsHistory = history
