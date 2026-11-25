@@ -66,6 +66,12 @@ struct SearchApp: App {
         // windows.json (see Windows.swift).
         Window("Search", id: Browsers.sceneID) {
             SceneRoot(slot: SceneSlot.shared)
+                // Let the window receive Handoff in its current macOS Space.
+                .handlesExternalEvents(preferring: [NSUserActivityTypeBrowsingWeb],
+                                      allowing: [NSUserActivityTypeBrowsingWeb])
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    Links.continuePage(activity)
+                }
                 .frame(minWidth: 640, minHeight: 420)
         }
         .windowStyle(.hiddenTitleBar)

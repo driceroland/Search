@@ -250,6 +250,11 @@ final class Links: NSObject, NSApplicationDelegate {
     /// http or https address (see Handoff.incoming). A test run takes none.
     func application(_ application: NSApplication, continue userActivity: NSUserActivity,
                      restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
+        Self.continuePage(userActivity)
+    }
+
+    @MainActor @discardableResult
+    static func continuePage(_ userActivity: NSUserActivity) -> Bool {
         guard !Store.testing, let url = Handoff.incoming(userActivity) else { return false }
         Links.take(url)
         return true
