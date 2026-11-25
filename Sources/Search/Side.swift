@@ -53,10 +53,6 @@ struct SideBar: View {
     /// The neighbouring spaces' own grey, apart from this one's.
     @Namespace private var before
 
-    /// Where each group's heading and tabs are, for a tab let go over
-    /// them: a box, read only then (see ColumnFrames).
-    @State private var groupDrops = GroupDropBox()
-    @State private var looseFrames = LooseFrames()
 
     /// A tab carried over the pins, or a pin over the tabs, and where it
     /// would land (see PinDrop).
@@ -1508,8 +1504,13 @@ struct SideBar: View {
         return ZStack(alignment: .top) {
             Color.clear.frame(height: plan.total)
             ForEach(drawn) { unit in
-                columnUnit(unit, plan: plan)
-                    .alignmentGuide(.top) { _ in -unit.y }
+                if case .row(let row) = unit.kind {
+                    // Placed by Carried, which holds it at the hand.
+                    looseRow(row, steps: plan.steps, place: unit.y)
+                } else {
+                    columnUnit(unit, plan: plan)
+                        .alignmentGuide(.top) { _ in -unit.y }
+                }
             }
             // Where the scroll goes for the tab in front (scroll): its rows
             // are not all made.
@@ -1530,9 +1531,36 @@ struct SideBar: View {
             let now = Int((top / (SideBar.windowRoom(room.height) / 2)).rounded(.down))
             if now != band { band = now }
         }
-        // Kept apart from what is drawn: read only as a tab is let go, and
-        // only the rows in sight tell theirs.
-        .onPreferenceChange(GroupDropFrames.self) { [groupDrops] in groupDrops.frames = $0 }
+    }
+
+    /// Where each group's heading and tabs and each loose tab lie, in the
+    /// rows' space, for a tab let go over them: from the plan, as they are
+    /// placed, rather than read from every row as it is laid out (each
+    /// reader made again with every scroll). Rows not drawn are where they
+    /// would be.
+    private func dropFrames() -> (groups: [UUID: GroupDropFrame], loose: [UUID: CGRect]) {
+        let plan = columnPlan()
+        let width = frames.rows.width
+        let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
+        var groups: [UUID: GroupDropFrame] = [:]
+        var loose: [UUID: CGRect] = [:]
+        for unit in plan.units {
+            switch unit.kind {
+            case .group(let group, let members, _):
+                groups[group.id] = GroupDropFrame(group: group.id, rect: CGRect(x: 0, y: unit.y, width: width, height: heading))
+                var y = unit.y + heading + SideBar.gap
+                for (member, place) in zip(members, steps(members)) {
+                    groups[member.id] = GroupDropFrame(group: group.id, tab: member.id,
+                                                       rect: CGRect(x: 0, y: y, width: width, height: place - SideBar.gap))
+                    y += place
+                }
+            case .row(let row):
+                loose[row.tab.id] = CGRect(x: 0, y: unit.y, width: width, height: unit.height)
+            default:
+                continue
+            }
+        }
+        return (groups, loose)
     }
 
     /// The scroll's mark for the tab in front (see loose).
@@ -1548,14 +1576,15 @@ struct SideBar: View {
         case .ghost(let carried):
             RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
         case .row(let row):
-            looseRow(row, steps: plan.steps)
+            looseRow(row, steps: plan.steps, place: unit.y)
         }
     }
 
     /// A group of the column: its heading and its tabs, on its wash.
     private func groupBlock(_ group: TabGroup, members: [Tab], ghost: Tab?) -> some View {
         VStack(spacing: SideBar.gap) {
-            GroupHeading(browser: browser, group: group, dragSpace: "rows", compact: icons)
+            // Its drop frame worked out from the plan (dropFrames), not read.
+            GroupHeading(browser: browser, group: group, compact: icons)
             groupRows(group, members: members, ghost: ghost)
         }
         .background(alignment: .top) {
@@ -1565,7 +1594,7 @@ struct SideBar: View {
         }
     }
 
-    private func looseRow(_ row: LooseRow, steps looseSteps: [CGFloat]) -> some View {
+    private func looseRow(_ row: LooseRow, steps looseSteps: [CGFloat], place: CGFloat) -> some View {
         let index = row.index, tab = row.tab
         return rowItem(tab, tabs: browser.tabs, splits: browser.splits,
                        activeID: browser.activeID, interactive: true, pill: pill,
@@ -1575,10 +1604,9 @@ struct SideBar: View {
             .modifier(Carried(index: index, steps: looseSteps, vertical: true,
                               space: "rows", onDropTab: { source, point in drop(source, at: point) },
                               groupDestination: { source, point in destination(source, at: point) },
-                              loose: prefs.usesTabGroups ? looseFrames : nil,
                               outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
                               cross: { cross(tab, $0, from: .rows) },
-                              land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
+                              land: { land(tab, $0) }, faded: crossing?.tab == tab.id, place: place) {
                 if prefs.usesTabGroups {
                     browser.move(tab, within: nil, to: $0)
                 } else {
@@ -1589,7 +1617,7 @@ struct SideBar: View {
 
     private func destination(_ tab: Tab, at point: CGPoint) -> GroupDropTarget? {
         guard prefs.usesTabGroups, tab.pin == nil else { return nil }
-        return GroupDropFrames.resolve(point, frames: groupDrops.frames, groups: browser.tabGroups,
+        return GroupDropFrames.resolve(point, frames: dropFrames().groups, groups: browser.tabGroups,
                                        excluding: tab.id, vertical: true)
     }
 
@@ -1603,8 +1631,8 @@ struct SideBar: View {
 
     private func leaving(_ tab: Tab, at point: CGPoint) -> LooseDrop? {
         guard prefs.usesTabGroups, tab.pin == nil else { return nil }
-        let loose = Set(looseTabs.map(\.id))
-        return GroupDropFrames.leaving(point, frames: groupDrops.frames, loose: looseFrames.rects.filter { loose.contains($0.key) },
+        let drawn = dropFrames()
+        return GroupDropFrames.leaving(point, frames: drawn.groups, loose: drawn.loose,
                                        groups: browser.tabGroups, source: tab.id, vertical: true)
     }
 
@@ -1643,7 +1671,8 @@ struct SideBar: View {
                                       groupDestination: { source, point in destination(source, at: point) },
                                       outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
                                       cross: { cross(tab, $0, from: .rows) },
-                                      land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
+                                      land: { land(tab, $0) }, faded: crossing?.tab == tab.id,
+                                      reportsGroup: false) {
                         browser.move(tab, within: group.id, to: $0)
                     })
             }
@@ -1730,7 +1759,7 @@ struct SideBar: View {
         case .loose:
             guard tab.pin != nil else { return nil }
             let inRows = CGPoint(x: point.x - frames.rows.minX, y: point.y - frames.rows.minY)
-            if prefs.usesTabGroups, let id = groupDrops.frames.values.first(where: { $0.rect.contains(inRows) })?.group {
+            if prefs.usesTabGroups, let id = dropFrames().groups.values.first(where: { $0.rect.contains(inRows) })?.group {
                 return .group(id)
             }
             let loose = looseTabs
