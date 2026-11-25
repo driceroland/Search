@@ -1322,6 +1322,9 @@ final class Tab: ObservableObject, Identifiable {
         // (see YouTubeAds.swift). Every frame; each script does nothing in a
         // frame that isn't YouTube's.
         scripts += YouTubeAds.scripts(for: Dusk.host(of: url ?? pageAddress))
+        // Cookie banners refused, only with the setting on and Shield not
+        // paused for this site (see CookieBanners.swift). The main frame only.
+        scripts += CookieBanners.scripts(for: Dusk.host(of: url ?? pageAddress))
         if !css.isEmpty {
             add(Veiling.style(css), .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }

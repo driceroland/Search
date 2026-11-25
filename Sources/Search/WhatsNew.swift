@@ -55,6 +55,9 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Refuse cookie banners", detail: "A cookie banner Search knows gets a no for you, never a yes, and the page scrolls again.",
+               since: "1.0.22", get: { $0.refusesCookieBanners }, set: { $0.refusesCookieBanners = $1 }),
+
         Toggle(title: "Backspace goes back", detail: "⌫ goes back a page and ⇧⌫ forward, when you aren't typing in a field.",
                since: "1.0.21", get: { $0.backspaceGoesBack }, set: { $0.backspaceGoesBack = $1 }),
 
