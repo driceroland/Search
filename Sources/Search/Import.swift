@@ -171,6 +171,11 @@ enum Chromium {
         Source(name: "Yandex", folder: "Yandex/YandexBrowser", service: "", account: "", app: "Yandex.app", importsPasswords: false),
         Source(name: "ChatGPT Atlas", folder: "com.openai.atlas/browser-data/host", service: "", account: "", app: "ChatGPT Atlas.app",
                importsPasswords: false),
+        // Arc-like browsers on Chromium, each with its spaces in files of
+        // its own beside its Chromium folder (ImportSidebars.swift). Yab
+        // keeps its passwords in keychain items of its own, not Chromium's.
+        Source(name: "Ardia", folder: "com.ardia.browser/Chromium", service: "Ardia Safe Storage", account: "Ardia", app: "Ardia.app"),
+        Source(name: "Yab", folder: "Yab/Chromium", service: "", account: "", app: "Yab.app", importsPasswords: false),
     ]
 
     /// Where browsers keep their data: ~/Library/Application Support. A test
@@ -271,8 +276,7 @@ enum Chromium {
     /// nil. The key is asked for once, here, whichever it is.
     static func read(_ source: Source, profile: String? = nil) throws -> Found {
         guard source.importsPasswords else { throw Trouble.unreadable }
-        guard let passphrase = safeStorage(source) else { throw Trouble.noPassphrase }
-        let key = stretch(passphrase)
+        guard let key = storageKey(source) else { throw Trouble.noPassphrase }
 
         var logins: [Login] = []
         var never: [String] = []
@@ -597,6 +601,11 @@ enum Chromium {
         else { return nil }
         return text
     }
+
+    /// The same, for reading what else a browser keeps behind its key
+    /// (Dia's sidebar, ImportSidebars.swift).
+    static func safeStoragePassphrase(_ source: Source) -> String? { safeStorage(source) }
+    static func stretchedKey(_ passphrase: String) -> [UInt8] { stretch(passphrase) }
 
     /// Chromium's own recipe, unchanged for a decade: PBKDF2 over SHA-1, the
     /// salt "saltysalt", 1003 rounds, sixteen bytes out.
@@ -1442,6 +1451,7 @@ enum ImportSource: Identifiable, Hashable {
         switch self {
         case .chromium(let s) where s.name == "Arc": out.append("spaces & pins")
         case .mozilla(let s) where s.keepsSpaces: out.append("spaces & pins")
+        case .chromium where keepsMoreSpaces: out.append("spaces & pins")
         default: break
         }
         if readsOpenTabs { out.append("open tabs") }
@@ -1481,7 +1491,7 @@ enum ImportSource: Identifiable, Hashable {
     var profiles: [Profile] {
         switch self {
         case .chromium(let s):
-            let names = s.localState.names
+            let names = sidebarProfileNames.merging(s.localState.names) { own, _ in own }
             return s.profiles.map(\.lastPathComponent)
                 .filter { !["Guest Profile", "System Profile"].contains($0) }
                 .sorted { $0.localizedStandardCompare($1) == .orderedAscending }

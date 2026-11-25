@@ -171,6 +171,8 @@ final class Links: NSObject, NSApplicationDelegate {
             LiveFolders.start()
             // Back to a page's full screen after ⌘Tab (FullScreenReturn.swift).
             FullScreenReturn.start()
+            // The Mac's screenshots in Downloads, once asked for (Screenshots.swift).
+            if Shared.prefs.screenshotsInDownloads { Screenshots.shared.watch(true) }
         }
         let plain = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
         guard !plain else { return }

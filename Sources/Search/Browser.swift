@@ -1743,8 +1743,10 @@ final class Browser: NSObject, ObservableObject {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Bring In"
-        panel.message = "A file another browser exported: bookmarks (.html), passwords (.csv), or Safari's File › Export Browsing Data (.zip)."
+        panel.message = "A file another browser exported: bookmarks (.html), passwords (.csv), Safari's File › Export Browsing Data (.zip), or a Search spaces file (.json)."
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        // Search's own spaces file (File › Export Spaces…): its spaces.
+        if let said = takeSpacesFile(url) { announce(said); return }
         Task { announce((await takeFile(url)).said) }
     }
 
@@ -3914,7 +3916,7 @@ final class Browser: NSObject, ObservableObject {
         // name, made if there is none, with its spaces in it, signed in
         // with that profile's own cookies.
         let others = Set(sidebar.spaces.map(\.profile)).subtracting(["Default"])
-        let named = others.isEmpty ? [:] : Arc.profileNames()
+        let named = others.isEmpty ? [:] : (sidebar.profileNames ?? Arc.profileNames())
         var profileFor: [String: UUID] = ["Default": profileID]
         for folder in others.sorted() {
             let name = named[folder] ?? folder
@@ -3965,13 +3967,20 @@ final class Browser: NSObject, ObservableObject {
                 Spaces.write(spaces, profile: profileID)
             }
         }
+        // The pins every space showed, from a Search spaces file: shared
+        // again where shared pins show (below, once the home is settled),
+        // else each space's own.
+        let sharesEverySpace = !sidebar.everySpace.isEmpty && prefs.showsSharedPins
+        let everySpace = sharesEverySpace ? [] : sidebar.everySpace
         for target in targets {
             var defs = Pins.defs(target.id)
             // The pins this space had before any of this, for telling a
             // favourite that is already here from one this import is adding.
             let had = defs
-            // A space's own profile's favourites, as Arc shows them above it.
-            let favourites = target.space.flatMap { sidebar.favoritesByProfile[$0.profile] } ?? sidebar.favorites
+            // The space's own pins, for a browser that keeps them by space;
+            // else its profile's favourites, as Arc shows them above it.
+            let favourites = (target.profile == profileID ? everySpace : [])
+                + (target.space?.favorites ?? target.space.flatMap { sidebar.favoritesByProfile[$0.profile] } ?? sidebar.favorites)
             // A favourite whose site is already pinned is the pin you have,
             // however far it has gone from the address it was pinned at: Gmail
             // pinned at mail.google.com answers at mail.google.com/mail/u/0/,
@@ -4015,7 +4024,9 @@ final class Browser: NSObject, ObservableObject {
                 PinFolders.set(target.id, PinTree.withoutEmpty(filed.folders, keeping: before, pins: defs), from: self)
             }
             Pins.set(target.id, defs, from: self)
-            let pages = folded ? [] : rows.isEmpty ? pinned : pinned.filter { $0.folder != nil }
+            let pages = (folded ? [] : rows.isEmpty ? pinned : pinned.filter { $0.folder != nil })
+                + (target.space?.open ?? []).map { ($0.item, $0.group) }
+            brought += (target.space?.open ?? []).map(\.item.url)
             if target.profile == profileID {
                 pinsChanged(in: target.id)
                 added += takeAsleep(pages, into: target.id)
@@ -4039,6 +4050,19 @@ final class Browser: NSObject, ObservableObject {
         // above told the window while the list was still the old one, and
         // with Spaces already on (Set Up Like Arc first) nothing told it at
         // all: they stood empty beside this one until Spaces went off and on.
+        if sharesEverySpace {
+            var shared = Pins.shared(profileID)
+            let had = shared
+            for item in sidebar.everySpace where !had.contains(where: { Browser.samePin($0, item.url) })
+                && !shared.contains(where: { $0.home == item.url.absoluteString }) {
+                let host = item.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+                shared.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
+                                     home: item.url.absoluteString, title: item.title, name: nil, titled: true))
+                pins += 1
+                brought.append(item.url)
+            }
+            if Pins.setShared(shared, from: self) { sharedPinsChanged() }
+        }
         if prefs.usesSpaces { preloadSpaces() }
         adoptIcons(for: brought, from: source, profile: profile)
         return (made, pins, added)
@@ -7751,6 +7775,7 @@ final class Browser: NSObject, ObservableObject {
             picking = nil
         }
         tab.onImageMenu = { [weak self] tab, url in self?.showImageMenu(for: tab, at: url) }
+        tab.onPictureItems = { [weak self] tab, url in self?.pictureItems(for: tab, at: url) ?? [] }
         tab.onImageItem = { [weak self] tab, url, copy in
             guard let self, let web = tab.built else { return }
             if copy { copyImage(at: url, in: tab) } else { downloadImage(at: url, from: web) }
@@ -10207,8 +10232,23 @@ extension Browser: WKDownloadDelegate {
         panel.nameFieldStringValue = name
         panel.directoryURL = downloadsFolder
         panel.canCreateDirectories = true
-        guard panel.runModal() == .OK else { return nil }
-        return panel.url
+        guard panel.runModal() == .OK, let file = panel.url else { return nil }
+        return Browser.clearing(file)
+    }
+
+    /// A file picked in the save panel over one already there: the panel
+    /// asked, and Replace was the answer. WebKit refuses to write over a
+    /// file, so the download failed at once and a retry came back as
+    /// "Photo 1 2.jpg" beside the old one (#1598). The old file goes to the
+    /// Trash first, where it can still be found; if it can't go, the new one
+    /// takes a free name beside it instead of failing.
+    nonisolated static func clearing(
+        _ file: URL,
+        remove: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
+    ) -> URL {
+        guard FileManager.default.fileExists(atPath: file.path) else { return file }
+        if (try? remove(file)) != nil, !FileManager.default.fileExists(atPath: file.path) { return file }
+        return free(file.lastPathComponent, in: file.deletingLastPathComponent())
     }
 
     /// The folders in a name an extension asked for ("photos/2026/a.jpg"),
@@ -10282,7 +10322,7 @@ extension Browser: WKDownloadDelegate {
 
     /// WebKit refuses to write over a file that is already there, so the name
     /// gains a number rather than the download quietly failing.
-    static func free(_ name: String, in folder: URL) -> URL {
+    nonisolated static func free(_ name: String, in folder: URL) -> URL {
         let stem = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
         var candidate = folder.appendingPathComponent(name)

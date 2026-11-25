@@ -219,6 +219,7 @@ struct Command: Identifiable {
         Command("file.closeTab", "Close Tab", .file, KeyCombo("w")) { $0.closeFront() },
         Command("file.closeWindow", "Close Window", .file, KeyCombo("w", shift: true)) { $0.closeWindow() },
         Command("file.import", "Bring Things Over…", .file, nil) { $0.bringingIn = "" },
+        Command("file.exportSpaces", "Export Spaces…", .file, nil) { $0.exportSpaces() },
         Command("file.share", "Share…", .file, nil) { $0.share() },
         Command("file.savePage", "Save Page As…", .file, nil) { $0.savePage() },
         Command("file.exportPDF", "Export as PDF…", .file, nil) { $0.exportPDF() },
@@ -263,6 +264,10 @@ struct Command: Identifiable {
         Command("view.inspector", "Web Inspector", .view, KeyCombo("i", option: true)) { $0.toggleInspector() },
         Command("view.console", "JavaScript Console", .view, KeyCombo("j", option: true)) { $0.showConsole() },
         Command("view.inspect", "Inspect Element", .view, KeyCombo("c", option: true)) { $0.inspectElement() },
+        // Not ⌃D, Cra's: in a page's text field that deletes forward.
+        Command("view.developerMode", "Developer Mode", .view, KeyCombo("i", shift: true, option: true)) {
+            $0.toggleDeveloperMode()
+        },
 
         Command("tabs.back", "Back", .tabs, KeyCombo("[")) { $0.back() },
         Command("tabs.forward", "Forward", .tabs, KeyCombo("]")) { $0.forward() },

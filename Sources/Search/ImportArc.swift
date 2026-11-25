@@ -36,15 +36,29 @@ struct ArcSidebar: Equatable {
         /// that keeps one (Zen's space themes); Arc's spaces come without.
         var colour = 0
         var gradient: SpaceGradient? = nil
+        /// Its own pins, for a browser that keeps them by space (Dia's,
+        /// Ardia's and Yab's favourites, Search's own squares); nil for the
+        /// favourites of its profile.
+        var favorites: [Item]? = nil
+        /// Its open tabs, asleep in it, each with its tab group's name: only
+        /// a Search spaces file brings these (see SpacesExport).
+        var open: [Open] = []
     }
+    struct Open: Equatable { var item: Item; var group: String? }
     /// The icons at the top, shared by every space of their profile.
     var favorites: [Item]
     /// The same, by the profile they belong to ("Default", "Profile 1"),
     /// for giving each space only its own profile's.
     var favoritesByProfile: [String: [Item]] = [:]
     var spaces: [Space]
+    /// What its profiles are called, by the key a space names its profile
+    /// with; nil for Arc's, read from its Local State.
+    var profileNames: [String: String]? = nil
+    /// Pins every space of this window's profile shows (Search's own, from
+    /// a spaces file): shared again, or each space's own with spaces off.
+    var everySpace: [Item] = []
 
-    var pinnedCount: Int { spaces.reduce(0) { $0 + Arc.count($1.pinned) } }
+    var pinnedCount: Int { spaces.reduce(0) { $0 + Arc.count($1.pinned) + ($1.favorites?.count ?? 0) } }
 }
 
 enum Arc {
@@ -319,7 +333,7 @@ extension ImportSource {
         switch self {
         case .chromium(let source) where source.name == "Arc": return Arc.sidebar(profile: profile)
         case .mozilla(let source) where source.keepsSpaces: return Zen.sidebar(in: source, profile: profile)
-        default: return nil
+        default: return moreSidebar(profile: profile)
         }
     }
 
@@ -327,7 +341,7 @@ extension ImportSource {
         switch self {
         case .chromium(let source) where source.name == "Arc": return Arc.counts(profile: profile)
         case .mozilla(let source) where source.keepsSpaces: return Zen.counts(in: source, profile: profile)
-        default: return nil
+        default: return moreCounts(profile: profile)
         }
     }
 
