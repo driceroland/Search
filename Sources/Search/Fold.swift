@@ -287,7 +287,10 @@ extension Browser {
 
     /// The folded column out over the page, or back in.
     func peek(_ out: Bool) {
-        moveColumn(out: out) { self.peeking = out }
+        guard out else { return moveColumn(out: false) { self.peeking = false } }
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { peeking = true }
     }
 
     /// A page filling the screen in front of this window. With
