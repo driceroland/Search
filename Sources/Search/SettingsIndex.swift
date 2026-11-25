@@ -1086,6 +1086,7 @@ extension SettingsIndex {
     /// defaults changed: what Tests/settings_layout.py reads back.
     @MainActor static func values(_ prefs: Preferences) -> [String: Any] {
         [
+            "glyph": prefs.glyph.rawValue,
             "tabs.layout": prefs.tabsLayout.rawValue,
             "tabs.sleep": prefs.sleepChoice.rawValue,
             "float.own": prefs.floatOwn.rawValue,

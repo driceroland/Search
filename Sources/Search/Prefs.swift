@@ -14,6 +14,11 @@ import WebKit
 enum Glyph: String, CaseIterable, Identifiable {
     case letters, icons
 
+    /// What a tab wears until it is chosen: the site's icon (letters until
+    /// 1.0.21). One never chosen follows this, whatever it was before; a
+    /// site without an icon still shows its letter (Mark).
+    static let standard: Glyph = .icons
+
     var id: String { rawValue }
 
     var title: String {
@@ -1359,7 +1364,7 @@ final class Preferences: ObservableObject {
         glassClear = (store.object(forKey: "window.glass.clear") as? Double).map { min(1, max(0, $0)) } ?? 0.5
         glassStyle = store.string(forKey: "window.glass.style").flatMap(GlassStyle.init) ?? .frosted
         liquidTabs = store.bool(forKey: "tabs.liquid")
-        glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
+        glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? Glyph.standard
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
         customSuggest = store.string(forKey: "search.customSuggest") ?? ""
@@ -1692,7 +1697,7 @@ final class Preferences: ObservableObject {
         take(\.liquidTabs, store.bool(forKey: "tabs.liquid"))
         take(\.bounces, store.bool(forKey: "pages.bounce"))
         Swipe.bounces = bounces
-        take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
+        take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: Glyph.standard)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
         take(\.tabClickAddressOnly, store.bool(forKey: "tabs.clickAddressOnly"))
         take(\.tabClickKeepsName, store.bool(forKey: "tabs.clickKeepsName"))
