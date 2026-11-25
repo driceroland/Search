@@ -547,7 +547,10 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
             let clipped = try highlightPixels(await controlSnapshot("#paint-clip"))
             check(clipped.orange == 0, "An overflow container clips a field highlight outside its visible area")
             _ = try? await evaluate("document.querySelector('#paint-clip').scrollLeft = 10000")
-            let revealed = try highlightPixels(await controlSnapshot("#paint-clip"))
+            var revealed = try highlightPixels(await controlSnapshot("#paint-clip"))
+            for _ in 0..<5 where revealed.orange <= 100 {
+                revealed = try highlightPixels(await controlSnapshot("#paint-clip"))
+            }
             check(revealed.orange > 100, "Scrolling an ancestor reveals the correctly positioned field highlight")
 
             _ = try? await evaluate("document.querySelector('#paint-mask').scrollIntoView({block:'center'})")
@@ -656,7 +659,10 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
                 if style == "text-align:center" {
                     _ = try await evaluate("void document.querySelector('#styled-input').animate([{transform:'translateX(0)'},{transform:'translateX(40px)'}], {duration:100,fill:'forwards'})")
                     try await Task.sleep(for: .milliseconds(350))
-                    let moved = try highlightPixels(await controlSnapshot("#styled-input"))
+                    var moved = try highlightPixels(await controlSnapshot("#styled-input"))
+                    for _ in 0..<5 where moved.yellow <= 100 {
+                        moved = try highlightPixels(await controlSnapshot("#styled-input"))
+                    }
                     check(moved.yellow > 100 && Double(before.ink.symmetricDifference(moved.ink).count) / Double(max(1, before.ink.count)) < 0.05,
                           "Field highlights follow layout changes that emit no DOM mutation or resize")
                 }

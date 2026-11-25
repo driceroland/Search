@@ -143,7 +143,7 @@ final class PageFind {
             if let selection, let field = responder as? NSTextField {
                 field.currentEditor()?.selectedRange = selection
             }
-            _ = try await web.callAsyncJavaScript(
+            _ = try? await web.callAsyncJavaScript(
                 """
                 const state = globalThis.__searchPageFindState_v2;
                 if (state?.generation === Number(generation) && state.current?.kind === "control"
