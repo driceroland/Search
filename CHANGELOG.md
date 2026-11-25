@@ -38,6 +38,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Search builds with Swift 6.3.3 (Xcode 26.6): `shownPages` in Fold.swift named its list `tabs`, and the closure that reads the window's tabs saw that name instead, which Swift 6.3 refuses as a closure capturing a value before it is declared. The list is called `shown` now. Thanks [@danicrg](https://github.com/danicrg) ([#1559](https://github.com/driceroland/Search/pull/1559))
 - Local addresses typed without a scheme, such as `LOCALHOST:3000`, `dev.LOCALHOST:3000` and `printer.LOCAL`, default to HTTP regardless of the hostname's case. `swift test --filter AddressTests` Thanks [@ChaitanyaSai-Meka](https://github.com/ChaitanyaSai-Meka) ([#1568](https://github.com/driceroland/Search/pull/1568))
 - An extension opening a tab with no address, as Vimium C does when its New tab URL is `about:newtab`, gets the blank tab ⌘T makes, as Chrome gives its New Tab page, instead of an empty about:blank page. Thanks [@xav-ie](https://github.com/xav-ie) ([#1555](https://github.com/driceroland/Search/pull/1555))
+- A home background (Settings › Appearance › Home) and a blank tab's wall are cut to the window's rounded corners, as Search's own pages are, instead of drawing square corners past them. Thanks [@ojowwalker77](https://github.com/ojowwalker77) ([#1531](https://github.com/driceroland/Search/pull/1531))
 
 ### Held back
 
