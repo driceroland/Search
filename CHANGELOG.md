@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- An extension's popup that is empty until its worker answers, as NordPass's is, no longer shrinks to a speck a second after it loads and starts as one at every opening after: it stays at its size until its content comes. `python3 Tests/extension_popup_slow.py` (idea 1179)
 - ⌘T and ⇧⌘N with every window closed bring the window back with the new tab, where the tab waited unseen until a click on the Dock icon. `python3 Tests/closed_window_new_tab.py` (idea 1183)
 - A tab in a group can be closed on its own with ⌘W: the first ⌘W still puts its page away, keeping its row in the group, and going back to it and pressing ⌘W again now closes it, where it put it away again for ever. Its menu has Put Away and a Close Tab that closes it at once. `python3 Tests/close_in_group_again.py` (idea 1189)
 
