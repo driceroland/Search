@@ -7969,7 +7969,24 @@ final class Browser: NSObject, ObservableObject {
         // question changes.
         picked = nil
         if launching, prefs.arcTabPopup { offerTabs() }
+        if prefs.returnTakesTop, picked == nil { pickTop() }
         askEngine()
+    }
+
+    /// Settings › Browsing › Return takes the top suggestion (#1556): the
+    /// place on top of the list is picked as you type, as in Arc's command
+    /// bar, so Return goes to the page you can see rather than searching
+    /// for the words. The field keeps what was typed, and ↑ lets go of the
+    /// row, as with ⌘T's open tabs. Only a place: a search on top is what
+    /// Return does already, and a command on top keeps Return as it does
+    /// everywhere. An address typed out goes where it says, and one the grey
+    /// ending finishes goes where the field shows.
+    private func pickTop() {
+        guard ending == nil, Address.url(from: typed) == nil,
+              let first = offers.first, first.kind.isPlace
+        else { return }
+        picked = 0
+        typing.pickedByTyping = true
     }
 
     /// ⌘T's field with Arc-style tab popup on: the open tabs, then the pins,

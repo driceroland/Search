@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Settings › Browsing › Return takes the top suggestion, off unless turned on: the place on top of the address field's list is picked as you type, as in Arc's command bar, so Return goes to it instead of searching for the words, with no ↓ first. A page found by a word from its title or the middle of its address was listed on top and still searched. The field keeps what was typed; ↑ lets go of the row and Return searches. A search or a command on top, an address typed out, and one the grey ending finishes go where they went before. In ⌘L, ⌘T, a blank tab and the address in the tab. `swift test --filter ReturnTakesTopTests`, `python3 Tests/return_takes_top.py` ([#1556](https://github.com/driceroland/Search/issues/1556))
+
 ### Fixed
 
 - With profiles in one window, going to another profile's space (⌃1–⌃9, the space's menu, a swipe past the last space) no longer puts that space's name up beside its icon — a profile's first space wears the profile's name, so it popped up on nearly every profile switch. The profile's badge beside it says whose window it is; switching spaces within a profile still names the space for a moment. `python3 Tests/profile_switch_name.py` (idea 1114)
