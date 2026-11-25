@@ -18,7 +18,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
-- Clicking **Allow all sites** in an embedded extension, such as Blackpane’s Reddit reader, now opens the permission prompt and grants the requested website access on approval. (#1561)
+- Clicking **Allow all sites** in an embedded extension frame now opens the permission prompt and grants the requested website access on approval. (#1561)
 
 - NordPass no longer freezes: its popup came up as an empty dark box and its pages hung. Its worker stores an encryption key in IndexedDB, and WebKit, sealing that key, waits on the very thread the worker runs on, for ever — 1.0.19 too, with NordPass's current extension. An extension's worker is now told at once it can't store such a key (a DataCloneError, as browsers that can't give), and goes on. `python3 Tests/extension_worker_cryptokey.py` (reported by email, idea 439)
 - Hide Elements names exactly what you picked: by its own id, a hook the site put there for its tests, or else its place on the page, each step counted, checked to match that one element before it is kept. A class, a role or a label once named the only one there was, and on a later visit every promo, dialog or card wearing it went too. Things hidden before keep their names. `python3 Tests/hide_elements.py` (reported by email, idea 1133)
