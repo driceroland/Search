@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Less memory with many tabs: a tab brought back from the last session makes its page's WebKit configuration only when it is opened, and the window no longer keeps a picture of itself for macOS's window restoration, which Search never used (16 MB for a 1280-point window, about 60 MB on a 5K screen). Activity Monitor's Memory for Search itself, after 30 s idle (hidden probe, `python3 Tests/mem_many_tabs.py 50 200 400`): 400 tabs 130 -> 114 MB, 200 tabs 115 -> 101, 50 tabs 91 -> 75.
 - The column stays quick with hundreds of tabs: only the rows in sight, and some way past them, are made, each placed where it lies by what the rows' heights add up to, and a row no longer reads where it is drawn on every frame of a scroll to be ready for a drag. Every row of a space was a live view that each change checked and laid out again. At 400 tabs (hidden probe, `python3 Tests/perf_many_tabs.py 50 200 400`, longest pass): closing a tab ~260 -> ~90 ms, a new tab ~120 -> ~50, picking a pin ~170 -> ~100, a space switch ~1.2 s -> ~0.6 s, the column's scroll ~640 -> ~25 ms. A tab gone to far down (⌘1–⌘9, a link, another space) is scrolled to as before, and tabs are carried, grouped and pinned by hand as before. `python3 Tests/column_lazy.py`, `python3 Tests/column_scroll.py`, `python3 Tests/space_switch.py` (idea 1051)
 
 ### Held back

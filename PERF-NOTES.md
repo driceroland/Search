@@ -85,3 +85,42 @@ Results in /private/tmp/claude-501/pmt-results/*.jsonl
   finds the landing by the bench's new per-pass "space" (it relied on >= 50 rows made).
 - Open: after keyspace's glide runs (perfkeyspace glide), the scroll at 400 is slow again (550 ms; base
   same sequence 638). Fresh, after select, after space: 21-47 ms. Not found yet.
+
+## Memory (25 Nov, 18:00-20:00, branch mem-many-tabs)
+Bench: Tests/mem_many_tabs.py (perf_many_tabs.py's world, hidden probe, SEARCH_MEASURE=1): footprint
+(phys_footprint = Activity Monitor's Memory column) 6 s after restore and after 30 s idle, RSS beside it.
+Results: /private/tmp/claude-501/mmt/*.jsonl (ab1 base/lazy/relays, ab2 relays/snap, ab3 base/final),
+footprint/vmmap/heap dumps in mmt/d0.
+- Phase 1's 271 MB at 400 tabs was RSS: it counts the frameworks' shared pages (__TEXT etc.). The same
+  run's footprint is 130 MB (RSS 248). Footprint is the number to quote.
+- Base, footprint after 30 s idle (2-3 rounds): 50 tabs 92 MB, 200 116, 400 130 -> ~110 KB per extra tab.
+- 400 tabs, by category: MALLOC_SMALL 81 MB (live objects in all zones ~52 MB; 43 MB free-but-dirty,
+  47 % fragmentation), MALLOC_LARGE 16 (empty: a freed window snapshot, below), VM_ALLOCATE 13, __DATA* 6,
+  WebKit malloc 3.4, IOAccelerator 2.3, CoreAnimation 1.9, malloc metadata 1.6.
+- 50 -> 400 tabs: live heap +11.5 MB (33 KB a tab: Tab 2 KB, configuration+prefs+content controller
+  ~1.5 KB, Combine ~3-4 KB = Browser.prepare's 6 sinks + Extensions.watch's 5, ~36 closure contexts, URLs and
+  strings), MALLOC_SMALL dirty +34 MB: the rest is fragmentation left by launch churn.
+- Launch churn (malloc_logger hook, main thread, first 10 s, bytes by Search's nearest frame; patch in
+  mmt/callers.patch): 132 MB allocated at 50 tabs, 579 MB at 400. 494 MB of the 400's have no Search frame
+  but main: SwiftUI/AttributeGraph run-loop updates. Then Store.testing 12.8 MB (110k calls),
+  LiveLensKey.reduce 5.4 MB (61k), the rows' bodies < 0.5 MB each.
+- Peak footprint at launch 236 MB (199 at 50 tabs): ~113 MB of GPU memory ("Owned physical footprint
+  (unmapped) (graphics)") during the first frame, given back within 2 s. Not in the steady number.
+- The 16 MB at ~16 s: NSPersistentUIWindowSnapshotter (AppKit's state-restoration picture of the window,
+  2560x1640x4), freed and kept by the allocator as MALLOC_LARGE (empty).
+- malloc_zone_pressure_relief(nil, 0) after idle frees 0 bytes on macOS 26: not a lever.
+- MallocStackLogging in the probe's environment is ignored (hardened runtime): malloc_history only gets
+  lite logging (live blocks), no -highWaterMark. lldb can't attach. A malloc_logger hook in a diagnostic
+  build (mmt/diag2.patch: blocks >= 4 MB with backtraces; mmt/callers.patch: bytes by caller) works.
+
+Commits (footprint after 30 s idle, interleaved A/B):
+- 223d7e42 lazy WKWebViewConfiguration for restored tabs: 400 130 -> 128, 50 92 -> 91.
+- 9b5c408d window.disableSnapshotRestoration(): 50 92 -> 76, 400 130 -> 113 (fixed ~16 MB; ~60 at 5K).
+- fefc08c9 Store.testing via getenv: churn only (12.8 MB/10 s at 400), footprint within 1 MB.
+- Lazy per-tab relays (13 objects) measured within noise (+-1 MB): dropped.
+- All three (ab3, 3 rounds, medians, footprint after 30 s idle / RSS):
+  50 tabs 91 -> 75 MB (RSS 165 -> 149), 200 115 -> 101 (197 -> 183), 400 130 -> 114 (249 -> 233).
+  Per extra tab still ~110 KB: the fixed part fell, the slope didn't.
+- Open: the slope is launch churn left as fragmentation, run-loop SwiftUI updates (494 MB allocated in
+  the first 10 s at 400 tabs vs 85 at 50); find which updates repeat per tab (preloadSpaces one space a
+  turn, each `tabs +=` re-evaluating SideBar, LiveLensKey's reduce) before cutting.
