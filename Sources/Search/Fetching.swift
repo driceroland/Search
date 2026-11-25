@@ -752,10 +752,10 @@ struct FetchDoor: View {
                 }
                 .frame(width: Door.width, height: 26)
                 .background(
-                    Capsule()
+                    Door.shape
                         .fill(hovering ? greys.hover : .clear)
                 )
-                .contentShape(Capsule())
+                .contentShape(Door.shape)
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }

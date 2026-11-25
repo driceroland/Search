@@ -294,7 +294,7 @@ struct ProfileBadge: View {
             ProfileAvatar(profile: profiles.profile(browser.profileID), size: 17, emphasis: hovering)
                 .frame(width: Self.width, height: 26)
                 .background(
-                    Capsule()
+                    Door.shape
                         .fill(hovering ? Palette.hover : .clear)
                 )
                 .contentShape(Rectangle())

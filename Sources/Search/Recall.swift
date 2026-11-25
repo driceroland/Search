@@ -50,15 +50,32 @@ struct HistoryPanel: View {
     /// Which history Clear takes: nil for every space's, as Safari's All
     /// Profiles; shown only when a signed-out space keeps one of its own.
     @State private var clearsIn: UUID?
+    @State private var span: Span = .all
     private var clearing: Bool { browser.recallMode == .clearing }
+
+    enum Span: String, CaseIterable, Identifiable {
+        case all = "All History", today = "Today", week = "Last 7 Days", month = "Last 30 Days"
+        var id: Self { self }
+        var since: Date? {
+            let calendar = Calendar.current
+            let today = calendar.startOfDay(for: Date())
+            switch self {
+            case .all: return nil
+            case .today: return today
+            case .week: return calendar.date(byAdding: .day, value: -6, to: today)
+            case .month: return calendar.date(byAdding: .day, value: -29, to: today)
+            }
+        }
+    }
 
     var body: some View {
         Plate("History", width: 600, close: { browser.recalling = false }) {
             VStack(alignment: .leading, spacing: 14) {
-                Hunt(text: $browser.recallHunt, prompt: "Search everywhere you have been", focus: $hunting)
+                Hunt(text: $browser.recallHunt, prompt: "Search everywhere you have been", focus: $hunting,
+                     count: (traces.count, "page"))
 
                 if traces.isEmpty {
-                    Card { Nothing(browser.recallHunt.isEmpty ? "Nothing yet." : "Nothing matches.") }
+                    Card { Nothing(browser.recallHunt.isEmpty && span == .all ? "Nothing yet." : "Nothing matches.") }
                 } else {
                     // Lazy: only the lines in view are made. Two thousand of
                     // them, each with its icon, took the panel a third of a
@@ -113,9 +130,10 @@ struct HistoryPanel: View {
                 sweeps
             } else {
                 HStack {
-                    Text(traces.count == 1 ? "1 page" : "\(traces.count) pages")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
+                    PillMenu(selection: $span, title: span.rawValue) {
+                        ForEach(Span.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .help("Show history from")
                     Spacer()
                     Pill("Clear…") { withAnimation(Motion.settle) { browser.recallMode = .clearing } }
                 }
@@ -127,6 +145,7 @@ struct HistoryPanel: View {
             refresh()
         }
         .onChange(of: browser.recallHunt) { _, _ in refresh() }
+        .onChange(of: span) { _, _ in refresh() }
         // Another space may keep a history of its own (Spaces.history).
         .onChange(of: browser.spaceID) { _, _ in refresh() }
     }
@@ -179,7 +198,8 @@ struct HistoryPanel: View {
     }
 
     private func refresh() {
-        traces = browser.history.everything(matching: browser.recallHunt)
+        let found = browser.history.everything(matching: browser.recallHunt)
+        traces = span.since.map { since in found.filter { $0.last >= since } } ?? found
         let calendar = Calendar.current
         let grouped = Dictionary(grouping: traces) { calendar.startOfDay(for: $0.last) }
         var made: [Listed] = []
@@ -250,7 +270,7 @@ struct HistoryPanel: View {
                 }
                 Spacer(minLength: 8)
                 if hovering {
-                    Quick("Remove", tint: .red.opacity(0.75), act: forget)
+                    Quick("Remove", tint: .red.opacity(0.75), symbol: "trash", act: forget)
                 } else {
                     Text(When.clock(trace.last))
                         .font(.system(size: 11.5))
@@ -348,7 +368,7 @@ struct DownloadsPanel: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if !fetches.entries.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
-                            Caption("Current downloads")
+                            Caption("Current downloads", count: fetches.entries.count)
                             Card {
                                 ForEach(Array(fetches.entries.enumerated()), id: \.element.id) { index, entry in
                                     if index > 0 { Rule() }
@@ -366,7 +386,7 @@ struct DownloadsPanel: View {
 
                     if !loot.kept.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
-                            Caption("Completed")
+                            Caption("Completed", count: loot.kept.count)
                             Card {
                                 ForEach(Array(loot.kept.enumerated()), id: \.element.id) { index, keep in
                                     if index > 0 { Rule() }
@@ -537,7 +557,7 @@ struct DownloadsPanel: View {
                         Quick("Retry", act: retry)
                             .help("Start the download again from the beginning")
                     }
-                    Quick("Remove", act: cancel)
+                    Quick("Remove", symbol: "trash", act: cancel)
                 }
             case .resuming:
                 HStack(spacing: 4) {
@@ -552,7 +572,7 @@ struct DownloadsPanel: View {
                         Quick("Retry", act: retry)
                             .help("Start the download again from the beginning")
                     }
-                    Quick("Remove", act: cancel)
+                    Quick("Remove", symbol: "trash", act: cancel)
                 }
             }
         }
@@ -586,7 +606,7 @@ struct DownloadsPanel: View {
                 Spacer(minLength: 8)
                 if hovering {
                     if keep.stillThere { Quick("Show in Finder", act: reveal) }
-                    Quick("Remove", tint: .red.opacity(0.75), act: forget)
+                    Quick("Remove", tint: .red.opacity(0.75), symbol: "trash", act: forget)
                 }
             }
             .padding(.horizontal, 14)

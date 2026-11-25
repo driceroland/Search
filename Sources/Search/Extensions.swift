@@ -2600,10 +2600,10 @@ private struct ExtensionButtons: View {
                 ExtensionIcon(button: button, size: 15)
                     .frame(width: Door.width, height: 26)
                     .background(
-                        Capsule()
+                        Door.shape
                             .fill(hovering ? Palette.hover : .clear)
                     )
-                    .contentShape(Capsule())
+                    .contentShape(Door.shape)
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
@@ -2766,7 +2766,7 @@ private struct ExtensionMenu: View {
                 .frame(maxHeight: 360)
                 .fixedSize(horizontal: false, vertical: true)
             }
-            Divider().overlay(Palette.hairline)
+            Divider()
             VStack(spacing: 1) {
                 Foot("storefront", "Chrome Web Store…") {
                     extensions.menuOpen = false

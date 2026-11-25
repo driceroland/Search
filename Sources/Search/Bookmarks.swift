@@ -1324,7 +1324,9 @@ struct BookmarksDropdown: View {
                 Text("No bookmarks yet")
                     .font(.system(size: 12.5))
                     .foregroundStyle(Palette.muted)
-                    .padding(.leading, 42)
+                    // In from the edge as the divider and the rows under
+                    // it start.
+                    .padding(.leading, 16)
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -1341,7 +1343,7 @@ struct BookmarksDropdown: View {
                     if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
                 }
             }
-            Divider().overlay(Palette.hairline)
+            Divider()
                 .padding(.horizontal, 16)
             VStack(spacing: 2) {
                 Foot(browser.pageKept ? "bookmark.fill" : "bookmark", browser.pageKept ? "Edit This Bookmark\u{2026}" : "Add This Page") {
@@ -1432,7 +1434,9 @@ struct BookmarksPanel: View {
     var body: some View {
         Plate("Bookmarks", width: 600, close: { browser.bookmarking = false }) {
             VStack(alignment: .leading, spacing: 14) {
-                Hunt(text: $query, prompt: "Search bookmarks", focus: $hunting)
+                Hunt(text: $query, prompt: "Search bookmarks", focus: $hunting,
+                     count: (query.isEmpty ? bookmarks.count : bookmarks.matches(query).count,
+                             query.isEmpty ? "bookmark" : "match"))
                     .onSubmit(openFirst)
 
                 if bookmarks.isEmpty {
@@ -1469,16 +1473,10 @@ struct BookmarksPanel: View {
             }
         } foot: {
             HStack(spacing: 8) {
-                Text("Bring in from")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.muted)
                 Pill("Bring in…") { browser.lead(to: InternalPage(.importing)) }
                 Pill("File…") { browser.importFile() }
                 Spacer()
                 Pill("New Folder…") { bookmarks.askNewFolder(in: nil) }
-                Text(bookmarks.count == 1 ? "1 bookmark" : "\(bookmarks.count) bookmarks")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.muted)
             }
         }
         .animation(Motion.settle, value: query.isEmpty)

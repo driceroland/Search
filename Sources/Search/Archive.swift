@@ -287,7 +287,7 @@ struct ArchivePanel: View {
                 }
                 Spacer(minLength: 8)
                 if hovering {
-                    Quick("Remove", tint: .red.opacity(0.75), act: remove)
+                    Quick("Remove", tint: .red.opacity(0.75), symbol: "trash", act: remove)
                 } else {
                     Text(When.clock(tab.closed))
                         .font(.system(size: 11.5))

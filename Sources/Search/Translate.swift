@@ -1075,7 +1075,7 @@ struct TranslateMenu: View {
                     }
                 }
                 .padding(6)
-                Divider().overlay(Palette.hairline)
+                Divider()
                 Text("Translated on this Mac. Nothing is sent anywhere.")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Palette.faint)

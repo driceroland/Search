@@ -47,7 +47,10 @@ struct Plate<Content: View, Foot: View>: View {
                 .padding(.top, 44)
                 .padding(.bottom, 20)
 
+            // All the room there is, however little is listed: the foot
+            // stays at the bottom of the page.
             content()
+                .frame(maxHeight: Foot.self == EmptyView.self ? nil : .infinity, alignment: .top)
 
             if Foot.self != EmptyView.self {
                 Rectangle().fill(Palette.hairline).frame(height: 1)
@@ -212,12 +215,24 @@ struct Line<Control: View>: View {
 /// A small heading over a card, for when a panel has more than one.
 struct Caption: View {
     let text: String
-    init(_ text: String) { self.text = text }
+    /// How many are under it, at its far end.
+    var count: Int? = nil
+    init(_ text: String, count: Int? = nil) {
+        self.text = text
+        self.count = count
+    }
     var body: some View {
-        Text(text)
-            .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(Palette.muted)
-            .padding(.leading, 2)
+        HStack(spacing: 8) {
+            Text(text)
+            if let count {
+                Spacer(minLength: 0)
+                Text("\(count)").monospacedDigit()
+            }
+        }
+        .font(.system(size: 11.5, weight: .medium))
+        .foregroundStyle(Palette.muted)
+        .padding(.horizontal, 2)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -226,6 +241,9 @@ struct Hunt: View {
     @Binding var text: String
     var prompt = "Search"
     var focus: FocusState<Bool>.Binding
+    /// How many the list under the field holds, at the field's far end, and
+    /// of what, for reading aloud.
+    var count: (Int, String)? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -242,6 +260,13 @@ struct Hunt: View {
                     .focused(focus)
             }
             .font(.system(size: 13))
+            if let (number, of) = count {
+                Text("\(number)")
+                    .font(.system(size: 12))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.muted)
+                    .accessibilityLabel("\(number) \(of)\(number == 1 ? "" : of.hasSuffix("ch") ? "es" : "s")")
+            }
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -275,11 +300,15 @@ struct Nothing: View {
 struct Quick: View {
     let title: String
     var tint: Color = Palette.ink
+    /// A symbol in the word's place, the word then its tooltip and what is
+    /// read aloud.
+    var symbol: String? = nil
     let act: () -> Void
 
-    init(_ title: String, tint: Color = Palette.ink, act: @escaping () -> Void) {
+    init(_ title: String, tint: Color = Palette.ink, symbol: String? = nil, act: @escaping () -> Void) {
         self.title = title
         self.tint = tint
+        self.symbol = symbol
         self.act = act
     }
 
@@ -287,7 +316,14 @@ struct Quick: View {
         Button(action: act) {
             // On one line, whatever room is left: in the narrow downloads
             // card, Resume, Retry and Remove broke in the middle of a word.
-            Text(title)
+            Group {
+                if let symbol {
+                    // As tall as the words beside it.
+                    Image(systemName: symbol).frame(height: 14)
+                } else {
+                    Text(title)
+                }
+            }
                 .font(.system(size: 11.5))
                 .foregroundStyle(tint)
                 .lineLimit(1)
@@ -297,5 +333,7 @@ struct Quick: View {
                 .background(Palette.wash, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
         }
         .buttonStyle(.plain)
+        .help(symbol == nil ? "" : title)
+        .accessibilityLabel(title)
     }
 }
