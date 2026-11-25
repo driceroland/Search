@@ -459,7 +459,7 @@ struct DownloadsPanel: View {
 
         private var stateLabel: String {
             switch entry.state {
-            case .downloading: return "Downloading"
+            case .downloading: return entry.stalled ? "Stalled" : "Downloading"
             case .pausing: return entry.stopping
             case .paused: return "Paused"
             case .resuming: return "Resuming…"

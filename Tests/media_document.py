@@ -111,7 +111,8 @@ def video_state(tab):
 
 
 def failure(tab):
-    return sv.cmd({"do": "wait", "id": tab, "seconds": 8}).get("failure")
+    # The bench says "" for no failure since fdc43d31 (it said nothing before).
+    return sv.cmd({"do": "wait", "id": tab, "seconds": 8}).get("failure") or None
 
 
 def plays(t, name, path):
