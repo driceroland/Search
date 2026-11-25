@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A download saved in the save panel over a file that is already there, after answering Replace, now replaces it (the old file goes to the Trash): WebKit won't write over a file, so the download failed at once, and Retry left the old file and saved "Photo 1 2.jpg" beside it. `swift test --filter DownloadReplaceTests` (idea 1232, [#1598](https://github.com/driceroland/Search/issues/1598))
 - A double-click on a pin's square that has wandered from its page takes it back home from any square, not only from the one you are already on: the first click makes the pin the one on screen and draws its square anew, and the double-click, counted by a tap that started over there, was lost. It is now read from the press itself. (idea 1216)
 - A picture inside a link keeps Open Link in New Tab in its right-click menu, whatever the page is built of: WebKit's own hit test now says whether the picture is a link, where Search's page script said so and missed a link it couldn't see, as one in a web component's closed shadow root, leaving only Open Image in New Tab. `python3 Tests/picture_link_menu.py` (idea 1208)
 - Under a sign-in box, each Apple Passwords account now says which entry it is, with its title when the Passwords app gives one or else its site, as keychain accounts show their site, where every row read "Apple Passwords" alone. `swift test --filter ApplePasswordsTests` (idea 1206)

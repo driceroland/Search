@@ -10234,8 +10234,23 @@ extension Browser: WKDownloadDelegate {
         panel.nameFieldStringValue = name
         panel.directoryURL = downloadsFolder
         panel.canCreateDirectories = true
-        guard panel.runModal() == .OK else { return nil }
-        return panel.url
+        guard panel.runModal() == .OK, let file = panel.url else { return nil }
+        return Browser.clearing(file)
+    }
+
+    /// A file picked in the save panel over one already there: the panel
+    /// asked, and Replace was the answer. WebKit refuses to write over a
+    /// file, so the download failed at once and a retry came back as
+    /// "Photo 1 2.jpg" beside the old one (#1598). The old file goes to the
+    /// Trash first, where it can still be found; if it can't go, the new one
+    /// takes a free name beside it instead of failing.
+    nonisolated static func clearing(
+        _ file: URL,
+        remove: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
+    ) -> URL {
+        guard FileManager.default.fileExists(atPath: file.path) else { return file }
+        if (try? remove(file)) != nil, !FileManager.default.fileExists(atPath: file.path) { return file }
+        return free(file.lastPathComponent, in: file.deletingLastPathComponent())
     }
 
     /// The folders in a name an extension asked for ("photos/2026/a.jpg"),
@@ -10309,7 +10324,7 @@ extension Browser: WKDownloadDelegate {
 
     /// WebKit refuses to write over a file that is already there, so the name
     /// gains a number rather than the download quietly failing.
-    static func free(_ name: String, in folder: URL) -> URL {
+    nonisolated static func free(_ name: String, in folder: URL) -> URL {
         let stem = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
         var candidate = folder.appendingPathComponent(name)
