@@ -14,7 +14,7 @@ final class SettingsIndexTests: XCTestCase {
     private let touched = ["sidebar", "sidebar.position", "tabs.sleep", SleepPace.key, "float.leave", "float.away",
                            "pins.home", "pins.peek", "links.peek", "links.peekClick", "pages.120", "pages.120.mode",
                            "swipe.history", "tabs.address", "links.show", "float.flicks", "spaces", "pins.list",
-                           "newtab.floating", "search.shift", "search.shiftCustom"]
+                           "newtab.floating", "search.shift", "search.shiftCustom", "tabs.swipeBackCloses"]
 
     private func fresh(_ body: () -> Void) {
         let saved = touched.map { ($0, Store.settings.object(forKey: $0)) }
@@ -111,6 +111,9 @@ final class SettingsIndexTests: XCTestCase {
         fresh {
             let prefs = Preferences()
             prefs.pinsKeepSite = false
+            // On by default since a35ea540: written off so Set Up has it
+            // to turn on, and Undo to put back.
+            prefs.swipeBackCloses = false
             let before = prefs.arcSnapshot
             let layout = prefs.tabsLayout
             XCTAssertFalse(prefs.looksLikeArc)
