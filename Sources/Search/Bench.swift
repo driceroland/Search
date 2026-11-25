@@ -7289,6 +7289,8 @@ extension Bench {
             if let browser, let offset = Bench.columnOffset(browser) { pass["offset"] = offset }
             // Whether the column's own rows are the ones on show, not the map's.
             if let browser { pass["shown"] = browser.spaceSwipe == 0 }
+            // The space the column has taken by the end of the pass.
+            if let browser { pass["space"] = browser.space.name }
             passes.append(pass)
             rows = built
             woke = 0
