@@ -3377,6 +3377,8 @@ final class Browser: NSObject, ObservableObject {
     /// The pins are every window's (see Pins.swift): a window new to this
     /// space has them too, before an empty tab.
     func restoreSession() {
+        PerfLog.mark("restoreStart")
+        defer { PerfLog.mark("restored") }
         let saved = twinned(readRow(spaceID), space: spaceID)
         tabGroups = (saved.groups ?? []).filter { group in
             saved.tabs.contains { $0.groupID == group.id }

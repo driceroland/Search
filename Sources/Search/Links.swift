@@ -120,7 +120,7 @@ final class Links: NSObject, NSApplicationDelegate {
         // is first asked for, and until then Search's own requests would go
         // out directly: making a store happens to ask for it early on
         // macOS 15.4, but on 14 the first update check can beat it.
-        MainActor.assumeIsolated { _ = BrowserProxy.shared }
+        MainActor.assumeIsolated { PerfLog.install(); _ = BrowserProxy.shared }
         Links.watchForTrouble()
         NSAppleEventManager.shared().setEventHandler(
             self, andSelector: #selector(handle(getURL:reply:)),
@@ -150,7 +150,7 @@ final class Links: NSObject, NSApplicationDelegate {
         // here, before the first is drawn, once more a turn later, and as
         // each is dressed. Open, with their tabs, and written down as they
         // were, until one is wanted (see Browsers.keepAway).
-        MainActor.assumeIsolated { Browsers.putAway() }
+        MainActor.assumeIsolated { PerfLog.mark("didFinishLaunching"); Browsers.putAway() }
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 Browsers.putAway()
