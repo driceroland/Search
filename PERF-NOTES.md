@@ -69,3 +69,19 @@ Results in /private/tmp/claude-501/pmt-results/*.jsonl
   Item 2 alone (w1 -> w2): within noise on this bench except scroll at 200 (428->214, busy 1846->572).
   Next/Previous Space pressed (stepKey) = run in the bench pass (step): 662 vs 650 @400, 510 vs 557 @200,
   ⌃N 479/421: the gap is in the command's path, not the bench; not found yet.
+
+## Phase 3 (25 Nov, 15:55-17:10), rebased on origin/main 9b67323c (1.0.21)
+- 260b1652 ColumnWindow holds the band (child view) + windowStep = room/6: scroll @400 longest 556 -> 137-192
+  (child only) -> 21-29 ms (max 36) on a fresh probe. Profile before: AttributeGraph update/propagate_dirty,
+  no Search frames; the band change re-evaluated the whole SideBar and made ~22 rows at once.
+- 6828ff60 band kept per space: rows made on a switch into the 200-tab space 82 -> 34. Switch pass now
+  ~160-220 ms at 400 and ~130-200 at 50: N-independent. Profile @50: NSWindow layout -> NSHostingView.layout
+  inside NSAnimationContext (~20 %), CA commit; the bench's own Bench.columnOffset/scrolls walk adds ~7 %
+  of spacetime passes. Taking the space as the slide starts (3a) needs that fixed ~150-200 ms cut first: not done.
+- 3b: ⌃N and Next/Previous on the SAME pair cost the same (perfkeyspace 2<->3: 559 vs 552; 1<->2: 190 each).
+  The gap was the bench: "step" alternated S1<->S2 while ⌃N alternated S0<->S1. Open: perfkeyspace on a
+  pair with the third space reads ~550 while spacetime reads ~180 for the same pair.
+- 4f... mark back in SideBar (in ColumnWindow it was drawn after onChange: space_switch 6 fails); space_switch
+  finds the landing by the bench's new per-pass "space" (it relied on >= 50 rows made).
+- Open: after keyspace's glide runs (perfkeyspace glide), the scroll at 400 is slow again (550 ms; base
+  same sequence 638). Fresh, after select, after space: 21-47 ms. Not found yet.
