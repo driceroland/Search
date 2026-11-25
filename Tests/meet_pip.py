@@ -206,7 +206,7 @@ try:
     t.ok("going to another tab opens it by itself", until(lambda: len(mp()["windows"]) == 1), (mp(), sv.ev(call, "JSON.stringify(log)")))
     w = mp()["windows"][0] if mp()["windows"] else {}
     t.ok("marked as opened by the switch", w.get("auto") is True, w)
-    t.ok("Meet's handler was called with Chrome's reason", "open auto contentoccluded" in (sv.ev(call, "JSON.stringify(log)") or ""), sv.ev(call, "JSON.stringify(log)"))
+    t.ok("Meet's handler was called as Chrome's own button calls it (useraction)", "open auto useraction" in (sv.ev(call, "JSON.stringify(log)") or ""), sv.ev(call, "JSON.stringify(log)"))
     t.ok("Search's own floating video did not take the page", not sv.cmd({"do": "float", "action": "showing"})["showing"])
     t.ok("still nothing on screen", nothing_on_screen(), mp())
     a, b = frames_advance()
