@@ -93,7 +93,7 @@ enum MeetPiP {
             if (errs++ > 40) return;
             var text = '';
             try { text = (x && (x.stack || x.message)) || String(x); } catch (e) {}
-            say({ kind: 'err:' + where + ':' + text.replace(/\s+/g, ' ').slice(0, 300) });
+            say({ kind: 'err:' + where + ':' + text.replace(/\\s+/g, ' ').slice(0, 300) });
           }
           listen.call(window, 'error', function (e) { err('error', e.error || e.message); });
           listen.call(window, 'unhandledrejection', function (e) { err('reject', e.reason); });
