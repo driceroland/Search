@@ -576,6 +576,15 @@ extension View {
         background(Palette.lift, in: shape)
     }
 
+    func rowHover(_ on: Bool) -> some View {
+        background {
+            RoundedRectangle(cornerRadius: Metrics.rowRadius - 2, style: .continuous)
+                .fill(on ? Palette.hover : .clear)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+        }
+    }
+
     func pill<S: InsettableShape>(_ shape: S) -> some View {
         background(Palette.lift, in: shape)
             .overlay(shape.strokeBorder(Palette.liftEdge, lineWidth: 1))

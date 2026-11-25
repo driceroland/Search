@@ -1480,7 +1480,7 @@ struct SettingRow<Control: View>: View {
         .padding(.leading, SettingRowLayout.leading)
         .padding(.trailing, SettingRowLayout.trailing)
         .padding(.vertical, 16)
-        .background(lit ? Palette.hover : .clear)
+        .rowHover(lit)
     }
 }
 
@@ -2009,7 +2009,7 @@ private struct PermissionSiteRow: View {
             .padding(.leading, 14 + SettingsPanel.listInset)
             .padding(.trailing, 14).frame(minHeight: 44)
             .contentShape(Rectangle())
-            .background(hovering ? Palette.hover : .clear)
+            .rowHover(hovering)
         }
         .buttonStyle(.plain)
         .padding(.leading, -SettingsPanel.listInset)

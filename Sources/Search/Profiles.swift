@@ -545,7 +545,7 @@ private struct AddLine: View {
             .padding(.leading, inset)
             .padding(.trailing, 16)
             .frame(minHeight: 40)
-            .background(hovering ? Palette.hover : .clear)
+            .rowHover(hovering)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -624,7 +624,7 @@ private struct NewProfileRow: View {
             .padding(.leading, 14)
             .padding(.trailing, 16)
             .padding(.vertical, 15)
-            .background(hovering ? Palette.hover : .clear)
+            .rowHover(hovering)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
