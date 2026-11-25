@@ -1,6 +1,8 @@
 import AppKit
 import CloudKit
 import Combine
+import CryptoKit
+import IOKit
 
 // Sync with iCloud: the same open tabs, pins, spaces, bookmarks and a few
 // settings on this Mac, Search on the iPhone, and other Macs, through the
@@ -125,8 +127,29 @@ struct ICloudLedger: Codable, Equatable {
     /// Optional, so a ledger without it still reads, and an older build
     /// reading this one passes it over.
     var folders: Bool?
+    /// Which Mac kept this ledger: ThisMac.fingerprint, a hash, never the
+    /// hardware UUID itself, and never sent anywhere. Optional, so a ledger
+    /// from before it still reads.
+    var mac: String?
 
     var deviceKey: String { "device." + device }
+
+    /// This ledger, as `mac`'s own. One that came from another Mac
+    /// (Migration Assistant, a backup restored on a new Mac) carries that
+    /// Mac's device id, and the two would take each other's tabs for their
+    /// own and never see each other: it starts again as a new device,
+    /// joining, as turning sync on does. What is on this Mac stays; the
+    /// other Mac's record in iCloud is left alone. A ledger from before the
+    /// fingerprint is taken as this Mac's.
+    func claimed(by mac: String?) -> ICloudLedger {
+        guard let mac, self.mac != mac else { return self }
+        if self.mac == nil {
+            var mine = self
+            mine.mac = mac
+            return mine
+        }
+        return ICloudLedger(folders: true, mac: mac)
+    }
 
     /// Something here, offered: true when it differs from the last JSON
     /// written or read, and is now stamped and due to go up. Nothing before
@@ -167,7 +190,26 @@ struct ICloudLedger: Codable, Equatable {
     }
 
     /// Everything forgotten but which device this is.
-    func fresh() -> ICloudLedger { ICloudLedger(device: device, folders: true) }
+    func fresh() -> ICloudLedger { ICloudLedger(device: device, folders: true, mac: mac) }
+}
+
+/// Something that tells this Mac from one set up from it with Migration
+/// Assistant, which copies Search's files and settings: a hash of the
+/// hardware UUID, salted, cut short. Kept only beside the sync ids, on this
+/// Mac; nil where IOKit says nothing.
+enum ThisMac {
+    nonisolated static let fingerprint: String? = {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+        guard service != 0 else { return nil }
+        defer { IOObjectRelease(service) }
+        guard let uuid = IORegistryEntryCreateCFProperty(service, kIOPlatformUUIDKey as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? String, !uuid.isEmpty else { return nil }
+        return hash(uuid)
+    }()
+
+    nonisolated static func hash(_ uuid: String) -> String {
+        SHA256.hash(data: Data(("search.sync.mac:" + uuid).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 // MARK: - the rules, worked out
@@ -504,6 +546,8 @@ final class ICloudSync: ObservableObject {
     private let defaults: UserDefaults
     private let file: URL?
     private let makeEngine: (ICloudSync, Data?) -> ICloudEngine
+    /// ThisMac.fingerprint, or a stand-in in the tests.
+    private let mac: String?
     private var bag: Set<AnyCancellable> = []
     private var timer: Timer?
     private var pending: DispatchWorkItem?
@@ -511,12 +555,15 @@ final class ICloudSync: ObservableObject {
     private var ticks = 0
 
     init(local: ICloudLocal, defaults: UserDefaults, file: URL?, available: Bool,
+         mac: String? = ThisMac.fingerprint,
          makeEngine: @escaping (ICloudSync, Data?) -> ICloudEngine) {
         self.local = local
         self.defaults = defaults
         self.file = file
         self.available = available
+        self.mac = mac
         self.makeEngine = makeEngine
+        ledger.mac = mac
         on = defaults.bool(forKey: ICloudSync.onKey)
     }
 
@@ -565,7 +612,12 @@ final class ICloudSync: ObservableObject {
     /// At launch: carries on if it was on.
     func start() {
         guard on, available, engine == nil, !Sync.shared.on else { return }
-        ledger = load() ?? ledger.fresh()
+        if let saved = load() {
+            ledger = saved.claimed(by: mac)
+            if ledger != saved { save() }
+        } else {
+            ledger = ledger.fresh()
+        }
         begin()
     }
 
@@ -575,7 +627,9 @@ final class ICloudSync: ObservableObject {
         on = true
         defaults.set(true, forKey: ICloudSync.onKey)
         defaults.removeObject(forKey: ICloudSync.offKey)
-        ledger = ledger.fresh()
+        // A new id each time: turning off took the old one's record away,
+        // and two Macs cloned before ICloudLedger.mac part this way.
+        ledger = ICloudLedger(folders: true, mac: mac)
         save()
         begin()
     }
@@ -1007,7 +1061,9 @@ final class ICloudSync: ObservableObject {
     private func load() -> ICloudLedger? {
         guard let file, let data = try? Data(contentsOf: file),
               let saved = try? JSONDecoder().decode(ICloudLedger.self, from: data) else { return nil }
-        for (key, value) in saved.values where key.hasPrefix("device.") && key != saved.deviceKey {
+        // Copied from another Mac: its tabs are that Mac's, not this one's.
+        let own = saved.claimed(by: mac).deviceKey
+        for (key, value) in saved.values where key.hasPrefix("device.") && key != own {
             if let tabs = ICloudMerge.decode(DeviceTabs.self, value) { others[String(key.dropFirst("device.".count))] = tabs }
         }
         return saved

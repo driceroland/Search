@@ -18,6 +18,7 @@ The pages, each with a banner of its own, all on one site:
   inline      the page's own style="display: block !important"
   inner       a pick on the banner's words, then ↑ to the banner
   left        pointing on, then left for another page and come back to
+  one, many   a promo and a dialog picked on one, and on many, more like them
 """
 import json
 import sys
@@ -49,6 +50,12 @@ PAGES = {
     "inner": ({}, banner("inner")),
     "left": ({}, banner("left")),
     "elsewhere": ({}, "<p>elsewhere"),
+    # One of a kind on the first visit, one of several on the next (idea 1133).
+    "one": ({}, "<div id=feed><div class=promo style='height:40px'>Ad A</div><p>post</div>"
+                "<div role=dialog style='height:40px'>Sign up</div>"),
+    "many": ({}, "<div id=feed><div class=promo style='height:40px'>Ad A</div><p>post"
+                 "<div class=promo>Ad B</div><div class=promo>Ad C</div></div>"
+                 "<div role=dialog style='height:40px'>Sign up</div><div role=dialog>Other</div>"),
 }
 
 
@@ -201,8 +208,26 @@ def case_left(t):
     t.ok("and the pointer is its own", ev(tab, "document.documentElement.style.cursor") == "")
 
 
+def case_one_of_many(t):
+    """what was picked is that one thing: on a later visit with more like it, only it goes (idea 1133)"""
+    sv.setup(sidebar=True); sv.launch()
+    tab = open_page("one")
+    # From the list, as its Hide something… starts it.
+    sv.cmd({"do": "ui", "hidden": True}); time.sleep(0.5)
+    pick(tab, "#feed > .promo")
+    sv.cmd({"do": "ui", "hidden": True}); time.sleep(0.5)
+    pick(tab, "[role=dialog]")
+    names = kept()
+    t.ok("each selector names one element now", len(names) == 2 and all(
+        ev(tab, f"document.querySelectorAll({json.dumps(n)}).length") == 1 for n in names), names)
+    ev(tab, f"location.href = {json.dumps(BASE + '/many')}"); time.sleep(1.5)
+    gone = ev(tab, "[...document.querySelectorAll('body *')].filter(e => getComputedStyle(e).display === 'none')"
+                   ".map(e => e.textContent.trim()).join('|')")
+    t.ok("on the next visit, only those two go", gone == "Ad A|Sign up", gone)
+
+
 def main():
-    for case in [case_hidden, case_kept_on_screen, case_wider, case_left]:
+    for case in [case_hidden, case_kept_on_screen, case_wider, case_left, case_one_of_many]:
         print(f"— {case.__doc__}")
         try:
             case(t)

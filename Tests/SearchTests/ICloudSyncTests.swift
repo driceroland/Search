@@ -1014,4 +1014,91 @@ final class ICloudSyncTests: XCTestCase {
         let defs = try JSONDecoder().decode([PinDef].self, from: json([row("a", in: UUID())]))
         XCTAssertNotNil(defs.first?.folder)
     }
+
+    // MARK: - a Mac set up from another (Migration Assistant)
+
+    func testALedgerFromAnotherMacStartsAgainAsANewDevice() {
+        var kept = ICloudLedger(mac: "aaaa")
+        kept.joined = true
+        kept.values["spaces"] = Data("[]".utf8)
+        kept.state = Data("engine".utf8)
+        XCTAssertEqual(kept.claimed(by: "aaaa"), kept, "the same Mac keeps everything")
+        var older = kept
+        older.mac = nil
+        XCTAssertEqual(older.claimed(by: "bbbb").device, kept.device, "a ledger from before the fingerprint is this Mac's")
+        XCTAssertEqual(older.claimed(by: "bbbb").mac, "bbbb")
+        XCTAssertEqual(kept.claimed(by: nil), kept, "no fingerprint, nothing to tell")
+        let copied = kept.claimed(by: "bbbb")
+        XCTAssertNotEqual(copied.device, kept.device, "a copy gets an id of its own")
+        XCTAssertFalse(copied.joined, "and joins again")
+        XCTAssertNil(copied.state, "with an engine of its own")
+        XCTAssertEqual(copied.mac, "bbbb")
+        XCTAssertEqual(copied.folders, true)
+        XCTAssertEqual(copied.fresh().mac, "bbbb", "turned off and on, it stays this Mac's")
+        XCTAssertNotEqual(ThisMac.hash("X"), "X")
+        XCTAssertEqual(ThisMac.hash("X").count, 16)
+        XCTAssertNotNil(ThisMac.fingerprint, "IOKit tells this Mac")
+    }
+
+    func testTwoMacsWithTheSameCopiedLedgerSeeEachOther() async throws {
+        // Mac A's ledger, joined, as Migration Assistant copies it to Mac B.
+        let other = UUID()
+        var old = ICloudLedger(mac: "mac-a")
+        old.joined = true
+        old.values["device.\(old.device)"] = json(DeviceTabs(name: "A", platform: "mac", at: Date(), tabs: []))
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("icloud-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try JSONEncoder().encode(old).write(to: file)
+
+        // Mac B, launched with sync on: a new id, joining; B's own pins stay.
+        let mac = FakeMac(), engine = FakeEngine()
+        mac.pinList[first] = [pin("n", "https://notes.example/", id: other)]
+        defaults.set(true, forKey: ICloudSync.onKey)
+        let sync = ICloudSync(local: mac, defaults: defaults, file: file, available: true, mac: "mac-b") { owner, _ in
+            engine.sync = owner
+            return engine
+        }
+        sync.start()
+        XCTAssertNotEqual(sync.ledger.device, old.device)
+        XCTAssertEqual(sync.ledger.mac, "mac-b")
+        XCTAssertNotNil(sync.others[old.device], "A's tabs are another Mac's, not B's own")
+        await until { sync.joined }
+        XCTAssertEqual(mac.pins(first).map(\.id), [other], "this Mac's pins stay")
+        await until { engine.saved.contains(sync.ledger.deviceKey) }
+        XCTAssertFalse(engine.deleted.contains("device.\(old.device)"), "Mac A's tabs are left alone")
+        // Kept on disk, so the next launch is B again.
+        await until { (try? JSONDecoder().decode(ICloudLedger.self, from: Data(contentsOf: file)))?.device == sync.ledger.device }
+        sync.turnOff()
+
+        // Mac A itself keeps its id.
+        let fileA = FileManager.default.temporaryDirectory.appendingPathComponent("icloud-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: fileA) }
+        try JSONEncoder().encode(old).write(to: fileA)
+        defaults.set(true, forKey: ICloudSync.onKey)
+        let a = ICloudSync(local: FakeMac(), defaults: defaults, file: fileA, available: true, mac: "mac-a") { owner, _ in
+            engine.sync = owner
+            return engine
+        }
+        a.start()
+        XCTAssertEqual(a.ledger.device, old.device)
+        XCTAssertTrue(a.joined)
+        a.turnOff()
+        // A pair cloned before the fingerprint parts with off and on.
+        a.turnOn()
+        XCTAssertNotEqual(a.ledger.device, old.device)
+        XCTAssertEqual(a.ledger.mac, "mac-a")
+        a.turnOff()
+    }
+
+    func testTheFolderSyncsIdIsThisMacsOwnToo() {
+        let first = Sync.device(in: defaults, mac: "mac-a")
+        XCTAssertEqual(Sync.device(in: defaults, mac: "mac-a"), first)
+        XCTAssertEqual(Sync.device(in: defaults, mac: nil), first)
+        let copied = Sync.device(in: defaults, mac: "mac-b")
+        XCTAssertNotEqual(copied, first, "settings copied to another Mac: an id of its own")
+        XCTAssertEqual(Sync.device(in: defaults, mac: "mac-b"), copied)
+        defaults.removeObject(forKey: Sync.deviceMacKey)
+        XCTAssertEqual(Sync.device(in: defaults, mac: "mac-c"), copied, "an id from before the fingerprint stays")
+        XCTAssertEqual(defaults.string(forKey: Sync.deviceMacKey), "mac-c")
+    }
 }
