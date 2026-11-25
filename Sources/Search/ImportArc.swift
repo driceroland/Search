@@ -333,7 +333,7 @@ extension ImportSource {
         switch self {
         case .chromium(let source) where source.name == "Arc": return Arc.sidebar(profile: profile)
         case .mozilla(let source) where source.keepsSpaces: return Zen.sidebar(in: source, profile: profile)
-        default: return nil
+        default: return moreSidebar(profile: profile)
         }
     }
 
@@ -341,7 +341,7 @@ extension ImportSource {
         switch self {
         case .chromium(let source) where source.name == "Arc": return Arc.counts(profile: profile)
         case .mozilla(let source) where source.keepsSpaces: return Zen.counts(in: source, profile: profile)
-        default: return nil
+        default: return moreCounts(profile: profile)
         }
     }
 
