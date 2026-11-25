@@ -34,11 +34,14 @@ struct PaneStageView: NSViewRepresentable {
     var corner: CGFloat = 0
     /// The page filling the screen, if one is (see SplitStage.immersed).
     var immersed: Tab.ID? = nil
+    /// No ground: an empty page the window shows through.
+    var bare = false
 
     func makeNSView(context: Context) -> PaneStage { PaneStage() }
 
     func updateNSView(_ stage: PaneStage, context: Context) {
         stage.corner = corner
+        stage.bare = bare
         stage.immersedID = immersed
         stage.onCommit = commit
         stage.onFocus = focus
@@ -63,6 +66,9 @@ final class PaneStage: NSView {
             paint()
             needsLayout = true
         }
+    }
+    var bare = false {
+        didSet { if bare != oldValue { paint() } }
     }
     /// The ground under each page's card, a layer of the stage's own behind
     /// the page — never the page's, which is cut to its corners. It cast a
@@ -266,7 +272,7 @@ final class PaneStage: NSView {
     }
 
     override func updateLayer() {
-        layer?.backgroundColor = Palette.NS.ground.cgColor
+        layer?.backgroundColor = bare ? NSColor.clear.cgColor : Palette.NS.ground.cgColor
     }
 
     // MARK: - what is shown
@@ -375,14 +381,14 @@ final class PaneStage: NSView {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let edge = NSColor.labelColor.withAlphaComponent(CardEdge.edge).cgColor
             let ground = Palette.NS.ground.cgColor
-            layer?.backgroundColor = card ? NSColor.clear.cgColor : ground
+            layer?.backgroundColor = card || bare ? NSColor.clear.cgColor : ground
             let hairline = 1 / max(1, window?.backingScaleFactor ?? 2)
             for slot in slots {
                 slot.layer?.borderWidth = card ? hairline : 0
                 slot.layer?.borderColor = edge
             }
             for shadow in shadows {
-                shadow.isHidden = !card
+                shadow.isHidden = !card || bare
                 shadow.backgroundColor = ground
                 shadow.cornerRadius = corner
                 shadow.cornerCurve = .continuous

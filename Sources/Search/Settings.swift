@@ -711,6 +711,7 @@ struct SettingsPanel: View {
                 set: { on in withAnimation(Motion.glide) { prefs.roomyTabs = on } }
             ))
         case "sidebar.player": Switch(on: $prefs.showsPlayer)
+        case "sidebar.player.scroll": Switch(on: $prefs.rollsPlayerTitle)
         case "sidebar.foldButton": Switch(on: $prefs.foldButton)
         case "sidebar.narrowIcons":
             Switch(on: Binding(

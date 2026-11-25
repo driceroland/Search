@@ -689,7 +689,8 @@ struct ContentView: View {
                                                      height: chrome.height - roomed.height),
                                       scale: displayScale))
                 .modifier(CardEdge(on: cards && !browser.prefs.splitView, insets: cardInsets,
-                                   corner: cardCorner, scale: displayScale))
+                                   corner: cardCorner, scale: displayScale,
+                                   clears: browser.clearsBlank, front: browser.active))
                 // The page's own view cut to the card, on the same frames.
                 .modifier(CardClip(card: cardInsets, corner: cardCorner, scale: displayScale,
                                    on: cards))

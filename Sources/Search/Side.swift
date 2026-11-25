@@ -323,7 +323,7 @@ struct SideBar: View {
             .animation(doorsFoot ? SideBar.footIn : SideBar.doorsOut) {
                 $0.modifier(EndInset(bottom: footHeight))
             }
-            .padding(.bottom, (browser.player == nil ? 0 : rowHeight + SideBar.playerGap)
+            .padding(.bottom, (browser.player == nil ? 0 : PlayerRow.height(prefs) + SideBar.playerGap)
                      + (agentHere && !icons ? agentCard + SideBar.playerGap : 0)
                      + (updateHere ? rowHeight + SideBar.playerGap : 0))
 
@@ -815,8 +815,12 @@ struct SideBar: View {
         let pinLines = folders.isEmpty ? listed.map { PinRowLine.pin($0, depth: 0) }
             : Browser.pinRowLines(listed, folders: folders, showing: row.active)
         let (groups, rest) = row.drawn(groupsOn: prefs.usesTabGroups, splitView: prefs.splitView)
+        let keeps = showsLine(kept: pins.count + listed.count + groups.count, listed: listed.count, loose: rest.filter { !$0.isBlank }.count)
+        let divided = icons && !pins.isEmpty && !keeps
+        let folderFirst = icons && prefs.usesTabGroups && groups.first.map { !$0.group.collapsed } == true
+        let lead: CGFloat = icons && !pins.isEmpty && !(prefs.usesTabGroups && !groups.isEmpty) ? gap : 0
         let (lines, tints) = previewLines(row, pins: pinLines, groups: groups, rest: rest,
-                                         keeps: showsLine(kept: pins.count + listed.count + groups.count, listed: listed.count, loose: rest.filter { !$0.isBlank }.count))
+                                         keeps: keeps, divided: divided, keepLead: lead)
         let cells = pinCells(pins.count)
         return VStack(alignment: .leading, spacing: 0) {
             if !pins.isEmpty {
@@ -828,7 +832,16 @@ struct SideBar: View {
                         }
                     }
                 }
-                .padding(.bottom, icons ? 22 : 18)
+                .padding(.bottom, divided || icons ? 0 : pinsTail(folder: !folders.isEmpty || (prefs.usesTabGroups && !groups.isEmpty),
+                                                               rows: !listed.isEmpty || !rest.isEmpty))
+                if divided {
+                    Rectangle()
+                        .fill(Palette.divider)
+                        .frame(width: 28, height: Self.hairlineHeight)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 6)
+                        .padding(.bottom, folderFirst ? 6 - Self.folderPad : 6)
+                }
             }
             if showsMarks {
                 SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons)
@@ -894,7 +907,7 @@ struct SideBar: View {
     }
 
     private func previewLines(_ row: Parked, pins: [PinRowLine], groups: [Parked.DrawnGroup], rest: [Tab],
-                              keeps: Bool) -> ([PreviewLine], [PreviewTint]) {
+                              keeps: Bool, divided: Bool, keepLead: CGFloat) -> ([PreviewLine], [PreviewTint]) {
         let front = row.splits.first { pair in row.active.map(pair.tabs.contains) ?? false }?.left ?? row.active
         let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
         let lines: (Tab) -> CGFloat = { tab in
@@ -919,7 +932,7 @@ struct SideBar: View {
         }
         for drawn in groups {
             let top = y
-            if icons && !drawn.group.collapsed { y += Self.folderPad + (pinsDivided && drawn.group.id == browser.tabGroups.first?.id ? 0 : Self.folderLead) }
+            if icons && !drawn.group.collapsed { y += Self.folderPad + (divided && drawn.group.id == groups.first?.group.id ? 0 : Self.folderLead) }
             // A folded group showing none of its tabs still has its empty
             // stack under its heading, and the gap after it.
             add("heading-\(drawn.group.id)", .heading(drawn.group), heading, after: icons && !drawn.group.collapsed ? Self.folderPad : drawn.tabs.isEmpty ? 2 * gap : gap)
@@ -985,8 +998,20 @@ struct SideBar: View {
     /// frame late, and for one frame the whole column would drag the window.
     private var rowsEnd: CGFloat {
         let pins = browser.squarePins.count
-        let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + (pinsDivided ? 6 + dividerBelow + Self.hairlineHeight : icons ? 0 : Self.pinsGap)
+        let pinBlock = pins == 0 ? 0 : (pinCells(pins).map(\.maxY).max() ?? 0) + (pinsDivided ? 6 + dividerBelow + Self.hairlineHeight : icons ? 0 : pinsTailHere)
         return top + pinBlock + marksHeight + rowsHeight
+    }
+
+    /// The room under the squares, titles shown: more before a folder, a
+    /// row's own gap before rows, and none before the row that makes a tab,
+    /// which brings that gap itself — so a space with pins and one with
+    /// none keep it as far from what is above.
+    private func pinsTail(folder: Bool, rows: Bool) -> CGFloat {
+        folder ? Self.pinsGap : rows ? gap : 0
+    }
+    private var pinsTailHere: CGFloat {
+        pinsTail(folder: browser.showsPinFolderRows || (prefs.usesTabGroups && !browser.tabGroups.isEmpty),
+                 rows: !browser.listedPins.isEmpty || !looseTabs.isEmpty)
     }
 
     private static var hairlineHeight: CGFloat { 1 / (NSScreen.main?.backingScaleFactor ?? 2) }
@@ -1170,7 +1195,9 @@ struct SideBar: View {
         // A row of fewer than three keeps three places.
         let slots = prefs.fitsPins ? rows : rows.map { rows.count == 1 ? max($0, min(3, fits)) : $0 }
         let widths = slots.map { max(20, (room - CGFloat($0 - 1) * gap) / CGFloat($0)) }
-        let height = min(SideBar.square, widths.min() ?? SideBar.square)
+        // As tall as a tab's line: a space with pins and one that starts at
+        // its tabs begin with the same height, so nothing steps between them.
+        let height = min(rowHeight, widths.min() ?? rowHeight)
         var cells: [CGRect] = []
         for (row, n) in rows.enumerated() {
             for col in 0..<n {
@@ -2255,6 +2282,11 @@ private struct SideRow: View, Equatable {
                             // A pinned row away from its page: the icon takes
                             // it back (PinIconHome).
                             .modifier(PinIconHome(browser: browser, tab: tab, enabled: interactive))
+                    } else {
+                        Image(systemName: "globe")
+                            .font(.system(size: prefs.roomyTabs ? 13 : 12, weight: .regular))
+                            .foregroundStyle(colour.opacity(0.45))
+                            .frame(width: prefs.roomyTabs ? 17 : 15, height: prefs.roomyTabs ? 17 : 15)
                     }
                     if tab.bench, !tab.agent {
                         // A script's tab, not yours.
@@ -2539,7 +2571,7 @@ struct KeepLine: View {
                 .transition(.opacity)
             }
         }
-        .padding(.horizontal, compact ? 14 : 28)
+        .padding(.horizontal, compact ? 14 : 10)
         .frame(height: KeepLine.height(compact: compact))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -2587,6 +2619,9 @@ extension EnvironmentValues {
 
 struct Door: View {
     static let width: CGFloat = 32
+    /// What lights under the pointer, on this button and on every other of
+    /// the sidebar's foot and the top bar: a square with soft corners.
+    static let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
     @Environment(\.greys) private var greys
     @Environment(\.doorWidth) private var doorWidth
     @Environment(\.inkDoors) private var inkDoors
@@ -2624,11 +2659,11 @@ struct Door: View {
                         RoundedRectangle(cornerRadius: Metrics.rowRadius * 32 / 34, style: .continuous)
                             .fill(hovering ? greys.hover : .clear)
                     } else {
-                        Capsule()
+                        Door.shape
                             .fill(on ? greys.wash : (hovering ? greys.hover : .clear))
                     }
                 }
-                .contentShape(prominent ? AnyShape(RoundedRectangle(cornerRadius: Metrics.rowRadius * 32 / 34, style: .continuous)) : AnyShape(Capsule()))
+                .contentShape(prominent ? AnyShape(RoundedRectangle(cornerRadius: Metrics.rowRadius * 32 / 34, style: .continuous)) : AnyShape(Door.shape))
         }
         .buttonStyle(.plain)
         .simultaneousGesture(

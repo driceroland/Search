@@ -483,6 +483,14 @@ struct IconLabelLayer: View {
                     .foregroundStyle(tab.asleep ? Palette.ink.opacity(putAway ? 0.45 : 0.7) : Palette.ink)
                     .lineLimit(1)
                     .frame(maxWidth: 240, alignment: .leading)
+                // The tile's corner speaker, said again out here, where the
+                // name covers it. To be seen: a press is the tile's.
+                if !tab.loading && (tab.noisy || tab.muted) {
+                    Image(systemName: tab.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 18)
+                }
             }
             .padding(.leading, 10)
             .padding(.trailing, 10)

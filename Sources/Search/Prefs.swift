@@ -299,6 +299,10 @@ final class Preferences: ObservableObject {
     @Published var showsPlayer: Bool {
         didSet { store.set(showsPlayer, forKey: "sidebar.player") }
     }
+    /// A title too long for that card rolls past while the pointer is on it.
+    @Published var rollsPlayerTitle: Bool {
+        didSet { store.set(rollsPlayerTitle, forKey: "sidebar.player.scroll") }
+    }
     /// One tab's line in the column, and the size its title is set in.
     var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 28 }
     var sideTitle: CGFloat { roomyTabs ? 14 : 12.5 }
@@ -1330,6 +1334,7 @@ final class Preferences: ObservableObject {
         narrowsToIcons = store.bool(forKey: "sidebar.narrowIcons")
         narrowed = store.bool(forKey: "sidebar.narrowed")
         showsPlayer = store.bool(forKey: "sidebar.player")
+        rollsPlayerTitle = (store.object(forKey: "sidebar.player.scroll") as? Bool) ?? true
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true

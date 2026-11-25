@@ -276,11 +276,18 @@ final class Pulling: ObservableObject {
 struct ReadingFill: View {
     @ObservedObject var meter: Reading
     let width: CGFloat
+    /// Clear of the row's round corners.
+    private static let inset: CGFloat = 10
 
     var body: some View {
-        Rectangle()
-            .fill(Palette.ink.opacity(0.055))
-            .frame(width: width * meter.value)
+        // A short line along the foot. As a wash over the row's whole
+        // height, its hard end read as the highlight drawn in two pieces.
+        Capsule()
+            .fill(Palette.ink.opacity(0.3))
+            .frame(width: max(0, width - 2 * Self.inset) * meter.value, height: 2)
+            .padding(.leading, Self.inset)
+            .padding(.bottom, 2)
+            .frame(maxHeight: .infinity, alignment: .bottom)
             .animation(.easeOut(duration: 0.15), value: meter.value)
     }
 }

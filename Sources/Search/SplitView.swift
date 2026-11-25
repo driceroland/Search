@@ -52,7 +52,8 @@ struct SplitStage: View {
             accounts: browser.suggesting.map { (browser, $0) },
             pairing: browser.applePairing.map { (browser, $0) },
             corner: round,
-            immersed: immersed
+            immersed: immersed,
+            bare: browser.clearsBlank && shown.count < 2 && shown.first?.isBlank != false
         )
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {

@@ -611,6 +611,10 @@ struct CardEdge: ViewModifier {
     /// the white of the page meets the window's grey on a sharp line. Zero
     /// keeps the soft card other cards are (the side panel, downloads).
     var scale: CGFloat = 0
+    /// No ground while nothing is open, or the tab in front is empty (see
+    /// Browser.clearsBlank).
+    var clears = false
+    var front: Tab? = nil
 
     // One shape of view, on or off: a page whose view were rebuilt as the
     // card comes and goes (the tabs across the top, a video taking the
@@ -624,7 +628,11 @@ struct CardEdge: ViewModifier {
             .clipShape(shape)
             .background {
                 if crisp {
-                    shape.fill(on ? Palette.ground : .clear)
+                    if !clears {
+                        shape.fill(on ? Palette.ground : .clear)
+                    } else if let front {
+                        UnlessBlank(tab: front) { shape.fill(on ? Palette.ground : .clear) }
+                    }
                 } else {
                     shape
                         .fill(on ? Palette.ground : .clear)
@@ -643,6 +651,17 @@ struct CardEdge: ViewModifier {
     static let shadow: Double = 0.24
     static let blur: CGFloat = 10
     static let edge: Double = 0
+}
+
+/// What is drawn only under a tab with something on it, watching the tab so
+/// it comes back as the page does.
+private struct UnlessBlank<Content: View>: View {
+    @ObservedObject var tab: Tab
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if !tab.isBlank { content() }
+    }
 }
 
 /// The card's outline: round at its corners, or, off, a rectangle reaching
