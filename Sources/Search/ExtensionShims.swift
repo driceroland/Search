@@ -35,6 +35,38 @@ enum ExtensionShims {
     /// 230 KB, almost all of it for the worker and the extension's pages,
     /// and a content script never runs a line of that part (see contentShim).
     nonisolated static let contentFile = "search-shim-content.js"
+    /// declarativeContent's gate (see the shim): registered for the sites an
+    /// extension's RequestContentScript rules name, in a page's top frame it
+    /// asks the worker which rules hold there, waits for their css
+    /// selectors as Chrome does, and asks for those rules' scripts once
+    /// each.
+    nonisolated static let declarativeFile = "search-declarative.js"
+    nonisolated static let declarativeGate = #"""
+    (() => {
+      if (window !== window.top || globalThis.__searchDeclarative) return;
+      globalThis.__searchDeclarative = true;
+      const runtime = (globalThis.chrome || globalThis.browser).runtime;
+      const page = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const ask = (m) => Promise.resolve(runtime.sendMessage({ __searchDeclarative: { ...m, page } }));
+      const holds = (lists) => lists.some((css) => css.every((s) => { try { return !!document.querySelector(s); } catch (e) { return false; } }));
+      ask({ check: true }).then((wanted) => {
+        if (!Array.isArray(wanted) || !wanted.length) return;
+        const left = new Map(wanted.map((w) => [w.rule, w.css]));
+        let observer = null, queued = false;
+        const look = () => {
+          queued = false;
+          const ready = [];
+          for (const [rule, lists] of left) if (holds(lists)) { ready.push(rule); left.delete(rule); }
+          if (ready.length) ask({ inject: ready }).catch(() => {});
+          if (!left.size && observer) { observer.disconnect(); observer = null; }
+        };
+        look();
+        if (!left.size) return;
+        observer = new MutationObserver(() => { if (!queued) { queued = true; setTimeout(look, 50); } });
+        observer.observe(document.documentElement || document, { childList: true, subtree: true, attributes: true });
+      }).catch(() => {});
+    })();
+    """#
     nonisolated static let contentEnd = "/* Search: a content script's shim ends here */"
     /// Search's passkey patch, put first in every script an extension runs in
     /// a page's own world (see Passkeys.swift, and `first` in the script).
@@ -53,7 +85,7 @@ enum ExtensionShims {
     /// extensions prepared before are prepared again.
     nonisolated private static let preparation = "8"
     nonisolated static let version: String = {
-        SHA256.hash(data: Data((script + PasskeyRelay.page + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
+        SHA256.hash(data: Data((script + PasskeyRelay.page + declarativeGate + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
 
     /// Chrome's least for a Manifest V3 extension's own pages, whatever its
@@ -121,15 +153,17 @@ enum ExtensionShims {
         try script.write(to: folder.appendingPathComponent(file), atomically: true, encoding: .utf8)
         try contentShim(script).write(to: folder.appendingPathComponent(contentFile), atomically: true, encoding: .utf8)
         try PasskeyRelay.page.write(to: folder.appendingPathComponent(passkeys), atomically: true, encoding: .utf8)
+        try declarativeGate.write(to: folder.appendingPathComponent(declarativeFile), atomically: true, encoding: .utf8)
 
         // Native messaging is how the shim reaches the browser; user scripts
-        // are carried out through WebKit's registered content scripts, which
-        // need scripting. What is added is written down, so the extension is
+        // and declarativeContent's RequestContentScript are carried out
+        // through WebKit's registered content scripts, which need scripting. What is added is written down, so the extension is
         // described by what it asked for, not by what Search gave it.
         var permissions = manifest["permissions"] as? [Any] ?? []
         let asked = Set(permissions.compactMap { $0 as? String })
         var added = (try? JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent(".search-added")))) as? [String] ?? []
-        for needed in ["nativeMessaging"] + (asked.contains("userScripts") ? ["scripting"] : []) where !asked.contains(needed) {
+        let injects = asked.contains("userScripts") || asked.contains("declarativeContent")
+        for needed in ["nativeMessaging"] + (injects ? ["scripting"] : []) where !asked.contains(needed) {
             permissions.append(needed)
             added.append(needed)
         }
@@ -1975,6 +2009,9 @@ enum ExtensionShims {
           })();
         });
       }
+      // The worker's answer to the declarativeContent gate in a page (see
+      // declarativeGate), set where the worker's part of the shim makes it.
+      let declarativeAnswer = null;
       const gather = (event, told) => {
         if (!event || typeof event.addListener !== "function") return;
         const add = event.addListener.bind(event);
@@ -2055,6 +2092,15 @@ enum ExtensionShims {
           // Only the worker answers; any other page stays out of it.
           if (message && message.__searchPing === true) {
             if (background) { sendResponse("pong"); return; }
+            return true;
+          }
+          // The declarativeContent gate in one of the extension's content
+          // scripts asking which rules hold for its page, or to have them
+          // carried out (see declarativeGate). Only the worker says.
+          if (internalMessages && !local && message && message.__searchDeclarative && typeof message.__searchDeclarative === "object") {
+            if (!sender || sender.id !== runtime.id || fromOwnPages(sender)) return;
+            if (!background || !declarativeAnswer) { setTimeout(() => respond(undefined), 10000); return true; }
+            declarativeAnswer(message.__searchDeclarative, sender).then((v) => respond(v ?? null), () => respond(null));
             return true;
           }
           // One of the extension's pages framed in a website asking whether
@@ -3295,13 +3341,201 @@ enum ExtensionShims {
       put2("instanceID", { getID: refuse("instanceID.getID"), getToken: refuse("instanceID.getToken"),
         deleteID: refuse("instanceID.deleteID"), deleteToken: refuse("instanceID.deleteToken"),
         getCreationTime: refuse("instanceID.getCreationTime"), onTokenRefresh: event() });
-      // Rules that show a button on matching pages: every button is always
-      // shown in Search, so there is nothing for them to do.
-      const rules = () => ({ addRules: (r, cb) => { if (cb) cb(r || []); }, removeRules: (i, cb) => { if (cb) cb(); },
-        getRules: (i, cb) => { const f = typeof i === "function" ? i : cb; if (f) f([]); } });
-      put2("declarativeContent", { onPageChanged: rules(),
-        PageStateMatcher: function (o) { Object.assign(this, o); }, ShowAction: function () {}, ShowPageAction: function () {},
-        SetIcon: function (o) { Object.assign(this, o); }, RequestContentScript: function (o) { Object.assign(this, o); } });
+      // chrome.declarativeContent. Its rules are kept by the browser
+      // (_search/declarative.json), as Chrome keeps them across restarts.
+      // ShowAction, ShowPageAction and SetIcon have nothing to do: every
+      // button is always shown in Search. RequestContentScript — how
+      // Everhour puts its timer into Linear once it is given linear.app
+      // (idea 1198) — is carried out: a small gate (declarativeGate) is
+      // registered as a content script for the sites the rules name, so
+      // WebKit runs it only where the extension has access; it asks the
+      // worker which rules hold for its page, waits for their css
+      // selectors, and the worker then injects the rule's own files into
+      // that tab with scripting, which again only reaches pages and frames
+      // the extension has access to.
+      if (declares("declarativeContent")) {
+        const type = (name) => "declarativeContent." + name;
+        const make = (name) => function (o) { Object.assign(this, o || {}); this.instanceType = type(name); };
+        const RCS = type("RequestContentScript");
+        const kept = () => native("declarativeContent.list", []).then((l) => Array.isArray(l) ? l : [], () => []);
+        let queue = Promise.resolve();
+        const serial = (f) => { const p = queue.then(f); queue = p.catch(() => {}); return p; };
+        // A UrlFilter, as Chrome reads one, against an address without its
+        // fragment. A key it doesn't know matches nothing.
+        const urlMatches = (f, href) => {
+          if (f == null) return true;
+          if (typeof f !== "object") return false;
+          let u; try { u = new URL(href); } catch (e) { return false; }
+          const host = u.hostname.toLowerCase(), path = u.pathname, query = u.search.replace(/^\?/, "");
+          const url = u.href.split("#")[0];
+          const port = u.port ? Number(u.port) : ({ "http:": 80, "https:": 443, "ws:": 80, "wss:": 443, "ftp:": 21 })[u.protocol];
+          const low = (v) => String(v).toLowerCase();
+          const regex = (v, text) => { try { return new RegExp(String(v)).test(text); } catch (e) { return false; } };
+          const tests = {
+            hostContains: (v) => ("." + host).includes(low(v)), hostEquals: (v) => host === low(v),
+            hostPrefix: (v) => host.startsWith(low(v)), hostSuffix: (v) => host.endsWith(low(v)),
+            pathContains: (v) => path.includes(String(v)), pathEquals: (v) => path === String(v),
+            pathPrefix: (v) => path.startsWith(String(v)), pathSuffix: (v) => path.endsWith(String(v)),
+            queryContains: (v) => query.includes(String(v)), queryEquals: (v) => query === String(v),
+            queryPrefix: (v) => query.startsWith(String(v)), querySuffix: (v) => query.endsWith(String(v)),
+            urlContains: (v) => url.includes(String(v)), urlEquals: (v) => url === String(v),
+            urlPrefix: (v) => url.startsWith(String(v)), urlSuffix: (v) => url.endsWith(String(v)),
+            urlMatches: (v) => regex(v, url), originAndPathMatches: (v) => regex(v, u.origin + path),
+            schemes: (v) => Array.isArray(v) && v.map(low).includes(u.protocol.slice(0, -1)),
+            ports: (v) => Array.isArray(v) && v.some((p) => Array.isArray(p) ? port >= p[0] && port <= p[1] : port === p),
+          };
+          return Object.entries(f).every(([k, v]) => k === "instanceType" || (tests[k] ? tests[k](v) : false));
+        };
+        // Where the gate has to run for a condition: as narrow as its
+        // UrlFilter allows a match pattern to say, never narrower. What it
+        // can't say runs the gate on every site the extension reaches, and
+        // the worker's check above decides.
+        const patternsOf = (f) => {
+          if (!f || typeof f !== "object") return ["*://*/*"];
+          let host = "*", scheme = "*";
+          const parsed = (v) => { try { return new URL(String(v)); } catch (e) { return null; } };
+          // A prefix names its host only when something follows the host:
+          // "https://linear.app" alone also starts "https://linear.app.example".
+          const whole = (v) => /^[a-z][a-z0-9+.-]*:\/\/[^/?#:]+[/?#:]/i.test(String(v));
+          if (typeof f.hostEquals === "string") host = f.hostEquals.toLowerCase();
+          else if (typeof f.urlEquals === "string" && parsed(f.urlEquals)) host = parsed(f.urlEquals).hostname;
+          else if (typeof f.urlPrefix === "string" && whole(f.urlPrefix) && parsed(f.urlPrefix)) host = parsed(f.urlPrefix).hostname;
+          else if (typeof f.hostSuffix === "string" && /^\.?[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(f.hostSuffix)) host = "*." + f.hostSuffix.toLowerCase().replace(/^\./, "");
+          const named = typeof f.urlEquals === "string" ? parsed(f.urlEquals) : typeof f.urlPrefix === "string" && whole(f.urlPrefix) ? parsed(f.urlPrefix) : null;
+          if (named && /^https?:$/.test(named.protocol)) scheme = named.protocol.slice(0, -1);
+          const schemes = Array.isArray(f.schemes) ? f.schemes.map((x) => String(x).toLowerCase()).filter((x) => x === "http" || x === "https") : null;
+          if (schemes && !schemes.length) return [];
+          return (schemes && scheme === "*" ? schemes : [scheme]).map((s) => s + "://" + host + "/*");
+        };
+        const injecting = (r) => (r.actions || []).some((a) => a && a.instanceType === RCS);
+        // What went wrong, for the bench in a test run (`./bench extensions`).
+        const told = (e) => { if (__SEARCH_VERBOSE__) native("debug.error", ["declarativeContent: " + String(e && e.message || e)]).catch(() => {}); };
+        const GATE = "search-declarative";
+        // The gate registered for exactly the sites the rules name now.
+        const sync = async (rules) => {
+          const scripting = chrome.scripting;
+          if (!scripting || typeof scripting.registerContentScripts !== "function") return;
+          const matches = [...new Set(rules.filter(injecting).flatMap((r) => (r.conditions || []).flatMap((c) => patternsOf(c && c.pageUrl))))].sort();
+          const had = (await scripting.getRegisteredContentScripts({ ids: [GATE] }).catch(() => []))[0];
+          const same = had && JSON.stringify([...(had.matches || [])].sort()) === JSON.stringify(matches);
+          if (same) return;
+          if (had) await scripting.unregisterContentScripts({ ids: [GATE] }).catch(() => {});
+          if (!matches.length) return;
+          await scripting.registerContentScripts([{ id: GATE, matches, js: ["search-declarative.js"], runAt: "document_idle",
+            allFrames: false, persistAcrossSessions: true }]);
+        };
+        const plain = (o) => JSON.parse(JSON.stringify(o ?? null));
+        const pick = (ids, rules) => Array.isArray(ids) ? rules.filter((r) => ids.includes(r.id)) : rules;
+        const callbackLast = (f) => (...args) => {
+          const callback = args.length && typeof args[args.length - 1] === "function" ? args.pop() : null;
+          const p = f(...args);
+          if (!callback) return p;
+          p.then((v) => callback(v), (e) => withLastError(e, callback));
+        };
+        const onPageChanged = Object.assign(event(), {
+          addRules: callbackLast((rules) => serial(async () => {
+            const have = await kept();
+            const taken = new Set(have.map((r) => r.id));
+            let n = have.length;
+            const added = (Array.isArray(rules) ? rules : []).map((r) => {
+              const rule = plain(r) || {};
+              if (!Array.isArray(rule.conditions) || !rule.conditions.length) throw new Error("Rule has no conditions");
+              if (!Array.isArray(rule.actions) || !rule.actions.length) throw new Error("Rule has no actions");
+              // Plain objects, made without the constructors, read as what
+              // they carry.
+              rule.conditions = rule.conditions.map((c) => ({ ...c, instanceType: c.instanceType || type("PageStateMatcher") }));
+              rule.actions = rule.actions.map((a) => ({ ...a, instanceType: a.instanceType || (a.js || a.css ? RCS : type("ShowAction")) }));
+              if (rule.id == null) { while (taken.has("_" + n + "_")) n++; rule.id = "_" + n + "_"; }
+              rule.id = String(rule.id);
+              if (taken.has(rule.id)) throw new Error("Duplicate rule ID: " + rule.id);
+              taken.add(rule.id);
+              if (typeof rule.priority !== "number") rule.priority = 100;
+              return rule;
+            });
+            const all = [...have, ...added];
+            await native("declarativeContent.save", [all]);
+            await sync(all).catch(told);
+            return added;
+          })),
+          removeRules: callbackLast((ids) => serial(async () => {
+            const have = await kept();
+            const left = Array.isArray(ids) ? have.filter((r) => !ids.includes(r.id)) : [];
+            await native("declarativeContent.save", [left]);
+            await sync(left).catch(told);
+          })),
+          getRules: callbackLast((ids) => kept().then((l) => pick(typeof ids === "function" ? null : ids, l))),
+        });
+        put2("declarativeContent", { onPageChanged,
+          PageStateMatcher: make("PageStateMatcher"), ShowAction: make("ShowAction"), ShowPageAction: make("ShowPageAction"),
+          SetIcon: make("SetIcon"), RequestContentScript: make("RequestContentScript") });
+
+        // The rule's files into the gate's tab: its top frame, or every frame
+        // the extension reaches with allFrames, about:blank ones only with
+        // matchAboutBlank. The content script's shim goes first, as for
+        // the manifest's own (it steps aside where it already runs).
+        const inject = async (tabId, action) => {
+          const scripting = chrome.scripting;
+          const js = (Array.isArray(action.js) ? action.js : []).map(String);
+          const css = (Array.isArray(action.css) ? action.css : []).map(String);
+          let frameIds = [0];
+          if (action.allFrames) {
+            const found = await scripting.executeScript({ target: { tabId, allFrames: true }, func: () => location.href });
+            // Frames it can't reach answer with an error and are left out.
+            // WebKit counts about:blank frames among those whatever their
+            // parent, so matchAboutBlank can't reach them yet.
+            frameIds = (found || []).filter((r) => r && !r.error && (action.matchAboutBlank || !/^about:/.test(String(r.result)))).map((r) => r.frameId);
+            if (!frameIds.length) return;
+          }
+          const target = { tabId, frameIds };
+          if (css.length) await scripting.insertCSS({ target, files: css }).catch(() => {});
+          if (js.length) await scripting.executeScript({ target, files: ["search-shim-content.js", ...js] });
+        };
+        // Which of its page's rules hold, as far as the address goes ({check}),
+        // with the css each condition waits for; then ({inject}) those
+        // whose selectors are there, each once for that page. Only from a
+        // tab's top frame, only on a site it may still reach.
+        const done = new Map();
+        if (background) declarativeAnswer = async (asked, sender) => {
+          const tabId = sender && sender.tab && sender.tab.id;
+          if (typeof tabId !== "number" || sender.frameId !== 0 || typeof sender.url !== "string") return null;
+          const href = sender.url;
+          // As a match pattern names a site: no port.
+          let site; try { const u = new URL(href); site = u.protocol + "//" + u.hostname + "/*"; } catch (e) { return null; }
+          if (!/^https?:/.test(site)) return null;
+          const reaches = await Promise.resolve(chrome.permissions.contains({ origins: [site] })).catch(() => false);
+          if (!reaches) return [];
+          const holding = (await kept()).filter(injecting)
+            .map((r) => ({ rule: r, conditions: (r.conditions || []).filter((c) => c && c.instanceType === type("PageStateMatcher") && urlMatches(c.pageUrl, href) && c.isBookmarked !== true) }))
+            .filter((x) => x.conditions.length);
+          if (Array.isArray(asked.inject)) {
+            // One page, one injection per rule: a gate asks once, and a page
+            // loaded again is a new address-and-time.
+            const page = tabId + " " + href + " " + String(sender.documentId || asked.page || "");
+            for (const { rule } of holding.filter((x) => asked.inject.includes(x.rule.id))) {
+              const key = page + " " + rule.id;
+              if (done.has(key)) continue;
+              done.set(key, Date.now());
+              if (done.size > 500) done.delete(done.keys().next().value);
+              for (const action of rule.actions.filter((a) => a && a.instanceType === RCS)) {
+                await inject(tabId, action).catch(told);
+              }
+            }
+            return true;
+          }
+          const said = holding.map(({ rule, conditions }) => ({ rule: rule.id,
+            css: conditions.map((c) => (Array.isArray(c.css) ? c.css : []).map(String)) }));
+          return said;
+        };
+        // Kept in step with what the browser keeps, each time the worker
+        // starts: a registration WebKit didn't keep comes back.
+        if (background) kept().then((l) => sync(l)).catch(told);
+      } else {
+        const rules = () => ({ addRules: (r, cb) => { if (cb) cb(r || []); }, removeRules: (i, cb) => { if (cb) cb(); },
+          getRules: (i, cb) => { const f = typeof i === "function" ? i : cb; if (f) f([]); } });
+        put2("declarativeContent", { onPageChanged: rules(),
+          PageStateMatcher: function (o) { Object.assign(this, o); }, ShowAction: function () {}, ShowPageAction: function () {},
+          SetIcon: function (o) { Object.assign(this, o); }, RequestContentScript: function (o) { Object.assign(this, o); } });
+      }
 
       // WebKit serves an extension's .wasm files without the application/wasm
       // type, so compiling one as it streams in fails. Most code falls back
@@ -4823,6 +5057,8 @@ enum ExtensionShims {
           const rest = ours ? origins.filter((o) => !every(o)) : origins;
           const done = theirs.length || rest.length ? await remove({ permissions: theirs, origins: rest }) : true;
           if (done && ours) await native("permissions.removeWebsites", []);
+          // Not given again at the next launch (see Extensions.optionalKey).
+          if (done && (theirs.length || origins.length)) await native("permissions.forget", [theirs, origins]).catch(() => {});
           return done;
         }));
       }
@@ -6467,6 +6703,16 @@ enum ExtensionShims {
                 if age > 60 { try? FileManager.default.removeItem(at: file) }
             }
             return nil
+        // declarativeContent's rules, kept as Chrome keeps them: across
+        // restarts, until removed (see the shim).
+        case "declarativeContent.list":
+            return (try? JSONSerialization.jsonObject(with: Data(contentsOf: Extensions.folder(for: id).appendingPathComponent("_search/declarative.json")))) ?? []
+        case "declarativeContent.save":
+            let folder = Extensions.folder(for: id).appendingPathComponent("_search", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let rules = first as? [[String: Any]] ?? []
+            try JSONSerialization.data(withJSONObject: rules).write(to: folder.appendingPathComponent("declarative.json"), options: .atomic)
+            return nil
         case "userScripts.world", "userScripts.worlds":
             let url = Extensions.folder(for: id).appendingPathComponent("_search/worlds.json")
             var worlds = (try? JSONSerialization.jsonObject(with: Data(contentsOf: url))) as? [[String: Any]] ?? []
@@ -6553,6 +6799,7 @@ enum ExtensionShims {
             for permission in missing { context.setPermissionStatus(.grantedExplicitly, for: permission) }
             for pattern in unreached { Extensions.grant(pattern, in: context) }
             Extensions.fence(context)
+            Extensions.rememberOptional(sites: unreached, permissions: missing, for: id)
             return true
         case "permissions.removeWebsites":
             // What fence() keeps of <all_urls> once it is given back, and
@@ -6572,6 +6819,11 @@ enum ExtensionShims {
             context.grantedPermissionMatchPatterns = left
             Extensions.rebuildScripts(context)
             return true
+        case "permissions.forget":
+            // Given back through WebKit (see the shim's permissions.remove):
+            // not given again at the next launch.
+            Extensions.forgetOptional(sites: (args.dropFirst().first as? [String]) ?? [], permissions: (first as? [String]) ?? [], for: id)
+            return nil
         case "permissions.remove":
             let gone = Set((first as? [String]) ?? [])
             let had = Store.settings.stringArray(forKey: "extensions.granted.\(id)") ?? []

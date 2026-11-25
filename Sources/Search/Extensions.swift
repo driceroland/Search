@@ -685,6 +685,8 @@ final class Extensions: NSObject, ObservableObject {
             }
             // Every site it asked for, unless "Runs on" says fewer.
             Extensions.grantSites(context, as: SiteAccess.of(item.id))
+            // And what it was given since through permissions.request.
+            Extensions.restoreOptional(context, as: SiteAccess.of(item.id))
             clickGrants[item.id] = nil
             // Its own sign-in address, https://<id>.chromiumapp.org, which
             // is never loaded (see ExtensionAuth.handOver). WebKit shows an
@@ -1212,6 +1214,7 @@ final class Extensions: NSObject, ObservableObject {
         errors[id] = nil
         Extensions.setSettings([:], for: id)
         Store.settings.removeObject(forKey: "extensions.granted.\(id)")
+        Store.settings.removeObject(forKey: Extensions.optionalKey(id))
         loadsThisRun.remove(id)
         loadedBefore.remove(id)
         installing.remove(id)
@@ -1596,6 +1599,56 @@ final class Extensions: NSObject, ObservableObject {
     /// (file:///*) would be granted with the rest.
     nonisolated static func reachesFiles(_ pattern: WKWebExtension.MatchPattern) -> Bool {
         pattern.scheme?.lowercased() == "file"
+    }
+
+    // MARK: what permissions.request gave
+
+    /// What an extension was given through permissions.request, sites and
+    /// WebKit's own permissions ("site:" and "permission:" each), kept for
+    /// its next loads. WebKit's grants last only as long as the context, and
+    /// a context is made afresh at every launch: Everhour's linear.app was
+    /// gone after a relaunch, and with it its timer (idea 1198). Chrome keeps
+    /// them until the extension gives them back (permissions.remove) or is
+    /// removed.
+    static func optionalKey(_ id: String) -> String { "extensions.optional.\(id)" }
+
+    static func rememberOptional(sites: some Sequence<WKWebExtension.MatchPattern> = [], permissions: some Sequence<WKWebExtension.Permission> = [], for id: String) {
+        let items = sites.map { "site:" + $0.string } + permissions.map { "permission:" + $0.rawValue }
+        guard !items.isEmpty else { return }
+        let had = Store.settings.stringArray(forKey: optionalKey(id)) ?? []
+        Store.settings.set(Array(Set(had + items)).sorted(), forKey: optionalKey(id))
+    }
+
+    /// Given back: those sites (and every website, for <all_urls> or
+    /// *://*/*, held as each other) and permissions.
+    static func forgetOptional(sites: [String], permissions: [String], for id: String) {
+        var gone = Set(sites.map { "site:" + $0 } + permissions.map { "permission:" + $0 })
+        if gone.contains("site:<all_urls>") || gone.contains("site:*://*/*") { gone.formUnion(["site:<all_urls>", "site:*://*/*"]) }
+        let had = Store.settings.stringArray(forKey: optionalKey(id)) ?? []
+        let left = had.filter { !gone.contains($0) }
+        if left.count != had.count { Store.settings.set(left, forKey: optionalKey(id)) }
+    }
+
+    /// Given again as it loads: only what its manifest still offers as
+    /// optional, never extension pages or files, and sites only while "Runs
+    /// on" is every site it asks for — a narrower choice of yours stands.
+    static func restoreOptional(_ context: WKWebExtensionContext, as access: SiteAccess) {
+        let kept = Store.settings.stringArray(forKey: optionalKey(context.uniqueIdentifier)) ?? []
+        guard !kept.isEmpty else { return }
+        let found = context.webExtension
+        let offered = found.optionalPermissionMatchPatterns.union(found.allRequestedMatchPatterns)
+        for item in kept {
+            if item.hasPrefix("permission:") {
+                let permission = WKWebExtension.Permission(rawValue: String(item.dropFirst("permission:".count)))
+                if found.optionalPermissions.contains(permission) || found.requestedPermissions.contains(permission) {
+                    context.setPermissionStatus(.grantedExplicitly, for: permission)
+                }
+            } else if item.hasPrefix("site:"), access.mode == .all,
+                      let pattern = try? WKWebExtension.MatchPattern(string: String(item.dropFirst("site:".count))),
+                      !withheld(pattern), offered.contains(where: { $0.matches(pattern, options: .ignorePaths) }) {
+                grant(pattern, in: context)
+            }
+        }
     }
 
     /// What no extension is given or asked about: extension pages and files.
@@ -2236,7 +2289,9 @@ extension Extensions: WKWebExtensionControllerDelegate {
 
     func webExtensionController(_ controller: WKWebExtensionController, promptForPermissions permissions: Set<WKWebExtension.Permission>, in tab: (any WKWebExtensionTab)?, for extensionContext: WKWebExtensionContext) async -> (Set<WKWebExtension.Permission>, Date?) {
         let detail = permissions.map(\.rawValue).sorted().joined(separator: ", ")
-        return await ask("asks for more access", detail: detail, context: extensionContext) ? (permissions, nil) : ([], nil)
+        guard await ask("asks for more access", detail: detail, context: extensionContext) else { return ([], nil) }
+        Extensions.rememberOptional(permissions: permissions, for: extensionContext.uniqueIdentifier)
+        return (permissions, nil)
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, promptForPermissionToAccess urls: Set<URL>, in tab: (any WKWebExtensionTab)?, for extensionContext: WKWebExtensionContext) async -> (Set<URL>, Date?) {
@@ -2257,6 +2312,7 @@ extension Extensions: WKWebExtensionControllerDelegate {
         let all = wanted.contains { $0.matchesAllHosts || $0.matchesAllURLs }
         let what = all ? "every website" : wanted.map(\.string).sorted().joined(separator: ", ")
         guard await ask("wants to read and change \(what)", detail: "Until you remove the extension.", context: extensionContext) else { return ([], nil) }
+        Extensions.rememberOptional(sites: wanted, for: extensionContext.uniqueIdentifier)
         // Given only once this returns: fenced again right after.
         DispatchQueue.main.async { Extensions.fence(extensionContext) }
         return (wanted, nil)
