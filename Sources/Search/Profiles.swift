@@ -328,7 +328,7 @@ enum ProfileMenu {
 
     /// Its items, for the badge's menu and the dot's.
     static func items(for browser: Browser) -> [NSMenuItem] {
-        var items: [NSMenuItem] = []
+        var items: [NSMenuItem] = [.sectionHeader(title: "Profiles")]
         for profile in Profiles.shared.list {
             items.append(item(profile.name, checked: profile.id == browser.profileID) {
                 if profile.id != browser.profileID { Browsers.open(profile: profile.id) }

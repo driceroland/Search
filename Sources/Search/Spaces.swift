@@ -1188,26 +1188,30 @@ enum SpaceMenu {
             }
         }
         var index = 0
-        let headed = lists.contains { $0.spaces.count > 1 }
-        for list in lists where !list.spaces.isEmpty {
-            if headed, let name = list.name { menu.addItem(.sectionHeader(title: name)) }
+        let several = lists.count > 1
+        menu.addItem(.sectionHeader(title: several ? "Profiles and Spaces" : "Spaces"))
+        for (at, list) in lists.enumerated() where !list.spaces.isEmpty {
+            if several, let name = list.name {
+                if at > 0 { menu.addItem(.separator()) }
+                menu.addItem(.sectionHeader(title: name))
+            }
             for space in list.spaces {
-                let entry = NSMenuItem(title: space.name, action: nil, keyEquivalent: "")
-                entry.image = image(space.symbol, tint: space.tint)
-                entry.state = space.id == browser.spaceID ? .on : .off
-                let sub = NSMenu()
-                sub.autoenablesItems = false
-                sub.addItem(item("Switch to “\(space.name)”", key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
+                let entry = item(space.name, key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
                     browser.goToSpace(space.id)
-                })
-                if browser.spaces.contains(where: { $0.id == space.id }) {
-                    sub.addItem(.separator())
-                    addEdits(to: sub, for: space)
                 }
-                entry.submenu = sub
+                entry.image = image(space.symbol, tint: space.tint)
                 menu.addItem(entry)
                 index += 1
             }
+        }
+        if let here = browser.spaces.first(where: { $0.id == browser.spaceID }) {
+            let edit = NSMenu()
+            edit.autoenablesItems = false
+            addEdits(to: edit, for: here)
+            let editing = NSMenuItem(title: "Edit “\(here.name)”", action: nil, keyEquivalent: "")
+            editing.submenu = edit
+            menu.addItem(.separator())
+            menu.addItem(editing)
         }
         if browser.prefs.usesTabGroups, !browser.tabGroups.isEmpty {
             let fold = item("Fold All Groups") { browser.foldAllGroups(true) }
