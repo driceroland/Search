@@ -466,7 +466,7 @@ final class Browser: NSObject, ObservableObject {
     /// window again — every row, every pin — and the menu bar with it.
     var typed: String {
         get { typing.typed }
-        set { typing.typed = newValue; guess() }
+        set { typing.typed = newValue; guess(); warmBlank() }
     }
     let typing = FieldState()
 
@@ -3429,18 +3429,23 @@ final class Browser: NSObject, ObservableObject {
     /// front (a fresh start, see Session.startFresh) opens on one, beside its
     /// pins, rather than on the first of them.
     func frontBlank() {
-        // A blank tab costs nothing until it is asked for its page. Its
-        // web view — and with it WebKit's helper processes — is built a
-        // moment after the window is up, so that the first address typed
-        // finds everything already running, and the first frame never
-        // had to share the CPU with it.
+        // A blank tab costs nothing until it is asked for its page: its web
+        // view is made at the first key typed into its field (warmBlank),
+        // not a moment after launch. Made then, it started WebKit's GPU
+        // process at once, 4.5 MB and a process more for a browser at rest
+        // that may never be given an address.
         let tab = Tab(configuration: Web.configuration(space: spaceID))
         adopt(tab)
         activeID = tab.id
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak tab] in
-            guard let tab, tab.isBlank else { return }
-            _ = tab.web
-        }
+    }
+
+    /// The blank tab in front, its page made as soon as something is typed
+    /// for it, so that the address finds WebKit's helpers started by the
+    /// time Return is pressed, as it did when the page was made a second
+    /// after launch. Once: a tab's page is never made twice.
+    private func warmBlank() {
+        guard !typed.isEmpty, let tab = active, tab.isBlank, tab.built == nil else { return }
+        _ = tab.web
     }
 
     /// The few settings that something else has to be told about. The rest are
