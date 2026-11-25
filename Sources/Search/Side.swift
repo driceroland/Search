@@ -53,7 +53,9 @@ struct SideBar: View {
     /// The neighbouring spaces' own grey, apart from this one's.
     @Namespace private var before
 
-    @State private var groupFrames: [UUID: GroupDropFrame] = [:]
+    /// Where each group's heading and tabs are, for a tab let go over
+    /// them: a box, read only then (see ColumnFrames).
+    @State private var groupDrops = GroupDropBox()
     @State private var looseFrames = LooseFrames()
 
     /// A tab carried over the pins, or a pin over the tabs, and where it
@@ -75,6 +77,9 @@ struct SideBar: View {
     /// coming in, not a tab picked (see the rows' onChange).
     @State private var scrolledSpace: UUID?
     @State private var room = Room()
+    /// How far down its rows a scrolled column is, in half rooms: the
+    /// band of them drawn (shown).
+    @State private var band = 0
     private final class Room {
         var height: CGFloat = .infinity
         var needed: CGFloat = 0
@@ -83,6 +88,8 @@ struct SideBar: View {
         /// The tab in front and the room when the rows last fitted in a
         /// room measured: the column on screen, a plain stack at its top.
         var fitted: (active: Tab.ID?, height: CGFloat)?
+        /// When a space last came into the scroll (the rows' onChange).
+        var arrived: Date?
     }
 
     /// A tab's line: taller with roomier tabs turned on.
@@ -665,6 +672,14 @@ struct SideBar: View {
                                     }
                                 }
                                 .coordinateSpace(name: "scroll")
+                                // The room settling just after a space came in
+                                // (its pins, the foot): its tab in front kept in
+                                // the middle, not left under the foot.
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
+                                    guard let at = room.arrived, Date().timeIntervalSince(at) < 0.6,
+                                          let id = browser.activeSplit?.left ?? browser.activeID else { return }
+                                    scroll(proxy, to: id, anchor: .center)
+                                }
                                 // The tab you go to is the tab you see — ⌘1–⌘9,
                                 // ⇧⌘], a link opening beside the one on screen.
                                 .onChange(of: browser.activeID) { _, id in
@@ -679,6 +694,15 @@ struct SideBar: View {
                                     let representative = browser.activeSplit?.left ?? id
                                     if arrived {
                                         scroll(proxy, to: representative, anchor: .center)
+                                        // Again a turn later: its rows are placed by
+                                        // what they add up to (loose), and the mark
+                                        // asked for at once could still be where the
+                                        // last space had it.
+                                        DispatchQueue.main.async {
+                                            guard browser.activeID == id else { return }
+                                            scroll(proxy, to: representative, anchor: .center)
+                                        }
+                                        room.arrived = Date()
                                         return
                                     }
                                     // Without the glide on a test run: a hidden
@@ -766,6 +790,10 @@ struct SideBar: View {
 
     /// What the column last measured, for the bench (`columnscroll`). Test runs only.
     @MainActor static var measured: [String: CGFloat] = [:]
+    /// The tab in front's row as last drawn, in the window. Test runs only.
+    @MainActor static var liveRows: [UUID: CGRect] = [:]
+    /// What the scrolled rows last drew of their plan (loose). Test runs only.
+    @MainActor static var window: [String: CGFloat] = [:]
     /// The pinned rows' lines as last drawn with folders, for the bench
     /// (`pinfolder`): kind, depth, title, folded. Test runs only.
     @MainActor static var drawnPinLines: [[Any]] = []
@@ -1349,81 +1377,219 @@ struct SideBar: View {
         .padding(.bottom, pins.isEmpty && ghost == nil ? 0 : SideBar.gap)
     }
 
+    /// The groups, the line and the loose tabs, each where it lies down the
+    /// column, added up from the rows' known heights as a VStack with a gap
+    /// between each would lay them out (groupBlock, the rows' steps).
+    private struct ColumnPlan {
+        struct Unit: Identifiable {
+            enum Kind {
+                case group(TabGroup, members: [Tab], ghost: Tab?)
+                case keep
+                case row(LooseRow)
+                case ghost(Tab)
+            }
+            let id: AnyHashable
+            let kind: Kind
+            let y: CGFloat
+            let height: CGFloat
+        }
+        var units: [Unit] = []
+        var total: CGFloat = 0
+        /// The loose rows' places, as Carried counts them.
+        var steps: [CGFloat] = []
+        /// Where the loose rows start.
+        var looseTop: CGFloat = 0
+    }
+
+    private func columnPlan() -> ColumnPlan {
+        // See the grid: the drag is measured in the column's space, not
+        // the row's, so a row that has just moved keeps its bearings.
+        // Worked out once, not by every row: each look walks the whole
+        // row, and 300 rows asking made redrawing the column quadratic.
+        let loose = looseTabs
+        var plan = ColumnPlan()
+        var y: CGFloat = 0
+        func add(_ id: AnyHashable, _ kind: ColumnPlan.Unit.Kind, _ height: CGFloat) {
+            if !plan.units.isEmpty { y += SideBar.gap }
+            plan.units.append(ColumnPlan.Unit(id: id, kind: kind, y: y, height: height))
+            y += height
+        }
+        if prefs.usesTabGroups {
+            let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
+            for group in browser.tabGroups {
+                let members = browser.visibleTabs(in: group)
+                let ghost = crossing?.target == .group(group.id) ? crossingTab : nil
+                let lines = steps(members) + (ghost != nil ? [rowHeight + SideBar.gap] : [])
+                // Its heading, the gap under it and its rows, each a gap
+                // apart: an empty stack of rows still has the gap before it.
+                add(group.id, .group(group, members: members, ghost: ghost),
+                    heading + SideBar.gap + max(0, lines.reduce(0, +) - SideBar.gap))
+            }
+        }
+        // Under the groups: Clear keeps them, as it keeps the pins, so
+        // everything above the line is what stays.
+        if showsLine(kept: keptCount, listed: browser.listedPins.count, loose: loose.filter { !$0.isBlank }.count) {
+            add("keep", .keep, KeepLine.height)
+        }
+        let ghost: Int? = if case .loose(let at)? = crossing?.target { at } else { nil }
+        plan.steps = steps(loose)
+        plan.looseTop = plan.units.isEmpty ? 0 : y + SideBar.gap
+        for (index, tab) in loose.enumerated() {
+            if ghost == index, let carried = crossingTab { add("ghost", .ghost(carried), rowHeight) }
+            // Under each tab's row key, not its id: another space's tabs
+            // come into these same rows (see Browser.rowKey).
+            let key = browser.rowKey(tab)
+            add(key, .row(LooseRow(id: key, index: index, tab: tab)), plan.steps[index] - SideBar.gap)
+        }
+        if let ghost, ghost >= loose.count, let carried = crossingTab { add("ghost", .ghost(carried), rowHeight) }
+        plan.total = y
+        return plan
+    }
+
+    /// Where the tab in front (the first page of its pair) is among the
+    /// groups and loose rows, in the plan's space: nil when it is a pin,
+    /// or in a folded group that hides it.
+    private func activeRect(_ plan: ColumnPlan) -> CGRect? {
+        guard let id = browser.activeSplit?.left ?? browser.activeID else { return nil }
+        let heading = icons ? GroupHeading.compactHeight : GroupHeading.height
+        for unit in plan.units {
+            switch unit.kind {
+            case .row(let row) where row.tab.id == id:
+                return CGRect(x: 0, y: unit.y, width: 1, height: unit.height)
+            case .group(_, let members, _):
+                guard let at = members.firstIndex(where: { $0.id == id }) else { continue }
+                let places = steps(members)
+                let top = unit.y + heading + SideBar.gap + places.prefix(at).reduce(0, +)
+                return CGRect(x: 0, y: top, width: 1, height: places[at] - SideBar.gap)
+            default:
+                continue
+            }
+        }
+        return nil
+    }
+
+    /// Of the plan, what is drawn: all of it while the rows fit; scrolled,
+    /// what is in sight and some way past it either side (band), and
+    /// around the tab in front, for the scroll to go to it with its
+    /// neighbours already there.
+    private func shown(_ plan: ColumnPlan, active: CGRect?) -> [ColumnPlan.Unit] {
+        guard !fits else { return plan.units }
+        let room = SideBar.windowRoom(room.height)
+        let step = room / 2
+        var ranges = [(CGFloat(band) * step - room / 2, CGFloat(band) * step + 2 * room)]
+        if let active { ranges.append((active.minY - room, active.maxY + room)) }
+        return plan.units.filter { unit in
+            ranges.contains { unit.y + unit.height >= $0.0 && unit.y <= $0.1 }
+        }
+    }
+
+    /// The room a scrolled column draws its rows for: its own height, or
+    /// a tall window's before it is measured.
+    static func windowRoom(_ height: CGFloat) -> CGFloat {
+        height.isFinite && height > 100 ? height : 1200
+    }
+
     private var loose: some View {
-        VStack(spacing: SideBar.gap) {
-            if prefs.usesTabGroups {
-                ForEach(browser.tabGroups) { group in
-                    let members = browser.visibleTabs(in: group)
-                    let ghost = crossing?.target == .group(group.id) ? crossingTab : nil
-                    VStack(spacing: SideBar.gap) {
-                        GroupHeading(browser: browser, group: group, dragSpace: "rows", compact: icons)
-                        groupRows(group, members: members, ghost: ghost)
-                    }
-                    .background(alignment: .top) {
-                        groupWash(group.colour)
-                            .frame(height: members.isEmpty && ghost == nil
-                                   ? (icons ? GroupHeading.compactHeight : GroupHeading.height) : nil)
-                    }
-                }
+        let plan = columnPlan()
+        let active = activeRect(plan)
+        let drawn = shown(plan, active: active)
+        if Store.testing {
+            SideBar.window = ["band": CGFloat(band), "shown": CGFloat(drawn.count), "units": CGFloat(plan.units.count),
+                              "total": plan.total, "active": active?.minY ?? -1]
+        }
+        // Only what is in sight is made, and some way past it, each where
+        // it lies down the whole run: every row of the space a live view,
+        // each change checked and laid every one of them out again (at 400
+        // tabs, picking one took ~170 ms and a space switch over a second;
+        // perf-many-tabs). Placed by what their heights add up to, not by a
+        // lazy stack's guess: that one's guessed height for rows not yet
+        // made was three times too tall, and a tab gone to far down wasn't
+        // scrolled to.
+        return ZStack(alignment: .top) {
+            Color.clear.frame(height: plan.total)
+            ForEach(drawn) { unit in
+                columnUnit(unit, plan: plan)
+                    .alignmentGuide(.top) { _ in -unit.y }
             }
-            // See the grid: the drag is measured in the column's space, not
-            // the row's, so a row that has just moved keeps its bearings.
-            // Worked out once, not by every row: each look walks the whole
-            // row, and 300 rows asking made redrawing the column quadratic.
-            let loose = looseTabs
-            // Under the groups: Clear keeps them, as it keeps the pins, so
-            // everything above the line is what stays.
-            if showsLine(kept: keptCount, listed: browser.listedPins.count, loose: loose.filter { !$0.isBlank }.count) {
-                KeepLine(clears: !loose.isEmpty) { browser.clearTabs() }
-            }
-            let ghost: Int? = if case .loose(let at)? = crossing?.target { at } else { nil }
-            // In a stack of their own, measured, for where a pin carried
-            // among them would land.
-            if !loose.isEmpty || ghost != nil {
-                let looseSteps = steps(loose)
-                // Under each tab's row key, not its id: another space's tabs
-                // come into these same rows (see Browser.rowKey).
-                let rows = loose.enumerated().map { LooseRow(id: browser.rowKey($0.element), index: $0.offset, tab: $0.element) }
-                VStack(spacing: SideBar.gap) {
-                    ForEach(rows) { row in
-                        let index = row.index, tab = row.tab
-                        if ghost == index, let carried = crossingTab {
-                            RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
-                        }
-                        rowItem(tab, tabs: browser.tabs, splits: browser.splits,
-                                activeID: browser.activeID, interactive: true, pill: pill,
-                                close: { browser.closeTab(tab) })
-                        // Positions here are among the loose rows; the pinned block
-                        // sits in front of them in the real list.
-                        .modifier(Carried(index: index, steps: looseSteps, vertical: true,
-                                          space: "rows", onDropTab: { source, point in drop(source, at: point) },
-                                          groupDestination: { source, point in destination(source, at: point) },
-                                          loose: prefs.usesTabGroups ? looseFrames : nil,
-                                          outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
-                                          cross: { cross(tab, $0, from: .rows) },
-                                          land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
-                            if prefs.usesTabGroups {
-                                browser.move(tab, within: nil, to: $0)
-                            } else {
-                                browser.moveDisplayedTab(tab, to: $0 + browser.pinnedCount)
-                            }
-                        })
-                    }
-                    if let ghost, ghost >= loose.count, let carried = crossingTab {
-                        RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
-                    }
-                }
-                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.loose = $0 }
+            // Where the scroll goes for the tab in front (scroll): its rows
+            // are not all made.
+            if let active {
+                Color.clear
+                    .frame(height: active.height)
+                    .alignmentGuide(.top) { _ in -active.minY }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .id(SideBar.activeMark)
             }
         }
         .coordinateSpace(name: "rows")
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.rows = $0 }
-        .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
+        // How far down the run the scroll is: the band of it drawn, told
+        // only as it moves half a room on.
+        .onGeometryChange(for: CGFloat.self, of: { -$0.frame(in: .named("scroll")).minY }) { [room] top in
+            let now = Int((top / (SideBar.windowRoom(room.height) / 2)).rounded(.down))
+            if now != band { band = now }
+        }
+        // Kept apart from what is drawn: read only as a tab is let go, and
+        // only the rows in sight tell theirs.
+        .onPreferenceChange(GroupDropFrames.self) { [groupDrops] in groupDrops.frames = $0 }
+    }
+
+    /// The scroll's mark for the tab in front (see loose).
+    static let activeMark = "column-active-mark"
+
+    @ViewBuilder
+    private func columnUnit(_ unit: ColumnPlan.Unit, plan: ColumnPlan) -> some View {
+        switch unit.kind {
+        case .group(let group, let members, let ghost):
+            groupBlock(group, members: members, ghost: ghost)
+        case .keep:
+            KeepLine(clears: !plan.steps.isEmpty) { browser.clearTabs() }
+        case .ghost(let carried):
+            RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
+        case .row(let row):
+            looseRow(row, steps: plan.steps)
+        }
+    }
+
+    /// A group of the column: its heading and its tabs, on its wash.
+    private func groupBlock(_ group: TabGroup, members: [Tab], ghost: Tab?) -> some View {
+        VStack(spacing: SideBar.gap) {
+            GroupHeading(browser: browser, group: group, dragSpace: "rows", compact: icons)
+            groupRows(group, members: members, ghost: ghost)
+        }
+        .background(alignment: .top) {
+            groupWash(group.colour)
+                .frame(height: members.isEmpty && ghost == nil
+                       ? (icons ? GroupHeading.compactHeight : GroupHeading.height) : nil)
+        }
+    }
+
+    private func looseRow(_ row: LooseRow, steps looseSteps: [CGFloat]) -> some View {
+        let index = row.index, tab = row.tab
+        return rowItem(tab, tabs: browser.tabs, splits: browser.splits,
+                       activeID: browser.activeID, interactive: true, pill: pill,
+                       close: { browser.closeTab(tab) })
+            // Positions here are among the loose rows; the pinned block
+            // sits in front of them in the real list.
+            .modifier(Carried(index: index, steps: looseSteps, vertical: true,
+                              space: "rows", onDropTab: { source, point in drop(source, at: point) },
+                              groupDestination: { source, point in destination(source, at: point) },
+                              loose: prefs.usesTabGroups ? looseFrames : nil,
+                              outside: { browser.dragOut(tab) }, browser: browser, tab: tab,
+                              cross: { cross(tab, $0, from: .rows) },
+                              land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
+                if prefs.usesTabGroups {
+                    browser.move(tab, within: nil, to: $0)
+                } else {
+                    browser.moveDisplayedTab(tab, to: $0 + browser.pinnedCount)
+                }
+            })
     }
 
     private func destination(_ tab: Tab, at point: CGPoint) -> GroupDropTarget? {
         guard prefs.usesTabGroups, tab.pin == nil else { return nil }
-        return GroupDropFrames.resolve(point, frames: groupFrames, groups: browser.tabGroups,
+        return GroupDropFrames.resolve(point, frames: groupDrops.frames, groups: browser.tabGroups,
                                        excluding: tab.id, vertical: true)
     }
 
@@ -1438,15 +1604,16 @@ struct SideBar: View {
     private func leaving(_ tab: Tab, at point: CGPoint) -> LooseDrop? {
         guard prefs.usesTabGroups, tab.pin == nil else { return nil }
         let loose = Set(looseTabs.map(\.id))
-        return GroupDropFrames.leaving(point, frames: groupFrames, loose: looseFrames.rects.filter { loose.contains($0.key) },
+        return GroupDropFrames.leaving(point, frames: groupDrops.frames, loose: looseFrames.rects.filter { loose.contains($0.key) },
                                        groups: browser.tabGroups, source: tab.id, vertical: true)
     }
 
-    /// Where the scroll goes for `id`: a loose row is drawn under its row
-    /// key, not its tab's id (see Browser.rowKey); any other row under its id.
+    /// Where the scroll goes for `id`: the tab in front's mark among the
+    /// groups and loose rows, which are made only in sight (loose); a
+    /// pinned row under its own id.
     private func scroll(_ proxy: ScrollViewProxy, to id: Tab.ID, anchor: UnitPoint? = nil) {
-        if let tab = looseTabs.first(where: { $0.id == id }) {
-            proxy.scrollTo(browser.rowKey(tab), anchor: anchor)
+        if id == browser.activeSplit?.left ?? browser.activeID, activeRect(columnPlan()) != nil {
+            proxy.scrollTo(SideBar.activeMark, anchor: anchor)
         } else {
             proxy.scrollTo(id, anchor: anchor)
         }
@@ -1563,11 +1730,12 @@ struct SideBar: View {
         case .loose:
             guard tab.pin != nil else { return nil }
             let inRows = CGPoint(x: point.x - frames.rows.minX, y: point.y - frames.rows.minY)
-            if prefs.usesTabGroups, let id = groupFrames.values.first(where: { $0.rect.contains(inRows) })?.group {
+            if prefs.usesTabGroups, let id = groupDrops.frames.values.first(where: { $0.rect.contains(inRows) })?.group {
                 return .group(id)
             }
             let loose = looseTabs
-            guard !loose.isEmpty, let top = frames.loose?.minY else { return .loose(0) }
+            guard !loose.isEmpty else { return .loose(0) }
+            let top = frames.rows.minY + columnPlan().looseTop
             let ghost: (Int, CGFloat)? = if case .loose(let at)? = crossing?.target { (at, rowHeight) } else { nil }
             let heights = loose.map { browser.split(for: $0) != nil ? rowHeight * 2 : rowHeight }
             return .loose(PinDrop.rowSlot(y: point.y - top, heights: heights, gap: SideBar.gap, ghost: ghost))
@@ -2331,6 +2499,13 @@ private struct SideRow: View, Equatable {
                     GeometryReader { geo in
                         ReadingFill(meter: tab.meter, width: geo.size.width)
                     }
+                }
+                // Where the tab in front is drawn, for the bench
+                // (`columnscroll`'s "live"): the rows are lazy. Test runs only.
+                if Store.testing && interactive {
+                    Color.clear
+                        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { SideBar.liveRows[tab.id] = $0 }
+                        .onDisappear { SideBar.liveRows[tab.id] = nil }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
