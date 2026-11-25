@@ -2039,6 +2039,9 @@ final class Browser: NSObject, ObservableObject {
     private(set) static var displayAnswered: Int?
     private var askedAbout = ""
     private var askedRevision: UInt?
+    /// An address typed into the field, by the tab it was sent to, until
+    /// that tab's page has come in (see didFinish).
+    private var typedTo: [Tab.ID: (url: URL, at: Date)] = [:]
 
     func allowCapture() { answerCapture(.grant) }
     func allowCaptureOnce() { answerCapture(.grant, keep: false) }
@@ -8594,20 +8597,26 @@ final class Browser: NSObject, ObservableObject {
             picked = nil
             return
         }
+        // An address typed (or finished from what was typed), not a search:
+        // kept under the name it was typed by if the site sends you elsewhere.
+        let typedAddress = picked == nil && (ending != nil || Address.url(from: typed) != nil)
+        var going: Tab?
         if launching || fromSwitcher, !aside {
             // The floating new tab: what was typed gets a tab of its own, and
             // the page the field was raised over stays as it was. The same for
             // ⌘K, whose field looks no different.
-            open(url, foreground: true, from: active, loose: true)
+            going = open(url, foreground: true, from: active, loose: true)
         } else if aside {
             // Opened behind the page by hand, as a ⌘-clicked link is: it may
             // wait to load (Settings › Tabs › Load background tabs…).
-            open(url, foreground: front, from: active, mayWait: true)
+            going = open(url, foreground: front, from: active, mayWait: true)
         } else if editingPeek, peekInFront, let peek = peekTab {
             peek.go(to: url)
         } else {
-            (active ?? tabs.first)?.go(to: url)
+            going = active ?? tabs.first
+            going?.go(to: url)
         }
+        if typedAddress, let going { typedTo[going.id] = (url, Date()) }
         editing = false
         typed = ""
     }
@@ -9949,6 +9958,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // done, and it is shown.
         (webView as? PageView)?.showFirstFrame()
         guard let tab = anyTab(for: webView), let url = tab.address else { return }
+        let typed = typedTo.removeValue(forKey: tab.id)
         tab.uncover()
         // And again once it has all come in, for a page that drew its look
         // late, or never had a first frame to say so.
@@ -9971,6 +9981,14 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         Favicons.shared.fetch(for: tab)
         guard !tab.shy, !tab.bench else { return }
         history(of: tab).record(url, title: tab.title)
+        // An address you typed that sent you to another site — twitter.com
+        // to x.com — is kept too, as Chrome keeps it, so its first letters
+        // finish it next time: otherwise only the site it went to was ever
+        // in History, and "tw" never became twitter.com again.
+        if let typed, Date().timeIntervalSince(typed.at) < 30,
+           History.stripped(typed.url.host() ?? "") != History.stripped(url.host() ?? "") {
+            history(of: tab).record(typed.url, title: tab.title)
+        }
         // A site's home page that says where its search is (OpenSearch):
         // with Search a site on, it joins the list (see SiteSearch.learn).
         if prefs.searchesSites, profileID == Profile.personalID, url.scheme == "https", url.path.isEmpty || url.path == "/" {
