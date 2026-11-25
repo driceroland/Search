@@ -406,6 +406,7 @@ struct ProfileList: View {
             }
         }
         Rectangle().fill(Palette.divider).frame(height: 1)
+            .padding(.horizontal, SettingRowLayout.leading)
         NewProfileRow()
     }
 
