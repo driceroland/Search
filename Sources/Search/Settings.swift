@@ -771,6 +771,7 @@ struct SettingsPanel: View {
             .pickerStyle(.menu)
             .fixedSize()
         case "search.suggest": Switch(on: $prefs.engineSuggests)
+        case "field.top": Switch(on: $prefs.returnTakesTop)
         case "search.keywords":
             if draft == nil {
                 Pill("Add") { draft = Keyword() }
