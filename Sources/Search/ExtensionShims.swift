@@ -4787,13 +4787,23 @@ enum ExtensionShims {
             if (missing.length && !(await native("permissions.request", [missing]))) return false;
           }
           if (!theirs.length && !origins.length) return true;
-          // Already given (<all_urls> as *://*/*): nothing to ask again.
-          if (await Promise.resolve(contains({ permissions: theirs, origins: websites(origins) })).catch(() => false)) return true;
-          // Asked from a click on the extension's button: when filling in
-          // the tab it was given (mend) cost WebKit the click, Search
-          // knows it was one and asks the same question.
-          return Promise.resolve(request({ permissions: theirs, origins })).catch((e) =>
-            /user gesture/i.test(String(e && e.message)) ? native("permissions.afterClick", [theirs, origins]) : Promise.reject(e));
+          // Call WebKit while the click is still active, including in an
+          // extension frame embedded in a regular website.
+          try {
+            const allowed = await request({ permissions: theirs, origins });
+            if (!allowed) return false;
+            // WebKit can acknowledge an optional all-hosts request while
+            // deferring approval until individual hosts are visited.
+            const broad = origins.filter((o) => /^(?:https?|\*):\/\/\*\//.test(o) || o === "<all_urls>");
+            if (broad.length) {
+              return native("permissions.confirmAllHosts", [[], broad]);
+            }
+            return true;
+          } catch (e) {
+            if (!/user gesture/i.test(String(e && e.message))) throw e;
+            if (await Promise.resolve(contains({ permissions: theirs, origins: websites(origins) })).catch(() => false)) return true;
+            return native("permissions.afterClick", [theirs, origins]);
+          }
         }));
         put(p, "getAll", (callback) => {
           const pr = (async () => {
@@ -6501,7 +6511,7 @@ enum ExtensionShims {
             let had = Store.settings.stringArray(forKey: "extensions.granted.\(id)") ?? []
             Store.settings.set(Array(Set(had + wanted)).sorted(), forKey: "extensions.granted.\(id)")
             return true
-        case "permissions.afterClick":
+        case "permissions.confirmAllHosts", "permissions.afterClick":
             // permissions.request for WebKit's own permissions and sites,
             // made from a click on the extension's button whose moment
             // WebKit lost while the shim filled in the tab it was given
@@ -6511,12 +6521,29 @@ enum ExtensionShims {
             // (its options page in a tab, its popup): Chrome treats that as
             // the user gesture, and WebKit loses it as soon as the page
             // awaits anything before calling permissions.request.
-            let when = [Extensions.clicked[id], Extensions.touched[id]].compactMap { $0 }.max()
-            guard let when, Date().timeIntervalSince(when) < 10 else {
-                throw Unsupported(what: "Invalid call to permissions.request(). Must be called during a user gesture.")
+            if api == "permissions.confirmAllHosts" {
+                guard let names = first as? [String], names.isEmpty,
+                      let patterns = args.dropFirst().first as? [String], !patterns.isEmpty,
+                      patterns.allSatisfy({ (try? WKWebExtension.MatchPattern(string: $0))?.matchesAllHosts == true }) else {
+                    throw Unsupported(what: "No pending request for all websites.")
+                }
+                let held = context.grantedPermissionMatchPatterns.keys
+                if patterns.allSatisfy({ value in
+                    guard let pattern = try? WKWebExtension.MatchPattern(string: value) else { return false }
+                    return held.contains { $0.matchesAllHosts && $0.matches(pattern) }
+                }) { return true }
+                guard context.hasRequestedOptionalAccessToAllHosts else {
+                    throw Unsupported(what: "No pending request for all websites.")
+                }
+                context.hasRequestedOptionalAccessToAllHosts = false
+            } else {
+                let when = [Extensions.clicked[id], Extensions.touched[id]].compactMap { $0 }.max()
+                guard let when, Date().timeIntervalSince(when) < 10 else {
+                    throw Unsupported(what: "Invalid call to permissions.request(). Must be called during a user gesture.")
+                }
+                Extensions.clicked[id] = nil
+                Extensions.touched[id] = nil
             }
-            Extensions.clicked[id] = nil
-            Extensions.touched[id] = nil
             let found = context.webExtension
             let wanted = ((first as? [String]) ?? []).map { WKWebExtension.Permission(rawValue: $0) }
             let origins = ((args.dropFirst().first as? [String]) ?? []).compactMap { try? WKWebExtension.MatchPattern(string: $0) }
@@ -6535,6 +6562,9 @@ enum ExtensionShims {
             }
             let missing = wanted.filter { context.permissionStatus(for: $0) != .grantedExplicitly }
             let unreached = origins.filter { pattern in
+                if api == "permissions.confirmAllHosts" {
+                    return !context.grantedPermissionMatchPatterns.keys.contains { $0.matchesAllHosts && $0.matches(pattern) }
+                }
                 let status = context.permissionStatus(for: pattern)
                 if status == .grantedExplicitly || status == .grantedImplicitly { return false }
                 if status == .deniedExplicitly || status == .deniedImplicitly { return true }

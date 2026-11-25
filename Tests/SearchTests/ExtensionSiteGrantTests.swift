@@ -134,6 +134,39 @@ final class ExtensionSiteGrantTests: XCTestCase {
         XCTAssertTrue(context.grantedPermissionMatchPatterns.isEmpty)
     }
 
+    func testAllHostsConfirmationRequiresPendingRequestAndApproval() async throws {
+        let pattern = "https://*/*"
+        let (folder, ext) = try await fixture([pattern], optional: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let context = WKWebExtensionContext(for: ext)
+        let browser = Browser(record: WindowRecord())
+        Browsers.register(browser)
+        defer { browser.closeAll() }
+        let owner = Extensions.shared
+        let previousAnswer = owner.answerForTests
+        defer { owner.answerForTests = previousAnswer }
+        func confirm() async throws -> [String: Any]? {
+            try await ExtensionShims.answer([
+                "api": "permissions.confirmAllHosts", "args": [[], [pattern]],
+            ], from: context, owner: owner) as? [String: Any]
+        }
+
+        let unexpected = try await confirm()
+        XCTAssertNotNil(unexpected?["error"])
+        context.hasRequestedOptionalAccessToAllHosts = true
+        owner.answerForTests = false
+        let declined = try await confirm()
+        XCTAssertEqual(declined?["value"] as? Bool, false)
+        XCTAssertFalse(context.hasAccessToAllHosts)
+
+        context.hasRequestedOptionalAccessToAllHosts = true
+        owner.answerForTests = true
+        let approved = try await confirm()
+        XCTAssertEqual(approved?["value"] as? Bool, true)
+        XCTAssertTrue(context.hasAccess(to: try XCTUnwrap(URL(string: "https://example.com/article"))))
+        XCTAssertFalse(context.hasAccess(to: try XCTUnwrap(URL(string: "http://example.com/article"))))
+    }
+
     func testDifferentPathsAndSchemesAreKept() async throws {
         let patterns = ["https://*.example.com/one/*", "https://example.com/two/*", "http://example.com/one/*"]
         let (folder, ext) = try await fixture(patterns)
