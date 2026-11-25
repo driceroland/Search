@@ -40,6 +40,17 @@ struct Suggestion: Identifiable, Equatable {
         case command(AddressCommand)
 
         var isCommand: Bool { if case .command = self { return true }; return false }
+        /// A page to go to, rather than words to search for or a command.
+        var isPlace: Bool {
+            switch self {
+            case .open, .visited, .bookmark, .known, .searched, .elsewhere: return true
+            case .search, .suggested, .command: return false
+            }
+        }
+    }
+
+    func canBePickedWhileTyping(_ typed: String, ending: String?) -> Bool {
+        ending == nil && kind.isPlace && Address.url(from: typed) == nil
     }
 
     /// A command's row can read the same as the search for the same word

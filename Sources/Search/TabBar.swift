@@ -46,6 +46,12 @@ struct TabBar: View {
     /// The space whose run was last brought to its tab: another one is a
     /// space coming in, not a tab picked (see reveal).
     @State private var revealedSpace: UUID?
+    /// The width the tabs had when one was closed from the row. The ones
+    /// left keep it for a moment, so the next cross comes to where the last
+    /// one was and tabs can be closed one after another without chasing it
+    /// (see hold). Made wide again once the closing stops.
+    @State private var held: CGFloat?
+    @State private var holding = 0
 
     var body: some View {
         // A GeometryReader is only here to measure the width. Its content is
@@ -531,7 +537,19 @@ struct TabBar: View {
         } else {
             TabPill(browser: browser, prefs: browser.prefs, tab: tab,
                     live: tab.id == activeID, width: width, room: room, pill: pill,
-                    close: interactive ? { browser.closeTab(tab) } : {})
+                    close: interactive ? { hold(width); browser.closeTab(tab) } : {})
+        }
+    }
+
+    /// Keeps the tabs at `width` until half a second passes with nothing
+    /// more closed from the row, then lets them take the room again.
+    private func hold(_ width: CGFloat) {
+        if held == nil { held = width }
+        holding += 1
+        let ticket = holding
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            guard ticket == holding else { return }
+            withAnimation(Motion.settle) { held = nil }
         }
     }
 
@@ -572,7 +590,8 @@ struct TabBar: View {
     /// seemed to fit it didn't scroll either (#1295). What was missed is
     /// added, so the run either holds them all or scrolls.
     private func measures(in strip: CGFloat) -> Measures {
-        let each = width(in: strip)
+        // Never wider than they were held at, nor than the room allows now.
+        let each = min(width(in: strip), held ?? .infinity)
         return Measures(each: each, room: room(in: strip), content: content(in: strip, each: each) + unaccounted)
     }
 
@@ -2114,7 +2133,14 @@ struct TabMenu: View {
         }
         .disabled(browser.awake(because: tab) != nil)
         Divider()
-        Button("Close Tab", action: close)
+        if browser.putsAway(tab) {
+            // A grouped tab's page: put away, as its minus does, or closed
+            // for real, out of the group (idea 1189).
+            Button("Put Away") { browser.putAway(tab) }
+            Button("Close Tab") { browser.close(tab) }
+        } else {
+            Button("Close Tab", action: close)
+        }
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }
             .disabled(browser.tabs.count < 2)
         Button(browser.prefs.sidebar ? "Close Tabs Below" : "Close Tabs to the Right") { browser.closeTabsBelow(tab) }
@@ -2134,6 +2160,11 @@ struct TabPress: ViewModifier {
     /// Told when the button goes down on the tab and comes back up, whatever
     /// the press goes on to do, for the tab to give under it (see Give).
     var pressing: Binding<Bool>? = nil
+    /// The second press of a double-click, told whether the first one
+    /// opened the tab (see PinDouble): answered from the press itself, as
+    /// the first press makes the tab the one on screen and draws it anew,
+    /// and a tap counting to two lost its first tap there.
+    var again: ((Bool) -> Void)? = nil
     let act: () -> Void
 
     /// How far the hand may go before the press gives way to the row's
@@ -2170,9 +2201,17 @@ struct TabPress: ViewModifier {
                 DispatchQueue.main.async { selected = false }
                 return
             }
+            // Whether the press before this one, a double-click's first,
+            // opened the tab.
+            let opened = TabPress.openedAt.map { ProcessInfo.processInfo.systemUptime - $0 < NSEvent.doubleClickInterval } ?? false
             TabPress.openedAt = nil
             guard enabled, TabClick.flags.intersection([.command, .control, .shift, .option]).isEmpty,
                   !TabPress.otherButton else { return }
+            if let again, TabClick.clicks == 2 {
+                selected = false
+                again(opened)
+                return
+            }
             selected = !active
             if selected {
                 TabPress.openedAt = ProcessInfo.processInfo.systemUptime
@@ -2260,6 +2299,8 @@ struct ModifiedTabClick: ViewModifier {
 @MainActor
 enum TabClick {
     private static var last: (flags: NSEvent.ModifierFlags, at: TimeInterval)?
+    /// The left button's last press: how many clicks AppKit counted it as.
+    private static var down: (count: Int, at: TimeInterval)?
     /// How long a click's keys are its own: a press answers on the way down
     /// and a tap on the way up, well within this.
     static let fresh: TimeInterval = 0.5
@@ -2267,7 +2308,10 @@ enum TabClick {
     static let watching: Any? = NSEvent.addLocalMonitorForEvents(
         matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]
     ) { event in
-        MainActor.assumeIsolated { TabClick.last = (event.modifierFlags, event.timestamp) }
+        MainActor.assumeIsolated {
+            TabClick.last = (event.modifierFlags, event.timestamp)
+            if event.type == .leftMouseDown { TabClick.down = (event.clickCount, event.timestamp) }
+        }
         return event
     }
 
@@ -2276,8 +2320,15 @@ enum TabClick {
         return NSEvent.modifierFlags
     }
 
+    /// The clicks the press just made is the latest of, as AppKit counts
+    /// them (2 for a double-click's second), or 1 for none just made.
+    static var clicks: Int {
+        if let down, ProcessInfo.processInfo.systemUptime - down.at < fresh { return down.count }
+        return 1
+    }
+
     /// For tests: no click remembered.
-    static func forget() { last = nil }
+    static func forget() { last = nil; down = nil }
 }
 
 /// ⌥ and the click, nothing else held: Split View (Browser.optionClick).

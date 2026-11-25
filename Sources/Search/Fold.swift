@@ -161,8 +161,10 @@ extension Browser {
     /// other half in Split View.
     private var shownPages: [WKWebView] {
         guard let active else { return [] }
-        let tabs = activeSplit.map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? [active]
-        return tabs.compactMap { $0.isWeb && !$0.asleep && !$0.floating ? $0.built : nil }
+        // Not `tabs`: a local of that name is in scope in its own closure,
+        // which Swift 6.3 rejects as captured before it is declared.
+        let shown = activeSplit.map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? [active]
+        return shown.compactMap { $0.isWeb && !$0.asleep && !$0.floating ? $0.built : nil }
     }
 
     /// `done` once each of `pages` has its new size and WebKit has put it
@@ -374,7 +376,10 @@ struct Fold: View {
     static let edge: CGFloat = 6
     /// For a column hidden for good, which waits for the pointer to settle
     /// (see dwell): a wider edge to find, as a hand reaches for it (#1279).
-    static let hiddenEdge: CGFloat = 10
+    /// A band of 10 points stayed hard to catch for a pointer arriving fast
+    /// at the side (a user's report); a press in the band still reaches the
+    /// page until the column is out (Browser.covers).
+    static let hiddenEdge: CGFloat = 28
     /// How far past the window's edge, on the column's side, the pointer
     /// still counts as on it.
     static let overshoot: CGFloat = 48

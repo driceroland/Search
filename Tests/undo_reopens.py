@@ -64,8 +64,8 @@ def tidy():
 def main():
     t = sv.T()
     try:
-        # As it comes: off.
-        sv.setup(); sv.launch()
+        # Turned off (on by default since 25 Nov 2026).
+        sv.setup(**{"tabs.undoReopens": False}); sv.launch()
         keep = sv.page("keep")
         close_one(keep)
         a = undo()

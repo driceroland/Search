@@ -264,6 +264,7 @@ extension Browser {
                 guard let self, let tab else { done?("gone"); return }
                 if let reason = self.awake(because: tab) { done?(reason); return }
                 KeptSession.capture(tab) { storage in
+                  KeptPlace.capture(tab) { place in
                     // A draft may have appeared while WebKit took the picture or read storage.
                     tab.unsaved { typed in
                         if tab.built !== web || tab.documentGeneration != document || tab.touched != touched {
@@ -273,9 +274,11 @@ extension Browser {
                         if typed { done?("holding something typed"); return }
                         if let reason = self.awake(because: tab) { done?(reason); return }
                         KeptSession.remember(storage, for: tab, in: self)
+                        KeptPlace.remember(place, for: tab, in: self)
                         tab.sleep(picture: picture)
                         done?("asleep")
                     }
+                  }
                 }
             }
         }
@@ -353,6 +356,133 @@ enum KeptSession {
     /// The woken page committed (Tab.didCommit): its copy goes, and the
     /// answer says the tab should arm again without it. A blank page on the
     /// way there doesn't count.
+    static func committed(_ tab: Tab) -> Bool {
+        guard kept[tab.id] != nil, let url = tab.built?.url, url.absoluteString != "about:blank" else { return false }
+        kept[tab.id] = nil
+        return true
+    }
+}
+
+// A tab wakes where it was in a page that scrolls inside itself (idea 1149).
+//
+// The view made to wake a tab brings back the window's scroll with its
+// history (`interactionState`), and nothing else. Google Docs, Sheets, Notion
+// and most web apps keep the window still and scroll one big element of their
+// own (Docs' .kix-appview-editor), so a long document woke at its top.
+//
+// So, as the page falls asleep, the largest element scrolled inside it leaves
+// where it was and how to find it again: its id, or its place under the
+// nearest ancestor that has one, and its tag and classes. The woken page looks
+// for it from its start, for a few seconds, since an app draws it late, and
+// puts it back there once it is tall enough. Only on the same address; never
+// once the person has scrolled, clicked or typed; never once the page has
+// moved the element itself; and only for the woken document, not a later one
+// in the tab (dropped as it commits, like KeptSession). Held in memory only.
+@MainActor
+enum KeptPlace {
+    /// Each sleeping tab's `[address, path, classes, top, left]` as JSON.
+    private static var kept: [UUID: String] = [:]
+
+    private static let read = """
+        (() => {
+          try {
+            const view = innerWidth * innerHeight;
+            let best = null, area = 0;
+            const walk = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_ELEMENT);
+            for (let el = walk.currentNode, n = 0; el && n < 60000; el = walk.nextNode(), n++) {
+              if (el === document.body || el === document.documentElement) continue;
+              if (!(el.scrollTop > 0 || el.scrollLeft > 0)) continue;
+              const a = el.clientWidth * el.clientHeight;
+              if (a > area) { best = el; area = a; }
+            }
+            // Not a menu or a list off to the side: a quarter of the page at least.
+            if (!best || area < view / 4) return null;
+            const step = (el) => {
+              let i = 1;
+              for (let s = el.previousElementSibling; s; s = s.previousElementSibling) if (s.tagName === el.tagName) i++;
+              return el.tagName.toLowerCase() + ':nth-of-type(' + i + ')';
+            };
+            const parts = [];
+            let el = best;
+            for (; el && el !== document.documentElement; el = el.parentElement) {
+              if (el.id && document.querySelectorAll('#' + CSS.escape(el.id)).length === 1) {
+                parts.unshift('#' + CSS.escape(el.id));
+                break;
+              }
+              parts.unshift(step(el));
+            }
+            if (!el || el === document.documentElement) parts.unshift('html');
+            const classes = [...best.classList].map((c) => '.' + CSS.escape(c)).join('');
+            const like = classes ? best.tagName.toLowerCase() + classes : '';
+            return JSON.stringify([location.href, parts.join(' > '), like, best.scrollTop, best.scrollLeft]);
+          } catch (e) { return null; }
+        })()
+        """
+
+    /// Read the page before its view goes. A page that doesn't answer keeps nothing.
+    static func capture(_ tab: Tab, then: @escaping (String?) -> Void) {
+        guard let web = tab.built else { return then(nil) }
+        web.evaluateJavaScript(read, in: nil, in: Web.world) { result in
+            let json = (try? result.get()) as? String
+            then(json.flatMap { $0.utf8.count <= 16 * 1024 ? $0 : nil })
+        }
+    }
+
+    static func remember(_ place: String?, for tab: Tab, in browser: Browser) {
+        let open = Set((browser.tabs + browser.parkedTabs).map(\.id))
+        kept = kept.filter { open.contains($0.key) }
+        kept[tab.id] = place
+    }
+
+    /// For the woken tab's next document (Tab.arm), from its start.
+    static func script(for tab: Tab) -> String? {
+        guard let json = kept[tab.id] else { return nil }
+        return """
+            (() => {
+              try {
+                const [href, path, like, top, left] = \(json);
+                if (location.href !== href) return;
+                let done = false, placed = null, timer = 0;
+                const kinds = ['wheel', 'keydown', 'mousedown', 'pointerdown', 'touchstart'];
+                const stop = () => {
+                  done = true; clearInterval(timer);
+                  for (const t of kinds) removeEventListener(t, person, true);
+                };
+                // The person's own, not one the page made up.
+                const person = (e) => { if (e.isTrusted) stop(); };
+                for (const t of kinds) addEventListener(t, person, true);
+                const find = () => {
+                  let el = null;
+                  try { el = document.querySelector(path); } catch (e) {}
+                  if (!el && like) { try { const all = document.querySelectorAll(like); if (all.length === 1) el = all[0]; } catch (e) {} }
+                  return el;
+                };
+                const end = Date.now() + 8000;
+                const look = () => {
+                  if (done) return;
+                  if (Date.now() > end) return stop();
+                  const el = find();
+                  if (!el) return;
+                  const now = [el.scrollTop, el.scrollLeft];
+                  // Moved by the page itself since: its place, not ours.
+                  if (placed ? (now[0] !== placed[0] || now[1] !== placed[1]) && (now[0] || now[1])
+                             : (now[0] || now[1])) return stop();
+                  if (el.scrollHeight - el.clientHeight < top || el.scrollWidth - el.clientWidth < left) return;
+                  el.scrollTop = top; el.scrollLeft = left;
+                  placed = [el.scrollTop, el.scrollLeft];
+                  // There, and stays there a moment: an app that lays out again may move it back to the top.
+                  if (placed[0] === top && placed[1] === left && !look.at) look.at = Date.now();
+                  if (look.at && Date.now() - look.at > 1500) stop();
+                };
+                timer = setInterval(look, 100);
+                addEventListener('DOMContentLoaded', look);
+              } catch (e) {}
+            })();
+            """
+    }
+
+    /// The woken page committed (Tab.didCommit): its copy goes, and the
+    /// answer says the tab should arm again without it.
     static func committed(_ tab: Tab) -> Bool {
         guard kept[tab.id] != nil, let url = tab.built?.url, url.absoluteString != "about:blank" else { return false }
         kept[tab.id] = nil

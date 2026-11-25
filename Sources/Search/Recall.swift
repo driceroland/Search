@@ -392,13 +392,18 @@ struct DownloadsPanel: View {
 
     /// The list's scroll, fading out at its foot while more lies below
     /// rather than cutting a line in half; less as the end comes up, and
-    /// not at all once it is in view. A mask, so it is the same in light
-    /// and dark and over whatever the list is drawn on.
+    /// not at all once it is in view. Its head does the same once scrolled,
+    /// so a caption going under the title line isn't sliced across. A mask,
+    /// so it is the same in light and dark and over whatever the list is
+    /// drawn on.
     private struct FadingScroll<Content: View>: View {
         @ViewBuilder let content: () -> Content
         /// Where the list ends, and how tall the scroll is: the end lies
         /// below the foot by the difference.
         @State private var end: CGFloat = 0
+        /// Where the list starts: above the scroll's top by as much as it
+        /// has been scrolled.
+        @State private var start: CGFloat = 0
         @State private var height: CGFloat = 0
         private let fade: CGFloat = 24
         private static var space: String { "downloads.list" }
@@ -409,10 +414,11 @@ struct DownloadsPanel: View {
                     // Read where it is rather than sent up as a preference:
                     // one from inside the scroll never came out of it here.
                     .background(GeometryReader { list in
-                        let bottom = list.frame(in: .named(Self.space)).maxY
+                        let frame = list.frame(in: .named(Self.space))
                         Color.clear
-                            .onAppear { end = bottom }
-                            .onChange(of: bottom) { _, new in end = new }
+                            .onAppear { end = frame.maxY; start = frame.minY }
+                            .onChange(of: frame.maxY) { _, new in end = new }
+                            .onChange(of: frame.minY) { _, new in start = new }
                     })
             }
             .coordinateSpace(name: Self.space)
@@ -425,6 +431,9 @@ struct DownloadsPanel: View {
             })
             .mask {
                 VStack(spacing: 0) {
+                    LinearGradient(colors: [.black.opacity(1 - min(1, max(0, -start) / fade)), .black],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: fade)
                     Rectangle()
                     LinearGradient(colors: [.black, .black.opacity(1 - min(1, max(0, end - height) / fade))],
                                    startPoint: .top, endPoint: .bottom)
@@ -441,8 +450,11 @@ struct DownloadsPanel: View {
         let retry: () -> Void
         let cancel: () -> Void
 
+        private var received: String {
+            ByteCountFormatter.string(fromByteCount: entry.completedBytes, countStyle: .file)
+        }
+
         private var bytes: String {
-            let received = ByteCountFormatter.string(fromByteCount: entry.completedBytes, countStyle: .file)
             guard entry.totalBytes > 0 else { return received + " downloaded" }
             let total = ByteCountFormatter.string(fromByteCount: entry.totalBytes, countStyle: .file)
             return "\(received) of \(total)"
@@ -450,12 +462,20 @@ struct DownloadsPanel: View {
 
         private var stateLabel: String {
             switch entry.state {
-            case .downloading: return "Downloading"
+            case .downloading: return entry.stalled ? "Stalled" : "Downloading"
             case .pausing: return entry.stopping
             case .paused: return "Paused"
             case .resuming: return "Resuming…"
             case .failed: return "Failed"
             }
+        }
+
+        private func status(_ text: String) -> some View {
+            Text(text)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Palette.muted)
+                .monospacedDigit()
+                .lineLimit(1)
         }
 
         private var icon: String {
@@ -491,12 +511,13 @@ struct DownloadsPanel: View {
                                 }
                                 .frame(width: 68, height: 3)
                         }
-                        Text("\(stateLabel) · \(bytes)")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
-                            .monospacedDigit()
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        // A row with three buttons has little room left: say
+                        // less rather than cut the amount out of the middle.
+                        ViewThatFits(in: .horizontal) {
+                            status("\(stateLabel) · \(bytes)")
+                            status("\(stateLabel) · \(received)")
+                            status(stateLabel)
+                        }
                     }
                     if case .failed = entry.state {
                         Text(entry.errorDescription ?? "The download failed.")
@@ -505,9 +526,12 @@ struct DownloadsPanel: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     }
+                    // Beside the text, the buttons left it a few letters
+                    // wide; under it, the name and status read whole.
+                    controls
+                        .padding(.top, 4)
                 }
-                Spacer(minLength: 4)
-                controls
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)

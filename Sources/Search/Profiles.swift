@@ -348,45 +348,23 @@ enum ProfileMenu {
 
 // MARK: - Settings
 
-/// Settings › Spaces & Pins: profiles and their spaces, in shortcut order.
+/// Settings › Spaces & Pins: once there is more than one profile, each
+/// with its spaces, arrows to move it, Open, Rename… and Delete…, under the
+/// Profiles row. The order is the one profiles keep everywhere else.
 struct ProfileList: View {
     @ObservedObject var browser: Browser
     @ObservedObject var profiles = Profiles.shared
 
     var body: some View {
-        if profiles.several || browser.prefs.usesSpaces {
+        if profiles.several {
             ForEach(Array(profiles.list.enumerated()), id: \.element.id) { index, profile in
                 Rule()
                 ProfilesSettings.Row(profile: profile, current: profile.id == browser.profileID,
                                      spaces: profiles.spaces(of: profile.id).map(\.name),
                                      index: index, count: profiles.list.count)
-                if browser.prefs.usesSpaces {
-                    ProfileSpaces(profile: profile.id)
-                }
             }
         }
     }
-}
-
-private struct ProfileSpaces: View {
-    let profile: UUID
-    @State private var spaces: [Space] = []
-
-    var body: some View {
-        ForEach(Array(spaces.enumerated()), id: \.element.id) { index, space in
-            Rule()
-            Line(space.name, "Space") {
-                OrderButtons(name: space.name, index: index, count: spaces.count) { step in
-                    Spaces.move(space.id, profile: profile, by: step)
-                }
-            }
-            .padding(.leading, 14)
-        }
-        .onAppear { reload() }
-        .onReceive(NotificationCenter.default.publisher(for: Spaces.changed)) { _ in reload() }
-    }
-
-    private func reload() { spaces = Spaces.read(profile: profile) }
 }
 
 private struct OrderButtons: View {
