@@ -73,14 +73,25 @@ enum MeetPiP {
 
           // Meet offers its window only to Chrome, which it tells by
           // navigator.userAgent. Here only: every other site sees Search.
+          //
+          // Except to Meet's camera effects (blur, backgrounds): the script
+          // Meet loads for them from www.gstatic.com/video_effects reads the
+          // user agent itself, and for Chrome 122 or later it runs its
+          // pipeline in a worker fed by MediaStreamTrackProcessor and
+          // MediaStreamTrackGenerator, which a WebKit page hasn't got: the
+          // effect failed ("Can't find variable: MediaStreamTrackGenerator")
+          // and Meet turned the camera off. Asked by that script, the answer
+          // is Search's own, and it takes the way it takes in Safari.
           try {
-            var ua = navigator.userAgent;
+            var ua = navigator.userAgent, av = navigator.appVersion;
             if (!/ Chrome\\//.test(ua)) {
               var chrome = ua.replace(/ Version\\/[\\d.]+.*$/, '').replace(/ Safari\\/[\\d.]+$/, '') +
                 ' Chrome/\(Crx.chromeVersion) Safari/537.36';
               var version = chrome.replace(/^Mozilla\\//, '');
-              Object.defineProperty(Navigator.prototype, 'userAgent', { get: function () { return chrome; }, configurable: true, enumerable: true });
-              Object.defineProperty(Navigator.prototype, 'appVersion', { get: function () { return version; }, configurable: true, enumerable: true });
+              var effects = /\\/\\/www\\.gstatic\\.com\\/video_effects\\/|\\/_\\/rtcvidproc\\//;
+              var fromEffects = function () { try { return effects.test(String(new Error().stack || '')); } catch (e) { return false; } };
+              Object.defineProperty(Navigator.prototype, 'userAgent', { get: function () { return fromEffects() ? ua : chrome; }, configurable: true, enumerable: true });
+              Object.defineProperty(Navigator.prototype, 'appVersion', { get: function () { return fromEffects() ? av : version; }, configurable: true, enumerable: true });
             }
           } catch (e) {}
 
@@ -209,16 +220,6 @@ enum MeetPiP {
               if (r && typeof r.then === 'function') r.then(function () { say({ kind: 'enter:done' }); }, function (e) { err('enter', e); });
             } catch (e) { err('enter', e); }
           });
-
-          // Meet's effects (blur, backgrounds) take Chrome's way when the
-          // main page has MediaStreamTrackProcessor, which WebKit's doesn't
-          // carry through; without it, Meet takes the way Safari gets.
-          try {
-            say({ kind: 'mstp:' + (typeof window.MediaStreamTrackProcessor) + '/' + (typeof window.MediaStreamTrackGenerator) });
-            ['MediaStreamTrackProcessor', 'MediaStreamTrackGenerator'].forEach(function (name) {
-              if (name in window) Object.defineProperty(window, name, { value: undefined, writable: true, configurable: true });
-            });
-          } catch (e) {}
 
           // Meet, as Chrome, tells the browser whether its camera and
           // microphone are on (setCameraActive / setMicrophoneActive); Chrome

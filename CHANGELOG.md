@@ -15,6 +15,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Google Meet's own mini window (on; Settings › Videos turns it off): leave a Meet call's tab and the call comes along in a small window in the corner of the screen, with Meet's own tiles and buttons (mute, camera, leave), as in Chrome. It closes when you go back to the call; Meet's own picture-in-picture button opens it too. Meet only offers it to Chrome, so with the switch on Meet is told Search is Chrome.
 
+### Fixed
+
+- Google Meet with its mini window on: background blur and other camera effects work again. Told it was Chrome, Meet's effects took Chrome's way, which WebKit hasn't got, and failed with "Something went wrong and the visual effect can't be applied. Your camera is now off."; they now take the way they take in Safari.
+
 ### Held back
 
 Not in this version, kept on main for a later one:
