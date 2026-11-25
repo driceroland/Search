@@ -286,10 +286,17 @@ final class BrowserProxy: ObservableObject {
     /// Called where a store is made, not where one is read: `Store.websites`
     /// hands out WebKit's default store on every read, and attaching there
     /// meant hopping to the main actor inside a getter that is read off it.
+    ///
+    /// With no proxy, a store is left as WebKit makes it, with none: setting
+    /// even an empty list starts WebKit's network process, and Search at
+    /// rest on a new tab ran it for nothing (5.7 MB). `save` still reaches
+    /// every store attached here.
     func attach(_ store: WKWebsiteDataStore) {
         guard !stores.contains(store) else { return }
         stores.add(store)
-        store.proxyConfigurations = [value.configuration(password: password)].compactMap { $0 }
+        let configurations = [value.configuration(password: password)].compactMap { $0 }
+        guard !configurations.isEmpty || !store.proxyConfigurations.isEmpty else { return }
+        store.proxyConfigurations = configurations
     }
 
     func save(_ proposed: ProxySettingsValue, password: String) throws {

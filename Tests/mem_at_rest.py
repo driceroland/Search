@@ -4,9 +4,10 @@
 Build first (`./build.sh`), then
 
     python3 Tests/mem_at_rest.py [--rounds 3] [--settle 30] [--welcomed] [--detail DIR] [--out FILE]
-    python3 Tests/mem_at_rest.py --page [--rounds 3] [--out FILE]
+    python3 Tests/mem_at_rest.py --page [--typed] [--rounds 3] [--out FILE]
 
 MEM_APP=/path/to/Search.app measures another build (a copy kept for before/after).
+MEM_ENV="NAME=value …" adds to the app's environment.
 
 Memory (the default), the method of the browser comparison on the site: a
 fresh world (nothing in its folder, defaults or WebKit stores), the app
@@ -22,9 +23,12 @@ process's `footprint`, `vmmap --summary` and `heap -s` there.
 --page: the first real page after that rest, the cost of anything put off
 until a page needs it. The world is welcomed and has the bench on; after
 --settle seconds (default 10 with --page) a local page is opened in a
-background tab and the time from the request to its load event is taken
-(page_ms; start_ms to the navigation's start, on the page's own clock),
-with the processes there before and after.
+background tab with no click or key before it (the worst case: a page
+asked for by a script), or with --typed typed into the new tab's field a
+key at a time and Return pressed. The time from the request (or the
+Return) to the page's load event is taken on the page's own clock
+(page_ms; start_ms to the navigation's start), with the processes there
+before and after.
 
 The app is hidden again every quarter second while it runs and each round
 says whether a window of it was ever on a screen or frontmost: nothing here
@@ -187,7 +191,8 @@ def start():
         os.remove(sv.SOCK)
     w = subprocess.Popen([MEAS, "watch", EXE, "30000"], stdout=subprocess.PIPE, text=True)
     time.sleep(0.05)
-    subprocess.run(["open", "-n", "-g", "-j", "--env", f"SEARCH_PROBE={sv.W}", "--env", "SEARCH_MEASURE=1", sv.APP])
+    extra = [a for e in os.environ.get("MEM_ENV", "").split() for a in ("--env", e)]
+    subprocess.run(["open", "-n", "-g", "-j", "--env", f"SEARCH_PROBE={sv.W}", "--env", "SEARCH_MEASURE=1", *extra, sv.APP])
     pid = window = keeper = None
     for line in w.stdout:
         if line.startswith("pid "):
@@ -249,7 +254,7 @@ def memory_round(rnd, settle, welcomed, detail):
     return out
 
 
-def page_round(rnd, settle):
+def page_round(rnd, settle, typed):
     fresh(welcomed=True, bench=True)
     pid, window, keeper = start()
     for _ in range(300):
@@ -258,9 +263,16 @@ def page_round(rnd, settle):
         time.sleep(0.05)
     time.sleep(settle)
     before, total_before = group(pid)
-    sent = time.time() * 1000
     t0 = time.monotonic()
-    tab = sv.cmd({"do": "open", "url": f"{sv.BASE}/first-page"})
+    if typed:
+        # Typed into the new tab's field a key at a time, then Return: timed
+        # from the Return.
+        answer = sv.cmd({"do": "field", "text": f"{sv.BASE}/first-page", "type": True, "go": True})
+        sent = answer["submittedAt"]
+        tab = next(t for t in sv.cmd({"do": "tabs"})["tabs"] if t["active"])
+    else:
+        sent = time.time() * 1000
+        tab = sv.cmd({"do": "open", "url": f"{sv.BASE}/first-page"})
     opened = time.monotonic()
     sv.cmd({"do": "wait", "id": tab["id"], "seconds": 20})
     loaded = time.monotonic()
@@ -290,7 +302,7 @@ def main():
     results = []
     try:
         for rnd in range(rounds):
-            res = page_round(rnd, settle) if page else memory_round(rnd, settle, "--welcomed" in args, val("--detail", None))
+            res = page_round(rnd, settle, "--typed" in args) if page else memory_round(rnd, settle, "--welcomed" in args, val("--detail", None))
             print(json.dumps(res), flush=True)
             results.append(res)
             if outfile:

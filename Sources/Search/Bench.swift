@@ -2296,6 +2296,9 @@ final class Bench {
                         let start = CACurrentMediaTime()
                         var loading: Double?
                         let watch = tab.$loading.first(where: { $0 }).sink { _ in loading = (CACurrentMediaTime() - start) * 1000 }
+                        // When Return went, on the clock a page's
+                        // performance.timeOrigin is on (Tests/mem_at_rest.py).
+                        out["submittedAt"] = Date().timeIntervalSince1970 * 1000
                         browser.submit()
                         out["returned"] = (CACurrentMediaTime() - start) * 1000
                         Bench.whenResting(since: start) { rested in

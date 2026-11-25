@@ -2607,6 +2607,14 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 
 /// A web view that reads the two-finger swipe for itself.
 final class PageView: WKWebView {
+    /// Before WebKit can load anything into its store (Store.network).
+    override init(frame: CGRect, configuration: WKWebViewConfiguration) {
+        Store.network()
+        super.init(frame: frame, configuration: configuration)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
     var draftFrames: [WKFrameInfo] = []
 
     var onMenuClosed: (() -> Void)?
