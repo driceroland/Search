@@ -2099,6 +2099,8 @@ final class Tab: ObservableObject, Identifiable {
     /// A view that has lost its document is given the address back instead:
     /// there is nothing else for it to reload.
     func reload(fromOrigin: Bool = false) {
+        // Developer Mode's cache turned off for the site (DevMode.swift).
+        let fromOrigin = fromOrigin || DevMode.shared.skipsCache(pageAddress)
         (delegate as? Browser)?.certificateDeclined.remove(id)
         // Search's own pages are drawn from what is there now, always.
         guard page == nil else { return }

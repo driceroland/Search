@@ -263,6 +263,10 @@ struct Command: Identifiable {
         Command("view.inspector", "Web Inspector", .view, KeyCombo("i", option: true)) { $0.toggleInspector() },
         Command("view.console", "JavaScript Console", .view, KeyCombo("j", option: true)) { $0.showConsole() },
         Command("view.inspect", "Inspect Element", .view, KeyCombo("c", option: true)) { $0.inspectElement() },
+        // Not ⌃D, Cra's: in a page's text field that deletes forward.
+        Command("view.developerMode", "Developer Mode", .view, KeyCombo("i", shift: true, option: true)) {
+            $0.toggleDeveloperMode()
+        },
 
         Command("tabs.back", "Back", .tabs, KeyCombo("[")) { $0.back() },
         Command("tabs.forward", "Forward", .tabs, KeyCombo("]")) { $0.forward() },

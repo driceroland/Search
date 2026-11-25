@@ -25,6 +25,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- Developer Mode, site by site, as byearc asks and Cra has: a page on this Mac (localhost, 127.0.0.1, [::1], .localhost and .test) shows a slim bar over its corner with its whole address, Web Inspector, Reload Ignoring Cache and a switch that keeps the cache off for the site's reloads. Any site can be put in it or taken out from its site card, View › Developer Mode or ⇧⌥⌘I (not ⌃D, which deletes forward in a page's text field), and is remembered; private tabs remember nothing. On by itself for local sites, switchable in Settings › About › Developer. `swift test --filter DevModeTests`, `python3 Tests/arc_extras.py` (idea 450)
 - Hide Elements can take every element like the one you point at, as Arc's "Zap all related elements" does: hold ⌥ and the outline says how many are like it, then ⌥-click hides them all, and new ones like them on later visits too, such as every promoted product with the same border. A plain click still hides just the one. It is one line in Hidden on This Site, put back like any other. `python3 Tests/hide_elements_dynamic.py` (requested by email, idea 1195)
 
 ### Changed

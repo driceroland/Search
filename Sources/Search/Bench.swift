@@ -728,6 +728,25 @@ final class Bench {
                 "started": browser.fetches.started,
             ])
 
+        case "devmode":
+            // Developer Mode (DevMode.swift) for a tab's site, as its site
+            // card's switch and ⇧⌥⌘I set it: "set" true/false, "cache"
+            // true/false for its cache off, "reload" true reloads as ⌘R
+            // does. Test runs only.
+            guard Store.testing else { answer(["error": "devmode only works on a --test run"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            let mode = DevMode.shared
+            if let on = request["set"] as? Bool { mode.set(on, for: tab.pageAddress, shy: tab.shy) }
+            if request["toggle"] as? Bool == true {
+                browser.select(tab)
+                browser.toggleDeveloperMode()
+            }
+            if let off = request["cache"] as? Bool { mode.setSkipsCache(off, for: tab.pageAddress) }
+            if request["reload"] as? Bool == true { tab.reload() }
+            answer(["on": mode.isOn(tab), "local": mode.local, "cacheOff": mode.skipsCache(tab.pageAddress),
+                    "sites": mode.sites, "address": tab.pageAddress?.absoluteString ?? "",
+                    "command": Command.named("view.developerMode") != nil])
+
         case "kept":
             // A sleeping tab's picture, as kept for its waking, written to a
             // file: its size in pixels, what NSImage makes of it, and the
