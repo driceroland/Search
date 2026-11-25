@@ -23,7 +23,7 @@ try:
     sv.setup(sidebar=True); sv.launch()
     a = sv.page("a"); b = sv.page("b"); c = sv.page("c"); sv.page("front")
     st = pf(action="state")
-    t.ok("off by default", st.get("setting") is False, st.get("setting"))
+    t.ok("on by default (25 Nov 2026)", st.get("setting") is True, st.get("setting"))
     pf(action="on")
     for id in (a, b, c): pf(action="pin", id=id)
     pf(action="new", name="Work", id=a)

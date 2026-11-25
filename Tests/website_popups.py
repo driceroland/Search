@@ -116,10 +116,11 @@ def picture(name, window):
 def main():
     t = sv.T()
     try:
-        sv.setup(); sv.launch()
+        # Turned off (on by default since 25 Nov 2026).
+        sv.setup(**{"tabs.popupWindows": False}); sv.launch()
         page = sv.page("opener")
         tap(page, "#sized")
-        t.ok("off by default: a sized pop-up is still a tab", len(windows()) == 1 and len(tabs()) == 3, windows())
+        t.ok("turned off: a sized pop-up is still a tab", len(windows()) == 1 and len(tabs()) == 3, windows())
         picture("before-sized-popup", 1)
         sv.quit()
 
