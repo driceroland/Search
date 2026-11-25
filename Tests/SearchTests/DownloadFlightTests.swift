@@ -17,11 +17,18 @@ final class DownloadFlightTests: XCTestCase {
         XCTAssertEqual(end.y, foot.y, accuracy: 0.001)
     }
 
-    func testItRisesTheLiftAboveTheHigherEndAndNoFurther() {
+    func testItBowsUpAboveTheHigherEndButNoFurtherThanTheLift() {
         let highest = stride(from: 0.0, through: 1.0, by: 0.001)
             .map { DownloadFlight.point(from: click, to: foot, at: CGFloat($0)).y }
             .min() ?? .infinity
-        XCTAssertEqual(highest, click.y - DownloadFlight.lift, accuracy: 0.5)
+        XCTAssertLessThan(highest, click.y - 10)
+        XCTAssertGreaterThanOrEqual(highest, click.y - DownloadFlight.lift)
+    }
+
+    func testItGlidesSlowOffAndSlowIn() {
+        XCTAssertLessThan(DownloadFlight.glide(0.1), 0.1)
+        XCTAssertEqual(DownloadFlight.glide(0.5), 0.5, accuracy: 0.001)
+        XCTAssertGreaterThan(DownloadFlight.glide(0.9), 0.9)
     }
 
     func testToTheStripItNeverLeavesTheWindowsTop() {

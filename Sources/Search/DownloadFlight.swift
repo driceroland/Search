@@ -4,7 +4,7 @@
 // pulse alone stays and the Saved line says when the file is in.
 //
 // The numbers were settled in a sketch at the window's real size: a file's
-// own Finder icon, thrown, 600 ms, rising 90 pt above the higher end, fading
+// own Finder icon, gliding along a gentle curve for 600 ms, fading
 // in over the first fifth so it lifts out of the click rather than popping up
 // on it, swelling to half again its size at the top and landing at half. Then
 // the button's own pulse, and once the file is in, a check for a moment.
@@ -23,7 +23,8 @@ enum DownloadFlight {
     static let duration: Double = 0.6
     /// In Low Power Mode, as the pulse is quicker there (FetchDoor.pulse).
     static let lightDuration: Double = 0.4
-    /// How far above the higher end, the click or the button, it rises.
+    /// How far the curve bows up: its bend stands twice this above the
+    /// higher end, the click or the button.
     static let lift: CGFloat = 90
     /// Never closer than this to the window's top: in the strip across the
     /// top the button is only 26 pt down, and a full rise left the window.
@@ -53,15 +54,20 @@ enum DownloadFlight {
 
     static func duration(light: Bool) -> Double { light ? lightDuration : duration }
 
-    /// Where the file is at `t` (0…1): across at a steady pace, up and down
-    /// on a parabola through both ends that peaks `lift` above the higher.
+    /// Where the file is at `t` (0…1), along a gentle curve that bows up
+    /// toward a point `lift` × 2 above the higher end, easing out of the
+    /// click and into the button: a glide, as the interface's own things
+    /// move, rather than a throw.
     static func point(from a: CGPoint, to b: CGPoint, at t: CGFloat, lift: CGFloat = lift) -> CGPoint {
-        let peak = max(roof, min(a.y, b.y) - lift)
-        let rise = max(0, a.y - peak), fall = max(0, b.y - peak)
-        // y(t) = p t² + q t + a.y, through b.y at 1, its top at `peak`.
-        let q = -2 * (rise + (rise * fall).squareRoot())
-        let p = (b.y - a.y) - q
-        return CGPoint(x: a.x + (b.x - a.x) * t, y: p * t * t + q * t + a.y)
+        let e = glide(t), u = 1 - e
+        let bend = CGPoint(x: (a.x + b.x) / 2, y: max(roof, min(a.y, b.y) - lift * 2))
+        return CGPoint(x: u * u * a.x + 2 * u * e * bend.x + e * e * b.x,
+                       y: u * u * a.y + 2 * u * e * bend.y + e * e * b.y)
+    }
+
+    /// Slow off, quick through the middle, slow in.
+    static func glide(_ t: CGFloat) -> CGFloat {
+        t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
     }
 
     /// Its size at `t`: from its own toward `landing`, swollen at the top.
@@ -160,7 +166,7 @@ struct DownloadFlightLayer: View {
                             .resizable()
                             .frame(width: DownloadFlight.iconSize, height: DownloadFlight.iconSize)
                             .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
-                            .scaleEffect(DownloadFlight.scale(at: t))
+                            .scaleEffect(DownloadFlight.scale(at: DownloadFlight.glide(t)))
                             .opacity(DownloadFlight.opacity(at: t))
                             .position(DownloadFlight.point(from: from, to: to, at: t))
                     }
