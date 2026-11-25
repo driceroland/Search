@@ -363,15 +363,193 @@ enum ProfileMenu {
 struct ProfileList: View {
     @ObservedObject var browser: Browser
     @ObservedObject var profiles = Profiles.shared
+    @State private var open: Set<UUID> = []
 
     var body: some View {
         ForEach(Array(profiles.list.enumerated()), id: \.element.id) { index, profile in
             if index > 0 { Rule() }
+            let window = profile.id == browser.profileID ? browser
+                : Browsers.all.first { $0.profileID == profile.id && !$0.isPopup }
             ProfileRow(profile: profile, current: profile.id == browser.profileID,
-                       spaces: profiles.spaces(of: profile.id).count, deletable: profiles.several && !profile.isPersonal)
+                       spaces: profiles.spaces(of: profile.id).count,
+                       deletable: profiles.several && !profile.isPersonal,
+                       expanded: isOpen(profile.id)) {
+                withAnimation(Motion.quick) {
+                    if isOpen(profile.id) { open.remove(profile.id) } else { open.insert(profile.id) }
+                    if profile.id == browser.profileID { open.insert(Self.closedMark) }
+                }
+            }
+            if isOpen(profile.id) {
+                if let window {
+                    SpaceRows(browser: window)
+                } else {
+                    ForEach(profiles.spaces(of: profile.id)) { space in
+                        Rule(inset: SettingsPanel.textInset)
+                        SpaceLine(symbol: space.symbol, name: space.name, rename: nil, remove: nil)
+                    }
+                    Rule(inset: SettingsPanel.textInset)
+                    Text("Open the profile to add or change its spaces")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                        .padding(.leading, SettingsPanel.textInset)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         }
         Rule()
         NewProfileRow()
+    }
+
+    private static let closedMark = UUID(uuidString: "00000000-0000-0000-0000-00000000C105")!
+
+    private func isOpen(_ id: UUID) -> Bool {
+        if id == browser.profileID {
+            return open.contains(Self.closedMark) ? open.contains(id) : true
+        }
+        return open.contains(id)
+    }
+}
+
+private struct SpaceRows: View {
+    @ObservedObject var browser: Browser
+
+    var body: some View {
+        ForEach(browser.spaces) { space in
+            Rule(inset: SettingsPanel.textInset)
+            SpaceLine(
+                symbol: space.symbol, name: space.name,
+                rename: { browser.renameSpace(space.id, to: $0) },
+                remove: browser.canDeleteSpace(space.id) ? {
+                    let own = Spaces.ownsStore(space.id)
+                    Ask.sure("Delete “\(space.name)”?",
+                             detail: own ? "Its tabs close, and its cookies and sign-ins are erased from this Mac. History and bookmarks stay."
+                                         : "Its tabs and pins close. Your sign-ins, history and bookmarks stay.",
+                             confirm: "Delete") {
+                        browser.deleteSpace(space.id)
+                    }
+                } : nil)
+        }
+        Rule(inset: SettingsPanel.textInset)
+        AddLine(title: "New Space…", inset: SettingsPanel.textInset) {
+            Ask.newSpace(then: { name, shared in
+                browser.addSpace(named: name.isEmpty ? "Space \(browser.spaces.count + 1)" : name, sharesSignIns: shared)
+            }, cancelled: {})
+        }
+    }
+}
+
+private struct SpaceLine: View {
+    let symbol: String
+    let name: String
+    let rename: ((String) -> Void)?
+    let remove: (() -> Void)?
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.ink.opacity(0.7))
+                .frame(width: 18)
+            if let rename {
+                InlineName(name: name, commit: rename)
+            } else {
+                Text(name).font(.system(size: 13)).foregroundStyle(Palette.ink)
+            }
+            Spacer(minLength: 8)
+            if let remove {
+                QuickRemove(label: "Delete \(name)", act: remove)
+                    .opacity(hovering ? 1 : 0)
+            }
+        }
+        .padding(.leading, SettingsPanel.textInset)
+        .padding(.trailing, 16)
+        .frame(minHeight: 40)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+    }
+}
+
+private struct InlineName: View {
+    let name: String
+    let commit: (String) -> Void
+    @State private var text = ""
+    @State private var hovering = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("", text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .foregroundStyle(Palette.ink)
+            .focused($focused)
+            .padding(.horizontal, 6)
+            .frame(height: 24)
+            .background((focused || hovering) ? Palette.wash : .clear,
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .padding(.leading, -6)
+            .frame(maxWidth: 260, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .onHover { hovering = $0 }
+            .help("Rename")
+            .onAppear { text = name }
+            .onChange(of: name) { _, now in if !focused { text = now } }
+            .onSubmit(save)
+            .onChange(of: focused) { _, now in if !now { save() } }
+    }
+
+    private func save() {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == name { text = name } else { commit(trimmed) }
+    }
+}
+
+private struct QuickRemove: View {
+    let label: String
+    let act: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: act) {
+            Image(systemName: "trash")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(hovering ? Color.red.opacity(0.85) : Palette.muted)
+                .frame(width: 26, height: 26)
+                .background(hovering ? Palette.hover : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+private struct AddLine: View {
+    let title: String
+    let inset: CGFloat
+    let act: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: act) {
+            HStack(spacing: 10) {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 18)
+                Text(title).font(.system(size: 13))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(hovering ? Palette.ink : Palette.ink.opacity(0.75))
+            .padding(.leading, inset)
+            .padding(.trailing, 16)
+            .frame(minHeight: 40)
+            .background(hovering ? Palette.hover : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 
@@ -380,6 +558,9 @@ private struct ProfileRow: View {
     let current: Bool
     let spaces: Int
     let deletable: Bool
+    let expanded: Bool
+    let toggle: () -> Void
+    @State private var hovering = false
 
     private var detail: String {
         let count = spaces == 1 ? "1 space" : "\(spaces) spaces"
@@ -388,48 +569,41 @@ private struct ProfileRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            Button(action: toggle) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .frame(width: 14, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(expanded ? "Hide spaces of \(profile.name)" : "Show spaces of \(profile.name)")
             ProfileIconPicker(profile: profile)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(profile.name)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Palette.ink)
+            VStack(alignment: .leading, spacing: 2) {
+                InlineName(name: profile.name) { Profiles.shared.rename(profile.id, to: $0) }
                 Text(detail)
                     .font(.system(size: 11.5))
                     .foregroundStyle(Palette.muted)
             }
             Spacer(minLength: 8)
-            if !current { Pill("Open") { Browsers.open(profile: profile.id) } }
-            Menu {
-                Button("Rename…") {
-                    Ask.name("Rename Profile", placeholder: profile.name, initial: profile.name, confirm: "Rename") {
-                        Profiles.shared.rename(profile.id, to: $0)
+            if deletable {
+                QuickRemove(label: "Delete \(profile.name)") {
+                    Ask.sure("Delete “\(profile.name)”?",
+                             detail: "Its windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac.",
+                             confirm: "Delete", returnCancels: true) {
+                        Profiles.shared.delete(profile.id)
                     }
                 }
-                if deletable {
-                    Divider()
-                    Button("Delete…", role: .destructive) {
-                        Ask.sure("Delete “\(profile.name)”?",
-                                 detail: "Its windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac.",
-                                 confirm: "Delete", returnCancels: true) {
-                            Profiles.shared.delete(profile.id)
-                        }
-                    }
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Palette.muted)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
+                .opacity(hovering ? 1 : 0)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .accessibilityLabel("More for \(profile.name)")
+            if !current { Pill("Open") { Browsers.open(profile: profile.id) } }
         }
-        .padding(.leading, 12)
+        .padding(.leading, 8)
         .padding(.trailing, 16)
-        .padding(.vertical, 13)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 
