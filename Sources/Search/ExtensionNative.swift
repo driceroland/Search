@@ -23,6 +23,38 @@ enum ExtensionNative {
     /// category == "ExtensionNative"' --info --last 1h`
     static let log = Logger(subsystem: "com.officecommun.search", category: "ExtensionNative")
 
+    /// "0.21 s": how long after its host started a connection ended. The
+    /// moment matters (a port gone a fifth of a second in is the extension's
+    /// side going, not the app's), so not rounded to whole seconds.
+    static func since(_ start: Date, _ now: Date = Date()) -> String {
+        String(format: "%.2f s", now.timeIntervalSince(start))
+    }
+
+    /// When each extension's page last lost its web process, and why. An
+    /// extension's pages and its worker share one process: a page that
+    /// crashes takes the worker's ports to apps down with it, and those
+    /// hosts are stopped as the ports go. Kept so the log can say so (a
+    /// 1Password page that "kept crashing" left only a closed connection
+    /// in its app's log).
+    @MainActor static var processEnds: [String: (at: Date, why: String)] = [:]
+
+    /// An extension's page has lost its process (see Dialogs.pageProcessEnded).
+    @MainActor
+    static func processEnded(of extensionID: String, _ why: String) {
+        processEnds[extensionID] = (Date(), why)
+        let held = Live.pipes.values.filter { $0.extensionID == extensionID }.count
+        log.notice("An extension's process ended (\(why, privacy: .public)) with \(held, privacy: .public) port(s) to apps open: they go with it")
+    }
+
+    /// Why an extension let go of a port, as far as Search can tell.
+    @MainActor
+    static func letGoReason(of extensionID: String, _ now: Date = Date()) -> String {
+        if let end = processEnds[extensionID], abs(now.timeIntervalSince(end.at)) < 3 {
+            return "its process had just ended (\(end.why))"
+        }
+        return "its page or worker closed the port, reloaded or went"
+    }
+
     struct Refused: LocalizedError {
         let why: String
         var errorDescription: String? { why }
@@ -94,9 +126,11 @@ enum ExtensionNative {
         // have left its host behind.
         stopOrphans()
         let pipe = HostPipe(program: program, origin: "chrome-extension://\(extensionID)/")
+        pipe.name = name
         let started = Date()
+        log.notice("Host \(name, privacy: .public) started for a port")
         pipe.onTerminated = { note in
-            log.notice("Host \(name, privacy: .public) ended: \(note, privacy: .public), after \(Int(Date().timeIntervalSince(started)), privacy: .public)s")
+            log.notice("Host \(name, privacy: .public) ended: \(note, privacy: .public), \(since(started), privacy: .public) after it started")
         }
         pipe.onMessage = { message in
             DispatchQueue.main.async { port.sendMessage(message, completionHandler: nil) }
@@ -106,7 +140,7 @@ enum ExtensionNative {
         }
         // Listened to before it runs: a host may answer at once. One that
         // can't run is let go as one that has exited.
-        Live.keep(pipe, for: port, of: extensionID)
+        Live.keep(pipe, for: port, of: extensionID, name: name, started: started)
         do { try pipe.start() } catch { pipe.stop(); throw error }
         var beating: Timer?
         port.messageHandler = { message, _ in
@@ -134,10 +168,20 @@ enum ExtensionNative {
                 }
                 return
             }
-            try? pipe.write(message)
+            do { try pipe.write(message) } catch {
+                log.notice("A message to host \(name, privacy: .public) wasn't sent: \(error.localizedDescription, privacy: .public)")
+            }
         }
         port.disconnectHandler = { error in
-            log.info("Port to \(name, privacy: .public) let go\(error == nil ? "" : " with an error", privacy: .public)")
+            // Said at the default level, as the host's end is: a port the
+            // extension lets go a moment after its host started was only
+            // in the info log, and the log seemed to say nothing. Said a
+            // moment later: WebKit may tell of the port before it tells of
+            // the process that took it down.
+            let when = since(started), failed = error != nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                log.notice("Port to \(name, privacy: .public) closed by the extension\(failed ? " with an error" : "", privacy: .public): \(letGoReason(of: extensionID), privacy: .public), \(when, privacy: .public) after its host started; its host is stopped")
+            }
             beating?.invalidate()
             pipe.stop()
         }
@@ -153,8 +197,10 @@ enum ExtensionNative {
     @MainActor
     static func stopOrphans() {
         let gone = Live.pipes.values.filter { $0.port.isDisconnected }
-        if !gone.isEmpty { log.notice("Stopping \(gone.count, privacy: .public) host(s) whose port went unannounced") }
-        for live in gone { live.pipe.stop() }
+        for live in gone {
+            log.notice("Stopping host \(live.name, privacy: .public): its port went unannounced (\(letGoReason(of: live.extensionID), privacy: .public)), \(since(live.started), privacy: .public) after it started")
+            live.pipe.stop()
+        }
     }
 
     /// A worker's ports go with it, yet WebKit, stopping an idle worker and
@@ -168,20 +214,22 @@ enum ExtensionNative {
     @MainActor
     static func stopWorkerHosts(of extensionID: String) {
         let last = Live.pipes.values.filter { $0.worker && $0.extensionID == extensionID }
-        if !last.isEmpty { log.notice("A new worker: stopping its last worker's \(last.count, privacy: .public) host(s)") }
         for live in last {
-            let cleanup = live.port.disconnectHandler
+            log.notice("Stopping host \(live.name, privacy: .public): the extension's worker started again (\(letGoReason(of: extensionID), privacy: .public)), \(since(live.started), privacy: .public) after it started")
+            // Its own disconnect handler would log the port as closed by
+            // the extension; said above instead. Its keep-alive timer stops
+            // itself once the port reads as disconnected.
             live.port.disconnectHandler = nil
-            cleanup?(nil)
+            live.pipe.stop()
             if !live.port.isDisconnected { live.port.disconnect() }
         }
     }
 
     /// Hosts that are connected, held until they end.
     private enum Live {
-        nonisolated(unsafe) static var pipes: [ObjectIdentifier: (pipe: HostPipe, port: WKWebExtension.MessagePort, extensionID: String, worker: Bool)] = [:]
-        static func keep(_ pipe: HostPipe, for port: WKWebExtension.MessagePort, of extensionID: String) {
-            pipes[ObjectIdentifier(pipe)] = (pipe, port, extensionID, false)
+        nonisolated(unsafe) static var pipes: [ObjectIdentifier: (pipe: HostPipe, port: WKWebExtension.MessagePort, extensionID: String, worker: Bool, name: String, started: Date)] = [:]
+        static func keep(_ pipe: HostPipe, for port: WKWebExtension.MessagePort, of extensionID: String, name: String, started: Date) {
+            pipes[ObjectIdentifier(pipe)] = (pipe, port, extensionID, false, name, started)
             let previous = pipe.onExit
             pipe.onExit = {
                 previous?()
@@ -209,6 +257,8 @@ final class HostPipe: @unchecked Sendable {
     private let lock = NSLock()
     /// Held around each use of the input handle, so it is never written once closed.
     private let writing = NSLock()
+    /// The host's name, for the log only.
+    var name = ""
     var onMessage: ((Any) -> Void)?
     var onExit: (() -> Void)?
     /// Once the host's process has exited: how it ended (its status or the
@@ -335,6 +385,7 @@ final class HostPipe: @unchecked Sendable {
         buffer.append(chunk)
         var messages: [Any] = []
         var overlong = false
+        var dropped = 0
         while buffer.count >= 4 {
             let length = Int(buffer.prefix(4).withUnsafeBytes { $0.loadUnaligned(as: UInt32.self).littleEndian })
             if length > Self.frameCap { overlong = true; buffer = Data(); break }
@@ -343,6 +394,8 @@ final class HostPipe: @unchecked Sendable {
             buffer.removeSubrange(0..<(4 + length))
             if let message = try? JSONSerialization.jsonObject(with: body, options: [.fragmentsAllowed]) {
                 messages.append(message)
+            } else {
+                dropped += 1
             }
         }
         var handed: [(CheckedContinuation<Any?, Error>, Any)] = []
@@ -355,7 +408,13 @@ final class HostPipe: @unchecked Sendable {
         rest.forEach { onMessage?($0) }
         // As in Chrome, a host claiming a message past the cap is done with;
         // what it sent before that in the same read is still heard.
-        if overlong { finish(); end() }
+        if dropped > 0 {
+            ExtensionNative.log.notice("Host \(self.name, privacy: .public) sent \(dropped, privacy: .public) message(s) that aren't JSON: not passed on")
+        }
+        if overlong {
+            ExtensionNative.log.notice("Host \(self.name, privacy: .public) announced a message over 1 MB: the connection ends, as in Chrome")
+            finish(); end()
+        }
     }
 
     /// Stops the host as Chrome does: its input closed and SIGTERM, then
