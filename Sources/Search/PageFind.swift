@@ -190,8 +190,9 @@ final class PageFind {
     /// `callAsyncJavaScript` supplies these names as arguments; the query is
     /// never interpolated into source. State and ranges live only in Search's
     /// isolated content world, so the page's nodes stay untouched. The matches
-    /// are painted with `CSS.highlights` and one adopted style sheet, which the
-    /// page can read back, but not the list the count comes from.
+    /// are painted with `CSS.highlights`; fields use mirrors in a closed
+    /// shadow tree so their values and styles stay untouched. The page can
+    /// read the highlight sheet back, but not the list the count comes from.
     ///
     /// The page's text is read once and kept, as runs of text with a map back
     /// to the nodes, until a mutation, a changed field or another frame says
@@ -209,7 +210,8 @@ final class PageFind {
             generation: -1, query: null, matchCase: false, wholeWords: false,
             index: -1, matches: [], complete: true, cursor: null, expression: null,
             runs: null, current: null, savedSelections: [], painted: [], highlights: new WeakMap(),
-            observers: [], documents: [], controls: [], dirty: true
+            observers: [], documents: [], controls: [], dirty: true,
+            fieldPainters: new Map(), fieldHosts: new WeakSet()
         };
         Object.defineProperty(globalThis, key, { value: state, configurable: true });
     }
@@ -343,7 +345,7 @@ final class PageFind {
     function observe(context) {
         if (state.observers.some(item => !item.shadow && item.doc === context.doc)) return;
         try {
-            const observer = new context.win.MutationObserver(() => { state.dirty = true; });
+            const observer = new context.win.MutationObserver(pageMutations);
             observer.observe(context.doc.documentElement, {
                 subtree: true, childList: true, characterData: true, attributes: true
             });
@@ -503,6 +505,7 @@ final class PageFind {
             flush();
             state.controls.push({ element, value });
             const controlRun = makeRun(context, element);
+            controlRun.value = value;
             controlRun.nodes.push(element);
             addValue(controlRun, 0, value);
             run = controlRun;
@@ -548,7 +551,7 @@ final class PageFind {
             const root = element.shadowRoot;
             if (root) {
                 try {
-                    if (!shadows) shadows = new context.win.MutationObserver(() => { state.dirty = true; });
+                    if (!shadows) shadows = new context.win.MutationObserver(pageMutations);
                     shadows.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
                 } catch (_) {}
                 flush();
@@ -639,7 +642,7 @@ final class PageFind {
         if (run.control) {
             const control = run.control;
             return {
-                kind: "control", win: run.win, control,
+                kind: "control", win: run.win, control, value: run.value,
                 start: from.offset, end: to.offset,
                 savedStart: control.selectionStart, savedEnd: control.selectionEnd,
                 savedDirection: control.selectionDirection || "none"
@@ -716,13 +719,16 @@ final class PageFind {
     }
 
     // The selection alone is drawn pale grey while the find bar has the keys,
-    // so every match is painted too: yellow, the current one orange. Matches
-    // in fields keep only their selection.
+    // so every match is painted too: yellow, the current one orange.
     // Each window gets its two highlights once; after that they are only
     // cleared and added to. A highlight repaints the ranges it gains or
     // loses, whereas one set into or deleted from `CSS.highlights` could
     // stay on screen, or stay off it, until something else was drawn.
     function unpaint() {
+        for (const painter of state.fieldPainters.values()) {
+            try { painter.dispose(); } catch (_) {}
+        }
+        state.fieldPainters.clear();
         for (const highlights of state.painted) {
             try { highlights.all.clear(); highlights.current.clear(); } catch (_) {}
         }
@@ -732,7 +738,7 @@ final class PageFind {
     function highlightsIn(win) {
         const doc = win.document;
         let highlights = state.highlights.get(win);
-        if (!highlights) {
+        if (!highlights || highlights.doc !== doc) {
             const sheet = new win.CSSStyleSheet();
             sheet.replaceSync(
                 "::highlight(search-find-match) { background-color: #ffff00; color: #000; }"
@@ -740,7 +746,7 @@ final class PageFind {
             );
             const current = new win.Highlight();
             current.priority = 1;
-            highlights = { sheet, all: new win.Highlight(), current };
+            highlights = { doc, sheet, all: new win.Highlight(), current };
             state.highlights.set(win, highlights);
         }
         // A page may set its own sheets, or these names, again at any time.
@@ -756,13 +762,234 @@ final class PageFind {
         return highlights;
     }
 
+    function fieldPainter(win, highlights) {
+        let painter = state.fieldPainters.get(win);
+        if (painter) return painter;
+        const doc = win.document;
+        const host = doc.createElement("search-find-fields");
+        host.setAttribute("aria-hidden", "true");
+        host.style.cssText = "all:initial!important;display:block!important;position:fixed!important;inset:0!important;pointer-events:none!important;z-index:2147483647!important;contain:strict!important;overflow:hidden!important;user-select:none!important;-webkit-user-select:none!important";
+        state.fieldHosts.add(host);
+        const root = host.attachShadow({ mode: "closed" });
+        root.adoptedStyleSheets = [highlights.sheet];
+        doc.documentElement.append(host);
+        const fields = new Map(), listeners = [], watched = new Set();
+        const properties = [
+            "font-family", "font-size", "font-style", "font-weight", "font-stretch", "font-variant",
+            "font-feature-settings", "font-variation-settings", "font-kerning", "font-synthesis",
+            "line-height", "letter-spacing", "word-spacing", "text-align", "text-indent",
+            "text-transform", "text-rendering", "direction", "tab-size", "white-space",
+            "overflow-wrap", "word-break", "padding-top", "padding-right", "padding-bottom",
+            "padding-left", "-webkit-text-security"
+        ];
+        let timer = null, disposed = false;
+        const resized = new win.ResizeObserver(schedule);
+        function listen(target, type, capture = false) {
+            target.addEventListener(type, schedule, capture);
+            listeners.push({ target, type, capture });
+        }
+        function schedule() {
+            if (disposed || timer !== null) return;
+            timer = setTimeout(() => { timer = null; refresh(); }, 16);
+        }
+        function parent(element) {
+            return element.assignedSlot || element.parentElement || element.getRootNode().host || null;
+        }
+        function live() {
+            if (disposed) return false;
+            try { if (win.document === doc) return true; } catch (_) {}
+            painter.dispose();
+            return false;
+        }
+        function refresh() {
+            if (!live()) return;
+            for (const [control, field] of fields) {
+                const { box, mirror, value, ranges } = field;
+                box.style.display = "none";
+                field.retry = false;
+                if (!control.isConnected || control.value !== value || control.type === "password") continue;
+                const rect = control.getBoundingClientRect();
+                field.rect = rect;
+                field.scrollLeft = control.scrollLeft;
+                field.scrollTop = control.scrollTop;
+                if (!control.offsetWidth || !control.offsetHeight || rect.right <= 0 || rect.bottom <= 0
+                    || rect.left >= win.innerWidth || rect.top >= win.innerHeight) continue;
+                const style = win.getComputedStyle(control);
+                if (!rect.width || !rect.height || style.visibility !== "visible"
+                    || style.writingMode !== "horizontal-tb") continue;
+                const sx = rect.width / control.offsetWidth, sy = rect.height / control.offsetHeight;
+                const left = rect.left + control.clientLeft * sx, top = rect.top + control.clientTop * sy;
+                let clip = { left: 0, top: 0, right: win.innerWidth, bottom: win.innerHeight };
+                let opacity = Number(style.opacity), supported = true;
+                for (let element = control; element; element = parent(element)) {
+                    const css = element === control ? style : win.getComputedStyle(element);
+                    if (element !== control && element !== doc.documentElement) opacity *= Number(css.opacity);
+                    if (css.transform !== "none") {
+                        const matrix = new win.DOMMatrix(css.transform);
+                        if (!matrix.is2D || matrix.b !== 0 || matrix.c !== 0 || matrix.a <= 0 || matrix.d <= 0
+                            || element === doc.documentElement) { supported = false; break; }
+                    }
+                    if (element === control || element === doc.documentElement) continue;
+                    const bounds = element.getBoundingClientRect();
+                    const scaleX = element.offsetWidth ? bounds.width / element.offsetWidth : 1;
+                    const scaleY = element.offsetHeight ? bounds.height / element.offsetHeight : 1;
+                    if (css.overflowX !== "visible") {
+                        clip.left = Math.max(clip.left, bounds.left + element.clientLeft * scaleX);
+                        clip.right = Math.min(clip.right, bounds.left + (element.clientLeft + element.clientWidth) * scaleX);
+                    }
+                    if (css.overflowY !== "visible") {
+                        clip.top = Math.max(clip.top, bounds.top + element.clientTop * scaleY);
+                        clip.bottom = Math.min(clip.bottom, bounds.top + (element.clientTop + element.clientHeight) * scaleY);
+                    }
+                }
+                if (!supported || !opacity || clip.right <= left || clip.bottom <= top
+                    || clip.left >= left + control.clientWidth * sx || clip.top >= top + control.clientHeight * sy) continue;
+                const visibleLeft = Math.max(left, clip.left), visibleTop = Math.max(top, clip.top);
+                const visibleRight = Math.min(left + control.clientWidth * sx, clip.right);
+                const visibleBottom = Math.min(top + control.clientHeight * sy, clip.bottom);
+                const insetX = Math.min(4, (visibleRight - visibleLeft) / 2);
+                const insetY = Math.min(4, (visibleBottom - visibleTop) / 2);
+                const xs = [visibleLeft + insetX, (visibleLeft + visibleRight) / 2, visibleRight - insetX];
+                const ys = [visibleTop + insetY, (visibleTop + visibleBottom) / 2, visibleBottom - insetY];
+                const uncovered = xs.every(x => ys.every(y => {
+                    let hit = doc.elementFromPoint(x, y);
+                    while (hit?.shadowRoot?.elementFromPoint) {
+                        const nested = hit.shadowRoot.elementFromPoint(x, y);
+                        if (!nested || nested === hit) break;
+                        hit = nested;
+                    }
+                    return hit === control || control.contains(hit)
+                        || (style.pointerEvents === "none" && hit?.contains(control));
+                }));
+                if (!uncovered) { field.retry = true; continue; }
+                for (const property of properties) mirror.style.setProperty(property, style.getPropertyValue(property));
+                mirror.style.width = control.clientWidth + "px";
+                mirror.style.left = -control.scrollLeft + "px";
+                mirror.style.top = -control.scrollTop + "px";
+                box.style.cssText = "position:absolute;overflow:hidden;pointer-events:none;transform-origin:0 0";
+                Object.assign(box.style, {
+                    left: left + "px", top: top + "px", width: control.clientWidth + "px",
+                    height: control.clientHeight + "px", transform: `scale(${sx}, ${sy})`,
+                    opacity: String(opacity), borderRadius: style.borderRadius,
+                    clipPath: `inset(${Math.max(0, (clip.top - top) / sy)}px ${Math.max(0, control.clientWidth - (clip.right - left) / sx)}px ${Math.max(0, control.clientHeight - (clip.bottom - top) / sy)}px ${Math.max(0, (clip.left - left) / sx)}px)`
+                });
+                if (control.localName === "input") {
+                    mirror.style.whiteSpace = "pre";
+                    mirror.style.overflowWrap = "normal";
+                    mirror.style.top = (control.clientHeight - mirror.getBoundingClientRect().height / sy) / 2 + "px";
+                }
+                for (const range of ranges) {
+                    const current = highlights.current.has(range);
+                    highlights.all.delete(range);
+                    highlights.all.add(range);
+                    if (current) { highlights.current.delete(range); highlights.current.add(range); }
+                }
+            }
+        }
+        function reveal(match) {
+            const field = fields.get(match.control);
+            if (!field) return;
+            const range = field.ranges.find(range => range.startOffset === match.start && range.endOffset === match.end);
+            if (!range) return;
+            for (let element = match.control; element; element = parent(element)) {
+                const rect = range.getClientRects()[0];
+                if (!rect) break;
+                const viewport = element === doc.documentElement;
+                const bounds = viewport ? { left: 0, top: 0, width: win.innerWidth, height: win.innerHeight }
+                    : element.getBoundingClientRect();
+                const sx = !viewport && element.offsetWidth ? bounds.width / element.offsetWidth : 1;
+                const sy = !viewport && element.offsetHeight ? bounds.height / element.offsetHeight : 1;
+                const left = bounds.left + (viewport ? 0 : element.clientLeft * sx);
+                const top = bounds.top + (viewport ? 0 : element.clientTop * sy);
+                const right = left + (viewport ? win.innerWidth : element.clientWidth * sx);
+                const bottom = top + (viewport ? win.innerHeight : element.clientHeight * sy);
+                const dx = rect.left < left ? rect.left - left : Math.max(0, Math.min(rect.right - right, rect.left - left));
+                const dy = rect.top < top ? rect.top - top : Math.max(0, Math.min(rect.bottom - bottom, rect.top - top));
+                if (dx) element.scrollLeft += dx / sx;
+                if (dy) element.scrollTop += dy / sy;
+                if (dx || dy) refresh();
+            }
+        }
+        function rangeFor(match) {
+            const control = match.control;
+            if (control.value !== match.value) return null;
+            let field = fields.get(control);
+            if (!field) {
+                const box = doc.createElement("div"), mirror = doc.createElement("div");
+                const value = match.value;
+                const text = doc.createTextNode(value);
+                mirror.style.cssText = "all:initial;display:block;position:absolute;box-sizing:border-box;color:transparent;pointer-events:none";
+                mirror.append(text);
+                box.append(mirror);
+                root.append(box);
+                field = { box, mirror, text, value, ranges: [], rect: null, scrollLeft: 0, scrollTop: 0, retry: false };
+                fields.set(control, field);
+                for (let element = control; element; element = parent(element)) {
+                    if (!watched.has(element)) {
+                        watched.add(element);
+                        resized.observe(element);
+                        listen(element, "scroll");
+                    }
+                }
+            }
+            const range = doc.createRange();
+            range.setStart(field.text, match.start);
+            range.setEnd(field.text, match.end);
+            field.ranges.push(range);
+            return range;
+        }
+        listen(win, "scroll", true);
+        listen(win, "resize");
+        listen(doc, "input", true);
+        if (doc.fonts) listen(doc.fonts, "loadingdone");
+        const polling = setInterval(() => {
+            if (!live()) return;
+            for (const [control, field] of fields) {
+                if (!control.isConnected || control.value !== field.value || control.type === "password") {
+                    field.box.style.display = "none";
+                    continue;
+                }
+                const rect = control.getBoundingClientRect(), previous = field.rect;
+                if (field.retry || !previous || rect.x !== previous.x || rect.y !== previous.y
+                    || rect.width !== previous.width || rect.height !== previous.height
+                    || control.scrollLeft !== field.scrollLeft || control.scrollTop !== field.scrollTop) schedule();
+            }
+        }, 250);
+        painter = {
+            rangeFor, refresh, reveal, schedule,
+            dispose() {
+                if (disposed) return;
+                disposed = true;
+                if (timer !== null) clearTimeout(timer);
+                clearInterval(polling);
+                resized.disconnect();
+                for (const { target, type, capture } of listeners) {
+                    try { target.removeEventListener(type, schedule, capture); } catch (_) {}
+                }
+                host.remove();
+                state.fieldPainters.delete(win);
+            }
+        };
+        state.fieldPainters.set(win, painter);
+        return painter;
+    }
+
+    function pageMutations(records) {
+        const changed = records.some(record => !state.fieldHosts.has(record.target)
+            && !(record.type === "childList"
+                && [...record.addedNodes, ...record.removedNodes].every(node => state.fieldHosts.has(node))));
+        if (changed) {
+            state.dirty = true;
+            for (const painter of state.fieldPainters.values()) painter.schedule();
+        }
+        return changed;
+    }
+
     function paint() {
         unpaint();
-        // WebKit before macOS 14.2 has no highlights: the selection is all.
         if (typeof Highlight !== "function") return;
-        const painted = new Map();
+        const painted = new Map(), fieldRanges = new Map();
         for (const match of state.matches) {
-            if (match.kind !== "range") continue;
             try {
                 let highlights = painted.get(match.win);
                 if (!highlights) {
@@ -770,20 +997,26 @@ final class PageFind {
                     painted.set(match.win, highlights);
                     state.painted.push(highlights);
                 }
-                // A shadow tree takes no rules from the document's
-                // sheets, so its matches need the sheet there too, before
-                // the range is added, which is what repaints it.
-                const root = match.range.startContainer.getRootNode();
-                if (root.host && !root.adoptedStyleSheets.includes(highlights.sheet)) {
-                    root.adoptedStyleSheets = [...root.adoptedStyleSheets, highlights.sheet];
+                let range = match.range;
+                if (match.kind === "control") {
+                    range = fieldPainter(match.win, highlights).rangeFor(match);
+                    if (!range) continue;
+                    fieldRanges.set(match, range);
+                } else {
+                    const root = range.startContainer.getRootNode();
+                    if (root.host && !root.adoptedStyleSheets.includes(highlights.sheet)) {
+                        root.adoptedStyleSheets = [...root.adoptedStyleSheets, highlights.sheet];
+                    }
                 }
-                highlights.all.add(match.range);
+                highlights.all.add(range);
             } catch (_) {}
         }
         const current = state.matches[state.index];
-        if (current?.kind === "range") {
-            try { painted.get(current.win)?.current.add(current.range); } catch (_) {}
+        if (current) {
+            try { painted.get(current.win)?.current.add(current.range || fieldRanges.get(current)); } catch (_) {}
         }
+        for (const painter of state.fieldPainters.values()) painter.refresh();
+        if (current?.kind === "control") state.fieldPainters.get(current.win)?.reveal(current);
     }
 
     function scrollRange(range, win) {
@@ -851,7 +1084,7 @@ final class PageFind {
         state.documents = documents;
     }
     for (const observer of state.observers) {
-        if (observer.takeRecords().length) state.dirty = true;
+        pageMutations(observer.takeRecords());
     }
     if (state.controls.some(item => {
         try { return item.element.value !== item.value; }
