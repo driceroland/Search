@@ -793,6 +793,7 @@ final class Browser: NSObject, ObservableObject {
         guard let tab = active else { return }
         // An empty handler, not nil: see Tab.discard (#1031).
         tab.web.pauseAllMediaPlayback {}
+        Store.interacted(with: tab.web)
         announce("Paused")
     }
 
@@ -3287,6 +3288,7 @@ final class Browser: NSObject, ObservableObject {
                   let tab = (self.tabs + self.parkedTabs).first(where: { $0.id == id })
             else { return }
             tab.web.evaluateInSearch(Isolate.skip(seconds))
+            Store.interacted(with: tab.web)
         }
         floater.onProgress = { [weak self] answer in
             guard let self, let id = self.floating,
@@ -3309,6 +3311,7 @@ final class Browser: NSObject, ObservableObject {
             tab.web.evaluateInSearch(Isolate.toggle) { playing in
                 MainActor.assumeIsolated { answer((playing as? Bool) ?? true) }
             }
+            Store.interacted(with: tab.web)
         }
         floater.onGone = { [weak self] answer in
             guard let self, let id = self.floating,

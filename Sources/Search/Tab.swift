@@ -2229,6 +2229,7 @@ final class Tab: ObservableObject, Identifiable {
     func still() {
         guard noisy, let built else { return }
         stilled = true
+        Store.interacted(with: built)
         for frame in media.frames {
             built.evaluateJavaScript(Player.still, in: frame, in: Web.world) { _ in }
         }
@@ -2242,6 +2243,7 @@ final class Tab: ObservableObject, Identifiable {
     /// The player's play: what its pause stopped, playing again.
     func playAgain() {
         guard stilled, let built else { return }
+        Store.interacted(with: built)
         for frame in media.frames {
             built.evaluateJavaScript(Player.again, in: frame, in: Web.world) { _ in }
         }
