@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Under a sign-in box, each Apple Passwords account now says which entry it is, with its title when the Passwords app gives one or else its site, as keychain accounts show their site, where every row read "Apple Passwords" alone. `swift test --filter ApplePasswordsTests` (idea 1206)
 - ⌘Tab back to a page in full screen, a video or a page that asked for it, brings the full screen back: macOS made the browser's window key instead and showed WebKit's blurred "Click to Exit Full Screen" placeholder. Left from the browser's window, its own full screen or beside a video kept in its Space, it is that window that comes back, as before, and a click that brings Search back decides where it goes. `swift test --filter FullScreenReturnTests` (idea 1204)
 - A sign-in window a page opens on a click now opens even when the page first notes the step in its address (a #fragment of the same page), as single-page apps' routers do: Search took that jump for leaving the page, forgot the click, and refused the window, so a Sign in button looked dead (reported on Teams' "sign in again" banner). Leaving the page, reloading it or posting a form still ends the click, as before. `python3 Tests/msal_popup.py` (idea 1200)
 - An extension's popup that is empty until its worker answers, as NordPass's is, no longer shrinks to a speck a second after it loads and starts as one at every opening after: it stays at its size until its content comes. `python3 Tests/extension_popup_slow.py` (idea 1179)
