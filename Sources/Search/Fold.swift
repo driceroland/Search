@@ -376,7 +376,10 @@ struct Fold: View {
     static let edge: CGFloat = 6
     /// For a column hidden for good, which waits for the pointer to settle
     /// (see dwell): a wider edge to find, as a hand reaches for it (#1279).
-    static let hiddenEdge: CGFloat = 10
+    /// A band of 10 points stayed hard to catch for a pointer arriving fast
+    /// at the side (a user's report); a press in the band still reaches the
+    /// page until the column is out (Browser.covers).
+    static let hiddenEdge: CGFloat = 28
     /// How far past the window's edge, on the column's side, the pointer
     /// still counts as on it.
     static let overshoot: CGFloat = 48
