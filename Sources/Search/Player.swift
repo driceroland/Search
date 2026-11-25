@@ -5,7 +5,7 @@ import SwiftUI
 // stays, with its play and a cross to put it away, until it plays again,
 // its page goes or the tab sleeps.
 //
-// Off unless turned on in Settings › Appearance › Tabs, and only with the
+// On unless turned off in Settings › Appearance › Tabs, and only with the
 // tabs down the side, titles and all: a sidebar of icons alone has no room
 // for its title and buttons. Off, nothing of it reaches a page: the pause
 // is two lines of script run in Search's world when it is pressed, and

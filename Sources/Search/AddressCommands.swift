@@ -4,9 +4,9 @@ import Foundation
 // handful of words that mean "go here in the app" rather than "go here on
 // the web". Only the whole word runs on Return, so a search that starts
 // with one still searches; part of a word is just offered lower in the
-// list. Off by default (Settings › Spaces & Pins ›
-// Opening and starting › Address bar commands): nobody typing "settings" into a browser
-// expects the app to open its own panel instead of asking Google.
+// list. On unless turned off (Settings › Spaces & Pins › Opening and
+// starting › Address bar commands), since 25 Nov 2026 (Drice): whoever
+// wants "settings" alone sent to their search engine turns it off.
 //
 // With it on, every menu command (Shortcuts.swift's Command) is offered
 // too, as in Arc's Command Bar, found by the words of its name, and every
