@@ -39,6 +39,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Local addresses typed without a scheme, such as `LOCALHOST:3000`, `dev.LOCALHOST:3000` and `printer.LOCAL`, default to HTTP regardless of the hostname's case. `swift test --filter AddressTests` Thanks [@ChaitanyaSai-Meka](https://github.com/ChaitanyaSai-Meka) ([#1568](https://github.com/driceroland/Search/pull/1568))
 - An extension opening a tab with no address, as Vimium C does when its New tab URL is `about:newtab`, gets the blank tab ⌘T makes, as Chrome gives its New Tab page, instead of an empty about:blank page. Thanks [@xav-ie](https://github.com/xav-ie) ([#1555](https://github.com/driceroland/Search/pull/1555))
 - A home background (Settings › Appearance › Home) and a blank tab's wall are cut to the window's rounded corners, as Search's own pages are, instead of drawing square corners past them. Thanks [@ojowwalker77](https://github.com/ojowwalker77) ([#1531](https://github.com/driceroland/Search/pull/1531))
+- A download that has had nothing come in for 10 seconds says Stalled instead of Downloading, and Downloading again as soon as more arrives: a server gone quiet or a connection dropped without an error looked like it was still coming, for as long as WebKit took to give up. `swift test --filter FetchEntryTests`. ([#1292](https://github.com/driceroland/Search/issues/1292), idea 884) Thanks [@jolly-0806](https://github.com/jolly-0806) ([#1557](https://github.com/driceroland/Search/pull/1557))
 
 ### Held back
 
