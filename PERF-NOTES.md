@@ -39,3 +39,33 @@ Results in /private/tmp/claude-501/pmt-results/*.jsonl
   400 tabs 612 ms (callMs 132), then idle 0.1 % CPU, 1 web process, 217 MB. The 100 % CPU freeze is NOT
   reproduced with local pages: tabs stay lazy after the import. Suspects left: real sites' icons/titles
   fetched after an import, Profile 1's spaces in a second window, extensions.
+
+## Phase 2 (25 Nov, 14:30-15:55)
+- Lazy stack (perf-column's way, groups lazy too, no rail): 400 tabs select 162->111, close 182->79,
+  space 1378->425, scroll 928->249 (lz1, 1 round) and column_scroll 34/34, BUT its guessed height for rows
+  not made was 3x too tall (23,705 vs 6,136 pt) and a tab far down was not scrolled to
+  (Tests/column_lazy.py: last loose tab, last group). Dropped.
+- 3bc54d7e windowed column: SideBar.columnPlan (exact arithmetic, same as previewLines), only units in
+  [band-R/2, band+2R] U [active-R, active+R] made, placed by top guides in a ZStack of the whole height;
+  one scroll mark at the tab in front. Arrival rescroll a turn later + while the room settles (0.6 s).
+  column_lazy 19/19 (base hook build 17/17 on the older 17 checks), column_scroll 34/34, pin_drag,
+  pin_folders, close_in_group, fold_all_groups, new_tab_in_group, space_switch, space_landing, pin_line,
+  close_group, group_to_space, icon_column, pin_folder_scroll, fold_keep all pass. slide_column 14/3 fails
+  the same 3 on base. side_hover prints timings only (no pass line).
+- d78cb2fc drag tracking: loose rows placed by Carried's top guide (held: place at pick-up + travel), no
+  visual effect / origin / loose-rect reader; group and loose drop frames from the plan; grouped rows keep
+  the stack way (visual effect) but no GroupDropFrames reader. Unit tests: same 72/81 as base (Narrow 2,
+  PinDrag 7 fail on base too).
+- acb284a9 stepKey: Next/Previous Space pressed on ⌥⌘K/⌥⌘J.
+- Results in pmt-results/fin-*.jsonl (1 round, interleaved apps; machine noisier than phase 1: base ⌃N
+  at 50 tabs 515 ms vs 162 in phase 1).
+- Open: scroll at 400 still has a ~0.5 s pass (rows 37 built). Suspect: band change re-evaluates the
+  whole SideBar body (band is SideBar @State), the map's pages included. Next: band in a child view that
+  holds only the rows' window, then profile scroll (perf_profile.py 400 scroll).
+- 15:55 final, 1 round each, longest pass ms (busy): see pmt-results/fin-*.jsonl.
+  400: select 171->127, again 164->125, pin 163->98, new 105->56, close 236->122, space 1491->466,
+  scroll 635->556 (busy 2230->1992). 200: close 130->83, new 63->48, space 711->511, scroll 322->214
+  (busy 1487->572). 50: unchanged within noise.
+  Item 2 alone (w1 -> w2): within noise on this bench except scroll at 200 (428->214, busy 1846->572).
+  Next/Previous Space pressed (stepKey) = run in the bench pass (step): 662 vs 650 @400, 510 vs 557 @200,
+  ⌃N 479/421: the gap is in the command's path, not the bench; not found yet.
