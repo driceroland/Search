@@ -410,10 +410,10 @@ struct SettingsPanel: View {
                 // that row's words, on the same card. A box of its own inside
                 // the card read as nested and cramped.
                 ForEach(group.kids) { kid in
-                    divider(inset: SettingsPanel.textInset)
                     row(kid)
                     after(kid, searched: searched)
                 }
+                .padding(.bottom, 4)
             }
         }
     }
@@ -1456,7 +1456,8 @@ struct SettingRow<Control: View>: View {
         }
         .padding(.leading, child ? SettingsPanel.textInset : SettingRowLayout.leading)
         .padding(.trailing, SettingRowLayout.trailing)
-        .padding(.vertical, child ? 14 : 18)
+        .padding(.top, child ? 2 : 18)
+        .padding(.bottom, child ? 12 : 18)
         .background(lit ? Palette.hover : .clear)
     }
 }
