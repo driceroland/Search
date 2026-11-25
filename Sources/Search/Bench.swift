@@ -1755,6 +1755,69 @@ final class Bench {
                 answer(out)
             }
 
+        case "perfkeyspace":
+            // A space switch from the keyboard, timed from the key press until
+            // the space is taken (landedMs), its page is in the window
+            // (pageMs) and the column has stopped working (settledMs: the end
+            // of the last pass over 4 ms), within `seconds`. "index": ⌃N
+            // (⌘N with "cmd") posted through the app's event queue as `press`
+            // does, so the menus' key equivalents see it; "step": ±1, Next or
+            // Previous Space as its command runs it (no key by default).
+            // "glide": the slide a window on screen makes. Test runs only.
+            guard Store.testing else { answer(["error": "perfkeyspace is for test runs"]); return }
+            let seconds = min(10, request["seconds"] as? Double ?? 2)
+            let from = browser.spaceID
+            let start = CFAbsoluteTimeGetCurrent()
+            var landed: Double?, page: Double?, ahead: Double?, settled = 0.0, longest = 0.0, busy = 0.0, woke: CFAbsoluteTime = 0
+            let ms = { (t: CFAbsoluteTime) in ((t - start) * 10000).rounded() / 10 }
+            let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { _, _ in
+                woke = CFAbsoluteTimeGetCurrent()
+            }
+            let sleep = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
+                let now = CFAbsoluteTimeGetCurrent()
+                let began = woke > 0 ? woke : start
+                let pass = (now - began) * 1000
+                busy += pass
+                longest = max(longest, pass)
+                if pass > 4 { settled = ms(now) }
+                woke = 0
+                MainActor.assumeIsolated {
+                    if landed == nil, browser.spaceID != from { landed = ms(now) }
+                    // The new space's page on the stage ahead of its rows (a slide), or with them.
+                    if ahead == nil, browser.pageAhead != nil || landed != nil { ahead = ms(now) }
+                    if landed != nil, page == nil, let web = browser.active?.built, web.window === browser.window,
+                       !web.isHiddenOrHasHiddenAncestor {
+                        page = ms(now)
+                    }
+                }
+            }
+            let observers = [wake, sleep].compactMap { $0 }
+            for o in observers { CFRunLoopAddObserver(CFRunLoopGetMain(), o, .commonModes) }
+            SpaceSwipe.glidesHidden = request["glide"] as? Bool ?? false
+            if let step = request["step"] as? Int {
+                browser.stepSpace(step)
+            } else {
+                let n = max(1, min(9, request["index"] as? Int ?? 2))
+                let codes: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
+                let flags: NSEvent.ModifierFlags = request["cmd"] as? Bool == true ? .command : .control
+                for type in [NSEvent.EventType.keyDown, .keyUp] {
+                    if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags,
+                                                    timestamp: ProcessInfo.processInfo.systemUptime,
+                                                    windowNumber: browser.window?.windowNumber ?? 0, context: nil,
+                                                    characters: "\(n)", charactersIgnoringModifiers: "\(n)",
+                                                    isARepeat: false, keyCode: codes[n - 1]) {
+                        NSApp.postEvent(event, atStart: false)
+                    }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+                SpaceSwipe.glidesHidden = false
+                for o in observers { CFRunLoopRemoveObserver(CFRunLoopGetMain(), o, .commonModes) }
+                answer(["landedMs": landed.map { $0 as Any } ?? NSNull(), "pageMs": page.map { $0 as Any } ?? NSNull(),
+                        "aheadMs": ahead.map { $0 as Any } ?? NSNull(), "settledMs": settled, "longestMs": (longest * 10).rounded() / 10, "busyMs": (busy * 10).rounded() / 10,
+                        "space": browser.space.name, "tabs": browser.tabs.count])
+            }
+
         case "perfselect":
             // The Nth tab of the row (loose or pinned, as the row has them)
             // picked, timed as perftimed times a command. Test runs only.
