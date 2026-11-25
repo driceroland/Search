@@ -363,19 +363,24 @@ struct SiteCard: View {
     private var front: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let url = tab.pageAddress {
-                Header(title: SiteCard.site(url))
+                Header(title: SiteCard.site(url), icon: tab.icon)
             }
             if let safety {
                 Row(safety.title, submenu: true) { deeper = true }
+            }
+            // With the connection: both are about the site, not the page.
+            if let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+                Row("Site Permissions", submenu: true) { showingPermissions = true }
             }
             Row("Copy Address", keys: ShortcutStore.shared.key(for: "tabs.copyAddress")?.display ?? "") { after { browser.copyAddress() } }
             Separator()
             Row("Print…", keys: ShortcutStore.shared.key(for: "file.print")?.display ?? "") { after { browser.printPage() } }
             zoom
-            blocker
-            if let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
-                Row("Site Permissions", submenu: true) { showingPermissions = true }
+            // A breath, no line: the page's own above, what the site may do below.
+            if ["http", "https"].contains(tab.pageAddress?.scheme?.lowercased() ?? "") {
+                Color.clear.frame(height: 10)
             }
+            blocker
             sound
             grounded
             darken
@@ -402,7 +407,7 @@ struct SiteCard: View {
         if let url = tab.pageAddress, let scheme = url.scheme, let host = url.host() {
             let origin = Browser.origin(scheme, host, url.port ?? 0)
             VStack(alignment: .leading, spacing: 0) {
-                Header(title: origin)
+                Header(title: origin, icon: tab.icon)
                 if tab.shy {
                     Text("Permissions aren't saved in a private tab.")
                         .font(.system(size: 11)).foregroundStyle(Color(nsColor: .secondaryLabelColor))
@@ -646,7 +651,7 @@ struct SiteCard: View {
     private func security(_ safety: Safety) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if let url = tab.pageAddress {
-                Header(title: SiteCard.site(url))
+                Header(title: SiteCard.site(url), icon: tab.icon)
             }
             Text(safety.title)
                 .font(MenuMetrics.font)
@@ -800,18 +805,32 @@ struct SiteCard: View {
         }
     }
 
-    /// The site's name over the lines, as a menu's section header is drawn.
+    /// The site's name over the lines, as a menu's section header is drawn,
+    /// behind its icon, or a globe for a site with none.
     private struct Header: View {
         let title: String
+        let icon: NSImage?
 
         var body: some View {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                .lineLimit(1)
-                .padding(.leading, MenuMetrics.text)
-                .padding(.trailing, MenuMetrics.trailing)
-                .frame(height: MenuMetrics.row, alignment: .leading)
+            HStack(spacing: 8) {
+                if let icon {
+                    Mark(icon: icon, letter: "", size: 16)
+                        .accessibilityHidden(true)
+                } else {
+                    Image(systemName: "globe")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .frame(width: 16, height: 16)
+                        .accessibilityHidden(true)
+                }
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                    .lineLimit(1)
+            }
+            .padding(.leading, MenuMetrics.text)
+            .padding(.trailing, MenuMetrics.trailing)
+            .frame(height: MenuMetrics.row, alignment: .leading)
         }
     }
 
@@ -861,22 +880,22 @@ struct SiteCard: View {
 enum MenuMetrics {
     static let font = Font(NSFont.menuFont(ofSize: 0))
     /// One item.
-    static let row: CGFloat = 24
+    static let row: CGFloat = 30
     /// A separator's band.
-    static let separator: CGFloat = 11
+    static let separator: CGFloat = 15
     /// Above the first item and under the last.
-    static let pad: CGFloat = 5
+    static let pad: CGFloat = 8
     /// Where the highlight starts, from the menu's edge.
-    static let inset: CGFloat = 5
+    static let inset: CGFloat = 6
     /// Where an item's text starts, from the menu's edge: a context menu
     /// without a checkmark column, as the tab's right-click is.
-    static let text: CGFloat = 17
+    static let text: CGFloat = 18
     /// From the end of the text, or of its key equivalent, to the menu's edge.
-    static let trailing: CGFloat = 17
+    static let trailing: CGFloat = 18
     /// A separator's line, in from either edge.
-    static let rule: CGFloat = 16
-    static let highlight: CGFloat = 6
-    static let corner: CGFloat = 12
+    static let rule: CGFloat = 18
+    static let highlight: CGFloat = 8
+    static let corner: CGFloat = 14
     /// The line under the pointer: the accent colour as a menu shows it over
     /// its glass, lighter than the accent itself (111, 162, 249 for blue).
     static let selection = Color(nsColor: NSColor(name: nil) { appearance in

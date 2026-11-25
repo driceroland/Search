@@ -395,28 +395,62 @@ private final class ReminderPanel: NSPanel {
 }
 
 /// What the pill says, light on dark whatever the appearance, since it lies
-/// over a video: "Press Esc again to exit full screen", the key as a key.
+/// over a video: "Press Esc again to exit full screen", the key as a key. On
+/// the Mac's own dark glass, as its volume and playback panels are.
 private struct ReminderView: View {
     static let words = "Press Esc again to exit full screen"
+    private static let height: CGFloat = 38
+    private static let keyHeight: CGFloat = 22
+    private static let corner: CGFloat = 13
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             Text("Press")
-            Text("Esc")
-                .font(.system(size: 12, weight: .semibold))
-                .padding(.horizontal, 6)
-                .frame(height: 20)
-                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.6), lineWidth: 1))
+            Text("esc")
+                .font(.system(size: 11.5, weight: .medium))
+                .padding(.horizontal, 7)
+                .frame(height: Self.keyHeight)
+                .background(Color.white.opacity(0.16), in: RoundedRectangle(
+                    cornerRadius: Metrics.concentric(outer: Self.corner, inset: (Self.height - Self.keyHeight) / 2),
+                    style: .continuous))
             Text("again to exit full screen")
         }
-        .font(.system(size: 14, weight: .medium))
-        .foregroundStyle(Color.white)
-        .padding(.horizontal, 18)
-        .frame(height: 36)
-        .background(Capsule().fill(Color.black.opacity(0.72)))
+        .font(.system(size: 13, weight: .medium))
+        .foregroundStyle(Color.white.opacity(0.92))
+        .padding(.horizontal, 16)
+        .frame(height: Self.height)
+        .background(DarkGlass(corner: Self.corner))
+        .overlay(RoundedRectangle(cornerRadius: Self.corner, style: .continuous)
+            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.words)
     }
+}
+
+/// The blur of what is behind the pill's window, cut to its corners: a
+/// SwiftUI material only blurs its own window, which is clear.
+private struct DarkGlass: NSViewRepresentable {
+    let corner: CGFloat
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.appearance = NSAppearance(named: .vibrantDark)
+        // Clipping the view doesn't cut a blur from behind the window; a
+        // mask does, stretched from its corners.
+        let side = corner * 2 + 1
+        let mask = NSImage(size: NSSize(width: side, height: side), flipped: false) { [corner] rect in
+            NSBezierPath(roundedRect: rect, xRadius: corner, yRadius: corner).fill()
+            return true
+        }
+        mask.capInsets = NSEdgeInsets(top: corner, left: corner, bottom: corner, right: corner)
+        mask.resizingMode = .stretch
+        view.maskImage = mask
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }

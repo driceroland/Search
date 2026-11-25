@@ -138,10 +138,6 @@ struct Omnibox: View {
 
     private var field: some View {
         HStack(spacing: 8) {
-            if let site = browser.siteChip {
-                SiteChip(site: site)
-                    .transition(.scale(scale: 0.9, anchor: .leading).combined(with: .opacity))
-            }
             AddressField(browser: browser, tab: tab)
             // A private tab says so, at the field's far end.
             if isPrivate {
@@ -152,10 +148,19 @@ struct Omnibox: View {
                     .accessibilityLabel("Private tab")
                     .transition(.opacity)
             }
+            // The site being searched, at the end: the caret and the words
+            // stay where the eye already is as it arrives.
+            if let site = browser.siteChip {
+                SiteChip(site: site)
+                    .transition(.scale(scale: 0.9, anchor: .trailing).combined(with: .opacity))
+            }
         }
             .animation(Motion.quick, value: browser.siteChip)
             .frame(height: 22)
-            .padding(.horizontal, 22)
+            // A chip sits as far in from the end as from the top and foot,
+            // 11 points, its corners concentric with the field's.
+            .padding(.leading, 22)
+            .padding(.trailing, browser.siteChip == nil ? 22 : 11)
             .padding(.vertical, 14)
             .background {
                 ZStack {
@@ -374,9 +379,9 @@ private struct SiteChip: View {
                 .lineLimit(1)
                 .fixedSize()
         }
-        .padding(.horizontal, 8)
-        .frame(height: 22)
-        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .padding(.horizontal, 9)
+        .frame(height: 28)
+        .background(Palette.wash, in: RoundedRectangle(cornerRadius: Metrics.concentric(outer: 18, inset: 11), style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Searching \(site.name)")
     }
