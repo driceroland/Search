@@ -6388,6 +6388,7 @@ final class Bench {
                     "action": action?.label ?? "", "badge": action?.badgeText ?? "",
                     "popup": action?.presentsPopup ?? false,
                     "pinned": item.pinned ?? false, "source": item.source ?? "",
+                    "held": item.heldUpdate ?? "",
                     // Its commands, with the key each has now (Settings › Shortcuts).
                     "commands": (context?.commands ?? []).map { command -> [String: Any] in
                         ["id": command.id, "key": KeyCombo(activation: command.activationKey, flags: command.modifierFlags)?.display ?? ""]

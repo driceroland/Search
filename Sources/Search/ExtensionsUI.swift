@@ -278,6 +278,9 @@ struct ExtensionsPage: View {
             if item.source != nil || !item.fromStore {
                 Button("Reload") { extensions.reload(item.id) }
             }
+            if item.fromStore, item.heldUpdate != nil {
+                Button("Review Update…") { extensions.reviewUpdate(item.id) }
+            }
             if let context {
                 Divider()
                 if (context.webExtension.manifest["incognito"] as? String) == "not_allowed" {
@@ -303,6 +306,7 @@ struct ExtensionsPage: View {
 
         private func detail(_ context: WKWebExtensionContext?) -> String {
             var parts = ["Version \(item.version)", item.fromStore ? "Chrome Web Store" : folder]
+            if let held = item.heldUpdate { parts.append("update \(held) waiting for your OK") }
             if item.enabled, context == nil, extensions.notStarted[item.id] == nil { parts.append("couldn't start") }
             if extensions.newTabPageID == item.id {
                 parts.append("shows in new tabs")
