@@ -45,6 +45,8 @@ final class FollowFileTests: XCTestCase {
             "bookmarksNewTabOnly",
             // A click on the tab you're on keeps its name (idea 1076).
             "tabClickKeepsName",
+            // Double click to rename (#1601).
+            "tabClickRenames",
             // Icons only on the bookmarks bar (idea 980).
             "bookmarksIconsOnly",
         ])

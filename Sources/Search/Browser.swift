@@ -2601,8 +2601,17 @@ final class Browser: NSObject, ObservableObject {
     /// which has no address bar (Side.swift draws it with the titles).
     var clickKeepsTabName: Bool { prefs.tabClickKeepsName && prefs.addressLine && !prefs.iconColumn }
 
+    /// A click on the tab you're on renames it (Settings › Tabs › Double
+    /// click to rename). Ahead of keeping the name: the two can't both answer
+    /// the click.
+    var clickRenamesTab: Bool { prefs.tabClickRenames && !prefs.iconColumn }
+
     /// `card`: nil for a click on the tab, which follows the setting.
     func beginTabEdit(_ tab: Tab, card: Bool? = nil) {
+        if card == nil, clickRenamesTab, renamesInPlace(tab) {
+            beginTabRename(tab)
+            return
+        }
         // A click, with the address already in sight in its bar: the tab
         // keeps its name (Settings › Tabs › Clicking the tab you're on keeps
         // its name). Site Information… and ⌘L still open it.
