@@ -396,10 +396,10 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         var scope = formOf(pass);
         var all = scope ? scope.querySelectorAll('input')
           : pass.getRootNode() === document ? document.querySelectorAll('input') : deepInputs();
-        var user = null;
+        var user = null, blind = blanket(pass);
         for (var i = 0; i < all.length; i++) {
           if (all[i] === pass) break;
-          if (couldBeName(all[i], !scope)) user = all[i];
+          if (couldBeName(all[i], !scope, blind)) user = all[i];
         }
         return { user: user, pass: pass };
       }
@@ -410,15 +410,44 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // "username" or "email" is, even hidden or read-only, as the name a
       // password step keeps out of sight for password managers. With no
       // form around the password, any box on the page comes before it, so
-      // only one that says it takes a name counts.
-      function couldBeName(el, loose) {
+      // only one that says it takes a name counts. `blind`: the page marks
+      // every box new-password (blanket, below), so a name box saying so
+      // counts, form or not.
+      function couldBeName(el, loose, blind) {
         var kind = (el.type || 'text').toLowerCase();
         if (kind !== 'text' && kind !== 'email' && kind !== 'tel') return false;
         if (passwordBox(el)) return false;
         if (vouched(el) && !elsewhere(el)) return true;
         if (el.disabled || el.readOnly || el.getAttribute('aria-hidden') === 'true') return false;
         if (!shown(el)) return false;
-        return !aside(el) && !elsewhere(el) && (!loose || claimsName(el));
+        var off = !!blind && sayNothing(el);
+        return !aside(el) && !elsewhere(el, off) && (off || !loose || claimsName(el));
+      }
+      // A page that turns password managers off by marking every box
+      // autocomplete="new-password", the box for the name too: an app
+      // framework's sign-in (an airline crew portal's, idea 1169) with no
+      // form, no names and a placeholder alone. A box to type a name in that
+      // says new-password, and is not a password shown in clear, says
+      // nothing; nor then does the one password box after it, the only one
+      // in its form (or on the page): a sign-up asks for the name with its
+      // own hint and, often, for the password twice.
+      function sayNothing(el) {
+        if (!el || el.tagName !== 'INPUT' || passwordBox(el) || el.disabled || el.readOnly) return false;
+        var kind = (el.type || 'text').toLowerCase();
+        if (kind !== 'text' && kind !== 'email' && kind !== 'tel') return false;
+        return tokens(el).indexOf('new-password') >= 0
+          && !/pass|pwd|mot de passe|contrase|kennwort|wachtwoord|senha|parol/.test(words(el));
+      }
+      function blanket(pass) {
+        if (!pass || tokens(pass).indexOf('new-password') < 0) return false;
+        var within = formOf(pass) || (pass.getRootNode ? pass.getRootNode() : document);
+        var boxes = Array.prototype.filter.call(within.querySelectorAll(passwordBoxes), function (b) { return maskedBox(b) && shown(b); });
+        if (boxes.length !== 1 || boxes[0] !== pass) return false;
+        var all = within.querySelectorAll('input');
+        for (var i = 0; i < all.length && all[i] !== pass; i++) {
+          if (sayNothing(all[i]) && shown(all[i])) return true;
+        }
+        return false;
       }
 
       // Which boxes a saved account is offered in. Strict on purpose, as
@@ -449,7 +478,10 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // autocomplete says it is something else: a person's name, an
       // organisation, an address, a card, a code, a delivery's email.
       var foreign = /^(name|honorific-prefix|given-name|additional-name|family-name|honorific-suffix|nickname|organization|organization-title|one-time-code|new-password|street-address|postal-code|country|country-name|bday(-.*)?|sex|url|photo|language|impp|transaction-.*|cc-.*|address-.*|shipping|billing)$/;
-      function elsewhere(el) { return tokens(el).some(function (t) { return foreign.test(t); }); }
+      // `blind`: new-password, from a page marking every box so (blanket), is no sign.
+      function elsewhere(el, blind) {
+        return tokens(el).some(function (t) { return !(blind && t === 'new-password') && foreign.test(t); });
+      }
       function vouched(el) {
         return tokens(el).some(function (t) { return /^(username|email|webauthn)$/.test(t); });
       }
@@ -542,7 +574,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return looksLikeSignIn(el, scope) ? 'wide' : 'exact';
       }
       function nameBox(el) { return !!firstStep(el); }
-      function newPassword(el) { return tokens(el).indexOf('new-password') >= 0; }
+      function newPassword(el) { return tokens(el).indexOf('new-password') >= 0 && !blanket(el); }
       // What a box the caret is in is offered: null for nothing.
       function judge(el) {
         if (!el || (el.tagName || '').toLowerCase() !== 'input') return null;
@@ -550,9 +582,10 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         if (both) {
           if (el === both.pass) return newPassword(el) ? null : { name: false, wide: true };
           if (el !== both.user || newPassword(both.pass)) return null;
-          if (aside(el) || elsewhere(el)) return null;
+          var off = sayNothing(el) && blanket(both.pass);
+          if (aside(el) || elsewhere(el, off)) return null;
           var together = !!el.form && el.form === both.pass.form;
-          return together || claimsName(el) ? { name: false, wide: true } : null;
+          return together || off || claimsName(el) ? { name: false, wide: true } : null;
         }
         var step = firstStep(el);
         return step ? { name: true, wide: step === 'wide' } : null;
