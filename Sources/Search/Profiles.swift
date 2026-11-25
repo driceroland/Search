@@ -655,7 +655,7 @@ private struct NewProfileRow: View {
             Pill("New Profile…") { ProfileMenu.askNew() }
         }
         .padding(.horizontal, ProfileGrid.trailing)
-        .padding(.vertical, 12)
+        .padding(.vertical, ProfileGrid.edge)
     }
 }
 
