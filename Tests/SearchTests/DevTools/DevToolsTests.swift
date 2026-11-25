@@ -41,6 +41,9 @@ final class DevToolsTests: XCTestCase {
         window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 1100, height: 900),
                           styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        // Light whatever the Mac is in: the device toolbar's dark scheme is
+        // checked going back to light once it closes.
+        window.appearance = NSAppearance(named: .aqua)
         browser.window = window
         scratch = TestWorld.home.appendingPathComponent("devtools-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)

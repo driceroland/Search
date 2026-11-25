@@ -35,7 +35,12 @@ import WebKit
 // if the pointer got there from the window, not from beyond, and once it
 // rests there a moment: a pointer only crossing to a display on that side
 // goes on through. And while the column is out, a pointer just past the
-// edge is still on it.
+// edge is still on it. Faster still, the pointer goes from the page to
+// well past the edge between two of its moves: with the column folded by
+// hand, leaving the window through its side counts as reaching the edge,
+// as in Zen, and the column waits a moment for the pointer to come back
+// (idea 1144). Not with the window against the screen's edge, where the
+// pointer stops at the edge anyway.
 //
 // While a tab's address is being typed into its row, the column stays out:
 // the pointer drifting off it is no reason to take the field away.
@@ -156,8 +161,10 @@ extension Browser {
     /// other half in Split View.
     private var shownPages: [WKWebView] {
         guard let active else { return [] }
-        let tabs = activeSplit.map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? [active]
-        return tabs.compactMap { $0.isWeb && !$0.asleep && !$0.floating ? $0.built : nil }
+        // Not `tabs`: a local of that name is in scope in its own closure,
+        // which Swift 6.3 rejects as captured before it is declared.
+        let shown = activeSplit.map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? [active]
+        return shown.compactMap { $0.isWeb && !$0.asleep && !$0.floating ? $0.built : nil }
     }
 
     /// `done` once each of `pages` has its new size and WebKit has put it
@@ -372,7 +379,10 @@ struct Fold: View {
     static let hiddenEdge: CGFloat = 10
     /// How far past the window's edge, on the column's side, the pointer
     /// still counts as on it.
-    private static let overshoot: CGFloat = 48
+    static let overshoot: CGFloat = 48
+    /// How long a column brought out by a pointer flung off the window
+    /// through its edge (see flung) waits for the pointer to come back.
+    private static let flingHold: TimeInterval = 0.6
     /// The grace before the column goes back in. With the time the slide
     /// takes to start, the column begins to go as soon after the pointer
     /// leaves as Dia's does. Arc doesn't wait at all, which loses the column
@@ -660,6 +670,26 @@ struct Fold: View {
         let overshot = beside && pointer.crossing
             && NSScreen.screens.contains { $0.visibleFrame.contains(screen) }
         pointer.crossing = inWindow || overshot
+        let last = pointer.last
+        pointer.last = point
+        let now = ProcessInfo.processInfo.systemUptime
+        // Flung off the window through the column's edge (idea 1144): out at
+        // once, as the edge would have brought it had the pointer been seen
+        // there. Only with the column folded by hand, which comes at once
+        // from its edge; one hidden for good waits for the pointer to settle.
+        // Not while dragging something out of the window, and not with the
+        // window against its screen's edge, where the pointer stops at the
+        // edge itself or goes on to the display beyond (left as it was).
+        let flung = prefs.sidebar && !prefs.sideHides && !browser.peeking
+            && NSEvent.pressedMouseButtons == 0
+            && Fold.flung(from: last, to: point, size: size, right: onRight)
+            && !Fold.againstScreenEdge(window, right: onRight)
+            && last.map { NSWindow.windowNumber(at: window.convertPoint(toScreen: $0), belowWindowWithWindowNumber: 0) } == window.windowNumber
+        if flung { pointer.flungUntil = now + Fold.flingHold }
+        // Flung out, the column waits a moment for the pointer to come back,
+        // while it is still beside the window on that side.
+        let flingHeld = prefs.sidebar && now < pointer.flungUntil && past > 0
+            && point.y >= 0 && point.y < size.height
         if browser.peeking {
             pass()
             // Only this window counts, not another app's window over it. One
@@ -678,7 +708,8 @@ struct Fold: View {
             // The edge held: the column stays out for the whole drag. Measured
             // against the width saved before it, or the strip's, the pointer
             // counted as off the column halfway and it slid away (#1462).
-            let over = onOwnPanel || popup || holding || pointer.edgeHeld || overshot || (onWindow && inWindow && distance < reach)
+            let over = onOwnPanel || popup || holding || pointer.edgeHeld || overshot || flingHeld
+                || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
         } else if inWindow, distance < (prefs.sidebar && prefs.sideHides ? Fold.hiddenEdge : Fold.edge),
@@ -691,6 +722,12 @@ struct Fold: View {
             guard NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber
             else { return pass() }
             if arriving == nil { arrive() }
+        } else if flung {
+            pass()
+            peek(true)
+            // Gone in again once the hold is over, should the pointer not
+            // move again before then.
+            DispatchQueue.main.asyncAfter(deadline: .now() + Fold.flingHold + 0.01) { follow() }
         } else if overshot {
             // Off the window, so whatever is under the pointer isn't it. The
             // wait starts again with every move: the column comes once the
@@ -712,6 +749,32 @@ struct Fold: View {
         } else {
             pass()
         }
+    }
+
+    /// Whether a move of the pointer from `last` to `point`, both in the
+    /// window's own coordinates, left the window through the column's
+    /// side (`right`, or the left): from inside the window to past that
+    /// edge, crossing its line between the window's top and bottom. Between
+    /// two samples of a fast hand the pointer can go from the page to well
+    /// past the edge, and was never seen at the edge or just past it at
+    /// all (idea 1144). Zen counts the crossing, and so does this.
+    static func flung(from last: NSPoint?, to point: NSPoint, size: CGSize, right: Bool) -> Bool {
+        guard let last, last.x >= 0, last.x < size.width, last.y >= 0, last.y < size.height else { return false }
+        let edge = right ? size.width : 0
+        let past = right ? point.x - size.width : -point.x
+        guard past > 0, point.x != last.x else { return false }
+        // Where the move crossed the edge's line: within the window's height,
+        // not off its top or bottom corner on the way somewhere above or below.
+        let t = (edge - last.x) / (point.x - last.x)
+        let y = last.y + (point.y - last.y) * t
+        return y >= 0 && y < size.height
+    }
+
+    /// Whether the window's `right` (or left) side lies on its screen's own
+    /// edge, or past it.
+    static func againstScreenEdge(_ window: NSWindow, right: Bool) -> Bool {
+        guard let screen = window.screen?.frame else { return true }
+        return right ? window.frame.maxX >= screen.maxX - 1 : window.frame.minX <= screen.minX + 1
     }
 
     /// Whether the Dock hides on the screen's `right` (or left) edge, and
@@ -1008,6 +1071,12 @@ private final class Pointer {
     /// The pointer is over the window, or just went off the column's edge from
     /// it and hasn't gone further.
     var crossing = false
+    /// Where the pointer was at the move before, in the window's own
+    /// coordinates.
+    var last: NSPoint?
+    /// Until when a column brought out by a fling off the window's edge
+    /// stays out for the pointer to come back (see Fold.flung).
+    var flungUntil: TimeInterval = 0
     /// The column's edge is held: its width is the drag's, not yet saved,
     /// and the pointer can be anywhere along the drag (#1462).
     var edgeHeld = false
@@ -1020,6 +1089,8 @@ private final class Pointer {
     func start(_ moved: @escaping @MainActor () -> Void) {
         guard local == nil, let window else { return }
         crossing = false
+        last = nil
+        flungUntil = 0
         // The pointer's moves reach the monitor wherever it is over the
         // window, not only over what tracks it — for as long as the watch
         // lasts, and no longer.

@@ -695,6 +695,31 @@ final class Bench {
             tab.web.customUserAgent = request["ua"] as? String
             answer(["ua": tab.web.customUserAgent ?? ""])
 
+        case "downloads-rows":
+            // The Downloads panel's current rows and its Completed list, and
+            // with "press": RETRY or RESUME, that row's own button, as the
+            // panel calls it (Tests/download_retry.py). Only on a test run.
+            guard Store.testing else { answer(["error": "downloads-rows only works on a --test run"]); return }
+            let entries = browser.fetches.entries
+            if let press = request["press"] as? String {
+                let index = request["index"] as? Int ?? 0
+                guard entries.indices.contains(index) else { answer(["error": "no row \(index)"]); return }
+                switch press {
+                case "retry": browser.retryDownload(entries[index])
+                case "resume": browser.resumeDownload(entries[index])
+                default: answer(["error": "press retry or resume"]); return
+                }
+            }
+            answer([
+                "rows": browser.fetches.entries.map { entry in
+                    ["name": entry.name, "state": "\(entry.state)", "canResume": entry.canResume,
+                     "canRetry": entry.canRetry, "completed": entry.completedBytes, "total": entry.totalBytes,
+                     "error": entry.errorDescription ?? "", "file": entry.destination?.path ?? ""] as [String: Any]
+                },
+                "completed": browser.loot.kept.map { ["name": $0.name, "path": $0.path] },
+                "started": browser.fetches.started,
+            ])
+
         case "kept":
             // A sleeping tab's picture, as kept for its waking, written to a
             // file: its size in pixels, what NSImage makes of it, and the
@@ -732,7 +757,8 @@ final class Bench {
                     "noisy": tab?.noisy ?? false, "sounding": browser.sounding.count])
 
         case "eval":
-            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            // "little": true, in the newest small window's page.
+            guard let tab = page(request, in: browser) else { answer(missing(request)); return }
             guard let js = request["js"] as? String else { answer(["error": "eval needs js"]); return }
             house(tab)
             // Search's own world is where its page scripts live (see Web.world).
@@ -1444,7 +1470,23 @@ final class Bench {
                 if pressed.contains(where: { PageView.same($0, event) }) { resent += 1 }
                 return event
             }
-            PageHands.type(text, into: view) { pressed.append($0) }
+            // "code": one key by its code (51 is ⌫), with "mods" held:
+            // shift, option, command, control.
+            if let code = request["code"] as? Int {
+                var flags: NSEvent.ModifierFlags = []
+                for name in request["mods"] as? [String] ?? [] {
+                    switch name {
+                    case "shift": flags.insert(.shift)
+                    case "option": flags.insert(.option)
+                    case "command": flags.insert(.command)
+                    case "control": flags.insert(.control)
+                    default: break
+                    }
+                }
+                _ = PageHands.key(view, code: UInt16(code), characters: text, flags: flags) { pressed.append($0) }
+            } else {
+                PageHands.type(text, into: view) { pressed.append($0) }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 if let watch { NSEvent.removeMonitor(watch) }
                 answer(["typed": text, "sentBackUnused": resent, "quieted": PageView.quieted - before])
@@ -5408,6 +5450,8 @@ final class Bench {
                     "spaces": browser.spaces.map(\.name),
                     "badge": profiles.several,
                     "erasing": Store.settings.stringArray(forKey: "spaces.erasing") ?? [],
+                    // The space names the dot has shown after a switch, in order.
+                    "namesShown": SpaceDot.namesShown,
                 ])
             }
 
@@ -6369,6 +6413,7 @@ final class Bench {
                     "action": action?.label ?? "", "badge": action?.badgeText ?? "",
                     "popup": action?.presentsPopup ?? false,
                     "pinned": item.pinned ?? false, "source": item.source ?? "",
+                    "held": item.heldUpdate ?? "",
                     // Its commands, with the key each has now (Settings › Shortcuts).
                     "commands": (context?.commands ?? []).map { command -> [String: Any] in
                         ["id": command.id, "key": KeyCombo(activation: command.activationKey, flags: command.modifierFlags)?.display ?? ""]

@@ -554,6 +554,10 @@ enum SettingsIndex {
               title: "The field in the middle of the window", detail: "⌘T's and ⌘L's field over a page, centred on the window and higher up",
               more: "As Arc and Zen place it, near where Spotlight comes: the column is dimmed with the page. Off, the field is centred on the page beside the column.",
               keys: ["field.window"], words: ["command bar", "cmd t", "cmd l", "spotlight", "centre", "center", "position", "arc", "zen"]),
+        .init(id: "field.hidesPage", group: "opening", icon: "rectangle.fill",
+              title: "Hide the page behind the field", detail: "⌘T's and ⌘L's field over a plain ground, the page out of sight",
+              more: "Off, the page stays dimmed behind the field and shows through. Escape or a click outside the field brings it back, as before.",
+              keys: ["field.hidesPage"], words: ["command bar", "cmd t", "cmd l", "dim", "blur", "cluttered", "busy", "background", "behind"]),
         .init(id: "newtab.recent", group: "opening", icon: "clock.arrow.circlepath",
               title: "Recent places in the new tab", detail: "Before you type, ⌘T's field lists the last three places you went",
               more: "From History on this Mac, leaving out pages already open, which ⌘K finds. Nothing is picked until an arrow key picks it, and a private tab lists nothing.",
@@ -642,6 +646,10 @@ enum SettingsIndex {
               title: "⌥-click a link opens it in Split View", detail: "Its page beside the one you're reading, as Open Link in Split View",
               more: "Off, ⌥-click follows the link as a click does. In Safari it downloads the link instead.",
               keys: ["links.optionSplit"], words: ["option click", "alt click", "split", "side by side", "link", "open beside"]),
+        .init(id: "keys.backspaceBack", group: "mouse", icon: "delete.left",
+              title: "Backspace goes back", detail: "⌫ goes back a page and ⇧⌫ forward, as older browsers did",
+              more: "Only when you aren't typing in a field or editable text, and with no other key held. Off, as in Safari: ⌘[ goes back.",
+              keys: ["keys.backspaceBack"], words: ["backspace", "delete key", "back", "previous page", "go back", "history", "keyboard"]),
         .init(id: "autoscroll", group: "mouse", icon: "arrow.up.and.down.circle",
               title: "Scroll with the middle button", detail: "Click the wheel, then move the mouse to scroll, as on Windows",
               keys: ["autoscroll"], words: ["middle click", "autoscroll", "wheel"]),
@@ -1081,6 +1089,7 @@ extension SettingsIndex {
             "pins.home": prefs.pinsGoHome,
             "pins.peek": prefs.pinsPeek,
             "pins.linksNewTab": prefs.pinLinksOpenTabs,
+            "keys.backspaceBack": prefs.backspaceGoesBack,
             "links.peek": prefs.peekChoice.rawValue,
             "pages.120": prefs.fastPages.rawValue,
             "swipe.history": prefs.holdsHistory,
@@ -1126,6 +1135,9 @@ extension SettingsIndex {
         case "pins.linksNewTab":
             guard let on = value as? Bool else { return false }
             prefs.pinLinksOpenTabs = on
+        case "keys.backspaceBack":
+            guard let on = value as? Bool else { return false }
+            prefs.backspaceGoesBack = on
         case "sidebar.slides":
             guard let on = value as? Bool else { return false }
             prefs.slidesColumn = on

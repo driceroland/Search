@@ -530,7 +530,7 @@ extension Browser {
         // Beside the space's icon when the tabs are on screen (SpaceDot);
         // folded away, or with the icon up beside the helm, at the bottom.
         // With a button per space there is no dot to say it: at the bottom.
-        if prefs.showsSpaceButtons || folded && !peeking
+        if !arrivedQuietly(at: id), prefs.showsSpaceButtons || folded && !peeking
             || SideBar.doorsUp(prefs, width: prefs.columnWidth, fullScreen: fullScreen, spaces: SpaceButtons.count(prefs, spaces)) {
             announce(space.name)
         }
@@ -936,7 +936,9 @@ struct SpaceDot: View {
                 withAnimation(Motion.reduced ? nil : .easeOut(duration: 0.22)) { shown = (now, symbol) }
             }
         }
-        .onChange(of: browser.spaceID) { _, _ in if names { name() } }
+        // Not where another profile's window brought you: that is a change
+        // of profile, which the badge beside it shows (idea 1114).
+        .onChange(of: browser.spaceID) { _, now in if names, !browser.arrivedQuietly(at: now) { name() } }
         // The name, beside the icon that stands for it, the moment you get
         // there — right of it in the bar, over the first tabs (below, the
         // page would cover it), above it at the column's foot — and
@@ -963,11 +965,15 @@ struct SpaceDot: View {
         .animation(Motion.quick, value: named)
     }
 
+    /// Every name shown so, on a test run, for a probe to read.
+    @MainActor static var namesShown: [String] = []
+
     private func name() {
         guard !browser.makingSpace else { return }
         naming += 1
         let turn = naming
         named = browser.space.name
+        if Store.testing { Self.namesShown.append(browser.space.name) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             guard turn == naming else { return }
             named = nil
