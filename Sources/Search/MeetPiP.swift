@@ -210,6 +210,16 @@ enum MeetPiP {
             } catch (e) { err('enter', e); }
           });
 
+          // Meet's effects (blur, backgrounds) take Chrome's way when the
+          // main page has MediaStreamTrackProcessor, which WebKit's doesn't
+          // carry through; without it, Meet takes the way Safari gets.
+          try {
+            say({ kind: 'mstp:' + (typeof window.MediaStreamTrackProcessor) + '/' + (typeof window.MediaStreamTrackGenerator) });
+            ['MediaStreamTrackProcessor', 'MediaStreamTrackGenerator'].forEach(function (name) {
+              if (name in window) Object.defineProperty(window, name, { value: undefined, writable: true, configurable: true });
+            });
+          } catch (e) {}
+
           // Meet, as Chrome, tells the browser whether its camera and
           // microphone are on (setCameraActive / setMicrophoneActive); Chrome
           // only shows it. WebKit acts on it — mutes the capture, and won't
