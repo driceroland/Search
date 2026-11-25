@@ -753,32 +753,34 @@ struct SidePanelView: View {
     var body: some View {
         switch browser.sidePanel {
         case .page(let id, _, _):
-            VStack(spacing: 0) {
-                HStack(spacing: 8) {
+            ZStack(alignment: .top) {
+                PanelPage(web: SidePanelPages.shared.web(in: browser))
+                    .padding(.top, 52)
+                PanelToolbar {
                     if #available(macOS 15.4, *), let icon = Extensions.shared.contexts[id]?.webExtension.icon(for: CGSize(width: 16, height: 16)) {
-                        Image(nsImage: icon).resizable().interpolation(.high).frame(width: 14, height: 14)
+                        Image(nsImage: icon).resizable().interpolation(.high).frame(width: 16, height: 16)
                     }
                     Text(Browser.extensionName(id))
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     Door(icon: "xmark", help: "Close") { browser.closeSidePanel() }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                Rectangle().fill(Palette.hairline).frame(height: 1)
-                PanelPage(web: SidePanelPages.shared.web(in: browser))
             }
         case .site:
-            VStack(spacing: 0) {
-                // Its own line for each page made: a new site's line
-                // watches the new page, not the one let go.
+            ZStack(alignment: .top) {
+                // The page runs up under the bar, which floats on it, with
+                // its own top kept clear of the bar (see PanelPage.under).
+                if #available(macOS 26, *) {
+                    PanelPage(web: SidePanelPages.shared.web(in: browser), under: 52)
+                } else {
+                    PanelPage(web: SidePanelPages.shared.web(in: browser))
+                        .padding(.top, 52)
+                }
                 if let delegate = SidePanelPages.shared.siteDelegate(in: browser) {
                     SiteLine(browser: browser, delegate: delegate).id(ObjectIdentifier(delegate))
                 }
-                Rectangle().fill(Palette.hairline).frame(height: 1)
-                PanelPage(web: SidePanelPages.shared.web(in: browser))
             }
         case .downloads:
             // As tall as the panel, as its list is in a tab.
@@ -819,18 +821,34 @@ private struct SiteLine: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        PanelToolbar {
+            Image(systemName: seen.host.hasSuffix("(not secure)") ? "exclamationmark.triangle" : "globe")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Palette.muted)
             Text(seen.host)
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Palette.ink)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
-            Door(icon: "arrow.up.forward.square", help: "Open in a Tab") { browser.sitePanelToTab() }
-            Door(icon: "xmark", help: "Close") { browser.closeSidePanel() }
+            HStack(spacing: 2) {
+                Door(icon: "arrow.up.forward.square", help: "Open in a Tab") { browser.sitePanelToTab() }
+                Door(icon: "xmark", help: "Close") { browser.closeSidePanel() }
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+    }
+}
+
+private struct PanelToolbar<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: 10) { content }
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            // Glass over the page, not a band of its own: the page shows through.
+            .pill(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+            .padding(8)
     }
 }
 
@@ -841,6 +859,19 @@ private struct SiteLine: View {
 /// the page just let go, taken out of it, and the panel stayed white.
 private struct PanelPage: NSViewRepresentable {
     let web: WKWebView?
+    /// How much of the top a floating bar covers: WebKit lays the page out
+    /// below it, and what scrolls up shows through the bar.
+    var under: CGFloat = 0
+
+    static func dismantleNSView(_ holder: NSView, coordinator: ()) {
+        // A page leaving the panel, for a tab say, takes no inset with it.
+        for case let web as WKWebView in holder.subviews { inset(web, 0) }
+    }
+
+    private static func inset(_ web: WKWebView, _ top: CGFloat) {
+        guard #available(macOS 26, *), web.obscuredContentInsets.top != top else { return }
+        web.obscuredContentInsets = NSEdgeInsets(top: top, left: 0, bottom: 0, right: 0)
+    }
 
     func makeNSView(context: Context) -> NSView {
         let holder = NSView()
@@ -855,7 +886,9 @@ private struct PanelPage: NSViewRepresentable {
             holder.subviews.forEach { $0.removeFromSuperview() }
             return
         }
+        Self.inset(web, under)
         guard web.superview !== holder else { return }
+        for case let old as WKWebView in holder.subviews { Self.inset(old, 0) }
         holder.subviews.forEach { $0.removeFromSuperview() }
         web.removeFromSuperview()
         web.frame = holder.bounds
@@ -901,12 +934,7 @@ struct SidePanelBeside: View {
 
     /// The card's gap, or the hairline, with the handle on it.
     @ViewBuilder private var edge: some View {
-        if card {
-            handle.frame(width: Metrics.cardGap)
-        } else {
-            Rectangle().fill(Palette.hairline).frame(width: 1)
-                .overlay { handle.frame(width: 7) }
-        }
+        handle.frame(width: card ? Metrics.cardGap : Metrics.edgeGap)
     }
 
     /// The whole edge takes the pointer; a small pill in the middle of it

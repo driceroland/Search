@@ -55,6 +55,7 @@ final class PageFind {
                     "steps": steps,
                     "limit": Self.limit,
                     "generation": NSNumber(value: generation),
+                    "dim": Shared.prefs.findDims ? 0.16 : 0.0,
                 ]
             )
             guard generation >= newestGeneration else { return Self.staleResult }
@@ -115,6 +116,7 @@ final class PageFind {
                     "steps": 0,
                     "limit": Self.limit,
                     "generation": NSNumber(value: generation),
+                    "dim": 0.0,
                 ]
             )
         } catch {
@@ -176,6 +178,7 @@ final class PageFind {
     const needle = String(query ?? "");
     const epoch = Number(generation ?? 0);
     const moves = Math.trunc(Number(steps ?? 0)) || 0;
+    const dimming = Math.min(0.5, Math.max(0, Number(dim ?? 0))) || 0;
     const cap = Math.max(1, Math.trunc(Number(limit ?? 1000)) || 1000);
     const key = "__searchPageFindState_v2";
     let state = globalThis[key];
@@ -679,15 +682,73 @@ final class PageFind {
     }
 
     // The selection alone is drawn pale grey while the find bar has the keys,
-    // so every match is painted too: yellow, the current one orange. Matches
-    // in fields keep only their selection.
+    // so every match is painted too: yellow, the current one bright orange
+    // with black text. Matches in fields keep only their selection.
     // Each window gets its two highlights once; after that they are only
     // cleared and added to. A highlight repaints the ranges it gains or
     // loses, whereas one set into or deleted from `CSS.highlights` could
     // stay on screen, or stay off it, until something else was drawn.
+    const findRules = "::highlight(search-find-match) { background-color: #ffff00; color: #000; text-decoration: none; text-shadow: none; }"
+        + "::highlight(search-find-current) { background-color: #ff9632; color: #000; text-decoration: none; text-shadow: none; }";
+    const quietSelection = "::selection { background-color: transparent; color: #000; }";
+
+    // Where Settings asks for it, the page is under a faint veil while
+    // finding, all but the current match: cast by the shadow of an invisible
+    // box laid over that one.
+    function unring() {
+        try { state.unfollow?.(); } catch (_) {}
+        state.unfollow = null;
+        try { state.veil?.remove(); } catch (_) {}
+        state.veil = null;
+    }
+
+    // Fixed to the window and kept on the match: placed once on the page, it
+    // was left behind where the match scrolled in a box of its own or the page
+    // moved under it, and the veil lay over the very match it should spare.
+    function ring(current) {
+        unring();
+        if (!(dimming > 0) || current?.kind !== "range") return;
+        try {
+            const win = current.win;
+            const doc = win.document;
+            const pad = 2;
+            const box = doc.createElement("div");
+            box.style.cssText = "all:initial;position:fixed;pointer-events:none;box-sizing:border-box;"
+                + "z-index:2147483647;border-radius:4px;box-shadow:0 0 0 200vmax rgba(0,0,0," + dimming + ");";
+            const place = () => {
+                const rect = current.range.getBoundingClientRect();
+                const next = [rect.left - pad, rect.top - pad, rect.width + 2 * pad, rect.height + 2 * pad]
+                    .map(value => value + "px");
+                // Written only when it moved, not to stir the page's observers.
+                const style = box.style;
+                if (style.left !== next[0]) style.left = next[0];
+                if (style.top !== next[1]) style.top = next[1];
+                if (style.width !== next[2]) style.width = next[2];
+                if (style.height !== next[3]) style.height = next[3];
+                const display = rect.width || rect.height ? "block" : "none";
+                if (style.display !== display) style.display = display;
+            };
+            place();
+            doc.documentElement.appendChild(box);
+            state.veil = box;
+            const options = { capture: true, passive: true };
+            win.addEventListener("scroll", place, options);
+            win.addEventListener("resize", place, options);
+            // For what moves without either: a picture arriving above.
+            const timer = win.setInterval(place, 200);
+            state.unfollow = () => {
+                win.removeEventListener("scroll", place, options);
+                win.removeEventListener("resize", place, options);
+                win.clearInterval(timer);
+            };
+        } catch (_) {}
+    }
+
     function unpaint() {
+        unring();
         for (const highlights of state.painted) {
             try { highlights.all.clear(); highlights.current.clear(); } catch (_) {}
+            try { highlights.sheet.replaceSync(findRules); } catch (_) {}
         }
         state.painted = [];
     }
@@ -697,10 +758,7 @@ final class PageFind {
         let highlights = state.highlights.get(win);
         if (!highlights) {
             const sheet = new win.CSSStyleSheet();
-            sheet.replaceSync(
-                "::highlight(search-find-match) { background-color: #ffff00; color: #000; }"
-                + "::highlight(search-find-current) { background-color: #ff9632; color: #000; }"
-            );
+            sheet.replaceSync(findRules);
             const current = new win.Highlight();
             current.priority = 1;
             highlights = { sheet, all: new win.Highlight(), current };
@@ -746,7 +804,11 @@ final class PageFind {
         const current = state.matches[state.index];
         if (current?.kind === "range") {
             try { painted.get(current.win)?.current.add(current.range); } catch (_) {}
+            for (const highlights of state.painted) {
+                try { highlights.sheet.replaceSync(findRules + quietSelection); } catch (_) {}
+            }
         }
+        ring(current);
     }
 
     function scrollRange(range, win) {

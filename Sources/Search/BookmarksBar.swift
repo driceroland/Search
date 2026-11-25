@@ -149,7 +149,7 @@ struct BookmarksBar: View {
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(Palette.muted)
                 .frame(width: 22, height: 22)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? Palette.hover : .clear))
+                .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(hovering ? Palette.hover : .clear))
                 .contentShape(Rectangle())
                 .onTapGesture(perform: act)
                 .onHover { hovering = $0 }
@@ -207,7 +207,7 @@ struct BookmarksBar: View {
             .padding(.horizontal, bare ? 0 : 8)
             .frame(minWidth: bare ? 22 : nil)
             .frame(height: 22)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? Palette.hover : .clear))
+            .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(hovering ? Palette.hover : .clear))
             .contentShape(Rectangle())
             .onTapGesture(perform: act)
             .onHover { hovering = $0 }

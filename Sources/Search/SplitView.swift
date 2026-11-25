@@ -26,6 +26,7 @@ struct SplitStage: View {
         let shown: [Tab] = ahead.map { [$0] }
             ?? split.map { pair in pair.tabs.compactMap { id in browser.tabs.first { $0.id == id } } }
             ?? browser.active.map { [$0] } ?? []
+        let round = shown.count > 1 ? max(corner, Metrics.cardRadius) : corner
         // The stage alone says how big it is; what is drawn over each page
         // follows the frames it reports and has no say. Laid out beside the
         // stage, a page's frame from a moment ago held the stage at that
@@ -50,15 +51,16 @@ struct SplitStage: View {
             find: browser.finding ? browser : nil,
             accounts: browser.suggesting.map { (browser, $0) },
             pairing: browser.applePairing.map { (browser, $0) },
-            corner: corner,
-            immersed: immersed
+            corner: round,
+            immersed: immersed,
+            bare: browser.clearsBlank && shown.count < 2 && shown.first?.isBlank != false
         )
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 ForEach(shown) { tab in
                     if let frame = frames[tab.id] {
                         PaneLayers(browser: browser, tab: tab, paired: shown.count > 1, width: frame.width,
-                                   hovered: hovered == tab.id, corner: corner)
+                                   hovered: hovered == tab.id, corner: round)
                             .frame(width: frame.width, height: frame.height)
                             .offset(x: frame.minX, y: frame.minY)
                     }
@@ -314,9 +316,12 @@ private struct OpenTabs: View {
                         OpenTabRow(tab: tab) { browser.fill(blank, with: tab) }
                     }
                 }
-                // As wide as the field, its rows' text under the field's.
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 10)
                 .frame(width: min(Metrics.fieldWidth, max(0, geo.size.width - 28)), alignment: .leading)
+                .background(Palette.ground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                .shadow(color: .black.opacity(0.07), radius: 20, y: 6)
                 .frame(maxWidth: .infinity)
                 // Under the field, which stands 60 points above the middle,
                 // and under the Home grid when it stands there (#1381).

@@ -20,7 +20,9 @@ final class FieldState: ObservableObject {
 /// shivers and says so, rather than quietly handing your keystrokes to a
 /// search engine.
 struct Omnibox: View {
+    @Environment(\.colorScheme) private var scheme
     @ObservedObject var browser: Browser
+    @ObservedObject private var prefs = Shared.prefs
     @ObservedObject private var typing: FieldState
     /// Raised over a page by ⌘L, rather than standing on an empty tab.
     let over: Bool
@@ -93,10 +95,11 @@ struct Omnibox: View {
                     // Or out of sight, for whoever asked (Settings › Hide
                     // the page behind the field).
                     Rectangle()
-                        .fill(Palette.ground.opacity(browser.prefs.fieldHidesPage ? 1 : 0.74))
+                        .fill(browser.prefs.fieldHidesPage ? Palette.ground
+                              : scheme == .dark ? Color.black.opacity(0.36) : Color.white.opacity(0.5))
                         .ignoresSafeArea(.all, edges: fitted ? [] : .all)
                         .onTapGesture { browser.dismiss() }
-                        .transition(.opacity)
+                        .transition(prefs.animatesField ? .opacity : .identity)
                 }
 
                 field
@@ -119,30 +122,48 @@ struct Omnibox: View {
                 // measuring.
                 .padding(.bottom, top == nil ? 60 : 0)
                 .padding(.top, top ?? 0)
-                .transition(.scale(scale: 0.97).combined(with: .opacity))
+                .transition(prefs.animatesField ? .scale(scale: 0.97).combined(with: .opacity) : .identity)
                 // The list's arrival and its leaving are animated from here,
                 // briefly: nothing that changes the suggestions does it inside
                 // an animation of its own. Its rows follow what was typed or
                 // pasted at once — sliding into place on a spring between
                 // keystrokes, they trailed behind the field.
-                .animation(Motion.quick, value: browser.offers.isEmpty && browser.siteOffer == nil && browser.switcherNote == nil)
-                .animation(Motion.settle, value: refused)
+                .animation(prefs.animatesField ? Motion.quick : nil, value: browser.offers.isEmpty && browser.siteOffer == nil && browser.switcherNote == nil)
+                .animation(prefs.animatesField ? Motion.settle : nil, value: refused)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var isPrivate: Bool {
+        (tab.flatMap { id in browser.tabs.first { $0.id == id } } ?? browser.active)?.shy == true
+    }
+
     private var field: some View {
         HStack(spacing: 8) {
+            AddressField(browser: browser, tab: tab)
+            // A private tab says so, at the field's far end.
+            if isPrivate {
+                Image(systemName: "eyeglasses")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .help("Private tab")
+                    .accessibilityLabel("Private tab")
+                    .transition(.opacity)
+            }
+            // The site being searched, at the end: the caret and the words
+            // stay where the eye already is as it arrives.
             if let site = browser.siteChip {
                 SiteChip(site: site)
-                    .transition(.scale(scale: 0.9, anchor: .leading).combined(with: .opacity))
+                    .transition(.scale(scale: 0.9, anchor: .trailing).combined(with: .opacity))
             }
-            AddressField(browser: browser, tab: tab)
         }
             .animation(Motion.quick, value: browser.siteChip)
             .frame(height: 22)
-            .padding(.horizontal, 22)
+            // A chip sits as far in from the end as from the top and foot,
+            // 11 points, its corners concentric with the field's.
+            .padding(.leading, 22)
+            .padding(.trailing, browser.siteChip == nil ? 22 : 11)
             .padding(.vertical, 14)
             .background {
                 ZStack {
@@ -154,19 +175,19 @@ struct Omnibox: View {
                     // picture as a white or dark smudge (idea 952).
                     UnlessThemed(over: over) { Breath() }
 
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(Palette.ground)
                 }
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(
-                        refused ? Color.red.opacity(0.35) : Palette.hairline,
+                        refused ? Color.red.opacity(0.35) : Palette.ink.opacity(0.08),
                         lineWidth: 1
                     )
                     .allowsHitTesting(false)
             )
-            .shadow(color: .black.opacity(0.06), radius: 24, y: 8)
+            .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.12), radius: 18, y: 8)
             .modifier(Shake(travel: shake))
             .onAppear {
                 shake = 0
@@ -211,13 +232,13 @@ struct Omnibox: View {
             }
         }
         .padding(6)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Palette.hairline, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Palette.ink.opacity(0.08), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.07), radius: 20, y: 6)
-        .transition(.scale(scale: 0.98, anchor: .top).combined(with: .opacity))
+        .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.12), radius: 18, y: 8)
+        .transition(prefs.animatesField ? .scale(scale: 0.98, anchor: .top).combined(with: .opacity) : .identity)
     }
 
     /// One row of a list of places, here and under the field in the tab.
@@ -298,10 +319,10 @@ struct Omnibox: View {
             .padding(.vertical, 9)
             .background {
                 if picked {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Palette.wash)
                 } else if hovering {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Palette.hover)
                 }
             }
@@ -361,9 +382,9 @@ private struct SiteChip: View {
                 .lineLimit(1)
                 .fixedSize()
         }
-        .padding(.horizontal, 8)
-        .frame(height: 22)
-        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .padding(.horizontal, 9)
+        .frame(height: 28)
+        .background(Palette.wash, in: RoundedRectangle(cornerRadius: Metrics.concentric(outer: 18, inset: 11), style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Searching \(site.name)")
     }

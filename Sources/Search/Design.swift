@@ -15,8 +15,22 @@ enum Palette {
     static let ink = Color(nsColor: NS.ink)             // neutral-900 · neutral-100
     static let muted = Color(nsColor: NS.muted)         // neutral-500
     static let faint = Color(nsColor: NS.faint)         // neutral-300 · neutral-700
+    /// A shadow's black, softer in a light window, where the full strength
+    /// reads as a dirty smudge on white.
+    static func lift(light: Double, dark: Double) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            NSColor(white: 0, alpha: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light)
+        })
+    }
     static let hairline = Color(nsColor: NS.hairline)   // neutral-200 · neutral-800
-    static let wash = Color(nsColor: NS.wash)           // the live tab
+    static let divider = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(white: 1, alpha: 0.20)
+            : NSColor(white: 0, alpha: 0.16)
+    })
+    static let wash = Color(nsColor: NS.wash)
+    static let lift = Color(nsColor: NS.lift)
+    static let liftEdge = Color(nsColor: NS.liftEdge)           // the live tab
     static let hover = Color(nsColor: NS.hover)         // the one under the pointer
     /// Around the page's card, with the tabs down the side: the column, the
     /// bookmarks bar and the gaps share it, a touch off the page's white, so
@@ -34,9 +48,11 @@ enum Palette {
         static let ink = pair(0.09, 0.93)
         static let muted = pair(0.55, 0.58)
         static let faint = pair(0.83, 0.32)
-        static let hairline = pair(0.91, 0.20)
+        static let hairline = pair(0.87, 0.20)
         static let wash = pair(0.937, 0.175)
-        static let hover = pair(0.965, 0.15)
+        static let lift = pair(1.0, 0.2)
+        static let liftEdge = pair(0.86, 0.28)
+        static let hover = pair(0.9475, 0.17)
         static let frame = pair(0.955, 0.075)
         /// The resting traffic lights, drawn by hand when the app is behind.
         static let resting = pair(0.80, 0.30)
@@ -87,14 +103,14 @@ struct Greys {
     // white, or the frame beside the card). On that ground nothing changes;
     // on a space's colour or gradient they take its tint, where an opaque
     // grey sat on it as a grey patch (Drice, 18 Nov 2026).
-    static let white = Greys(wash: shade(0.063, 0.073), hover: shade(0.035, 0.045),
+    static let white = Greys(wash: shade(0.063, 0.073), hover: shade(0.0525, 0.0675),
                              tile: shade(0.063, 0.073).opacity(0.55), pinLive: shade(0.10, 0.112),
-                             washOnTile: shade(0.0294, 0.0342), hoverOnTile: shade(0.004, 0.005),
-                             muted: shade(0.45, 0.5281), faint: shade(0.17, 0.236))
-    static let frame = Greys(wash: shade(0.0628, 0.0865), hover: shade(0.0419, 0.0595),
+                             washOnTile: shade(0.0294, 0.0342), hoverOnTile: shade(0.006, 0.0075),
+                             muted: shade(0.58, 0.5281), faint: shade(0.30, 0.236))
+    static let frame = Greys(wash: shade(0.0628, 0.0865), hover: shade(0.06285, 0.08925),
                              tile: shade(0.0314, 0.0432), pinLive: shade(0.0995, 0.1243),
-                             washOnTile: shade(0.0324, 0.0452), hoverOnTile: shade(0.0108, 0.0169),
-                             muted: shade(0.4241, 0.5459), faint: shade(0.1309, 0.2649))
+                             washOnTile: shade(0.0324, 0.0452), hoverOnTile: shade(0.0162, 0.02535),
+                             muted: shade(0.55, 0.5459), faint: shade(0.27, 0.2649))
 
     private static func shade(_ light: CGFloat, _ dark: CGFloat) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -108,7 +124,15 @@ private struct GreysKey: EnvironmentKey {
     static let defaultValue = Greys.white
 }
 
+private struct InkDoorsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
+    var inkDoors: Bool {
+        get { self[InkDoorsKey.self] }
+        set { self[InkDoorsKey.self] = newValue }
+    }
     var greys: Greys {
         get { self[GreysKey.self] }
         set { self[GreysKey.self] = newValue }
@@ -169,15 +193,23 @@ enum Metrics {
     /// With the tabs down the side the page is a card: this far from the
     /// window's edges (and from the column, folded away), and its corners
     /// this round.
-    static let cardGap: CGFloat = 8
+    static let cardGap: CGFloat = 14
+    static let floatGap: CGFloat = 6
+    static let edgeGap: CGFloat = 10
+    static let columnRowInset: CGFloat = 10
     static let cardRadius: CGFloat = 10
+    static let rowRadius: CGFloat = 10
+    /// A popover's own corners, and the concentric rule for what sits in
+    /// them: the inner radius is the outer one less the inset between.
+    static let popoverRadius: CGFloat = 16
+    static func concentric(outer: CGFloat = popoverRadius, inset: CGFloat) -> CGFloat { max(outer - inset, 0) }
     /// Where the first tab starts. The traffic lights run from 19 to 79 —
     /// measured, not guessed — so this leaves them the same air on their right
     /// that the window gives them on their left.
-    static let lights: CGFloat = 100
+    static let lights: CGFloat = 108
     /// Back, forward and reload, at the far end of the row beside the
     /// bookmarks: three doors and the air before the next one.
-    static let helm: CGFloat = 3 * 26 + 2 * 2 + 8
+    static let helm: CGFloat = 3 * Door.width + 2 * 2 + 8
     /// The same three doors again, in the sidebar, where they sit right of
     /// the lights instead. The column already has 10 of horizontal padding
     /// of its own before this even starts. 72 put the back door's box 3
@@ -186,19 +218,23 @@ enum Metrics {
     /// lights, about the 19 the window leaves on their left, as a toolbar's
     /// first item sits in Safari. A column too narrow for that gives back
     /// what it must (SideBar.lights), down to where it was.
-    static let sideLights: CGFloat = 80
+    static let sideLights: CGFloat = 94
     /// The least of it the fold door may have: its box 3 points clear of
     /// the zoom button (SideBar.folds).
-    static let sideLightsLeast: CGFloat = 72
+    static let sideLightsLeast: CGFloat = 86
     /// The three doors' own width, without the air after them.
-    static let helmDoors: CGFloat = 3 * 26 + 2 * 4
+    static let helmDoors: CGFloat = 3 * Door.width + 2 * 4
     /// The same two, for the doors Settings leaves shown (idea 815): all
     /// three unless some are hidden, nothing when none is.
     @MainActor static func helm(_ prefs: Preferences) -> CGFloat {
         let n = CGFloat(prefs.helmDoors)
-        return n == 0 ? 0 : n * 26 + (n - 1) * 2 + 8
+        return n == 0 ? 0 : n * Door.width + (n - 1) * 2 + 8
     }
     @MainActor static func helmDoors(_ prefs: Preferences) -> CGFloat {
+        let n = CGFloat(prefs.helmDoors)
+        return n == 0 ? 0 : n * Door.width + (n - 1) * 4
+    }
+    @MainActor static func helmDoorsTall(_ prefs: Preferences) -> CGFloat {
         let n = CGFloat(prefs.helmDoors)
         return n == 0 ? 0 : n * 26 + (n - 1) * 4
     }
@@ -237,7 +273,7 @@ enum Metrics {
     static let tabMinWidth: CGFloat = 36
     static let tabGap: CGFloat = 2
     /// A pinned tab is a square the height of the row, holding one letter.
-    static let pinWidth: CGFloat = 30
+    static let pinWidth: CGFloat = 34
     /// The square at the end of the row that opens a new page.
     static let plusWidth: CGFloat = 30
     /// What a full row of tabs still leaves past the plus to take the window
@@ -361,6 +397,16 @@ enum Motion {
 
     static var settle: Animation? {
         reduced ? nil : light ? .easeOut(duration: 0.16) : .spring(response: 0.30, dampingFraction: 0.86)
+    }
+
+    nonisolated(unsafe) static var spaceMotion: SpaceMotion = .snappy
+
+    static var spaceSpan: Double { spaceMotion.span }
+
+    static var slides: Bool { !instant && spaceMotion != .none }
+
+    static var space: Animation? {
+        slides ? .spring(response: spaceSpan, dampingFraction: 1) : nil
     }
 
     static var quick: Animation? {
@@ -524,27 +570,33 @@ struct Shake: GeometryEffect {
 }
 
 extension View {
-    /// What a popover holds, on the ground colour. From macOS 26 a popover
-    /// clips what it holds to its own rounded glass, and the background
-    /// fills its arrow too; before, an opaque background was drawn out to the
-    /// content's square edges, past the popover's rounded corners (macOS 15,
-    /// by email). There the popover is handed the colour and fills its own
-    /// shape with it, arrow included. The bookmarks list and card were drawn
-    /// as a rounded card of their own inside the popover, which left the
-    /// arrow in the popover's lighter glass beside the darker card; they're
-    /// on the ground as the rest are now.
-    func popoverGround() -> some View {
-        modifier(PopoverGround())
+    /// A floating pill or card: the page shows through, blurred, under a
+    /// light wash of the ground so the text stays clear to read.
+    func pillGlass<S: InsettableShape>(_ shape: S) -> some View {
+        background(Palette.lift, in: shape)
     }
-}
 
-private struct PopoverGround: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(macOS 26, *) {
-            content.background(Palette.ground)
-        } else {
-            content.presentationBackground(Palette.ground)
+    func rowHover(_ on: Bool) -> some View {
+        background {
+            RoundedRectangle(cornerRadius: Metrics.rowRadius - 2, style: .continuous)
+                .fill(on ? Palette.hover : .clear)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
         }
+    }
+
+    func pill<S: InsettableShape>(_ shape: S) -> some View {
+        background(Palette.lift, in: shape)
+            .overlay(shape.strokeBorder(Palette.liftEdge, lineWidth: 1))
+            .shadow(color: .black.opacity(0.16), radius: 12, y: 4)
+    }
+
+    /// What a popover holds, on the popover's own glass, as the menus are:
+    /// painted over with the ground colour it stood out pitch black in a
+    /// dark window. Nothing is drawn behind it, so the system fills the
+    /// whole shape, arrow included.
+    func popoverGround() -> some View {
+        self
     }
 }
 
@@ -567,6 +619,10 @@ struct CardEdge: ViewModifier {
     /// the white of the page meets the window's grey on a sharp line. Zero
     /// keeps the soft card other cards are (the side panel, downloads).
     var scale: CGFloat = 0
+    /// No ground while nothing is open, or the tab in front is empty (see
+    /// Browser.clearsBlank).
+    var clears = false
+    var front: Tab? = nil
 
     // One shape of view, on or off: a page whose view were rebuilt as the
     // card comes and goes (the tabs across the top, a video taking the
@@ -580,11 +636,15 @@ struct CardEdge: ViewModifier {
             .clipShape(shape)
             .background {
                 if crisp {
-                    shape.fill(on ? Palette.ground : .clear)
+                    if !clears {
+                        shape.fill(on ? Palette.ground : .clear)
+                    } else if let front {
+                        UnlessBlank(tab: front) { shape.fill(on ? Palette.ground : .clear) }
+                    }
                 } else {
                     shape
                         .fill(on ? Palette.ground : .clear)
-                        .shadow(color: .black.opacity(on ? CardEdge.shadow : 0), radius: 6, y: 1)
+                        .shadow(color: .black.opacity(on ? CardEdge.shadow : 0), radius: CardEdge.blur, y: 2)
                 }
             }
             .overlay {
@@ -596,8 +656,20 @@ struct CardEdge: ViewModifier {
     }
 
     /// How dark the shadow and the edge are, for the stage's own cards too.
-    static let shadow: Double = 0.07
-    static let edge: Double = 0.08
+    static let shadow: Double = 0.24
+    static let blur: CGFloat = 10
+    static let edge: Double = 0
+}
+
+/// What is drawn only under a tab with something on it, watching the tab so
+/// it comes back as the page does.
+private struct UnlessBlank<Content: View>: View {
+    @ObservedObject var tab: Tab
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if !tab.isBlank { content() }
+    }
 }
 
 /// The card's outline: round at its corners, or, off, a rectangle reaching

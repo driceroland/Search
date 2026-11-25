@@ -689,7 +689,8 @@ struct ContentView: View {
                                                      height: chrome.height - roomed.height),
                                       scale: displayScale))
                 .modifier(CardEdge(on: cards && !browser.prefs.splitView, insets: cardInsets,
-                                   corner: cardCorner, scale: displayScale))
+                                   corner: cardCorner, scale: displayScale,
+                                   clears: browser.clearsBlank, front: browser.active))
                 // The page's own view cut to the card, on the same frames.
                 .modifier(CardClip(card: cardInsets, corner: cardCorner, scale: displayScale,
                                    on: cards))
@@ -803,6 +804,8 @@ struct ContentView: View {
             HomeBackground(theme: browser.prefs.homeTheme, tuning: browser.prefs.homeTuning,
                            image: browser.prefs.homeThemeImage, shuffle: browser.prefs.homeShuffle)
                 .clipShape(RoundedRectangle(cornerRadius: cardCorner, style: .continuous))
+        } else if browser.prefs.clearEmpty {
+            Color.clear
         } else {
             Palette.ground
         }
@@ -817,10 +820,10 @@ struct ContentView: View {
         if cards {
             // Folded away, edge to edge (see `edgeToEdge`).
             let gap = edgeToEdge ? 0 : Metrics.cardGap
-            return CGSize(width: sidebar ? sideWidth : gap,
+            return CGSize(width: sidebar ? sideWidth + max(Metrics.cardGap - Metrics.columnRowInset, 0) : gap,
                           height: barShown ? bar : gap)
         }
-        return CGSize(width: sidebar ? sideWidth : 0, height: band + bar)
+        return CGSize(width: sidebar ? sideWidth + Metrics.edgeGap : 0, height: band + bar)
     }
 
     /// The column's width folded away: the room ⌘S gives the page before
@@ -878,7 +881,7 @@ struct ContentView: View {
     /// gap before it with the page as a card, or its hairline edge to edge.
     /// Folded away, the panel goes edge to edge with the page.
     private var panelRoom: CGFloat {
-        panelUp ? panelWidth + (panelCard ? Metrics.cardGap : 1) : 0
+        panelUp ? panelWidth + (panelCard ? Metrics.cardGap : Metrics.edgeGap) : 0
     }
 
     /// The side panel as a card: as the page is.
@@ -1194,6 +1197,9 @@ struct ContentView: View {
             .onChange(of: browser.prefs.columnWidth) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
+            .onChange(of: browser.liftsLights) { _, _ in
+                DispatchQueue.main.async { Lights.refresh(window); measureLights() }
+            }
             // On the right, the lights sit in the column's corner, which
             // moves with its edge.
             .onChange(of: edges.side) { _, _ in
@@ -1306,17 +1312,15 @@ struct ContentView: View {
                         .foregroundStyle(Palette.muted)
                 }
             }
-                .font(.system(size: 12))
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
                 .contentShape(Capsule())
                 .onTapGesture {
                     if let file = browser.announcedFile { NSWorkspace.shared.activateFileViewerSelecting([file]) }
                 }
-                .padding(.horizontal, 15)
-                .padding(.vertical, 9)
-                .background(Palette.ground, in: Capsule())
-                .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-                .shadow(color: .black.opacity(0.10), radius: 18, y: 6)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .pill(Capsule())
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 .animation(Motion.settle, value: browser.announcement)
         }
     }
@@ -1495,10 +1499,14 @@ struct ContentView: View {
         // its three doors sit on the lights' line.
         let edges = self.edges
         Lights.keep(window, centreX: { window in
-            browser.prefs.sidebar && browser.prefs.sidePosition == .right
-                ? window.frame.width - (edges.side ?? browser.prefs.columnWidth) + Lights.centre.x
-                : Lights.centre.x
-        }, vertical: { _ in browser.prefs.iconColumn }) { measureLights() }
+            let lead = browser.prefs.iconColumn ? Metrics.iconColumn / 2 : Lights.centre.x
+            let right = browser.prefs.sidebar && browser.prefs.sidePosition == .right
+            let inset = browser.liftsLights ? Metrics.floatGap : 0
+            return right
+                ? window.frame.width - (edges.side ?? browser.prefs.columnWidth) + lead - inset
+                : lead + inset
+        }, vertical: { _ in browser.prefs.iconColumn },
+           down: { _ in browser.liftsLights ? Metrics.floatGap : 0 }) { measureLights() }
         DispatchQueue.main.async { measureLights() }
 
         // The traffic lights are drawn — measured, they paint themselves — but

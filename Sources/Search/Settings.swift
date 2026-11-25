@@ -95,13 +95,13 @@ struct SettingsPanel: View {
         }
     }
 
-    private static let rail: CGFloat = 196
-    private static let column: CGFloat = 600
-    private static let width: CGFloat = 720
-    private static let height: CGFloat = 540
+    private static let rail: CGFloat = 212
+    private static let column: CGFloat = 640
+    private static let width: CGFloat = 820
+    private static let height: CGFloat = 620
     /// Where a row's words start, past its icon. What goes under a row's
     /// words (pictures, lists, fields) starts there too.
-    static let textInset: CGFloat = 52
+    static let textInset: CGFloat = SettingRowLayout.leading + SettingRowLayout.icon + SettingRowLayout.gap
     /// A list under a row's words starts this far in, its lines adding
     /// their own 14 to reach textInset.
     static let listInset: CGFloat = textInset - 14
@@ -120,7 +120,6 @@ struct SettingsPanel: View {
     private var tabbed: some View {
         HStack(spacing: 0) {
             pages
-            Rectangle().fill(Palette.hairline).frame(width: 1)
             content
                 .padding(.top, 26)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -142,16 +141,15 @@ struct SettingsPanel: View {
     private var card: some View {
         HStack(spacing: 0) {
             pages
-            Rectangle().fill(Palette.hairline).frame(width: 1)
             content
         }
         .frame(width: SettingsPanel.width, height: SettingsPanel.height)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Shared.prefs.clearPanels ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Palette.ground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(color: .black.opacity(0.16), radius: 34, y: 12)
         .onChange(of: page) { _, page in Store.settings.set(page.rawValue, forKey: "settings.page") }
     }
@@ -163,19 +161,18 @@ struct SettingsPanel: View {
 
     private var pages: some View {
         let counts = Dictionary(grouping: hits, by: \.page).mapValues(\.count)
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: 4) {
             Text("Settings")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Palette.ink)
-                .padding(.horizontal, 10)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 12)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
             FindField(text: $query, focus: $finding)
-                .padding(.bottom, 10)
+                .padding(.bottom, 14)
             ForEach(Array(Page.blocks.enumerated()), id: \.offset) { index, block in
                 if index > 0 {
-                    Rectangle().fill(Palette.hairline).frame(height: 1)
-                        .padding(.horizontal, 10).padding(.vertical, 7)
+                    Color.clear.frame(height: 18)
                 }
                 ForEach(block) { item in
                     PageRow(page: item, on: !searching && page == item,
@@ -188,7 +185,7 @@ struct SettingsPanel: View {
             Spacer(minLength: 0)
         }
         .animation(slide, value: page)
-        .padding(8)
+        .padding(10)
         .frame(width: SettingsPanel.rail, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Palette.wash.opacity(0.45), in: Rectangle())
@@ -237,10 +234,10 @@ struct SettingsPanel: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 9)
-            .frame(height: 28)
-            .background(Palette.ground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+            .background(Palette.ground, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
         }
     }
 
@@ -255,7 +252,7 @@ struct SettingsPanel: View {
 
         var body: some View {
             Button(action: act) {
-                HStack(spacing: 9) {
+                HStack(spacing: 10) {
                     Image(systemName: page.icon)
                         .font(.system(size: 12, weight: .medium))
                         .frame(width: 16)
@@ -268,25 +265,25 @@ struct SettingsPanel: View {
                             .foregroundStyle(Palette.ink)
                             .padding(.horizontal, 6)
                             .frame(height: 17)
-                            .background(Palette.ground, in: Capsule())
+                            .background(Palette.ground, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
                     }
                 }
                 .foregroundStyle(on ? Palette.ink : (hovering ? Palette.ink.opacity(0.75) : Palette.muted))
                 .opacity(count == 0 ? 0.4 : 1)
-                .padding(.horizontal, 10)
-                .frame(height: 30)
+                .padding(.horizontal, 12)
+                .frame(height: 34)
                 .background {
                     if on {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                             .fill(Palette.ground)
                             .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
                             .matchedGeometryEffect(id: "chosen", in: chosen)
                     } else if hovering {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                             .fill(Palette.hover)
                     }
                 }
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
@@ -313,21 +310,20 @@ struct SettingsPanel: View {
                     Door(icon: "xmark", help: "Done   esc") { browser.tuning = false }
                 }
             }
-            .padding(.bottom, 18)
-            .padding(.horizontal, 24)
+            .padding(.bottom, 22)
+            .padding(.horizontal, 32)
             .frame(maxWidth: asTab ? SettingsPanel.column : .infinity)
             .frame(maxWidth: .infinity)
 
             ScrollViewReader { reader in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 44) {
                         if searching { results } else { section(page) }
                     }
-                    .environment(\.ruleInset, 0)
-                    .padding(.bottom, 24)
-                    // Keep the rows narrow, not the scroll view: the empty
-                    // space beside them must receive scrolling too.
-                    .padding(.horizontal, 24)
+                    .environment(\.ruleInset, SettingsPanel.textInset)
+                    .environment(\.rulesHidden, true)
+                    .padding(.bottom, 32)
+                    .padding(.horizontal, 32)
                     .frame(maxWidth: asTab ? SettingsPanel.column : .infinity)
                     .frame(maxWidth: .infinity)
                 }
@@ -369,8 +365,26 @@ struct SettingsPanel: View {
 
     private func groups(of page: Page) -> some View {
         ForEach(SettingsIndex.groups(of: page)) { group in
+            groupBlock(group)
+        }
+    }
+
+    @ViewBuilder
+    private func groupBlock(_ group: SettingsGroup) -> some View {
+        if group.id == "profiles" {
+            GroupBlock(title: group.title, icon: group.icon) {
+                Card { ProfileList(browser: browser) }
+                if let note = group.note { GroupNote(note) }
+                let rest = SettingsIndex.items(in: group.id).filter { $0.id != "profiles" && shown($0) }
+                if !rest.isEmpty {
+                    Card { rows(rest, searched: false) }
+                        .padding(.top, 14)
+                }
+            }
+        } else {
             GroupBlock(title: group.title, icon: group.icon) {
                 Card { rows(SettingsIndex.items(in: group.id).filter(shown), searched: false) }
+                if let note = group.note { GroupNote(note) }
             }
         }
     }
@@ -379,14 +393,54 @@ struct SettingsPanel: View {
     private func shown(_ item: SettingsItem) -> Bool { SettingsIndex.applies(item, prefs) }
 
     private func rows(_ items: [SettingsItem], searched: Bool) -> some View {
-        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-            if index > 0 { Rule() }
-            row(item)
-            after(item, searched: searched)
+        let byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func root(_ item: SettingsItem) -> String {
+            var at = item
+            while let parent = at.parent, let up = byID[parent], up.id != item.id { at = up }
+            return at.id
+        }
+        var groups: [(head: SettingsItem, kids: [SettingsItem])] = []
+        var place: [String: Int] = [:]
+        for item in items {
+            let top = root(item)
+            if top != item.id, let at = place[top] {
+                groups[at].kids.append(item)
+            } else {
+                place[item.id] = groups.count
+                groups.append((item, []))
+            }
+        }
+        return ForEach(Array(groups.enumerated()), id: \.element.head.id) { index, group in
+            if index > 0 { divider() }
+            row(group.head)
+            after(group.head, searched: searched)
+            if !group.kids.isEmpty {
+                // What depends on the row above, in a step: its icons under
+                // that row's words, on the same card. A box of its own inside
+                // the card read as nested and cramped.
+                ForEach(group.kids) { kid in
+                    divider()
+                    row(kid, child: true)
+                    after(kid, searched: searched)
+                }
+            }
         }
     }
 
-    private func row(_ item: SettingsItem) -> some View {
+    /// The hairline between rows, from the icons' edge of the row under it.
+    private func divider(inset: CGFloat = SettingRowLayout.leading) -> some View {
+        Rectangle()
+            .fill(Palette.divider)
+            .frame(height: 1)
+            .padding(.leading, inset)
+            .padding(.trailing, SettingRowLayout.trailing)
+    }
+
+    /// Segmented choices go under their words, as the long ones always did,
+    /// so no row has its choices to the right and another's below.
+    private static let stacked: Set<String> = ["address.width", "window.glass.style", "glyph", "float.style", "pages.120"]
+
+    private func row(_ item: SettingsItem, child: Bool = false) -> some View {
         let counts = SettingsIndex.applies(item, prefs)
         // The switch that swaps ⌘1–⌘9 and ⌃1–⌃9 names both as they were.
         let relabel: (String) -> String = item.id == "spaces.commandNumbers" ? { $0 } : shortcuts.relabel
@@ -395,13 +449,16 @@ struct SettingsPanel: View {
             title: relabel(title(of: item)),
             detail: relabel(counts ? detail(of: item) : SettingsIndex.needs(item)),
             more: counts ? item.more.map(relabel) : nil,
-            wide: item.kind == .wide,
-            lit: lit == item.id
+            wide: item.kind == .wide || Self.stacked.contains(item.id),
+            sits: Self.stacked.contains(item.id),
+            lit: lit == item.id,
+            child: child,
+            mark: searching ? query.trimmingCharacters(in: .whitespaces) : nil
         ) {
             control(item)
         }
         .disabled(!counts)
-        .opacity(counts ? 1 : 0.5)
+        .opacity(counts ? 1 : 0.35)
         .id(item.id)
     }
 
@@ -536,15 +593,12 @@ struct SettingsPanel: View {
                 }
             }
         case "mail.webmail":
-            Picker("", selection: $prefs.webmail) {
+            PillMenu(selection: $prefs.webmail, title: prefs.webmail.title) {
                 ForEach(Webmail.allCases) { mail in
                     Text(mail.title).tag(mail)
                     if mail == .none { Divider() }
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
         case "mail.default":
             if mailDefault {
                 Image(systemName: "checkmark")
@@ -593,12 +647,9 @@ struct SettingsPanel: View {
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)
         case "downloads.button": Switch(on: $prefs.alwaysShowsDownloads)
         case "downloads.open":
-            Picker("Open Downloads", selection: $prefs.downloadsOpening) {
+            PillMenu(selection: $prefs.downloadsOpening, title: prefs.downloadsOpening.title) {
                 ForEach(DownloadsOpening.allCases) { Text($0.title).tag($0) }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
         default: EmptyView()
         }
     }
@@ -620,6 +671,8 @@ struct SettingsPanel: View {
                         set: { layout in withAnimation(Motion.glide) { prefs.tabsLayout = layout } }
                      ))
         case "sidebar.hides": Switch(on: $prefs.sideHides)
+        case "sidebar.floats": Switch(on: $prefs.sideFloats)
+        case "sidebar.instantIn": Switch(on: $prefs.sideAppearsAtOnce)
         case "sidebar.slides": Switch(on: $prefs.slidesColumn)
         case "sidebar.foldIcons": Switch(on: $prefs.foldsToIcons)
         case "layout.cards":
@@ -650,6 +703,7 @@ struct SettingsPanel: View {
                 set: { on in withAnimation(Motion.glide) { prefs.roomyTabs = on } }
             ))
         case "sidebar.player": Switch(on: $prefs.showsPlayer)
+        case "sidebar.player.scroll": Switch(on: $prefs.rollsPlayerTitle)
         case "sidebar.foldButton": Switch(on: $prefs.foldButton)
         case "sidebar.narrowIcons":
             Switch(on: Binding(
@@ -696,14 +750,11 @@ struct SettingsPanel: View {
     private func tabsControl(_ id: String) -> some View {
         switch id {
         case "tabs.newPlace":
-            Picker("New tab position", selection: $prefs.newTabPlace) {
+            PillMenu(selection: $prefs.newTabPlace, title: prefs.newTabPlace == .next ? "After current" : prefs.newTabPlace == .top ? (prefs.sidebar ? "Top" : "Leftmost") : (prefs.sidebar ? "Bottom" : "Rightmost")) {
                 Text("After current").tag(NewTabPlace.next)
                 Text(prefs.sidebar ? "Top" : "Leftmost").tag(NewTabPlace.top)
                 Text(prefs.sidebar ? "Bottom" : "Rightmost").tag(NewTabPlace.end)
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
         case "tabs.newAfterLast": Switch(on: $prefs.newTabAfterLast)
         case "tabs.keepWindow": Switch(on: $prefs.keepWindowAfterLast)
         case "tabs.closeGoesBack": Switch(on: $prefs.closeGoesBack)
@@ -726,14 +777,11 @@ struct SettingsPanel: View {
             }
         case "tabs.sleep.dim": Switch(on: $prefs.dimsSleepingTabs)
         case "tabs.close.after":
-            Picker("", selection: $prefs.tabLife) {
+            PillMenu(selection: $prefs.tabLife, title: prefs.tabLife.title) {
                 ForEach(TabLife.allCases) { life in
                     Text(life.title).tag(life)
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
         case "tabs.shortcuts": Switch(on: $prefs.showsTabShortcuts)
         case "tabs.address":
             Switch(on: Binding(
@@ -751,25 +799,19 @@ struct SettingsPanel: View {
     private func browsingControl(_ id: String) -> some View {
         switch id {
         case "search.engine":
-            Picker("", selection: $prefs.engine) {
+            PillMenu(selection: $prefs.engine, title: prefs.engine.title) {
                 ForEach(Engine.allCases) { engine in
                     Text(engine.title).tag(engine)
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
         case "search.shift":
-            Picker("", selection: $prefs.shiftEngine) {
+            PillMenu(selection: $prefs.shiftEngine, title: prefs.shiftEngine?.title ?? "Off") {
                 Text("Off").tag(Engine?.none)
                 Divider()
                 ForEach(Engine.allCases) { engine in
                     Text(engine.title).tag(Engine?.some(engine))
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
         case "search.suggest": Switch(on: $prefs.engineSuggests)
         case "field.top": Switch(on: $prefs.returnTakesTop)
         case "search.keywords":
@@ -839,6 +881,15 @@ struct SettingsPanel: View {
         case "links.ask": Switch(on: $prefs.asksSpaceForLinks)
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
+        case "pins.fit": Switch(on: $prefs.fitsPins)
+        case "folders.arrowHover": Switch(on: $prefs.foldersArrowOnHover)
+        case "icons.peek": Switch(on: $prefs.iconPeeks)
+        case "spaces.motion": Segmented(options: [(SpaceMotion.none, "None"), (.snappy, "Snappy"), (.smooth, "Smooth")], selection: $prefs.spaceMotion)
+        case "icons.peek.delay": Segmented(options: [(0.25, "Short"), (0.6, "Medium"), (1.0, "Long")], selection: $prefs.iconPeekDelay)
+        case "field.animates": Switch(on: $prefs.animatesField)
+        case "panels.clear": Switch(on: $prefs.clearPanels)
+        case "empty.clear": Switch(on: $prefs.clearEmpty)
+        case "find.dim": Switch(on: $prefs.findDims)
         case "pins.folders": Switch(on: $prefs.pinFolders)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "pins.linksNewTab": Switch(on: $prefs.pinLinksOpenTabs)
@@ -898,15 +949,14 @@ struct SettingsPanel: View {
     private func otherControl(_ id: String) -> some View {
         switch id {
         case "links.peek":
-            Picker("Peek at a link", selection: $prefs.peekChoice) {
+            PillMenu(selection: $prefs.peekChoice, title: prefs.peekChoice.title) {
                 ForEach(PeekChoice.allCases) { choice in
                     Text(choice.title).tag(choice)
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
         case "links.peek.stays": Switch(on: $prefs.peekStays)
+        case "links.peek.dim": Switch(on: $prefs.peekDims)
+        case "links.peek.dimSide": Switch(on: $prefs.peekDimsSide)
         case "links.optionSplit": Switch(on: $prefs.optionClickSplits)
         case "keys.backspaceBack": Switch(on: $prefs.backspaceGoesBack)
         case "autoscroll": Switch(on: $prefs.autoScroll)
@@ -1270,7 +1320,11 @@ private extension View {
     /// out to the card's left edge, as every other one in Settings.
     func under() -> some View {
         padding(.leading, SettingsPanel.listInset)
-            .environment(\.ruleInset, -SettingsPanel.listInset)
+            // Their lines add 14: two more, and their controls end where
+            // the rows' switches do.
+            .padding(.trailing, SettingRowLayout.trailing - 14)
+            .environment(\.ruleInset, SettingsPanel.textInset - SettingsPanel.listInset)
+            .environment(\.rulesGone, true)
     }
 }
 
@@ -1282,89 +1336,151 @@ struct GroupBlock<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 10.5, weight: .semibold))
-                Text(title.uppercased())
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .tracking(0.5)
+        VStack(alignment: .leading, spacing: 12) {
+            if !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .padding(.leading, 14)
             }
-            .foregroundStyle(Palette.ink.opacity(0.62))
-            .padding(.leading, 2)
             content()
         }
+    }
+}
+
+struct GroupNote: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .foregroundStyle(Palette.muted)
+            .lineSpacing(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 14)
+            .padding(.top, -4)
     }
 }
 
 /// One setting: its icon in a soft tile, what it is, one line on what it
 /// does (the rest behind the (i)), and its control. A wide control goes
 /// under the words.
+enum SettingRowLayout {
+    static let leading: CGFloat = 16
+    static let trailing: CGFloat = 16
+    static let icon: CGFloat = 20
+    static let gap: CGFloat = 14
+}
+
 struct SettingRow<Control: View>: View {
     let icon: String
     let title: String
     let detail: String
     var more: String? = nil
     var wide = false
+    var sits = false
     var lit = false
+    /// Belongs to the row above it: set in a step.
+    var child = false
+    var mark: String? = nil
     @ViewBuilder let control: () -> Control
 
     @State private var open = false
+    @Environment(\.colorScheme) private var scheme
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Palette.ink.opacity(0.78))
-                    .frame(width: 26, height: 26)
-                    .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 5) {
-                        Text(title)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Palette.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if more != nil {
-                            Button { withAnimation(Motion.quick) { open.toggle() } } label: {
-                                Image(systemName: open ? "info.circle.fill" : "info.circle")
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.muted.opacity(0.8))
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .help(more ?? "")
-                            .accessibilityLabel("More about \(title)")
-                        }
-                    }
-                    if !detail.isEmpty {
-                        Text(detail)
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if open, let more {
-                        Text(more)
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 3)
-                            .transition(.opacity)
-                    }
-                }
-                Spacer(minLength: 8)
-                if !wide { control() }
-            }
-            if wide {
-                control()
-                    .padding(.leading, 38)
+    private func marked(_ text: String) -> AttributedString {
+        var out = AttributedString(text)
+        guard let mark else { return out }
+        let words = mark.split(separator: " ").map(String.init).filter { $0.count >= 2 }
+        let plain = text as NSString
+        for word in words {
+            var from = 0
+            while from < plain.length {
+                let found = plain.range(of: word, options: [.caseInsensitive, .diacriticInsensitive], range: NSRange(location: from, length: plain.length - from))
+                guard found.location != NSNotFound,
+                      let range = Range(found, in: text),
+                      let lower = AttributedString.Index(range.lowerBound, within: out),
+                      let upper = AttributedString.Index(range.upperBound, within: out) else { break }
+                out[lower..<upper].backgroundColor = scheme == .dark ? Color.white.opacity(0.28) : Color.black.opacity(0.12)
+                from = found.location + found.length
             }
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 14)
-        .padding(.vertical, 10)
-        .background(lit ? Palette.hover : .clear)
+        return out
+    }
+
+    private func header(trailing: Bool) -> some View {
+        HStack(alignment: .center, spacing: SettingRowLayout.gap) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(Palette.ink.opacity(0.7))
+                .frame(width: SettingRowLayout.icon)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Text(marked(title))
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if more != nil {
+                        Button { withAnimation(Motion.quick) { open.toggle() } } label: {
+                            Image(systemName: open ? "info.circle.fill" : "info.circle")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(Palette.muted.opacity(0.8))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(more ?? "")
+                        .accessibilityLabel("More about \(title)")
+                    }
+                }
+                if !detail.isEmpty {
+                    Text(marked(detail))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 16)
+            if trailing { control() }
+        }
+    }
+
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header(trailing: false)
+            control()
+                .padding(.leading, SettingRowLayout.icon + SettingRowLayout.gap)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !wide {
+                header(trailing: true)
+            } else if sits {
+                ViewThatFits(in: .horizontal) {
+                    header(trailing: true)
+                    stacked
+                }
+            } else {
+                stacked
+            }
+            if open, let more {
+                Text(more)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, SettingRowLayout.icon + SettingRowLayout.gap)
+                    .padding(.top, -6)
+                    .transition(.opacity)
+            }
+        }
+        .environment(\.subordinate, child)
+        .padding(.leading, SettingRowLayout.leading)
+        .padding(.trailing, SettingRowLayout.trailing)
+        .padding(.vertical, 16)
+        .rowHover(lit)
     }
 }
 
@@ -1577,6 +1693,18 @@ struct Segmented<Option: Hashable>: View {
     /// True when the control has the whole width to itself, so the choices
     /// share it evenly instead of each taking only what its word needs.
     var wide = false
+    /// Over a space's colour: grounds of thinned ink, which take the colour
+    /// under them, rather than the greys, which sat on it like stickers.
+    var airy = false
+
+    /// The chosen one's ground there: a lighter film in the dark, near white
+    /// in the light.
+    private static var airyChosen: Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                ? NSColor(white: 1, alpha: 0.18) : NSColor(white: 1, alpha: 0.95)
+        })
+    }
 
     @Namespace private var slide
 
@@ -1585,56 +1713,130 @@ struct Segmented<Option: Hashable>: View {
             ForEach(options, id: \.0) { option, title in
                 Text(title)
                     .font(.system(size: 11.5, weight: option == selection ? .medium : .regular))
-                    .foregroundStyle(option == selection ? Palette.ink : Palette.muted)
+                    .foregroundStyle(option == selection ? Palette.ink : airy ? Palette.ink.opacity(0.72) : Palette.muted)
                     .lineLimit(1)
                     .fixedSize(horizontal: !wide, vertical: false)
                     .frame(maxWidth: wide ? .infinity : nil)
-                    .padding(.horizontal, wide ? 4 : 10)
-                    .padding(.vertical, 5)
+                    // Sharing a narrow column, the words need the room.
+                    .minimumScaleFactor(wide ? 0.85 : 1)
+                    .padding(.horizontal, wide ? 2 : 12)
+                    .padding(.vertical, 6)
                     .background {
                         if option == selection {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(Palette.ground)
+                            // Concentric with the track, 2 points in.
+                            RoundedRectangle(cornerRadius: Metrics.concentric(outer: Metrics.rowRadius, inset: 2), style: .continuous)
+                                .fill(airy ? Self.airyChosen : Palette.ground)
                                 .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
                                 .matchedGeometryEffect(id: "chosen", in: slide)
                         }
                     }
-                    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
                     .onTapGesture {
                         withAnimation(Motion.settle) { selection = option }
                     }
             }
         }
         .padding(2)
-        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(airy ? Palette.ink.opacity(0.1) : Palette.wash, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
         .animation(Motion.settle, value: selection)
     }
 }
 
-/// On or off, in ink rather than in blue.
-/// A few things each shown or not, side by side: a tick for each
-/// (Back, Forward, Reload…).
 struct Ticks: View {
     let items: [(String, Binding<Bool>)]
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 8) {
             ForEach(items.indices, id: \.self) { index in
-                Toggle(items[index].0, isOn: items[index].1)
-                    .toggleStyle(.checkbox)
-                    .font(.system(size: 12.5))
+                Chip(title: items[index].0, on: items[index].1)
             }
         }
+    }
+
+    private struct Chip: View {
+        let title: String
+        @Binding var on: Bool
+        @State private var hovering = false
+
+        var body: some View {
+            Button { withAnimation(Motion.quick) { on.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: on ? "checkmark" : "plus")
+                        .font(.system(size: 9.5, weight: .semibold))
+                    Text(title)
+                        .font(.system(size: 12))
+                }
+                .foregroundStyle(on ? Palette.ground : Palette.ink.opacity(hovering ? 0.9 : 0.7))
+                .padding(.horizontal, 12)
+                .frame(height: 28)
+                .background(on ? Palette.ink : (hovering ? Palette.hover : Palette.wash), in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .accessibilityAddTraits(on ? .isSelected : [])
+        }
+    }
+}
+
+struct PillMenu<Value: Hashable, Content: View>: View {
+    @Binding var selection: Value
+    let title: String
+    @ViewBuilder let content: () -> Content
+
+    init(selection: Binding<Value>, title: String, @ViewBuilder content: @escaping () -> Content) {
+        self._selection = selection
+        self.title = title
+        self.content = content
+    }
+
+    var body: some View {
+        Menu {
+            Picker("", selection: $selection, content: content)
+                .pickerStyle(.inline)
+                .labelsHidden()
+        } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+            }
+            .foregroundStyle(Palette.ink)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(Palette.wash, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityValue(title)
+    }
+}
+
+private struct SubordinateKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var subordinate: Bool {
+        get { self[SubordinateKey.self] }
+        set { self[SubordinateKey.self] = newValue }
     }
 }
 
 struct Switch: View {
     @Binding var on: Bool
+    @Environment(\.subordinate) private var small
 
     var body: some View {
         Capsule()
-            .fill(on ? Palette.ink : Palette.faint)
-            .frame(width: 30, height: 18)
+            .fill(on ? Palette.ink : Palette.muted.opacity(0.25))
+            .frame(width: small ? 24 : 30, height: small ? 14 : 18)
             .overlay(alignment: on ? .trailing : .leading) {
                 Circle()
                     .fill(Palette.ground)
@@ -1677,8 +1879,8 @@ struct Steps: View {
         }
         .padding(.horizontal, 2)
         .frame(height: 24)
-        .background(Palette.ground, in: Capsule())
-        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+        .background(Palette.ground, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
     }
 
     private struct Step: View {
@@ -1724,13 +1926,13 @@ struct Pill: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11.5))
+                .font(.system(size: 12))
                 .foregroundStyle(filled ? Palette.ground : tint)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(filled ? Palette.ink : (hovering ? Palette.hover : Palette.ground), in: Capsule())
-                .overlay(Capsule().strokeBorder(filled ? .clear : Palette.hairline, lineWidth: 1))
-                .contentShape(Capsule())
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(filled ? Palette.ink : (hovering ? Palette.hover : Palette.ground), in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).strokeBorder(filled ? .clear : Palette.hairline, lineWidth: 1))
+                .contentShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -1807,7 +2009,7 @@ private struct PermissionSiteRow: View {
             .padding(.leading, 14 + SettingsPanel.listInset)
             .padding(.trailing, 14).frame(minHeight: 44)
             .contentShape(Rectangle())
-            .background(hovering ? Palette.hover : .clear)
+            .rowHover(hovering)
         }
         .buttonStyle(.plain)
         .padding(.leading, -SettingsPanel.listInset)

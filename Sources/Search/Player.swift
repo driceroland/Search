@@ -5,6 +5,9 @@ import SwiftUI
 // stays, with its play and a cross to put it away, until it plays again,
 // its page goes or the tab sleeps.
 //
+// A title too long for the card rolls past while the pointer is on it
+// (Settings can turn that off).
+//
 // Off unless turned on in Settings › Appearance › Tabs, and only with the
 // tabs down the side, titles and all: a sidebar of icons alone has no room
 // for its title and buttons. Off, nothing of it reaches a page: the pause
@@ -83,27 +86,28 @@ extension Browser {
     }
 }
 
-/// The row itself, above the doors at the foot of the sidebar. A card's
-/// hairline rather than a tab's ground, so it never reads as one more tab.
+/// The card itself, above the doors at the foot of the sidebar: raised off
+/// the column on the pills' ground, with their edge and a shadow, so it
+/// never reads as one more tab.
 struct PlayerRow: View {
-    @Environment(\.greys) private var greys
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
 
     @State private var hovering = false
 
+    /// A little taller than a tab's line.
+    static func height(_ prefs: Preferences) -> CGFloat { prefs.sideRow + 10 }
+
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Metrics.popoverRadius - 4, style: .continuous)
         HStack(spacing: 8) {
-            Mark(icon: tab.icon, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15)
-            Text(tab.label)
-                .font(.system(size: prefs.sideTitle))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
-            Spacer(minLength: 0)
+            Mark(icon: tab.icon, letter: tab.monogram, size: prefs.roomyTabs ? 18 : 16)
+            ScrollingTitle(title: tab.label, size: prefs.sideTitle, rolling: hovering && prefs.rollsPlayerTitle)
+                .fontWeight(.medium)
+                .foregroundStyle(Palette.ink)
             if tab.stilled && hovering {
-                // Paused from here and not wanted again: the row goes until
+                // Paused from here and not wanted again: the card goes until
                 // the tab plays again.
                 PlayerButton(symbol: "xmark", help: "Put Away") { tab.stilled = false }
                     .transition(.opacity)
@@ -112,31 +116,100 @@ struct PlayerRow: View {
                 if tab.stilled { tab.playAgain() } else { tab.still() }
             }
         }
-        .padding(.leading, 10)
+        .padding(.leading, 11)
         .padding(.trailing, 7)
-        .frame(height: prefs.sideRow)
+        .frame(height: Self.height(prefs))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(hovering ? greys.hover : .clear)
+            shape.fill(Palette.lift)
+                .shadow(color: .black.opacity(hovering ? 0.28 : 0.18), radius: hovering ? 10 : 6, y: hovering ? 4 : 2)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Palette.hairline, lineWidth: 1)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        // The buttons take their own clicks; the rest of the row is the way
+        .overlay(shape.strokeBorder(Palette.liftEdge, lineWidth: 1))
+        .contentShape(shape)
+        // The buttons take their own clicks; the rest of the card is the way
         // to the tab.
         .onTapGesture { browser.select(tab) }
         .onHover { hovering = $0 }
-        .help("Go to the tab")
+        // No tooltip over a title that is being read as it rolls.
+        .help(prefs.rollsPlayerTitle ? "" : "Go to the tab")
         .animation(Motion.quick, value: hovering)
         .animation(Motion.quick, value: tab.stilled)
     }
 }
 
-/// One of the row's buttons, drawn as the tab's speaker is: a symbol, with
-/// the cross's faint disc behind it under the pointer.
+/// One line, cut short at rest. While `rolling`, one too long for its room
+/// waits a moment, then goes slowly round, and waits again at its start.
+/// Still with Reduce Motion.
+private struct ScrollingTitle: View {
+    let title: String
+    let size: CGFloat
+    let rolling: Bool
+
+    /// The room there is, and what the whole line would take.
+    @State private var room: CGFloat = 0
+    @State private var full: CGFloat = 0
+    @State private var since = Date()
+
+    /// Points a second, the wait at the start, and the space between the end
+    /// of the line and its coming round again.
+    private static let speed = 24.0
+    private static let wait = 0.5
+    private static let gap: CGFloat = 36
+
+    private var rolls: Bool { rolling && !Motion.reduced && full > room + 0.5 }
+
+    private var line: some View {
+        Text(title).font(.system(size: size)).lineLimit(1)
+    }
+
+    var body: some View {
+        line.truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(rolls ? 0 : 1)
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { room = $0 }
+            .background(alignment: .leading) {
+                line.fixedSize().hidden()
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { full = $0 }
+            }
+            .overlay(alignment: .leading) {
+                if rolls {
+                    TimelineView(.animation) { context in
+                        let round = Double(full + Self.gap)
+                        let spent = context.date.timeIntervalSince(since)
+                            .truncatingRemainder(dividingBy: Self.wait + round / Self.speed)
+                        let gone = CGFloat(max(0, spent - Self.wait) * Self.speed)
+                        HStack(spacing: Self.gap) {
+                            line.fixedSize()
+                            line.fixedSize()
+                        }
+                        .offset(x: -gone)
+                        .frame(width: room, alignment: .leading)
+                        .mask(fade(leading: min(gone, 10)))
+                    }
+                    .accessibilityHidden(true)
+                }
+            }
+            .onChange(of: rolling) { since = Date() }
+            .onChange(of: title) { since = Date() }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(title)
+    }
+
+    /// Soft at the edges the words pass under; whole at the start while they
+    /// have yet to move.
+    private func fade(leading: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                .frame(width: leading)
+            Color.black
+            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 10)
+        }
+    }
+}
+
+/// One of the card's buttons: a symbol on a faint disc, darker under the
+/// pointer.
 private struct PlayerButton: View {
     let symbol: String
     let help: String
@@ -147,15 +220,16 @@ private struct PlayerButton: View {
     var body: some View {
         Button(action: act) {
             Image(systemName: symbol)
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(Palette.muted)
-                .frame(width: 15, height: 15)
-                .background(Palette.ink.opacity(hovering ? 0.07 : 0), in: Circle())
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Palette.ink)
+                .frame(width: 24, height: 24)
+                .background(Palette.ink.opacity(hovering ? 0.16 : 0.08), in: Circle())
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(help)
+        .accessibilityLabel(help)
         .animation(Motion.quick, value: hovering)
     }
 }

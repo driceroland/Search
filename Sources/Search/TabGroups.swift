@@ -114,7 +114,7 @@ struct GroupHeading: View {
     /// Its height in the column, a little under a tab's.
     static let height: CGFloat = 24
     /// And in the column of icons.
-    static let compactHeight: CGFloat = 18
+    static let compactHeight: CGFloat = 24
 
     /// A test run's stand-in for a name drawn wider than measured here, as on
     /// another macOS (TabBar.measures): taken off every heading's width.
@@ -141,19 +141,21 @@ struct GroupHeading: View {
 
     /// The column of icons' heading: the letter, a fold mark beside it.
     private var short: some View {
-        HStack(spacing: 2) {
-            Text(group.name.first.map { String($0).uppercased() } ?? "•")
-                .font(.system(size: 9.5, weight: .semibold))
-            Image(systemName: "chevron.down")
-                .font(.system(size: 6.5, weight: .bold))
-                .rotationEffect(.degrees(group.collapsed ? -90 : 0))
+        ZStack {
+            if hovering {
+                Image(systemName: group.collapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+            } else {
+                Text(group.name.first.map { String($0).uppercased() } ?? "•")
+                    .font(.system(size: 11, weight: .semibold))
+            }
         }
         .foregroundStyle(titleColour(hovering: hovering))
+        .frame(width: group.collapsed ? Metrics.iconTile : Metrics.iconTile - 4, height: Self.compactHeight)
+        .background(RoundedRectangle(cornerRadius: group.collapsed ? Metrics.rowRadius : Metrics.rowRadius - 2, style: .continuous)
+            .fill(dropping ? greys.wash : (hovering && group.collapsed ? greys.hover : Color.clear)))
+        .contentShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
         .frame(maxWidth: .infinity)
-        .frame(height: Self.compactHeight)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(dropping ? greys.wash : (hovering ? greys.hover : greys.tile)))
-        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .onTapGesture { browser.toggleTabGroup(group.id) }
         .modifier(GroupHeadingShared(browser: browser, group: group, dragSpace: dragSpace, dropping: $dropping))
         .onHover { hovering = $0 }
@@ -202,10 +204,10 @@ struct GroupHeading: View {
                 }
             }
             if !editing && !horizontal {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .medium))
-                    .rotationEffect(.degrees(group.collapsed ? -90 : 0))
-                    .opacity(hovering ? 1 : 0)
+                Image(systemName: group.collapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(group.collapsed ? Palette.muted : titleColour(hovering: false))
+                    .opacity(browser.prefs.foldersArrowOnHover ? (hovering ? 1 : 0) : (group.collapsed || hovering ? 1 : 0))
             }
         }
         .foregroundStyle(titleColour(hovering: false))
@@ -280,19 +282,18 @@ private struct GroupHeadingShared: ViewModifier {
             .contextMenu {
                 // First, as Chrome has it: a tab at the group's end, in front.
                 Button("New Tab in Group") { browser.newTab(inGroup: group.id) }
-                Divider()
                 Button("Rename Group") { browser.editingGroupID = group.id }
                 Button(group.collapsed ? "Expand Group" : "Collapse Group") { browser.toggleTabGroup(group.id) }
-                Button("Colour…") { choosingColour = true }
-                // The whole group into another space, still a group there: Arc's
-                // folders came in wherever Arc had them.
-                if browser.prefs.usesSpaces, browser.spaces.count > 1 {
-                    Menu("Move Group to Space") {
-                        ForEach(browser.spaces.filter { $0.id != browser.spaceID }) { space in
-                            Button {
-                                browser.move(group: group.id, toSpace: space.id)
-                            } label: {
-                                Label(space.name, systemImage: space.symbol)
+                Menu("Customise") {
+                    Button("Colour…") { choosingColour = true }
+                    if browser.prefs.usesSpaces, browser.spaces.count > 1 {
+                        Menu("Move Group to Space") {
+                            ForEach(browser.spaces.filter { $0.id != browser.spaceID }) { space in
+                                Button {
+                                    browser.move(group: group.id, toSpace: space.id)
+                                } label: {
+                                    Label(space.name, systemImage: space.symbol)
+                                }
                             }
                         }
                     }
@@ -330,7 +331,7 @@ struct GroupBand: View {
     var first = false
     var last = false
 
-    static let radius: CGFloat = 9
+    static let radius: CGFloat = Metrics.rowRadius
     /// A tab's height and a heading's: a pair in Split View is laid out as
     /// tall as the strip, and its piece would stand out above and below.
     static let height: CGFloat = 28

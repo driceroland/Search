@@ -83,18 +83,18 @@ struct SplitTabItem: View {
             }
         }
         .background {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                 .fill(greys.tile)
                 .padding(.vertical, inset)
                 .allowsHitTesting(false)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
                 .padding(.vertical, inset)
                 .allowsHitTesting(false)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Split tabs")
         .animation(Motion.quick, value: hovered)
@@ -146,7 +146,6 @@ struct SplitTabItem: View {
                 .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(Palette.muted)
                 .frame(width: 15, height: 15)
-                .background(Palette.ink.opacity(0.07), in: Circle())
                 .overlay {
                     CloseClick(armed: true) { browser.closeTab(tab) }
                         .frame(width: 30, height: 28)
@@ -220,7 +219,7 @@ private struct SplitTabHalf: View {
             .padding(.trailing, stacked ? 7 : 4)
             .frame(height: stacked ? height : Self.pillHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background { ground.animation(Motion.quick, value: stacked && focused).animation(Motion.quick, value: joined) }
+            .background { ground.padding(stacked ? 3 : 0).animation(Motion.quick, value: stacked && focused).animation(Motion.quick, value: joined) }
             .frame(height: height)
             .contentShape(Rectangle())
     }
@@ -277,11 +276,9 @@ private struct SplitTabHalf: View {
     /// The grey's shape: round, but square on the side it shares with the
     /// other half while that one is lit too.
     private var shape: UnevenRoundedRectangle {
-        let round: CGFloat = 9
-        // Square where it meets a lit neighbour; round at the ends and
-        // beside one that isn't.
-        let before: CGFloat = !first && joinedBefore ? 0 : round
-        let after: CGFloat = !last && joinedAfter ? 0 : round
+        let round: CGFloat = stacked ? Metrics.rowRadius - 3 : 9
+        let before: CGFloat = !stacked && !first && joinedBefore ? 0 : round
+        let after: CGFloat = !stacked && !last && joinedAfter ? 0 : round
         let radii: RectangleCornerRadii = stacked
             ? .init(topLeading: before, bottomLeading: after, bottomTrailing: after, topTrailing: before)
             : .init(topLeading: before, bottomLeading: before, bottomTrailing: after, topTrailing: after)
@@ -384,7 +381,6 @@ private struct SplitTabHalf: View {
             .font(.system(size: 8, weight: .semibold))
             .foregroundStyle(Palette.muted)
             .frame(width: 15, height: 15)
-            .background(hovering ? Palette.ink.opacity(0.07) : .clear, in: Circle())
             .opacity(hovering ? 1 : 0)
             .overlay {
                 CloseClick(armed: hovering) { browser.closeTab(tab) }

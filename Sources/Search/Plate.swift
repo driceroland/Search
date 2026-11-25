@@ -32,7 +32,8 @@ struct Plate<Content: View, Foot: View>: View {
     @Environment(\.asTab) private var asTab
 
     var body: some View {
-        if asTab { page } else { card }
+        Group { if asTab { page } else { card } }
+            .environment(\.rulesHidden, true)
     }
 
     /// In a tab of its own (see InternalPages.swift): the same title and
@@ -46,7 +47,10 @@ struct Plate<Content: View, Foot: View>: View {
                 .padding(.top, 44)
                 .padding(.bottom, 20)
 
+            // All the room there is, however little is listed: the foot
+            // stays at the bottom of the page.
             content()
+                .frame(maxHeight: Foot.self == EmptyView.self ? nil : .infinity, alignment: .top)
 
             if Foot.self != EmptyView.self {
                 Rectangle().fill(Palette.hairline).frame(height: 1)
@@ -70,28 +74,28 @@ struct Plate<Content: View, Foot: View>: View {
                 Spacer(minLength: 0)
                 Door(icon: "xmark", help: "Done   esc", act: close)
             }
-            .padding(.horizontal, 22)
-            .padding(.top, 18)
-            .padding(.bottom, 14)
+            .padding(.horizontal, 28)
+            .padding(.top, 22)
+            .padding(.bottom, 18)
 
             content()
-                .padding(.horizontal, 22)
+                .padding(.horizontal, 28)
 
             if Foot.self != EmptyView.self {
                 Rectangle().fill(Palette.hairline).frame(height: 1)
                     .padding(.top, 18)
                 foot()
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 14)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 16)
             } else {
-                Color.clear.frame(height: 20)
+                Color.clear.frame(height: 28)
             }
         }
         .frame(width: width, alignment: .leading)
-        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Shared.prefs.clearPanels ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Palette.ground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.16), radius: 34, y: 12)
@@ -116,9 +120,9 @@ struct Card<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) { content() }
             .background(Palette.ground)
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
                     .strokeBorder(Palette.hairline, lineWidth: 1)
             )
     }
@@ -129,9 +133,25 @@ struct Card<Content: View>: View {
 struct Rule: View {
     var inset: CGFloat? = nil
     @Environment(\.ruleInset) private var standard
+    @Environment(\.rulesHidden) private var hidden
+    @Environment(\.rulesGone) private var gone
     var body: some View {
-        Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, inset ?? standard)
+        if gone {
+            Color.clear.frame(height: 0)
+        } else if hidden {
+            Color.clear.frame(height: 8)
+        } else {
+            Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, inset ?? standard)
+        }
     }
+}
+
+private struct RulesHiddenKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private struct RulesGoneKey: EnvironmentKey {
+    static let defaultValue = false
 }
 
 private struct RuleInsetKey: EnvironmentKey {
@@ -139,6 +159,15 @@ private struct RuleInsetKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
+    var rulesGone: Bool {
+        get { self[RulesGoneKey.self] }
+        set { self[RulesGoneKey.self] = newValue }
+    }
+    var rulesHidden: Bool {
+        get { self[RulesHiddenKey.self] }
+        set { self[RulesHiddenKey.self] = newValue }
+    }
+
     /// Where a Rule without an inset of its own starts. Settings sets 0, so
     /// every hairline in its cards runs from edge to edge, those drawn by
     /// the lists it borrows from other panels too. A list drawn further in
@@ -179,19 +208,31 @@ struct Line<Control: View>: View {
             control()
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.vertical, 13)
     }
 }
 
 /// A small heading over a card, for when a panel has more than one.
 struct Caption: View {
     let text: String
-    init(_ text: String) { self.text = text }
+    /// How many are under it, at its far end.
+    var count: Int? = nil
+    init(_ text: String, count: Int? = nil) {
+        self.text = text
+        self.count = count
+    }
     var body: some View {
-        Text(text)
-            .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(Palette.muted)
-            .padding(.leading, 2)
+        HStack(spacing: 8) {
+            Text(text)
+            if let count {
+                Spacer(minLength: 0)
+                Text("\(count)").monospacedDigit()
+            }
+        }
+        .font(.system(size: 11.5, weight: .medium))
+        .foregroundStyle(Palette.muted)
+        .padding(.horizontal, 2)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -200,6 +241,9 @@ struct Hunt: View {
     @Binding var text: String
     var prompt = "Search"
     var focus: FocusState<Bool>.Binding
+    /// How many the list under the field holds, at the field's far end, and
+    /// of what, for reading aloud.
+    var count: (Int, String)? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -216,6 +260,13 @@ struct Hunt: View {
                     .focused(focus)
             }
             .font(.system(size: 13))
+            if let (number, of) = count {
+                Text("\(number)")
+                    .font(.system(size: 12))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.muted)
+                    .accessibilityLabel("\(number) \(of)\(number == 1 ? "" : of.hasSuffix("ch") ? "es" : "s")")
+            }
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -225,9 +276,9 @@ struct Hunt: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, 14)
+        .frame(height: 32)
+        .background(Palette.wash, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
     }
 }
 
@@ -249,11 +300,15 @@ struct Nothing: View {
 struct Quick: View {
     let title: String
     var tint: Color = Palette.ink
+    /// A symbol in the word's place, the word then its tooltip and what is
+    /// read aloud.
+    var symbol: String? = nil
     let act: () -> Void
 
-    init(_ title: String, tint: Color = Palette.ink, act: @escaping () -> Void) {
+    init(_ title: String, tint: Color = Palette.ink, symbol: String? = nil, act: @escaping () -> Void) {
         self.title = title
         self.tint = tint
+        self.symbol = symbol
         self.act = act
     }
 
@@ -261,15 +316,24 @@ struct Quick: View {
         Button(action: act) {
             // On one line, whatever room is left: in the narrow downloads
             // card, Resume, Retry and Remove broke in the middle of a word.
-            Text(title)
+            Group {
+                if let symbol {
+                    // As tall as the words beside it.
+                    Image(systemName: symbol).frame(height: 14)
+                } else {
+                    Text(title)
+                }
+            }
                 .font(.system(size: 11.5))
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Palette.wash, in: Capsule())
+                .background(Palette.wash, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
         }
         .buttonStyle(.plain)
+        .help(symbol == nil ? "" : title)
+        .accessibilityLabel(title)
     }
 }

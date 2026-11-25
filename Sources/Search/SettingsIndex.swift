@@ -17,6 +17,7 @@ struct SettingsGroup: Identifiable {
     let page: SettingsPanel.Page
     let title: String
     let icon: String
+    var note: String? = nil
 }
 
 /// One row of Settings.
@@ -59,7 +60,7 @@ enum SettingsIndex {
     // MARK: - groups
 
     static let groups: [SettingsGroup] = [
-        .init(id: "browser", page: .general, title: "Your browser", icon: "globe.desk"),
+        .init(id: "browser", page: .general, title: "Your browser", icon: "globe.desk", note: "Search can be the browser other apps open links in."),
         .init(id: "devices", page: .general, title: "Sync and other devices", icon: "icloud"),
         .init(id: "downloads", page: .general, title: "Downloads", icon: "arrow.down.circle"),
 
@@ -82,8 +83,9 @@ enum SettingsIndex {
         .init(id: "video", page: .browsing, title: "Video", icon: "play.rectangle"),
         .init(id: "pages", page: .browsing, title: "Pages", icon: "doc.richtext"),
 
-        .init(id: "arc", page: .spaces, title: "Coming from Arc?", icon: "arrow.down.forward.square"),
-        .init(id: "spaces", page: .spaces, title: "Spaces and profiles", icon: "rectangle.3.group"),
+        .init(id: "arc", page: .spaces, title: "Coming from Arc?", icon: "arrow.down.forward.square", note: "Bring your Arc setup over in one step. Nothing in Arc is changed."),
+        .init(id: "spaces", page: .spaces, title: "Spaces", icon: "rectangle.3.group", note: "Spaces keep separate sets of tabs in one window. Switch with ⌥1–⌥9 or a two-finger swipe."),
+        .init(id: "profiles", page: .spaces, title: "Profiles", icon: "person.2", note: "Each profile has its own sign-ins, history and bookmarks. Extensions, passwords and settings are shared."),
         .init(id: "pins", page: .spaces, title: "Pins", icon: "pin"),
         .init(id: "opening", page: .spaces, title: "Opening and starting", icon: "command"),
 
@@ -125,6 +127,9 @@ enum SettingsIndex {
               title: "Make Search open email links", detail: "So links from other apps open your webmail too",
               more: "macOS asks you to confirm. Pick another app in Mail › Settings › General › Default email reader to undo it.",
               words: ["email", "mailto", "gmail", "mail", "default email", "handler"], parent: "mail.webmail"),
+        .init(id: "quit.confirm", group: "browser", icon: "power",
+              title: "Confirm before quitting", detail: "Ask before ⌘Q or Quit Search closes the browser",
+              keys: ["quit.confirm"], words: ["quit", "cmd q"]),
         .init(id: "general.import", group: "browser", icon: "square.and.arrow.down.on.square",
               title: "Bring things over", detail: "Bookmarks, history, passwords and extensions from another browser",
               more: "From another browser on this Mac, or from a file it exported. Nothing leaves your Mac.",
@@ -144,9 +149,6 @@ enum SettingsIndex {
               title: "Sync Macs through a folder", detail: "Macs only: spaces, pins, bookmarks and settings, as files in a folder you pick",
               more: "The older way, from before Sync with iCloud: no iPhone and no open tabs, but no iCloud needed either, and every profile, not only Personal. Choose a folder your Macs share, in Dropbox or iCloud Drive for example, and turn this on with the same folder in Search on each Mac. Never your history, passwords, cookies, sign-ins or open tabs. No account and no server: only small files in that folder. Off while Sync with iCloud is on: use one or the other.",
               keys: ["sync.folder"], words: ["sync", "folder", "dropbox", "icloud drive", "other mac", "devices", "mac", "profiles", "legacy", "older"]),
-        .init(id: "quit.confirm", group: "browser", icon: "power",
-              title: "Confirm before quitting", detail: "Ask before ⌘Q or Quit Search closes the browser",
-              keys: ["quit.confirm"], words: ["quit", "cmd q"]),
         .init(id: "downloads.folder", group: "downloads", icon: "folder",
               title: "Save to", detail: "", keys: ["downloads"], words: ["download folder"]),
         .init(id: "downloads.ask", group: "downloads", icon: "questionmark.folder",
@@ -191,9 +193,37 @@ enum SettingsIndex {
               keys: ["sidebar", "sidebar.position", "sidebar.icons"],
               words: ["sidebar", "vertical tabs", "column", "left", "right", "top", "tab bar", "position",
                       "icons only", "compact", "collapsed", "narrow", "favicons"], kind: .wide),
+        .init(id: "layout.cards", group: "window", icon: "rectangle.inset.filled",
+              title: "The page as a card", detail: "A little room around the page, with rounded corners",
+              more: "Off, the page reaches the window's edges and the column is white with its hairline.",
+              keys: ["layout.cards"], words: ["edge to edge", "rounded", "margin"], kind: .wide, parent: "tabs.layout"),
+        .init(id: "layout.cardsFullScreen", group: "window", icon: "arrow.up.left.and.arrow.down.right",
+              title: "Keep the card in full screen", detail: "Off, the page goes edge to edge when the window fills the screen",
+              keys: ["layout.cardsFullScreen"], words: ["full screen", "fullscreen", "card", "margin", "rounded", "zen", "arc"],
+              parent: "layout.cards"),
+        .init(id: "tabs.compact", group: "window", icon: "rectangle.compress.vertical",
+              title: "Shorter tab bar", detail: "Only a few points above and below the tabs, for more of the page",
+              keys: ["tabs.compact"], words: ["compact", "slim", "thin", "height", "padding", "tab bar", "toolbar"],
+              parent: "tabs.layout"),
+        .init(id: "address.shown", group: "window", icon: "link",
+              title: "Always show the address bar", detail: "The page's full address, to type in",
+              keys: ["address.shown"], words: ["address bar", "url", "location", "url bar", "omnibox", "full address"]),
+        .init(id: "address.width", group: "window", icon: "arrow.left.and.right",
+              title: "Address width", detail: "Before the tabs across the top",
+              keys: ["address.width"], words: ["address bar", "url", "width", "wide"], parent: "address.shown"),
+        .init(id: "toolbar.left", group: "window", icon: "arrow.left.arrow.right",
+              title: "Back, forward and reload on the left", detail: "Beside the window's buttons, before the tabs",
+              keys: ["toolbar.left"], words: ["toolbar", "buttons", "navigation"], parent: "tabs.layout"),
         .init(id: "sidebar.hides", group: "window", icon: "sidebar.squares.left",
               title: "Hide the column until the pointer reaches the edge", detail: "The page takes the whole window; ⌘S keeps the tabs out",
               keys: ["sidebar.hides"], words: ["auto hide", "sidebar"], parent: "tabs.layout"),
+        .init(id: "sidebar.floats", group: "window", icon: "rectangle.portrait.on.rectangle.portrait",
+              title: "Float the column over the page", detail: "Out from the edge as a rounded card with room around it",
+              more: "Off, the hidden column slides out flush against the window's edge.",
+              keys: ["sidebar.floats"], words: ["float", "floating", "card", "hover", "edge", "sidebar", "arc"], parent: "sidebar.hides"),
+        .init(id: "sidebar.instantIn", group: "window", icon: "bolt",
+              title: "Show the column at once on hover", detail: "No slide in when the pointer reaches the edge; it still slides away",
+              keys: ["sidebar.instantIn"], words: ["animation", "instant", "hover", "edge", "slide", "sidebar", "fast"], parent: "sidebar.hides"),
         .init(id: "sidebar.slides", group: "window", icon: "rectangle.lefthalf.inset.filled.arrow.left",
               title: "Slide the column in and out", detail: "A gentler slide when ⌘S or the window's edge brings the column out or puts it away",
               more: "With Reduce Motion on in System Settings › Accessibility › Display, the column fades in and out instead. With Reduce animations on, it comes and goes at once.",
@@ -207,31 +237,6 @@ enum SettingsIndex {
               title: "A loading line with the tabs hidden", detail: "Folded away with ⌘S, a thin line along the page's top while it loads",
               more: "With the tabs in sight, the ring on the tab says a page is loading; hidden, nothing did. The line runs as far as the page has come and goes once it is there.",
               keys: ["fold.loadingLine"], words: ["loading", "progress", "bar", "spinner", "indicator", "hidden sidebar", "folded", "arc"]),
-        .init(id: "layout.cards", group: "window", icon: "rectangle.inset.filled",
-              title: "The page as a card", detail: "A little room around the page, with rounded corners",
-              more: "Off, the page reaches the window's edges and the column is white with its hairline.",
-              keys: ["layout.cards"], words: ["edge to edge", "rounded", "margin"], kind: .wide, parent: "tabs.layout"),
-        .init(id: "layout.cardsFullScreen", group: "window", icon: "arrow.up.left.and.arrow.down.right",
-              title: "Keep the card in full screen", detail: "Off, the page goes edge to edge when the window fills the screen",
-              keys: ["layout.cardsFullScreen"], words: ["full screen", "fullscreen", "card", "margin", "rounded", "zen", "arc"],
-              parent: "layout.cards"),
-        .init(id: "toolbar.left", group: "window", icon: "arrow.left.arrow.right",
-              title: "Back, forward and reload on the left", detail: "Beside the window's buttons, before the tabs",
-              keys: ["toolbar.left"], words: ["toolbar", "buttons", "navigation"], parent: "tabs.layout"),
-        .init(id: "tabs.compact", group: "window", icon: "rectangle.compress.vertical",
-              title: "Shorter tab bar", detail: "Only a few points above and below the tabs, for more of the page",
-              keys: ["tabs.compact"], words: ["compact", "slim", "thin", "height", "padding", "tab bar", "toolbar"],
-              parent: "tabs.layout"),
-        .init(id: "address.shown", group: "window", icon: "link",
-              title: "Always show the address bar", detail: "The page's full address, to type in",
-              keys: ["address.shown"], words: ["address bar", "url", "location", "url bar", "omnibox", "full address"]),
-        .init(id: "address.width", group: "window", icon: "arrow.left.and.right",
-              title: "Address width", detail: "Before the tabs across the top",
-              keys: ["address.width"], words: ["address bar", "url", "width", "wide"], parent: "address.shown"),
-        .init(id: "scrollbars.fade", group: "window", icon: "scroll",
-              title: "Fade scroll bars when scrolling stops", detail: "Thin bars over the page that come up only as it scrolls, even with a mouse",
-              more: "As macOS draws them with a trackpad, whatever System Settings › Appearance › Show scroll bars says. Off, Search follows that setting.",
-              keys: ["scrollbars.fade"], words: ["scroll bar", "scrollbar", "scrollbars", "overlay", "fade", "hide", "auto hide", "when scrolling"]),
         .init(id: "window.glass", group: "window", icon: "square.on.square.intersection.dashed",
               title: "Glass", detail: "What is behind the window shows through the tabs and the frame, blurred",
               more: "As in Arc and Zen. The glass takes the space's colour; how see-through it is, and its grain, are in the space's menu › Colour…. Not in full screen.",
@@ -245,21 +250,50 @@ enum SettingsIndex {
         .init(id: "window.glass.grain", group: "window", icon: "circle.dotted",
               title: "Grain", detail: "A still noise over the glass",
               keys: ["window.glass.grain"], words: ["grain", "noise", "texture", "glass"], parent: "window.glass"),
+        .init(id: "panels.clear", group: "window", icon: "square.on.square.dashed",
+              title: "See-through panels", detail: "Settings, History, Downloads and Passwords let the page show through",
+              keys: ["panels.clear"], words: ["transparent", "translucent", "glass", "blur", "background", "settings"]),
+        .init(id: "empty.clear", group: "window", icon: "rectangle.dashed",
+              title: "See-through when empty", detail: "On a new tab or with none open, the main part looks like the sidebar",
+              keys: ["empty.clear"], words: ["transparent", "translucent", "glass", "blur", "background", "no tabs", "empty"]),
+        .init(id: "find.dim", group: "window", icon: "circle.lefthalf.filled.inverse",
+              title: "Dim the page while finding", detail: "A faint veil over everything but the match you are on, so it stands out",
+              keys: ["find.dim"], words: ["find", "search", "cmd f", "dim", "dark", "highlight", "match", "veil"]),
+        .init(id: "glyph", group: "tablook", icon: "app",
+              title: "Tabs show", detail: "A letter or the site's icon",
+              more: "Beside the title, and on a pinned square.",
+              keys: ["glyph"], words: ["favicon", "icons", "letters"]),
+        .init(id: "sidebar.roomy", group: "tablook", icon: "textformat.size.larger",
+              title: "Roomier tabs", detail: "Taller rows and larger titles in the column",
+              keys: ["sidebar.roomy"], words: ["bigger", "larger", "text size", "accessibility"], parent: "tabs.layout"),
+        .init(id: "tabs.highContrast", group: "tablook", icon: "bold",
+              title: "High contrast text", detail: "Tab titles in black or white, instead of soft grey",
+              keys: ["tabs.highContrast"], words: ["contrast", "accessibility", "bold", "readable", "black", "white"]),
+        .init(id: "tabs.reading", group: "tablook", icon: "text.line.first.and.arrowtriangle.forward",
+              title: "Show how far you've read", detail: "A thin line along the tab you're on grows as you scroll down",
+              keys: ["tabs.reading"], words: ["progress", "scroll"]),
+        .init(id: "tabs.pinCounts", group: "tablook", icon: "app.badge",
+              title: "Show counts on pins", detail: "A pinned page's unread count, from its title, as a badge on its icon",
+              keys: ["tabs.pinCounts"], words: ["badge", "unread", "count", "messages", "notifications", "pinned", "whatsapp"]),
         .init(id: "tabs.liquid", group: "tablook", icon: "drop.halffull",
               title: "Liquid Glass tab", detail: "The tab you're on under a pane of Liquid Glass that glides, stretches and settles",
               more: "It bends the tabs it passes over. Pinned tabs and split pages keep their grey. Under Reduce Motion it goes straight to the tab you pick.",
               keys: ["tabs.liquid"], words: ["liquid glass", "liquid", "glass", "active tab", "selected tab", "animation", "wobble"]),
-        .init(id: "sidebar.roomy", group: "tablook", icon: "textformat.size.larger",
-              title: "Roomier tabs", detail: "Taller rows and larger titles in the column",
-              keys: ["sidebar.roomy"], words: ["bigger", "larger", "text size", "accessibility"], parent: "tabs.layout"),
-        .init(id: "sidebar.doorsUp", group: "tablook", icon: "rectangle.topthird.inset.filled",
-              title: "Buttons at the top", detail: "Bookmarks, extensions and downloads beside back, forward and reload, when they fit",
-              keys: ["sidebar.doorsUp"], words: ["minimal", "toolbar", "footer", "bottom", "icons", "clean"], parent: "tabs.layout"),
+        .init(id: "scrollbars.fade", group: "window", icon: "scroll",
+              title: "Fade scroll bars when scrolling stops", detail: "Thin bars over the page that come up only as it scrolls, even with a mouse",
+              more: "As macOS draws them with a trackpad, whatever System Settings › Appearance › Show scroll bars says. Off, Search follows that setting.",
+              keys: ["scrollbars.fade"], words: ["scroll bar", "scrollbar", "scrollbars", "overlay", "fade", "hide", "auto hide", "when scrolling"]),
+        .init(id: "tabs.give", group: "tablook", icon: "hand.point.up.left",
+              title: "Tabs give when pressed", detail: "A tab sinks a little under the pointer, as in Arc",
+              keys: ["tabs.give"], words: ["press", "animation", "bounce"]),
         .init(id: "helm.shown", group: "tablook", icon: "arrow.left.arrow.right",
               title: "Back, forward and reload", detail: "Untick any you reach with the keys: the tabs get the room",
               more: "⌘[, ⌘] and ⌘R work whichever are shown. In the column they sit beside the window's buttons; across the top, at the row's end.",
               keys: ["helm.back.hidden", "helm.forward.hidden", "helm.reload.hidden"],
               words: ["toolbar", "buttons", "navigation", "hide", "back", "forward", "reload", "minimal", "clean"], kind: .wide),
+        .init(id: "sidebar.doorsUp", group: "tablook", icon: "rectangle.topthird.inset.filled",
+              title: "Buttons at the top", detail: "Bookmarks, extensions and downloads beside back, forward and reload, when they fit",
+              keys: ["sidebar.doorsUp"], words: ["minimal", "toolbar", "footer", "bottom", "icons", "clean"], parent: "tabs.layout"),
         .init(id: "foot.shown", group: "tablook", icon: "square.grid.3x1.below.line.grid.1x2",
               title: "Buttons under the column", detail: "Untick extensions, bookmarks or your profile to hide its button",
               more: "Across the top, the same buttons at the row's end. A pinned extension keeps its own button, and Bookmarks and Settings › Extensions are still in the menus.",
@@ -273,26 +307,22 @@ enum SettingsIndex {
               title: "Narrow to icons", detail: "Pulled narrower than 200 points, the sidebar becomes a strip of site icons and its buttons",
               more: "The strip keeps the space's colour and shows letters or icons as the tabs do. Back, forward and reload stay on their keys. Pull its edge back out, or press ⌘S, for titles again.",
               keys: ["sidebar.narrowIcons"], words: ["collapse", "collapsed", "compact", "narrow", "thin", "strip", "icons only", "auto"], parent: "tabs.layout"),
+        .init(id: "icons.peek", group: "tablook", icon: "sidebar.squares.left",
+              title: "Show names when the pointer rests on icons", detail: "The tile you rest on grows out to show its name; the arrow shows back, forward and reload",
+              keys: ["icons.peek"], words: ["hover", "expand", "peek", "icons only", "titles", "arc"], parent: "tabs.layout"),
+        .init(id: "icons.peek.delay", group: "tablook", icon: "timer",
+              title: "Wait before showing names", detail: "How long the pointer rests on an icon first",
+              keys: ["icons.peek.delay"], words: ["hover", "delay", "wait", "names", "icons only", "peek"], parent: "icons.peek"),
+        .init(id: "folders.arrowHover", group: "tablook", icon: "chevron.right",
+              title: "Show folder arrows only on hover", detail: "Folder headings show their arrow when the pointer is on them",
+              keys: ["folders.arrowHover"], words: ["chevron", "arrow", "folder", "group", "hover"]),
         .init(id: "sidebar.player", group: "tablook", icon: "play.circle",
               title: "What's playing in other tabs", detail: "At the foot of the sidebar, to pause it, play it again or go to it",
               more: "A tab playing sound while you're on another one shows above the sidebar's foot.",
               keys: ["sidebar.player"], words: ["media", "music", "now playing", "pause", "player", "sound", "audio"], parent: "tabs.layout"),
-        .init(id: "glyph", group: "tablook", icon: "app",
-              title: "Tabs show", detail: "A letter or the site's icon",
-              more: "Beside the title, and on a pinned square.",
-              keys: ["glyph"], words: ["favicon", "icons", "letters"]),
-        .init(id: "tabs.highContrast", group: "tablook", icon: "bold",
-              title: "High contrast text", detail: "Tab titles in black or white, instead of soft grey",
-              keys: ["tabs.highContrast"], words: ["contrast", "accessibility", "bold", "readable", "black", "white"]),
-        .init(id: "tabs.reading", group: "tablook", icon: "text.line.first.and.arrowtriangle.forward",
-              title: "Show how far you've read", detail: "The tab you're on fills with grey as you scroll down",
-              keys: ["tabs.reading"], words: ["progress", "scroll"]),
-        .init(id: "tabs.pinCounts", group: "tablook", icon: "app.badge",
-              title: "Show counts on pins", detail: "A pinned page's unread count, from its title, as a badge on its icon",
-              keys: ["tabs.pinCounts"], words: ["badge", "unread", "count", "messages", "notifications", "pinned", "whatsapp"]),
-        .init(id: "tabs.give", group: "tablook", icon: "hand.point.up.left",
-              title: "Tabs give when pressed", detail: "A tab sinks a little under the pointer, as in Arc",
-              keys: ["tabs.give"], words: ["press", "animation", "bounce"]),
+        .init(id: "sidebar.player.scroll", group: "tablook", icon: "arrow.left.arrow.right",
+              title: "Scroll long titles on hover", detail: "A title too long for the card rolls slowly past while the pointer is on it",
+              keys: ["sidebar.player.scroll"], words: ["marquee", "scroll", "title", "now playing", "hover", "animation"], parent: "sidebar.player"),
         .init(id: "bookmarks.bar", group: "tablook", icon: "bookmark",
               title: "Show the bookmarks bar", detail: "Your bookmarks in a row above the page",
               keys: ["bookmarks.bar"], words: ["favorites bar"]),
@@ -319,6 +349,9 @@ enum SettingsIndex {
               title: "Reduce animations", detail: "Switching tabs, spaces and panels happens at once, without sliding or fading",
               more: "For Search alone, whatever Reduce Motion in System Settings says. The tab ⌘1–⌘9 picks is lit at once, and the page shows at once.",
               keys: [Motion.instantKey], words: ["animations", "motion", "instant", "faster", "reduce motion", "transitions"]),
+        .init(id: "field.animates", group: "motion", icon: "wand.and.rays",
+              title: "Animate the address field", detail: "Off, the address field and its list appear and go at once",
+              keys: ["field.animates"], words: ["animation", "fast", "instant", "omnibox", "address", "field", "speed"]),
 
         // Tabs
         .init(id: "tabs.newPlace", group: "newtabs", icon: "arrow.right.to.line",
@@ -360,14 +393,6 @@ enum SettingsIndex {
               title: "The ⌃Tab switcher leaves out pinned tabs", detail: "Otherwise pinned tabs appear alongside regular tabs",
               more: "When on, pinned tabs stay in their places and do not appear in the ⌃Tab switcher grid. Off, the switcher includes pinned tabs that are awake or in front.",
               keys: ["tabs.switcherLeavesOutPins"], words: ["ctrl tab", "switcher", "pins", "pinned", "exclude"]),
-        .init(id: "tabs.lazy", group: "newtabs", icon: "hourglass",
-              title: "Load background tabs when you go to them", detail: "A link opened behind the page waits until you go to its tab",
-              more: "With ⌘-click, the middle button, or a batch of links from another app. ⇧⌘-click still takes you there at once.",
-              keys: ["tabs.lazy"], words: ["lazy", "background"]),
-        .init(id: "tabs.popupWindows", group: "newtabs", icon: "macwindow.on.rectangle",
-              title: "Open sized pop-ups in small windows", detail: "A site asking for a window at its own size gets one, not a tab",
-              more: "A call, a sign-in or a chat asking for a window its size gets one, as in Safari. Pop-up blocking still applies.",
-              keys: ["tabs.popupWindows"], words: ["popup", "pop-up", "window"]),
         .init(id: "tabs.sleep", group: "memory", icon: "moon.zzz",
               title: "Sleep tabs you aren't using", detail: "A resting tab lets its page go and comes back where you left it",
               more: "Pinned tabs, sound, calls and anything typed stay awake. Right-click a site's card to keep it awake.",
@@ -502,11 +527,16 @@ enum SettingsIndex {
               keys: [Preferences.spaceButtonsKey],
               words: ["arc", "spaces", "buttons", "icons", "switcher", "dot", "footer", "bottom"],
               parent: "spaces"),
-        .init(id: "profiles", group: "spaces", icon: "person.2",
+        .init(id: "spaces.motion", group: "spaces", icon: "hand.draw",
+              title: "Swipe animation", detail: "How a space slides in once your fingers let go or you press ⌃1–⌃9",
+              more: "None switches at once; the rows still follow your fingers while they are down. Snappy settles in about a third of a second, Smooth in about half.",
+              keys: ["spaces.motion"], words: ["swipe", "slide", "animation", "motion", "spaces", "speed", "snappy", "smooth", "none", "transition"],
+              parent: "spaces"),
+        .init(id: "profiles", group: "profiles", icon: "person.2",
               title: "Profiles", detail: "Spaces with their own sign-ins, history and bookmarks",
               more: "In windows of their own, unless Profiles in one window is on. Extensions, passwords and settings are shared.",
               words: ["profile", "accounts", "work", "personal"]),
-        .init(id: "profiles.oneWindow", group: "spaces", icon: "macwindow",
+        .init(id: "profiles.oneWindow", group: "profiles", icon: "macwindow",
               title: "Profiles in one window", detail: "Every profile's spaces in one window, switched in place",
               more: "Choosing a space of another profile brings that profile's window into this one's place, so each keeps its own sign-ins. Closing it closes them all.",
               keys: ["profiles.oneWindow"], words: ["arc", "profiles", "single window", "merge"], parent: "profiles"),
@@ -527,6 +557,15 @@ enum SettingsIndex {
               title: "Pins keep their site", detail: "Links elsewhere open over the pin, and ⌘W takes it back home",
               more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at. With Links from pinned tabs open in a new tab on, those links open as tabs instead of peeks.",
               keys: ["pins.home", "pins.peek"], words: ["pinned tabs", "go home", "reset pin"]),
+        .init(id: "pins.commandNewTab", group: "pins", icon: "command",
+              title: "⌘-click on a pin opens a new tab",
+              detail: "Opens a tab at the pin's site, or moves a wandered page to loose tabs",
+              more: "As in Arc: ⌘-clicking a pin opens a new tab at its address; on a pin that has wandered from its page, the wandered page is kept in loose tabs and the pin gets a fresh tab at home. Off, ⌘-click adds the pin to your tab selection.",
+              keys: ["pins.commandNewTab"],
+              words: ["command click", "cmd click", "pinned", "arc", "selection", "multi select"]),
+        .init(id: "pins.fit", group: "pins", icon: "arrow.left.and.right.square",
+              title: "Fit pinned squares in one row", detail: "Squares get narrower so more fit side by side, as in Arc",
+              keys: ["pins.fit"], words: ["arc", "favorites", "squares", "shrink", "width", "fit", "one row"]),
         .init(id: "pins.list", group: "pins", icon: "list.bullet.rectangle",
               title: "Pinned rows", detail: "Pins as rows under the squares, and Clear over the rest",
               more: "As in Arc: squares for the sites you live in, rows for pages you keep, and a line over the rest with Clear. Right-click a tab to pin it as a row. A row taken away from its page goes back with a click on its icon.",
@@ -538,12 +577,6 @@ enum SettingsIndex {
               words: ["arc", "folder", "folders", "nested", "subfolder", "pinned folder", "pinned tabs", "organise", "organize",
                       "live folder", "feed", "rss", "atom"],
               parent: "pins.list"),
-        .init(id: "pins.commandNewTab", group: "pins", icon: "command",
-              title: "⌘-click on a pin opens a new tab",
-              detail: "Opens a tab at the pin's site, or moves a wandered page to loose tabs",
-              more: "As in Arc: ⌘-clicking a pin opens a new tab at its address; on a pin that has wandered from its page, the wandered page is kept in loose tabs and the pin gets a fresh tab at home. Off, ⌘-click adds the pin to your tab selection.",
-              keys: ["pins.commandNewTab"],
-              words: ["command click", "cmd click", "pinned", "arc", "selection", "multi select"]),
         .init(id: "pins.linksNewTab", group: "pins", icon: "arrow.up.forward.square",
               title: "Links from pinned tabs open in a new tab",
               detail: "A link clicked in a pin opens beside the loose tabs, and the pin stays on its page",
@@ -558,7 +591,7 @@ enum SettingsIndex {
               title: "The field in the middle of the window", detail: "⌘T's and ⌘L's field over a page, centred on the window and higher up",
               more: "As Arc and Zen place it, near where Spotlight comes: the column is dimmed with the page. Off, the field is centred on the page beside the column.",
               keys: ["field.window"], words: ["command bar", "cmd t", "cmd l", "spotlight", "centre", "center", "position", "arc", "zen"]),
-        .init(id: "field.hidesPage", group: "opening", icon: "rectangle.fill",
+        .init(id: "field.hidesPage", group: "opening", icon: "eye.slash",
               title: "Hide the page behind the field", detail: "⌘T's and ⌘L's field over a plain ground, the page out of sight",
               more: "Off, the page stays dimmed behind the field and shows through. Escape or a click outside the field brings it back, as before.",
               keys: ["field.hidesPage"], words: ["command bar", "cmd t", "cmd l", "dim", "blur", "cluttered", "busy", "background", "behind"]),
@@ -646,6 +679,12 @@ enum SettingsIndex {
         .init(id: "links.peek.stays", group: "mouse", icon: "eye.slash",
               title: "Peek stays with its tab", detail: "Another tab hides it, with its video and sound paused, and coming back shows it",
               keys: ["links.peek.stays"], words: ["peek", "keep peek", "switch tabs"], parent: "links.peek"),
+        .init(id: "links.peek.dim", group: "mouse", icon: "circle.lefthalf.filled",
+              title: "Dim the page behind a peek", detail: "The page darkens a little, so the panel stands out",
+              keys: ["links.peek.dim"], words: ["peek", "dim", "dark", "background", "shift click"], parent: "links.peek"),
+        .init(id: "links.peek.dimSide", group: "mouse", icon: "sidebar.left",
+              title: "Dim the sidebar too", detail: "The tabs darken with the page while a peek is open",
+              keys: ["links.peek.dimSide"], words: ["peek", "dim", "sidebar", "column", "tabs", "dark"], parent: "links.peek"),
         .init(id: "links.optionSplit", group: "mouse", icon: "rectangle.split.2x1",
               title: "⌥-click a link opens it in Split View", detail: "Its page beside the one you're reading, as Open Link in Split View",
               more: "Off, ⌥-click follows the link as a click does. In Safari it downloads the link instead.",
@@ -822,8 +861,13 @@ enum SettingsIndex {
         case "pages.dusk": return prefs.look != .light
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
+        case "sidebar.player.scroll": return prefs.sidebar && !prefs.sideIcons && prefs.showsPlayer
+        case "icons.peek": return prefs.iconColumn
+        case "icons.peek.delay": return prefs.iconColumn && prefs.iconPeeks
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
+        case "sidebar.floats": return prefs.sidebar && prefs.cards
+        case "sidebar.instantIn": return prefs.sidebar
         case "address.width": return prefs.addressLine && !prefs.sidebar
         case "tabs.clickKeepsName": return prefs.addressLine && !prefs.iconColumn
         // A click that edits nothing has no card to leave out.
@@ -839,11 +883,12 @@ enum SettingsIndex {
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
-        case "spaces.links", "links.ask", "spaces.buttons": return prefs.usesSpaces
+        case "spaces.links", "links.ask", "spaces.buttons", "spaces.motion": return prefs.usesSpaces
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent", "newtab.arc": return prefs.floatingNewTab
         case "mail.default": return prefs.webmail != .none
-        case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
+        case "links.peek.stays", "links.peek.dim": return prefs.peeksLinks || prefs.pinsPeek
+        case "links.peek.dimSide": return (prefs.peeksLinks || prefs.pinsPeek) && prefs.peekDims && prefs.sidebar
         case "launcher.key": return prefs.launcher
         case "icloud.erase": return ICloudSync.shared.on
         default: return true
@@ -857,6 +902,8 @@ enum SettingsIndex {
         case "inspector.dark": return "Only while Search isn't set to Dark"
         case "toolbar.left", "tabs.compact", "address.width": return "Only with the tabs across the top"
         case "sidebar.roomy", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return "Only with titles in the column"
+        case "icons.peek": return "Only with icons only"
+        case "icons.peek.delay": return "Only with icons only and names on hover"
         case "tabs.liquid": return LiquidTab.available ? "Only with titles in the column, or the tabs across the top" : "Liquid Glass needs macOS 26"
         case "window.glass.style": return GlassStyle.liquidAvailable ? "Only with Glass on" : "Liquid Glass needs macOS 26"
         case "window.glass.clear", "window.glass.grain": return "With spaces on, in the space's menu › Colour…"
@@ -867,10 +914,13 @@ enum SettingsIndex {
         case "profiles.oneWindow": return "Only with more than one profile"
         case "spaces.links", "links.ask", "spaces.buttons": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"
+        case "sidebar.player.scroll": return "Only with What's playing in other tabs on, and titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent", "newtab.arc": return "Only with the new tab in a floating field"
         case "mail.default": return "Only with a webmail chosen for email links"
-        case "links.peek.stays": return "Only when links or pins open peeks"
+        case "links.peek.stays", "links.peek.dim": return "Only when links or pins open peeks"
+        case "links.peek.dimSide": return "Only with Dim the page behind a peek on and the tabs down a side"
+        case "sidebar.floats": return "Only with the page as a card and the tabs down a side"
         case "launcher.key": return "Only with the address field from any app on"
         case "bookmarks.side": return "Only with the bookmarks bar shown and the tabs down a side"
         default: return "Only with the tabs down a side"

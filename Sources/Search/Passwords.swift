@@ -14,7 +14,8 @@ struct PasswordsPanel: View {
         Plate("Passwords", width: 620, close: { browser.managing = false }) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
-                    Hunt(text: $browser.hunting, prompt: "Search sites and accounts", focus: $hunting)
+                    Hunt(text: $browser.hunting, prompt: "Search sites and accounts", focus: $hunting,
+                         count: (browser.shownSites.reduce(0) { $0 + $1.logins.count }, "password"))
                     Pill(adding ? "Cancel" : "Add", filled: !adding) { adding.toggle() }
                 }
 
@@ -52,9 +53,6 @@ struct PasswordsPanel: View {
         } foot: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    Text("Bring in from")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
                     // Which browser, which profile and what of it: the sheet.
                     Pill("Bring in…") { browser.lead(to: InternalPage(.importing)) }
                     Pill("File…") { browser.importFile() }
@@ -63,14 +61,11 @@ struct PasswordsPanel: View {
                     // leaves: never more than can be seen (Browser.forgetShown).
                     let shown = browser.shownSites.reduce(0) { $0 + $1.logins.count }
                     if shown > 0 {
-                        Pill(browser.hunting.trimmingCharacters(in: .whitespaces).isEmpty ? "Remove All…" : "Remove \(shown)…") {
+                        Pill(browser.hunting.trimmingCharacters(in: .whitespaces).isEmpty ? "Remove All…" : "Remove \(shown)…", tint: .red.opacity(0.85)) {
                             browser.forgetShown()
                         }
                         .disabled(browser.forgetting)
                     }
-                    Text(browser.saved.count == 1 ? "1 password" : "\(browser.saved.count) passwords")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
                 }
                 Text("macOS asks once for that browser's keychain key. Nothing is changed there; everything lands in your own keychain, under Search.")
                     .font(.system(size: 11.5))
@@ -183,7 +178,7 @@ struct PasswordsPanel: View {
                 if hovering || shown {
                     Quick(shown ? "Hide" : "Show") { shown ? conceal() : reveal() }
                     Quick("Copy", act: copy)
-                    Quick("Remove", tint: .red.opacity(0.75), act: forget)
+                    Quick("Remove", tint: .red.opacity(0.75), symbol: "trash", act: forget)
                 }
             }
             .padding(.horizontal, 10)

@@ -774,14 +774,12 @@ struct FetchDoor: View {
                     CubicKeyframe(pulse.peak, duration: pulse.up)
                     CubicKeyframe(1, duration: pulse.down)
                 }
-                .frame(width: 26, height: 26)
+                .frame(width: Door.width, height: 26)
                 .background(
-                    // A door's hover (Door), on any ground: an opaque grey
-                    // stood darker than its neighbours' on glass (idea 1034).
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    Door.shape
                         .fill(hovering ? greys.hover : .clear)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(Door.shape)
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }

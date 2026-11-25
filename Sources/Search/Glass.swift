@@ -34,6 +34,10 @@ extension Browser {
     /// whenever it shows, sliding out or back in included.
     var glassUnder: Bool { glassy && !folded }
 
+    /// Whether an empty page leaves out its ground, so the window's own, as
+    /// the column has it, shows there too (Settings, See-through when empty).
+    var clearsBlank: Bool { prefs.clearEmpty && prefs.homeTheme == .off }
+
     /// The window under the views: clear for glass, otherwise the colour of
     /// the ground, so a resize or a slide never shows another colour at the
     /// edge for a frame.

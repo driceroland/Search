@@ -13,11 +13,12 @@ extension Browser {
         guard let url = active?.address, let window = self.window ?? Links.window,
               let view = active?.built.flatMap({ $0.window === window ? $0 : nil }) ?? window.contentView
         else { return }
-        // A few points in from the corner, so the arrow points at the page
-        // rather than at its edge. Flipped or not, the picker hangs below.
-        let inset: CGFloat = 12
-        let y = view.isFlipped ? inset : view.bounds.maxY - inset
-        let anchor = NSRect(x: view.bounds.maxX - inset, y: y, width: 1, height: 1)
+        // Well in from the corner, so the arrow has a straight edge to stand
+        // on: at the very corner the popover squeezed it into a bump against
+        // its rounded top right. Flipped or not, the picker hangs below.
+        let across: CGFloat = 72, down: CGFloat = 6
+        let y = view.isFlipped ? down : view.bounds.maxY - down
+        let anchor = NSRect(x: view.bounds.maxX - across, y: y, width: 1, height: 1)
         NSSharingServicePicker(items: [url]).show(relativeTo: anchor, of: view, preferredEdge: view.isFlipped ? .maxY : .minY)
     }
 }

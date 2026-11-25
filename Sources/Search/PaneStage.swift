@@ -34,11 +34,14 @@ struct PaneStageView: NSViewRepresentable {
     var corner: CGFloat = 0
     /// The page filling the screen, if one is (see SplitStage.immersed).
     var immersed: Tab.ID? = nil
+    /// No ground: an empty page the window shows through.
+    var bare = false
 
     func makeNSView(context: Context) -> PaneStage { PaneStage() }
 
     func updateNSView(_ stage: PaneStage, context: Context) {
         stage.corner = corner
+        stage.bare = bare
         stage.immersedID = immersed
         stage.onCommit = commit
         stage.onFocus = focus
@@ -63,6 +66,9 @@ final class PaneStage: NSView {
             paint()
             needsLayout = true
         }
+    }
+    var bare = false {
+        didSet { if bare != oldValue { paint() } }
     }
     /// The ground under each page's card, a layer of the stage's own behind
     /// the page — never the page's, which is cut to its corners. It cast a
@@ -131,7 +137,7 @@ final class PaneStage: NSView {
 
     /// Between the pages: room for the divider, and to keep it off the left
     /// page's scroll bar.
-    static let gutter: CGFloat = 7
+    static let gutter: CGFloat = 16
     /// Narrower than this, a page is no use: the pair shows the focused page
     /// alone until there is room again, and stays a pair.
     static let narrowest: CGFloat = 250
@@ -266,7 +272,7 @@ final class PaneStage: NSView {
     }
 
     override func updateLayer() {
-        layer?.backgroundColor = Palette.NS.ground.cgColor
+        layer?.backgroundColor = bare ? NSColor.clear.cgColor : Palette.NS.ground.cgColor
     }
 
     // MARK: - what is shown
@@ -375,14 +381,14 @@ final class PaneStage: NSView {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let edge = NSColor.labelColor.withAlphaComponent(CardEdge.edge).cgColor
             let ground = Palette.NS.ground.cgColor
-            layer?.backgroundColor = card ? NSColor.clear.cgColor : ground
+            layer?.backgroundColor = card || bare ? NSColor.clear.cgColor : ground
             let hairline = 1 / max(1, window?.backingScaleFactor ?? 2)
             for slot in slots {
                 slot.layer?.borderWidth = card ? hairline : 0
                 slot.layer?.borderColor = edge
             }
             for shadow in shadows {
-                shadow.isHidden = !card
+                shadow.isHidden = !card || bare
                 shadow.backgroundColor = ground
                 shadow.cornerRadius = corner
                 shadow.cornerCurve = .continuous
@@ -770,11 +776,11 @@ final class PaneStage: NSView {
         guard window != nil, tabs.count == 1, split == nil, immersedID == nil, page(tab) != nil else { return }
         // Another space's page: the one going fades into it, as the rows
         // slide, rather than giving way to it in a single frame.
-        if fading, !Motion.reduced, tabs.first !== tab, let layer {
+        if fading, Motion.slides, tabs.first !== tab, let layer {
             let fade = CATransition()
             fade.type = .fade
-            fade.duration = 0.15
-            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            fade.duration = Motion.spaceSpan
+            fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
             layer.add(fade, forKey: "space")
         }
         // The usual way in, so a move under way is cut short as any change of

@@ -162,6 +162,8 @@ final class Sync: ObservableObject {
     private var timer: Timer?
     private var pending: DispatchWorkItem?
     private var watchers: [String: DispatchSourceFileSystemObject] = [:]
+    private var ownWrites: [String: Double] = [:]
+    private var quietUntil: Date = .distantPast
     private var running = false
 
     private init() {}
@@ -346,9 +348,19 @@ final class Sync: ObservableObject {
         }
         // This Mac's file, only when it says something new.
         let written = (try? Data(contentsOf: own)).flatMap { SyncMerge.decode($0, scope: scope) }
+        if let written, written.device == device, let mine = ownWrites[scope], abs(written.written - mine) > 0.5 {
+            problem = "Another copy of Search on this Mac is syncing too. Quit one of them."
+            return names
+        }
         if written?.items != merged || written?.name != Sync.macName {
             let file = SyncFile(format: SyncMerge.format, device: device, name: Sync.macName, scope: scope, written: now, items: merged)
-            if let data = SyncMerge.encode(file) { try? data.write(to: own, options: .atomic) }
+            if let data = SyncMerge.encode(file) {
+                try? data.write(to: own, options: .atomic)
+                ownWrites[scope] = now
+                quietUntil = Date().addingTimeInterval(1)
+            }
+        } else if let written, ownWrites[scope] == nil {
+            ownWrites[scope] = written.written
         }
         return names
     }
@@ -359,7 +371,12 @@ final class Sync: ObservableObject {
         let descriptor = open(folder.path, O_EVTONLY)
         guard descriptor >= 0 else { return }
         let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: [.write, .rename, .delete], queue: .main)
-        source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.schedule() } }
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, Date() >= self.quietUntil else { return }
+                self.schedule()
+            }
+        }
         source.setCancelHandler { close(descriptor) }
         source.resume()
         watchers[scope] = source

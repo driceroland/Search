@@ -432,7 +432,7 @@ final class Float {
             button.target = self
             button.action = action
             button.wantsLayer = true
-            button.layer?.backgroundColor = NSColor(white: 0.1, alpha: 0.55).cgColor
+            button.layer?.backgroundColor = NSColor(white: 0.1, alpha: 0.82).cgColor
             button.layer?.cornerRadius = round
             addSubview(button)
         }

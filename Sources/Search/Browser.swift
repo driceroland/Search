@@ -2975,7 +2975,9 @@ final class Browser: NSObject, ObservableObject {
     /// The key each loose row of the column is drawn under (see rowKey).
     var rowKeys: [Tab.ID: Int] = [:]
     var lastRowKey = 0
-    var parked: [UUID: Parked] = [:]
+    var parked: [UUID: Parked] = [:] { didSet { parkedStamp &+= 1 } }
+    var parkedStamp = 0
+    var mapStamp = 0
     /// How far the column's rows have followed two fingers sideways, and
     /// whether the card for a new space stands in for them (see SpaceSwipe).
     /// The distance changes with every event of the swipe, so it is kept
@@ -3074,6 +3076,8 @@ final class Browser: NSObject, ObservableObject {
     /// Settings › Appearance › Window › Keep the card in full screen, off
     /// unless turned on, keeps it there too, as Arc and Zen do (#1152).
     var asCards: Bool { prefs.sidebar && prefs.cards && (!fullScreen || prefs.cardsInFullScreen) }
+    var floatsColumn: Bool { asCards && prefs.sideFloats }
+    var liftsLights: Bool { folded && floatsColumn && !fullScreen && !frontFillsHere }
     /// The extension a popup window was opened for (windows.create with
     /// type "popup"), or nil for a browser window. Such a window is small,
     /// the page under a thin line with its site; it is never saved, never

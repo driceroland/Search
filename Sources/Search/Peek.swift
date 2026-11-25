@@ -217,7 +217,9 @@ struct PeekLayer: View {
             // The dimming only fades. Grown and shrunk with the panel, its
             // edges travelled across the window as it came (Drice, 24 Sep 2026).
             if browser.peekInFront {
-                Color.black.opacity(0.22)
+                // Clear when dimming is off, and still there to take the
+                // click that closes the peek.
+                Color.black.opacity(browser.prefs.peekDims ? 0.4 : 0.001)
                     .contentShape(Rectangle())
                     .onTapGesture { browser.closePeek() }
                     .transition(.opacity)
@@ -259,17 +261,21 @@ struct PeekPanel: View {
                                 .strokeBorder(Palette.hairline, lineWidth: 1)
                         )
                         .shadow(color: .black.opacity(0.25), radius: 30, y: 10)
-                    if !browser.peekFill { VStack(spacing: 8) {
-                        Knob("xmark", help: "Close (esc)") { browser.closePeek() }
-                        // ⌥ on it keeps the page beside this one, with Split
-                        // View on, as the button under it does.
-                        Knob("arrow.up.left.and.arrow.down.right", help: "Open as a tab (⌘O or ⌘↩)") {
-                            browser.keepPeek(beside: NSEvent.modifierFlags.contains(.option))
+                    if !browser.peekFill {
+                        VStack(spacing: 8) {
+                            KnobGroup {
+                                Knob("xmark", help: "Close (esc)") { browser.closePeek() }
+                            }
+                            KnobGroup {
+                                Knob("arrow.up.left.and.arrow.down.right", help: "Open as a tab (⌘O or ⌘↩)") {
+                                    browser.keepPeek(beside: NSEvent.modifierFlags.contains(.option))
+                                }
+                                if browser.prefs.splitView {
+                                    Knob("rectangle.split.2x1", help: "Keep beside this page (⌥⌘↩)") { browser.keepPeek(beside: true) }
+                                }
+                            }
                         }
-                        if browser.prefs.splitView {
-                            Knob("rectangle.split.2x1", help: "Keep beside this page (⌥⌘↩)") { browser.keepPeek(beside: true) }
-                        }
-                    } }
+                    }
                 }
                 .frame(width: geo.size.width * (browser.peekFill ? 1 : 0.82), height: geo.size.height * (browser.peekFill ? 1 : 0.86))
                 .offset(x: browser.peekFill ? 0 : 21)
@@ -294,15 +300,26 @@ struct PeekPanel: View {
         var body: some View {
             Button(action: act) {
                 Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.ink)
-                    .frame(width: 28, height: 28)
-                    .background(hovering ? Palette.hover : Palette.ground, in: Circle())
-                    .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
+                    .frame(width: 30, height: 30)
+                    .background(hovering ? Palette.hover : .clear, in: Circle())
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .help(help)
             .onHover { hovering = $0 }
+            .animation(Motion.quick, value: hovering)
+        }
+    }
+
+    private struct KnobGroup<Content: View>: View {
+        @ViewBuilder let content: () -> Content
+
+        var body: some View {
+            VStack(spacing: 2) { content() }
+                .padding(3)
+                .pill(Capsule())
         }
     }
 }

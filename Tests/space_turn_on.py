@@ -51,7 +51,7 @@ def main():
         t.ok("Spaces on: one space, School", [s["name"] for s in st["spaces"]] == ["School"] and st["current"] == "School",
              st["spaces"])
         menu = [m["title"] for m in st["menu"]]
-        t.ok("and it can be renamed", "Rename “School”…" in menu, menu)
+        t.ok("and it can be renamed", "Rename…" in menu, menu)
 
         for dx in (-150, -400):
             sv.cmd({"do": "space", "action": "swipe", "dx": dx})

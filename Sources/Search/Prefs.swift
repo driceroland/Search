@@ -24,6 +24,17 @@ enum Glyph: String, CaseIterable, Identifiable {
     }
 }
 
+enum SpaceMotion: String, CaseIterable {
+    case none, snappy, smooth
+
+    var span: Double {
+        switch self {
+        case .none, .snappy: return 0.32
+        case .smooth: return 0.72
+        }
+    }
+}
+
 /// Peek uses modified left clicks, leaving plain clicks and Control-click alone.
 enum PeekClick: String, CaseIterable {
     case shift, optionShift, optionCommand
@@ -230,6 +241,12 @@ final class Preferences: ObservableObject {
     @Published var sideHides: Bool {
         didSet { store.set(sideHides, forKey: "sidebar.hides") }
     }
+    @Published var sideFloats: Bool {
+        didSet { store.set(sideFloats, forKey: "sidebar.floats") }
+    }
+    @Published var sideAppearsAtOnce: Bool {
+        didSet { store.set(sideAppearsAtOnce, forKey: "sidebar.instantIn") }
+    }
     /// The column slides out and back in a longer, eased slide (Motion.slidesColumn),
     /// where it otherwise snaps out on a short spring. Off unless asked for.
     @Published var slidesColumn: Bool {
@@ -298,6 +315,10 @@ final class Preferences: ObservableObject {
     /// with its pause (see Player.swift). Off unless asked for.
     @Published var showsPlayer: Bool {
         didSet { store.set(showsPlayer, forKey: "sidebar.player") }
+    }
+    /// A title too long for that card rolls past while the pointer is on it.
+    @Published var rollsPlayerTitle: Bool {
+        didSet { store.set(rollsPlayerTitle, forKey: "sidebar.player.scroll") }
     }
     /// One tab's line in the column, and the size its title is set in.
     var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 28 }
@@ -436,6 +457,22 @@ final class Preferences: ObservableObject {
     /// Shown unless hidden. A pinned extension keeps its button.
     @Published var hidesExtensionsDoor: Bool { didSet { store.set(hidesExtensionsDoor, forKey: "foot.extensions.hidden") } }
     @Published var hidesBookmarksDoor: Bool { didSet { store.set(hidesBookmarksDoor, forKey: "foot.bookmarks.hidden") } }
+    @Published var fitsPins: Bool { didSet { store.set(fitsPins, forKey: "pins.fit") } }
+    @Published var foldersArrowOnHover: Bool { didSet { store.set(foldersArrowOnHover, forKey: "folders.arrowHover") } }
+    @Published var iconPeeks: Bool { didSet { store.set(iconPeeks, forKey: "icons.peek") } }
+    @Published var spaceMotion: SpaceMotion {
+        didSet {
+            store.set(spaceMotion.rawValue, forKey: "spaces.motion")
+            Motion.spaceMotion = spaceMotion
+        }
+    }
+    @Published var iconPeekDelay: Double { didSet { store.set(iconPeekDelay, forKey: "icons.peek.delay") } }
+    @Published var animatesField: Bool { didSet { store.set(animatesField, forKey: "field.animates") } }
+    /// With no tab open, the main part is left clear: the window's glass shows.
+    @Published var clearEmpty: Bool { didSet { store.set(clearEmpty, forKey: "empty.clear") } }
+    /// ⌘F veils the page a little, all but the match you are on.
+    @Published var findDims: Bool { didSet { store.set(findDims, forKey: "find.dim") } }
+    @Published var clearPanels: Bool { didSet { store.set(clearPanels, forKey: "panels.clear") } }
     @Published var hidesProfileDoor: Bool { didSet { store.set(hidesProfileDoor, forKey: "foot.profile.hidden") } }
     /// The profile's badge is drawn: several profiles, and not hidden.
     var showsProfileDoor: Bool { Profiles.shared.several && !hidesProfileDoor }
@@ -833,6 +870,14 @@ final class Preferences: ObservableObject {
     /// A change to how a peek goes away, so off unless asked for.
     @Published var peekStays: Bool {
         didSet { store.set(peekStays, forKey: "links.peek.stays") }
+    }
+    /// The page darkens behind a peek, so the panel stands out. On unless
+    /// turned off.
+    @Published var peekDims: Bool {
+        didSet { store.set(peekDims, forKey: "links.peek.dim") }
+    }
+    @Published var peekDimsSide: Bool {
+        didSet { store.set(peekDimsSide, forKey: "links.peek.dimSide") }
     }
     /// ⌥-click on a link opens it in Split View, as its menu's Open Link in
     /// Split View does (see Browser.openLinkBeside). Safari's ⌥-click
@@ -1334,6 +1379,8 @@ final class Preferences: ObservableObject {
             ?? SidebarDefault.fresh(testing: Store.testing)
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
+        sideFloats = store.object(forKey: "sidebar.floats") as? Bool ?? true
+        sideAppearsAtOnce = store.bool(forKey: "sidebar.instantIn")
         slidesColumn = store.bool(forKey: Motion.slidesKey)
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         doorsUp = store.bool(forKey: "sidebar.doorsUp")
@@ -1343,6 +1390,7 @@ final class Preferences: ObservableObject {
         narrowsToIcons = store.bool(forKey: "sidebar.narrowIcons")
         narrowed = store.bool(forKey: "sidebar.narrowed")
         showsPlayer = store.bool(forKey: "sidebar.player")
+        rollsPlayerTitle = (store.object(forKey: "sidebar.player.scroll") as? Bool) ?? true
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
@@ -1376,6 +1424,18 @@ final class Preferences: ObservableObject {
         hidesReload = store.bool(forKey: "helm.reload.hidden")
         hidesExtensionsDoor = store.bool(forKey: "foot.extensions.hidden")
         hidesBookmarksDoor = store.bool(forKey: "foot.bookmarks.hidden")
+        fitsPins = store.bool(forKey: "pins.fit")
+        foldersArrowOnHover = store.object(forKey: "folders.arrowHover") as? Bool ?? false
+        iconPeeks = store.object(forKey: "icons.peek") as? Bool ?? true
+        iconPeekDelay = store.object(forKey: "icons.peek.delay") as? Double ?? 0.6
+        let motion = (store.string(forKey: "spaces.motion")).flatMap(SpaceMotion.init(rawValue:))
+            ?? (NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? .none : .snappy)
+        spaceMotion = motion
+        Motion.spaceMotion = motion
+        animatesField = store.object(forKey: "field.animates") as? Bool ?? true
+        clearPanels = store.bool(forKey: "panels.clear")
+        findDims = (store.object(forKey: "find.dim") as? Bool) ?? false
+        clearEmpty = store.bool(forKey: "empty.clear")
         hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen
@@ -1521,6 +1581,8 @@ final class Preferences: ObservableObject {
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")
+        peekDims = (store.object(forKey: "links.peek.dim") as? Bool) ?? true
+        peekDimsSide = store.bool(forKey: "links.peek.dimSide")
         optionClickSplits = store.bool(forKey: "links.optionSplit")
         backspaceGoesBack = store.bool(forKey: Preferences.backspaceKey)
         pinsPeek = keepsSite
@@ -1645,6 +1707,8 @@ final class Preferences: ObservableObject {
         take(\.sidePosition, "sidebar.position", store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init),
              or: .left)
         take(\.sideHides, store.bool(forKey: "sidebar.hides"))
+        take(\.sideFloats, store.object(forKey: "sidebar.floats") as? Bool ?? true)
+        take(\.sideAppearsAtOnce, store.bool(forKey: "sidebar.instantIn"))
         take(\.slidesColumn, store.bool(forKey: Motion.slidesKey))
         take(\.roomyTabs, store.bool(forKey: "sidebar.roomy"))
         take(\.doorsUp, store.bool(forKey: "sidebar.doorsUp"))

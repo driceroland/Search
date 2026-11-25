@@ -155,6 +155,8 @@ final class SpaceSwipe {
             leave(browser, for: other, step: step)
         } else if target >= 0, target <= furthest(browser) {
             slide(browser, to: target, from: here)
+        } else if target == browser.spaces.count, asksPast(browser) {
+            openDialog(browser)
         }
         return true
     }
@@ -164,7 +166,22 @@ final class SpaceSwipe {
     /// just turned on, a stroke over the tabs brought a nameless card that
     /// looked like a second space nobody made; New Space… still opens it.
     private func furthest(_ browser: Browser) -> Int {
-        browser.spaces.count > 1 || browser.makingSpace ? browser.spaces.count : browser.spaces.count - 1
+        if asksPast(browser) { return browser.spaces.count - 1 }
+        return browser.prefs.sidebar || browser.spaces.count > 1 || browser.makingSpace ? browser.spaces.count : browser.spaces.count - 1
+    }
+
+    private func asksPast(_ browser: Browser) -> Bool {
+        browser.prefs.sidebar && browser.prefs.iconColumn && !browser.makingSpace
+    }
+
+    private func openDialog(_ browser: Browser, speed: CGFloat = 0) {
+        resting = Date().addingTimeInterval(SpaceSwipe.rest)
+        guard browser.spaceSwipe != 0, Motion.slides else {
+            browser.spaceSwipe = 0
+            browser.askForSpaceInDialog()
+            return
+        }
+        SwipeGlide.start(browser, to: 0, speed: speed, halfway: { [weak browser] in browser?.askForSpaceInDialog() })
     }
 
     /// With profiles in one window, past this window's first space or its
@@ -194,7 +211,7 @@ final class SpaceSwipe {
             guard let next = Browsers.front, next !== browser, next.spaceID == space else { return }
             self.browser = next
             next.spaceStep = step
-            guard !Motion.reduced else { return }
+            guard Motion.slides else { return }
             next.spaceSwipe = CGFloat(step) * width
             SwipeGlide.start(next, to: 0)
         }
@@ -256,7 +273,7 @@ final class SpaceSwipe {
         // the hand is still (landSoon), and until then, up to a click while
         // fingers rested on the trackpad, the column wore the last space's
         // colour under the new space's rows (idea 954).
-        if to != here, browser.spaceHeading != id { withAnimation(Motion.quick) { browser.spaceHeading = id } }
+        if to != here, browser.spaceHeading != id { withAnimation(Motion.space) { browser.spaceHeading = id } }
         let moved = browser.spaceComing != (to == here ? nil : id) || browser.comingSlot != slot
         browser.spaceComing = to == here ? nil : id
         browser.comingSlot = slot
@@ -357,8 +374,8 @@ final class SpaceSwipe {
     /// and the space is simply there, as a swipe let go short already
     /// snaps back without moving (Motion.settle).
     private func carry(_ browser: Browser, to offset: CGFloat, then arrived: @escaping () -> Void) {
-        guard !Motion.reduced else { return arrived() }
-        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
+        guard Motion.slides else { return arrived() }
+        withAnimation(Motion.space, completionCriteria: .removed) {
             browser.spaceSwipe = offset
         } completion: {
             arrived()
@@ -415,6 +432,8 @@ final class SpaceSwipe {
                 leave(browser, for: other, step: target - here)
             } else if target >= 0, target <= furthest(browser) {
                 slide(browser, to: target, from: here)
+            } else if target == browser.spaces.count, asksPast(browser) {
+                openDialog(browser)
             }
             return true
         }
@@ -514,9 +533,12 @@ final class SpaceSwipe {
         }
         if !holding {
             holding = true
+            browser.preloadSpaces()
             // Scrolled since the map drew this space: drawn again, as the
             // column is now.
-            if browser.mapScroll(fits: browser.mapDrew.fits) != browser.mapDrew.scrolled { browser.mapDrawn.value += 1 }
+            if browser.mapScroll(fits: browser.mapDrew.fits) != browser.mapDrew.scrolled || browser.mapStamp != browser.parkedStamp {
+                browser.mapDrawn.value += 1
+            }
             SwipeGlide.pause()
             // From where they are, not jumping the few points it took to
             // tell which way the fingers go.
@@ -526,6 +548,13 @@ final class SpaceSwipe {
         let now = CACurrentMediaTime()
         trail.append((now, browser.spaceSwipe))
         trail.removeAll { now - $0.at > 0.08 }
+        if asksPast(browser), gathered.width <= -SpaceSwipe.enough(for: browser), shown(browser) == browser.spaces.count - 1,
+           beyond(browser, browser.spaces.count) == nil {
+            holding = false
+            tracking = false
+            ignoring = true
+            openDialog(browser, speed: fingerSpeed())
+        }
         return true
     }
 
@@ -564,13 +593,17 @@ final class SpaceSwipe {
             leave(browser, for: other, step: target - here)
             return
         }
+        if target == here + 1, target == browser.spaces.count, asksPast(browser) {
+            openDialog(browser, speed: speed)
+            return
+        }
         guard target != here, target >= 0, target <= furthest(browser) else {
             // Back where they were: the space on screen, or on its way in.
-            if let coming = browser.spaceComing, !browser.makingSpace, !Motion.reduced {
+            if let coming = browser.spaceComing, !browser.makingSpace, Motion.slides {
                 letGoSpeed = speed
                 bring(browser, coming, step: lastStep)
                 letGoSpeed = nil
-            } else if Motion.reduced {
+            } else if !Motion.slides {
                 browser.spaceSwipe = 0
             } else {
                 SwipeGlide.start(browser, to: 0, speed: speed)
@@ -592,7 +625,7 @@ final class SpaceSwipe {
 
     /// Fingers going from the last space toward the card for a new one.
     private func toCard(_ travel: CGFloat, in browser: Browser) -> Bool {
-        travel < 0 && !browser.makingSpace && shown(browser) == browser.spaces.count - 1 && beyond(browser, browser.spaces.count) == nil
+        travel < 0 && !browser.makingSpace && !asksPast(browser) && shown(browser) == browser.spaces.count - 1 && beyond(browser, browser.spaces.count) == nil
     }
 
     /// The pages carry on the way the fingers went until the next one is
@@ -621,7 +654,7 @@ final class SpaceSwipe {
         // its rows carried on into place from where they left them, and the
         // space taken once they stand there (bring). The card for a new
         // space, as before.
-        if target < browser.spaces.count, !Motion.reduced {
+        if target < browser.spaces.count, Motion.slides {
             bring(browser, browser.spaces[target].id, step: target > here ? 1 : -1)
             return
         }
@@ -657,10 +690,13 @@ struct NewSpaceCard: View {
     /// Signed in where the other spaces are, or starting afresh.
     @State private var shared = true
     @State private var hovering = false
+    @State private var naming = false
     @FocusState private var typing: Bool
-
+    private var empty: Bool { name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// Between one control of the card and the next.
+    private static let step: CGFloat = 12
     private var saying: String {
-        shared ? "Signed in wherever your other spaces are." : "Its own cookies and sign-ins, starting from none."
+        shared ? "Same sign-ins as\nyour other spaces." : "Starts signed out,\nwith its own cookies."
     }
 
     var body: some View {
@@ -673,46 +709,34 @@ struct NewSpaceCard: View {
                         .frame(width: 170)
                     Segmented(options: [(true, "Signed in"), (false, "Signed out")], selection: $shared)
                         .fixedSize()
-                        .help(saying)
+                        .help(saying.replacingOccurrences(of: "\n", with: " "))
                     Pill("Cancel") { cancel() }
                     Pill("Create", filled: true) { create() }
                 }
                 .frame(height: Metrics.strip)
             } else {
-                VStack(spacing: 12) {
-                    pick(size: 20, box: CGSize(width: 44, height: 40))
-                    VStack(spacing: 4) {
-                        Text("New space")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Palette.ink)
-                        Text("Its own tabs.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.muted)
-                            .multilineTextAlignment(.center)
-                    }
-                    field
-                    // Most people want Google and the rest to know them here too;
-                    // some want a clean slate.
-                    VStack(spacing: 6) {
-                        Segmented(options: [(true, "Signed in"), (false, "Signed out")], selection: $shared, wide: true)
-                        Text(saying)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.muted)
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    HStack(spacing: 8) {
-                        Pill("Cancel") { cancel() }
-                        Pill("Create", filled: true) { create() }
+                // Who the space is, how it is set up, and the way on, each
+                // twice as far from the next as the things within it.
+                VStack(spacing: 0) {
+                    pick(size: 26, box: CGSize(width: 48, height: 44))
+                        .padding(.bottom, 8)
+                    title
+                        .padding(.bottom, Self.step * 2)
+                    signIns
+                        .padding(.bottom, Self.step * 2)
+                    VStack(spacing: Self.step) {
+                        SpaceCardButton(title: "Create", filled: true) { create() }
+                        SpaceCardButton(title: "Cancel", plain: true) { cancel() }
                     }
                 }
-                .padding(16)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 28)
                 .frame(maxWidth: .infinity)
             }
         }
         .onAppear {
             icon = browser.freeIcon
-            DispatchQueue.main.async { typing = true }
+            if inline { DispatchQueue.main.async { typing = true } }
         }
         .onExitCommand(perform: cancel)
     }
@@ -724,10 +748,11 @@ struct NewSpaceCard: View {
             Image(systemName: icon)
                 .font(.system(size: size, weight: .medium))
                 .foregroundStyle(Palette.ink)
+                .opacity(inline || hovering || choosing ? 1 : 0.85)
                 .frame(width: box.width, height: box.height)
                 .background(
-                    RoundedRectangle(cornerRadius: inline ? 8 : 10, style: .continuous)
-                        .fill(hovering || choosing ? Palette.hover : .clear)
+                    RoundedRectangle(cornerRadius: inline ? 8 : 12, style: .continuous)
+                        .fill(inline && (hovering || choosing) ? Palette.hover : .clear)
                 )
                 .contentShape(Rectangle())
                 .id(icon)
@@ -739,13 +764,69 @@ struct NewSpaceCard: View {
         .popover(isPresented: $choosing, hangingFrom: .bottom) { icons }
     }
 
+    private var defaultName: String { "Space \(browser.spaces.count + 1)" }
+
+    private var title: some View {
+        TextField(defaultName, text: $name)
+            .textFieldStyle(.plain)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(Palette.ink)
+            .multilineTextAlignment(.center)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(typing ? Palette.wash : naming ? Palette.hover : .clear)
+            )
+            .onHover { naming = $0 }
+            .focused($typing)
+            .onSubmit(create)
+            .animation(Motion.quick, value: naming)
+            .animation(Motion.quick, value: typing)
+            .help("Rename")
+    }
+
+    /// Both choices side by side, and under them, in a fainter box of
+    /// its own as wide, what the chosen one means: both films over the
+    /// space's colour. A pop-up had no room in a narrow column and cut its
+    /// own word short.
+    private var signIns: some View {
+        // A little under a step: the words are the switch's own.
+        VStack(spacing: 8) {
+            Segmented(options: [(true, "Shared"), (false, "Separate")], selection: $shared, wide: true, airy: true)
+                .accessibilityRepresentation {
+                    Picker("Sign-ins", selection: $shared) {
+                        Text("Shared").tag(true)
+                        Text("Separate").tag(false)
+                    }
+                }
+            // Broken by hand into two even lines, either way, so neither
+            // leaves a stray word and the buttons stay put.
+            Text(saying)
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.ink.opacity(0.72))
+                .lineSpacing(2)
+                .multilineTextAlignment(.center)
+                .lineLimit(2, reservesSpace: true)
+                .fixedSize(horizontal: false, vertical: true)
+                .id(shared)
+                .transition(.opacity)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 10)
+                .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+        }
+        .animation(Motion.quick, value: shared)
+    }
+
     private var field: some View {
         TextField(inline ? "New space" : "Name", text: $name)
             .textFieldStyle(.plain)
             .font(.system(size: inline ? 12.5 : 13))
-            .padding(.horizontal, 10)
-            .frame(height: inline ? 26 : 30)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.wash))
+            .padding(.horizontal, inline ? 10 : 12)
+            .frame(height: inline ? 26 : 36)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(inline ? Palette.wash : .clear))
             .focused($typing)
             .onSubmit(create)
     }
@@ -776,8 +857,9 @@ struct NewSpaceCard: View {
     }
 
     private func create() {
-        let named = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !named.isEmpty else { typing = true; return }
+        let typed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard inline ? !typed.isEmpty : true else { typing = true; return }
+        let named = typed.isEmpty ? defaultName : typed
         browser.addSpace(named: named, icon: icon, sharesSignIns: shared)
     }
 
@@ -786,6 +868,52 @@ struct NewSpaceCard: View {
         browser.cancelSpaceCreation()
         let back = browser.spaces.firstIndex { $0.id == browser.spaceID } ?? 0
         SpaceSwipe.shared.slide(browser, to: back, from: browser.spaces.count)
+    }
+}
+
+/// Where the card for a new space stands in the column: centred, with
+/// the rows' margin either side, for the swipe's card and the page it lands
+/// on to be the same one.
+struct NewSpacePlace: View {
+    @ObservedObject var browser: Browser
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            NewSpaceCard(browser: browser)
+            Spacer(minLength: 0)
+        }
+        .frame(maxHeight: .infinity)
+    }
+}
+
+private struct SpaceCardButton: View {
+    let title: String
+    var filled = false
+    var dimmed = false
+    /// No ground until the pointer is on it: the lesser of two.
+    var plain = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: filled ? .medium : .regular))
+                .foregroundStyle(filled && !dimmed ? Palette.ground : dimmed ? Palette.muted : Palette.ink)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity)
+                .frame(height: 32)
+                .background(filled && !dimmed ? Palette.ink : hovering && !dimmed ? (plain ? Palette.ink.opacity(0.1) : Palette.hover) : plain ? .clear : Palette.wash, in: shape)
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
+        .animation(Motion.quick, value: dimmed)
     }
 }
 
@@ -831,13 +959,7 @@ struct SwipeCard: View {
                 .allowsHitTesting(false)
                 .modifier(SwipeShift(offset: browser.spaceSwipeOffset, by: Metrics.strip))
         } else if !inline, side.value < 0, at + 1 >= browser.spaces.count, browser.drawsPage(after: at) {
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                NewSpaceCard(browser: browser)
-                Spacer(minLength: 0)
-                Spacer(minLength: 0)
-            }
-            .frame(maxHeight: .infinity)
+            NewSpacePlace(browser: browser)
             .padding(.horizontal, 10)
             .frame(width: width, alignment: .topLeading)
             .modifier(SwipeShift(offset: browser.spaceSwipeOffset, by: width, across: true))
@@ -923,11 +1045,9 @@ final class SwipeGlide: NSObject {
     /// Steps it on when no frame comes: a window that isn't drawn — a hidden
     /// one, as the bench's — gets none, and the rows stayed out of place.
     private var watch: Timer?
-    /// How quickly the spring pulls, a second: most of the way in a tenth
-    /// of a second, within a point of its place in a fifth. At 20, a slide
-    /// took 0.4 s, and at 26 a third of a second: it felt slow, and the
-    /// next stroke often had to wait for it.
-    private static let pull: Double = 34
+    private let omega = 2 * Double.pi / Motion.spaceSpan
+    private var x0: Double?
+    private var rate: Double?
 
     private init(_ browser: Browser, to: CGFloat, speed: CGFloat?, land: (() -> CGFloat)?,
                  halfway: (() -> Void)?, done: @escaping () -> Void) {
@@ -952,7 +1072,7 @@ final class SwipeGlide: NSObject {
         stop()
         started += 1
         let glide = SwipeGlide(browser, to: to, speed: speed, land: land, halfway: halfway, done: done)
-        guard let view = browser.window?.contentView else {
+        guard Motion.slides, let view = browser.window?.contentView else {
             glide.finish()
             return
         }
@@ -1029,20 +1149,24 @@ final class SwipeGlide: NSObject {
         // jumped most of the way in at once.
         let began = self.began ?? now
         self.began = began
-        let t = now - began
-        // How far from its place, and how fast it closes in: x(t) =
-        // (x0 + (v0 + ωx0)t)e^(−ωt), its speed (v0 − ω(v0 + ωx0)t)e^(−ωt).
-        // Not set off by the fingers (⌃1–⌃9, the menu, the mouse's
-        // buttons): under way at once, gently. From rest, the first moment
-        // barely moved and the key seemed not to have been taken; at the
-        // spring's whole pace, the rows whipped off.
-        let w = Self.pull, x0 = Double(from - to), v0 = speed.map(Double.init) ?? -0.5 * w * x0
-        let fade = exp(-w * t)
-        var x = (x0 + (v0 + w * x0) * t) * fade
-        let v = (v0 - w * (v0 + w * x0) * t) * fade
-        // A flick faster than the spring would have it goes all the way and
-        // stops there, rather than past its place and back.
-        if x * x0 < 0 { x = 0 }
+        let t = max(0, now - began)
+        let x0 = self.x0 ?? Double(from - to)
+        self.x0 = x0
+        let x: Double
+        if Motion.spaceMotion == .smooth {
+            let w = omega
+            let size = abs(x0)
+            let along = size < 1 ? 0 : max(0, -Double(speed ?? 0) * x0 / size)
+            let v0 = self.rate ?? min(max(along, 0.2 * w * size), 0.45 * w * size)
+            self.rate = v0
+            let c = size < 1 ? 0 : w * x0 - v0 * x0 / size
+            x = (x0 + c * t) * exp(-w * t)
+        } else {
+            let w = omega
+            var c = abs(x0) < 1 ? 0 : Double(speed ?? 0) + w * x0
+            if c * x0 < 0 { c = 0 }
+            x = (x0 + c * t) * exp(-w * t)
+        }
         if abs(x) <= abs(x0) / 2, let halfway {
             self.halfway = nil
             halfway()
@@ -1052,7 +1176,7 @@ final class SwipeGlide: NSObject {
             to = land()
         }
         browser.spaceSwipe = to + CGFloat(x)
-        guard x == 0 || (abs(x) < 1 && abs(v) < 30) || t > 0.8 else { return }
+        guard t >= 1 || abs(x) < 0.5 else { return }
         end()
         if Self.current === self { Self.current = nil }
         finish()

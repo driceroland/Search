@@ -287,7 +287,10 @@ extension Browser {
 
     /// The folded column out over the page, or back in.
     func peek(_ out: Bool) {
-        moveColumn(out: out) { self.peeking = out }
+        guard out, prefs.sideAppearsAtOnce else { return moveColumn(out: out) { self.peeking = out } }
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { peeking = true }
     }
 
     /// A page filling the screen in front of this window. With
@@ -334,8 +337,7 @@ extension Browser {
         // Out, or still sliding back in: where it lies.
         func lies() -> Bool {
             if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
-            // A floating card stands a gap in, its edge to pull just past it.
-            let reach = prefs.columnWidth + (asCards ? Metrics.cardGap + 5 : 0)
+            let reach = prefs.columnWidth + (floatsColumn ? Metrics.floatGap + 5 : 0)
             return right ? point.x >= size.width - reach : point.x <= reach
         }
         if peeking { return lies() }
@@ -475,15 +477,21 @@ struct Fold: View {
                         onDrag(width)
                     })
                         .frame(maxHeight: .infinity, alignment: .top)
+                        .overlay {
+                            if browser.peekInFront, prefs.peekDims, prefs.peekDimsSide {
+                                Color.black.opacity(0.4)
+                                    .clipShape(RoundedRectangle(cornerRadius: floating ? Metrics.cardRadius : 0, style: .continuous))
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { browser.closePeek() }
+                                    .transition(.opacity)
+                            }
+                        }
+                        .animation(Motion.quick, value: browser.peekInFront)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
                                              strength: browser.folded && browser.peeking ? 1 : 0,
                                              ground: !browser.glassUnder, corner: floating ? Metrics.cardRadius : 0))
-                        // Folded away beside a page that is a card, the
-                        // page has the whole window, and the column comes
-                        // out over it as a card of its own, as Arc's does:
-                        // clear of the window's edges, its corners round.
-                        .padding(onRight ? .trailing : .leading, floating ? Metrics.cardGap : 0)
-                        .padding(.vertical, floating ? Metrics.cardGap : 0)
+                        .padding(onRight ? .trailing : .leading, floating ? Metrics.floatGap : 0)
+                        .padding(.vertical, floating ? Metrics.floatGap : 0)
                         // Faded rather than slid under Reduce Motion with
                         // Slide the column in and out on (Browser.moveColumn).
                         .animation(Motion.fadesColumn ? .easeInOut(duration: Motion.fade) : nil) { column in
@@ -500,6 +508,11 @@ struct Fold: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity,
                    alignment: onRight ? .trailing : .leading)
+            .overlay {
+                if prefs.sidebar, prefs.iconColumn, prefs.iconPeeks {
+                    IconLabelLayer(browser: browser, onRight: onRight)
+                }
+            }
             // As the page beside it moves (see ContentView).
             .animation(Motion.glide, value: prefs.sidebar)
             .animation(Motion.glide, value: prefs.sidePosition)
@@ -597,13 +610,11 @@ struct Fold: View {
         browser.folded && !browser.peeking
     }
 
-    /// The column out over the page as a floating card (see body).
     private var floating: Bool {
-        folding && browser.asCards
+        folding && browser.floatsColumn
     }
 
-    /// How far the column is slid off the window's edge: all of it, the
-    /// floating card's gap included.
+    /// How far the column is slid off the window's edge: all of it.
     private var columnOffset: CGFloat {
         guard lightsOff, !browser.fadeHeld else { return 0 }
         return columnAway
@@ -611,7 +622,7 @@ struct Fold: View {
 
     /// The column's offset wholly off the window's edge.
     private var columnAway: CGFloat {
-        let away = prefs.columnWidth + (floating ? Metrics.cardGap : 0)
+        let away = prefs.columnWidth + (floating ? Metrics.floatGap : 0)
         return onRight ? away : -away
     }
 
@@ -700,7 +711,7 @@ struct Fold: View {
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
             // Floating, the column stands a gap in from the edge, and its
             // edge to pull reaches half its width past it.
-            let reach = prefs.sidebar ? prefs.columnWidth + (floating ? Metrics.cardGap + 5 : 0) : Metrics.strip
+            let reach = prefs.sidebar ? prefs.columnWidth + (floating ? Metrics.floatGap + 5 : 0) : Metrics.strip
             // An extension's popup hangs from its button in the column: the
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).
