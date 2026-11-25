@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Settings › Tabs › Site icons on pins, off unless turned on: with Tabs show on Letters, the pinned squares wear their sites' icons while the rows keep their letters. A square has no title beside it, so pins that start with the same letter looked alike. A pin with no icon yet keeps its letter. `swift test --filter FollowFileTests` and `--filter SyncTests` (#1553)
+
 ### Held back
 
 Not in this version, kept on main for a later one:

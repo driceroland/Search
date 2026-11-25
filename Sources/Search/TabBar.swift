@@ -1025,7 +1025,7 @@ private struct TabPill: View, Equatable {
                         // Its page on the way, as a tab's ring says; the
                         // letter or icon comes back once it is there.
                         Ring(size: 11)
-                    } else if prefs.glyph == .icons, let icon = tab.icon {
+                    } else if prefs.pinGlyph == .icons, let icon = tab.icon {
                         Mark(icon: icon, letter: tab.pin ?? "", size: 16, dim: tab.asleep,
                              contrast: prefs.highContrastText)
                     } else {

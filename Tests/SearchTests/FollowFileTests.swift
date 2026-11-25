@@ -47,6 +47,8 @@ final class FollowFileTests: XCTestCase {
             "tabClickKeepsName",
             // Icons only on the bookmarks bar (idea 980).
             "bookmarksIconsOnly",
+            // Site icons on the pinned squares while the tabs show letters (#1553).
+            "pinIcons",
         ])
     }
 

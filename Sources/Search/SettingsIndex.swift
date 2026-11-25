@@ -281,6 +281,10 @@ enum SettingsIndex {
               title: "Tabs show", detail: "A letter or the site's icon",
               more: "Beside the title, and on a pinned square.",
               keys: ["glyph"], words: ["favicon", "icons", "letters"]),
+        .init(id: "pins.icons", group: "tablook", icon: "pin",
+              title: "Site icons on pins", detail: "Pinned squares wear their sites' icons while the tabs show letters",
+              more: "A pinned square has no title beside it, so its icon tells it from the pins that start with the same letter. A pin with no icon yet keeps its letter.",
+              keys: ["pins.icons"], words: ["favicon", "icons", "letters", "pinned", "pins"], parent: "glyph"),
         .init(id: "tabs.highContrast", group: "tablook", icon: "bold",
               title: "High contrast text", detail: "Tab titles in black or white, instead of soft grey",
               keys: ["tabs.highContrast"], words: ["contrast", "accessibility", "bold", "readable", "black", "white"]),
@@ -820,6 +824,7 @@ enum SettingsIndex {
     @MainActor static func applies(_ item: SettingsItem, _ prefs: Preferences) -> Bool {
         switch item.id {
         case "pages.dusk": return prefs.look != .light
+        case "pins.icons": return prefs.glyph == .letters
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
@@ -854,6 +859,7 @@ enum SettingsIndex {
     static func needs(_ item: SettingsItem) -> String {
         switch item.id {
         case "pages.dusk": return "Only while Search isn't set to Light"
+        case "pins.icons": return "Only with Tabs show on Letters"
         case "inspector.dark": return "Only while Search isn't set to Dark"
         case "toolbar.left", "tabs.compact", "address.width": return "Only with the tabs across the top"
         case "sidebar.roomy", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return "Only with titles in the column"

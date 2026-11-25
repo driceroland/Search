@@ -364,6 +364,15 @@ final class Preferences: ObservableObject {
     @Published var glyph: Glyph {
         didSet { store.set(glyph.rawValue, forKey: "glyph") }
     }
+    /// With Letters, the pinned squares still wear their sites' icons: a
+    /// square has no title beside it, and pins that start with the same
+    /// letter look alike (#1553). Off unless turned on.
+    @Published var pinIcons: Bool {
+        didSet { store.set(pinIcons, forKey: "pins.icons") }
+    }
+    /// What a pinned square wears: the tabs' glyph, or the site's icon
+    /// whatever the tabs show while Site icons on pins is on.
+    var pinGlyph: Glyph { pinIcons ? .icons : glyph }
     @Published var engine: Engine {
         didSet { store.set(engine.rawValue, forKey: "search.engine") }
     }
@@ -1358,6 +1367,7 @@ final class Preferences: ObservableObject {
         glassStyle = store.string(forKey: "window.glass.style").flatMap(GlassStyle.init) ?? .frosted
         liquidTabs = store.bool(forKey: "tabs.liquid")
         glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
+        pinIcons = store.bool(forKey: "pins.icons")
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
         customSuggest = store.string(forKey: "search.customSuggest") ?? ""
@@ -1670,6 +1680,7 @@ final class Preferences: ObservableObject {
         take(\.bounces, store.bool(forKey: "pages.bounce"))
         Swipe.bounces = bounces
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
+        take(\.pinIcons, store.bool(forKey: "pins.icons"))
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
         take(\.tabClickAddressOnly, store.bool(forKey: "tabs.clickAddressOnly"))
         take(\.tabClickKeepsName, store.bool(forKey: "tabs.clickKeepsName"))

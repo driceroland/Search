@@ -672,6 +672,7 @@ struct SettingsPanel: View {
                           ("Bookmarks", Binding(get: { !prefs.hidesBookmarksDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesBookmarksDoor = !on } })),
                           ("Profile", Binding(get: { !prefs.hidesProfileDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesProfileDoor = !on } }))])
         case "glyph": Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
+        case "pins.icons": Switch(on: $prefs.pinIcons)
         case "tabs.highContrast": Switch(on: $prefs.highContrastText)
         case "tabs.reading": Switch(on: $prefs.showsReading)
         case "tabs.pinCounts": Switch(on: $prefs.showsPinCounts)

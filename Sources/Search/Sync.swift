@@ -62,6 +62,7 @@ enum SyncSettings {
     @MainActor static let all: [Setting] = [
         raw("look", \.look),
         raw("glyph", \.glyph),
+        coded("pins.icons", \.pinIcons),
         raw("search.engine", \.engine),
         coded("search.custom", \.customEngine),
         coded("search.customSuggest", \.customSuggest),
@@ -85,7 +86,7 @@ enum SyncSettings {
     static let known: Set<String> = [
         "look", "glyph", "search.engine", "search.custom", "search.customSuggest", "search.suggest",
         "search.keywords", "spaces",
-        "pins.list", "pins.home", "tabs.close.after", "tabs.newPlace", "tabs.shortcuts", "shield",
+        "pins.list", "pins.home", "pins.icons", "tabs.close.after", "tabs.newPlace", "tabs.shortcuts", "shield",
         "privacy.clickIDs", "privacy.gpc", "bookmarks.bar", "bookmarks.side", "quit.confirm",
     ]
 
