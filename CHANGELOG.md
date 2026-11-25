@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Fixed
+
+- The zoom button stays in line with the other two when a window manager (OmniWM, for one) sizes the window as it opens. On about half of launches it was left where macOS puts it, up and over the minimise button, until the window was resized, most likely because AppKit laid the title bar out again while Search was placing the three, a move that was then dropped. A move heard while placing is now looked at once the pass is over, at most twice in a row. `swift test --filter LightsTests` (reported by a user of OmniWM)
+
 ### Held back
 
 Not in this version, kept on main for a later one:
