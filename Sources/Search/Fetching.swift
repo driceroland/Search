@@ -504,6 +504,7 @@ final class Fetches: ObservableObject {
     /// and no others. It shows no page and runs no extension.
     private static func view(for entry: FetchEntry, store: WKWebsiteDataStore) -> (WKWebView, Bool) {
         if let page = entry.webView, page.configuration.websiteDataStore === store { return (page, false) }
+        Store.network()
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = store
         configuration.processPool = Web.pool

@@ -164,6 +164,7 @@ final class Links: NSObject, NSApplicationDelegate {
         DispatchQueue.global(qos: .utility).async { ImportFile.sweepScratch() }
         Trim.start()
         MainActor.assumeIsolated {
+            Store.networkOnFirstInput()
             Shared.prefs.followFile()
             // The address field from any app, once asked for (Launcher.swift).
             Launcher.shared.start()
@@ -189,6 +190,9 @@ final class Links: NSObject, NSApplicationDelegate {
         guard let text = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: text), Links.takes(url)
         else { return }
+        // A page is coming: WebKit's network process starts before its tab
+        // is made (Store.network).
+        MainActor.assumeIsolated { Store.network() }
         let sender = Self.sender(of: event)
         Links.take(url, sender: sender?.localizedName, pid: sender?.processIdentifier)
     }
