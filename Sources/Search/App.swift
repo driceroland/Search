@@ -24,6 +24,18 @@ struct SearchApp: App {
     /// What the menus act on: the window in front's browser.
     private var browser: Browser { front.browser ?? SceneSlot.shared.browser }
 
+    /// A page open on another device, as History's menu lists it.
+    @ViewBuilder
+    private func elsewhere(_ page: DeviceTabs.Page) -> some View {
+        if let url = URL(string: page.url) {
+            Button {
+                browser.open(url, foreground: true)
+            } label: {
+                MenuLine(title: page.title.isEmpty ? Address.withoutWWW(page.url) : page.title, url: url)
+            }
+        }
+    }
+
     init() {
         // AppKit's guess at password fields (#1458): every time a native
         // field takes the keyboard (the address field, ⌘L, ⌘T…), it walks
@@ -438,14 +450,25 @@ struct SearchApp: App {
                 if icloud.on, !icloud.devices.isEmpty {
                     Section("Tabs on Your Other Devices") {
                         ForEach(icloud.devices, id: \.id) { device in
+                            // Its tab groups first, a menu each, as they
+                            // are on that device (idea 1093), then the rest.
                             Menu(ICloudSync.title(device.tabs)) {
-                                ForEach(device.tabs.tabs, id: \.self) { page in
-                                    if let url = URL(string: page.url) {
-                                        Button {
-                                            browser.open(url, foreground: true)
-                                        } label: {
-                                            MenuLine(title: page.title.isEmpty ? Address.withoutWWW(page.url) : page.title, url: url)
+                                ForEach(Array(device.tabs.sections.enumerated()), id: \.offset) { _, section in
+                                    if let group = section.group {
+                                        Menu(group.name.isEmpty ? "Group" : group.name) {
+                                            ForEach(section.pages, id: \.self) { page in elsewhere(page) }
+                                            if browser.prefs.usesTabGroups {
+                                                Divider()
+                                                Button("Open All in Tab Group") {
+                                                    let urls = section.pages.compactMap { URL(string: $0.url) }
+                                                    if let id = browser.openInTabGroup(urls, named: group.name), let colour = group.colour {
+                                                        browser.setTabGroupColour(id, to: colour)
+                                                    }
+                                                }
+                                            }
                                         }
+                                    } else {
+                                        ForEach(section.pages, id: \.self) { page in elsewhere(page) }
                                     }
                                 }
                             }
@@ -587,7 +610,12 @@ struct ContentView: View {
     /// The room the page leaves for the column and the strip, set without
     /// animation (see `make(room:after:)`); nil only before the window is up.
     @State private var room: CGSize?
+    /// The card's gap on the far side and along the bottom the page is laid
+    /// out to leave, set with `room` and like it never animated; nil
+    /// follows `farGap`.
+    @State private var farRoom: CGFloat?
     @State private var roomTicket = 0
+    @Environment(\.displayScale) private var displayScale
     @State private var immersionRevision = 0
     /// The window's width, for a side panel that leaves the page some room.
     @State private var across: CGFloat = 0
@@ -630,25 +658,41 @@ struct ContentView: View {
             // ground: a gap on the far side and along the bottom here, at the
             // top and on the column's side in the room (see chrome). Two pages
             // side by side are a card each (see PaneStage).
+            //
+            // The card itself — its clip, ground and edge — is drawn where
+            // the column and the gaps leave it at every frame of a ⌘S, the
+            // page inside laid out once at its new size: a page given its
+            // room before the column slides away reached past the window's
+            // far edge with the card's own round corners, and the card's
+            // edge was seen to grow out of the window and come back. Folded
+            // away, the card is the whole window, edge to edge, its corners
+            // square; it grows into that and back with the column's slide.
             stage
                 .modifier(DevToolsStage(browser: browser))
-                .modifier(CardEdge(on: cards && !browser.prefs.splitView))
                 // The tabs folded away: a line says the page is coming
                 // (Settings, idea 269), clear of the card's round corners.
                 .overlay(alignment: .top) {
                     if browser.folded, browser.prefs.showsLoadingLine, fullscreenTab == nil, let tab = browser.active {
                         TabLoadingLine(tab: tab)
-                            .padding(.horizontal, cards ? Metrics.cardRadius : 0)
+                            .padding(.horizontal, cardCorner)
                     }
                 }
-                .padding(.leading, sideOnRight ? farGap + panelRoom : 0)
-                .padding(.trailing, sideOnRight ? 0 : farGap + panelRoom)
-                .padding(.bottom, farGap)
+                .padding(.leading, sideOnRight ? laidFar + panelRoom : 0)
+                .padding(.trailing, sideOnRight ? 0 : laidFar + panelRoom)
+                .padding(.bottom, laidFar)
                 .padding(.leading, sideOnRight ? 0 : roomed.width)
                 .padding(.trailing, sideOnRight ? roomed.width : 0)
                 .padding(.top, roomed.height)
-                .offset(x: sideOnRight ? 0 : chrome.width - roomed.width,
-                        y: chrome.height - roomed.height)
+                // On whole pixels as it slides: between them, the page was
+                // drawn resampled, soft, for the length of the slide.
+                .modifier(PixelOffset(offset: CGSize(width: sideOnRight ? farGap - laidFar : chrome.width - roomed.width,
+                                                     height: chrome.height - roomed.height),
+                                      scale: displayScale))
+                .modifier(CardEdge(on: cards && !browser.prefs.splitView, insets: cardInsets,
+                                   corner: cardCorner, scale: displayScale))
+                // The page's own view cut to the card, on the same frames.
+                .modifier(CardClip(card: cardInsets, corner: cardCorner, scale: displayScale,
+                                   on: cards))
 
             // An extension's side panel, on the side away from the column
             // (see SidePanel.swift); two pages in Split View share what's left.
@@ -679,7 +723,10 @@ struct ContentView: View {
             .onChange(of: geo.size.height) { _, height in tall = height } } }
         .animation(Motion.glide, value: browser.prefs.sidebar)
         .animation(Motion.glide, value: browser.prefs.sidePosition)
-        .onAppear { if room == nil { room = chrome } }
+        .onAppear {
+            if room == nil { room = chrome }
+            if farRoom == nil { farRoom = farGap }
+        }
         .onChange(of: chrome) { old, new in make(room: new, after: old) }
         // The column's edge let go where it was: the page its room at last.
         .onChange(of: edges.side == nil) { _, free in
@@ -687,7 +734,10 @@ struct ContentView: View {
             roomTicket += 1
             var still = Transaction()
             still.disablesAnimations = true
-            withTransaction(still) { room = chrome }
+            withTransaction(still) {
+                room = chrome
+                farRoom = farGap
+            }
         }
         // ⌘S folding the column: the page its room now, the column still
         // out over it, its far side past the window's edge; called off, the
@@ -697,7 +747,14 @@ struct ContentView: View {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) {
-                if away, sidebar { room = CGSize(width: foldedWidth, height: roomed.height) } else { room = chrome }
+                if away, sidebar {
+                    // Edge to edge once folded: the whole window, at once.
+                    room = CGSize(width: foldedWidth, height: cards && !barShown ? 0 : roomed.height)
+                    farRoom = 0
+                } else {
+                    room = chrome
+                    farRoom = farGap
+                }
             }
         }
     }
@@ -707,9 +764,9 @@ struct ContentView: View {
     @ViewBuilder
     private var stage: some View {
         if browser.prefs.splitView {
-            SplitStage(browser: browser, corner: cards ? Metrics.cardRadius : 0, immersed: fullscreenTab?.id)
+            SplitStage(browser: browser, corner: cardCorner, immersed: fullscreenTab?.id)
         } else if let tab = browser.active {
-            Page(tab: tab, corner: cards ? Metrics.cardRadius : 0, browser: browser)
+            Page(tab: tab, corner: cardCorner, browser: browser)
                 .overlay {
                     if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
                 }
@@ -745,6 +802,7 @@ struct ContentView: View {
         } else if browser.prefs.homeTheme != .off {
             HomeBackground(theme: browser.prefs.homeTheme, tuning: browser.prefs.homeTuning,
                            image: browser.prefs.homeThemeImage, shuffle: browser.prefs.homeShuffle)
+                .clipShape(RoundedRectangle(cornerRadius: cardCorner, style: .continuous))
         } else {
             Palette.ground
         }
@@ -757,15 +815,36 @@ struct ContentView: View {
     private var chrome: CGSize {
         let bar = barShown ? BookmarksBar.height : 0
         if cards {
-            return CGSize(width: sidebar ? sideWidth : Metrics.cardGap,
-                          height: barShown ? bar : Metrics.cardGap)
+            // Folded away, edge to edge (see `edgeToEdge`).
+            let gap = edgeToEdge ? 0 : Metrics.cardGap
+            return CGSize(width: sidebar ? sideWidth : gap,
+                          height: barShown ? bar : gap)
         }
         return CGSize(width: sidebar ? sideWidth : 0, height: band + bar)
     }
 
     /// The column's width folded away: the room ⌘S gives the page before
     /// the column slides (see Browser.toggleFold).
-    private var foldedWidth: CGFloat { cards ? Metrics.cardGap : 0 }
+    private var foldedWidth: CGFloat { 0 }
+
+    /// The column folded away with the page as a card: the card takes the
+    /// whole window, with no gap around it and square corners. Out over the
+    /// page, the column is a card of its own (see Fold).
+    private var edgeToEdge: Bool { cards && browser.folded }
+
+    /// The card's corners: square edge to edge.
+    private var cardCorner: CGFloat { cards && !edgeToEdge ? Metrics.cardRadius : 0 }
+
+    /// Where the card lies in the window, animated with the column: what
+    /// the column and the strip take, and the gaps beyond.
+    private var cardInsets: EdgeInsets {
+        let far = farGap + panelRoom
+        return EdgeInsets(top: chrome.height, leading: sideOnRight ? far : chrome.width,
+                          bottom: farGap, trailing: sideOnRight ? chrome.width : far)
+    }
+
+    /// The far gap the page is laid out to leave (see `farRoom`).
+    private var laidFar: CGFloat { farRoom ?? farGap }
 
     /// The column's width: the setting, or where its edge is while held.
     private var sideWidth: CGFloat { edges.side ?? browser.prefs.columnWidth }
@@ -778,7 +857,7 @@ struct ContentView: View {
     }
 
     /// The card's gap on the side away from the column, and along the bottom.
-    private var farGap: CGFloat { cards ? Metrics.cardGap : 0 }
+    private var farGap: CGFloat { cards && !edgeToEdge ? Metrics.cardGap : 0 }
 
     /// The side panel is up: an extension's page in it, the tab in front one
     /// that extension may see, and no page filling the screen.
@@ -797,13 +876,17 @@ struct ContentView: View {
 
     /// What the side panel takes from the page: its width, and the card's
     /// gap before it with the page as a card, or its hairline edge to edge.
+    /// Folded away, the panel goes edge to edge with the page.
     private var panelRoom: CGFloat {
-        panelUp ? panelWidth + (cards ? Metrics.cardGap : 1) : 0
+        panelUp ? panelWidth + (panelCard ? Metrics.cardGap : 1) : 0
     }
+
+    /// The side panel as a card: as the page is.
+    private var panelCard: Bool { cards && !edgeToEdge }
 
     private var sidePanel: some View {
         SidePanelBeside(browser: browser, prefs: browser.prefs, onLeft: sideOnRight,
-                        card: cards, width: panelWidth, onDrag: { [edges] in edges.panel = $0 })
+                        card: panelCard, width: panelWidth, onDrag: { [edges] in edges.panel = $0 })
             .padding(.top, chrome.height)
             .padding(.bottom, farGap)
             .padding(sideOnRight ? .leading : .trailing, farGap)
@@ -816,7 +899,7 @@ struct ContentView: View {
     /// aren't folded away or under a video filling the screen, and it isn't
     /// in the column instead (SideBookmarks).
     private var barShown: Bool {
-        browser.prefs.bookmarksBar && !browser.prefs.sideBookmarks && !browser.bookmarks.isEmpty && !browser.folded
+        browser.bookmarksBarForTab && !browser.prefs.sideBookmarks && !browser.bookmarks.isEmpty && !browser.folded
             && fullscreenTab == nil
     }
 
@@ -846,15 +929,26 @@ struct ContentView: View {
             withTransaction(still) { room = CGSize(width: max(Metrics.sideMin, new.width - 40), height: new.height) }
             return
         }
+        // The card's far gap coming back as the column does (see
+        // `edgeToEdge`): the page keeps the whole window until the slide is
+        // over, the card closing in over it.
+        let far = farGap
+        let farComing = far > laidFar
         // Given already, with the chrome itself (see `immersing`).
-        if now == new {
+        if now == new, !farComing {
             roomTicket += 1
+            if farRoom != far {
+                var still = Transaction()
+                still.disablesAnimations = true
+                withTransaction(still) { farRoom = far }
+            }
             return
         }
         // Out of nothing, or out of the card's gap (see chrome): never more
-        // than that unless something is there.
+        // than that unless something is there. Edge to edge, the gap is
+        // what arrives.
         let floor = Metrics.cardGap
-        let arriving = (old.width <= floor && new.width > floor, old.height <= floor && new.height > floor)
+        let arriving = (old.width <= floor && new.width > old.width, old.height <= floor && new.height > old.height)
         var at = now
         if !arriving.0 { at.width = new.width }
         if !arriving.1 { at.height = new.height }
@@ -863,12 +957,18 @@ struct ContentView: View {
         still.disablesAnimations = true
         // With Reduce Motion on, nothing slides: the page takes its new room
         // with the chrome, not after a slide that isn't there.
-        withTransaction(still) { room = Motion.reduced ? new : at }
-        guard !Motion.reduced, arriving.0 || arriving.1 else { return }
+        withTransaction(still) {
+            room = Motion.reduced ? new : at
+            farRoom = Motion.reduced || !farComing ? far : laidFar
+        }
+        guard !Motion.reduced, arriving.0 || arriving.1 || farComing else { return }
         let ticket = roomTicket
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
             guard ticket == roomTicket else { return }
-            withTransaction(still) { room = chrome }
+            withTransaction(still) {
+                room = chrome
+                farRoom = farGap
+            }
         }
     }
 
@@ -1314,6 +1414,7 @@ struct ContentView: View {
             immersionRevision += 1
             roomTicket += 1
             room = chrome
+            farRoom = farGap
         }
     }
 
@@ -1441,6 +1542,7 @@ struct ContentView: View {
                 // close a click on a tab's cross makes, on the way up, is.
                 guard let window, event.window === window else { return event }
                 Browser.lastClose = nil
+                Browser.lastMove = nil
                 // A click on the tab switcher, in this window only (see
                 // Browser.clickTabSwitcher), turned into the top-left
                 // coordinates SwiftUI's frames are in.
@@ -1553,7 +1655,7 @@ struct ContentView: View {
     /// acts on the key: ⌘W's own close is then the last.
     private static func keyed(_ event: NSEvent) {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if flags != .command || event.shortcutCharacters != "z" { Browser.lastClose = nil }
+        if flags != .command || event.shortcutCharacters != "z" { Browser.lastClose = nil; Browser.lastMove = nil }
     }
 
     /// Each browser's key monitor. Kept here rather than in the view, so
@@ -2142,9 +2244,16 @@ struct ContentView: View {
             // typed there to undo. Only once the page has left the key
             // unused (pageFirst): a document or a drawing keeps its own
             // undo. Not in a panel or another window.
-            guard browser.prefs.undoReopensTab, let window, event.window === window,
-                  browser.canUndoClose else { return false }
-            browser.undoClose()
+            // The same for a move of tabs into a folder or a group, or out
+            // of one (Browser.lastMove): all of them back in one step.
+            guard browser.prefs.undoReopensTab, let window, event.window === window else { return false }
+            if browser.canUndoMove {
+                browser.undoMove()
+            } else if browser.canUndoClose {
+                browser.undoClose()
+            } else {
+                return false
+            }
         // ⌘+ arrives as "=" or "+" depending on the keyboard; both mean bigger.
         case "=", "+":
             browser.zoom(by: 1.1)

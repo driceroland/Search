@@ -74,4 +74,25 @@ final class GeckoTabsTests: XCTestCase {
         let top = try XCTUnwrap(MozillaSession.store(in: profile))
         XCTAssertEqual(MozillaSession.read(top, leavingPins: false).windows.first?.first?.url.absoluteString, "https://new.example/")
     }
+
+    /// A Mac browser open with its last window closed keeps that window only
+    /// among the closed ones: its tabs come from there (idea 1116).
+    func testLastClosedWindowWhenNoneIsOpen() {
+        var store = Self.firefoxStore()
+        store["windows"] = []
+        let snapshot = MozillaSession.read(store, leavingPins: false)
+        XCTAssertEqual(snapshot.windows.joined().map(\.url.absoluteString), ["https://closed.example/"])
+    }
+
+    /// Zen's open tabs carry their space, and its spaces' names come with
+    /// them, read from zen-sessions.jsonlz4 before any session store.
+    func testZenTabsKeepTheirSpaceFromZensOwnFile() throws {
+        let profile = scratch.appendingPathComponent("zen", isDirectory: true)
+        try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
+        try ZenImportTests.mozlz4(json: ZenImportTests.sidebarFixture()).write(to: profile.appendingPathComponent("zen-sessions.jsonlz4"))
+        let snapshot = Zen.sessionTabs(inProfile: profile)
+        let open = try XCTUnwrap(snapshot.windows.first?.first)
+        XCTAssertEqual(open.url.absoluteString, "https://open.example/")
+        XCTAssertEqual(open.space.flatMap { snapshot.spaceNames[$0] }, "Work")
+    }
 }

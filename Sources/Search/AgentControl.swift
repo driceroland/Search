@@ -770,7 +770,7 @@ final class AgentControl: ObservableObject {
 
     // MARK: ending
 
-    /// Stop: the column's foot, the strip, the row, File › Stop Agent.
+    /// Stop: the column's foot, the strip, File › Stop Agent.
     func stopSession() {
         if let session { end(session, "stopped from the window") }
     }
@@ -872,6 +872,24 @@ final class AgentControl: ObservableObject {
         let when = stale ? session.askedUptime + 0.2 : ProcessInfo.processInfo.systemUptime
         return NSEvent.mouseEvent(with: .leftMouseUp, location: spot, modifierFlags: [], timestamp: when,
                                   windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 0)
+    }
+
+    /// An allowed agent drawn in a window with nothing connected, for the
+    /// offscreen pictures (AgentCardTests); nil puts it away. Test runs only.
+    func showForTest(_ client: String?, in browser: Browser? = nil, busy: Bool = true,
+                     auto: Bool = false, justAdmitted: Bool = false) {
+        guard Store.testing else { return }
+        guard let client, let browser else { session = nil; shownIn = nil; return }
+        let session = AgentSession(fd: -1, program: "test")
+        session.client = client
+        session.browser = browser
+        session.consent.hello()
+        session.consent.answer(allow: true, seesTabs: false)
+        session.busy = busy
+        session.auto = auto
+        session.justAdmitted = justAdmitted
+        self.session = session
+        shownIn = ObjectIdentifier(browser)
     }
 
     /// The bench's answer, in a test run (Bench `agents`).

@@ -679,6 +679,7 @@ struct SettingsPanel: View {
         case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
         case "bookmarks.iconsOnly": Switch(on: $prefs.bookmarksIconsOnly)
+        case "bookmarks.newTabOnly": Switch(on: $prefs.bookmarksNewTabOnly)
         case "bookmarks.side":
             Switch(on: Binding(
                 get: { prefs.bookmarksInSidebar },
@@ -704,6 +705,7 @@ struct SettingsPanel: View {
             .pickerStyle(.menu)
             .fixedSize()
         case "tabs.newAfterLast": Switch(on: $prefs.newTabAfterLast)
+        case "tabs.keepWindow": Switch(on: $prefs.keepWindowAfterLast)
         case "tabs.closeGoesBack": Switch(on: $prefs.closeGoesBack)
         case "home.grid": Switch(on: $prefs.homeGrid)
         case "tabs.undoReopens": Switch(on: $prefs.undoReopensTab)
@@ -739,6 +741,7 @@ struct SettingsPanel: View {
                 set: { on in withAnimation(Motion.glide) { prefs.showsAddress = on } }
             ))
         case "tabs.clickAddressOnly": Switch(on: $prefs.tabClickAddressOnly)
+        case "tabs.clickKeepsName": Switch(on: $prefs.tabClickKeepsName)
         case "note.groups", "note.awake": Always()
         default: EmptyView()
         }
@@ -840,6 +843,7 @@ struct SettingsPanel: View {
         case "pins.linksNewTab": Switch(on: $prefs.pinLinksOpenTabs)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
         case "field.window": Switch(on: $prefs.fieldOnWindow)
+        case "field.hidesPage": Switch(on: $prefs.fieldHidesPage)
         case "newtab.recent": Switch(on: $prefs.recentInNewTab)
         case "newtab.arc": Switch(on: $prefs.arcTabPopup)
         case "commandbar": Switch(on: $prefs.commandBar)
@@ -903,6 +907,7 @@ struct SettingsPanel: View {
             .fixedSize()
         case "links.peek.stays": Switch(on: $prefs.peekStays)
         case "links.optionSplit": Switch(on: $prefs.optionClickSplits)
+        case "keys.backspaceBack": Switch(on: $prefs.backspaceGoesBack)
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "wheel.smooth": Switch(on: $prefs.wheelGlides)
         case "pages.bounce": Switch(on: $prefs.bounces)

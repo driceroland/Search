@@ -71,6 +71,8 @@ final class ICloudSyncTests: XCTestCase {
         var removedSpaces = false
 
         func openTabs() -> [DeviceTabs.Page] { tabs }
+        var groupList: [DeviceTabs.Group]?
+        func openGroups(for pages: [DeviceTabs.Page]) -> [DeviceTabs.Group]? { groupList }
         func spaces() -> [Space] { spaceList }
         func adopt(spaces: [Space], removing: Bool) { spaceList = spaces; removedSpaces = removing; adopted.append("spaces") }
         func pins(_ space: UUID) -> [PinDef] { pinList[space] ?? [] }
@@ -406,6 +408,98 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertEqual(sync.offers(for: "s"), [], "one letter is too little to go looking")
         sync.removed("device.PHONE-1")
         XCTAssertTrue(sync.others.isEmpty)
+    }
+
+    // MARK: - tab groups with the open tabs (idea 1093)
+
+    func testTabGroupsGoUpWithTheirTabsInOrder() throws {
+        let work = TabGroup(id: UUID(), name: "Work", collapsed: true, colour: 3)
+        let read = TabGroup(id: UUID(), name: "Read", collapsed: false)
+        let unused = TabGroup(id: UUID(), name: "Empty", collapsed: false)
+        let pages = ICloudMerge.pages([
+            (url: URL(string: "https://b.example/"), title: "B", shy: false, pinned: false, group: read.id),
+            (url: URL(string: "https://a.example/"), title: "A", shy: false, pinned: false, group: work.id),
+            (url: URL(string: "https://secret.example/"), title: "Private", shy: true, pinned: false, group: work.id),
+            (url: URL(string: "https://c.example/"), title: "C", shy: false, pinned: false, group: work.id),
+            (url: URL(string: "https://d.example/"), title: "D", shy: false, pinned: false, group: nil),
+        ])
+        XCTAssertEqual(pages.map(\.group), [read.id, work.id, work.id, nil], "a private tab never goes, grouped or not")
+        let groups = try XCTUnwrap(ICloudMerge.groups([work, read, unused, work], for: pages))
+        XCTAssertEqual(groups, [DeviceTabs.Group(id: read.id, name: "Read", colour: nil, collapsed: nil),
+                                DeviceTabs.Group(id: work.id, name: "Work", colour: 3, collapsed: true)],
+                       "in the order the tabs name them, once each, none left empty")
+        XCTAssertNil(ICloudMerge.groups([work], for: [DeviceTabs.Page(url: "https://x.example/", title: "X")]))
+    }
+
+    func testWithoutGroupsTheRecordIsTheJSONItAlwaysWas() throws {
+        let tabs = DeviceTabs(name: "Mac", platform: "macos", at: Date(timeIntervalSinceReferenceDate: 100),
+                              tabs: [DeviceTabs.Page(url: "https://a.example/", title: "A")])
+        let out = text(ICloudMerge.outgoing(tabs, over: nil, shape: .device))
+        XCTAssertEqual(out, #"{"at":100,"name":"Mac","platform":"macos","tabs":[{"title":"A","url":"https://a.example/"}]}"#)
+    }
+
+    /// What a Search from before groups (and the iPhone) has: the old shape.
+    struct OldDeviceTabs: Codable, Equatable {
+        struct Page: Codable, Equatable { var url: String; var title: String }
+        var name: String; var platform: String; var at: Date; var tabs: [Page]
+    }
+
+    func testGroupsGoFromOneMacToAnotherAndAnOlderOneStillReadsTheTabs() async throws {
+        // This Mac: two groups and a loose tab.
+        let work = UUID(), read = UUID()
+        let a = FakeMac(), cloudA = FakeEngine()
+        a.deviceName = "Studio"
+        a.tabs = [DeviceTabs.Page(url: "https://w1.example/", title: "W1", group: work),
+                  DeviceTabs.Page(url: "https://w2.example/", title: "W2", group: work),
+                  DeviceTabs.Page(url: "https://r1.example/", title: "R1", group: read),
+                  DeviceTabs.Page(url: "https://loose.example/", title: "Loose")]
+        a.groupList = [DeviceTabs.Group(id: work, name: "Work", colour: 2, collapsed: true),
+                       DeviceTabs.Group(id: read, name: "Read")]
+        let syncA = await joined(a, cloudA)
+        let sent = try XCTUnwrap(syncA.outgoing(syncA.ledger.deviceKey)?.data)
+
+        // The other Mac fetches it.
+        let b = FakeMac(), cloudB = FakeEngine()
+        let otherSuite = "icloud-tests-\(UUID().uuidString)"
+        let otherDefaults = try XCTUnwrap(UserDefaults(suiteName: otherSuite))
+        defer { otherDefaults.removePersistentDomain(forName: otherSuite) }
+        let syncB = make(b, cloudB, defaults: otherDefaults)
+        syncB.turnOn()
+        await syncB.join()
+        XCTAssertTrue(syncB.joined)
+        XCTAssertNotEqual(syncB.ledger.deviceKey, syncA.ledger.deviceKey, "two devices")
+        let id = String(syncA.ledger.deviceKey.dropFirst("device.".count))
+        syncB.arrived(syncA.ledger.deviceKey, data: sent, at: Date(), fields: nil)
+        let seen = try XCTUnwrap(syncB.others[id])
+        let sections = seen.sections
+        XCTAssertEqual(sections.map { $0.group?.name }, ["Work", "Read", nil])
+        XCTAssertEqual(sections.map { $0.pages.map(\.title) }, [["W1", "W2"], ["R1"], ["Loose"]], "each group's tabs in order")
+        XCTAssertEqual(sections[0].group?.colour, 2)
+        XCTAssertEqual(sections[0].group?.collapsed, true)
+        XCTAssertEqual(sections[1].group?.collapsed, nil, "open")
+
+        // A Search from before groups, or the iPhone, reads the same record:
+        // every tab, in one list.
+        let old = try JSONDecoder().decode(OldDeviceTabs.self, from: sent)
+        XCTAssertEqual(old.tabs.map(\.title), ["W1", "W2", "R1", "Loose"])
+        // And its own record, without them, reads here as tabs in no group.
+        let older = try JSONEncoder().encode(OldDeviceTabs(name: "Old Mac", platform: "macos", at: Date(),
+                                                           tabs: [.init(url: "https://o.example/", title: "O")]))
+        syncB.arrived("device.OLD", data: older, at: Date(), fields: nil)
+        XCTAssertEqual(syncB.others["OLD"]?.sections.map { $0.group?.name }, [nil])
+
+        // A group renamed, nothing else changed: it goes up again.
+        cloudA.saved = []
+        a.groupList?[1].name = "Reading"
+        syncA.publish()
+        XCTAssertEqual(cloudA.saved, [syncA.ledger.deviceKey])
+        cloudA.saved = []
+        syncA.publish()
+        XCTAssertEqual(cloudA.saved, [], "the same groups a moment later are not a change")
+        // A page naming a group the list doesn't have is in none.
+        var stray = seen
+        stray.groups = nil
+        XCTAssertEqual(stray.sections.map { $0.pages.count }, [4])
     }
 
     // MARK: - joining
@@ -919,5 +1013,92 @@ final class ICloudSyncTests: XCTestCase {
         // And a pins record whose folder ids point nowhere reads whole.
         let defs = try JSONDecoder().decode([PinDef].self, from: json([row("a", in: UUID())]))
         XCTAssertNotNil(defs.first?.folder)
+    }
+
+    // MARK: - a Mac set up from another (Migration Assistant)
+
+    func testALedgerFromAnotherMacStartsAgainAsANewDevice() {
+        var kept = ICloudLedger(mac: "aaaa")
+        kept.joined = true
+        kept.values["spaces"] = Data("[]".utf8)
+        kept.state = Data("engine".utf8)
+        XCTAssertEqual(kept.claimed(by: "aaaa"), kept, "the same Mac keeps everything")
+        var older = kept
+        older.mac = nil
+        XCTAssertEqual(older.claimed(by: "bbbb").device, kept.device, "a ledger from before the fingerprint is this Mac's")
+        XCTAssertEqual(older.claimed(by: "bbbb").mac, "bbbb")
+        XCTAssertEqual(kept.claimed(by: nil), kept, "no fingerprint, nothing to tell")
+        let copied = kept.claimed(by: "bbbb")
+        XCTAssertNotEqual(copied.device, kept.device, "a copy gets an id of its own")
+        XCTAssertFalse(copied.joined, "and joins again")
+        XCTAssertNil(copied.state, "with an engine of its own")
+        XCTAssertEqual(copied.mac, "bbbb")
+        XCTAssertEqual(copied.folders, true)
+        XCTAssertEqual(copied.fresh().mac, "bbbb", "turned off and on, it stays this Mac's")
+        XCTAssertNotEqual(ThisMac.hash("X"), "X")
+        XCTAssertEqual(ThisMac.hash("X").count, 16)
+        XCTAssertNotNil(ThisMac.fingerprint, "IOKit tells this Mac")
+    }
+
+    func testTwoMacsWithTheSameCopiedLedgerSeeEachOther() async throws {
+        // Mac A's ledger, joined, as Migration Assistant copies it to Mac B.
+        let other = UUID()
+        var old = ICloudLedger(mac: "mac-a")
+        old.joined = true
+        old.values["device.\(old.device)"] = json(DeviceTabs(name: "A", platform: "mac", at: Date(), tabs: []))
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("icloud-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try JSONEncoder().encode(old).write(to: file)
+
+        // Mac B, launched with sync on: a new id, joining; B's own pins stay.
+        let mac = FakeMac(), engine = FakeEngine()
+        mac.pinList[first] = [pin("n", "https://notes.example/", id: other)]
+        defaults.set(true, forKey: ICloudSync.onKey)
+        let sync = ICloudSync(local: mac, defaults: defaults, file: file, available: true, mac: "mac-b") { owner, _ in
+            engine.sync = owner
+            return engine
+        }
+        sync.start()
+        XCTAssertNotEqual(sync.ledger.device, old.device)
+        XCTAssertEqual(sync.ledger.mac, "mac-b")
+        XCTAssertNotNil(sync.others[old.device], "A's tabs are another Mac's, not B's own")
+        await until { sync.joined }
+        XCTAssertEqual(mac.pins(first).map(\.id), [other], "this Mac's pins stay")
+        await until { engine.saved.contains(sync.ledger.deviceKey) }
+        XCTAssertFalse(engine.deleted.contains("device.\(old.device)"), "Mac A's tabs are left alone")
+        // Kept on disk, so the next launch is B again.
+        await until { (try? JSONDecoder().decode(ICloudLedger.self, from: Data(contentsOf: file)))?.device == sync.ledger.device }
+        sync.turnOff()
+
+        // Mac A itself keeps its id.
+        let fileA = FileManager.default.temporaryDirectory.appendingPathComponent("icloud-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: fileA) }
+        try JSONEncoder().encode(old).write(to: fileA)
+        defaults.set(true, forKey: ICloudSync.onKey)
+        let a = ICloudSync(local: FakeMac(), defaults: defaults, file: fileA, available: true, mac: "mac-a") { owner, _ in
+            engine.sync = owner
+            return engine
+        }
+        a.start()
+        XCTAssertEqual(a.ledger.device, old.device)
+        XCTAssertTrue(a.joined)
+        a.turnOff()
+        // A pair cloned before the fingerprint parts with off and on.
+        a.turnOn()
+        XCTAssertNotEqual(a.ledger.device, old.device)
+        XCTAssertEqual(a.ledger.mac, "mac-a")
+        a.turnOff()
+    }
+
+    func testTheFolderSyncsIdIsThisMacsOwnToo() {
+        let first = Sync.device(in: defaults, mac: "mac-a")
+        XCTAssertEqual(Sync.device(in: defaults, mac: "mac-a"), first)
+        XCTAssertEqual(Sync.device(in: defaults, mac: nil), first)
+        let copied = Sync.device(in: defaults, mac: "mac-b")
+        XCTAssertNotEqual(copied, first, "settings copied to another Mac: an id of its own")
+        XCTAssertEqual(Sync.device(in: defaults, mac: "mac-b"), copied)
+        defaults.removeObject(forKey: Sync.deviceMacKey)
+        XCTAssertEqual(Sync.device(in: defaults, mac: "mac-c"), copied, "an id from before the fingerprint stays")
+        XCTAssertEqual(defaults.string(forKey: Sync.deviceMacKey), "mac-c")
     }
 }

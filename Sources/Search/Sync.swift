@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import SystemConfiguration
 
-// Sync with your other Macs, through a folder you choose.
+// Sync Macs through a folder (once "Sync with your other Macs"): a folder you choose.
 //
 // THE DECISION (17 Nov 2026): a folder, not iCloud's own APIs.
 //   - CloudKit and NSUbiquitousKeyValueStore need an iCloud container and
@@ -20,7 +20,8 @@ import SystemConfiguration
 //   Drive, Dropbox, a shared disk — and whatever moves that folder between
 //   Macs does the rest. No account, no server, nothing of ours in between.
 //
-// Off unless turned on (Settings › General › Sync with your other Macs).
+// Off unless turned on (Settings › General › Sync and other devices ›
+// Sync Macs through a folder; "Sync with your other Macs" until 1.0.20).
 //
 // In the folder, "Search Sync/<scope>/<device>.json": one file per Mac per
 // scope, written only by that Mac, so two Macs never write the same file.
@@ -133,17 +134,29 @@ final class Sync: ObservableObject {
 
     nonisolated static let folderKey = "sync.folder"
     nonisolated static let deviceKey = "sync.device"
+    /// ThisMac.fingerprint of the Mac that made sync.device.
+    nonisolated static let deviceMacKey = "sync.device.mac"
     /// The folder Search makes inside the one chosen.
     nonisolated static let inside = "Search Sync"
 
     /// This Mac's id in the folder: made once, kept with the settings, so
     /// each test world (SEARCH_PROBE=<name>) is a Mac of its own.
-    let device: String = {
-        if let kept = Store.settings.string(forKey: Sync.deviceKey), !kept.isEmpty { return kept }
+    let device: String = Sync.device(in: Store.settings, mac: ThisMac.fingerprint)
+
+    /// This Mac's id, made once. Settings copied from another Mac
+    /// (Migration Assistant) carry that Mac's: both would write the same
+    /// file in the folder, so this one makes its own (ICloudLedger.claimed).
+    nonisolated static func device(in defaults: UserDefaults, mac: String?) -> String {
+        let keptMac = defaults.string(forKey: deviceMacKey)
+        if let kept = defaults.string(forKey: deviceKey), !kept.isEmpty, keptMac == nil || mac == nil || keptMac == mac {
+            if keptMac == nil, let mac { defaults.set(mac, forKey: deviceMacKey) }
+            return kept
+        }
         let made = UUID().uuidString
-        Store.settings.set(made, forKey: Sync.deviceKey)
+        defaults.set(made, forKey: deviceKey)
+        if let mac { defaults.set(mac, forKey: deviceMacKey) }
         return made
-    }()
+    }
 
     private var bag: Set<AnyCancellable> = []
     private var timer: Timer?

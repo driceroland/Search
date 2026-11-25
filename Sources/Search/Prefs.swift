@@ -466,6 +466,12 @@ final class Preferences: ObservableObject {
     @Published var newTabAfterLast: Bool {
         didSet { store.set(newTabAfterLast, forKey: "tabs.newAfterLast") }
     }
+    /// ⌘W on the window's last tab, a blank one, leaves it rather than
+    /// closing the window (see Browser.close); ⇧⌘W still closes it. Off
+    /// unless asked for.
+    @Published var keepWindowAfterLast: Bool {
+        didSet { store.set(keepWindowAfterLast, forKey: "tabs.keepWindow") }
+    }
     /// Closing the tab on screen goes back to the one viewed before it
     /// rather than the neighbour (see Browser.close). Off unless asked for.
     @Published var closeGoesBack: Bool {
@@ -568,6 +574,14 @@ final class Preferences: ObservableObject {
     /// still shows the card. Off unless turned on (idea 951).
     @Published var tabClickAddressOnly: Bool {
         didSet { store.set(tabClickAddressOnly, forKey: "tabs.clickAddressOnly") }
+    }
+    /// With the address bar always shown, a click on the tab you're on
+    /// leaves it as it is, its name in the row: the address is edited in
+    /// the bar, or with ⌘L. Only while that bar is in sight, so the address
+    /// is always one click away (see Browser.clickKeepsTabName). Off unless
+    /// turned on (idea 1076).
+    @Published var tabClickKeepsName: Bool {
+        didSet { store.set(tabClickKeepsName, forKey: "tabs.clickKeepsName") }
     }
     /// The ad blocker. On unless turned off; there is nothing else to it.
     @Published var shielded: Bool {
@@ -827,6 +841,17 @@ final class Preferences: ObservableObject {
     @Published var optionClickSplits: Bool {
         didSet { store.set(optionClickSplits, forKey: "links.optionSplit") }
     }
+    /// ⌫ goes back a page and ⇧⌫ forward, as Safari once had it: only when
+    /// no field or editable text has the keys and nothing else is held,
+    /// which WebKit decides (see Web.backspace). Off unless asked for, as
+    /// in Safari (#1161; idea 1120).
+    @Published var backspaceGoesBack: Bool {
+        didSet {
+            store.set(backspaceGoesBack, forKey: Preferences.backspaceKey)
+            Web.backspaceEverywhere()
+        }
+    }
+    nonisolated static let backspaceKey = "keys.backspaceBack"
     /// Pins as in Arc: a link from a pinned tab to another site opens in a
     /// peek, so the pin stays on its page (see Peek.swift), and ⌘W takes it
     /// back to the page it was pinned at. Half of "Pins keep their site"
@@ -933,6 +958,12 @@ final class Preferences: ObservableObject {
     /// the pinned rows. Off unless asked for; Settings › Appearance › Tabs.
     @Published var bookmarksInSidebar: Bool {
         didSet { store.set(bookmarksInSidebar, forKey: "bookmarks.side") }
+    }
+    /// The bookmarks bar above the page only while the tab on screen is a
+    /// new one, as Chrome's and Edge's "Only on new tab" (idea 1082). Off
+    /// unless asked for.
+    @Published var bookmarksNewTabOnly: Bool {
+        didSet { store.set(bookmarksNewTabOnly, forKey: "bookmarks.newTabOnly") }
     }
     /// Whether the bookmarks bar is in the column now: the bar shown, asked
     /// for there, and the tabs down a side. With the bar hidden it is hidden
@@ -1212,6 +1243,12 @@ final class Preferences: ObservableObject {
     @Published var fieldOnWindow: Bool {
         didSet { store.set(fieldOnWindow, forKey: "field.window") }
     }
+    /// The page behind ⌘T's and ⌘L's field covered whole, rather than
+    /// dimmed and still showing through: for whoever finds it busy. A plain
+    /// cover, nothing worked out from the page. Off unless asked for.
+    @Published var fieldHidesPage: Bool {
+        didSet { store.set(fieldHidesPage, forKey: "field.hidesPage") }
+    }
     /// The address field from any app, as Spotlight's comes: a key of your
     /// own raises it over the app in front, and Return opens what was typed
     /// in Search (see Launcher.swift). Off unless asked for, and no key
@@ -1339,6 +1376,7 @@ final class Preferences: ObservableObject {
         showsLoadingLine = store.bool(forKey: "fold.loadingLine")
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
+        keepWindowAfterLast = store.bool(forKey: "tabs.keepWindow")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
         undoReopensTab = store.bool(forKey: "tabs.undoReopens")
         homeGrid = store.bool(forKey: "home.grid")
@@ -1360,6 +1398,7 @@ final class Preferences: ObservableObject {
         // Security's advice); a choice made before stands.
         showsAddress = store.object(forKey: "tabs.address") as? Bool ?? true
         tabClickAddressOnly = store.bool(forKey: "tabs.clickAddressOnly")
+        tabClickKeepsName = store.bool(forKey: "tabs.clickKeepsName")
         shielded = store.object(forKey: "shield") as? Bool ?? true
         let keeps = store.bool(forKey: "sites.keep")
         keepsSignIns = keeps
@@ -1442,6 +1481,7 @@ final class Preferences: ObservableObject {
         handoff = store.bool(forKey: "handoff")
         floatingNewTab = store.bool(forKey: "newtab.floating")
         fieldOnWindow = store.bool(forKey: "field.window")
+        fieldHidesPage = store.bool(forKey: "field.hidesPage")
         launcher = store.bool(forKey: "launcher.on")
         launcherLittle = store.bool(forKey: "launcher.little")
         launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
@@ -1475,6 +1515,7 @@ final class Preferences: ObservableObject {
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")
         optionClickSplits = store.bool(forKey: "links.optionSplit")
+        backspaceGoesBack = store.bool(forKey: Preferences.backspaceKey)
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
         readerFollowsLook = store.bool(forKey: "reader.follows")
@@ -1490,6 +1531,7 @@ final class Preferences: ObservableObject {
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
         bookmarksInSidebar = store.bool(forKey: "bookmarks.side")
         bookmarksIconsOnly = store.bool(forKey: "bookmarks.iconsOnly")
+        bookmarksNewTabOnly = store.bool(forKey: "bookmarks.newTabOnly")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
         downloadsOpening = store.string(forKey: "downloads.open").flatMap(DownloadsOpening.init(rawValue:)) ?? .tab
         let links = store.object(forKey: "links.show") as? Bool ?? true
@@ -1623,12 +1665,14 @@ final class Preferences: ObservableObject {
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
         take(\.tabClickAddressOnly, store.bool(forKey: "tabs.clickAddressOnly"))
+        take(\.tabClickKeepsName, store.bool(forKey: "tabs.clickKeepsName"))
         take(\.instantMotion, store.bool(forKey: Motion.instantKey))
         take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))
         take(\.spacesOnCommand, store.bool(forKey: Preferences.spacesOnCommandKey))
         take(\.bookmarksBar, store.bool(forKey: "bookmarks.bar"))
         take(\.bookmarksInSidebar, store.bool(forKey: "bookmarks.side"))
         take(\.bookmarksIconsOnly, store.bool(forKey: "bookmarks.iconsOnly"))
+        take(\.bookmarksNewTabOnly, store.bool(forKey: "bookmarks.newTabOnly"))
         take(\.alwaysShowsDownloads, store.bool(forKey: "downloads.button"))
     }
 

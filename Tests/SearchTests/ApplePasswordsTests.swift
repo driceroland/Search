@@ -567,6 +567,59 @@ final class ApplePasswordsTests: XCTestCase {
         XCTAssertTrue(fake.stopped)
     }
 
+    /// A helper slow to answer, as after a wake, or answering with an error
+    /// of its own, is no reason to drop a pairing that still works: the
+    /// next question is asked with the same key, and no code (idea 1108).
+    func testSlowOrFailedAnswerKeepsThePairing() async {
+        let fake = FakeHelper(code: "246810")
+        let apple = await paired(fake)
+        apple.woke()
+        fake.mute = true
+        let slow = await apple.logins(for: "accounts.example.test", tab: UUID())
+        XCTAssertEqual(slow, [])
+        XCTAssertEqual(apple.state, .paired, "a timeout keeps the pairing")
+        fake.mute = false
+        fake.status = 1
+        let failed = await apple.logins(for: "accounts.example.test", tab: UUID())
+        XCTAssertEqual(failed, [])
+        XCTAssertEqual(apple.state, .paired, "an error of the helper's own keeps the pairing")
+        fake.status = nil
+        let names = await apple.logins(for: "accounts.example.test", tab: UUID())
+        XCTAssertEqual(names.map(\.user), ["ada@example.test"])
+        XCTAssertFalse(fake.stopped)
+        XCTAssertNil(apple.lastEnd)
+    }
+
+    /// Why the last pairing ended is kept, for the line logged when a code
+    /// is asked for again (idea 1108): the helper gone, the session dropped
+    /// by the helper, or Search letting go.
+    func testWhyTheLastPairingEndedIsKept() async {
+        let fake = FakeHelper(code: "246810")
+        let apple = await paired(fake)
+        fake.onEnd?()
+        XCTAssertEqual(apple.state, .idle)
+        XCTAssertTrue(apple.lastEnd?.why.hasPrefix("Apple's helper ended") == true, apple.lastEnd?.why ?? "nil")
+        XCTAssertTrue(apple.lastEnd?.why.contains("state paired") == true, apple.lastEnd?.why ?? "nil")
+
+        let other = FakeHelper(code: "135790")
+        let again = await paired(other)
+        other.status = 9
+        _ = await again.logins(for: "accounts.example.test", tab: UUID())
+        XCTAssertEqual(again.lastEnd?.why, "a request failed (status(9))")
+
+        let third = FakeHelper(code: "112233")
+        let quit = await paired(third)
+        quit.disconnect(because: "Search quit")
+        XCTAssertEqual(quit.lastEnd?.why, "Search quit")
+
+        // Only a pairing that was made counts: a code given up on is not one.
+        let fourth = FakeHelper(code: "445566")
+        let unpaired = ApplePasswords(makeLink: { fourth })
+        await unpaired.connect()
+        unpaired.disconnect()
+        XCTAssertNil(unpaired.lastEnd)
+    }
+
     /// Quitting (or the switch going off) still tells the helper goodbye
     /// and drops the key.
     func testQuitStillDropsTheKey() async {
@@ -858,6 +911,9 @@ private final class FakeHelper: AppleLink {
     private(set) var tabEvents: [[String: Any]] = []
     /// Answers every question with this status instead, if set.
     var status: Int?
+    /// Hears questions about a site and never answers them, as a helper
+    /// slow to come back after the Mac wakes.
+    var mute = false
     private var tid = ""
     private var a = SRPNumber(1), b = SRPNumber(1), v = SRPNumber(1)
     private var salt: [UInt8] = []
@@ -938,6 +994,7 @@ private final class FakeHelper: AppleLink {
         case let command? where [4, 5, 16, 17].contains(command):
             guard let key else { return }
             commands.append(command)
+            if mute { return }
             let payload = json(message["payload"])
             let smsg = json(payload["SMSG"])
             let sealed = [UInt8](Data(hexString: smsg["SDATA"] as! String)!)

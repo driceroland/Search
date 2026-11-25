@@ -46,6 +46,12 @@ struct TabBar: View {
     /// The space whose run was last brought to its tab: another one is a
     /// space coming in, not a tab picked (see reveal).
     @State private var revealedSpace: UUID?
+    /// The width the tabs had when one was closed from the row. The ones
+    /// left keep it for a moment, so the next cross comes to where the last
+    /// one was and tabs can be closed one after another without chasing it
+    /// (see hold). Made wide again once the closing stops.
+    @State private var held: CGFloat?
+    @State private var holding = 0
 
     var body: some View {
         // A GeometryReader is only here to measure the width. Its content is
@@ -531,7 +537,19 @@ struct TabBar: View {
         } else {
             TabPill(browser: browser, prefs: browser.prefs, tab: tab,
                     live: tab.id == activeID, width: width, room: room, pill: pill,
-                    close: interactive ? { browser.closeTab(tab) } : {})
+                    close: interactive ? { hold(width); browser.closeTab(tab) } : {})
+        }
+    }
+
+    /// Keeps the tabs at `width` until half a second passes with nothing
+    /// more closed from the row, then lets them take the room again.
+    private func hold(_ width: CGFloat) {
+        if held == nil { held = width }
+        holding += 1
+        let ticket = holding
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            guard ticket == holding else { return }
+            withAnimation(Motion.settle) { held = nil }
         }
     }
 
@@ -572,7 +590,8 @@ struct TabBar: View {
     /// seemed to fit it didn't scroll either (#1295). What was missed is
     /// added, so the run either holds them all or scrolls.
     private func measures(in strip: CGFloat) -> Measures {
-        let each = width(in: strip)
+        // Never wider than they were held at, nor than the room allows now.
+        let each = min(width(in: strip), held ?? .infinity)
         return Measures(each: each, room: room(in: strip), content: content(in: strip, each: each) + unaccounted)
     }
 
@@ -1805,18 +1824,16 @@ struct TabMenu: View {
             // a drag onto a group takes them (see carried).
             let moving = browser.carried(with: tab)
             Menu("Move to Group") {
-                Button("New Group") {
-                    let id = browser.addTabGroup(containing: tab)
-                    for other in moving where other !== tab { browser.move(other, toGroup: id) }
-                }
+                // All of them at once, in their order: one step for ⌘Z.
+                Button("New Group") { browser.addTabGroup(containing: [tab] + moving.filter { $0 !== tab }) }
                 if !browser.tabGroups.isEmpty { Divider() }
                 ForEach(browser.tabGroups) { group in
-                    Button(group.name) { for each in moving { browser.move(each, toGroup: group.id) } }
+                    Button(group.name) { browser.move(moving, toGroup: group.id) }
                         .disabled(moving.allSatisfy { $0.groupID == group.id })
                 }
                 if moving.contains(where: { $0.groupID != nil }) {
                     Divider()
-                    Button("Remove from Group") { for each in moving { browser.move(each, toGroup: nil) } }
+                    Button("Remove from Group") { browser.move(moving, toGroup: nil) }
                 }
             }
         }
@@ -1837,6 +1854,7 @@ struct TabMenu: View {
             }
         } else if picked.allSatisfy({ $0.pin != nil }) {
             Button("Unpin \(count) Tabs") { for each in picked { browser.unpin(each) } }
+            pickedFolderMenu(picked)
         }
         if browser.prefs.usesSpaces, picked.allSatisfy({ !$0.bench && !$0.everywhere
                && $0.address.flatMap({ Browser.extensionHost(of: $0) }) == nil }) {
@@ -1891,6 +1909,32 @@ struct TabMenu: View {
             .disabled(browser.tabs.count <= count)
     }
 
+    /// Picked pinned rows, all of them into a folder, in their order (idea
+    /// 1092): only when every one of them can go in one.
+    @ViewBuilder
+    private func pickedFolderMenu(_ picked: [Tab]) -> some View {
+        if browser.prefs.showsPinFolders && picked.allSatisfy({ browser.takesFolder($0) }), let first = picked.first {
+            Button("New Folder with \(picked.count) Pins") {
+                browser.undoableMove {
+                    if let made = browser.newPinFolder(holding: first) { browser.movePins(picked, into: made) }
+                }
+            }
+            let folders = browser.pinFolders
+            if !folders.isEmpty {
+                Menu("Move to Folder") {
+                    ForEach(PinFolderMenu.entries(folders), id: \.folder.id) { entry in
+                        Button(entry.title) { browser.movePins(picked, into: entry.folder.id) }
+                            .disabled(picked.allSatisfy { $0.pinFolder == entry.folder.id })
+                    }
+                    if picked.contains(where: { $0.pinFolder != nil }) {
+                        Divider()
+                        Button("Remove from Folder") { browser.movePins(picked, into: nil) }
+                    }
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var singleMenu: some View {
         groupMenu
@@ -1921,7 +1965,7 @@ struct TabMenu: View {
                 Button("New Live Folder…") { LiveFolders.ask(for: browser, in: nil) }
             }
             if browser.prefs.showsPinFolders && browser.takesFolder(tab) {
-                Button("New Folder") { browser.newPinFolder(holding: tab) }
+                Button("New Folder") { browser.undoableMove { browser.newPinFolder(holding: tab) } }
                 Button("New Live Folder…") { LiveFolders.ask(for: browser, in: tab.pinFolder) }
                 let folders = browser.pinFolders
                 if !folders.isEmpty {

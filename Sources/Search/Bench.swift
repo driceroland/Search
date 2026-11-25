@@ -508,6 +508,9 @@ final class Bench {
             }
             else if request["off"] as? Bool == true { browser.unpin(tab) }
             else if request["home"] as? Bool == true { browser.goHome(tab) }
+            // "icon": a click on a pinned row's icon (PinIconHome), as the
+            // icon's own tap does; "took" says whether it was armed.
+            else if request["icon"] as? Bool == true { taken = PinIconHome.clicked(tab, in: browser) }
             // "rehome": Replace Pinned Page with Current URL, as the pin's
             // menu does.
             else if request["rehome"] as? Bool == true { browser.rehome(tab) }
@@ -520,7 +523,10 @@ final class Bench {
             else { browser.pin(tab, listed: request["listed"] as? Bool ?? false) }
             answer(["pin": tab.pin ?? "", "listed": tab.listed, "everywhere": tab.everywhere, "pinned": browser.pinnedCount, "home": tab.home?.absoluteString ?? "",
                     "address": tab.address?.absoluteString ?? "", "editingLetter": browser.editingPin == tab.id,
-                    "taken": taken.map { $0 as Any } ?? NSNull()])
+                    "taken": taken.map { $0 as Any } ?? NSNull(),
+                    // A pinned row's icon while it takes the pin home
+                    // (PinIconHome): its centre, from the window's top left.
+                    "icon": PinIconHome.centre(of: tab.id).map { $0 as Any } ?? NSNull()])
 
         case "select":
             // Picking a tab takes the window over, which the bench never does
@@ -689,6 +695,31 @@ final class Bench {
             tab.web.customUserAgent = request["ua"] as? String
             answer(["ua": tab.web.customUserAgent ?? ""])
 
+        case "downloads-rows":
+            // The Downloads panel's current rows and its Completed list, and
+            // with "press": RETRY or RESUME, that row's own button, as the
+            // panel calls it (Tests/download_retry.py). Only on a test run.
+            guard Store.testing else { answer(["error": "downloads-rows only works on a --test run"]); return }
+            let entries = browser.fetches.entries
+            if let press = request["press"] as? String {
+                let index = request["index"] as? Int ?? 0
+                guard entries.indices.contains(index) else { answer(["error": "no row \(index)"]); return }
+                switch press {
+                case "retry": browser.retryDownload(entries[index])
+                case "resume": browser.resumeDownload(entries[index])
+                default: answer(["error": "press retry or resume"]); return
+                }
+            }
+            answer([
+                "rows": browser.fetches.entries.map { entry in
+                    ["name": entry.name, "state": "\(entry.state)", "canResume": entry.canResume,
+                     "canRetry": entry.canRetry, "completed": entry.completedBytes, "total": entry.totalBytes,
+                     "error": entry.errorDescription ?? "", "file": entry.destination?.path ?? ""] as [String: Any]
+                },
+                "completed": browser.loot.kept.map { ["name": $0.name, "path": $0.path] },
+                "started": browser.fetches.started,
+            ])
+
         case "kept":
             // A sleeping tab's picture, as kept for its waking, written to a
             // file: its size in pixels, what NSImage makes of it, and the
@@ -726,7 +757,8 @@ final class Bench {
                     "noisy": tab?.noisy ?? false, "sounding": browser.sounding.count])
 
         case "eval":
-            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            // "little": true, in the newest small window's page.
+            guard let tab = page(request, in: browser) else { answer(missing(request)); return }
             guard let js = request["js"] as? String else { answer(["error": "eval needs js"]); return }
             house(tab)
             // Search's own world is where its page scripts live (see Web.world).
@@ -1438,7 +1470,23 @@ final class Bench {
                 if pressed.contains(where: { PageView.same($0, event) }) { resent += 1 }
                 return event
             }
-            PageHands.type(text, into: view) { pressed.append($0) }
+            // "code": one key by its code (51 is ⌫), with "mods" held:
+            // shift, option, command, control.
+            if let code = request["code"] as? Int {
+                var flags: NSEvent.ModifierFlags = []
+                for name in request["mods"] as? [String] ?? [] {
+                    switch name {
+                    case "shift": flags.insert(.shift)
+                    case "option": flags.insert(.option)
+                    case "command": flags.insert(.command)
+                    case "control": flags.insert(.control)
+                    default: break
+                    }
+                }
+                _ = PageHands.key(view, code: UInt16(code), characters: text, flags: flags) { pressed.append($0) }
+            } else {
+                PageHands.type(text, into: view) { pressed.append($0) }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 if let watch { NSEvent.removeMonitor(watch) }
                 answer(["typed": text, "sentBackUnused": resent, "quieted": PageView.quieted - before])
@@ -2317,6 +2365,7 @@ final class Bench {
             guard Store.testing else { answer(["error": "bar only works on a --test run — it would size your window"]); return }
             guard let window = browser.window else { answer(["error": "no window"]); return }
             if let on = request["iconsOnly"] as? Bool { browser.prefs.bookmarksIconsOnly = on }
+            if let on = request["newTabOnly"] as? Bool { browser.prefs.bookmarksNewTabOnly = on }
             if let width = request["width"] as? Double {
                 var frame = window.frame
                 frame.size.width = width
@@ -2366,7 +2415,15 @@ final class Bench {
                             "bare": roots.map { BookmarksBar.Item.bare($0, iconsOnly: iconsOnly) },
                             "hidden": hidden.map(\.label), "menu": lines(menu.items, 0),
                             "tabsBefore": before, "tabsAfter": browser.tabs.count,
-                            "active": browser.active?.address?.absoluteString ?? ""])
+                            "active": browser.active?.address?.absoluteString ?? "",
+                            // How far down the window the page on screen starts:
+                            // the bar's height more while the bar is up.
+                            "pageTop": browser.active?.built.flatMap { web -> Double? in
+                                guard web.window === window, let content = window.contentView else { return nil }
+                                let r = web.convert(web.bounds, to: nil)
+                                return Double(content.bounds.height - r.maxY)
+                            } ?? -1,
+                            "barForTab": browser.bookmarksBarForTab])
                 }
             }
 
@@ -2717,7 +2774,15 @@ final class Bench {
             }
             // "entitled": the signature carries the container and CloudKit,
             // read from the process alone; nothing asks CloudKit.
-            answer(["on": icloud.on, "available": icloud.available, "entitled": ICloudSync.entitled,
+            // The open tabs as this Mac's device record would carry them,
+            // groups and all (idea 1093), whether or not sync is on.
+            let side = MacSide()
+            let pages = side.openTabs()
+            let record = DeviceTabs(name: "probe", platform: "macos", at: Date(timeIntervalSinceReferenceDate: 0),
+                                    tabs: pages, groups: side.openGroups(for: pages))
+            let published = ICloudMerge.outgoing(record, over: nil, shape: .device).map { String(decoding: $0, as: UTF8.self) } ?? ""
+            answer(["published": published,
+                    "on": icloud.on, "available": icloud.available, "entitled": ICloudSync.entitled,
                     "scheduled": icloud.isScheduled,
                     "engine": icloud.engine != nil, "joined": icloud.joined, "folderSync": Sync.shared.on,
                     "stored": Store.settings.object(forKey: ICloudSync.onKey) != nil,
@@ -2741,6 +2806,19 @@ final class Bench {
             func state(_ extra: [String: Any] = [:]) -> [String: Any] {
                 var out: [String: Any] = ["joined": Bench.pair?.sync.joined ?? false,
                                           "records": (Bench.pair?.sync.ledger.values.keys.sorted() ?? [])]
+                // The open tabs as History › Tabs on Your Other Devices lists
+                // them (idea 1112): this Mac's record as it stands in the
+                // ledger, and each other device's, by section: its group's
+                // name (null: in none) and its pages' addresses.
+                func sections(_ tabs: DeviceTabs) -> [[String: Any]] {
+                    tabs.sections.map { ["group": $0.group?.name ?? NSNull(), "colour": $0.group?.colour ?? NSNull(),
+                                         "pages": $0.pages.map(\.url)] }
+                }
+                if let sync = Bench.pair?.sync {
+                    out["mine"] = sync.ledger.values[sync.ledger.deviceKey]
+                        .flatMap { ICloudMerge.decode(DeviceTabs.self, $0) }.map(sections) ?? []
+                    out["others"] = sync.devices.map { ["name": ICloudSync.title($0.tabs), "sections": sections($0.tabs)] }
+                }
                 for (key, value) in extra { out[key] = value }
                 return out
             }
@@ -4524,8 +4602,10 @@ final class Bench {
                     return
                 }
                 let size = top.bounds.size
-                // The column's side: the window's first 420 points across.
-                let w = Int(min(size.width, 420) * scale), h = Int(size.height * scale)
+                // The column's side: the window's first 420 points across,
+                // or with "wide" all of it.
+                let across = request["wide"] as? Bool == true ? size.width : min(size.width, 420)
+                let w = Int(across * scale), h = Int(size.height * scale)
                 let shot: [String: Any] = ["t": Int((CACurrentMediaTime() - started) * 1000), "space": browser.space.name]
                 if let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
@@ -4537,6 +4617,9 @@ final class Bench {
                 shots.append(shot)
                 if index == 0 {
                     switch request["action"] as? String {
+                    case "fold": browser.toggleFold()
+                    case "peek": browser.peek(true)
+                    case "unpeek": browser.peek(false)
                     case "space":
                         // Slid in through the map, as on screen.
                         SpaceSwipe.glidesHidden = true
@@ -5041,6 +5124,80 @@ final class Bench {
                 window.contentView = nil
             }
 
+        case "picked":
+            // Tabs picked in the column moved together (MovePicked.swift,
+            // idea 1092): into a pin folder or a group by the tab menu
+            // ("via": "menu") or by a drag of `id` let go there ("via":
+            // "drag"), and ⌘Z's undo of it. Test runs only.
+            guard Store.testing else { answer(["error": "picked only works on a --test run"]); return }
+            func find(_ key: String) -> Tab? {
+                guard let ref = (request[key] as? String)?.lowercased(), !ref.isEmpty else { return nil }
+                return browser.tabs.first { $0.id.uuidString.lowercased().hasPrefix(ref) }
+            }
+            let named = request["name"] as? String ?? ""
+            let drag = request["via"] as? String == "drag"
+            switch request["action"] as? String ?? "state" {
+            case "folder":
+                let into: UUID?
+                if named == "none" { into = nil }
+                else if let folder = browser.pinFolders.first(where: { $0.name == named }) { into = folder.id }
+                else { answer(["error": "no folder “\(named)”"]); return }
+                if drag {
+                    guard let tab = find("id") else { answer(["error": "a drag needs id"]); return }
+                    browser.movePin(tab, to: PinTree.Place(folder: into, anchor: find("anchor")?.id,
+                                                           after: request["after"] as? Bool ?? false))
+                } else {
+                    browser.movePins(browser.pickedTabs, into: into)
+                }
+            case "newFolder":
+                // New Folder with N Pins.
+                let picked = browser.pickedTabs
+                guard let first = picked.first else { answer(["error": "nothing picked"]); return }
+                browser.undoableMove {
+                    if let made = browser.newPinFolder(named: named.isEmpty ? "New Folder" : named, holding: first, rename: false) {
+                        browser.movePins(picked, into: made)
+                    }
+                }
+            case "group":
+                if drag {
+                    guard let tab = find("id"), let group = browser.tabGroups.first(where: { $0.name == named }) else {
+                        answer(["error": "a drag needs id and a group's name"]); return
+                    }
+                    browser.move(tab, toGroup: GroupDropTarget(group: group.id, member: find("member")?.id,
+                                                               after: request["after"] as? Bool ?? false))
+                } else if request["new"] as? Bool == true {
+                    guard let id = browser.addTabGroup(containing: browser.pickedTabs) else { answer(["error": "nothing picked"]); return }
+                    if !named.isEmpty { browser.renameTabGroup(id, to: named) }
+                    browser.editingGroupID = nil
+                } else if named == "none" {
+                    browser.move(browser.pickedTabs, toGroup: nil)
+                } else if let group = browser.tabGroups.first(where: { $0.name == named }) {
+                    browser.move(browser.pickedTabs, toGroup: group.id)
+                } else {
+                    answer(["error": "no group “\(named)”"]); return
+                }
+            case "undo":
+                browser.undoMove()
+            case "state":
+                break
+            default:
+                answer(["error": "picked: state, folder, newFolder, group or undo"]); return
+            }
+            let folders = browser.pinFolders, groups = browser.tabGroups
+            answer([
+                "row": browser.tabs.map { Bench.short($0) },
+                "folderOf": Dictionary(browser.tabs.filter { $0.pin != nil }.map {
+                    (Bench.short($0), $0.pinFolder.flatMap { id in folders.first { $0.id == id }?.name } ?? "")
+                }, uniquingKeysWith: { a, _ in a }),
+                "groupOf": Dictionary(browser.tabs.filter { $0.pin == nil }.map {
+                    (Bench.short($0), $0.groupID.flatMap { id in groups.first { $0.id == id }?.name } ?? "")
+                }, uniquingKeysWith: { a, _ in a }),
+                "groups": groups.map(\.name),
+                "folders": folders.map(\.name),
+                "selected": browser.pickedTabs.map { Bench.short($0) },
+                "canUndo": browser.canUndoMove,
+            ])
+
         case "pinfolder":
             // Folders in pinned rows (PinFolders.swift), as the setting,
             // the menus and a drag make and change them, and the rows read
@@ -5293,6 +5450,8 @@ final class Bench {
                     "spaces": browser.spaces.map(\.name),
                     "badge": profiles.several,
                     "erasing": Store.settings.stringArray(forKey: "spaces.erasing") ?? [],
+                    // The space names the dot has shown after a switch, in order.
+                    "namesShown": SpaceDot.namesShown,
                 ])
             }
 
@@ -6254,6 +6413,7 @@ final class Bench {
                     "action": action?.label ?? "", "badge": action?.badgeText ?? "",
                     "popup": action?.presentsPopup ?? false,
                     "pinned": item.pinned ?? false, "source": item.source ?? "",
+                    "held": item.heldUpdate ?? "",
                     // Its commands, with the key each has now (Settings › Shortcuts).
                     "commands": (context?.commands ?? []).map { command -> [String: Any] in
                         ["id": command.id, "key": KeyCombo(activation: command.activationKey, flags: command.modifierFlags)?.display ?? ""]

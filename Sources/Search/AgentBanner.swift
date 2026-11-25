@@ -5,10 +5,11 @@ import SwiftUI
 // page's own questions, in the window it asked in only. Never anything over
 // the page after that: while it is allowed, the tab it is working in wears
 // a dot on its icon's corner (AgentMark), moving with it from tab to tab and
-// gone once it is idle; Stop is on that row under the pointer, on a quiet
-// line at the foot of the column — or at the far end of the strip when the
+// gone once it is idle; Stop is on a card at the foot of the column, drawn
+// as "Update ready" is — or on a pill at the far end of the strip when the
 // tabs are across the top — and in File › Stop Agent, all for as long as it
-// is connected, and gone with it.
+// is connected, and gone with it. Not on the tab's row, where it covered
+// the title.
 //
 // Neither the question nor its buttons take the keys: Return never allows,
 // and nothing an agent sends reaches these buttons, which only a click of
@@ -44,9 +45,10 @@ private struct AgentSessionBar: View {
     }
 }
 
-/// Connected, in the chrome: a quiet line at the foot of the column (`.row`),
-/// a mark there when the column is icons only (`.icon`), or at the far end
-/// of the strip (`.door`). Each with Stop.
+/// Connected, in the chrome: a card at the foot of the column, drawn as
+/// "Update ready" is (`.row`), a mark there when the column is icons only
+/// (`.icon`), or a pill at the far end of the strip, as the update's
+/// (`.door`). Each with Stop.
 struct AgentStatus: View {
     enum Style { case row, icon, door }
     @ObservedObject var browser: Browser
@@ -55,14 +57,21 @@ struct AgentStatus: View {
 
     var body: some View {
         if let session = agents.session, session.browser === browser {
-            AgentStatusFace(session: session, style: style)
+            AgentStatusFace(session: session, style: style, prefs: browser.prefs)
         }
     }
+
+    /// The card's height in the column: a row's, and a line more for
+    /// "Always allowed".
+    static func cardHeight(row: CGFloat, auto: Bool) -> CGFloat { row + (auto ? 12 : 0) }
 }
 
 private struct AgentStatusFace: View {
     @ObservedObject var session: AgentSession
     let style: AgentStatus.Style
+    @ObservedObject var prefs: Preferences
+    @Environment(\.greys) private var greys
+    @State private var hovering = false
 
     var body: some View {
         if session.consent.state == .allowed {
@@ -78,48 +87,101 @@ private struct AgentStatusFace: View {
                 }
                 .buttonStyle(.plain)
                 .shortcutHelp("\(AgentWords.short(session)). Click to stop it.", "file.stopAgent")
-            case .row, .door:
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(session.justAdmitted ? AgentWords.admitted(session)
-                             : style == .door ? AgentWords.short(session) : AgentWords.line(session))
-                            .font(.system(size: 11, weight: session.justAdmitted ? .medium : .regular))
-                            .foregroundStyle(session.justAdmitted ? Palette.ink : Palette.muted)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Text("·").font(.system(size: 11)).foregroundStyle(Palette.muted)
-                        AgentStop()
-                        if style == .row { Spacer(minLength: 0) }
-                    }
-                    // Let in without asking: always said, under it.
-                    if session.auto, style == .row {
-                        Text("Allowed automatically")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Palette.muted.opacity(0.8))
-                            .lineLimit(1)
-                    }
-                }
-                .padding(.horizontal, style == .row ? 10 : 4)
-                .help(AgentWords.short(session) + ". Stop disconnects it; its tabs stay.")
-                .fixedSize(horizontal: style == .door, vertical: true)
+            case .row: card
+            case .door: pill
             }
         }
     }
-}
 
-private struct AgentStop: View {
-    @State private var hovering = false
-    var body: some View {
-        Button { AgentControl.shared.stopSession() } label: {
-            Text("Stop")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(hovering ? Palette.ink : Palette.ink.opacity(0.75))
-                .contentShape(Rectangle())
-                .background(ClickSpot { AgentControl.shared.stopButton = $0 })
+    /// Working: the accent colour; quiet, muted.
+    private var mark: some View {
+        Image(systemName: "cursorarrow.rays")
+            .foregroundStyle(session.busy ? Color.accentColor : Palette.muted)
+    }
+
+    private var stop: some View {
+        CardButton(title: "Stop", act: { AgentControl.shared.stopSession() }) {
+            ClickSpot { AgentControl.shared.stopButton = $0 }
         }
-        .buttonStyle(.plain)
+        .shortcutHelp("Disconnect it. Its tabs stay where they are.", "file.stopAgent")
+    }
+
+    /// Let in without asking: always said, said out loud for a few seconds.
+    private var always: some View {
+        Text("Always allowed")
+            .font(.system(size: 10, weight: session.justAdmitted ? .medium : .regular))
+            .foregroundStyle(session.justAdmitted ? Palette.ink : Palette.muted.opacity(0.8))
+            .lineLimit(1)
+    }
+
+    /// The column's: its name alone, short enough for the narrowest column.
+    private var card: some View {
+        HStack(spacing: 8) {
+            // The icon goes first when the column is too narrow for both:
+            // the name is what must be read whole.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    mark.font(.system(size: 12))
+                    words
+                }
+                words
+            }
+            Spacer(minLength: 0)
+            stop
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 6)
+        .frame(height: AgentStatus.cardHeight(row: prefs.sideRow, auto: session.auto))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(hovering ? greys.hover : .clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Palette.hairline, lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onHover { hovering = $0 }
-        .help("Disconnect it. Its tabs stay where they are.")
+        .help(AgentWords.short(session) + ". Stop disconnects it; its tabs stay.")
+        .animation(Motion.quick, value: hovering)
+    }
+
+    private var words: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(session.client)
+                .font(.system(size: prefs.sideTitle))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
+            if session.auto { always }
+        }
+    }
+
+    /// The strip's: the update's pill, with Stop at its end.
+    private var pill: some View {
+        HStack(spacing: 4) {
+            mark.font(.system(size: 10, weight: .medium))
+            Text(session.client)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .foregroundStyle(hovering ? Palette.ink : Palette.ink.opacity(0.75))
+            if session.auto {
+                Text("·").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                always
+            }
+            stop.padding(.leading, 2)
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 2)
+        .padding(.vertical, 2)
+        .background(Palette.ground.opacity(hovering ? 1 : 0.6), in: Capsule())
+        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+        .contentShape(Capsule())
+        .fixedSize()
+        .onHover { hovering = $0 }
+        .help(AgentWords.short(session) + ". Stop disconnects it; its tabs stay.")
+        .animation(Motion.quick, value: hovering)
     }
 }
 
@@ -155,24 +217,6 @@ struct AgentMark: View {
     }
 }
 
-/// Stop, on the row of the tab an agent is working in, under the pointer.
-struct AgentRowStop: View {
-    var body: some View {
-        Button { AgentControl.shared.stopSession() } label: {
-            Text("Stop")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Palette.ink)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .background(Palette.ground, in: Capsule())
-                .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .shortcutHelp("Stop the coding agent. Its tabs stay where they are.", "file.stopAgent")
-    }
-}
-
 /// File › Stop Agent: there while one is connected.
 struct StopAgentMenuItem: View {
     @ObservedObject private var agents = AgentControl.shared
@@ -202,7 +246,7 @@ enum AgentWords {
     /// In the strip, where there is room for one short line.
     @MainActor
     static func short(_ session: AgentSession) -> String {
-        session.auto ? "\(session.client) · Allowed automatically" : line(session)
+        session.auto ? "\(line(session)) · Allowed automatically" : line(session)
     }
 }
 

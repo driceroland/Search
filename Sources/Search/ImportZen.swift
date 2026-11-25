@@ -86,18 +86,35 @@ enum Zen {
         sidebar(in: source, profile: profile).map { ($0.spaces.count, $0.pinnedCount + $0.favorites.count) }
     }
 
-    /// One profile's, the newest way Zen has kept them first.
-    static func sidebar(inProfile folder: URL) -> ArcSidebar? {
-        // Since window sync: the file, else its newest good copy.
+    /// Zen's own session file since window sync, else its newest good
+    /// copy, in the order Zen itself recovers them.
+    static func sessionFiles(inProfile folder: URL) -> [URL] {
         let backups = folder.appendingPathComponent("zen-sessions-backup")
         let dated = ((try? FileManager.default.contentsOfDirectory(atPath: backups.path)) ?? [])
             .filter { $0.hasPrefix("zen-sessions-") && $0.hasSuffix(".jsonlz4") }
             .sorted(by: >)
             .prefix(5)
             .map { backups.appendingPathComponent($0) }
-        for file in [folder.appendingPathComponent("zen-sessions.jsonlz4"),
-                     backups.appendingPathComponent("clean.jsonlz4"),
-                     backups.appendingPathComponent("recovery.baklz4")] + dated {
+        return [folder.appendingPathComponent("zen-sessions.jsonlz4"),
+                backups.appendingPathComponent("clean.jsonlz4"),
+                backups.appendingPathComponent("recovery.baklz4")] + dated
+    }
+
+    /// The open tabs in that file — every space's, each with its space, as
+    /// one window — or none when it has no spaces (idea 1116).
+    static func sessionTabs(inProfile folder: URL) -> SessionImport.Snapshot {
+        for file in sessionFiles(inProfile: folder) {
+            guard let top = MozLz4.json(file, inside: folder), !((top["spaces"] as? [Any]) ?? []).isEmpty else { continue }
+            let window: [String: Any] = ["tabs": top["tabs"] ?? [], "groups": top["groups"] ?? [], "spaces": top["spaces"] ?? []]
+            return MozillaSession.read(["windows": [window]], leavingPins: true, salt: folder.lastPathComponent)
+        }
+        return .init()
+    }
+
+    /// One profile's, the newest way Zen has kept them first.
+    static func sidebar(inProfile folder: URL) -> ArcSidebar? {
+        // Since window sync: the file, else its newest good copy.
+        for file in sessionFiles(inProfile: folder) {
             if let top = MozLz4.json(file, inside: folder), let found = parse(top), !found.spaces.isEmpty { return found }
         }
         // Before it: the tables in places.sqlite.

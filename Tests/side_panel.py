@@ -250,10 +250,12 @@ def main():
             picture(f"{tag}across")
             ui(sidebar=True)
 
-            # The column folded away: still on the far side.
+            # The column folded away: still on the far side, edge to edge
+            # with the page, which fills the window folded (24 Nov 2026).
             ui(folded=True)
             r = box()
-            t.ok(f"{kind}: folded, the panel stays", r == (w - GAP - WIDTH, GAP, w - GAP, h - GAP), r)
+            t.ok(f"{kind}: folded, the panel stays, edge to edge", r == (w - WIDTH, 0, w, h), r)
+            t.ok(f"{kind}: folded, the page up to its hairline", max(x[2] for x in pages()) == w - WIDTH - 1, pages())
             ui(folded=False)
 
             # The button again: it goes, and the page has its room back.

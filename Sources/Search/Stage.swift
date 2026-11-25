@@ -40,7 +40,12 @@ struct Page: View {
             // A blank tab owns no page to paint over this, and a tab that
             // gets one is no longer blank, so the wall goes with the load.
             // Split panes draw their layers through here too.
-            if tab.isBlank { BlankWall() }
+            // Cut to the card's corners itself, as Search's own pages are:
+            // the card's clip doesn't reach under the page's AppKit view.
+            if tab.isBlank {
+                BlankWall()
+                    .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            }
             // A tab put down with ⌘W has no view, and asking for one here
             // would build an empty one a frame before the stage moves on.
             //
@@ -373,7 +378,7 @@ final class StageView: NSView {
     /// always carried down to.
     var corner: CGFloat = 0 {
         didSet {
-            guard corner != oldValue else { return }
+            guard corner != oldValue, !cardDriven else { return }
             wantsLayer = true
             layer?.cornerRadius = corner
             layer?.cornerCurve = .continuous
@@ -381,8 +386,77 @@ final class StageView: NSView {
         }
     }
 
+    /// The window's page card, once the window drives it (ContentView's
+    /// CardClip): the card can be smaller than the page while ⌘S moves the
+    /// column, the page laid out once at its new size and the card closing
+    /// in or opening out over it, and a clip of SwiftUI's never reached the
+    /// web view, which ran past the window's edge with its round corners.
+    /// So the card is cut here, frame by frame: by the layer's own round
+    /// corners when it is the whole page, as at rest, and by a mask its
+    /// size, from the page's top corner, while it is smaller.
+    private var cardDriven = false
+    /// The card's size, asked whenever this view is cut to it; nil is the
+    /// card at rest, the whole of the page.
+    private var cardSize: (() -> CGSize)?
+    /// How much smaller than this view the card is, across and down.
+    private var cardShort = CGSize.zero
+    private var cardCorner: CGFloat = 0
+    /// Made once and kept: no layer is made while the card moves.
+    private lazy var cardMask: CALayer = {
+        let mask = CALayer()
+        mask.backgroundColor = NSColor.black.cgColor
+        mask.cornerCurve = .continuous
+        return mask
+    }()
+
+    func clip(card: (() -> CGSize)?, corner: CGFloat) {
+        cardDriven = true
+        cardSize = card
+        cardShort = .zero
+        cardCorner = corner
+        // Cut once this view is laid out in this same pass, where it is
+        // put for this frame: cut before, under Reduce Motion, the page was
+        // cut to its new card a frame before it moved there.
+        needsLayout = true
+    }
+
+    /// Cut by a stage of two pages, which works out each page's share.
+    func clip(short: CGSize, corner: CGFloat) {
+        cardDriven = true
+        cardSize = nil
+        cardShort = short
+        cardCorner = corner
+        applyCard()
+    }
+
+    private func applyCard() {
+        guard cardDriven else { return }
+        if let card = cardSize?() {
+            cardShort = CGSize(width: max(0, bounds.width - card.width), height: max(0, bounds.height - card.height))
+        }
+        wantsLayer = true
+        guard let layer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if cardShort.width < 0.25, cardShort.height < 0.25 {
+            if layer.mask != nil { layer.mask = nil }
+            layer.cornerRadius = cardCorner
+            layer.cornerCurve = .continuous
+            layer.masksToBounds = cardCorner > 0
+        } else {
+            layer.cornerRadius = 0
+            layer.masksToBounds = false
+            let size = CGSize(width: max(0, bounds.width - cardShort.width), height: max(0, bounds.height - cardShort.height))
+            cardMask.cornerRadius = cardCorner
+            cardMask.frame = CGRect(x: 0, y: isFlipped ? 0 : bounds.height - size.height, width: size.width, height: size.height)
+            if layer.mask !== cardMask { layer.mask = cardMask }
+        }
+        CATransaction.commit()
+    }
+
     override func layout() {
         super.layout()
+        applyCard()
         settle()
     }
 

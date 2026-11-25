@@ -60,6 +60,7 @@ enum SettingsIndex {
 
     static let groups: [SettingsGroup] = [
         .init(id: "browser", page: .general, title: "Your browser", icon: "globe.desk"),
+        .init(id: "devices", page: .general, title: "Sync and other devices", icon: "icloud"),
         .init(id: "downloads", page: .general, title: "Downloads", icon: "arrow.down.circle"),
 
         .init(id: "theme", page: .appearance, title: "Light and dark", icon: "circle.lefthalf.filled"),
@@ -70,6 +71,7 @@ enum SettingsIndex {
         .init(id: "themes", page: .themes, title: "Home background", icon: "photo.artframe"),
 
         .init(id: "newtabs", page: .tabs, title: "New tabs", icon: "plus.square"),
+        .init(id: "closing", page: .tabs, title: "Closing and switching", icon: "xmark.square"),
         .init(id: "memory", page: .tabs, title: "Memory", icon: "moon.zzz"),
         .init(id: "tabbar", page: .tabs, title: "In the tab bar", icon: "number"),
         .init(id: "tabwindows", page: .tabs, title: "Windows", icon: "macwindow.on.rectangle"),
@@ -127,21 +129,21 @@ enum SettingsIndex {
               title: "Bring things over", detail: "Bookmarks, history, passwords and extensions from another browser",
               more: "From another browser on this Mac, or from a file it exported. Nothing leaves your Mac.",
               words: ["import", "chrome", "safari", "arc", "migrate"]),
-        .init(id: "sync", group: "browser", icon: "arrow.triangle.2.circlepath",
-              title: "Sync with your other Macs", detail: "Spaces, pins, bookmarks and settings, through a folder you choose",
-              more: "Choose a folder your Macs share, in iCloud Drive or Dropbox for example, and turn this on with the same folder in Search on each Mac. Each profile syncs on its own. Never your history, passwords, cookies, sign-ins or open tabs. No account and no server: only small files in that folder.",
-              keys: ["sync.folder"], words: ["sync", "icloud", "dropbox", "other mac", "devices", "mac"]),
-        .init(id: "handoff", group: "browser", icon: "iphone.and.arrow.forward",
+        .init(id: "icloud", group: "devices", icon: "icloud",
+              title: "Sync with iCloud", detail: "With your iPhone and other Macs: open tabs, pins, spaces, bookmarks, a few settings",
+              more: "Through your own iCloud, end to end encrypted: Search on your iPhone and your other Macs see this Mac's open tabs (under History and in the address field, as Tabs on Your Other Devices) and share its pins, spaces, bookmarks, search engine and look. Private tabs never go, nor your history, passwords, cookies or sign-ins. On for a new Search once you leave the welcome, where its switch is, so it can be turned off first; off for a Search you had before until you turn it on. Nothing leaves this Mac while it's off. The way to sync with your iPhone. Off while Sync Macs through a folder is on: use one or the other.",
+              keys: ["icloud.sync"], words: ["sync", "icloud", "iphone", "ios", "cloudkit", "other devices", "devices", "icloud tabs", "tabs on other devices", "handoff", "cloudkit sync", "iphone sync"]),
+        .init(id: "icloud.erase", group: "devices", icon: "trash",
+              title: "Delete Search's data from iCloud", detail: "For every device. What is on each one stays, and sync turns off here",
+              words: ["icloud", "delete", "erase", "remove", "sync"], parent: "icloud"),
+        .init(id: "handoff", group: "devices", icon: "iphone.and.arrow.forward",
               title: "Handoff to your iPhone and iPad", detail: "The page in front comes up in their app switcher, as Safari's does",
               more: "And at the end of the Dock on your other Macs. macOS carries the address to devices signed in to your Apple Account with Handoff on, in System Settings › General › AirDrop & Handoff on a Mac. Never a private tab or a space signed out of the others. Pages handed off from your iPhone open here when Search is your default browser.",
               keys: ["handoff"], words: ["handoff", "continuity", "iphone", "ipad", "devices", "app switcher", "multitasking"]),
-        .init(id: "icloud", group: "browser", icon: "icloud",
-              title: "Sync with iCloud", detail: "Open tabs, pins, spaces, bookmarks and a few settings, with your iPhone",
-              more: "Through your own iCloud, end to end encrypted: Search on your iPhone and your other Macs see this Mac's open tabs (under History and in the address field, as Tabs on Your Other Devices) and share its pins, spaces, bookmarks, search engine and look. Private tabs never go, nor your history, passwords, cookies or sign-ins. On for a new Search once you leave the welcome, where its switch is, so it can be turned off first; off for a Search you had before until you turn it on. Nothing leaves this Mac while it's off. Not together with Sync with your other Macs.",
-              keys: ["icloud.sync"], words: ["sync", "icloud", "iphone", "ios", "cloudkit", "other devices", "devices", "icloud tabs", "tabs on other devices", "handoff"]),
-        .init(id: "icloud.erase", group: "browser", icon: "trash",
-              title: "Delete Search's data from iCloud", detail: "For every device. What is on each one stays, and sync turns off here",
-              words: ["icloud", "delete", "erase", "remove", "sync"], parent: "icloud"),
+        .init(id: "sync", group: "devices", icon: "folder.badge.gearshape",
+              title: "Sync Macs through a folder", detail: "Macs only: spaces, pins, bookmarks and settings, as files in a folder you pick",
+              more: "The older way, from before Sync with iCloud: no iPhone and no open tabs, but no iCloud needed either, and every profile, not only Personal. Choose a folder your Macs share, in Dropbox or iCloud Drive for example, and turn this on with the same folder in Search on each Mac. Never your history, passwords, cookies, sign-ins or open tabs. No account and no server: only small files in that folder. Off while Sync with iCloud is on: use one or the other.",
+              keys: ["sync.folder"], words: ["sync", "folder", "dropbox", "icloud drive", "other mac", "devices", "mac", "profiles", "legacy", "older"]),
         .init(id: "quit.confirm", group: "browser", icon: "power",
               title: "Confirm before quitting", detail: "Ask before ⌘Q or Quit Search closes the browser",
               keys: ["quit.confirm"], words: ["quit", "cmd q"]),
@@ -304,6 +306,11 @@ enum SettingsIndex {
               more: "Folders keep their names. A bookmark you renamed to nothing already shows its icon alone.",
               keys: ["bookmarks.iconsOnly"], words: ["favorites bar", "bookmarks toolbar", "favicons", "compact", "icon only", "names", "titles"],
               parent: "bookmarks.bar"),
+        .init(id: "bookmarks.newTabOnly", group: "tablook", icon: "plus.square",
+              title: "Show the bookmarks bar only on new tabs", detail: "Hidden while a page is open, as Chrome and Edge can",
+              more: "The bar comes back as soon as the tab on screen is a new one.",
+              keys: ["bookmarks.newTabOnly"], words: ["favorites bar", "bookmarks toolbar", "new tab", "only", "hide", "chrome", "edge"],
+              parent: "bookmarks.bar"),
         .init(id: "motion.light", group: "motion", icon: "leaf",
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
@@ -322,14 +329,18 @@ enum SettingsIndex {
               title: "Links opened in front go beside their page", detail: "A link that opens a new tab lands right after the tab it came from",
               more: "In the order you click them, as ⌘-clicks do, while you go back and forth between the page and the tabs it opened. Going to any other tab starts again right after the page.",
               keys: ["tabs.frontBeside"], words: ["target blank", "new tab", "order", "next to", "opener", "link"], parent: "tabs.newPlace"),
-        .init(id: "tabs.newAfterLast", group: "newtabs", icon: "plus.rectangle.on.rectangle",
+        .init(id: "tabs.newAfterLast", group: "closing", icon: "plus.rectangle.on.rectangle",
               title: "Leave a new tab when the last tab closes", detail: "Otherwise you land on a pinned tab",
               keys: ["tabs.newAfterLast"], words: ["last tab"]),
-        .init(id: "tabs.closeGoesBack", group: "newtabs", icon: "arrow.uturn.backward",
+        .init(id: "tabs.keepWindow", group: "closing", icon: "macwindow",
+              title: "Keep the window when its last tab closes", detail: "⌘W on the last, empty tab leaves it; ⇧⌘W closes the window",
+              more: "As in Arc: closing the last page leaves an empty tab, and closing that one does nothing more, so a window isn't closed by a ⌘W too many.",
+              keys: ["tabs.keepWindow"], words: ["last tab", "close window", "keep window", "cmd w"]),
+        .init(id: "tabs.closeGoesBack", group: "closing", icon: "arrow.uturn.backward",
               title: "Closing a tab goes back to the one before", detail: "Otherwise you land on the tab beside it",
               more: "The tab you viewed last in this space, as ⌃Tab would take you. The other half of a Split View stays first.",
               keys: ["tabs.closeGoesBack"], words: ["close", "previous tab", "recent"]),
-        .init(id: "tabs.swipeBackCloses", group: "newtabs", icon: "xmark.circle",
+        .init(id: "tabs.swipeBackCloses", group: "closing", icon: "xmark.circle",
               title: "Swipe back closes a tab a link opened", detail: "Back to the tab you were on, as Safari and Arc do",
               more: "On the page a link opened in a new tab, with nothing before it, a swipe back shows a cross and closes the tab, then goes to the tab you viewed last. Pages you clicked through in the tab go back as usual first. Only the swipe: a mouse's back button does nothing there, as before.",
               keys: ["tabs.swipeBackCloses"], words: ["swipe", "back", "close", "target blank", "new tab", "opener", "gesture", "link"]),
@@ -337,15 +348,15 @@ enum SettingsIndex {
               title: "Show the Home bookmarks on a new tab", detail: "The sites of your bookmark folder called Home, under the address field",
               more: "Make a folder called Home in Bookmarks and put sites in it: a blank tab shows up to 16 of them as tiles with their names, in the order you keep them.",
               keys: ["home.grid"], words: ["home", "home page", "start page", "new tab", "speed dial", "favorites"]),
-        .init(id: "tabs.undoReopens", group: "newtabs", icon: "arrow.uturn.backward.circle",
-              title: "⌘Z reopens a closed tab", detail: "Right after closing it, as ⇧⌘T would bring it back",
-              more: "Only while closing it is the last thing you did: type or click anything else and ⌘Z undoes as before. A page that uses ⌘Z itself, such as a document or a drawing, keeps it.",
-              keys: ["tabs.undoReopens"], words: ["undo", "reopen", "closed tab", "cmd z", "restore"]),
-        .init(id: "tabs.switcherBehindFirst", group: "newtabs", icon: "rectangle.stack",
+        .init(id: "tabs.undoReopens", group: "closing", icon: "arrow.uturn.backward.circle",
+              title: "⌘Z reopens a closed tab", detail: "Right after closing it, as ⇧⌘T would; tabs just moved into a folder or group go back too",
+              more: "Only while closing or moving them is the last thing you did: type or click anything else and ⌘Z undoes as before. A page that uses ⌘Z itself, such as a document or a drawing, keeps it. Several tabs moved together go back together.",
+              keys: ["tabs.undoReopens"], words: ["undo", "reopen", "closed tab", "cmd z", "restore", "move", "folder", "group"]),
+        .init(id: "tabs.switcherBehindFirst", group: "closing", icon: "rectangle.stack",
               title: "⌃Tab goes to a link opened behind", detail: "Otherwise a quick ⌃Tab goes back to the tab you were on before",
               more: "A link you ⌘-click, middle-click or open with Open Link in New Tab comes right after the page in the ⌃Tab switcher, the newest first. Off, it comes after the tab you were on before.",
               keys: ["tabs.switcherBehindFirst"], words: ["ctrl tab", "switcher", "background", "recent", "new tab"]),
-        .init(id: "tabs.switcherLeavesOutPins", group: "newtabs", icon: "pin.slash",
+        .init(id: "tabs.switcherLeavesOutPins", group: "closing", icon: "pin.slash",
               title: "The ⌃Tab switcher leaves out pinned tabs", detail: "Otherwise pinned tabs appear alongside regular tabs",
               more: "When on, pinned tabs stay in their places and do not appear in the ⌃Tab switcher grid. Off, the switcher includes pinned tabs that are awake or in front.",
               keys: ["tabs.switcherLeavesOutPins"], words: ["ctrl tab", "switcher", "pins", "pinned", "exclude"]),
@@ -379,6 +390,12 @@ enum SettingsIndex {
               title: "Clicking the tab you're on edits its address only", detail: "Without the site card under it",
               more: "Site Information… in the tab's menu still shows the card.",
               keys: ["tabs.clickAddressOnly"], words: ["site card", "site information", "card", "popover", "click", "url", "edit address", "address bar"]),
+        .init(id: "tabs.clickKeepsName", group: "tabbar", icon: "character.textbox",
+              title: "Clicking the tab you're on keeps its name", detail: "Its address is edited in the address bar above, or with ⌘L",
+              more: "With Always show the address bar on, in Settings › Appearance › Window: a click on the tab you're on leaves its title as it is, so the tabs stay a list of names. Rename is still in the tab's right-click menu, and Site Information… still shows the site card.",
+              keys: ["tabs.clickKeepsName"],
+              words: ["click", "tab name", "title", "keep name", "address bar", "edit address", "url", "sidebar", "rename", "arc"],
+              parent: "address.shown"),
         .init(id: "tabs.mirror", group: "tabwindows", icon: "rectangle.on.rectangle",
               title: "Same tabs in every window", detail: "Each window lists the same open tabs in a space, as it lists the same pins",
               more: "A tab opened, closed, moved, grouped or renamed in one window is so in the others. Each window shows the page on its own, so the same tab can be open in two windows at once. Private tabs stay in their window, and closing a window leaves its tabs in the others.",
@@ -504,12 +521,12 @@ enum SettingsIndex {
               parent: "spaces"),
         .init(id: "pins.keep", group: "pins", icon: "pin.circle",
               title: "Pins keep their site", detail: "Links elsewhere open over the pin, and ⌘W takes it back home",
-              more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at.",
+              more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at. With Links from pinned tabs open in a new tab on, those links open as tabs instead of peeks.",
               keys: ["pins.home", "pins.peek"], words: ["pinned tabs", "go home", "reset pin"]),
         .init(id: "pins.list", group: "pins", icon: "list.bullet.rectangle",
               title: "Pinned rows", detail: "Pins as rows under the squares, and Clear over the rest",
-              more: "As in Arc: squares for the sites you live in, rows for pages you keep, and a line over the rest with Clear. Right-click a tab to pin it as a row.",
-              keys: ["pins.list"], words: ["arc", "pinned"], parent: "tabs.layout"),
+              more: "As in Arc: squares for the sites you live in, rows for pages you keep, and a line over the rest with Clear. Right-click a tab to pin it as a row. A row taken away from its page goes back with a click on its icon.",
+              keys: ["pins.list"], words: ["arc", "pinned", "back to pinned page", "reset pin", "favicon", "go home"], parent: "tabs.layout"),
         .init(id: "pins.folders", group: "pins", icon: "folder",
               title: "Folders in pinned rows", detail: "Pinned rows in folders, folders in folders, as in Arc",
               more: "Right-click a pinned row and choose New Folder, or drag a row onto a folder. A folder folds with a click and holds up to three levels. Bringing Arc over keeps its folders as folders here. New Live Folder… fills one from a site's RSS or Atom feed, kept fresh every half hour.",
@@ -526,7 +543,7 @@ enum SettingsIndex {
         .init(id: "pins.linksNewTab", group: "pins", icon: "arrow.up.forward.square",
               title: "Links from pinned tabs open in a new tab",
               detail: "A link clicked in a pin opens beside the loose tabs, and the pin stays on its page",
-              more: "For pins in folders and loose pins alike, and links to the pin's own site as well as to others. A redirect, a form, a jump within the page and the site's own sign-in pages still go in the pin. Off, a link within the site goes in the pin, as in Arc.",
+              more: "For pins in folders and loose pins alike, and links to the pin's own site as well as to others. A redirect, a form, a jump within the page and the site's own sign-in pages still go in the pin. Off, a link within the site goes in the pin, as in Arc. While on, it takes the place of Pins keep their site's peek.",
               keys: ["pins.linksNewTab"],
               words: ["pinned", "pinned folder", "links", "new tab", "arc", "pin stays", "open links"]),
         .init(id: "newtab.floating", group: "opening", icon: "rectangle.and.text.magnifyingglass",
@@ -537,6 +554,10 @@ enum SettingsIndex {
               title: "The field in the middle of the window", detail: "⌘T's and ⌘L's field over a page, centred on the window and higher up",
               more: "As Arc and Zen place it, near where Spotlight comes: the column is dimmed with the page. Off, the field is centred on the page beside the column.",
               keys: ["field.window"], words: ["command bar", "cmd t", "cmd l", "spotlight", "centre", "center", "position", "arc", "zen"]),
+        .init(id: "field.hidesPage", group: "opening", icon: "rectangle.fill",
+              title: "Hide the page behind the field", detail: "⌘T's and ⌘L's field over a plain ground, the page out of sight",
+              more: "Off, the page stays dimmed behind the field and shows through. Escape or a click outside the field brings it back, as before.",
+              keys: ["field.hidesPage"], words: ["command bar", "cmd t", "cmd l", "dim", "blur", "cluttered", "busy", "background", "behind"]),
         .init(id: "newtab.recent", group: "opening", icon: "clock.arrow.circlepath",
               title: "Recent places in the new tab", detail: "Before you type, ⌘T's field lists the last three places you went",
               more: "From History on this Mac, leaving out pages already open, which ⌘K finds. Nothing is picked until an arrow key picks it, and a private tab lists nothing.",
@@ -625,6 +646,10 @@ enum SettingsIndex {
               title: "⌥-click a link opens it in Split View", detail: "Its page beside the one you're reading, as Open Link in Split View",
               more: "Off, ⌥-click follows the link as a click does. In Safari it downloads the link instead.",
               keys: ["links.optionSplit"], words: ["option click", "alt click", "split", "side by side", "link", "open beside"]),
+        .init(id: "keys.backspaceBack", group: "mouse", icon: "delete.left",
+              title: "Backspace goes back", detail: "⌫ goes back a page and ⇧⌫ forward, as older browsers did",
+              more: "Only when you aren't typing in a field or editable text, and with no other key held. Off, as in Safari: ⌘[ goes back.",
+              keys: ["keys.backspaceBack"], words: ["backspace", "delete key", "back", "previous page", "go back", "history", "keyboard"]),
         .init(id: "autoscroll", group: "mouse", icon: "arrow.up.and.down.circle",
               title: "Scroll with the middle button", detail: "Click the wheel, then move the mouse to scroll, as on Windows",
               keys: ["autoscroll"], words: ["middle click", "autoscroll", "wheel"]),
@@ -796,6 +821,9 @@ enum SettingsIndex {
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
         case "address.width": return prefs.addressLine && !prefs.sidebar
+        case "tabs.clickKeepsName": return prefs.addressLine && !prefs.iconColumn
+        // A click that edits nothing has no card to leave out.
+        case "tabs.clickAddressOnly": return !(prefs.tabClickKeepsName && prefs.addressLine && !prefs.iconColumn)
         case "tabs.liquid": return LiquidTab.available && !(prefs.sidebar && prefs.sideIcons)
         case "window.glass.style": return prefs.glass && GlassStyle.liquidAvailable
         // With spaces on they are in the space's Colour…, beside its colour.
@@ -803,7 +831,7 @@ enum SettingsIndex {
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
-        case "bookmarks.iconsOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
+        case "bookmarks.iconsOnly", "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
@@ -830,6 +858,8 @@ enum SettingsIndex {
         case "window.glass.clear", "window.glass.grain": return "With spaces on, in the space's menu › Colour…"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "icloud.erase": return "Only while Sync with iCloud is on"
+        case "tabs.clickKeepsName": return "Only with the address bar always shown, and titles in the column or tabs across the top"
+        case "tabs.clickAddressOnly": return "Has no effect while Clicking the tab you're on keeps its name is on"
         case "profiles.oneWindow": return "Only with more than one profile"
         case "spaces.links", "links.ask", "spaces.buttons": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"
@@ -1059,6 +1089,7 @@ extension SettingsIndex {
             "pins.home": prefs.pinsGoHome,
             "pins.peek": prefs.pinsPeek,
             "pins.linksNewTab": prefs.pinLinksOpenTabs,
+            "keys.backspaceBack": prefs.backspaceGoesBack,
             "links.peek": prefs.peekChoice.rawValue,
             "pages.120": prefs.fastPages.rawValue,
             "swipe.history": prefs.holdsHistory,
@@ -1104,6 +1135,9 @@ extension SettingsIndex {
         case "pins.linksNewTab":
             guard let on = value as? Bool else { return false }
             prefs.pinLinksOpenTabs = on
+        case "keys.backspaceBack":
+            guard let on = value as? Bool else { return false }
+            prefs.backspaceGoesBack = on
         case "sidebar.slides":
             guard let on = value as? Bool else { return false }
             prefs.slidesColumn = on
