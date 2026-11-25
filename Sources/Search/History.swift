@@ -49,6 +49,10 @@ struct Suggestion: Identifiable, Equatable {
         }
     }
 
+    func canBePickedWhileTyping(_ typed: String, ending: String?) -> Bool {
+        ending == nil && kind.isPlace && Address.url(from: typed) == nil
+    }
+
     /// A command's row can read the same as the search for the same word
     /// ("Settings" typed with its capital), and two rows can't share a name.
     var id: String {

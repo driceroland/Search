@@ -43,8 +43,11 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var offers: [Suggestion] = []
     /// The rest of the best match, after the caret, as ⌘L's field draws it.
     @Published private(set) var ending: String?
-    /// The row the arrow keys have walked to.
-    @Published var picked: Int?
+    /// The row Return will take.
+    @Published var picked: Int? {
+        didSet { pickedByTyping = false }
+    }
+    private var pickedByTyping = false
     /// Bumped when what was typed is no address and can't be searched for.
     @Published private(set) var refusals = 0
     /// Bumped each time the field should take the keys.
@@ -284,7 +287,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
 
     /// Typed plus whatever the field is finishing for you.
     var completed: String {
-        if let picked, offers.indices.contains(picked) { return offers[picked].key }
+        if !pickedByTyping, let picked, offers.indices.contains(picked) { return offers[picked].key }
         return typed + (ending ?? "")
     }
 
@@ -321,6 +324,10 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         let command = rest.first?.kind.isCommand == true ? [rest.removeFirst()] : []
         offers = command + open + rest
         ending = places.ending
+        if target.prefs.returnTakesTop, offers.first?.canBePickedWhileTyping(typed, ending: ending) == true {
+            picked = 0
+            pickedByTyping = true
+        }
     }
 
     /// Pages open in the windows of the profile the field was raised for,
