@@ -540,6 +540,10 @@ struct AddressField: NSViewRepresentable {
             guard let coordinator, let field else { return false }
             return coordinator.wantsKeys(field)
         }
+        field.canPasteAndGo = { [weak field] in field?.wanted?() == true }
+        field.pasteAndGo = { [weak coordinator = context.coordinator] url in
+            coordinator?.browser.submit(address: url)
+        }
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
@@ -661,7 +665,7 @@ struct AddressField: NSViewRepresentable {
     /// field had no window to ask: the request went nowhere and nothing asked
     /// again, so ⌘T left a field with no caret and typing that went nowhere
     /// until it was clicked. Now the request waits for the window.
-    final class Field: RoomyField {
+    final class Field: WebsiteAddressField {
         var arrived: (() -> Void)?
         /// Where the caret was as the field last let go of the keys.
         var leftAt: NSRange?
@@ -905,7 +909,72 @@ class RoomyField: NSTextField {
     }
 }
 
+class WebsiteAddressField: RoomyField {
+    var pasteAndGo: ((URL) -> Void)?
+    var canPasteAndGo: () -> Bool = { true }
+    var pasteAndGoPasteboard: () -> NSPasteboard = { .general }
+
+    fileprivate lazy var addressEditor: AddressEditor = {
+        // This initializer builds the text storage and layout machinery.
+        let editor = AddressEditor(frame: .zero)
+        editor.isFieldEditor = true
+        editor.field = self
+        return editor
+    }()
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        // If a contextual click lands on the control before it has the keys,
+        // let its native editor build the menu just as for an editing field.
+        if pasteAndGo != nil, canPasteAndGo(), currentEditor() == nil {
+            window?.makeFirstResponder(self)
+        }
+        return (currentEditor() as? AddressEditor)?.menu(for: event) ?? super.menu(for: event)
+    }
+}
+
+private final class AddressEditor: NSTextView {
+    weak var field: WebsiteAddressField?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let native = super.menu(for: event)
+        guard let native, let field, field.currentEditor() === self,
+              field.pasteAndGo != nil, field.canPasteAndGo(), Self.website(on: field.pasteAndGoPasteboard()) != nil
+        else { return native }
+
+        let menu = native.copy() as! NSMenu
+        let item = NSMenuItem(title: "Paste and Go", action: #selector(go(_:)), keyEquivalent: "")
+        item.target = self
+        if let paste = menu.items.firstIndex(where: { $0.action == #selector(NSText.paste(_:)) }) {
+            menu.insertItem(item, at: paste + 1)
+        } else {
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func go(_ sender: NSMenuItem) {
+        guard let field, field.currentEditor() === self, field.canPasteAndGo(), let navigate = field.pasteAndGo,
+              let url = Self.website(on: field.pasteAndGoPasteboard()) else { return }
+        navigate(url)
+    }
+
+    private static func website(on pasteboard: NSPasteboard) -> URL? {
+        guard let items = pasteboard.pasteboardItems, items.count == 1, let item = items.first,
+              let raw = item.string(forType: .URL) ?? item.string(forType: .string) else { return nil }
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.rangeOfCharacter(from: .whitespacesAndNewlines.union(.controlCharacters)) == nil,
+              let url = Address.url(from: text),
+              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              let host = url.host, !host.isEmpty else { return nil }
+        return url
+    }
+}
+
 final class RoomyFieldCell: NSTextFieldCell {
+    override func fieldEditor(for controlView: NSView) -> NSTextView? {
+        (controlView as? WebsiteAddressField)?.addressEditor ?? super.fieldEditor(for: controlView)
+    }
+
     /// What is kept clear past the caret at the end of the text.
     static let margin: CGFloat = 4
 
