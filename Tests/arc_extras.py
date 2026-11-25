@@ -135,6 +135,33 @@ def main():
         names = [c["name"] for c in sv.cmd({"do": "screenshots"})["completed"]]
         t.ok("shots: off, nothing more", len(names) == 1 and not r["on"], names)
 
+        # --- A pin's glance -------------------------------------------------
+        # An ordinary tab, not a bench one: bench tabs never sleep.
+        mail = sv.sp("open", url=f"http://127.0.0.1:{PORT}/mail")["resultID"]
+        time.sleep(2)
+        sv.cmd({"do": "pin", "id": mail})
+        sv.cmd({"do": "select", "id": local})
+        r = sv.cmd({"do": "pinpreview", "id": mail})
+        t.ok("pin: on by default", r["on"], r)
+        t.ok("pin: the unread count from its title", r["unread"] == "3", r)
+        t.ok("pin: no card while the window isn't in front (hidden probe)", r["refusal"] == "window not in front" and not r["shown"], r)
+        r = sv.cmd({"do": "pinpreview", "id": mail, "picture": True})
+        print("   live pin's picture:", r.get("picture") or "(none: a hidden window paints nothing)")
+        # A pin in the space on screen stays awake; one asleep is one put to
+        # sleep before it was pinned (or brought back at launch, unopened).
+        sv.cmd({"do": "pin", "id": mail, "off": True})
+        sv.cmd({"do": "select", "id": local})
+        s = sv.cmd({"do": "sleep", "id": mail})
+        sv.cmd({"do": "pin", "id": mail})
+        s = sv.cmd({"do": "pinpreview", "id": mail})
+        t.ok("pin: asleep, as a pin", s["asleep"] and not s["built"], s)
+        r = sv.cmd({"do": "pinpreview", "id": mail, "picture": True, "hover": True})
+        time.sleep(1)
+        after = sv.cmd({"do": "pinpreview", "id": mail})
+        t.ok("pin: asleep, asking for its glance doesn't wake it",
+             r["asleepAfter"] and not r["builtAfter"] and after["asleep"] and not after["built"], (r, after))
+        t.ok("pin: asleep, no unread count (it may be stale)", after["unread"] == "", after)
+        t.ok("pin: hovered in a hidden probe, no card", not after["shown"], after)
     finally:
         sv.finish()
     t.done()

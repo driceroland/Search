@@ -757,6 +757,25 @@ final class Bench {
                     "refused": Screenshots.shared.refused?.path ?? "",
                     "completed": browser.loot.kept.map { ["name": $0.name, "from": $0.from, "path": $0.path] }])
 
+        case "pinpreview":
+            // A pin's glance (PinPreview.swift) as it stands: why a card
+            // would not show now, what it says is waiting, and with "picture"
+            // the picture it would show — fetched as the card fetches it,
+            // and the pin's sleep after. Test runs only.
+            guard Store.testing else { answer(["error": "pinpreview only works on a --test run"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            if request["hover"] as? Bool == true { PinPreview.hover(true, tab: tab, in: browser) }
+            var out: [String: Any] = ["refusal": PinPreview.refusal(tab, in: browser) ?? "", "unread": PinPreview.glance(tab) ?? "",
+                                      "title": tab.title, "asleep": tab.asleep, "built": tab.built != nil,
+                                      "shown": PinPreview.isShown, "on": browser.prefs.pinPreviews, "last": PinPreview.last]
+            guard request["picture"] as? Bool == true else { answer(out); return }
+            tab.preview(width: PinPreviewCard.width) { image in
+                out["picture"] = image.map { NSStringFromSize($0.size) } ?? ""
+                out["asleepAfter"] = tab.asleep
+                out["builtAfter"] = tab.built != nil
+                answer(out)
+            }
+
         case "kept":
             // A sleeping tab's picture, as kept for its waking, written to a
             // file: its size in pixels, what NSImage makes of it, and the

@@ -570,6 +570,12 @@ final class Preferences: ObservableObject {
     @Published var developerLocal: Bool {
         didSet { store.set(developerLocal, forKey: DevMode.localKey) }
     }
+    /// A card with a picture of a pin's page, and what it says is waiting,
+    /// when the pointer rests on the pin (PinPreview.swift). On unless
+    /// turned off.
+    @Published var pinPreviews: Bool {
+        didSet { store.set(pinPreviews, forKey: "pins.preview") }
+    }
     /// The Mac's screenshots listed in Downloads as they are taken
     /// (Screenshots.swift). Off unless turned on: it reads a folder of yours.
     @Published var screenshotsInDownloads: Bool {
@@ -1430,6 +1436,7 @@ final class Preferences: ObservableObject {
         // On by default, but off in test runs unless a test asks, so no
         // other probe's pages on 127.0.0.1 wear the bar.
         developerLocal = store.object(forKey: DevMode.localKey) as? Bool ?? !Store.testing
+        pinPreviews = store.object(forKey: "pins.preview") as? Bool ?? true
         screenshotsInDownloads = store.bool(forKey: Screenshots.key)
         highContrastText = store.bool(forKey: "tabs.highContrast")
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
