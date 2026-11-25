@@ -393,11 +393,20 @@ struct SettingsPanel: View {
     private func shown(_ item: SettingsItem) -> Bool { SettingsIndex.applies(item, prefs) }
 
     private func rows(_ items: [SettingsItem], searched: Bool) -> some View {
+        let byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func root(_ item: SettingsItem) -> String {
+            var at = item
+            while let parent = at.parent, let up = byID[parent], up.id != item.id { at = up }
+            return at.id
+        }
         var groups: [(head: SettingsItem, kids: [SettingsItem])] = []
-        for (index, item) in items.enumerated() {
-            if index > 0, belongs(item, to: items[index - 1]), !groups.isEmpty {
-                groups[groups.count - 1].kids.append(item)
+        var place: [String: Int] = [:]
+        for item in items {
+            let top = root(item)
+            if top != item.id, let at = place[top] {
+                groups[at].kids.append(item)
             } else {
+                place[item.id] = groups.count
                 groups.append((item, []))
             }
         }
@@ -410,7 +419,7 @@ struct SettingsPanel: View {
                 // that row's words, on the same card. A box of its own inside
                 // the card read as nested and cramped.
                 ForEach(group.kids) { kid in
-                    row(kid)
+                    row(kid, child: true)
                     after(kid, searched: searched)
                 }
                 .padding(.bottom, 4)
@@ -431,12 +440,7 @@ struct SettingsPanel: View {
     /// so no row has its choices to the right and another's below.
     private static let stacked: Set<String> = ["address.width", "window.glass.style", "glyph", "float.style", "pages.120"]
 
-    private func belongs(_ item: SettingsItem, to previous: SettingsItem) -> Bool {
-        guard let parent = item.parent else { return false }
-        return parent == previous.id || parent == previous.parent
-    }
-
-    private func row(_ item: SettingsItem) -> some View {
+    private func row(_ item: SettingsItem, child: Bool = false) -> some View {
         let counts = SettingsIndex.applies(item, prefs)
         // The switch that swaps ⌘1–⌘9 and ⌃1–⌃9 names both as they were.
         let relabel: (String) -> String = item.id == "spaces.commandNumbers" ? { $0 } : shortcuts.relabel
@@ -447,7 +451,7 @@ struct SettingsPanel: View {
             more: counts ? item.more.map(relabel) : nil,
             wide: item.kind == .wide || Self.stacked.contains(item.id),
             lit: lit == item.id,
-            child: item.parent != nil,
+            child: child,
             mark: searching ? query.trimmingCharacters(in: .whitespaces) : nil
         ) {
             control(item)

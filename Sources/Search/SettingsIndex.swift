@@ -588,7 +588,7 @@ enum SettingsIndex {
               title: "The field in the middle of the window", detail: "⌘T's and ⌘L's field over a page, centred on the window and higher up",
               more: "As Arc and Zen place it, near where Spotlight comes: the column is dimmed with the page. Off, the field is centred on the page beside the column.",
               keys: ["field.window"], words: ["command bar", "cmd t", "cmd l", "spotlight", "centre", "center", "position", "arc", "zen"]),
-        .init(id: "field.hidesPage", group: "opening", icon: "rectangle.fill",
+        .init(id: "field.hidesPage", group: "opening", icon: "eye.slash",
               title: "Hide the page behind the field", detail: "⌘T's and ⌘L's field over a plain ground, the page out of sight",
               more: "Off, the page stays dimmed behind the field and shows through. Escape or a click outside the field brings it back, as before.",
               keys: ["field.hidesPage"], words: ["command bar", "cmd t", "cmd l", "dim", "blur", "cluttered", "busy", "background", "behind"]),
