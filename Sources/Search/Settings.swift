@@ -450,6 +450,7 @@ struct SettingsPanel: View {
             detail: relabel(counts ? detail(of: item) : SettingsIndex.needs(item)),
             more: counts ? item.more.map(relabel) : nil,
             wide: item.kind == .wide || Self.stacked.contains(item.id),
+            sits: Self.stacked.contains(item.id),
             lit: lit == item.id,
             child: child,
             mark: searching ? query.trimmingCharacters(in: .whitespaces) : nil
@@ -1377,6 +1378,7 @@ struct SettingRow<Control: View>: View {
     let detail: String
     var more: String? = nil
     var wide = false
+    var sits = false
     var lit = false
     /// Belongs to the row above it: set in a step.
     var child = false
@@ -1406,41 +1408,62 @@ struct SettingRow<Control: View>: View {
         return out
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: SettingRowLayout.gap) {
-                Image(systemName: icon)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Palette.ink.opacity(0.7))
-                    .frame(width: SettingRowLayout.icon)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 5) {
-                        Text(marked(title))
-                            .font(.system(size: 13))
-                            .foregroundStyle(Palette.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if more != nil {
-                            Button { withAnimation(Motion.quick) { open.toggle() } } label: {
-                                Image(systemName: open ? "info.circle.fill" : "info.circle")
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.muted.opacity(0.8))
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .help(more ?? "")
-                            .accessibilityLabel("More about \(title)")
+    private func header(trailing: Bool) -> some View {
+        HStack(alignment: .center, spacing: SettingRowLayout.gap) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(Palette.ink.opacity(0.7))
+                .frame(width: SettingRowLayout.icon)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Text(marked(title))
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if more != nil {
+                        Button { withAnimation(Motion.quick) { open.toggle() } } label: {
+                            Image(systemName: open ? "info.circle.fill" : "info.circle")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(Palette.muted.opacity(0.8))
+                                .contentShape(Rectangle())
                         }
-                    }
-                    if !detail.isEmpty {
-                        Text(marked(detail))
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
-                            .lineSpacing(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                        .buttonStyle(.plain)
+                        .help(more ?? "")
+                        .accessibilityLabel("More about \(title)")
                     }
                 }
-                Spacer(minLength: 16)
-                if !wide { control() }
+                if !detail.isEmpty {
+                    Text(marked(detail))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 16)
+            if trailing { control() }
+        }
+    }
+
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header(trailing: false)
+            control()
+                .padding(.leading, SettingRowLayout.icon + SettingRowLayout.gap)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !wide {
+                header(trailing: true)
+            } else if sits {
+                ViewThatFits(in: .horizontal) {
+                    header(trailing: true)
+                    stacked
+                }
+            } else {
+                stacked
             }
             if open, let more {
                 Text(more)
@@ -1450,10 +1473,6 @@ struct SettingRow<Control: View>: View {
                     .padding(.leading, SettingRowLayout.icon + SettingRowLayout.gap)
                     .padding(.top, -6)
                     .transition(.opacity)
-            }
-            if wide {
-                control()
-                    .padding(.leading, SettingRowLayout.icon + SettingRowLayout.gap)
             }
         }
         .environment(\.subordinate, child)
