@@ -9772,7 +9772,14 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// blank page the flow ended on: nothing to look at, and nothing for
     /// reload to fetch, because there is no longer an address to fetch.
     func webViewDidClose(_ webView: WKWebView) {
-        guard let tab = tab(for: webView) else { return }
+        guard let tab = tab(for: webView) else {
+            // A small window's page, in no row: its window goes, as a pop-up
+            // window's does, and closing it closes the page, so its opener
+            // sees it closed (#1145). Left alone, the window stayed on the
+            // blank page a sign-in ended on.
+            if let page = littleTab(for: webView), let little = LittleWindow.holding(page.id) { little.close() }
+            return
+        }
         // A popup window is the one page it opened: when that
         // page closes itself (a sign-in, once done), the
         // window goes too, as in Chrome, instead of staying on a blank tab.
