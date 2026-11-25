@@ -695,6 +695,31 @@ final class Bench {
             tab.web.customUserAgent = request["ua"] as? String
             answer(["ua": tab.web.customUserAgent ?? ""])
 
+        case "downloads-rows":
+            // The Downloads panel's current rows and its Completed list, and
+            // with "press": RETRY or RESUME, that row's own button, as the
+            // panel calls it (Tests/download_retry.py). Only on a test run.
+            guard Store.testing else { answer(["error": "downloads-rows only works on a --test run"]); return }
+            let entries = browser.fetches.entries
+            if let press = request["press"] as? String {
+                let index = request["index"] as? Int ?? 0
+                guard entries.indices.contains(index) else { answer(["error": "no row \(index)"]); return }
+                switch press {
+                case "retry": browser.retryDownload(entries[index])
+                case "resume": browser.resumeDownload(entries[index])
+                default: answer(["error": "press retry or resume"]); return
+                }
+            }
+            answer([
+                "rows": browser.fetches.entries.map { entry in
+                    ["name": entry.name, "state": "\(entry.state)", "canResume": entry.canResume,
+                     "canRetry": entry.canRetry, "completed": entry.completedBytes, "total": entry.totalBytes,
+                     "error": entry.errorDescription ?? "", "file": entry.destination?.path ?? ""] as [String: Any]
+                },
+                "completed": browser.loot.kept.map { ["name": $0.name, "path": $0.path] },
+                "started": browser.fetches.started,
+            ])
+
         case "kept":
             // A sleeping tab's picture, as kept for its waking, written to a
             // file: its size in pixels, what NSImage makes of it, and the
