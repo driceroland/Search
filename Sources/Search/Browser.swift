@@ -793,6 +793,7 @@ final class Browser: NSObject, ObservableObject {
         guard let tab = active else { return }
         // An empty handler, not nil: see Tab.discard (#1031).
         tab.web.pauseAllMediaPlayback {}
+        Store.interacted(with: tab.web)
         announce("Paused")
     }
 
@@ -925,10 +926,29 @@ final class Browser: NSObject, ObservableObject {
 
     /// Both the page in front of you and the one that loads next time.
     private func redress() {
-        guard let tab = active else { return }
-        let css = curtain.css(on: hereHost)
-        tab.arm(hiding: css)
-        tab.applyVeils(css)
+        guard let host = hereHost else { return }
+        reveil(host)
+    }
+
+    /// A site's hidden things as they now stand, into every open page of
+    /// it and the next page each loads: this window's tabs, other windows',
+    /// a site's sized pop-up window, a small window's, a peek's. Only the
+    /// page they were picked on took them, and the same site in a pop-up
+    /// window kept showing them until it was reloaded (idea 1142). A private
+    /// tab keeps what it took off for itself as well.
+    private func reveil(_ host: String) {
+        let css = curtain.css(on: host)
+        func dress(_ tab: Tab) {
+            guard curtain.host(of: tab.address) == host else { return }
+            tab.arm(hiding: css)
+            guard tab.built != nil else { return }
+            let passing = Browsers.all.lazy.map { $0.passingCSS(tab.id) }.first { !$0.isEmpty } ?? ""
+            tab.applyVeils(css + passing)
+        }
+        for browser in Browsers.all {
+            for tab in browser.tabs + browser.parkedTabs + [browser.peekTab].compactMap({ $0 }) { dress(tab) }
+        }
+        for little in LittleWindow.all { dress(little.tab) }
     }
 
     // MARK: - passwords
@@ -3265,32 +3285,48 @@ final class Browser: NSObject, ObservableObject {
         if prefs.usesSpaces { Links.onceShown { [weak self] in self?.preloadSpaces(gradually: true) } }
     }
 
+    /// The window the floating video's return button last brought forward,
+    /// for the bench.
+    static weak var returnedTo: Browser?
+
     /// The floating video's buttons answer the window whose video it is:
     /// set as it comes out of one (see lift).
     private func ownFloater() {
-        floater.onReturn = { [weak self] in
-            guard let self else { return }
+        floater.onReturn = { [weak self, weak floater] in
+            // The window it came out of is gone: the little one closes, and
+            // nothing else comes up.
+            guard let self else { floater?.drop(); return }
             // The window closes first, and unconditionally. Hanging that on
             // finding the tab again is how a little window survives the button
             // meant to dismiss it.
             let came = self.floating
             self.land()
-            if let came {
-                if let space = self.parked.first(where: { $0.value.tabs.contains { $0.id == came } })?.key {
-                    self.switchSpace(to: space)
-                }
-                if let tab = self.tabs.first(where: { $0.id == came }) { self.select(tab) }
+            Self.returnedTo = nil
+            guard let came else { return }
+            if let space = self.parked.first(where: { $0.value.tabs.contains { $0.id == came } })?.key {
+                self.switchSpace(to: space)
             }
+            // Its tab gone (closed, or put to sleep with its window): the
+            // little window was all there was to close.
+            guard let tab = self.tabs.first(where: { $0.id == came }) else { return }
+            self.select(tab)
+            // This window to the front, wherever it is (another desktop, behind
+            // another profile's, minimized), and no other. The first of the
+            // app's windows was brought forward before: often another browser
+            // window, a profile's tucked one or a closed one, or the launcher —
+            // "a random new window" (idea 1177).
+            guard self.isOpen || self.tucked, !self.retired else { return }
+            Self.returnedTo = self
             // Never a test run's: a probe started hidden stays off every screen.
             guard !Store.testing else { return }
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.windows.first { $0.contentView != nil }?.makeKeyAndOrderFront(nil)
+            Browsers.show(self)
         }
         floater.onSkip = { [weak self] seconds in
             guard let self, let id = self.floating,
                   let tab = (self.tabs + self.parkedTabs).first(where: { $0.id == id })
             else { return }
             tab.web.evaluateInSearch(Isolate.skip(seconds))
+            Store.interacted(with: tab.web)
         }
         floater.onProgress = { [weak self] answer in
             guard let self, let id = self.floating,
@@ -3313,6 +3349,7 @@ final class Browser: NSObject, ObservableObject {
             tab.web.evaluateInSearch(Isolate.toggle) { playing in
                 MainActor.assumeIsolated { answer((playing as? Bool) ?? true) }
             }
+            Store.interacted(with: tab.web)
         }
         floater.onGone = { [weak self] answer in
             guard let self, let id = self.floating,
@@ -7676,9 +7713,7 @@ final class Browser: NSObject, ObservableObject {
                 return
             }
             curtain.hide(selector, label: label, note: note, on: host)
-            let css = curtain.css(on: host)
-            tab.arm(hiding: css)
-            tab.applyVeils(css)
+            reveil(host)
             // Said once the page shows it gone, not before: a rule the page
             // outranks was announced as hidden, and listed, while the thing
             // stayed in front of you (#1270). One that didn't take is
@@ -7689,9 +7724,7 @@ final class Browser: NSObject, ObservableObject {
                 if let veil = curtain.veils(on: host).first(where: { $0.selector == selector }) {
                     curtain.restore(veil, on: host)
                 }
-                let css = curtain.css(on: host)
-                tab.arm(hiding: css)
-                tab.applyVeils(css)
+                reveil(host)
                 announce(Self.keptOnScreen)
             }
         }
@@ -7973,7 +8006,24 @@ final class Browser: NSObject, ObservableObject {
         // question changes.
         picked = nil
         if launching, prefs.arcTabPopup { offerTabs() }
+        if prefs.returnTakesTop, picked == nil { pickTop() }
         askEngine()
+    }
+
+    /// Settings › Browsing › Return takes the top suggestion (#1556): the
+    /// place on top of the list is picked as you type, as in Arc's command
+    /// bar, so Return goes to the page you can see rather than searching
+    /// for the words. The field keeps what was typed, and ↑ lets go of the
+    /// row, as with ⌘T's open tabs. Only a place: a search on top is what
+    /// Return does already, and a command on top keeps Return as it does
+    /// everywhere. An address typed out goes where it says, and one the grey
+    /// ending finishes goes where the field shows.
+    private func pickTop() {
+        guard ending == nil, Address.url(from: typed) == nil,
+              let first = offers.first, first.kind.isPlace
+        else { return }
+        picked = 0
+        typing.pickedByTyping = true
     }
 
     /// ⌘T's field with Arc-style tab popup on: the open tabs, then the pins,
@@ -8838,7 +8888,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
         // The next document gets this site's stylesheet of hidden things,
         // decided here because here is the last moment before it loads.
-        if action.targetFrame?.isMainFrame ?? true, let tab = tab(for: webView) {
+        // A peek's or a small window's page as well, which is in no row:
+        // tab(for:) left it without them, and without the blocker's say
+        // for the site, until something else re-armed it (idea 1142).
+        if action.targetFrame?.isMainFrame ?? true, let tab = popupTab(for: webView) {
             let host = curtain.host(of: url)
             tab.arm(hiding: curtain.css(on: host), to: url)
             // And the blocker, on or off for where it is going.
@@ -9755,7 +9808,14 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// blank page the flow ended on: nothing to look at, and nothing for
     /// reload to fetch, because there is no longer an address to fetch.
     func webViewDidClose(_ webView: WKWebView) {
-        guard let tab = tab(for: webView) else { return }
+        guard let tab = tab(for: webView) else {
+            // A small window's page, in no row: its window goes, as a pop-up
+            // window's does, and closing it closes the page, so its opener
+            // sees it closed (#1145). Left alone, the window stayed on the
+            // blank page a sign-in ended on.
+            if let page = littleTab(for: webView), let little = LittleWindow.holding(page.id) { little.close() }
+            return
+        }
         // A popup window is the one page it opened: when that
         // page closes itself (a sign-in, once done), the
         // window goes too, as in Chrome, instead of staying on a blank tab.

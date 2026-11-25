@@ -169,13 +169,27 @@ enum Web {
         unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, on)
     }
 
-    /// WebKit's ⌫ as Back and ⇧⌫ as Forward, off as in Safari. Back is ⌘[,
-    /// or what Settings gives it.
+    /// WebKit's ⌫ as Back and ⇧⌫ as Forward, off as in Safari (#1161).
+    /// Back is ⌘[, or what Settings gives it. Settings › Keyboard & Mouse ›
+    /// Backspace goes back turns it on (idea 1120): WebKit then goes back
+    /// only for a ⌫ nothing in the page took — not in a field or editable
+    /// text, not one the page stopped — with no ⌘, ⌥ or ⌃ held.
     static func backspaceStays(_ preferences: WKPreferences) {
+        backspace(preferences, goesBack: Store.settings.bool(forKey: Preferences.backspaceKey))
+    }
+
+    static func backspace(_ preferences: WKPreferences, goesBack: Bool) {
         let set = NSSelectorFromString("_setBackspaceKeyNavigationEnabled:")
         guard preferences.responds(to: set) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
-        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, false)
+        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, goesBack)
+    }
+
+    /// The switch turned: every page open now follows it, without a reload.
+    /// A page's preferences are its configuration's, shared, and WebKit
+    /// hands a change on to the page.
+    @MainActor static func backspaceEverywhere() {
+        for page in pages.allObjects { backspaceStays(page.configuration.preferences) }
     }
 }
 
@@ -395,8 +409,10 @@ final class Tab: ObservableObject, Identifiable {
         documentGeneration &+= 1
         built?.draftFrames.removeAll()
         popupGesture.clear()
-        // A woken page has its sessionStorage back; later ones don't get it.
-        if KeptSession.committed(self) { arm(hiding: veils) }
+        // A woken page has its sessionStorage and its place back; later
+        // ones don't get them.
+        let session = KeptSession.committed(self), place = KeptPlace.committed(self)
+        if session || place { arm(hiding: veils) }
         // What the old page was refused went with it.
         if !blockedPopups.isEmpty { blockedPopups = [] }
         // A translated page is gone; its frames with it.
@@ -1326,6 +1342,10 @@ final class Tab: ObservableObject, Identifiable {
         if let kept = KeptSession.script(for: self) {
             add(kept, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
+        // Its place in a part of the page that scrolls by itself (KeptPlace).
+        if let place = KeptPlace.script(for: self) {
+            add(place, .atDocumentStart, mainFrameOnly: true, in: Web.world)
+        }
         // Only while a developer tools package has a tool open on this tab
         // (DevToolsPackages.swift).
         scripts += DevToolsPackages.scripts(for: self)
@@ -2222,6 +2242,7 @@ final class Tab: ObservableObject, Identifiable {
     func still() {
         guard noisy, let built else { return }
         stilled = true
+        Store.interacted(with: built)
         for frame in media.frames {
             built.evaluateJavaScript(Player.still, in: frame, in: Web.world) { _ in }
         }
@@ -2235,6 +2256,7 @@ final class Tab: ObservableObject, Identifiable {
     /// The player's play: what its pause stopped, playing again.
     func playAgain() {
         guard stilled, let built else { return }
+        Store.interacted(with: built)
         for frame in media.frames {
             built.evaluateJavaScript(Player.again, in: frame, in: Web.world) { _ in }
         }

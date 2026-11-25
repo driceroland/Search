@@ -803,6 +803,7 @@ struct ContentView: View {
         } else if browser.prefs.homeTheme != .off {
             HomeBackground(theme: browser.prefs.homeTheme, tuning: browser.prefs.homeTuning,
                            image: browser.prefs.homeThemeImage, shuffle: browser.prefs.homeShuffle)
+                .clipShape(RoundedRectangle(cornerRadius: cardCorner, style: .continuous))
         } else if browser.prefs.clearEmpty {
             Color.clear
         } else {

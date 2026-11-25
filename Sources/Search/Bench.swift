@@ -695,6 +695,31 @@ final class Bench {
             tab.web.customUserAgent = request["ua"] as? String
             answer(["ua": tab.web.customUserAgent ?? ""])
 
+        case "downloads-rows":
+            // The Downloads panel's current rows and its Completed list, and
+            // with "press": RETRY or RESUME, that row's own button, as the
+            // panel calls it (Tests/download_retry.py). Only on a test run.
+            guard Store.testing else { answer(["error": "downloads-rows only works on a --test run"]); return }
+            let entries = browser.fetches.entries
+            if let press = request["press"] as? String {
+                let index = request["index"] as? Int ?? 0
+                guard entries.indices.contains(index) else { answer(["error": "no row \(index)"]); return }
+                switch press {
+                case "retry": browser.retryDownload(entries[index])
+                case "resume": browser.resumeDownload(entries[index])
+                default: answer(["error": "press retry or resume"]); return
+                }
+            }
+            answer([
+                "rows": browser.fetches.entries.map { entry in
+                    ["name": entry.name, "state": "\(entry.state)", "canResume": entry.canResume,
+                     "canRetry": entry.canRetry, "completed": entry.completedBytes, "total": entry.totalBytes,
+                     "error": entry.errorDescription ?? "", "file": entry.destination?.path ?? ""] as [String: Any]
+                },
+                "completed": browser.loot.kept.map { ["name": $0.name, "path": $0.path] },
+                "started": browser.fetches.started,
+            ])
+
         case "kept":
             // A sleeping tab's picture, as kept for its waking, written to a
             // file: its size in pixels, what NSImage makes of it, and the
@@ -732,7 +757,8 @@ final class Bench {
                     "noisy": tab?.noisy ?? false, "sounding": browser.sounding.count])
 
         case "eval":
-            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            // "little": true, in the newest small window's page.
+            guard let tab = page(request, in: browser) else { answer(missing(request)); return }
             guard let js = request["js"] as? String else { answer(["error": "eval needs js"]); return }
             house(tab)
             // Search's own world is where its page scripts live (see Web.world).
@@ -1444,7 +1470,23 @@ final class Bench {
                 if pressed.contains(where: { PageView.same($0, event) }) { resent += 1 }
                 return event
             }
-            PageHands.type(text, into: view) { pressed.append($0) }
+            // "code": one key by its code (51 is ⌫), with "mods" held:
+            // shift, option, command, control.
+            if let code = request["code"] as? Int {
+                var flags: NSEvent.ModifierFlags = []
+                for name in request["mods"] as? [String] ?? [] {
+                    switch name {
+                    case "shift": flags.insert(.shift)
+                    case "option": flags.insert(.option)
+                    case "command": flags.insert(.command)
+                    case "control": flags.insert(.control)
+                    default: break
+                    }
+                }
+                _ = PageHands.key(view, code: UInt16(code), characters: text, flags: flags) { pressed.append($0) }
+            } else {
+                PageHands.type(text, into: view) { pressed.append($0) }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 if let watch { NSEvent.removeMonitor(watch) }
                 answer(["typed": text, "sentBackUnused": resent, "quieted": PageView.quieted - before])
@@ -4034,6 +4076,48 @@ final class Bench {
                 answer(["showing": browser.floater.showing])
                 return
             }
+            // The active tab's video out, as ⇧⌘P lifts it, into the little
+            // window off every screen.
+            if request["action"] as? String == "lift" {
+                Float.benchAway = NSPoint(x: -20000, y: -20000)
+                if let tab = browser.active {
+                    let occlusion = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+                    if tab.web.responds(to: occlusion) {
+                        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+                        unsafeBitCast(tab.web.method(for: occlusion), to: Setter.self)(tab.web, occlusion, false)
+                    }
+                }
+                browser.toggleFloat()
+                DispatchQueue.main.asyncAfter(deadline: .now() + (request["wait"] as? Double ?? 1)) {
+                    answer(["showing": browser.floater.showing, "floating": browser.tabs.first { $0.id == browser.floating }.map(Bench.short) ?? "",
+                            "window": Browsers.all.firstIndex { $0 === browser }.map { $0 + 1 } ?? 0])
+                }
+                return
+            }
+            // The return button, pressed (idea 1177): which window it brings
+            // forward, and that it makes none. In a test run nothing is ordered
+            // in; the window it would bring is told instead.
+            if request["action"] as? String == "return" {
+                let owner = Browsers.all.first { $0.floating != nil }
+                let made = Browsers.all.count, numbers = Set(NSApp.windows.map(\.windowNumber))
+                // What the button brought forward before the fix: the app's first window.
+                let first = NSApp.windows.first { $0.contentView != nil }
+                let firstKind = first.map { w in Browsers.browser(for: w) === owner ? "owner" : Browsers.browser(for: w) != nil ? "other browser" : "\(type(of: w))" } ?? "none"
+                browser.floater.onReturn?()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    let to = Browser.returnedTo
+                    answer(["showing": browser.floater.showing, "floating": Browsers.all.contains { $0.floating != nil },
+                            "owner": owner.flatMap { o in Browsers.all.firstIndex { $0 === o }.map { $0 + 1 } } ?? 0,
+                            "to": to.flatMap { t in Browsers.all.firstIndex { $0 === t }.map { $0 + 1 } } ?? 0,
+                            "active": (to ?? owner)?.active.map(Bench.short) ?? "",
+                            "space": (to ?? owner)?.space.name ?? "",
+                            "firstWindow": firstKind,
+                            "browsersMade": Browsers.all.count - made,
+                            "windowsMade": NSApp.windows.filter { !numbers.contains($0.windowNumber) && $0.isVisible }.count,
+                            "onScreen": NSApp.windows.filter { w in w.isVisible && w.alphaValue > 0 && NSScreen.screens.contains { $0.frame.intersects(w.frame) } }.count])
+                }
+                return
+            }
             guard Float.benchAway != nil,
                   let panel = NSApp.windows.first(where: { "\(type(of: $0))" == "Panel" && $0.isVisible }),
                   let controls = panel.contentView?.subviews.first(where: { "\(type(of: $0))" == "Controls" })
@@ -6369,6 +6453,7 @@ final class Bench {
                     "action": action?.label ?? "", "badge": action?.badgeText ?? "",
                     "popup": action?.presentsPopup ?? false,
                     "pinned": item.pinned ?? false, "source": item.source ?? "",
+                    "held": item.heldUpdate ?? "",
                     // Its commands, with the key each has now (Settings › Shortcuts).
                     "commands": (context?.commands ?? []).map { command -> [String: Any] in
                         ["id": command.id, "key": KeyCombo(activation: command.activationKey, flags: command.modifierFlags)?.display ?? ""]

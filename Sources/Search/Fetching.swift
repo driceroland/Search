@@ -27,6 +27,12 @@ final class FetchEntry: ObservableObject, Identifiable {
     @Published private(set) var completedBytes: Int64 = 0
     @Published private(set) var totalBytes: Int64 = 0
     @Published private(set) var errorDescription: String?
+    /// Still downloading, but nothing has come in for `stallAfter`: a
+    /// server gone quiet or a connection dropped without an error, which
+    /// WebKit can take minutes to give up on. Only the row's word changes.
+    @Published private(set) var stalled = false
+    var stallAfter: TimeInterval = 10
+    private var stallWatch: Task<Void, Never>?
 
     private struct PartialFileVersion: Equatable {
         let volume: UInt64
@@ -90,13 +96,29 @@ final class FetchEntry: ObservableObject, Identifiable {
         errorDescription = nil
         state = .downloading
         self.operationID = UUID()
+        watchForStall()
+    }
+
+    /// Starts the count again from now; each byte that comes in calls it.
+    private func watchForStall() {
+        stallWatch?.cancel()
+        if stalled { stalled = false }
+        let wait = stallAfter
+        stallWatch = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled, let self, self.state == .downloading else { return }
+            self.stalled = true
+        }
     }
 
     func record(_ progress: Progress, trackFile: Bool = true) {
         // Set only on a change: each one draws the download's row again.
         let completed = max(0, progress.completedUnitCount)
         let total = max(0, progress.totalUnitCount)
-        if completedBytes != completed { completedBytes = completed }
+        if completedBytes != completed {
+            completedBytes = completed
+            if state == .downloading { watchForStall() }
+        }
         if totalBytes != total { totalBytes = total }
         let now = total > 0 ? min(1, max(0, Double(completed) / Double(total))) : nil
         if fraction != now { fraction = now }
@@ -223,6 +245,8 @@ final class FetchEntry: ObservableObject, Identifiable {
         pendingStop = nil
         operationID = UUID()
         errorDescription = nil
+        stallWatch?.cancel()
+        stalled = false
         fraction = nil
         completedBytes = 0
         totalBytes = 0

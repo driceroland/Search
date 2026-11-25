@@ -401,6 +401,11 @@ extension Browser {
         guard let tab = tab(for: webView) else { return }
         dropQuestions(for: tab.id)
         let host = tab.address?.host() ?? ""
+        // An extension's page shares its process with the extension's
+        // worker: its ports to apps on the Mac went with it.
+        if #available(macOS 15.4, *), tab.address?.scheme == "chrome-extension", !host.isEmpty {
+            ExtensionNative.processEnded(of: host, end.name)
+        }
         // On screen, either half of a pair: straight back, a reload beats a
         // white page with a button on it — unless it keeps dying (see
         // recoverFromCrash). Behind another tab: the moment you come back to it.

@@ -2069,11 +2069,12 @@ private struct PinSquare: View, Equatable {
         live ? greys.pinLive : selected ? greys.wash : hovering ? greys.hover : greys.tile
     }
 
-    /// The pin's letter: full ink with High contrast text, otherwise soft
-    /// grey until the square is live or under the pointer.
+    /// The pin's letter: full ink with High contrast text, otherwise the
+    /// ground's soft grey (see Door) until the square is live or under the
+    /// pointer.
     private var pinLetter: Color {
         if live || prefs.highContrastText { return Palette.ink }
-        return hovering ? Palette.ink.opacity(0.7) : Palette.muted
+        return hovering ? Palette.ink.opacity(0.7) : greys.muted
     }
 
     var body: some View {
@@ -2148,7 +2149,9 @@ private struct PinSquare: View, Equatable {
         .overlay { MiddleClick { browser.close(tab) } }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
-        .background { if !inMap { SiteCardPanel.Square(id: tab.id) } }
+        // Another space's page draws its squares too: only this space's say
+        // where they are.
+        .modifier(SiteCardPanel.Square(id: tab.id, on: !inMap && browser.tabs.contains { $0 === tab }))
         .help(tab.label)
         .animation(nil, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -2647,7 +2650,7 @@ struct Door: View {
         } label: {
             Image(systemName: icon)
                 .font(.system(size: prominent ? 13 : 12, weight: prominent ? .semibold : .medium))
-                .foregroundStyle(on || prominent || inkDoors ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
+                .foregroundStyle(on || prominent || inkDoors ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : greys.muted))
                 .offset(x: nudge)
                 .frame(width: prominent ? 32 : doorWidth, height: prominent ? 32 : 26)
                 .background {

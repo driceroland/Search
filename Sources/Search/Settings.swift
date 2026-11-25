@@ -807,6 +807,7 @@ struct SettingsPanel: View {
                 }
             }
         case "search.suggest": Switch(on: $prefs.engineSuggests)
+        case "field.top": Switch(on: $prefs.returnTakesTop)
         case "search.keywords":
             if draft == nil {
                 Pill("Add") { draft = Keyword() }
@@ -888,6 +889,7 @@ struct SettingsPanel: View {
         case "pins.linksNewTab": Switch(on: $prefs.pinLinksOpenTabs)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
         case "field.window": Switch(on: $prefs.fieldOnWindow)
+        case "field.hidesPage": Switch(on: $prefs.fieldHidesPage)
         case "newtab.recent": Switch(on: $prefs.recentInNewTab)
         case "newtab.arc": Switch(on: $prefs.arcTabPopup)
         case "commandbar": Switch(on: $prefs.commandBar)
@@ -950,6 +952,7 @@ struct SettingsPanel: View {
         case "links.peek.dim": Switch(on: $prefs.peekDims)
         case "links.peek.dimSide": Switch(on: $prefs.peekDimsSide)
         case "links.optionSplit": Switch(on: $prefs.optionClickSplits)
+        case "keys.backspaceBack": Switch(on: $prefs.backspaceGoesBack)
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "wheel.smooth": Switch(on: $prefs.wheelGlides)
         case "pages.bounce": Switch(on: $prefs.bounces)

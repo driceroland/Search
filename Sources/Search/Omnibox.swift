@@ -92,8 +92,11 @@ struct Omnibox: View {
             if browser.fieldShowing, !browser.editingInline, high || !browser.fieldOnWindow {
                 if over {
                     // The page is still there, just out of the way.
+                    // Or out of sight, for whoever asked (Settings › Hide
+                    // the page behind the field).
                     Rectangle()
-                        .fill(scheme == .dark ? Color.black.opacity(0.36) : Color.white.opacity(0.5))
+                        .fill(browser.prefs.fieldHidesPage ? Palette.ground
+                              : scheme == .dark ? Color.black.opacity(0.36) : Color.white.opacity(0.5))
                         .ignoresSafeArea(.all, edges: fitted ? [] : .all)
                         .onTapGesture { browser.dismiss() }
                         .transition(prefs.animatesField ? .opacity : .identity)
