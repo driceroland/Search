@@ -202,6 +202,17 @@ enum Spaces {
         write(read().filter { $0.profileID != profile } + mine)
     }
 
+    /// Move a space within its profile, including when no window of it is open.
+    static func move(_ id: UUID, profile: UUID, by step: Int) {
+        var spaces = read(profile: profile)
+        guard step == -1 || step == 1,
+              let from = spaces.firstIndex(where: { $0.id == id }),
+              spaces.indices.contains(from + step) else { return }
+        spaces.swapAt(from, from + step)
+        Store.settings.set(true, forKey: "spaces.orderKept")
+        write(spaces, profile: profile)
+    }
+
     /// The list of spaces changed, in one window or another.
     static let changed = Notification.Name("SearchSpacesChanged")
 
