@@ -1549,8 +1549,13 @@ enum ExtensionShims {
       // Its pages too: an extension reads navigator.userAgent to pick a code
       // path, a download, a welcome page, and finds nothing it knows in
       // Safari's. (Not WebKit's setting: see Extensions.init.)
-      if (!inContent && typeof navigator !== "undefined" && !/ Chrome\//.test(navigator.userAgent)) {
-        const chromeUA = navigator.userAgent.replace(/ Version\/[\d.]+.*$/, "").replace(/ Safari\/[\d.]+$/, "") + " Chrome/__SEARCH_CHROME__ Safari/537.36";
+      // And its content scripts, in their own world, which in Chrome read
+      // Chrome's: a password manager's (Avira's, idea 1214) took the Safari
+      // path there and sent you to its Safari app. The page beside them
+      // keeps reading Safari's: this world's Navigator is its own.
+      // Chrome's engine token as well: AppleWebKit/605 is Safari's.
+      if (typeof navigator !== "undefined" && !/ Chrome\//.test(navigator.userAgent)) {
+        const chromeUA = navigator.userAgent.replace(/ Version\/[\d.]+.*$/, "").replace(/ Safari\/[\d.]+$/, "").replace(/AppleWebKit\/[\d.]+/, "AppleWebKit/537.36") + " Chrome/__SEARCH_CHROME__ Safari/537.36";
         const proto = typeof WorkerNavigator !== "undefined" && worker ? WorkerNavigator.prototype : typeof Navigator !== "undefined" ? Navigator.prototype : null;
         try {
           if (proto) {
