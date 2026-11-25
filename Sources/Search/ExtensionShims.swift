@@ -1162,6 +1162,42 @@ enum ExtensionShims {
           }
         }, true);
       }
+      // The same thread, the same trap: a CryptoKey put into IndexedDB from
+      // the worker is wrapped by asking the main thread for the key that
+      // seals it, and the worker waits for an answer that can never come —
+      // the worker and every page of the extension froze for good, its
+      // popup an empty dark box (NordPass, idea 439). So a value holding a
+      // CryptoKey is refused at once with the DataCloneError of a browser
+      // that can't store one, which libraries already fall back from.
+      if (worker && root.IDBObjectStore && typeof root.CryptoKey === "function") {
+        const holdsKey = (value) => {
+          const seen = new Set(), todo = [value];
+          let n = 0;
+          while (todo.length && n++ < 20000) {
+            const v = todo.pop();
+            if (!v || typeof v !== "object" || seen.has(v)) continue;
+            if (v instanceof root.CryptoKey) return true;
+            seen.add(v);
+            if (ArrayBuffer.isView(v) || v instanceof ArrayBuffer || (root.Blob && v instanceof root.Blob)) continue;
+            if (v instanceof Map) { for (const [k, x] of v) todo.push(k, x); continue; }
+            if (v instanceof Set) { for (const x of v) todo.push(x); continue; }
+            for (const k of Object.keys(v)) todo.push(v[k]);
+          }
+          return false;
+        };
+        const refuse = () => new DOMException("A CryptoKey can't be stored from an extension's service worker in this browser.", "DataCloneError");
+        const guard = (proto, name) => {
+          const original = proto && proto[name];
+          if (typeof original !== "function") return;
+          Object.defineProperty(proto, name, { configurable: true, writable: true, value: function (value, ...rest) {
+            if (holdsKey(value)) throw refuse();
+            return original.call(this, value, ...rest);
+          } });
+        };
+        guard(root.IDBObjectStore.prototype, "put");
+        guard(root.IDBObjectStore.prototype, "add");
+        if (root.IDBCursor) guard(root.IDBCursor.prototype, "update");
+      }
       // WebKit runs an extension's worker on its web process's main thread,
       // and a worker's WebSocket waits there for the main thread to set up
       // its channel — for itself, for ever: the worker and every page of the
@@ -2994,7 +3030,11 @@ enum ExtensionShims {
       define("identity",
         ["launchWebAuthFlow", "getAuthToken", "getProfileUserInfo", "removeCachedAuthToken", "clearAllCachedAuthTokens"],
         ["onSignInChanged"],
-        { getRedirectURL: (path = "") => "https://" + runtime.id + ".chromiumapp.org/" + String(path).replace(/^\//, "") });
+        { getRedirectURL: (path = "") => "https://" + runtime.id + ".chromiumapp.org/" + String(path).replace(/^\//, ""),
+          // Chrome's enum for getProfileUserInfo({ accountStatus }). Fathom
+          // reads AccountStatus.ANY for every request it makes; without it
+          // each one threw before it was sent (idea 1101).
+          AccountStatus: Object.freeze({ SYNC: "SYNC", ANY: "ANY" }) });
 
       // Chrome's settings objects: get, set and clear, and an event.
       const setting = (name) => ({

@@ -273,48 +273,79 @@ enum Veiling {
                !/^(css|sc|jsx|emotion|svelte|styles?)-/.test(c);
       }
 
-      function unique(sel) {
-        try { return document.querySelectorAll(sel).length === 1; } catch (e) { return false; }
+      // What the selector names must be this one thing, now: not one
+      // like it, and not several (a list of cards, one of them picked).
+      function only(sel, el) {
+        try {
+          var all = document.querySelectorAll(sel);
+          return all.length === 1 && all[0] === el;
+        } catch (e) { return false; }
       }
 
-      function selectorFor(el) {
-        if (el.id && unique('#' + CSS.escape(el.id))) return '#' + CSS.escape(el.id);
+      // An id a person gave it, not one a framework counted out.
+      function steadyId(id) {
+        return /^[a-zA-Z][\\w-]{0,59}$/.test(id) && !/\\d{3,}/.test(id);
+      }
 
-        var hooks = ['data-testid', 'data-test', 'data-qa', 'data-cy', 'aria-label', 'name', 'role'];
+      // Its place among its parent's children of its kind, always written
+      // out: a step without it would match every sibling of that kind that
+      // a later visit brings (idea 1133).
+      function step(node) {
+        var tagName = node.tagName.toLowerCase(), parent = node.parentElement;
+        if (!parent) return tagName;
+        var kin = Array.prototype.filter.call(parent.children, function (c) {
+          return c.tagName === node.tagName;
+        });
+        return tagName + ':nth-of-type(' + (kin.indexOf(node) + 1) + ')';
+      }
+
+      // A path of such steps from the nearest thing with a steady id of its
+      // own (or from the body), the picked thing's own step with its steady
+      // classes too: it can name one element at most, and when the page is
+      // laid out otherwise on a later visit it names none rather than the
+      // wrong one.
+      function path(el, anchored) {
+        var parts = [], node = el;
+        while (node && node.nodeType === 1 && node !== document.documentElement) {
+          if (node === document.body) { parts.unshift('body'); break; }
+          if (anchored && node !== el && node.id && steadyId(node.id) && only('#' + CSS.escape(node.id), node)) {
+            parts.unshift('#' + CSS.escape(node.id));
+            break;
+          }
+          var here = step(node);
+          if (node === el) {
+            var classes = (typeof el.className === 'string' ? el.className.trim().split(/\\s+/) : [])
+              .filter(steady).slice(0, 2);
+            if (classes.length) here = here.replace(/:nth-of-type/, '.' + classes.map(CSS.escape).join('.') + ':nth-of-type');
+          }
+          parts.unshift(here);
+          node = node.parentElement;
+        }
+        return parts.join(' > ');
+      }
+
+      // The most specific name that still survives the page's next visit:
+      // its own steady id; a hook the site put there for its own tests;
+      // else its place. Each checked to name exactly this element, or none
+      // is given and nothing is hidden. Words a page reuses (a role, an
+      // aria-label, a class on its own) once named the only one there
+      // was, and on a later visit every one of them (idea 1133).
+      function selectorFor(el) {
+        if (el.id && steadyId(el.id) && only('#' + CSS.escape(el.id), el)) return '#' + CSS.escape(el.id);
+
+        var hooks = ['data-testid', 'data-test', 'data-qa', 'data-cy'];
         for (var i = 0; i < hooks.length; i++) {
           var v = el.getAttribute && el.getAttribute(hooks[i]);
           if (v) {
             var s = el.tagName.toLowerCase() + '[' + hooks[i] + '="' + CSS.escape(v) + '"]';
-            if (unique(s)) return s;
+            if (only(s, el)) return s;
           }
         }
 
-        var classes = (el.className && typeof el.className === 'string')
-          ? el.className.trim().split(/\\s+/).filter(steady) : [];
-        if (classes.length) {
-          var byClass = el.tagName.toLowerCase() + '.' + classes.map(CSS.escape).join('.');
-          if (unique(byClass)) return byClass;
-        }
-
-        // Last resort: a path, anchored on the nearest thing with a name.
-        var parts = [], node = el;
-        while (node && node.nodeType === 1 && node !== document.documentElement) {
-          if (node.id && unique('#' + CSS.escape(node.id))) {
-            parts.unshift('#' + CSS.escape(node.id));
-            break;
-          }
-          var tagName = node.tagName.toLowerCase();
-          var parent = node.parentElement;
-          if (!parent) { parts.unshift(tagName); break; }
-          var kin = Array.prototype.filter.call(parent.children, function (c) {
-            return c.tagName === node.tagName;
-          });
-          parts.unshift(kin.length > 1
-            ? tagName + ':nth-of-type(' + (kin.indexOf(node) + 1) + ')'
-            : tagName);
-          node = parent;
-        }
-        return parts.join(' > ');
+        var anchored = path(el, true);
+        if (only(anchored, el)) return anchored;
+        var whole = path(el, false);
+        return only(whole, el) ? whole : null;
       }
 
       function onMove(e) {
@@ -371,8 +402,10 @@ enum Veiling {
         var el = target || document.elementFromPoint(e.clientX, e.clientY);
         if (!el || el === frame || el === document.documentElement || el === document.body) return;
         try {
+          var sel = selectorFor(el);
+          if (!sel) throw 'it has no name of its own on this page';
           window.webkit.messageHandlers.officeVeil.postMessage({
-            selector: selectorFor(el),
+            selector: sel,
             label: name(el),
             note: shape(el)
           });

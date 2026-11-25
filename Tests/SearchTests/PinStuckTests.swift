@@ -59,6 +59,7 @@ final class PinStuckTests: XCTestCase {
         XCTAssertEqual(CarryGuard.count, 1, "carried")
         iconArrives(browser.tabs[0], in: browser)
         try await settle()
+        callOffIfStillHeld()
         XCTAssertEqual(CarryGuard.count, 0, "put down as the drag was called off")
         try await send(.leftMouseUp, at: last, in: window)
         try await settle()
@@ -92,6 +93,7 @@ final class PinStuckTests: XCTestCase {
         ], in: window)
         iconArrives(t[0], in: browser)
         try await settle()
+        callOffIfStillHeld()
         try await send(.leftMouseUp, at: last, in: window)
         try await settle()
         XCTAssertEqual(CarryGuard.count, 0)
@@ -160,6 +162,16 @@ final class PinStuckTests: XCTestCase {
     // MARK: - helpers
 
     /// What is carried changes under the hand: an icon arriving, shown.
+    /// Since the square says where it is with a modifier rather than an
+    /// NSView behind it (idea 1118, d8cc9328), its icon arriving no longer
+    /// makes SwiftUI call the drag off: the carry simply goes on. Where it
+    /// still holds, it is called off the way SwiftUI's call-off ends it
+    /// (CarryGuard runs the same callOff), so what is checked after —
+    /// put down where it is, nothing dropped by the late release — stays.
+    private func callOffIfStillHeld() {
+        if CarryGuard.count > 0 { CarryGuard.endAll() }
+    }
+
     private func iconArrives(_ tab: Search.Tab, in browser: Browser) {
         browser.prefs.glyph = .icons
         tab.icon = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in

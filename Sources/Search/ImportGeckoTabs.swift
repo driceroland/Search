@@ -12,7 +12,19 @@ extension MozillaSession {
     static func read(_ top: [String: Any], leavingPins: Bool, salt: String = "") -> SessionImport.Snapshot {
         var snapshot = SessionImport.Snapshot()
         var unnamed = 0
-        for (number, window) in (top["windows"] as? [Any] ?? []).compactMap({ $0 as? [String: Any] }).enumerated() where normal(window) {
+        // The windows open; with none, the last one closed. A Mac browser
+        // stays open with its last window closed, and its session store then
+        // holds that window only among the closed ones (idea 1116).
+        var windows = (top["windows"] as? [Any] ?? []).compactMap { $0 as? [String: Any] }.filter { normal($0) }
+        if !windows.contains(where: { !($0["tabs"] as? [Any] ?? []).isEmpty }),
+           let last = (top["_closedWindows"] as? [Any] ?? []).compactMap({ $0 as? [String: Any] }).first(where: { normal($0) }) {
+            windows = [last]
+        }
+        for (number, window) in windows.enumerated() {
+            for case let raw as [String: Any] in (window["spaces"] as? [Any]) ?? [] {
+                guard let id = raw["uuid"] as? String, snapshot.spaceNames[id] == nil else { continue }
+                snapshot.spaceNames[id] = Arc.named(raw["name"] as? String) ?? "Space"
+            }
             var groups: [String: SessionImport.Group] = [:]
             for case let raw as [String: Any] in (window["groups"] as? [Any]) ?? [] {
                 guard let id = raw["id"] as? String else { continue }
@@ -45,8 +57,11 @@ extension MozillaSession {
                     }
                     token = made
                 }
+                // Zen's workspace, kept on the tab or, older, as its attribute.
+                let space = (tab["zenWorkspace"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                    ?? ((tab["attributes"] as? [String: Any])?["zen-workspace-id"] as? String)
                 tabs.append(.init(url: url, title: SessionImport.titled(entries[index]["title"] as? String ?? "", for: url),
-                                  pinned: pinned, group: token))
+                                  pinned: pinned, group: token, space: space))
             }
             if !tabs.isEmpty { snapshot.windows.append(tabs) }
         }
@@ -66,11 +81,17 @@ extension Mozilla {
     static func sessions(in source: Source, profile: String? = nil) -> SessionImport.Snapshot {
         var all = SessionImport.Snapshot()
         for folder in Zen.folders(of: source, profile: profile) {
-            guard let top = MozillaSession.store(in: folder) else { continue }
-            let read = MozillaSession.read(top, leavingPins: source.keepsSpaces, salt: folder.lastPathComponent)
+            // Zen's own file first: since its window sync it holds every
+            // tab of every space, each with its space, whatever windows
+            // are open; the session store is read when it has none.
+            var read = source.keepsSpaces ? Zen.sessionTabs(inProfile: folder) : SessionImport.Snapshot()
+            if read.tabs == 0, let top = MozillaSession.store(in: folder) {
+                read = MozillaSession.read(top, leavingPins: source.keepsSpaces, salt: folder.lastPathComponent)
+            }
             all.windows += read.windows
             all.found += read.found
             all.groups.merge(read.groups) { first, _ in first }
+            all.spaceNames.merge(read.spaceNames) { first, _ in first }
         }
         return all.capped()
     }

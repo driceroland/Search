@@ -192,6 +192,12 @@ final class ApplePasswords: ObservableObject {
     private var lastWake: Date?
     private var asking: Int?
     private var lastTab = 1
+    /// How the last pairing ended, and when: said in the log when a code is
+    /// asked for again (idea 1108), so a pairing asked for again the next
+    /// morning says whether Apple's helper went (on its own, or stopped by
+    /// macOS), the helper dropped the session, or Search let it go. Plain
+    /// words only, as the rest of the log.
+    private(set) var lastEnd: (why: String, at: Date)?
 
     struct Unavailable: LocalizedError {
         let errorDescription: String?
@@ -238,6 +244,11 @@ final class ApplePasswords: ObservableObject {
         guard state == .idle, !refused else { return }
         heard = false
         let began = Date()
+        if let lastEnd {
+            Self.log.notice("Pairing again: the last pairing ended \(Int(began.timeIntervalSince(lastEnd.at)), privacy: .public)s ago because \(lastEnd.why, privacy: .public)")
+        } else {
+            Self.log.notice("Pairing: no pairing before this one since Search started")
+        }
         state = .starting
         do {
             try await exclusive {
@@ -327,6 +338,7 @@ final class ApplePasswords: ObservableObject {
         if link != nil || state != .idle {
             Self.log.notice("Disconnecting: \(why, privacy: .public), \(self.context, privacy: .public)")
         }
+        if state == .paired { lastEnd = (why, Date()) }
         if let link {
             try? link.send(AppleMessages.end())
             link.onEnd = nil
@@ -464,6 +476,9 @@ final class ApplePasswords: ObservableObject {
     /// with it.
     private func ended() {
         Self.log.notice("Helper ended: \(self.context, privacy: .public)")
+        if state == .paired {
+            lastEnd = ("Apple's helper ended (its process exited or closed its output); \(context)", Date())
+        }
         link = nil
         reset()
         state = .idle

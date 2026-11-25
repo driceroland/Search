@@ -793,6 +793,7 @@ final class Browser: NSObject, ObservableObject {
         guard let tab = active else { return }
         // An empty handler, not nil: see Tab.discard (#1031).
         tab.web.pauseAllMediaPlayback {}
+        Store.interacted(with: tab.web)
         announce("Paused")
     }
 
@@ -925,10 +926,29 @@ final class Browser: NSObject, ObservableObject {
 
     /// Both the page in front of you and the one that loads next time.
     private func redress() {
-        guard let tab = active else { return }
-        let css = curtain.css(on: hereHost)
-        tab.arm(hiding: css)
-        tab.applyVeils(css)
+        guard let host = hereHost else { return }
+        reveil(host)
+    }
+
+    /// A site's hidden things as they now stand, into every open page of
+    /// it and the next page each loads: this window's tabs, other windows',
+    /// a site's sized pop-up window, a small window's, a peek's. Only the
+    /// page they were picked on took them, and the same site in a pop-up
+    /// window kept showing them until it was reloaded (idea 1142). A private
+    /// tab keeps what it took off for itself as well.
+    private func reveil(_ host: String) {
+        let css = curtain.css(on: host)
+        func dress(_ tab: Tab) {
+            guard curtain.host(of: tab.address) == host else { return }
+            tab.arm(hiding: css)
+            guard tab.built != nil else { return }
+            let passing = Browsers.all.lazy.map { $0.passingCSS(tab.id) }.first { !$0.isEmpty } ?? ""
+            tab.applyVeils(css + passing)
+        }
+        for browser in Browsers.all {
+            for tab in browser.tabs + browser.parkedTabs + [browser.peekTab].compactMap({ $0 }) { dress(tab) }
+        }
+        for little in LittleWindow.all { dress(little.tab) }
     }
 
     // MARK: - passwords
@@ -2938,6 +2958,15 @@ final class Browser: NSObject, ObservableObject {
     /// of a second later. Published, unlike spaceComing, which a swipe sets
     /// at every step; this changes once a switch.
     @Published var spaceHeading: UUID?
+    /// The space this window was just brought to from another profile's
+    /// window (OneWindow.join), and when: arriving there is a change of
+    /// profile, not of space, so its name isn't put up as a switch's is —
+    /// the profile's badge says whose it is (idea 1114).
+    var quietArrival: (space: UUID, at: Date)?
+    func arrivedQuietly(at space: UUID) -> Bool {
+        guard let quiet = quietArrival, quiet.space == space else { return false }
+        return Date().timeIntervalSince(quiet.at) < 1
+    }
     /// Where it lies in the map, in pages from this space: next to the
     /// space it came from, wherever it is among the spaces (mapSlot).
     var comingSlot = 0
@@ -3278,6 +3307,7 @@ final class Browser: NSObject, ObservableObject {
                   let tab = (self.tabs + self.parkedTabs).first(where: { $0.id == id })
             else { return }
             tab.web.evaluateInSearch(Isolate.skip(seconds))
+            Store.interacted(with: tab.web)
         }
         floater.onProgress = { [weak self] answer in
             guard let self, let id = self.floating,
@@ -3300,6 +3330,7 @@ final class Browser: NSObject, ObservableObject {
             tab.web.evaluateInSearch(Isolate.toggle) { playing in
                 MainActor.assumeIsolated { answer((playing as? Bool) ?? true) }
             }
+            Store.interacted(with: tab.web)
         }
         floater.onGone = { [weak self] answer in
             guard let self, let id = self.floating,
@@ -3985,6 +4016,12 @@ final class Browser: NSObject, ObservableObject {
            isUntouched(home) {
             deleteSpace(home)
         }
+        // The spaces that came, made ahead of time as at launch, so a swipe
+        // or the map shows their rows at once (idea 1109). Spaces turned on
+        // above told the window while the list was still the old one, and
+        // with Spaces already on (Set Up Like Arc first) nothing told it at
+        // all: they stood empty beside this one until Spaces went off and on.
+        if prefs.usesSpaces { preloadSpaces() }
         adoptIcons(for: brought, from: source, profile: profile)
         return (made, pins, added)
     }
@@ -4000,7 +4037,8 @@ final class Browser: NSObject, ObservableObject {
 
     /// Another browser's open tabs (see ImportSession.swift, and
     /// MozillaSession for Firefox and Zen), from
-    /// the snapshot read when the sheet counted them, into this space: its
+    /// the snapshot read when the sheet counted them, into this space (a
+    /// Zen tab into the space of its space's name, when there is one): its
     /// pinned tabs as pins, the rest asleep at the end of the row, a grouped
     /// tab in the group of that name, made if missing and folded as it was.
     /// Kept whether or not tab groups are turned on, as takeAsleep keeps
@@ -4025,8 +4063,33 @@ final class Browser: NSObject, ObservableObject {
             Pins.set(spaceID, defs, from: self)
             pinsChanged(in: spaceID)
         }
+        // A tab open in one of Zen's spaces goes to the space here of that
+        // name — the one its spaces import made, or one you already had —
+        // asleep at the end of its row; the rest come into this one
+        // (idea 1116).
+        var elsewhere: [UUID: [SessionImport.Tab]] = [:]
+        var order: [UUID] = []
+        var here: [SessionImport.Tab] = []
+        for page in all where !page.pinned {
+            let name = page.space.flatMap { snapshot.spaceNames[$0] }
+            let target = name.flatMap { name in spaces.first { $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }?.id }
+            if let target, target != spaceID {
+                if elsewhere[target] == nil { order.append(target) }
+                elsewhere[target, default: []].append(page)
+            } else {
+                here.append(page)
+            }
+        }
+        var placed = 0
+        for target in order {
+            let pages = elsewhere[target] ?? []
+            placed += takeAsleep(pages.map { page in
+                (ArcSidebar.Item(title: page.title, url: page.url), page.group.flatMap { snapshot.groups[$0]?.title })
+            }, into: target)
+            brought += pages.map(\.url)
+        }
         var seen = Set(tabs.compactMap { ($0.pending ?? $0.address)?.absoluteString })
-        let new = all.filter { !$0.pinned && seen.insert($0.url.absoluteString).inserted }
+        let new = here.filter { seen.insert($0.url.absoluteString).inserted }
         var groups = tabGroups
         var made: [SessionImport.Token: UUID] = [:]
         func group(_ token: SessionImport.Token?) -> UUID? {
@@ -4057,7 +4120,7 @@ final class Browser: NSObject, ObservableObject {
         }
         brought += new.map(\.url)
         adoptIcons(for: brought, from: source, profile: profile)
-        return (pins, new.count, newGroups)
+        return (pins, new.count + placed, newGroups)
     }
 
     /// The icons for what Arc's side of the import brought in, from Arc's own
@@ -7631,9 +7694,7 @@ final class Browser: NSObject, ObservableObject {
                 return
             }
             curtain.hide(selector, label: label, note: note, on: host)
-            let css = curtain.css(on: host)
-            tab.arm(hiding: css)
-            tab.applyVeils(css)
+            reveil(host)
             // Said once the page shows it gone, not before: a rule the page
             // outranks was announced as hidden, and listed, while the thing
             // stayed in front of you (#1270). One that didn't take is
@@ -7644,9 +7705,7 @@ final class Browser: NSObject, ObservableObject {
                 if let veil = curtain.veils(on: host).first(where: { $0.selector == selector }) {
                     curtain.restore(veil, on: host)
                 }
-                let css = curtain.css(on: host)
-                tab.arm(hiding: css)
-                tab.applyVeils(css)
+                reveil(host)
                 announce(Self.keptOnScreen)
             }
         }
@@ -8793,7 +8852,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
         // The next document gets this site's stylesheet of hidden things,
         // decided here because here is the last moment before it loads.
-        if action.targetFrame?.isMainFrame ?? true, let tab = tab(for: webView) {
+        // A peek's or a small window's page as well, which is in no row:
+        // tab(for:) left it without them, and without the blocker's say
+        // for the site, until something else re-armed it (idea 1142).
+        if action.targetFrame?.isMainFrame ?? true, let tab = popupTab(for: webView) {
             let host = curtain.host(of: url)
             tab.arm(hiding: curtain.css(on: host), to: url)
             // And the blocker, on or off for where it is going.
@@ -9710,7 +9772,14 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     /// blank page the flow ended on: nothing to look at, and nothing for
     /// reload to fetch, because there is no longer an address to fetch.
     func webViewDidClose(_ webView: WKWebView) {
-        guard let tab = tab(for: webView) else { return }
+        guard let tab = tab(for: webView) else {
+            // A small window's page, in no row: its window goes, as a pop-up
+            // window's does, and closing it closes the page, so its opener
+            // sees it closed (#1145). Left alone, the window stayed on the
+            // blank page a sign-in ended on.
+            if let page = littleTab(for: webView), let little = LittleWindow.holding(page.id) { little.close() }
+            return
+        }
         // A popup window is the one page it opened: when that
         // page closes itself (a sign-in, once done), the
         // window goes too, as in Chrome, instead of staying on a blank tab.
