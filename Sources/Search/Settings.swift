@@ -101,7 +101,7 @@ struct SettingsPanel: View {
     private static let height: CGFloat = 620
     /// Where a row's words start, past its icon. What goes under a row's
     /// words (pictures, lists, fields) starts there too.
-    static let textInset: CGFloat = 48
+    static let textInset: CGFloat = SettingRowLayout.leading + SettingRowLayout.icon + SettingRowLayout.gap
     /// A list under a row's words starts this far in, its lines adding
     /// their own 14 to reach textInset.
     static let listInset: CGFloat = textInset - 14
@@ -402,44 +402,29 @@ struct SettingsPanel: View {
             }
         }
         return ForEach(Array(groups.enumerated()), id: \.element.head.id) { index, group in
-            if index > 0 {
-                Rectangle()
-                    .fill(Palette.divider)
-                    .frame(height: 1)
-                    // From the icons' edge, not the words'.
-                    .padding(.leading, 16)
-                    .padding(.trailing, 16)
-            }
+            if index > 0 { divider() }
             row(group.head)
             after(group.head, searched: searched)
             if !group.kids.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(Array(group.kids.enumerated()), id: \.element.id) { at, kid in
-                        // A hairline between them, so each reads as a setting of its own.
-                        if at > 0 {
-                            Rectangle().fill(Palette.divider).frame(height: 1)
-                                .padding(.leading, 16).padding(.trailing, 18)
-                        }
-                        row(kid)
-                        after(kid, searched: searched)
-                    }
+                // What depends on the row above, in a step: its icons under
+                // that row's words, on the same card. A box of its own inside
+                // the card read as nested and cramped.
+                ForEach(group.kids) { kid in
+                    divider(inset: SettingsPanel.textInset)
+                    row(kid)
+                    after(kid, searched: searched)
                 }
-                // A plain panel, edged, a step off the card it lies on, and
-                // clear of its sides and of the row above and below.
-                .background(
-                    RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
-                        .fill(Palette.ink.opacity(0.055))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
-                        .strokeBorder(Palette.hairline, lineWidth: 1)
-                )
-                .padding(.leading, SettingsPanel.textInset - 6)
-                .padding(.trailing, 16)
-                .padding(.top, 4)
-                .padding(.bottom, 16)
             }
         }
+    }
+
+    /// The hairline between rows, from the icons' edge of the row under it.
+    private func divider(inset: CGFloat = SettingRowLayout.leading) -> some View {
+        Rectangle()
+            .fill(Palette.divider)
+            .frame(height: 1)
+            .padding(.leading, inset)
+            .padding(.trailing, SettingRowLayout.trailing)
     }
 
     /// Segmented choices go under their words, as the long ones always did,
@@ -1325,6 +1310,9 @@ private extension View {
     /// out to the card's left edge, as every other one in Settings.
     func under() -> some View {
         padding(.leading, SettingsPanel.listInset)
+            // Their lines add 14: two more, and their controls end where
+            // the rows' switches do.
+            .padding(.trailing, SettingRowLayout.trailing - 14)
             .environment(\.ruleInset, SettingsPanel.textInset - SettingsPanel.listInset)
             .environment(\.rulesGone, true)
     }
@@ -1368,6 +1356,13 @@ struct GroupNote: View {
 /// One setting: its icon in a soft tile, what it is, one line on what it
 /// does (the rest behind the (i)), and its control. A wide control goes
 /// under the words.
+enum SettingRowLayout {
+    static let leading: CGFloat = 16
+    static let trailing: CGFloat = 16
+    static let icon: CGFloat = 20
+    static let gap: CGFloat = 14
+}
+
 struct SettingRow<Control: View>: View {
     let icon: String
     let title: String
@@ -1405,11 +1400,13 @@ struct SettingRow<Control: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Palette.ink.opacity(0.7))
-                    .frame(width: 20)
+            HStack(alignment: .center, spacing: SettingRowLayout.gap) {
+                if !child {
+                    Image(systemName: icon)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Palette.ink.opacity(0.7))
+                        .frame(width: SettingRowLayout.icon)
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 5) {
                         Text(marked(title))
@@ -1444,18 +1441,18 @@ struct SettingRow<Control: View>: View {
                     .font(.system(size: 11.5))
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 34)
+                    .padding(.leading, child ? 0 : SettingRowLayout.icon + SettingRowLayout.gap)
                     .padding(.top, -6)
                     .transition(.opacity)
             }
             if wide {
                 control()
-                    .padding(.leading, 34)
+                    .padding(.leading, child ? 0 : SettingRowLayout.icon + SettingRowLayout.gap)
             }
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 18)
-        .padding(.vertical, 18)
+        .padding(.leading, child ? SettingsPanel.textInset : SettingRowLayout.leading)
+        .padding(.trailing, SettingRowLayout.trailing)
+        .padding(.vertical, child ? 14 : 18)
         .background(lit ? Palette.hover : .clear)
     }
 }
@@ -1669,6 +1666,18 @@ struct Segmented<Option: Hashable>: View {
     /// True when the control has the whole width to itself, so the choices
     /// share it evenly instead of each taking only what its word needs.
     var wide = false
+    /// Over a space's colour: grounds of thinned ink, which take the colour
+    /// under them, rather than the greys, which sat on it like stickers.
+    var airy = false
+
+    /// The chosen one's ground there: a lighter film in the dark, near white
+    /// in the light.
+    private static var airyChosen: Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                ? NSColor(white: 1, alpha: 0.18) : NSColor(white: 1, alpha: 0.95)
+        })
+    }
 
     @Namespace private var slide
 
@@ -1677,16 +1686,19 @@ struct Segmented<Option: Hashable>: View {
             ForEach(options, id: \.0) { option, title in
                 Text(title)
                     .font(.system(size: 11.5, weight: option == selection ? .medium : .regular))
-                    .foregroundStyle(option == selection ? Palette.ink : Palette.muted)
+                    .foregroundStyle(option == selection ? Palette.ink : airy ? Palette.ink.opacity(0.72) : Palette.muted)
                     .lineLimit(1)
                     .fixedSize(horizontal: !wide, vertical: false)
                     .frame(maxWidth: wide ? .infinity : nil)
-                    .padding(.horizontal, wide ? 6 : 12)
+                    // Sharing a narrow column, the words need the room.
+                    .minimumScaleFactor(wide ? 0.85 : 1)
+                    .padding(.horizontal, wide ? 2 : 12)
                     .padding(.vertical, 6)
                     .background {
                         if option == selection {
-                            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
-                                .fill(Palette.ground)
+                            // Concentric with the track, 2 points in.
+                            RoundedRectangle(cornerRadius: Metrics.concentric(outer: Metrics.rowRadius, inset: 2), style: .continuous)
+                                .fill(airy ? Self.airyChosen : Palette.ground)
                                 .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
                                 .matchedGeometryEffect(id: "chosen", in: slide)
                         }
@@ -1698,7 +1710,7 @@ struct Segmented<Option: Hashable>: View {
             }
         }
         .padding(2)
-        .background(Palette.wash, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+        .background(airy ? Palette.ink.opacity(0.1) : Palette.wash, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
         .animation(Motion.settle, value: selection)
     }
 }
