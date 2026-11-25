@@ -22,6 +22,9 @@ Measured, per N:
   the busy time over the 0.8 s after.
 - newtab / close: a tab opened (bench open) and closed again.
 - space: ⌃2 / ⌃1 (Bench spacetime), the longest pass and the busy time.
+- keyspace: ⌃2 / ⌃1 as key presses, at once and with the slide, and Next /
+  Previous Space: from the press to the space taken, its page in the window,
+  and the column settled (Bench perfkeyspace).
 - scroll: the column scrolled (paceframes scroll, not staged: nothing is
   ordered in), the busy time and the longest pass.
 - visited: idle again after the first-visit picks built pages.
@@ -310,6 +313,25 @@ def measure(n, rnd):
             sw.append({"callMs": r["callMs"], "longestMs": max(ps_), "busyMs": sum(ps_), "rows": sum(p["rows"] for p in r["passes"])})
             time.sleep(0.3)
         out["space"] = summ(sw[1:]) | {"rows": med([s["rows"] for s in sw[1:]])}
+    if want("keyspace"):
+        # ⌃2 / ⌃1 pressed (through the app's event queue, as a real press),
+        # switched at once as a hidden window does and with the slide a
+        # window on screen makes; and Next/Previous Space as its command runs.
+        ks = {}
+        for name, extra in (("key", {}), ("keyGlide", {"glide": True}), ("step", None)):
+            rs = []
+            for j in range(5):
+                req = {"do": "perfkeyspace", "seconds": 2}
+                if extra is None:
+                    req["step"] = 1 if j % 2 == 0 else -1
+                else:
+                    req |= extra | {"index": 2 if j % 2 == 0 else 1}
+                rs.append(sv.cmd(req))
+                time.sleep(0.3)
+            ok = [r for r in rs[1:] if r["landedMs"] is not None]
+            ks[name] = {"landed": f"{len(ok)}/{len(rs) - 1}"} | {
+                k: med([r[k] for r in ok if r[k] is not None]) for k in ("aheadMs", "landedMs", "pageMs", "settledMs", "longestMs", "busyMs")}
+        out["keyspace"] = ks
     if want("scroll"):
         sc = []
         for j in range(4):
