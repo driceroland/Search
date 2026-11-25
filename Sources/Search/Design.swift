@@ -394,10 +394,14 @@ enum Motion {
         reduced ? nil : light ? .easeOut(duration: 0.16) : .spring(response: 0.30, dampingFraction: 0.86)
     }
 
-    static let spaceSpan: Double = 0.32
+    nonisolated(unsafe) static var spaceMotion: SpaceMotion = .smooth
+
+    static var spaceSpan: Double { spaceMotion.span }
+
+    static var slides: Bool { !reduced && spaceMotion != .none }
 
     static var space: Animation? {
-        reduced ? nil : .spring(response: spaceSpan, dampingFraction: 1)
+        slides ? .spring(response: spaceSpan, dampingFraction: 1) : nil
     }
 
     static var quick: Animation? {

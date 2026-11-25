@@ -516,6 +516,11 @@ enum SettingsIndex {
               keys: [Preferences.spaceButtonsKey],
               words: ["arc", "spaces", "buttons", "icons", "switcher", "dot", "footer", "bottom"],
               parent: "spaces"),
+        .init(id: "spaces.motion", group: "spaces", icon: "hand.draw",
+              title: "Swipe animation", detail: "How a space slides in once your fingers let go or you press ⌃1–⌃9",
+              more: "None switches at once; the rows still follow your fingers while they are down. Snappy settles in about a third of a second, Smooth in about half.",
+              keys: ["spaces.motion"], words: ["swipe", "slide", "animation", "motion", "spaces", "speed", "snappy", "smooth", "none", "transition"],
+              parent: "spaces"),
         .init(id: "profiles", group: "profiles", icon: "person.2",
               title: "Profiles", detail: "Spaces with their own sign-ins, history and bookmarks",
               more: "In windows of their own, unless Profiles in one window is on. Extensions, passwords and settings are shared.",
@@ -850,11 +855,12 @@ enum SettingsIndex {
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
-        case "spaces.links", "links.ask", "spaces.buttons": return prefs.usesSpaces
+        case "spaces.links", "links.ask", "spaces.buttons", "spaces.motion": return prefs.usesSpaces
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent", "newtab.arc": return prefs.floatingNewTab
         case "mail.default": return prefs.webmail != .none
-        case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
+        case "links.peek.stays", "links.peek.dim": return prefs.peeksLinks || prefs.pinsPeek
+        case "links.peek.dimSide": return (prefs.peeksLinks || prefs.pinsPeek) && prefs.peekDims && prefs.sidebar
         case "launcher.key": return prefs.launcher
         case "icloud.erase": return ICloudSync.shared.on
         default: return true

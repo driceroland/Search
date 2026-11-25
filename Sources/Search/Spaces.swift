@@ -634,7 +634,7 @@ extension Browser {
     /// frames are never drawn, so the bench's), the space at once.
     func goToSpace(_ id: UUID) {
         let shown = spaceComing ?? spaceID
-        guard prefs.usesSpaces, id != shown, !makingSpace, !Motion.reduced,
+        guard prefs.usesSpaces, id != shown, !makingSpace, Motion.slides,
               let to = spaces.firstIndex(where: { $0.id == id }),
               let here = spaces.firstIndex(where: { $0.id == shown }),
               !NSApp.isHidden || SpaceSwipe.glidesHidden

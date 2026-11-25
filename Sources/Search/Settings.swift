@@ -891,6 +891,7 @@ struct SettingsPanel: View {
         case "pins.fit": Switch(on: $prefs.fitsPins)
         case "folders.arrowHover": Switch(on: $prefs.foldersArrowOnHover)
         case "icons.peek": Switch(on: $prefs.iconPeeks)
+        case "spaces.motion": Segmented(options: [(SpaceMotion.none, "None"), (.snappy, "Snappy"), (.smooth, "Smooth")], selection: $prefs.spaceMotion)
         case "icons.peek.delay": Segmented(options: [(0.25, "Short"), (0.6, "Medium"), (1.0, "Long")], selection: $prefs.iconPeekDelay)
         case "field.animates": Switch(on: $prefs.animatesField)
         case "panels.clear": Switch(on: $prefs.clearPanels)

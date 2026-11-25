@@ -553,6 +553,7 @@ struct SideBar: View {
             // (Browser.columnTurning), for the same reason (idea 927).
             if live == nil, !browser.columnTurning { SwipeSided(side: browser.mapDrawn) { _ in others } }
         }
+        .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
         // The card for a new space, with its field, only while the fingers
         // bring it. Over the pages, not among them: among them, each swipe's
         // start laid them all out again.
@@ -628,18 +629,13 @@ struct SideBar: View {
                 if icons {
                     Color.clear.frame(maxHeight: .infinity)
                 } else {
-                    VStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        NewSpaceCard(browser: browser)
-                        Spacer(minLength: 0)
-                    }
-                    .frame(maxHeight: .infinity)
+                    NewSpacePlace(browser: browser)
                 }
             } else if browser.spaces[index].id == browser.spaceID {
                 VStack(alignment: .leading, spacing: 0) {
                     if !browser.squarePins.isEmpty || ghostSquare != nil {
                         pinned
-                            .padding(.bottom, pinsDivided ? 0 : icons && !browser.squarePins.isEmpty ? 0 : browser.squarePins.isEmpty ? 10 : Self.pinsGap)
+                            .padding(.bottom, pinsDivided ? 0 : icons && !browser.squarePins.isEmpty ? 0 : browser.squarePins.isEmpty ? 10 : pinsTailHere)
                             // A square carried down over the rows passes
                             // over them, not under.
                             .zIndex(carriedPin ? 1 : 0)

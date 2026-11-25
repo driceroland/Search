@@ -776,7 +776,7 @@ final class PaneStage: NSView {
         guard window != nil, tabs.count == 1, split == nil, immersedID == nil, page(tab) != nil else { return }
         // Another space's page: the one going fades into it, as the rows
         // slide, rather than giving way to it in a single frame.
-        if fading, !Motion.reduced, tabs.first !== tab, let layer {
+        if fading, Motion.slides, tabs.first !== tab, let layer {
             let fade = CATransition()
             fade.type = .fade
             fade.duration = Motion.spaceSpan

@@ -24,6 +24,17 @@ enum Glyph: String, CaseIterable, Identifiable {
     }
 }
 
+enum SpaceMotion: String, CaseIterable {
+    case none, snappy, smooth
+
+    var span: Double {
+        switch self {
+        case .none, .snappy: return 0.32
+        case .smooth: return 0.72
+        }
+    }
+}
+
 /// Peek uses modified left clicks, leaving plain clicks and Control-click alone.
 enum PeekClick: String, CaseIterable {
     case shift, optionShift, optionCommand
@@ -443,6 +454,12 @@ final class Preferences: ObservableObject {
     @Published var fitsPins: Bool { didSet { store.set(fitsPins, forKey: "pins.fit") } }
     @Published var foldersArrowOnHover: Bool { didSet { store.set(foldersArrowOnHover, forKey: "folders.arrowHover") } }
     @Published var iconPeeks: Bool { didSet { store.set(iconPeeks, forKey: "icons.peek") } }
+    @Published var spaceMotion: SpaceMotion {
+        didSet {
+            store.set(spaceMotion.rawValue, forKey: "spaces.motion")
+            Motion.spaceMotion = spaceMotion
+        }
+    }
     @Published var iconPeekDelay: Double { didSet { store.set(iconPeekDelay, forKey: "icons.peek.delay") } }
     @Published var animatesField: Bool { didSet { store.set(animatesField, forKey: "field.animates") } }
     /// With no tab open, the main part is left clear: the window's glass shows.
@@ -1372,6 +1389,9 @@ final class Preferences: ObservableObject {
         foldersArrowOnHover = store.object(forKey: "folders.arrowHover") as? Bool ?? false
         iconPeeks = store.object(forKey: "icons.peek") as? Bool ?? true
         iconPeekDelay = store.object(forKey: "icons.peek.delay") as? Double ?? 0.6
+        let motion = (store.string(forKey: "spaces.motion")).flatMap(SpaceMotion.init(rawValue:)) ?? .smooth
+        spaceMotion = motion
+        Motion.spaceMotion = motion
         animatesField = store.object(forKey: "field.animates") as? Bool ?? true
         clearPanels = store.bool(forKey: "panels.clear")
         findDims = (store.object(forKey: "find.dim") as? Bool) ?? true
