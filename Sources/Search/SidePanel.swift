@@ -770,8 +770,14 @@ struct SidePanelView: View {
             }
         case .site:
             ZStack(alignment: .top) {
-                // The page runs up under the bar, which floats on it.
-                PanelPage(web: SidePanelPages.shared.web(in: browser))
+                // The page runs up under the bar, which floats on it, with
+                // its own top kept clear of the bar (see PanelPage.under).
+                if #available(macOS 26, *) {
+                    PanelPage(web: SidePanelPages.shared.web(in: browser), under: 52)
+                } else {
+                    PanelPage(web: SidePanelPages.shared.web(in: browser))
+                        .padding(.top, 52)
+                }
                 if let delegate = SidePanelPages.shared.siteDelegate(in: browser) {
                     SiteLine(browser: browser, delegate: delegate).id(ObjectIdentifier(delegate))
                 }
@@ -841,9 +847,7 @@ private struct PanelToolbar<Content: View>: View {
             .padding(.horizontal, 12)
             .frame(height: 36)
             // Glass over the page, not a band of its own: the page shows through.
-            .pillGlass(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
-            .shadow(color: .black.opacity(0.14), radius: 12, y: 4)
+            .pill(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
             .padding(8)
     }
 }
@@ -855,6 +859,19 @@ private struct PanelToolbar<Content: View>: View {
 /// the page just let go, taken out of it, and the panel stayed white.
 private struct PanelPage: NSViewRepresentable {
     let web: WKWebView?
+    /// How much of the top a floating bar covers: WebKit lays the page out
+    /// below it, and what scrolls up shows through the bar.
+    var under: CGFloat = 0
+
+    static func dismantleNSView(_ holder: NSView, coordinator: ()) {
+        // A page leaving the panel, for a tab say, takes no inset with it.
+        for case let web as WKWebView in holder.subviews { inset(web, 0) }
+    }
+
+    private static func inset(_ web: WKWebView, _ top: CGFloat) {
+        guard #available(macOS 26, *), web.obscuredContentInsets.top != top else { return }
+        web.obscuredContentInsets = NSEdgeInsets(top: top, left: 0, bottom: 0, right: 0)
+    }
 
     func makeNSView(context: Context) -> NSView {
         let holder = NSView()
@@ -869,7 +886,9 @@ private struct PanelPage: NSViewRepresentable {
             holder.subviews.forEach { $0.removeFromSuperview() }
             return
         }
+        Self.inset(web, under)
         guard web.superview !== holder else { return }
+        for case let old as WKWebView in holder.subviews { Self.inset(old, 0) }
         holder.subviews.forEach { $0.removeFromSuperview() }
         web.removeFromSuperview()
         web.frame = holder.bounds

@@ -28,7 +28,9 @@ enum Palette {
             ? NSColor(white: 1, alpha: 0.20)
             : NSColor(white: 0, alpha: 0.16)
     })
-    static let wash = Color(nsColor: NS.wash)           // the live tab
+    static let wash = Color(nsColor: NS.wash)
+    static let lift = Color(nsColor: NS.lift)
+    static let liftEdge = Color(nsColor: NS.liftEdge)           // the live tab
     static let hover = Color(nsColor: NS.hover)         // the one under the pointer
     /// Around the page's card, with the tabs down the side: the column, the
     /// bookmarks bar and the gaps share it, a touch off the page's white, so
@@ -48,6 +50,8 @@ enum Palette {
         static let faint = pair(0.83, 0.32)
         static let hairline = pair(0.87, 0.20)
         static let wash = pair(0.937, 0.175)
+        static let lift = pair(1.0, 0.2)
+        static let liftEdge = pair(0.86, 0.28)
         static let hover = pair(0.9475, 0.17)
         static let frame = pair(0.955, 0.075)
         /// The resting traffic lights, drawn by hand when the app is behind.
@@ -568,31 +572,21 @@ extension View {
     /// A floating pill or card: the page shows through, blurred, under a
     /// light wash of the ground so the text stays clear to read.
     func pillGlass<S: InsettableShape>(_ shape: S) -> some View {
-        background(Palette.ground.opacity(0.58), in: shape)
-            .background(.ultraThinMaterial, in: shape)
+        background(Palette.lift, in: shape)
     }
 
-    /// What a popover holds, on the ground colour. From macOS 26 a popover
-    /// clips what it holds to its own rounded glass, and the background
-    /// fills its arrow too; before, an opaque background was drawn out to the
-    /// content's square edges, past the popover's rounded corners (macOS 15,
-    /// by email). There the popover is handed the colour and fills its own
-    /// shape with it, arrow included. The bookmarks list and card were drawn
-    /// as a rounded card of their own inside the popover, which left the
-    /// arrow in the popover's lighter glass beside the darker card; they're
-    /// on the ground as the rest are now.
+    func pill<S: InsettableShape>(_ shape: S) -> some View {
+        background(Palette.lift, in: shape)
+            .overlay(shape.strokeBorder(Palette.liftEdge, lineWidth: 1))
+            .shadow(color: .black.opacity(0.16), radius: 12, y: 4)
+    }
+
+    /// What a popover holds, on the popover's own glass, as the menus are:
+    /// painted over with the ground colour it stood out pitch black in a
+    /// dark window. Nothing is drawn behind it, so the system fills the
+    /// whole shape, arrow included.
     func popoverGround() -> some View {
-        modifier(PopoverGround())
-    }
-}
-
-private struct PopoverGround: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(macOS 26, *) {
-            content.background(Palette.ground)
-        } else {
-            content.presentationBackground(Palette.ground)
-        }
+        self
     }
 }
 

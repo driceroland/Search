@@ -1308,17 +1308,15 @@ struct ContentView: View {
                         .foregroundStyle(Palette.muted)
                 }
             }
-                .font(.system(size: 12))
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
                 .contentShape(Capsule())
                 .onTapGesture {
                     if let file = browser.announcedFile { NSWorkspace.shared.activateFileViewerSelecting([file]) }
                 }
-                .padding(.horizontal, 15)
-                .padding(.vertical, 9)
-                .pillGlass(Capsule())
-                .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-                .shadow(color: .black.opacity(0.10), radius: 18, y: 6)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .pill(Capsule())
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 .animation(Motion.settle, value: browser.announcement)
         }
     }
