@@ -208,6 +208,7 @@ struct SideBar: View {
     }
 
     var body: some View {
+        let _ = Bench.count("sidebar")
         ZStack(alignment: .top) {
             // Not under the card for a new space: it isn't made of views that
             // would take the click first.
@@ -578,6 +579,7 @@ struct SideBar: View {
     /// space's as they are, scrolled as the column is, another's as it was
     /// left. Its tab in front's ground glides nowhere (LiveMatch).
     private func mapPage(_ space: UUID) -> some View {
+        let _ = Bench.count("map")
         let here = space == browser.spaceID
         let row = here
             ? Parked(tabs: browser.tabs, active: browser.activeID, splits: browser.splits, groups: browser.tabGroups)
@@ -1484,7 +1486,7 @@ struct SideBar: View {
         // scrolled to. The band in sight is the window's own (ColumnWindow):
         // as the scroll moves it on, only the window is drawn again, not the
         // column around it and every space's page of the map.
-        return ColumnWindow(plan: plan, active: activeRect(plan), whole: fits, room: room) { unit in
+        return ColumnWindow(plan: plan, space: browser.spaceID, active: activeRect(plan), whole: fits, room: room) { unit in
             if case .row(let row) = unit.kind {
                 // Placed by Carried, which holds it at the hand.
                 looseRow(row, steps: plan.steps, place: unit.y)
@@ -1505,17 +1507,30 @@ struct SideBar: View {
     /// moving it on draws this again and nothing around it.
     fileprivate struct ColumnWindow<Unit: View>: View {
         let plan: ColumnPlan
+        /// Whose rows these are: a band measured in another space's rows is
+        /// none of this one's.
+        let space: UUID
         let active: CGRect?
         let whole: Bool
         let room: Room
         @ViewBuilder let unit: (ColumnPlan.Unit) -> Unit
-        @State private var band = 0
+        @State private var band: (space: UUID, at: Int)?
 
         private func shown() -> [ColumnPlan.Unit] {
             guard !whole else { return plan.units }
             let room = SideBar.windowRoom(room.height)
             let step = SideBar.windowStep(room)
-            var ranges = [(CGFloat(band) * step - room / 2, CGFloat(band) * step + room * 3 / 2 + step)]
+            var ranges: [(CGFloat, CGFloat)] = []
+            // Where the scroll is in these rows. A space just come in is
+            // scrolled to its tab in front: the band the last space's scroll
+            // left drew rows of this one nobody sees (twice the rows made as
+            // a space came in), so only that tab's neighbours until the scroll
+            // says where it is.
+            if let band, band.space == space {
+                ranges.append((CGFloat(band.at) * step - room / 2, CGFloat(band.at) * step + room * 3 / 2 + step))
+            } else if active == nil {
+                ranges.append((-room / 2, room * 3 / 2 + step))
+            }
             if let active { ranges.append((active.minY - room, active.maxY + room)) }
             return plan.units.filter { unit in
                 ranges.contains { unit.y + unit.height >= $0.0 && unit.y <= $0.1 }
@@ -1523,9 +1538,10 @@ struct SideBar: View {
         }
 
         var body: some View {
+            let _ = Bench.count("window")
             let drawn = shown()
             if Store.testing {
-                SideBar.window = ["band": CGFloat(band), "shown": CGFloat(drawn.count), "units": CGFloat(plan.units.count),
+                SideBar.window = ["band": CGFloat(band?.at ?? -1), "shown": CGFloat(drawn.count), "units": CGFloat(plan.units.count),
                                   "total": plan.total, "active": active?.minY ?? -1]
             }
             return ZStack(alignment: .top) {
@@ -1544,9 +1560,9 @@ struct SideBar: View {
             }
             // How far down the run the scroll is: the band of it drawn, told
             // only as it moves a step on (windowStep).
-            .onGeometryChange(for: CGFloat.self, of: { -$0.frame(in: .named("scroll")).minY }) { [room] top in
+            .onGeometryChange(for: CGFloat.self, of: { -$0.frame(in: .named("scroll")).minY }) { [room, space] top in
                 let now = Int((top / SideBar.windowStep(SideBar.windowRoom(room.height))).rounded(.down))
-                if now != band { band = now }
+                if band?.space != space || band?.at != now { band = (space, now) }
             }
         }
     }

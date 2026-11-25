@@ -54,6 +54,7 @@ struct TabBar: View {
     @State private var holding = 0
 
     var body: some View {
+        let _ = Bench.count("tabbar")
         // A GeometryReader is only here to measure the width. Its content is
         // put in a stack of its own and told to fill it: left to itself a
         // reader pins whatever it holds to the top corner, which is the row
