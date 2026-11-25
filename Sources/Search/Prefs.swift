@@ -852,6 +852,12 @@ final class Preferences: ObservableObject {
             Motion.instant = instantMotion
         }
     }
+    /// A new download's file arcs from the click into the downloads button,
+    /// and a check shows in the button once it is in (DownloadFlight.swift).
+    /// Off unless turned on; Reduce Motion skips both.
+    @Published var animatesDownloads: Bool {
+        didSet { store.set(animatesDownloads, forKey: "motion.downloads") }
+    }
     /// The modifier chosen in Settings › Shortcuts; Shift-click by default.
     @Published var peekClick: PeekClick {
         didSet { store.set(peekClick.rawValue, forKey: "links.peekClick") }
@@ -1631,6 +1637,7 @@ final class Preferences: ObservableObject {
         FrameRate.mode = fast
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         lightMotion = store.object(forKey: Motion.lightKey) as? Bool ?? true
+        animatesDownloads = store.bool(forKey: "motion.downloads")
         let instant = store.bool(forKey: Motion.instantKey)
         instantMotion = instant
         Motion.instant = instant

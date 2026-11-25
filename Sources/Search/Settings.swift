@@ -690,6 +690,7 @@ struct SettingsPanel: View {
             ))
         case "motion.light": Switch(on: $prefs.lightMotion)
         case "motion.instant": Switch(on: $prefs.instantMotion)
+        case "motion.downloads": Switch(on: $prefs.animatesDownloads)
         case "note.split": Always()
         default: EmptyView()
         }

@@ -2780,6 +2780,19 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var announcedFile: URL?
     /// Downloads while they happen (see Fetching.swift).
     let fetches = Shared.fetches
+    /// Where and when the pointer last went down in this window, in the
+    /// top-left points SwiftUI's frames are in (ContentView.watchKeys): where
+    /// a download's flight sets off from (DownloadFlight.swift).
+    var lastPress: (at: CGPoint, time: CFTimeInterval)?
+    /// A new download's file on its way to the downloads button.
+    @Published var flight: DownloadTrip?
+    /// The tab at the window's edge a flight lands in, the column folded away.
+    @Published var downloadsEdge = false
+    /// The downloads button's pulse: as a download begins, or, after a
+    /// flight, as it lands.
+    @Published var doorBeat = 0
+    /// The downloads button this window shows, for a flight to aim at.
+    let doorSpot = DoorSpot()
 
     /// ⌘⇧C. The address, in the clipboard, and a line that says as much.
     func copyAddress(to board: NSPasteboard = .general) {
@@ -9511,6 +9524,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             download.cancel { _ in }
             return
         }
+        if entry == nil { launchFlight(for: download) }
         // A true resume may continue the preserved target without asking its
         // delegate for a destination again. Publish Finder progress as soon
         // as the resumed WKDownload is attached; `going` coalesces a later
