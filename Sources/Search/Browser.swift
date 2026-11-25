@@ -8036,9 +8036,7 @@ final class Browser: NSObject, ObservableObject {
     /// everywhere. An address typed out goes where it says, and one the grey
     /// ending finishes goes where the field shows.
     private func pickTop() {
-        guard ending == nil, Address.url(from: typed) == nil,
-              let first = offers.first, first.kind.isPlace
-        else { return }
+        guard offers.first?.canBePickedWhileTyping(typed, ending: ending) == true else { return }
         picked = 0
         typing.pickedByTyping = true
     }
