@@ -210,4 +210,21 @@ final class PopupGestureTests: XCTestCase {
         XCTAssertNil(context.exception)
     }
 
+    /// A #fragment jump on the same page keeps the click; leaving the
+    /// document does not (idea 1200).
+    func testFragmentJumpKeepsTheDocument() {
+        let page = URL(string: "https://teams.example/v2/")!
+        let leaves = { (to: String, reload: Bool, method: String?) in
+            PopupGesture.leavesDocument(to: URL(string: to), from: page, reload: reload, method: method)
+        }
+        XCTAssertFalse(leaves("https://teams.example/v2/#signin", false, "GET"))
+        XCTAssertFalse(leaves("https://teams.example/v2/#signin", false, nil))
+        XCTAssertTrue(leaves("https://teams.example/v2/#signin", true, "GET"), "a reload is a new document")
+        XCTAssertTrue(leaves("https://teams.example/v2/#signin", false, "POST"), "a POST is a new document")
+        XCTAssertTrue(leaves("https://teams.example/v2/", false, "GET"), "the same address without a fragment loads it again")
+        XCTAssertTrue(leaves("https://teams.example/other#signin", false, "GET"))
+        XCTAssertTrue(leaves("https://login.example/#signin", false, "GET"))
+        XCTAssertTrue(PopupGesture.leavesDocument(to: URL(string: "https://teams.example/v2/#a"), from: nil, reload: false, method: "GET"))
+    }
+
 }

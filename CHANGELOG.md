@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A sign-in window a page opens on a click now opens even when the page first notes the step in its address (a #fragment of the same page), as single-page apps' routers do: Search took that jump for leaving the page, forgot the click, and refused the window, so a Sign in button looked dead (reported on Teams' "sign in again" banner). Leaving the page, reloading it or posting a form still ends the click, as before. `python3 Tests/msal_popup.py` (idea 1200)
 - An extension's popup that is empty until its worker answers, as NordPass's is, no longer shrinks to a speck a second after it loads and starts as one at every opening after: it stays at its size until its content comes. `python3 Tests/extension_popup_slow.py` (idea 1179)
 - ⌘T and ⇧⌘N with every window closed bring the window back with the new tab, where the tab waited unseen until a click on the Dock icon. `python3 Tests/closed_window_new_tab.py` (idea 1183)
 - A tab in a group can be closed on its own with ⌘W: the first ⌘W still puts its page away, keeping its row in the group, and going back to it and pressing ⌘W again now closes it, where it put it away again for ever. Its menu has Put Away and a Close Tab that closes it at once. `python3 Tests/close_in_group_again.py` (idea 1189)

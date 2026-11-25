@@ -8716,8 +8716,12 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     ) {
         decide(webView, action) { [weak self] policy in
             // Revoke before WebKit can run the old document's unload handlers.
-            // A nil target is a new window, not this tab leaving its document.
-            if policy == .allow, action.targetFrame?.isMainFrame == true {
+            // A nil target is a new window, not this tab leaving its document,
+            // and a jump to a #fragment of the same page keeps it: the click
+            // is still the page's (see PopupGesture.leavesDocument).
+            if policy == .allow, action.targetFrame?.isMainFrame == true,
+               PopupGesture.leavesDocument(to: action.request.url, from: webView.url,
+                                           reload: action.navigationType == .reload, method: action.request.httpMethod) {
                 self?.popupTab(for: webView)?.popupGesture.clear()
             }
             if policy == .allow, action.targetFrame?.isMainFrame ?? true, let url = action.request.url {
