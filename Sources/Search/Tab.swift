@@ -402,8 +402,10 @@ final class Tab: ObservableObject, Identifiable {
         documentGeneration &+= 1
         built?.draftFrames.removeAll()
         popupGesture.clear()
-        // A woken page has its sessionStorage back; later ones don't get it.
-        if KeptSession.committed(self) { arm(hiding: veils) }
+        // A woken page has its sessionStorage and its place back; later
+        // ones don't get them.
+        let session = KeptSession.committed(self), place = KeptPlace.committed(self)
+        if session || place { arm(hiding: veils) }
         // What the old page was refused went with it.
         if !blockedPopups.isEmpty { blockedPopups = [] }
         // A translated page is gone; its frames with it.
@@ -1332,6 +1334,10 @@ final class Tab: ObservableObject, Identifiable {
         // A woken page's sessionStorage, back before its scripts (KeptSession).
         if let kept = KeptSession.script(for: self) {
             add(kept, .atDocumentStart, mainFrameOnly: true, in: Web.world)
+        }
+        // Its place in a part of the page that scrolls by itself (KeptPlace).
+        if let place = KeptPlace.script(for: self) {
+            add(place, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
         // Only while a developer tools package has a tool open on this tab
         // (DevToolsPackages.swift).
