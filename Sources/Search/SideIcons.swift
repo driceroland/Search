@@ -94,6 +94,9 @@ struct IconTile: View {
     var interactive = true
     /// Half of a pair: the pair's tile draws the ground and the edge.
     var half = false
+    var size: CGFloat = Metrics.iconTile
+
+    private var radius: CGFloat { size < Metrics.iconTile ? Metrics.rowRadius - 2 : Metrics.rowRadius }
 
     @State private var hovering = false
     @State private var selectedOnPress = false
@@ -131,7 +134,7 @@ struct IconTile: View {
                     .opacity(live || hovering ? 1 : 0.85)
             }
         }
-        .frame(width: Metrics.iconTile, height: Metrics.iconTile)
+        .frame(width: size, height: size)
         // Only the tab already on screen wears a cross, so picking another
         // tile cannot close it with that same press.
         .overlay {
@@ -158,13 +161,13 @@ struct IconTile: View {
         .background { if !half { ground.animation(Motion.quick, value: live) } }
         .overlay {
             if browser.selectedTabIDs.contains(tab.id) {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: radius - 1, style: .continuous)
                     .strokeBorder(Palette.ink.opacity(0.35), lineWidth: 1)
                     .allowsHitTesting(false)
             }
         }
         .modifier(Give(pressed: pressed && prefs.tabsGive))
-        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: radius - 1, style: .continuous))
         .modifier(TabPress(enabled: interactive && !browser.isPickedAmongOthers(tab), active: live, selected: $selectedOnPress, pressing: $pressed) {
             browser.clearTabSelection()
             browser.select(tab)
@@ -234,13 +237,13 @@ struct IconTile: View {
     @ViewBuilder
     private var ground: some View {
         if live {
-            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .fill(greys.pinLive)
                 .modifier(LiveMatch(id: LivePill.id(browser), in: pill))
         } else if browser.selectedTabIDs.contains(tab.id) {
-            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).fill(greys.wash)
+            RoundedRectangle(cornerRadius: radius, style: .continuous).fill(greys.wash)
         } else if hovering {
-            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).fill(greys.hover)
+            RoundedRectangle(cornerRadius: radius, style: .continuous).fill(greys.hover)
         }
     }
 }
@@ -278,6 +281,9 @@ struct IconPair: View {
     var focusedID: Tab.ID? = nil
     let interactive: Bool
     let pill: Namespace.ID
+    var size: CGFloat = Metrics.iconTile
+
+    private var radius: CGFloat { size < Metrics.iconTile ? Metrics.rowRadius - 2 : Metrics.rowRadius }
 
     @Environment(\.greys) private var greys
     /// Carried and about to come apart: the half that stays dims.
@@ -295,11 +301,11 @@ struct IconPair: View {
         .background {
             // The split's own ground, lighter than the live grey that sits on
             // the half the keys go to.
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .fill(live ? greys.wash : greys.tile)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 1)
                 .allowsHitTesting(false)
         }
@@ -319,40 +325,16 @@ struct IconPair: View {
 
     private func half(_ tab: Tab) -> some View {
         IconTile(browser: browser, prefs: prefs, tab: tab, live: focused == tab.id, pill: pill,
-                 close: { browser.closeTab(tab) }, interactive: interactive, half: true)
+                 close: { browser.closeTab(tab) }, interactive: interactive, half: true, size: size)
             .opacity(separation.leaving.map { leaving in leaving != tab.id && pages.contains { $0.id == leaving } } == true ? 0.35 : 1)
             .background {
                 if focused == tab.id {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: radius - 1, style: .continuous)
                         .fill(greys.pinLive)
                         .padding(2)
                         .modifier(LiveMatch(id: LivePill.id(browser), in: pill))
                 }
             }
-    }
-}
-
-/// A group in the column of icons: its first letter, small, where the row
-/// had its name — pressed to fold or unfold it, the name in its tooltip,
-/// its menu and drop as the heading's (GroupHeading).
-struct IconGroupBracket: View {
-    let folded: Bool
-    let rows: Int
-    var onRight = false
-
-    private var height: CGFloat {
-        CGFloat(max(rows, 1)) * Metrics.iconTile + CGFloat(max(rows - 1, 0)) * 2
-    }
-
-    var body: some View {
-        // The bracket down the tiles' leading edge, from the heading to the
-        // last of them: thin, the hairline's grey a little darker.
-        Capsule()
-            .fill(Palette.ink.opacity(0.18))
-            .frame(width: 2, height: height)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .opacity(folded ? 0 : 1)
-            .allowsHitTesting(false)
     }
 }
 
@@ -392,7 +374,7 @@ final class IconLabel: ObservableObject {
             }
             let next = DispatchWorkItem { [weak self] in self?.show(id: id, browser: browser, frame: frame, kind: kind) }
             arrival = next
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: next)
+            DispatchQueue.main.asyncAfter(deadline: .now() + browser.prefs.iconPeekDelay, execute: next)
         } else if shown?.id == id {
             if case .nav = kind { leave(after: 0.3) } else { leave(after: 0) }
         }
@@ -458,21 +440,27 @@ struct IconLabelLayer: View {
     private func pill(_ shown: IconLabel.Shown) -> some View {
         switch shown.kind {
         case .tab(let tab):
-            TabName(tab: tab, putAway: browser.putsAway(tab) && tab.asleep, height: max(shown.frame.height, Metrics.iconTile), ground: AnyView(ground))
+            TabName(tab: tab, prefs: browser.prefs, putAway: browser.putsAway(tab) && tab.asleep, height: max(shown.frame.height, Metrics.iconTile), ground: AnyView(ground))
                 .allowsHitTesting(false)
         case .nav:
             Helm(browser: browser)
+                .environment(\.inkDoors, true)
                 .padding(.horizontal, 4)
                 .frame(height: max(shown.frame.height, 30))
                 .background(ground.clipShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)))
-                .shadow(color: .black.opacity(0.22), radius: 10, y: 3)
+                .overlay(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).strokeBorder(Palette.ink.opacity(0.10), lineWidth: 1))
+                .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
                 .onHover { IconLabel.shared.overPill = $0 }
         }
     }
 
     private var ground: some View {
         ZStack {
-            browser.asCards ? Palette.frame : Palette.ground
+            if browser.glassUnder {
+                Rectangle().fill(.regularMaterial)
+            } else {
+                browser.asCards ? Palette.frame : Palette.ground
+            }
             SpaceWash(look: browser.wash)
             (browser.asCards ? Greys.frame : Greys.white).hover
         }
@@ -480,23 +468,25 @@ struct IconLabelLayer: View {
 
     private struct TabName: View {
         @ObservedObject var tab: Tab
+        let prefs: Preferences
         let putAway: Bool
         let height: CGFloat
         let ground: AnyView
 
         var body: some View {
-            HStack(spacing: 10) {
-                Mark(icon: tab.icon, letter: tab.monogram, size: 16, dim: tab.asleep)
-                    .frame(width: Metrics.iconTile)
+            HStack(spacing: 8) {
+                Mark(icon: tab.icon, letter: tab.monogram, size: prefs.roomyTabs ? 17 : 15, dim: tab.asleep)
                 Text(tab.label.isEmpty ? "New Tab" : tab.label)
-                    .font(.system(size: 13))
+                    .font(.system(size: prefs.sideTitle))
                     .foregroundStyle(tab.asleep ? Palette.ink.opacity(putAway ? 0.45 : 0.7) : Palette.ink)
                     .lineLimit(1)
                     .frame(maxWidth: 240, alignment: .leading)
             }
-            .padding(.trailing, 14)
+            .padding(.leading, 10)
+            .padding(.trailing, 10)
             .frame(height: height)
             .background(ground.clipShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)))
+            .overlay(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).strokeBorder(Palette.ink.opacity(0.10), lineWidth: 1))
             .shadow(color: .black.opacity(0.22), radius: 10, y: 3)
         }
     }

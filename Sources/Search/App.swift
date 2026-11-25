@@ -746,7 +746,7 @@ struct ContentView: View {
             return CGSize(width: sidebar ? sideWidth + max(Metrics.cardGap - Metrics.columnRowInset, 0) : Metrics.cardGap,
                           height: barShown ? bar : Metrics.cardGap)
         }
-        return CGSize(width: sidebar ? sideWidth : 0, height: band + bar)
+        return CGSize(width: sidebar ? sideWidth + Metrics.edgeGap : 0, height: band + bar)
     }
 
     /// The column's width folded away: the room ⌘S gives the page before
@@ -784,7 +784,7 @@ struct ContentView: View {
     /// What the side panel takes from the page: its width, and the card's
     /// gap before it with the page as a card, or its hairline edge to edge.
     private var panelRoom: CGFloat {
-        panelUp ? panelWidth + (cards ? Metrics.cardGap : 1) : 0
+        panelUp ? panelWidth + (cards ? Metrics.cardGap : Metrics.edgeGap) : 0
     }
 
     private var sidePanel: some View {

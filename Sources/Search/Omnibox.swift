@@ -93,7 +93,7 @@ struct Omnibox: View {
                 if over {
                     // The page is still there, just out of the way.
                     Rectangle()
-                        .fill(scheme == .dark ? Color.black.opacity(0.28) : Color.white.opacity(0.4))
+                        .fill(scheme == .dark ? Color.black.opacity(0.36) : Color.white.opacity(0.5))
                         .ignoresSafeArea(.all, edges: fitted ? [] : .all)
                         .onTapGesture { browser.dismiss() }
                         .transition(prefs.animatesField ? .opacity : .identity)
@@ -174,12 +174,12 @@ struct Omnibox: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(
-                        refused ? Color.red.opacity(0.35) : Palette.hairline,
+                        refused ? Color.red.opacity(0.35) : Palette.ink.opacity(0.08),
                         lineWidth: 1
                     )
                     .allowsHitTesting(false)
             )
-            .shadow(color: Palette.lift(light: over ? 0.08 : 0.035, dark: over ? 0.14 : 0.06), radius: over ? 32 : 24, y: over ? 12 : 8)
+            .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.12), radius: 18, y: 8)
             .modifier(Shake(travel: shake))
             .onAppear {
                 shake = 0
@@ -227,9 +227,9 @@ struct Omnibox: View {
         .background(Palette.ground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Palette.hairline, lineWidth: 1)
+                .strokeBorder(Palette.ink.opacity(0.08), lineWidth: 1)
         )
-        .shadow(color: Palette.lift(light: 0.04, dark: 0.07), radius: 20, y: 6)
+        .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.12), radius: 18, y: 8)
         .transition(prefs.animatesField ? .scale(scale: 0.98, anchor: .top).combined(with: .opacity) : .identity)
     }
 

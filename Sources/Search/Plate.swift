@@ -136,7 +136,7 @@ struct Rule: View {
         if gone {
             Color.clear.frame(height: 0)
         } else if hidden {
-            Rectangle().fill(Palette.hairline.opacity(0.55)).frame(height: 1).padding(.leading, inset ?? standard).padding(.trailing, 16)
+            Color.clear.frame(height: 8)
         } else {
             Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, inset ?? standard)
         }

@@ -598,6 +598,7 @@ extension Browser {
             .min { abs($0 - at) < abs($1 - at) }
         guard let next else {
             // All in memory now: the sweep at launch saw only this row.
+            mapDrawn.value += 1
             closeLeftAlone()
             return
         }
@@ -719,11 +720,15 @@ extension Browser {
             SpaceSwipe.shared.start(for: self)
             SpaceSwipe.shared.slide(self, to: spaces.count, from: here)
         } else {
-            Ask.newSpace(
-                then: { name, shared in self.addSpace(named: name, sharesSignIns: shared) },
-                cancelled: { self.cancelSpaceCreation() }
-            )
+            askForSpaceInDialog()
         }
+    }
+
+    func askForSpaceInDialog() {
+        Ask.newSpace(
+            then: { name, shared in self.addSpace(named: name, sharesSignIns: shared) },
+            cancelled: { self.cancelSpaceCreation() }
+        )
     }
 
     func cancelSpaceCreation() {
@@ -1088,7 +1093,7 @@ enum SpaceMenu {
 
     /// The menu itself, for show() to pop up, and for the bench to read.
     static func flat(_ menu: NSMenu) -> [NSMenuItem] {
-        menu.items.flatMap { item in [item] + ((item.representedObject as? String) == "space-edit" ? item.submenu?.items ?? [] : []) }
+        menu.items.flatMap { item in [item] + (item.submenu?.items ?? []) }
     }
 
     static func perform(_ item: NSMenuItem) {
@@ -1106,9 +1111,7 @@ enum SpaceMenu {
                 (profile.name, profile.id == browser.profileID ? browser.spaces : Spaces.read(profile: profile.id))
             }
             : [(nil, browser.spaces)]
-        // What a space's row opens when it is hovered: its own edits.
-        func editMenu(for here: Space) -> NSMenu {
-            let edit = NSMenu()
+        func addEdits(to edit: NSMenu, for here: Space) {
             edit.addItem(item("Rename…") {
                 Ask.name("Rename Space", placeholder: here.name, initial: here.name, confirm: "Rename") { browser.renameSpace(here.id, to: $0) }
             })
@@ -1173,23 +1176,25 @@ enum SpaceMenu {
                     }
                 })
             }
-        edit.title = "Edit"
-        return edit
         }
         var index = 0
         let headed = lists.contains { $0.spaces.count > 1 }
         for list in lists where !list.spaces.isEmpty {
             if headed, let name = list.name { menu.addItem(.sectionHeader(title: name)) }
             for space in list.spaces {
-                let entry = item(space.name, key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
-                    browser.goToSpace(space.id)
-                }
+                let entry = NSMenuItem(title: space.name, action: nil, keyEquivalent: "")
                 entry.image = image(space.symbol, tint: space.tint)
-                // Hovering a space of this window's own shows what can be done to it.
+                entry.state = space.id == browser.spaceID ? .on : .off
+                let sub = NSMenu()
+                sub.autoenablesItems = false
+                sub.addItem(item("Switch to “\(space.name)”", key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
+                    browser.goToSpace(space.id)
+                })
                 if browser.spaces.contains(where: { $0.id == space.id }) {
-                    entry.submenu = editMenu(for: space)
-                    entry.representedObject = "space-edit"
+                    sub.addItem(.separator())
+                    addEdits(to: sub, for: space)
                 }
+                entry.submenu = sub
                 menu.addItem(entry)
                 index += 1
             }

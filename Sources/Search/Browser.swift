@@ -2926,7 +2926,9 @@ final class Browser: NSObject, ObservableObject {
     /// The key each loose row of the column is drawn under (see rowKey).
     var rowKeys: [Tab.ID: Int] = [:]
     var lastRowKey = 0
-    var parked: [UUID: Parked] = [:]
+    var parked: [UUID: Parked] = [:] { didSet { parkedStamp &+= 1 } }
+    var parkedStamp = 0
+    var mapStamp = 0
     /// How far the column's rows have followed two fingers sideways, and
     /// whether the card for a new space stands in for them (see SpaceSwipe).
     /// The distance changes with every event of the swipe, so it is kept

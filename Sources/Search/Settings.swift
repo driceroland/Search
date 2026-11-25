@@ -393,10 +393,52 @@ struct SettingsPanel: View {
     private func shown(_ item: SettingsItem) -> Bool { SettingsIndex.applies(item, prefs) }
 
     private func rows(_ items: [SettingsItem], searched: Bool) -> some View {
-        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-            if index > 0, !belongs(item, to: items[index - 1]) { Rule() }
-            row(item)
-            after(item, searched: searched)
+        var groups: [(head: SettingsItem, kids: [SettingsItem])] = []
+        for (index, item) in items.enumerated() {
+            if index > 0, belongs(item, to: items[index - 1]), !groups.isEmpty {
+                groups[groups.count - 1].kids.append(item)
+            } else {
+                groups.append((item, []))
+            }
+        }
+        return ForEach(Array(groups.enumerated()), id: \.element.head.id) { index, group in
+            if index > 0 {
+                Rectangle()
+                    .fill(Palette.divider)
+                    .frame(height: 1)
+                    // From the icons' edge, not the words'.
+                    .padding(.leading, 16)
+                    .padding(.trailing, 16)
+            }
+            row(group.head)
+            after(group.head, searched: searched)
+            if !group.kids.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(group.kids.enumerated()), id: \.element.id) { at, kid in
+                        // A hairline between them, so each reads as a setting of its own.
+                        if at > 0 {
+                            Rectangle().fill(Palette.divider).frame(height: 1)
+                                .padding(.leading, 16).padding(.trailing, 18)
+                        }
+                        row(kid)
+                        after(kid, searched: searched)
+                    }
+                }
+                // A plain panel, edged, a step off the card it lies on, and
+                // clear of its sides and of the row above and below.
+                .background(
+                    RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+                        .fill(Palette.ink.opacity(0.055))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+                        .strokeBorder(Palette.hairline, lineWidth: 1)
+                )
+                .padding(.leading, SettingsPanel.textInset - 6)
+                .padding(.trailing, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 16)
+            }
         }
     }
 
@@ -844,9 +886,11 @@ struct SettingsPanel: View {
         case "pins.fit": Switch(on: $prefs.fitsPins)
         case "folders.arrowHover": Switch(on: $prefs.foldersArrowOnHover)
         case "icons.peek": Switch(on: $prefs.iconPeeks)
+        case "icons.peek.delay": Segmented(options: [(0.25, "Short"), (0.6, "Medium"), (1.0, "Long")], selection: $prefs.iconPeekDelay)
         case "field.animates": Switch(on: $prefs.animatesField)
         case "panels.clear": Switch(on: $prefs.clearPanels)
         case "empty.clear": Switch(on: $prefs.clearEmpty)
+        case "find.dim": Switch(on: $prefs.findDims)
         case "pins.folders": Switch(on: $prefs.pinFolders)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
@@ -1298,7 +1342,7 @@ struct SettingRow<Control: View>: View {
     var more: String? = nil
     var wide = false
     var lit = false
-    /// Belongs to the row above it: set in a step, with a line down its side.
+    /// Belongs to the row above it: set in a step.
     var child = false
     var mark: String? = nil
     @ViewBuilder let control: () -> Control
@@ -1376,14 +1420,9 @@ struct SettingRow<Control: View>: View {
                     .padding(.leading, 34)
             }
         }
-        .padding(.leading, child ? 38 : 16)
+        .padding(.leading, 16)
         .padding(.trailing, 18)
         .padding(.vertical, 18)
-        .overlay(alignment: .leading) {
-            if child {
-                Rectangle().fill(Palette.hairline).frame(width: 1.5).padding(.leading, 25).padding(.vertical, 8)
-            }
-        }
         .background(lit ? Palette.hover : .clear)
     }
 }

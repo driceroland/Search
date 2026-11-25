@@ -155,6 +155,8 @@ final class SpaceSwipe {
             leave(browser, for: other, step: step)
         } else if target >= 0, target <= furthest(browser) {
             slide(browser, to: target, from: here)
+        } else if target == browser.spaces.count, asksPast(browser) {
+            openDialog(browser)
         }
         return true
     }
@@ -164,7 +166,22 @@ final class SpaceSwipe {
     /// just turned on, a stroke over the tabs brought a nameless card that
     /// looked like a second space nobody made; New Space… still opens it.
     private func furthest(_ browser: Browser) -> Int {
-        browser.prefs.sidebar || browser.spaces.count > 1 || browser.makingSpace ? browser.spaces.count : browser.spaces.count - 1
+        if asksPast(browser) { return browser.spaces.count - 1 }
+        return browser.prefs.sidebar || browser.spaces.count > 1 || browser.makingSpace ? browser.spaces.count : browser.spaces.count - 1
+    }
+
+    private func asksPast(_ browser: Browser) -> Bool {
+        browser.prefs.sidebar && browser.prefs.iconColumn && !browser.makingSpace
+    }
+
+    private func openDialog(_ browser: Browser, speed: CGFloat = 0) {
+        resting = Date().addingTimeInterval(SpaceSwipe.rest)
+        guard browser.spaceSwipe != 0, !Motion.reduced else {
+            browser.spaceSwipe = 0
+            browser.askForSpaceInDialog()
+            return
+        }
+        SwipeGlide.start(browser, to: 0, speed: speed, halfway: { [weak browser] in browser?.askForSpaceInDialog() })
     }
 
     /// With profiles in one window, past this window's first space or its
@@ -415,6 +432,8 @@ final class SpaceSwipe {
                 leave(browser, for: other, step: target - here)
             } else if target >= 0, target <= furthest(browser) {
                 slide(browser, to: target, from: here)
+            } else if target == browser.spaces.count, asksPast(browser) {
+                openDialog(browser)
             }
             return true
         }
@@ -516,7 +535,9 @@ final class SpaceSwipe {
             holding = true
             // Scrolled since the map drew this space: drawn again, as the
             // column is now.
-            if browser.mapScroll(fits: browser.mapDrew.fits) != browser.mapDrew.scrolled { browser.mapDrawn.value += 1 }
+            if browser.mapScroll(fits: browser.mapDrew.fits) != browser.mapDrew.scrolled || browser.mapStamp != browser.parkedStamp {
+                browser.mapDrawn.value += 1
+            }
             SwipeGlide.pause()
             // From where they are, not jumping the few points it took to
             // tell which way the fingers go.
@@ -526,6 +547,13 @@ final class SpaceSwipe {
         let now = CACurrentMediaTime()
         trail.append((now, browser.spaceSwipe))
         trail.removeAll { now - $0.at > 0.08 }
+        if asksPast(browser), gathered.width <= -SpaceSwipe.enough(for: browser), shown(browser) == browser.spaces.count - 1,
+           beyond(browser, browser.spaces.count) == nil {
+            holding = false
+            tracking = false
+            ignoring = true
+            openDialog(browser, speed: fingerSpeed())
+        }
         return true
     }
 
@@ -564,6 +592,10 @@ final class SpaceSwipe {
             leave(browser, for: other, step: target - here)
             return
         }
+        if target == here + 1, target == browser.spaces.count, asksPast(browser) {
+            openDialog(browser, speed: speed)
+            return
+        }
         guard target != here, target >= 0, target <= furthest(browser) else {
             // Back where they were: the space on screen, or on its way in.
             if let coming = browser.spaceComing, !browser.makingSpace, !Motion.reduced {
@@ -592,7 +624,7 @@ final class SpaceSwipe {
 
     /// Fingers going from the last space toward the card for a new one.
     private func toCard(_ travel: CGFloat, in browser: Browser) -> Bool {
-        travel < 0 && !browser.makingSpace && shown(browser) == browser.spaces.count - 1 && beyond(browser, browser.spaces.count) == nil
+        travel < 0 && !browser.makingSpace && !asksPast(browser) && shown(browser) == browser.spaces.count - 1 && beyond(browser, browser.spaces.count) == nil
     }
 
     /// The pages carry on the way the fingers went until the next one is
@@ -920,7 +952,8 @@ final class SwipeGlide: NSObject {
     /// Steps it on when no frame comes: a window that isn't drawn — a hidden
     /// one, as the bench's — gets none, and the rows stayed out of place.
     private var watch: Timer?
-    private static let span: Double = Motion.spaceSpan
+    private static let omega = 2 * Double.pi / Motion.spaceSpan
+    private var x0: Double?
 
     private init(_ browser: Browser, to: CGFloat, speed: CGFloat?, land: (() -> CGFloat)?,
                  halfway: (() -> Void)?, done: @escaping () -> Void) {
@@ -1022,11 +1055,13 @@ final class SwipeGlide: NSObject {
         // jumped most of the way in at once.
         let began = self.began ?? now
         self.began = began
-        let t = now - began
-        let x0 = Double(from - to)
-        let u = min(1, t / Self.span)
-        let rest = 1 - u
-        let x = x0 * rest * rest * rest * rest
+        let t = max(0, now - began)
+        let x0 = self.x0 ?? Double(from - to)
+        self.x0 = x0
+        let w = Self.omega
+        var c = abs(x0) < 1 ? 0 : Double(speed ?? 0) + w * x0
+        if c * x0 < 0 { c = 0 }
+        let x = (x0 + c * t) * exp(-w * t)
         if abs(x) <= abs(x0) / 2, let halfway {
             self.halfway = nil
             halfway()
@@ -1036,7 +1071,7 @@ final class SwipeGlide: NSObject {
             to = land()
         }
         browser.spaceSwipe = to + CGFloat(x)
-        guard u >= 1 || abs(x) < 0.5 else { return }
+        guard t >= 1 || abs(x) < 0.5 else { return }
         end()
         if Self.current === self { Self.current = nil }
         finish()

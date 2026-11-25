@@ -34,9 +34,22 @@ struct TabBar: View {
     /// the address when it is in sight. The badge was left out, and the row
     /// was laid out 28 points wider than the window gave it.
     private var leading: CGFloat {
-        (browser.prefs.helmDoors > 0 ? Metrics.helmDoors(browser.prefs) + Metrics.tabGap : 0)
+        buttonsWidth
             + (browser.prefs.addressLine ? browser.prefs.addressWidth.width + AddressLine.after + Metrics.tabGap : 0)
     }
+    private var showsSpaceDot: Bool { browser.prefs.usesSpaces && !browser.prefs.showsSpaceButtons }
+    private var spaceButtonCount: Int { SpaceButtons.count(browser.prefs, browser.spaces) }
+
+    private var buttonsWidth: CGFloat {
+        var items: [CGFloat] = []
+        if showsSpaceDot { items.append(SpaceDot.width) }
+        if spaceButtonCount > 0 { items.append(CGFloat(spaceButtonCount) * SpaceDot.width + CGFloat(spaceButtonCount - 1) * 2) }
+        if browser.prefs.showsProfileDoor { items.append(ProfileBadge.width) }
+        if !browser.prefs.hidesBookmarksDoor { items.append(Door.width) }
+        guard !items.isEmpty else { return 0 }
+        return items.reduce(0, +) + CGFloat(items.count) * Metrics.tabGap + PinLine.width + 2 * PinLine.air + Metrics.tabGap
+    }
+
     /// How much wider the run's tabs were laid out than they were worked out
     /// to be (see `measures`).
     @State private var unaccounted: CGFloat = 0
@@ -71,8 +84,13 @@ struct TabBar: View {
                     .frame(width: lights)
 
                 HStack(spacing: Metrics.tabGap) {
-                    // Back, forward and reload by the lights, when asked.
-                    if browser.prefs.helmDoors > 0 { Helm(browser: browser) }
+                    if showsSpaceDot { SpaceDot(browser: browser).zIndex(1) }
+                    if spaceButtonCount > 0 { SpaceButtons(browser: browser) }
+                    if browser.prefs.showsProfileDoor { ProfileBadge(browser: browser) }
+                    if !browser.prefs.hidesBookmarksDoor {
+                        BookmarkDoor(browser: browser, arrowEdge: .bottom)
+                    }
+                    if buttonsWidth > 0 { PinLine() }
                     // The page's address, when it is to be in sight: before the tabs.
                     if browser.prefs.addressLine {
                         AddressLine(browser: browser)
@@ -264,12 +282,7 @@ struct TabBar: View {
                         // Only while a download is running, and a moment after.
                         FetchDoor(browser: browser, fetches: browser.fetches)
                         ExtensionSlot(browser: browser, puzzle: !browser.prefs.hidesExtensionsDoor)
-                        if !browser.prefs.hidesBookmarksDoor {
-                            BookmarkDoor(browser: browser, arrowEdge: .bottom)
-                        }
-                        SpaceButtons(browser: browser)
-                        if browser.prefs.showsProfileDoor { ProfileBadge(browser: browser) }
-                        if browser.prefs.usesSpaces && !browser.prefs.showsSpaceButtons { SpaceDot(browser: browser).zIndex(1) }
+                        if browser.prefs.helmDoors > 0 { Helm(browser: browser).padding(.leading, 8) }
                     }
                     .background {
                         GeometryReader { box in
@@ -663,7 +676,7 @@ struct TabBar: View {
     /// until they have been, the helm and the bookmarks stand in for them —
     /// unless the helm leads, when nothing at the far end may be a real zero.
     private func room(in strip: CGFloat) -> CGFloat {
-        let far = doors > 0 ? doors : Door.width + 8 + Door.width
+        let far = doors > 0 ? doors : (browser.prefs.helmDoors > 0 ? Metrics.helmDoors(browser.prefs) + 8 : 0)
         return max(0, strip - lights - dot - leading - 12 - Metrics.plusWidth - Metrics.tabRowHold - far - 3 * Metrics.tabGap)
     }
 
@@ -760,13 +773,13 @@ struct PinLine: View {
     /// What it takes out of the run: itself, and the gap the stack puts
     /// before it. The widths have to count it, or every tab is laid out as
     /// though the line weren't there and the run runs a line's width over.
-    static let air: CGFloat = 6
+    static let air: CGFloat = 10
     static let space: CGFloat = PinLine.width + 2 * PinLine.air + Metrics.tabGap
 
     var body: some View {
         Rectangle()
-            .fill(Palette.hairline)
-            .frame(width: PinLine.width, height: 18)
+            .fill(Palette.divider)
+            .frame(width: PinLine.width, height: 16)
             .padding(.horizontal, PinLine.air)
     }
 }
@@ -859,12 +872,13 @@ struct Helm: View {
 @MainActor
 struct SmartNav: View {
     @ObservedObject var browser: Browser
+    var prominent = false
 
     var body: some View {
         if let tab = browser.active {
-            Live(browser: browser, tab: tab)
+            Live(browser: browser, prominent: prominent, tab: tab)
         } else {
-            Door(icon: "chevron.left") {}
+            Door(icon: "chevron.left", prominent: prominent) {}
                 .opacity(0.3)
                 .allowsHitTesting(false)
         }
@@ -872,6 +886,7 @@ struct SmartNav: View {
 
     private struct Live: View {
         let browser: Browser
+        let prominent: Bool
         @ObservedObject var tab: Tab
 
         var body: some View {
@@ -879,7 +894,7 @@ struct SmartNav: View {
             let forward = !tab.isBlank && tab.canGoForward
             let shows = back || !forward
             Door(icon: shows ? "chevron.left" : "chevron.right", help: shows ? "Back" : "Forward",
-                 shortcut: shows ? "tabs.back" : "tabs.forward", held: { Rewind.both(tab, browser: browser) }) {
+                 shortcut: shows ? "tabs.back" : "tabs.forward", held: { Rewind.both(tab, browser: browser) }, prominent: prominent) {
                 if back { browser.back() } else if forward { browser.forward() }
             }
             .opacity(back || forward ? 1 : 0.3)

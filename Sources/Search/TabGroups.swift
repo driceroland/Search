@@ -151,9 +151,9 @@ struct GroupHeading: View {
             }
         }
         .foregroundStyle(titleColour(hovering: hovering))
-        .frame(width: Metrics.iconTile, height: Self.compactHeight)
-        .background(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
-            .fill(dropping ? greys.wash : (hovering ? greys.hover : Color.clear)))
+        .frame(width: group.collapsed ? Metrics.iconTile : Metrics.iconTile - 4, height: Self.compactHeight)
+        .background(RoundedRectangle(cornerRadius: group.collapsed ? Metrics.rowRadius : Metrics.rowRadius - 2, style: .continuous)
+            .fill(dropping ? greys.wash : (hovering && group.collapsed ? greys.hover : Color.clear)))
         .contentShape(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
         .frame(maxWidth: .infinity)
         .onTapGesture { browser.toggleTabGroup(group.id) }

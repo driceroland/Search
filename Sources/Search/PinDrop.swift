@@ -119,10 +119,27 @@ struct RowGhost: View {
     @ObservedObject var tab: Tab
     let height: CGFloat
     let size: CGFloat
+    var icon = false
 
     var body: some View {
+        if icon {
+            let shape = RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+            Mark(icon: tab.icon, letter: tab.monogram, size: 16)
+                .opacity(0.6)
+                .frame(width: Metrics.iconTile, height: Metrics.iconTile)
+                .background(shape.fill(greys.hover))
+                .overlay { shape.strokeBorder(Palette.ink.opacity(0.16), lineWidth: 1) }
+                .frame(maxWidth: .infinity)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
         let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
-        HStack(spacing: 8) {
+        return HStack(spacing: 8) {
             Mark(icon: tab.icon, letter: tab.monogram, size: 15)
             Text(tab.label)
                 .font(.system(size: size))

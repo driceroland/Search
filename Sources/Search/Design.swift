@@ -23,6 +23,11 @@ enum Palette {
         })
     }
     static let hairline = Color(nsColor: NS.hairline)   // neutral-200 · neutral-800
+    static let divider = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(white: 1, alpha: 0.20)
+            : NSColor(white: 0, alpha: 0.16)
+    })
     static let wash = Color(nsColor: NS.wash)           // the live tab
     static let hover = Color(nsColor: NS.hover)         // the one under the pointer
     /// Around the page's card, with the tabs down the side: the column, the
@@ -43,7 +48,7 @@ enum Palette {
         static let faint = pair(0.83, 0.32)
         static let hairline = pair(0.87, 0.20)
         static let wash = pair(0.937, 0.175)
-        static let hover = pair(0.965, 0.15)
+        static let hover = pair(0.9475, 0.17)
         static let frame = pair(0.955, 0.075)
         /// The resting traffic lights, drawn by hand when the app is behind.
         static let resting = pair(0.80, 0.30)
@@ -94,13 +99,13 @@ struct Greys {
     // white, or the frame beside the card). On that ground nothing changes;
     // on a space's colour or gradient they take its tint, where an opaque
     // grey sat on it as a grey patch (Drice, 18 Nov 2026).
-    static let white = Greys(wash: shade(0.063, 0.073), hover: shade(0.035, 0.045),
+    static let white = Greys(wash: shade(0.063, 0.073), hover: shade(0.0525, 0.0675),
                              tile: shade(0.063, 0.073).opacity(0.55), pinLive: shade(0.10, 0.112),
-                             washOnTile: shade(0.0294, 0.0342), hoverOnTile: shade(0.004, 0.005),
+                             washOnTile: shade(0.0294, 0.0342), hoverOnTile: shade(0.006, 0.0075),
                              muted: shade(0.58, 0.5281), faint: shade(0.30, 0.236))
-    static let frame = Greys(wash: shade(0.0628, 0.0865), hover: shade(0.0419, 0.0595),
+    static let frame = Greys(wash: shade(0.0628, 0.0865), hover: shade(0.06285, 0.08925),
                              tile: shade(0.0314, 0.0432), pinLive: shade(0.0995, 0.1243),
-                             washOnTile: shade(0.0324, 0.0452), hoverOnTile: shade(0.0108, 0.0169),
+                             washOnTile: shade(0.0324, 0.0452), hoverOnTile: shade(0.0162, 0.02535),
                              muted: shade(0.55, 0.5459), faint: shade(0.27, 0.2649))
 
     private static func shade(_ light: CGFloat, _ dark: CGFloat) -> Color {
@@ -115,7 +120,15 @@ private struct GreysKey: EnvironmentKey {
     static let defaultValue = Greys.white
 }
 
+private struct InkDoorsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
+    var inkDoors: Bool {
+        get { self[InkDoorsKey.self] }
+        set { self[InkDoorsKey.self] = newValue }
+    }
     var greys: Greys {
         get { self[GreysKey.self] }
         set { self[GreysKey.self] = newValue }
@@ -177,6 +190,7 @@ enum Metrics {
     /// window's edges (and from the column, folded away), and its corners
     /// this round.
     static let cardGap: CGFloat = 14
+    static let edgeGap: CGFloat = 10
     static let columnRowInset: CGFloat = 10
     static let cardRadius: CGFloat = 10
     static let rowRadius: CGFloat = 10
@@ -383,7 +397,7 @@ enum Motion {
     static let spaceSpan: Double = 0.32
 
     static var space: Animation? {
-        reduced ? nil : .timingCurve(0.22, 1, 0.36, 1, duration: spaceSpan)
+        reduced ? nil : .spring(response: spaceSpan, dampingFraction: 1)
     }
 
     static var quick: Animation? {

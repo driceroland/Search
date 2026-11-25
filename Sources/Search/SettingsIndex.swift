@@ -247,6 +247,9 @@ enum SettingsIndex {
         .init(id: "empty.clear", group: "window", icon: "rectangle.dashed",
               title: "See-through when empty", detail: "With no tab open, the main part has no background",
               keys: ["empty.clear"], words: ["transparent", "translucent", "glass", "blur", "background", "no tabs", "empty"]),
+        .init(id: "find.dim", group: "window", icon: "circle.lefthalf.filled.inverse",
+              title: "Dim the page while finding", detail: "A faint veil over everything but the match you are on, so it stands out",
+              keys: ["find.dim"], words: ["find", "search", "cmd f", "dim", "dark", "highlight", "match", "veil"]),
         .init(id: "glyph", group: "tablook", icon: "app",
               title: "Tabs show", detail: "A letter or the site's icon",
               more: "Beside the title, and on a pinned square.",
@@ -298,6 +301,9 @@ enum SettingsIndex {
         .init(id: "icons.peek", group: "tablook", icon: "sidebar.squares.left",
               title: "Show names when the pointer rests on icons", detail: "The tile you rest on grows out to show its name; the arrow shows back, forward and reload",
               keys: ["icons.peek"], words: ["hover", "expand", "peek", "icons only", "titles", "arc"], parent: "tabs.layout"),
+        .init(id: "icons.peek.delay", group: "tablook", icon: "timer",
+              title: "Wait before showing names", detail: "How long the pointer rests on an icon first",
+              keys: ["icons.peek.delay"], words: ["hover", "delay", "wait", "names", "icons only", "peek"], parent: "icons.peek"),
         .init(id: "folders.arrowHover", group: "tablook", icon: "chevron.right",
               title: "Show folder arrows only on hover", detail: "Folder headings show their arrow when the pointer is on them",
               keys: ["folders.arrowHover"], words: ["chevron", "arrow", "folder", "group", "hover"]),
@@ -791,6 +797,7 @@ enum SettingsIndex {
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
         case "icons.peek": return prefs.iconColumn
+        case "icons.peek.delay": return prefs.iconColumn && prefs.iconPeeks
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
         case "address.width": return prefs.addressLine && !prefs.sidebar
@@ -824,6 +831,7 @@ enum SettingsIndex {
         case "toolbar.left", "tabs.compact", "address.width": return "Only with the tabs across the top"
         case "sidebar.roomy", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return "Only with titles in the column"
         case "icons.peek": return "Only with icons only"
+        case "icons.peek.delay": return "Only with icons only and names on hover"
         case "tabs.liquid": return LiquidTab.available ? "Only with titles in the column, or the tabs across the top" : "Liquid Glass needs macOS 26"
         case "window.glass.style": return GlassStyle.liquidAvailable ? "Only with Glass on" : "Liquid Glass needs macOS 26"
         case "window.glass.clear", "window.glass.grain": return "With spaces on, in the space's menu › Colour…"

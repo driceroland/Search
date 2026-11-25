@@ -55,6 +55,7 @@ final class PageFind {
                     "steps": steps,
                     "limit": Self.limit,
                     "generation": NSNumber(value: generation),
+                    "dim": Shared.prefs.findDims ? 0.16 : 0.0,
                 ]
             )
             guard generation >= newestGeneration else { return Self.staleResult }
@@ -115,6 +116,7 @@ final class PageFind {
                     "steps": 0,
                     "limit": Self.limit,
                     "generation": NSNumber(value: generation),
+                    "dim": 0.0,
                 ]
             )
         } catch {
@@ -176,6 +178,7 @@ final class PageFind {
     const needle = String(query ?? "");
     const epoch = Number(generation ?? 0);
     const moves = Math.trunc(Number(steps ?? 0)) || 0;
+    const dimming = Math.min(0.5, Math.max(0, Number(dim ?? 0))) || 0;
     const cap = Math.max(1, Math.trunc(Number(limit ?? 1000)) || 1000);
     const key = "__searchPageFindState_v2";
     let state = globalThis[key];
@@ -679,19 +682,65 @@ final class PageFind {
     }
 
     // The selection alone is drawn pale grey while the find bar has the keys,
-    // so every match is painted too: pale white, the current one brighter with a white underline. Matches
+    // so every match is painted too: pale yellow, the current one orange with
+    // black text, and a white ring that pops round it (see ring). Matches
     // in fields keep only their selection.
     // Each window gets its two highlights once; after that they are only
     // cleared and added to. A highlight repaints the ranges it gains or
     // loses, whereas one set into or deleted from `CSS.highlights` could
     // stay on screen, or stay off it, until something else was drawn.
-    const findRules = "::highlight(search-find-match) { background-color: rgba(255, 255, 255, 0.28); text-decoration: none; }"
-        + "::highlight(search-find-current) { background-color: rgba(255, 255, 255, 0.55); color: inherit; text-decoration: underline 2px #fff; text-underline-offset: 3px; }"
-        + "@media (prefers-color-scheme: light) { ::highlight(search-find-match) { background-color: rgba(0, 0, 0, 0.12); }"
-        + " ::highlight(search-find-current) { background-color: rgba(0, 0, 0, 0.22); text-decoration: underline 2px #000; } }";
+    const findRules = "::highlight(search-find-match) { background-color: transparent; text-decoration: none; }"
+        + "::highlight(search-find-current) { background-color: #ffa000; color: #000; text-decoration: none; text-shadow: none; }";
     const quietSelection = "::selection { background-color: transparent; }";
 
+    // Safari's way of showing the matches: each one that isn't the current
+    // gets a white rounded border (an element laid over it, as a highlight
+    // can't have a border), and the current one is plain bright orange, with
+    // the rest of the page under a faint veil where Settings asks for one,
+    // cast by the shadow of an invisible box over it.
+    function unring() {
+        for (const box of state.rings || []) { try { box.remove(); } catch (_) {} }
+        state.rings = [];
+    }
+
+    function ring(current) {
+        unring();
+        const limit = 150;
+        let drawn = 0;
+        const draw = (match, isCurrent) => {
+            const doc = match.win.document;
+            const rect = match.range.getBoundingClientRect();
+            if (!rect.width && !rect.height) return;
+            // Only what is near the screen: a page of thousands of matches
+            // gets no thousands of boxes.
+            if (!isCurrent && (rect.bottom < -200 || rect.top > match.win.innerHeight + 200)) return;
+            const scroller = doc.scrollingElement || doc.documentElement;
+            const pad = 2;
+            const box = doc.createElement("div");
+            box.style.cssText = "all:initial;position:absolute;pointer-events:none;box-sizing:border-box;"
+                + (isCurrent
+                    ? "z-index:2147483646;border-radius:6px;"
+                        + (dimming > 0 ? "box-shadow:0 0 0 200vmax rgba(0,0,0," + dimming + ");" : "")
+                    : "z-index:2147483647;border:2px solid #fff;border-radius:6px;box-shadow:0 0 0 1px rgba(0,0,0,.28);");
+            box.style.left = (rect.left + scroller.scrollLeft - pad - (isCurrent ? 0 : 2)) + "px";
+            box.style.top = (rect.top + scroller.scrollTop - pad - (isCurrent ? 0 : 2)) + "px";
+            box.style.width = (rect.width + 2 * pad + (isCurrent ? 0 : 4)) + "px";
+            box.style.height = (rect.height + 2 * pad + (isCurrent ? 0 : 4)) + "px";
+            doc.documentElement.appendChild(box);
+            state.rings.push(box);
+        };
+        try {
+            if (current?.kind === "range" && (dimming > 0)) draw(current, true);
+            for (const match of state.matches) {
+                if (drawn >= limit) break;
+                if (match.kind !== "range" || match === current) continue;
+                try { draw(match, false); drawn += 1; } catch (_) {}
+            }
+        } catch (_) {}
+    }
+
     function unpaint() {
+        unring();
         for (const highlights of state.painted) {
             try { highlights.all.clear(); highlights.current.clear(); } catch (_) {}
             try { highlights.sheet.replaceSync(findRules); } catch (_) {}
@@ -754,6 +803,7 @@ final class PageFind {
                 try { highlights.sheet.replaceSync(findRules + quietSelection); } catch (_) {}
             }
         }
+        ring(current);
     }
 
     function scrollRange(range, win) {

@@ -770,8 +770,8 @@ struct SidePanelView: View {
             }
         case .site:
             ZStack(alignment: .top) {
+                // The page runs up under the bar, which floats on it.
                 PanelPage(web: SidePanelPages.shared.web(in: browser))
-                    .padding(.top, 52)
                 if let delegate = SidePanelPages.shared.siteDelegate(in: browser) {
                     SiteLine(browser: browser, delegate: delegate).id(ObjectIdentifier(delegate))
                 }
@@ -840,9 +840,10 @@ private struct PanelToolbar<Content: View>: View {
         HStack(spacing: 10) { content }
             .padding(.horizontal, 12)
             .frame(height: 36)
-            .background(Palette.ground, in: RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
+            // Glass over the page, not a band of its own: the page shows through.
+            .pillGlass(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
-            .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+            .shadow(color: .black.opacity(0.14), radius: 12, y: 4)
             .padding(8)
     }
 }
@@ -914,12 +915,7 @@ struct SidePanelBeside: View {
 
     /// The card's gap, or the hairline, with the handle on it.
     @ViewBuilder private var edge: some View {
-        if card {
-            handle.frame(width: Metrics.cardGap)
-        } else {
-            Rectangle().fill(Palette.hairline).frame(width: 1)
-                .overlay { handle.frame(width: 7) }
-        }
+        handle.frame(width: card ? Metrics.cardGap : Metrics.edgeGap)
     }
 
     /// The whole edge takes the pointer; a small pill in the middle of it

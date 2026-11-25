@@ -5275,7 +5275,7 @@ final class Bench {
                     grain: request["grain"] as? Bool ?? false))
             case "menu":
                 // A space chosen from the space's menu, by its title, as a click would.
-                guard let found = SpaceMenu.flat(SpaceMenu.menu(for: browser)).first(where: { $0.title == request["title"] as? String && $0.action != nil }) else {
+                guard let found = SpaceMenu.flat(SpaceMenu.menu(for: browser)).first(where: { ($0.title == request["title"] as? String || $0.title == "Switch to “\(request["title"] as? String ?? "")”") && $0.action != nil }) else {
                     answer(["error": "no such space in the menu"]); return
                 }
                 SpaceMenu.perform(found)

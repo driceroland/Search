@@ -1324,7 +1324,9 @@ struct BookmarksDropdown: View {
                 Text("No bookmarks yet")
                     .font(.system(size: 12.5))
                     .foregroundStyle(Palette.muted)
-                    .padding(14)
+                    .padding(.leading, 42)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 ScrollView {
                     BookmarkOutline(bookmarks: bookmarks, expanded: $expanded) { url in
@@ -1340,12 +1342,12 @@ struct BookmarksDropdown: View {
                 }
             }
             Divider().overlay(Palette.hairline)
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 16)
             VStack(spacing: 2) {
                 Foot(browser.pageKept ? "bookmark.fill" : "bookmark", browser.pageKept ? "Edit This Bookmark\u{2026}" : "Add This Page") {
                     browser.bookmarkCurrent()
                 }
-                Foot(nil, "Manage Bookmarks…") { browser.bookmarking = true }
+                Foot("book", "Manage Bookmarks…") { browser.bookmarking = true }
             }
             .padding(6)
         }
@@ -1388,24 +1390,20 @@ struct BookmarksDropdown: View {
     static let benchToggle = PassthroughSubject<Bookmark.ID, Never>()
 
     private struct Foot: View {
-        let symbol: String?
+        let symbol: String
         let title: String
         let act: () -> Void
         @State private var hovering = false
 
-        init(_ symbol: String?, _ title: String, act: @escaping () -> Void) {
+        init(_ symbol: String, _ title: String, act: @escaping () -> Void) {
             self.symbol = symbol
             self.title = title
             self.act = act
         }
 
         var body: some View {
-            HStack(spacing: 8) {
-                if let symbol {
-                    Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(Palette.muted).frame(width: 14)
-                } else {
-                    Spacer().frame(width: 14)
-                }
+            HStack(spacing: 10) {
+                Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(Palette.muted).frame(width: 16)
                 Text(title).font(.system(size: 12.5)).foregroundStyle(Palette.ink)
                 Spacer(minLength: 0)
             }
