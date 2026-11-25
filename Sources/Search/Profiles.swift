@@ -489,7 +489,7 @@ private struct InlineName: View {
             .background((focused || hovering) ? Palette.wash : .clear,
                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .padding(.leading, -6)
-            .frame(maxWidth: 260, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .onHover { hovering = $0 }
             .help("Rename")
@@ -514,7 +514,7 @@ private struct QuickRemove: View {
         Button(action: act) {
             Image(systemName: "trash")
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(hovering ? Color.red.opacity(0.85) : Palette.muted)
+                .foregroundStyle(hovering ? Palette.ink : Palette.muted)
                 .frame(width: 26, height: 26)
                 .background(hovering ? Palette.hover : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .contentShape(Rectangle())
