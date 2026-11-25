@@ -4951,6 +4951,7 @@ final class Browser: NSObject, ObservableObject {
     /// still comes up for one to be asked about: a private new tab never
     /// asks.
     func launch() {
+        comeBackIfShut()
         // Again while it is up: put away, as the key that raised it, the way
         // Spotlight's does. What was typed waits for the next ⌘T (see
         // dismiss()). It used to stay up with what was typed cleared.
@@ -5235,6 +5236,14 @@ final class Browser: NSObject, ObservableObject {
     /// makes on its own still closes with close(_:).
     func closeTab(_ tab: Tab) {
         if putsAway(tab) { putAway(tab) } else { close(tab) }
+    }
+
+    /// ⌘T or ⇧⌘N with every window closed: the menus act on the window
+    /// closed last, kept with the app running (#327), and its new tab sat
+    /// there unseen until a click on the Dock icon brought the window back.
+    /// The window comes back first, as ⌘N brings it (idea 1183).
+    private func comeBackIfShut() {
+        if shut, !isPopup, !tucked { Browsers.show(self) }
     }
 
     /// Whether Close Tab puts this tab away rather than closing it: a page
@@ -6975,6 +6984,7 @@ final class Browser: NSObject, ObservableObject {
     /// history, and no place in tomorrow's session.
     func newShyTab() {
         if websitePopup { tabDestination.newShyTab(); return }
+        comeBackIfShut()
         // Never two empty private tabs, as ⌘T never makes two empty ones:
         // one already open is moved to the chosen position.
         if let blank = tabs.last(where: { $0.isBlank && $0.shy && !$0.bench && split(for: $0) == nil }) {
