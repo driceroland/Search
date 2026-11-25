@@ -476,6 +476,14 @@ final class Bench {
                 answer(["positions": seen, "last": seen.last?[1] ?? -1, "smooth": WheelGlide.on])
             }
 
+        case "mute":
+            // The tab's speaker turned off, as its button would: for probes,
+            // whose media must never be heard. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "mute only works on a --test run"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            if !tab.muted { tab.toggleMute() }
+            answer(["muted": tab.muted])
+
         case "sleep":
             // Now rather than after half an hour, but past every other check
             // a tab has to clear — the answer says which one kept it awake.
@@ -720,6 +728,54 @@ final class Bench {
                 "started": browser.fetches.started,
             ])
 
+        case "devmode":
+            // Developer Mode (DevMode.swift) for a tab's site, as its site
+            // card's switch and ⇧⌥⌘I set it: "set" true/false, "cache"
+            // true/false for its cache off, "reload" true reloads as ⌘R
+            // does. Test runs only.
+            guard Store.testing else { answer(["error": "devmode only works on a --test run"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            let mode = DevMode.shared
+            if let on = request["set"] as? Bool { mode.set(on, for: tab.pageAddress, shy: tab.shy) }
+            if request["toggle"] as? Bool == true {
+                browser.select(tab)
+                browser.toggleDeveloperMode()
+            }
+            if let off = request["cache"] as? Bool { mode.setSkipsCache(off, for: tab.pageAddress) }
+            if request["reload"] as? Bool == true { tab.reload() }
+            answer(["on": mode.isOn(tab), "local": mode.local, "cacheOff": mode.skipsCache(tab.pageAddress),
+                    "sites": mode.sites, "address": tab.pageAddress?.absoluteString ?? "",
+                    "command": Command.named("view.developerMode") != nil])
+
+        case "screenshots":
+            // Screenshots in Downloads (Screenshots.swift): what is watched,
+            // whether it was refused. Test runs only, on a folder of the
+            // test's (downloads.screenshots.folder), never the Mac's.
+            guard Store.testing else { answer(["error": "screenshots only works on a --test run"]); return }
+            if let on = request["set"] as? Bool { browser.prefs.screenshotsInDownloads = on }
+            answer(["on": browser.prefs.screenshotsInDownloads, "folder": Screenshots.shared.folder?.path ?? "",
+                    "refused": Screenshots.shared.refused?.path ?? "",
+                    "completed": browser.loot.kept.map { ["name": $0.name, "from": $0.from, "path": $0.path] }])
+
+        case "pinpreview":
+            // A pin's glance (PinPreview.swift) as it stands: why a card
+            // would not show now, what it says is waiting, and with "picture"
+            // the picture it would show — fetched as the card fetches it,
+            // and the pin's sleep after. Test runs only.
+            guard Store.testing else { answer(["error": "pinpreview only works on a --test run"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            if request["hover"] as? Bool == true { PinPreview.hover(true, tab: tab, in: browser) }
+            var out: [String: Any] = ["refusal": PinPreview.refusal(tab, in: browser) ?? "", "unread": PinPreview.glance(tab) ?? "",
+                                      "title": tab.title, "asleep": tab.asleep, "built": tab.built != nil,
+                                      "shown": PinPreview.isShown, "on": browser.prefs.pinPreviews, "last": PinPreview.last]
+            guard request["picture"] as? Bool == true else { answer(out); return }
+            tab.preview(width: PinPreviewCard.width) { image in
+                out["picture"] = image.map { NSStringFromSize($0.size) } ?? ""
+                out["asleepAfter"] = tab.asleep
+                out["builtAfter"] = tab.built != nil
+                answer(out)
+            }
+
         case "kept":
             // A sleeping tab's picture, as kept for its waking, written to a
             // file: its size in pixels, what NSImage makes of it, and the
@@ -747,7 +803,7 @@ final class Bench {
                 switch act {
                 case "still": tab.still()
                 case "play": tab.playAgain()
-                case "away": tab.stilled = false
+                case "away": tab.handPause()
                 case "go": browser.select(tab)
                 default: answer(["error": "act is still, play, away or go"]); return
                 }
@@ -2606,6 +2662,23 @@ final class Bench {
                         "kept": took.kept, "skipped": took.skipped, "cancelled": took.cancelled,
                         "total": browser.bookmarks.count, "top": browser.bookmarks.roots.map(\.title), "saved": browser.saved.count])
             }
+
+        case "export-spaces":
+            // File › Export Spaces… without its panel: the file is .json or
+            // a bookmarks page by its name. With no path, only the spaces as
+            // they would be written. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "export-spaces only works on a --test run"]); return }
+            var out: [String: Any] = [:]
+            if let path = request["path"] as? String { out["said"] = browser.exportSpaces(to: URL(fileURLWithPath: path)) }
+            out["spaces"] = (try? JSONSerialization.jsonObject(with: SpacesExport.json(SpacesExport.gather()))) ?? [:]
+            answer(out)
+
+        case "import-spaces-file":
+            // Bring Things Over › File… given a Search spaces file.
+            guard Store.testing else { answer(["error": "import-spaces-file only works on a --test run"]); return }
+            guard let path = request["path"] as? String else { answer(["error": "import-spaces-file needs a path"]); return }
+            answer(["said": browser.takeSpacesFile(URL(fileURLWithPath: path)) ?? "not a spaces file",
+                    "names": browser.spaces.map(\.name), "usesSpaces": browser.prefs.usesSpaces])
 
         case "remove-folder":
             // The bookmarks list's Remove on a top-level folder, question and

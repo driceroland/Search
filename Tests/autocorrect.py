@@ -14,8 +14,10 @@ WebKit's back, after a page opened since, and after a relaunch.
 
 Inline predictions (idea 842): the grey rest of a word WebKit offers at the
 caret whenever the Mac's "Show inline predictive text" is on, autocorrect or
-not. Edit › Spelling and Grammar › Show Inline Predictions is off unless
-switched on, and counts over the Mac. The Mac's settings can't be touched
+not. Edit › Spelling and Grammar › Show Inline Predictions follows the Mac until
+switched (25 Nov 2026), and then counts over the Mac: switched off before
+launch here, for the run below; with no choice, a last launch checks it
+follows the Mac's own setting and that an earlier build's false is gone. The Mac's settings can't be touched
 here, so they are played in the copy's own domain, which AppKit reads before
 the global one: inline predictions, text completion and autocorrect said on
 there before launch (as an app that follows a Mac with them on sees them),
@@ -194,6 +196,8 @@ def main():
     if ours(): sys.exit("a copy from this run is already running")
     wipe()
     for k in ["bench", "welcomed", "autocorrect"]: subprocess.run(["defaults", "write", SUITE, k, "-bool", "true"])
+    # Chosen off, so it counts over the Mac's on (see the top).
+    subprocess.run(["defaults", "write", SUITE, "inlinePredictions", "-bool", "false"])
     make_copy()
     mac_says_on()
     t = T()
@@ -244,6 +248,17 @@ def main():
         settings_front()
         cmd({"do": "textcheck", "id": tab, "toggle": "autocorrect"})
         agree(t, "on again from Settings", tab, True)
+        # Never chosen: the Mac's own setting, and nothing kept in the app's
+        # defaults, not even the false an earlier build wrote there.
+        quit()
+        subprocess.run(["defaults", "delete", SUITE, "inlinePredictions"], capture_output=True)
+        subprocess.run(["defaults", "write", ID, "NSAutomaticInlinePredictionEnabled", "-bool", "false"])
+        tab = launch()
+        a = look_all(tab)["predictions"]
+        g = subprocess.run(["defaults", "read", "-g", "NSAutomaticInlinePredictionEnabled"], capture_output=True, text=True).stdout.strip()
+        mac = g != "0"
+        t.ok(f"never chosen: follows the Mac's ({mac}), nothing kept",
+             a["setting"] is mac and a["menu"] is mac and a["page"] is mac and a["kept"] is None, str(a))
     finally:
         quit()
         wipe()

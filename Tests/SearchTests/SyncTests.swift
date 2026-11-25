@@ -643,4 +643,26 @@ final class SyncTests: XCTestCase {
         SyncSettings.apply(["set:look": "\"sepia\""], to: prefs)
         XCTAssertEqual(prefs.look, .dark)
     }
+
+    /// Tabs show site icons by default since letters were (Glyph.standard).
+    /// A Mac that never chose doesn't stamp its new default over a value the
+    /// Macs agreed — it may be another Mac's choice — and once chosen here,
+    /// its own value goes.
+    func testAChangedDefaultNeverOverwritesWhatWasAgreed() {
+        let store = Store.settings
+        let kept = store.object(forKey: "glyph")
+        defer { if let kept { store.set(kept, forKey: "glyph") } else { store.removeObject(forKey: "glyph") } }
+        store.removeObject(forKey: "glyph")
+        let prefs = Preferences()
+        XCTAssertEqual(prefs.glyph, .icons)
+        XCTAssertNil(store.object(forKey: "glyph"), "a default is never written")
+        XCTAssertEqual(SyncSettings.items(prefs)["set:glyph"], "\"icons\"", "nothing agreed: the default goes")
+        XCTAssertEqual(SyncSettings.items(prefs, agreed: ["set:glyph": "\"letters\""])["set:glyph"], "\"letters\"")
+        // The pass applies what was agreed: chosen elsewhere, it is taken here.
+        SyncSettings.apply(["set:glyph": "\"letters\""], to: prefs)
+        XCTAssertEqual(prefs.glyph, .letters)
+        prefs.glyph = .icons
+        XCTAssertEqual(SyncSettings.items(prefs, agreed: ["set:glyph": "\"letters\""])["set:glyph"], "\"icons\"",
+                       "chosen here, this Mac's own value goes")
+    }
 }

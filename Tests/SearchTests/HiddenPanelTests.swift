@@ -20,9 +20,9 @@ final class HiddenPanelTests: XCTestCase {
         let host = "hidden-panel.example"
         browser.curtain.restoreAll(on: host)
         defer { browser.curtain.restoreAll(on: host) }
-        browser.curtain.hide("#one", label: "One", note: "300×80 · top right", on: host)
-        browser.curtain.hide("#two", label: "Two", note: "300×80 · top right", on: host)
-        browser.curtain.hide("#three", label: "Three", note: "300×80 · top left", on: host)
+        browser.curtain.hide(Veil(selector: "#one", label: "One", note: "300×80 · top right", date: Date()), on: host)
+        browser.curtain.hide(Veil(selector: "#two", label: "Two", note: "300×80 · top right", date: Date()), on: host)
+        browser.curtain.hide(Veil(selector: "#three", label: "Three", note: "300×80 · top left", date: Date()), on: host)
 
         // In a window never ordered in, as the panel is in one: SwiftUI
         // draws again only what has been told it changed.

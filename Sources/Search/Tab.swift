@@ -661,6 +661,9 @@ final class Tab: ObservableObject, Identifiable {
     /// Paused from the player at the foot of the sidebar, to be played again
     /// from there (see Player.swift).
     @Published var stilled = false
+    /// WebKit's media suspension, put on by the player's pause for what a
+    /// script can't reach, and lifted by its play or `handPause` (Player.swift).
+    private var suspended = false
     /// Darkened by Search, as its page last said (see Dusk.swift).
     @Published var dusked = false
     /// What the page measured: true, dark by itself; nil, not yet measured.
@@ -688,7 +691,7 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     /// What the page hands back when you point at something and click it.
-    var onPick: ((Tab, String, String, String) -> Void)?
+    var onPick: ((Tab, Veil) -> Void)?
     /// The page has a sign-in on it; the page has just sent one.
     var onSignIn: ((Tab) -> Void)?
     /// The caret has entered or left one of the sign-in boxes; where the box
@@ -1575,8 +1578,8 @@ final class Tab: ObservableObject, Identifiable {
         return "\(scheme)://\(bracketed)" + (port.map { ":\($0)" } ?? "")
     }
 
-    func picked(selector: String, label: String, note: String) {
-        onPick?(self, selector, label, note)
+    func picked(_ veil: Veil) {
+        onPick?(self, veil)
     }
 
     /// Show one hidden thing while the pointer rests on its row in the list.
@@ -1699,6 +1702,10 @@ final class Tab: ObservableObject, Identifiable {
     /// True for a tab that has a place and an address but is holding no page —
     /// brought back from the last session, or put down with ⌘W while pinned.
     var asleep: Bool { pending != nil }
+
+    /// Where a grouped tab was when its page was put away (Browser.putAway):
+    /// gone back to and still there, Close Tab closes it for real.
+    var putAwayAt: URL?
 
     /// ⌘W on a pinned tab. The letter keeps its place in the row and the
     /// address is remembered; everything the page was holding is let go, so a
@@ -2099,6 +2106,8 @@ final class Tab: ObservableObject, Identifiable {
     /// A view that has lost its document is given the address back instead:
     /// there is nothing else for it to reload.
     func reload(fromOrigin: Bool = false) {
+        // Developer Mode's cache turned off for the site (DevMode.swift).
+        let fromOrigin = fromOrigin || DevMode.shared.skipsCache(pageAddress)
         (delegate as? Browser)?.certificateDeclined.remove(id)
         // Search's own pages are drawn from what is there now, always.
         guard page == nil else { return }
@@ -2216,8 +2225,15 @@ final class Tab: ObservableObject, Identifiable {
     private func heard(_ on: Bool) {
         let was = noisy
         noisy = on
-        // Playing again, from the player or from the page: nothing paused.
-        if on { stilled = false }
+        // Playing again, from the player or from the page: nothing paused,
+        // and nothing left suspended.
+        if on {
+            stilled = false
+            if suspended {
+                suspended = false
+                built?.setAllMediaPlaybackSuspended(false) {}
+            }
+        }
         quiet?.invalidate()
         quiet = nil
         guard was, !on else { return }
@@ -2232,13 +2248,14 @@ final class Tab: ObservableObject, Identifiable {
         quiet?.invalidate()
         quiet = nil
         media.forget()
-        stilled = false
+        handPause()
     }
 
     /// The player's pause (Player.swift): what plays is paused and
     /// remembered, in each frame that played and then in the page, and once
-    /// the page has done that, WebKit pauses what a script can't reach.
-    /// Nothing remembered anywhere, and the player has nothing to play again.
+    /// the page has done that, WebKit suspends what a script can't reach — a
+    /// player in a shadow root, one never put in the page — to be resumed by
+    /// the player's play.
     func still() {
         guard noisy, let built else { return }
         stilled = true
@@ -2246,21 +2263,43 @@ final class Tab: ObservableObject, Identifiable {
         for frame in media.frames {
             built.evaluateJavaScript(Player.still, in: frame, in: Web.world) { _ in }
         }
-        let frames = !media.frames.isEmpty
-        built.evaluateJavaScript(Player.still, in: nil, in: Web.world) { [weak self] result in
-            if !frames, ((try? result.get()) as? Int ?? 0) == 0 { self?.stilled = false }
-            built.pauseAllMediaPlayback {}
+        built.evaluateJavaScript(Player.still, in: nil, in: Web.world) { [weak self] _ in
+            // Played again or gone in the meantime: nothing to suspend.
+            guard let self, self.built === built, self.stilled, !self.suspended else { return }
+            self.suspended = true
+            built.setAllMediaPlaybackSuspended(true) {}
         }
     }
 
-    /// The player's play: what its pause stopped, playing again.
+    /// The player's play: what its pause stopped, playing again — WebKit's
+    /// suspension lifted first, which resumes only what was still playing
+    /// when it began, then what the script paused.
     func playAgain() {
         guard stilled, let built else { return }
         Store.interacted(with: built)
+        if suspended {
+            suspended = false
+            built.setAllMediaPlaybackSuspended(false) {}
+        }
         for frame in media.frames {
             built.evaluateJavaScript(Player.again, in: frame, in: Web.world) { _ in }
         }
         built.evaluateJavaScript(Player.again, in: nil, in: Web.world) { _ in }
+    }
+
+    /// The player's pause given up — put away with its cross, the tab gone
+    /// to, its page leaving: what WebKit suspended is paused as by the
+    /// page's own button, and the suspension lifted, so the page plays and
+    /// pauses as it would and the next page starts with nothing held.
+    func handPause() {
+        stilled = false
+        guard suspended else { return }
+        suspended = false
+        guard let built else { return }
+        // Paused while suspended, a player stays paused once it is lifted.
+        // Sent one after the other, they reach the page in that order.
+        built.pauseAllMediaPlayback {}
+        built.setAllMediaPlaybackSuspended(false) {}
     }
 
     /// Quiet long enough: the paused media muted, in the page and in each
@@ -2295,8 +2334,10 @@ final class Tab: ObservableObject, Identifiable {
         quiet?.invalidate()
         quiet = nil
         media.forget()
-        // What the player paused went with the page: nothing to play again.
+        // What the player paused went with the page: nothing to play again,
+        // and the suspension with the view.
         stilled = false
+        suspended = false
         guard let web = built else { return }
         DevToolsPackages.unload(web)
         (delegate as? Browser)?.cancelDisplay(for: web)

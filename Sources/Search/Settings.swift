@@ -619,6 +619,8 @@ struct SettingsPanel: View {
             // Coming from another browser, now or any time later: the same
             // page as File › Bring Things Over… and the Welcome's.
             Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
+        case "general.exportSpaces":
+            Pill("Export Spaces…") { browser.exportSpaces() }
         case "sync":
             // On asks for the folder first; cancelled, it stays off.
             // Never with Sync with iCloud: the two would undo each other.
@@ -646,6 +648,7 @@ struct SettingsPanel: View {
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)
         case "downloads.button": Switch(on: $prefs.alwaysShowsDownloads)
+        case "downloads.screenshots": ScreenshotsSwitch(prefs: prefs)
         case "downloads.open":
             PillMenu(selection: $prefs.downloadsOpening, title: prefs.downloadsOpening.title) {
                 ForEach(DownloadsOpening.allCases) { Text($0.title).tag($0) }
@@ -890,6 +893,7 @@ struct SettingsPanel: View {
         case "panels.clear": Switch(on: $prefs.clearPanels)
         case "empty.clear": Switch(on: $prefs.clearEmpty)
         case "find.dim": Switch(on: $prefs.findDims)
+        case "pins.preview": Switch(on: $prefs.pinPreviews)
         case "pins.folders": Switch(on: $prefs.pinFolders)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "pins.linksNewTab": Switch(on: $prefs.pinLinksOpenTabs)
@@ -972,6 +976,7 @@ struct SettingsPanel: View {
         case "updates.notice": Switch(on: $prefs.showsUpdateReady)
         case "about.feedback": Pill("Send Feedback") { Links.writeFeedback() }
         case "about.notes": Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
+        case "developer.local": Switch(on: $prefs.developerLocal)
         case "bench": Switch(on: $prefs.bench)
         case "agents": Switch(on: $prefs.agents)
         case "news.updates": OptInSettingsField(betaOnly: false) { _ = browser.open($0, foreground: true) }

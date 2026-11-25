@@ -421,6 +421,9 @@ struct SiteCard: View {
             sound
             grounded
             darken
+            if DevMode.host(of: tab.pageAddress) != nil {
+                Developer(tab: tab)
+            }
             if prefs.keepsSitesAwake, tab.awakeHost != nil {
                 HStack(spacing: 0) {
                     Text("Keep This Site Awake").font(MenuMetrics.font)
@@ -680,6 +683,35 @@ struct SiteCard: View {
             .padding(.leading, MenuMetrics.text)
             .padding(.trailing, MenuMetrics.trailing)
             .frame(height: MenuMetrics.row)
+        }
+    }
+
+    /// Developer Mode for the site (DevMode.swift): its bar over the page,
+    /// at once.
+    private struct Developer: View {
+        @ObservedObject var tab: Tab
+        @ObservedObject private var mode = DevMode.shared
+
+        var body: some View {
+            HStack(spacing: 0) {
+                Text("Developer Mode")
+                    .font(MenuMetrics.font)
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .fixedSize()
+                Spacer(minLength: 24)
+                if let keys = ShortcutStore.shared.key(for: "view.developerMode")?.display {
+                    Text(keys)
+                        .font(MenuMetrics.font)
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .fixedSize()
+                        .padding(.trailing, 8)
+                }
+                Switch(on: Binding(get: { mode.isOn(tab) }, set: { mode.set($0, for: tab.pageAddress, shy: tab.shy) }))
+            }
+            .padding(.leading, MenuMetrics.text)
+            .padding(.trailing, MenuMetrics.trailing)
+            .frame(height: MenuMetrics.row)
+            .help("The page's whole address and quick tools: Web Inspector, reload ignoring cache, cache off")
         }
     }
 

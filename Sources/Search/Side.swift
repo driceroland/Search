@@ -2147,12 +2147,17 @@ private struct PinSquare: View, Equatable {
         .modifier(OptionClick { if !lettering { browser.optionClick(tab) } })
         // Put down, like ⌘W: close() is what knows a pin isn't removed.
         .overlay { MiddleClick { browser.close(tab) } }
-        .onHover { hovering = $0 }
+        .onHover { on in
+            hovering = on
+            // A glance at its page, when it is asked for (PinPreview.swift).
+            if !inMap { PinPreview.hover(on, tab: tab, in: browser) }
+        }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
         // Another space's page draws its squares too: only this space's say
         // where they are.
         .modifier(SiteCardPanel.Square(id: tab.id, on: !inMap && browser.tabs.contains { $0 === tab }))
-        .help(tab.label)
+        // The glance says its name, and more.
+        .help(prefs.pinPreviews ? "" : tab.label)
         .animation(nil, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))
     }
