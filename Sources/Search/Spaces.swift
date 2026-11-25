@@ -906,8 +906,8 @@ struct SpaceDot: View {
             ZStack {
                 Image(systemName: shown?.symbol ?? symbol)
                     .font(.system(size: 12, weight: .medium))
-                    // Hovered as the doors beside it are (Door, idea 1034).
-                    .foregroundStyle(tint ?? (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
+                    // Hovered and at rest as the doors beside it are (Door, idea 1034).
+                    .foregroundStyle(tint ?? (hovering ? Palette.ink.opacity(0.7) : greys.muted))
                     .id(shown?.key ?? key)
                     // The way the tabs go: sideways in the column; in the bar
                     // across the top, up for the next space, down going back.
@@ -1034,8 +1034,8 @@ private struct SpaceButton: View {
                 // Its colour only while it's the one on screen: the others
                 // all grey alike, coloured or not, so a coloured space's
                 // button didn't read as the one you're in.
-                // Hovered as the doors beside it are (Door, idea 1034).
-                .foregroundStyle(current ? (space.tint ?? Palette.ink) : hovering ? Palette.ink.opacity(0.7) : Palette.muted)
+                // Hovered and at rest as the doors beside it are (Door, idea 1034).
+                .foregroundStyle(current ? (space.tint ?? Palette.ink) : hovering ? Palette.ink.opacity(0.7) : greys.muted)
                 .opacity(current || hovering ? 1 : 0.75)
                 .frame(minWidth: squeezes ? 20 : 26, idealWidth: 26, maxWidth: 26, minHeight: 26, maxHeight: 26)
                 .background(

@@ -1941,11 +1941,12 @@ private struct PinSquare: View, Equatable {
         live ? greys.pinLive : selected ? greys.wash : hovering ? greys.hover : greys.tile
     }
 
-    /// The pin's letter: full ink with High contrast text, otherwise soft
-    /// grey until the square is live or under the pointer.
+    /// The pin's letter: full ink with High contrast text, otherwise the
+    /// ground's soft grey (see Door) until the square is live or under the
+    /// pointer.
     private var pinLetter: Color {
         if live || prefs.highContrastText { return Palette.ink }
-        return hovering ? Palette.ink.opacity(0.7) : Palette.muted
+        return hovering ? Palette.ink.opacity(0.7) : greys.muted
     }
 
     var body: some View {
@@ -2488,7 +2489,12 @@ struct Door: View {
         } label: {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(on ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
+                // At rest in the ground's own grey, as a tab's title is: the
+                // plain ground's Palette.muted, but black or white let
+                // through, so it stands off whatever it lies on. An opaque
+                // mid grey vanished on glass with Transparency up, where the
+                // ground is whatever is behind the window.
+                .foregroundStyle(on ? Palette.ink : (hovering ? Palette.ink.opacity(0.7) : greys.muted))
                 .offset(x: nudge)
                 .frame(width: 26, height: 26)
                 .background(
