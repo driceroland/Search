@@ -145,7 +145,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Show that a download started** *([#830](https://github.com/driceroland/Search/issues/830))*
 - [ ] **VPN extensions** *([#831](https://github.com/driceroland/Search/issues/831))*
 - [ ] **Zotero Connector** *(email)*
-- [ ] **Neat Download Manager** *(email)*
 - [ ] **Todoist and Clockify extensions** *(email)*
 - [ ] **Dia pins and spaces import** *(email)*
 - [ ] **Full screen on ⌃⌘F** *(email)*
