@@ -14,10 +14,14 @@ enum Store {
     /// is not belt and braces: a development build launched from a terminal
     /// once wrote over somebody's real session, and asking a person to
     /// remember a flag is not a safeguard.
-    static var testing: Bool {
-        if ProcessInfo.processInfo.environment["SEARCH_PROBE"] != nil { return true }
-        return Bundle.main.executablePath?.contains("/.build/") == true
-    }
+    ///
+    /// Asked a hundred thousand times in a launch's first seconds with
+    /// hundreds of tabs: read with getenv, not ProcessInfo's environment,
+    /// which is a fresh dictionary of every variable at each call (13 MB
+    /// allocated and freed again in ten seconds at 400 tabs), and still
+    /// read each time, as a unit test sets SEARCH_PROBE before its world.
+    static var testing: Bool { getenv("SEARCH_PROBE") != nil || fromBuildFolder }
+    private static let fromBuildFolder = Bundle.main.executablePath?.contains("/.build/") == true
 
     /// Which test world a test run lives in. SEARCH_PROBE=1, or a run from
     /// the build folder, is the test world, "Search (test)". SEARCH_PROBE=
@@ -38,7 +42,7 @@ enum Store {
     /// the way WebKit slows them, App Nap left to macOS — so what gets
     /// measured is what people get.
     static var measuring: Bool {
-        testing && ProcessInfo.processInfo.environment["SEARCH_MEASURE"] != nil
+        testing && getenv("SEARCH_MEASURE") != nil
     }
 
     /// Cookies, sign-ins, caches. WebKit keeps its default store per bundle,
