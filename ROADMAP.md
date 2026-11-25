@@ -40,10 +40,6 @@ in it is stale. Whoever works on Search keeps it that way, with `./ideas`
 - [ ] **Window stutters between screens** Dragging the window from one screen to another stutters. Needs a trace recorded on two screens. *(X)*
 - [ ] **Figma and LinkedIn feel slow** Figma blurs for a moment as you zoom in; LinkedIn's feed and profiles scroll with lag. *(email)*
 
-## Done, in the next version
-
-- [x] **Drag a download out of Downloads** A finished download whose file is still there can be dragged to Finder or another app, as a file. Built for 1.0.20: drag it from the Downloads tab, side panel or card onto a page (an upload) or into another app. *([#920](https://github.com/driceroland/Search/issues/920), [#1388](https://github.com/driceroland/Search/issues/1388))*
-
 ## Now — fixes for the next update
 
 - [ ] **Spaces sometimes don't switch** *(email)*

@@ -65,20 +65,25 @@ struct UpdateNoticeRow: View {
     var body: some View {
         if let shown = UpdateNotice.shown(updater, prefs) {
             HStack(spacing: 8) {
-                Image(systemName: "arrow.down.circle")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.muted)
-                Text(UpdateNotice.title(shown.kind))
-                    .font(.system(size: prefs.sideTitle))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
+                // The icon goes first in a narrow column, as on the agent's
+                // card: the words are what must be read whole.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.muted)
+                        title(shown.kind)
+                    }
+                    title(shown.kind)
+                    // Narrowest of all: the button says the rest.
+                    title("Update")
+                }
                 Spacer(minLength: 0)
                 if hovering {
                     UpdateNoticeCross { prefs.updateHiddenBuild = shown.build }
                         .transition(.opacity)
                 }
-                UpdateNoticeButton(title: UpdateNotice.button(shown.kind)) { UpdateNotice.act(shown.kind) }
+                CardButton(title: UpdateNotice.button(shown.kind)) { UpdateNotice.act(shown.kind) }
             }
             .padding(.leading, 10)
             .padding(.trailing, 6)
@@ -103,6 +108,16 @@ struct UpdateNoticeRow: View {
                   : "A new version of Search is out. Install fetches it; it starts at the next launch.")
             .animation(Motion.quick, value: hovering)
         }
+    }
+
+    private func title(_ kind: UpdateNotice.Kind) -> some View { title(UpdateNotice.title(kind)) }
+
+    private func title(_ words: String) -> some View {
+        Text(words)
+            .font(.system(size: prefs.sideTitle))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
     }
 }
 
@@ -147,12 +162,20 @@ struct UpdateNoticePill: View {
     }
 }
 
-/// Restart or Install, as the agent's Stop on a row is drawn: a small
-/// capsule on the ground, under a hairline.
-private struct UpdateNoticeButton: View {
+/// Restart or Install, and the coding agent's Stop on its card
+/// (AgentBanner): a small capsule on the ground, under a hairline. `spot`
+/// is drawn behind the label, for a control that has to know where it is.
+struct CardButton<Spot: View>: View {
     let title: String
     let act: () -> Void
+    let spot: Spot
     @State private var hovering = false
+
+    init(title: String, act: @escaping () -> Void, @ViewBuilder spot: () -> Spot) {
+        self.title = title
+        self.act = act
+        self.spot = spot()
+    }
 
     var body: some View {
         Button(action: act) {
@@ -164,11 +187,18 @@ private struct UpdateNoticeButton: View {
                 .background(Palette.ground, in: Capsule())
                 .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
                 .contentShape(Capsule())
+                .background(spot)
                 .fixedSize()
         }
         .buttonStyle(.plain)
         .focusable(false)
         .onHover { hovering = $0 }
+    }
+}
+
+extension CardButton where Spot == EmptyView {
+    init(title: String, act: @escaping () -> Void) {
+        self.init(title: title, act: act) { EmptyView() }
     }
 }
 

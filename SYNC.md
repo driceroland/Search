@@ -53,7 +53,8 @@ JSON. Unknown keys are ignored on read; missing optional keys are nil.
 PinDef        { id: UUID, letter: String, home: String, title: String, name: String? }
 Bookmark      { id: UUID, title: String, url: String?, children: [Bookmark]? }   // url nil = folder
 Space         { id: UUID, name: String, colour: Int, icon: String?, ... }        // the Mac's Space
-DeviceTabs    { name: String, platform: "ios" | "macos", at: Date, tabs: [{ url: String, title: String }] }
+DeviceTabs    { name: String, platform: "ios" | "macos", at: Date, tabs: [{ url: String, title: String, group: UUID? }],
+                groups: [{ id: UUID, name: String, colour: Int?, collapsed: Bool? }]? }
 SharedSettings{ engine: String?, custom: String?, suggest: String?, look: String? } // Engine / Look raw values
 ```
 
@@ -63,6 +64,14 @@ SharedSettings{ engine: String?, custom: String?, suggest: String?, look: String
 - `DeviceTabs.tabs`: ordinary web pages only, no pinned tabs (pins travel as
   pins), **never private tabs**. The Mac sends every window's tabs of every
   space as one list.
+- `DeviceTabs.groups` and `tabs[].group` (optional, from the Mac since
+  1.0.20): the tab groups the open tabs are in, by name, colour number and
+  folded state; a group's tabs are the pages naming it, in `tabs`' order.
+  Both are absent when no tab is in a group, or groups are off there, so
+  such a device writes the JSON it always has. A device that doesn't know
+  them reads the tabs as before, in one list; only a device's own app ever
+  writes its `device.` record, so nothing else can drop them. A `group` the
+  list doesn't have means none.
 - `DeviceTabs.name`: the device's own name as the person knows it (the Mac's
   computer name). The other side shows it ("On Drice's MacBook Pro"). `at`
   is when the list was written; a device writes again only when `tabs` or

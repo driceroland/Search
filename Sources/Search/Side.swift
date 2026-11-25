@@ -24,6 +24,10 @@ struct SideBar: View {
     /// On the window's ground, beside the page's card (see CardEdge): the
     /// ground's colour and no edge of its own, the card's edge being the line.
     var onFrame = false
+    /// Round, folded out over the page as a floating card (see Fold): the
+    /// column's own ground cut to it. Only the ground is cut, not the
+    /// column, whose edge to pull stands just past it.
+    var corner: CGFloat = 0
     /// The greys for that ground, handed down to every row, pin and door.
     private var greys: Greys { onFrame ? .frame : .white }
 
@@ -300,16 +304,15 @@ struct SideBar: View {
                 $0.modifier(EndInset(bottom: footHeight))
             }
             .padding(.bottom, (browser.player == nil ? 0 : rowHeight + SideBar.playerGap)
-                     + (agentHere && !icons ? SideBar.agentRow + SideBar.playerGap : 0)
+                     + (agentHere && !icons ? agentCard + SideBar.playerGap : 0)
                      + (updateHere ? rowHeight + SideBar.playerGap : 0))
 
             VStack(spacing: 0) {
                 Spacer()
-                // A coding agent allowed in this window: its pill and Stop,
+                // A coding agent allowed in this window: its card and Stop,
                 // in the column rather than over the page (AgentBanner).
                 if agentHere, !icons {
                     AgentStatus(browser: browser, style: .row)
-                        .frame(height: SideBar.agentRow)
                         .padding(.horizontal, 10)
                         .padding(.bottom, SideBar.playerGap)
                         .transition(.opacity)
@@ -406,6 +409,7 @@ struct SideBar: View {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         }
         .overlay(alignment: innerEdge) {
             if !onFrame { Rectangle().fill(Palette.hairline).frame(width: 1) }
@@ -1645,8 +1649,8 @@ struct SideBar: View {
     }
     /// Between what plays in another tab and the foot's doors.
     private static let playerGap: CGFloat = 4
-    /// The agent's quiet line at the column's foot.
-    private static let agentRow: CGFloat = 30
+    /// The agent's card at the column's foot (AgentStatus).
+    private var agentCard: CGFloat { AgentStatus.cardHeight(row: rowHeight, auto: agents.session?.auto == true) }
     /// "Update ready" is showing at the foot (UpdateNotice); not in the
     /// column of icons, where there is no room for its words.
     private var updateHere: Bool { !icons && UpdateNotice.shown(updater, prefs) != nil }
@@ -2016,7 +2020,9 @@ private struct PinSquare: View, Equatable {
         .overlay { MiddleClick { browser.close(tab) } }
         .onHover { hovering = $0 }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
-        .background { if !inMap { SiteCardPanel.Square(id: tab.id) } }
+        // Another space's page draws its squares too: only this space's say
+        // where they are.
+        .modifier(SiteCardPanel.Square(id: tab.id, on: !inMap && browser.tabs.contains { $0 === tab }))
         .help(tab.label)
         .animation(nil, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -2182,10 +2188,6 @@ private struct SideRow: View, Equatable {
             .padding(.leading, 10)
             .padding(.trailing, status || peeking ? 0 : 10)
             .frame(height: prefs.sideRow)
-            // Stop, under the pointer, on the row the agent is working in.
-            .overlay(alignment: .trailing) {
-                if hovering, tab.agentWorking, !editing { AgentRowStop().padding(.trailing, 4) }
-            }
             .contentShape(Rectangle())
             .modifier(TabPress(enabled: interactive && !editing && !pickedAmongOthers, active: live, selected: $selectedOnPress, pressing: $pressed) {
                 browser.clearTabSelection()

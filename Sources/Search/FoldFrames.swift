@@ -43,7 +43,7 @@ enum FoldFrames {
                             "atRest": census(window)])
                     return
                 }
-                once(browser, window, span: span) { found in
+                once(browser, window, span: span, track: request["track"] as? Bool == true) { found in
                     presses.append(found)
                     later(rest) { press(n + 1) }
                 }
@@ -102,7 +102,17 @@ enum FoldFrames {
         var ticks: [(at: CFTimeInterval, column: Double)] = []
         var column: () -> Double = { .nan }
         var look: () -> Void = {}
-        @objc func tick(_ link: CADisplayLink) { ticks.append((link.timestamp, column())); look() }
+        /// With "track": where things stood at each frame (see `geometry`).
+        var track: (() -> [String: Any])?
+        var tracked: [[String: Any]] = []
+        var started: CFTimeInterval = 0
+        @objc func tick(_ link: CADisplayLink) {
+            ticks.append((link.timestamp, column())); look()
+            if var at = track?() {
+                at["t"] = ((link.timestamp - started) * 10000).rounded() / 10
+                tracked.append(at)
+            }
+        }
     }
 
     /// Each layer's model state, frame to frame: what the window server is
@@ -145,7 +155,7 @@ enum FoldFrames {
     }
 
     /// One ⌘S, timed for `span` seconds.
-    private static func once(_ browser: Browser, _ window: NSWindow, span: Double,
+    private static func once(_ browser: Browser, _ window: NSWindow, span: Double, track: Bool = false,
                              _ done: @escaping @MainActor ([String: Any]) -> Void) {
         guard let root = window.contentView?.superview else { done([:]); return }
         func catches(in view: NSView) -> [NSView] {
@@ -183,6 +193,8 @@ enum FoldFrames {
         link.add(to: .main, forMode: .common)
         let before = browser.folded
         let started = CACurrentMediaTime()
+        ticker.started = started
+        if track { ticker.track = { geometry(browser, window) } }
         let cpu0 = cpu()
         browser.toggleFold()
         var middle: [String: Any] = [:]
@@ -193,8 +205,13 @@ enum FoldFrames {
             for observer in observers { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
             let ticks = ticker.ticks.filter { $0.at >= started - 0.001 }
             // The frames the column moved on, and the time between them.
+            // Not its last point: kept to whole pixels (PixelOffset), the
+            // spring's tail moves a half point every few frames, which is
+            // the column at rest, not a stall.
             var moves: [CFTimeInterval] = []
-            for (a, b) in zip(ticks, ticks.dropFirst()) where !a.column.isNaN && !b.column.isNaN && abs(b.column - a.column) > 0.01 {
+            let rest = ticks.last?.column ?? .nan
+            for (a, b) in zip(ticks, ticks.dropFirst()) where !a.column.isNaN && !b.column.isNaN && abs(b.column - a.column) > 0.01
+                && !(abs(a.column - rest) <= 1) {
                 moves.append(b.at)
             }
             let gaps = zip(moves, moves.dropFirst()).map { ($1 - $0) * 1000 }.sorted()
@@ -213,8 +230,52 @@ enum FoldFrames {
                   "cpuMs": ((cpu1 - cpu0) * 10000).rounded() / 10,
                   "layersMoved": layers.moved, "layersMovedMax": layers.maxMoved, "redrawn": layers.redrawn, "addedLayers": layers.added,
                   "redrawers": layers.redrawers, "pageWidths": pageWidths,
-                  "middle": middle])
+                  "middle": middle, "track": ticker.tracked])
         }
+    }
+
+    /// Where the page's card, the column and the window's buttons stand at
+    /// this frame, in the window's coordinates with y down: the page as it
+    /// is seen — the web view cut by every layer above it that clips, short
+    /// of the window's own — the column's left edge, and the buttons'
+    /// slide as Core Animation shows it.
+    static func geometry(_ browser: Browser, _ window: NSWindow) -> [String: Any] {
+        guard let root = window.contentView?.superview, let top = root.layer else { return [:] }
+        let height = top.bounds.height
+        func flip(_ r: CGRect) -> [Double] {
+            [Double(r.minX), Double(height - r.maxY), Double(r.width), Double(r.height)].map { ($0 * 10).rounded() / 10 }
+        }
+        var out: [String: Any] = ["window": flip(top.bounds)]
+        if let web = browser.active?.built, var layer = web.layer {
+            var seen = layer.convert(layer.bounds, to: top)
+            var radius: CGFloat = 0
+            while let up = layer.superlayer, up !== top {
+                if up.masksToBounds || up.mask != nil {
+                    let clip = up.convert(up.mask?.frame ?? up.bounds, to: top)
+                    if clip.width < 10_000 {
+                        seen = seen.intersection(clip)
+                        radius = max(radius, up.mask?.cornerRadius ?? up.cornerRadius)
+                    }
+                }
+                layer = up
+            }
+            out["card"] = flip(seen)
+            out["radius"] = Double(radius)
+            out["page"] = flip(web.convert(web.bounds, to: nil).offsetBy(dx: 0, dy: 0))
+            out["pageSize"] = [Double(web.frame.width), Double(web.frame.height)]
+        }
+        func catches(in view: NSView) -> [NSView] {
+            (String(describing: type(of: view)) == "Catch" ? [view] : []) + view.subviews.flatMap(catches)
+        }
+        if let marker = catches(in: root).first {
+            out["column"] = Double(marker.convert(marker.bounds, to: nil).minX)
+        }
+        if let bar = window.standardWindowButton(.closeButton)?.superview, let layer = bar.layer {
+            let shown = layer.presentation() ?? layer
+            out["lights"] = (shown.value(forKeyPath: "transform.translation.x") as? Double) ?? 0
+            out["lightsHidden"] = bar.isHidden
+        }
+        return out
     }
 
     private static func later(_ seconds: Double, _ work: @escaping @MainActor () -> Void) {
