@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A double-click on a pin's square that has wandered from its page takes it back home from any square, not only from the one you are already on: the first click makes the pin the one on screen and draws its square anew, and the double-click, counted by a tap that started over there, was lost. It is now read from the press itself. (idea 1216)
 - A picture inside a link keeps Open Link in New Tab in its right-click menu, whatever the page is built of: WebKit's own hit test now says whether the picture is a link, where Search's page script said so and missed a link it couldn't see, as one in a web component's closed shadow root, leaving only Open Image in New Tab. `python3 Tests/picture_link_menu.py` (idea 1208)
 - Under a sign-in box, each Apple Passwords account now says which entry it is, with its title when the Passwords app gives one or else its site, as keychain accounts show their site, where every row read "Apple Passwords" alone. `swift test --filter ApplePasswordsTests` (idea 1206)
 - ⌘Tab back to a page in full screen, a video or a page that asked for it, brings the full screen back: macOS made the browser's window key instead and showed WebKit's blurred "Click to Exit Full Screen" placeholder. Left from the browser's window, its own full screen or beside a video kept in its Space, it is that window that comes back, as before, and a click that brings Search back decides where it goes. `swift test --filter FullScreenReturnTests` (idea 1204)

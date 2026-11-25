@@ -2006,14 +2006,19 @@ private struct PinSquare: View, Equatable {
         }
         .animation(Motion.quick, value: peek?.id)
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
-        .modifier(TabPress(enabled: !lettering && !pickedAmongOthers, active: live, selected: $selectedOnPress) {
+        .modifier(TabPress(enabled: !lettering && !pickedAmongOthers, active: live, selected: $selectedOnPress, again: { opened in
+            // A double-click: home, from this square or another (PinDouble).
+            guard PinDouble.goesHome(clicks: 2, live: live, opened: opened, wandered: PinDouble.wandered(tab)) else { return }
+            browser.clearTabSelection()
+            browser.goHome(tab)
+        }) {
             browser.clearTabSelection()
             browser.select(tab)
         })
-        .modifier(OneClick(double: live) {
-            guard !selectedOnPress, TabClick.flags.intersection([.command, .shift, .option]).isEmpty else { return }
+        .modifier(OneClick(double: false) {
+            guard !selectedOnPress, !live, TabClick.flags.intersection([.command, .shift, .option]).isEmpty else { return }
             browser.clearTabSelection()
-            if live { browser.goHome(tab) } else { browser.select(tab) }
+            browser.select(tab)
         })
         .modifier(ModifiedTabClick { browser.extendTabSelection(to: tab, modifiers: $0) })
         .modifier(OptionClick { if !lettering { browser.optionClick(tab) } })
