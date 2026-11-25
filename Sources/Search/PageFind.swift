@@ -682,60 +682,65 @@ final class PageFind {
     }
 
     // The selection alone is drawn pale grey while the find bar has the keys,
-    // so every match is painted too: pale yellow, the current one orange with
-    // black text, and a white ring that pops round it (see ring). Matches
-    // in fields keep only their selection.
+    // so every match is painted too: yellow, the current one bright orange
+    // with black text. Matches in fields keep only their selection.
     // Each window gets its two highlights once; after that they are only
     // cleared and added to. A highlight repaints the ranges it gains or
     // loses, whereas one set into or deleted from `CSS.highlights` could
     // stay on screen, or stay off it, until something else was drawn.
-    const findRules = "::highlight(search-find-match) { background-color: transparent; text-decoration: none; }"
-        + "::highlight(search-find-current) { background-color: #ffa000; color: #000; text-decoration: none; text-shadow: none; }";
+    const findRules = "::highlight(search-find-match) { background-color: #ffe14d; color: #000; text-decoration: none; text-shadow: none; }"
+        + "::highlight(search-find-current) { background-color: #ffaa00; color: #000; text-decoration: none; text-shadow: none; }";
     const quietSelection = "::selection { background-color: transparent; }";
 
-    // Safari's way of showing the matches: each one that isn't the current
-    // gets a white rounded border (an element laid over it, as a highlight
-    // can't have a border), and the current one is plain bright orange, with
-    // the rest of the page under a faint veil where Settings asks for one,
-    // cast by the shadow of an invisible box over it.
+    // Where Settings asks for it, the page is under a faint veil while
+    // finding, all but the current match: cast by the shadow of an invisible
+    // box laid over that one.
     function unring() {
-        for (const box of state.rings || []) { try { box.remove(); } catch (_) {} }
-        state.rings = [];
+        try { state.unfollow?.(); } catch (_) {}
+        state.unfollow = null;
+        try { state.veil?.remove(); } catch (_) {}
+        state.veil = null;
     }
 
+    // Fixed to the window and kept on the match: placed once on the page, it
+    // was left behind where the match scrolled in a box of its own or the page
+    // moved under it, and the veil lay over the very match it should spare.
     function ring(current) {
         unring();
-        const limit = 150;
-        let drawn = 0;
-        const draw = (match, isCurrent) => {
-            const doc = match.win.document;
-            const rect = match.range.getBoundingClientRect();
-            if (!rect.width && !rect.height) return;
-            // Only what is near the screen: a page of thousands of matches
-            // gets no thousands of boxes.
-            if (!isCurrent && (rect.bottom < -200 || rect.top > match.win.innerHeight + 200)) return;
-            const scroller = doc.scrollingElement || doc.documentElement;
+        if (!(dimming > 0) || current?.kind !== "range") return;
+        try {
+            const win = current.win;
+            const doc = win.document;
             const pad = 2;
             const box = doc.createElement("div");
-            box.style.cssText = "all:initial;position:absolute;pointer-events:none;box-sizing:border-box;"
-                + (isCurrent
-                    ? "z-index:2147483646;border-radius:6px;"
-                        + (dimming > 0 ? "box-shadow:0 0 0 200vmax rgba(0,0,0," + dimming + ");" : "")
-                    : "z-index:2147483647;border:2px solid #fff;border-radius:6px;box-shadow:0 0 0 1px rgba(0,0,0,.28);");
-            box.style.left = (rect.left + scroller.scrollLeft - pad - (isCurrent ? 0 : 2)) + "px";
-            box.style.top = (rect.top + scroller.scrollTop - pad - (isCurrent ? 0 : 2)) + "px";
-            box.style.width = (rect.width + 2 * pad + (isCurrent ? 0 : 4)) + "px";
-            box.style.height = (rect.height + 2 * pad + (isCurrent ? 0 : 4)) + "px";
+            box.style.cssText = "all:initial;position:fixed;pointer-events:none;box-sizing:border-box;"
+                + "z-index:2147483647;border-radius:4px;box-shadow:0 0 0 200vmax rgba(0,0,0," + dimming + ");";
+            const place = () => {
+                const rect = current.range.getBoundingClientRect();
+                const next = [rect.left - pad, rect.top - pad, rect.width + 2 * pad, rect.height + 2 * pad]
+                    .map(value => value + "px");
+                // Written only when it moved, not to stir the page's observers.
+                const style = box.style;
+                if (style.left !== next[0]) style.left = next[0];
+                if (style.top !== next[1]) style.top = next[1];
+                if (style.width !== next[2]) style.width = next[2];
+                if (style.height !== next[3]) style.height = next[3];
+                const display = rect.width || rect.height ? "block" : "none";
+                if (style.display !== display) style.display = display;
+            };
+            place();
             doc.documentElement.appendChild(box);
-            state.rings.push(box);
-        };
-        try {
-            if (current?.kind === "range" && (dimming > 0)) draw(current, true);
-            for (const match of state.matches) {
-                if (drawn >= limit) break;
-                if (match.kind !== "range" || match === current) continue;
-                try { draw(match, false); drawn += 1; } catch (_) {}
-            }
+            state.veil = box;
+            const options = { capture: true, passive: true };
+            win.addEventListener("scroll", place, options);
+            win.addEventListener("resize", place, options);
+            // For what moves without either: a picture arriving above.
+            const timer = win.setInterval(place, 200);
+            state.unfollow = () => {
+                win.removeEventListener("scroll", place, options);
+                win.removeEventListener("resize", place, options);
+                win.clearInterval(timer);
+            };
         } catch (_) {}
     }
 
