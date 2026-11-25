@@ -389,9 +389,11 @@ struct ProfileList: View {
                 if let window {
                     SpaceRows(browser: window)
                 } else {
-                    ForEach(profiles.spaces(of: profile.id)) { space in
+                    let list = profiles.spaces(of: profile.id)
+                    ForEach(list) { space in
                         Rule(inset: ProfileGrid.text)
-                        SpaceLine(symbol: space.symbol, name: space.name, rename: nil, remove: nil)
+                        SpaceLine(symbol: space.symbol, name: space.name, rename: nil,
+                                  remove: list.count == 1 ? lastSpaceRemove(profile: profile.id, space: space.name) : nil)
                     }
                     Rule(inset: ProfileGrid.text)
                     Text("Open the profile to add or change its spaces")
@@ -417,6 +419,19 @@ struct ProfileList: View {
     }
 }
 
+@MainActor
+private func lastSpaceRemove(profile id: UUID, space: String) -> (() -> Void)? {
+    guard id != Profile.personalID else { return nil }
+    let profile = Profiles.shared.profile(id)
+    return {
+        Ask.sure("Delete “\(profile.name)”?",
+                 detail: "“\(space)” is its last space. The profile's windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac.",
+                 confirm: "Delete", returnCancels: true) {
+            Profiles.shared.delete(id)
+        }
+    }
+}
+
 private struct SpaceRows: View {
     @ObservedObject var browser: Browser
 
@@ -434,7 +449,7 @@ private struct SpaceRows: View {
                              confirm: "Delete") {
                         browser.deleteSpace(space.id)
                     }
-                } : nil)
+                } : lastSpaceRemove(profile: browser.profileID, space: space.name))
         }
         Rule(inset: ProfileGrid.text)
         AddLine(title: "New Space…") {
@@ -450,14 +465,13 @@ private struct SpaceLine: View {
     let name: String
     let rename: ((String) -> Void)?
     let remove: (() -> Void)?
-    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: ProfileGrid.gap) {
             Image(systemName: symbol)
-                .font(.system(size: 13))
+                .font(.system(size: 12))
                 .foregroundStyle(Palette.ink.opacity(0.7))
-                .frame(width: ProfileGrid.avatar)
+                .frame(width: 18)
             if let rename {
                 InlineName(name: name, commit: rename)
             } else {
@@ -466,24 +480,21 @@ private struct SpaceLine: View {
             Spacer(minLength: 8)
             if let remove {
                 QuickRemove(label: "Delete \(name)", act: remove)
-                    .opacity(hovering ? 1 : 0)
             }
         }
-        .padding(.leading, ProfileGrid.icon)
+        .padding(.leading, ProfileGrid.text)
         .padding(.trailing, ProfileGrid.trailing)
-        .frame(minHeight: 40)
-        .contentShape(Rectangle())
-        .rowHover(hovering)
-        .onHover { hovering = $0 }
+        .padding(.vertical, 8)
     }
 }
 
 private enum ProfileGrid {
-    static let leading: CGFloat = 12
+    static let leading: CGFloat = 16
     static let chevron: CGFloat = 14
     static let avatar: CGFloat = 24
     static let gap: CGFloat = 10
     static let trailing: CGFloat = 16
+    static let edge: CGFloat = 16
     static let icon: CGFloat = leading + chevron + gap
     static let text: CGFloat = icon + avatar + gap
 }
@@ -492,33 +503,42 @@ private struct InlineName: View {
     let name: String
     let commit: (String) -> Void
     @State private var text = ""
-    @State private var hovering = false
+    @State private var editing = false
     @FocusState private var focused: Bool
 
     var body: some View {
-        TextField("", text: $text)
-            .textFieldStyle(.plain)
-            .font(.system(size: 13))
-            .foregroundStyle(Palette.ink)
-            .focused($focused)
-            .padding(.horizontal, 6)
-            .frame(height: 24)
-            .background(focused ? Palette.wash : .clear,
-                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .padding(.leading, -6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .onHover { hovering = $0 }
-            .help("Rename")
-            .onAppear { text = name }
-            .onChange(of: name) { _, now in if !focused { text = now } }
-            .onSubmit(save)
-            .onChange(of: focused) { _, now in if !now { save() } }
+        Group {
+            if editing {
+                TextField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .focused($focused)
+                    .onSubmit { focused = false }
+                    .onExitCommand { text = name; editing = false }
+                    .onChange(of: focused) { _, now in if !now { save() } }
+                    .onAppear { text = name; focused = true }
+            } else {
+                Text(name)
+                    .lineLimit(1)
+                    .contentShape(Rectangle())
+                    .onTapGesture { editing = true }
+                    .help("Click to rename")
+            }
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(Palette.ink)
+        .padding(.horizontal, 6)
+        .frame(height: 22)
+        .background(editing ? Palette.wash : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .padding(.leading, -6)
+        .frame(maxWidth: editing ? .infinity : nil, alignment: .leading)
+        .accessibilityLabel(name)
+        .accessibilityHint("Click to rename")
     }
 
     private func save() {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed == name { text = name } else { commit(trimmed) }
+        if !trimmed.isEmpty, trimmed != name { commit(trimmed) }
+        editing = false
     }
 }
 
@@ -552,16 +572,15 @@ private struct AddLine: View {
         Button(action: act) {
             HStack(spacing: ProfileGrid.gap) {
                 Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: ProfileGrid.avatar)
-                Text(title).font(.system(size: 13))
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 18)
+                Text(title).font(.system(size: 12.5))
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(hovering ? Palette.ink : Palette.ink.opacity(0.75))
-            .padding(.leading, ProfileGrid.icon)
-            .padding(.trailing, 16)
-            .frame(minHeight: 40)
-            .rowHover(hovering)
+            .foregroundStyle(hovering ? Palette.ink : Palette.muted)
+            .padding(.leading, ProfileGrid.text)
+            .padding(.trailing, ProfileGrid.trailing)
+            .padding(.vertical, 10)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -576,7 +595,6 @@ private struct ProfileRow: View {
     let deletable: Bool
     let expanded: Bool
     let toggle: () -> Void
-    @State private var hovering = false
 
     private var detail: String {
         let count = spaces == 1 ? "1 space" : "\(spaces) spaces"
@@ -612,16 +630,12 @@ private struct ProfileRow: View {
                         Profiles.shared.delete(profile.id)
                     }
                 }
-                .opacity(hovering ? 1 : 0)
             }
             if !current { Pill("Open") { Browsers.open(profile: profile.id) } }
         }
         .padding(.leading, ProfileGrid.leading)
         .padding(.trailing, ProfileGrid.trailing)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
-        .rowHover(hovering)
-        .onHover { hovering = $0 }
+        .padding(.vertical, ProfileGrid.edge)
     }
 }
 
@@ -641,8 +655,7 @@ private struct NewProfileRow: View {
             .foregroundStyle(hovering ? Palette.ink : Palette.ink.opacity(0.8))
             .padding(.leading, ProfileGrid.icon)
             .padding(.trailing, ProfileGrid.trailing)
-            .padding(.vertical, 15)
-            .rowHover(hovering)
+            .padding(.vertical, ProfileGrid.edge)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
