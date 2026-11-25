@@ -73,10 +73,7 @@ struct SideBar: View {
     /// coming in, not a tab picked (see the rows' onChange).
     @State private var scrolledSpace: UUID?
     @State private var room = Room()
-    /// How far down its rows a scrolled column is, in half rooms: the
-    /// band of them drawn (shown).
-    @State private var band = 0
-    private final class Room {
+    fileprivate final class Room {
         var height: CGFloat = .infinity
         var needed: CGFloat = 0
         /// The rows' own height, as last laid out.
@@ -660,6 +657,7 @@ struct SideBar: View {
                                     rows.onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
                                         room.drawn = $0
                                         refit()
+                                        settleArrival(proxy)
                                     }
                                     // How far it is scrolled, for its rows
                                     // in the map to be drawn the same (mapPage).
@@ -668,13 +666,12 @@ struct SideBar: View {
                                     }
                                 }
                                 .coordinateSpace(name: "scroll")
-                                // The room settling just after a space came in
-                                // (its pins, the foot): its tab in front kept in
-                                // the middle, not left under the foot.
+                                // The room or the rows settling just after a
+                                // space came in (its pins, the foot, a row
+                                // grown): its tab in front kept in the middle,
+                                // not left under the foot.
                                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
-                                    guard let at = room.arrived, Date().timeIntervalSince(at) < 0.6,
-                                          let id = browser.activeSplit?.left ?? browser.activeID else { return }
-                                    scroll(proxy, to: id, anchor: .center)
+                                    settleArrival(proxy)
                                 }
                                 // The tab you go to is the tab you see — ⌘1–⌘9,
                                 // ⇧⌘], a link opening beside the one on screen.
@@ -1376,7 +1373,7 @@ struct SideBar: View {
     /// The groups, the line and the loose tabs, each where it lies down the
     /// column, added up from the rows' known heights as a VStack with a gap
     /// between each would lay them out (groupBlock, the rows' steps).
-    private struct ColumnPlan {
+    fileprivate struct ColumnPlan {
         struct Unit: Identifiable {
             enum Kind {
                 case group(TabGroup, members: [Tab], ghost: Tab?)
@@ -1464,35 +1461,19 @@ struct SideBar: View {
         return nil
     }
 
-    /// Of the plan, what is drawn: all of it while the rows fit; scrolled,
-    /// what is in sight and some way past it either side (band), and
-    /// around the tab in front, for the scroll to go to it with its
-    /// neighbours already there.
-    private func shown(_ plan: ColumnPlan, active: CGRect?) -> [ColumnPlan.Unit] {
-        guard !fits else { return plan.units }
-        let room = SideBar.windowRoom(room.height)
-        let step = room / 2
-        var ranges = [(CGFloat(band) * step - room / 2, CGFloat(band) * step + 2 * room)]
-        if let active { ranges.append((active.minY - room, active.maxY + room)) }
-        return plan.units.filter { unit in
-            ranges.contains { unit.y + unit.height >= $0.0 && unit.y <= $0.1 }
-        }
-    }
-
     /// The room a scrolled column draws its rows for: its own height, or
     /// a tall window's before it is measured.
     static func windowRoom(_ height: CGFloat) -> CGFloat {
         height.isFinite && height > 100 ? height : 1200
     }
 
+    /// How far the scroll moves before the window drawn moves with it: a
+    /// sixth of the room, a few rows made and a few let go each time.
+    /// Half a room made a dozen at once, ~140 ms at 400 tabs.
+    static func windowStep(_ room: CGFloat) -> CGFloat { room / 6 }
+
     private var loose: some View {
         let plan = columnPlan()
-        let active = activeRect(plan)
-        let drawn = shown(plan, active: active)
-        if Store.testing {
-            SideBar.window = ["band": CGFloat(band), "shown": CGFloat(drawn.count), "units": CGFloat(plan.units.count),
-                              "total": plan.total, "active": active?.minY ?? -1]
-        }
         // Only what is in sight is made, and some way past it, each where
         // it lies down the whole run: every row of the space a live view,
         // each change checked and laid every one of them out again (at 400
@@ -1500,36 +1481,73 @@ struct SideBar: View {
         // perf-many-tabs). Placed by what their heights add up to, not by a
         // lazy stack's guess: that one's guessed height for rows not yet
         // made was three times too tall, and a tab gone to far down wasn't
-        // scrolled to.
-        return ZStack(alignment: .top) {
-            Color.clear.frame(height: plan.total)
-            ForEach(drawn) { unit in
-                if case .row(let row) = unit.kind {
-                    // Placed by Carried, which holds it at the hand.
-                    looseRow(row, steps: plan.steps, place: unit.y)
-                } else {
-                    columnUnit(unit, plan: plan)
-                        .alignmentGuide(.top) { _ in -unit.y }
-                }
-            }
-            // Where the scroll goes for the tab in front (scroll): its rows
-            // are not all made.
-            if let active {
-                Color.clear
-                    .frame(height: active.height)
-                    .alignmentGuide(.top) { _ in -active.minY }
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                    .id(SideBar.activeMark)
+        // scrolled to. The band in sight is the window's own (ColumnWindow):
+        // as the scroll moves it on, only the window is drawn again, not the
+        // column around it and every space's page of the map.
+        return ColumnWindow(plan: plan, active: activeRect(plan), whole: fits, room: room) { unit in
+            if case .row(let row) = unit.kind {
+                // Placed by Carried, which holds it at the hand.
+                looseRow(row, steps: plan.steps, place: unit.y)
+            } else {
+                columnUnit(unit, plan: plan)
+                    .alignmentGuide(.top) { _ in -unit.y }
             }
         }
         .coordinateSpace(name: "rows")
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.rows = $0 }
-        // How far down the run the scroll is: the band of it drawn, told
-        // only as it moves half a room on.
-        .onGeometryChange(for: CGFloat.self, of: { -$0.frame(in: .named("scroll")).minY }) { [room] top in
-            let now = Int((top / (SideBar.windowRoom(room.height) / 2)).rounded(.down))
-            if now != band { band = now }
+    }
+
+    /// The groups and loose rows of the plan that are drawn, with the
+    /// scroll's mark for the tab in front: all of them while the rows fit;
+    /// scrolled, what is in sight and some way past it either side (band),
+    /// and around the tab in front, for the scroll to go to it with its
+    /// neighbours already there. The band is kept here, so that the scroll
+    /// moving it on draws this again and nothing around it.
+    fileprivate struct ColumnWindow<Unit: View>: View {
+        let plan: ColumnPlan
+        let active: CGRect?
+        let whole: Bool
+        let room: Room
+        @ViewBuilder let unit: (ColumnPlan.Unit) -> Unit
+        @State private var band = 0
+
+        private func shown() -> [ColumnPlan.Unit] {
+            guard !whole else { return plan.units }
+            let room = SideBar.windowRoom(room.height)
+            let step = SideBar.windowStep(room)
+            var ranges = [(CGFloat(band) * step - room / 2, CGFloat(band) * step + room * 3 / 2 + step)]
+            if let active { ranges.append((active.minY - room, active.maxY + room)) }
+            return plan.units.filter { unit in
+                ranges.contains { unit.y + unit.height >= $0.0 && unit.y <= $0.1 }
+            }
+        }
+
+        var body: some View {
+            let drawn = shown()
+            if Store.testing {
+                SideBar.window = ["band": CGFloat(band), "shown": CGFloat(drawn.count), "units": CGFloat(plan.units.count),
+                                  "total": plan.total, "active": active?.minY ?? -1]
+            }
+            return ZStack(alignment: .top) {
+                Color.clear.frame(height: plan.total)
+                ForEach(drawn) { unit($0) }
+                // Where the scroll goes for the tab in front (scroll): its
+                // rows are not all made.
+                if let active {
+                    Color.clear
+                        .frame(height: active.height)
+                        .alignmentGuide(.top) { _ in -active.minY }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                        .id(SideBar.activeMark)
+                }
+            }
+            // How far down the run the scroll is: the band of it drawn, told
+            // only as it moves a step on (windowStep).
+            .onGeometryChange(for: CGFloat.self, of: { -$0.frame(in: .named("scroll")).minY }) { [room] top in
+                let now = Int((top / SideBar.windowStep(SideBar.windowRoom(room.height))).rounded(.down))
+                if now != band { band = now }
+            }
         }
     }
 
@@ -1561,6 +1579,14 @@ struct SideBar: View {
             }
         }
         return (groups, loose)
+    }
+
+    /// Just after a space came into the scroll (room.arrived), a change of
+    /// the room or of the rows' height scrolls to its tab in front again.
+    private func settleArrival(_ proxy: ScrollViewProxy) {
+        guard let at = room.arrived, Date().timeIntervalSince(at) < 0.6,
+              let id = browser.activeSplit?.left ?? browser.activeID else { return }
+        scroll(proxy, to: id, anchor: .center)
     }
 
     /// The scroll's mark for the tab in front (see loose).
