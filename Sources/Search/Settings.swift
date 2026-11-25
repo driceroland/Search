@@ -419,7 +419,7 @@ struct SettingsPanel: View {
                 // that row's words, on the same card. A box of its own inside
                 // the card read as nested and cramped.
                 ForEach(group.kids) { kid in
-                    divider(inset: SettingsPanel.textInset)
+                    divider()
                     row(kid, child: true)
                     after(kid, searched: searched)
                 }
@@ -1409,12 +1409,10 @@ struct SettingRow<Control: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: SettingRowLayout.gap) {
-                if !child {
-                    Image(systemName: icon)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Palette.ink.opacity(0.7))
-                        .frame(width: SettingRowLayout.icon)
-                }
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Palette.ink.opacity(0.7))
+                    .frame(width: SettingRowLayout.icon)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 5) {
                         Text(marked(title))
@@ -1449,16 +1447,17 @@ struct SettingRow<Control: View>: View {
                     .font(.system(size: 11.5))
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, child ? 0 : SettingRowLayout.icon + SettingRowLayout.gap)
+                    .padding(.leading, SettingRowLayout.icon + SettingRowLayout.gap)
                     .padding(.top, -6)
                     .transition(.opacity)
             }
             if wide {
                 control()
-                    .padding(.leading, child ? 0 : SettingRowLayout.icon + SettingRowLayout.gap)
+                    .padding(.leading, SettingRowLayout.icon + SettingRowLayout.gap)
             }
         }
-        .padding(.leading, child ? SettingsPanel.textInset : SettingRowLayout.leading)
+        .environment(\.subordinate, child)
+        .padding(.leading, SettingRowLayout.leading)
         .padding(.trailing, SettingRowLayout.trailing)
         .padding(.vertical, 16)
         .background(lit ? Palette.hover : .clear)
@@ -1799,13 +1798,25 @@ struct PillMenu<Value: Hashable, Content: View>: View {
     }
 }
 
+private struct SubordinateKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var subordinate: Bool {
+        get { self[SubordinateKey.self] }
+        set { self[SubordinateKey.self] = newValue }
+    }
+}
+
 struct Switch: View {
     @Binding var on: Bool
+    @Environment(\.subordinate) private var small
 
     var body: some View {
         Capsule()
             .fill(on ? Palette.ink : Palette.muted.opacity(0.25))
-            .frame(width: 30, height: 18)
+            .frame(width: small ? 24 : 30, height: small ? 14 : 18)
             .overlay(alignment: on ? .trailing : .leading) {
                 Circle()
                     .fill(Palette.ground)
