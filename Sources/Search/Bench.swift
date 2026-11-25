@@ -4077,6 +4077,48 @@ final class Bench {
                 answer(["showing": browser.floater.showing])
                 return
             }
+            // The active tab's video out, as ⇧⌘P lifts it, into the little
+            // window off every screen.
+            if request["action"] as? String == "lift" {
+                Float.benchAway = NSPoint(x: -20000, y: -20000)
+                if let tab = browser.active {
+                    let occlusion = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+                    if tab.web.responds(to: occlusion) {
+                        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+                        unsafeBitCast(tab.web.method(for: occlusion), to: Setter.self)(tab.web, occlusion, false)
+                    }
+                }
+                browser.toggleFloat()
+                DispatchQueue.main.asyncAfter(deadline: .now() + (request["wait"] as? Double ?? 1)) {
+                    answer(["showing": browser.floater.showing, "floating": browser.tabs.first { $0.id == browser.floating }.map(Bench.short) ?? "",
+                            "window": Browsers.all.firstIndex { $0 === browser }.map { $0 + 1 } ?? 0])
+                }
+                return
+            }
+            // The return button, pressed (idea 1177): which window it brings
+            // forward, and that it makes none. In a test run nothing is ordered
+            // in; the window it would bring is told instead.
+            if request["action"] as? String == "return" {
+                let owner = Browsers.all.first { $0.floating != nil }
+                let made = Browsers.all.count, numbers = Set(NSApp.windows.map(\.windowNumber))
+                // What the button brought forward before the fix: the app's first window.
+                let first = NSApp.windows.first { $0.contentView != nil }
+                let firstKind = first.map { w in Browsers.browser(for: w) === owner ? "owner" : Browsers.browser(for: w) != nil ? "other browser" : "\(type(of: w))" } ?? "none"
+                browser.floater.onReturn?()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    let to = Browser.returnedTo
+                    answer(["showing": browser.floater.showing, "floating": Browsers.all.contains { $0.floating != nil },
+                            "owner": owner.flatMap { o in Browsers.all.firstIndex { $0 === o }.map { $0 + 1 } } ?? 0,
+                            "to": to.flatMap { t in Browsers.all.firstIndex { $0 === t }.map { $0 + 1 } } ?? 0,
+                            "active": (to ?? owner)?.active.map(Bench.short) ?? "",
+                            "space": (to ?? owner)?.space.name ?? "",
+                            "firstWindow": firstKind,
+                            "browsersMade": Browsers.all.count - made,
+                            "windowsMade": NSApp.windows.filter { !numbers.contains($0.windowNumber) && $0.isVisible }.count,
+                            "onScreen": NSApp.windows.filter { w in w.isVisible && w.alphaValue > 0 && NSScreen.screens.contains { $0.frame.intersects(w.frame) } }.count])
+                }
+                return
+            }
             guard Float.benchAway != nil,
                   let panel = NSApp.windows.first(where: { "\(type(of: $0))" == "Panel" && $0.isVisible }),
                   let controls = panel.contentView?.subviews.first(where: { "\(type(of: $0))" == "Controls" })

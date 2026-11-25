@@ -3281,26 +3281,41 @@ final class Browser: NSObject, ObservableObject {
         if prefs.usesSpaces { Links.onceShown { [weak self] in self?.preloadSpaces(gradually: true) } }
     }
 
+    /// The window the floating video's return button last brought forward,
+    /// for the bench.
+    static weak var returnedTo: Browser?
+
     /// The floating video's buttons answer the window whose video it is:
     /// set as it comes out of one (see lift).
     private func ownFloater() {
-        floater.onReturn = { [weak self] in
-            guard let self else { return }
+        floater.onReturn = { [weak self, weak floater] in
+            // The window it came out of is gone: the little one closes, and
+            // nothing else comes up.
+            guard let self else { floater?.drop(); return }
             // The window closes first, and unconditionally. Hanging that on
             // finding the tab again is how a little window survives the button
             // meant to dismiss it.
             let came = self.floating
             self.land()
-            if let came {
-                if let space = self.parked.first(where: { $0.value.tabs.contains { $0.id == came } })?.key {
-                    self.switchSpace(to: space)
-                }
-                if let tab = self.tabs.first(where: { $0.id == came }) { self.select(tab) }
+            Self.returnedTo = nil
+            guard let came else { return }
+            if let space = self.parked.first(where: { $0.value.tabs.contains { $0.id == came } })?.key {
+                self.switchSpace(to: space)
             }
+            // Its tab gone (closed, or put to sleep with its window): the
+            // little window was all there was to close.
+            guard let tab = self.tabs.first(where: { $0.id == came }) else { return }
+            self.select(tab)
+            // This window to the front, wherever it is (another desktop, behind
+            // another profile's, minimized), and no other. The first of the
+            // app's windows was brought forward before: often another browser
+            // window, a profile's tucked one or a closed one, or the launcher —
+            // "a random new window" (idea 1177).
+            guard self.isOpen || self.tucked, !self.retired else { return }
+            Self.returnedTo = self
             // Never a test run's: a probe started hidden stays off every screen.
             guard !Store.testing else { return }
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.windows.first { $0.contentView != nil }?.makeKeyAndOrderFront(nil)
+            Browsers.show(self)
         }
         floater.onSkip = { [weak self] seconds in
             guard let self, let id = self.floating,
