@@ -672,6 +672,7 @@ struct SettingsPanel: View {
                      ))
         case "sidebar.hides": Switch(on: $prefs.sideHides)
         case "sidebar.floats": Switch(on: $prefs.sideFloats)
+        case "sidebar.instantIn": Switch(on: $prefs.sideAppearsAtOnce)
         case "sidebar.slides": Switch(on: $prefs.slidesColumn)
         case "sidebar.foldIcons": Switch(on: $prefs.foldsToIcons)
         case "layout.cards":

@@ -287,7 +287,7 @@ extension Browser {
 
     /// The folded column out over the page, or back in.
     func peek(_ out: Bool) {
-        guard out else { return moveColumn(out: false) { self.peeking = false } }
+        guard out, prefs.sideAppearsAtOnce else { return moveColumn(out: out) { self.peeking = out } }
         var still = Transaction()
         still.disablesAnimations = true
         withTransaction(still) { peeking = true }

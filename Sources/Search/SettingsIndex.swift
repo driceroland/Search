@@ -221,6 +221,9 @@ enum SettingsIndex {
               title: "Float the column over the page", detail: "Out from the edge as a rounded card with room around it",
               more: "Off, the hidden column slides out flush against the window's edge.",
               keys: ["sidebar.floats"], words: ["float", "floating", "card", "hover", "edge", "sidebar", "arc"], parent: "sidebar.hides"),
+        .init(id: "sidebar.instantIn", group: "window", icon: "bolt",
+              title: "Show the column at once on hover", detail: "No slide in when the pointer reaches the edge; it still slides away",
+              keys: ["sidebar.instantIn"], words: ["animation", "instant", "hover", "edge", "slide", "sidebar", "fast"], parent: "sidebar.hides"),
         .init(id: "sidebar.slides", group: "window", icon: "rectangle.lefthalf.inset.filled.arrow.left",
               title: "Slide the column in and out", detail: "A gentler slide when ⌘S or the window's edge brings the column out or puts it away",
               more: "With Reduce Motion on in System Settings › Accessibility › Display, the column fades in and out instead. With Reduce animations on, it comes and goes at once.",
@@ -864,6 +867,7 @@ enum SettingsIndex {
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
         case "sidebar.floats": return prefs.sidebar && prefs.cards
+        case "sidebar.instantIn": return prefs.sidebar
         case "address.width": return prefs.addressLine && !prefs.sidebar
         case "tabs.clickKeepsName": return prefs.addressLine && !prefs.iconColumn
         // A click that edits nothing has no card to leave out.

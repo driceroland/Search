@@ -244,6 +244,9 @@ final class Preferences: ObservableObject {
     @Published var sideFloats: Bool {
         didSet { store.set(sideFloats, forKey: "sidebar.floats") }
     }
+    @Published var sideAppearsAtOnce: Bool {
+        didSet { store.set(sideAppearsAtOnce, forKey: "sidebar.instantIn") }
+    }
     /// The column slides out and back in a longer, eased slide (Motion.slidesColumn),
     /// where it otherwise snaps out on a short spring. Off unless asked for.
     @Published var slidesColumn: Bool {
@@ -1377,6 +1380,7 @@ final class Preferences: ObservableObject {
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
         sideFloats = store.object(forKey: "sidebar.floats") as? Bool ?? true
+        sideAppearsAtOnce = store.bool(forKey: "sidebar.instantIn")
         slidesColumn = store.bool(forKey: Motion.slidesKey)
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         doorsUp = store.bool(forKey: "sidebar.doorsUp")
@@ -1425,7 +1429,7 @@ final class Preferences: ObservableObject {
         iconPeeks = store.object(forKey: "icons.peek") as? Bool ?? true
         iconPeekDelay = store.object(forKey: "icons.peek.delay") as? Double ?? 0.6
         let motion = (store.string(forKey: "spaces.motion")).flatMap(SpaceMotion.init(rawValue:))
-            ?? (NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? .none : .smooth)
+            ?? (NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? .none : .snappy)
         spaceMotion = motion
         Motion.spaceMotion = motion
         animatesField = store.object(forKey: "field.animates") as? Bool ?? true
@@ -1704,6 +1708,7 @@ final class Preferences: ObservableObject {
              or: .left)
         take(\.sideHides, store.bool(forKey: "sidebar.hides"))
         take(\.sideFloats, store.object(forKey: "sidebar.floats") as? Bool ?? true)
+        take(\.sideAppearsAtOnce, store.bool(forKey: "sidebar.instantIn"))
         take(\.slidesColumn, store.bool(forKey: Motion.slidesKey))
         take(\.roomyTabs, store.bool(forKey: "sidebar.roomy"))
         take(\.doorsUp, store.bool(forKey: "sidebar.doorsUp"))

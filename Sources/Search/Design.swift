@@ -399,7 +399,7 @@ enum Motion {
         reduced ? nil : light ? .easeOut(duration: 0.16) : .spring(response: 0.30, dampingFraction: 0.86)
     }
 
-    nonisolated(unsafe) static var spaceMotion: SpaceMotion = .smooth
+    nonisolated(unsafe) static var spaceMotion: SpaceMotion = .snappy
 
     static var spaceSpan: Double { spaceMotion.span }
 
