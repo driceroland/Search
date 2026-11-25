@@ -51,6 +51,12 @@ final class LooseFrames {
     var rects: [UUID: CGRect] = [:]
 }
 
+/// The groups' headings and tabs as last drawn (GroupDropFrames), kept where
+/// a change draws nothing: read only as a tab is let go.
+final class GroupDropBox {
+    var frames: [UUID: GroupDropFrame] = [:]
+}
+
 /// A tab of a group let go outside every group: in front of the tab in no
 /// group it lands before, or after them all.
 struct LooseDrop: Equatable {

@@ -3918,6 +3918,14 @@ final class Bench {
                     out["offset"] = Double(scroll.contentView.bounds.minY)
                     out["visible"] = Double(scroll.contentView.bounds.height)
                     out["content"] = Double(document.frame.height)
+                    // The scroll's room from the window's top, as the rows
+                    // are drawn (SideBar.liveRow), for "live" to be checked in it.
+                    let rect = scroll.convert(scroll.bounds, to: nil)
+                    out["room"] = [Double(window.frame.height - rect.maxY), Double(window.frame.height - rect.minY)]
+                }
+                out["window"] = SideBar.window.mapValues(Double.init)
+                if let id = browser.activeID, let live = SideBar.liveRows[id] {
+                    out["live"] = [Double(live.minY), Double(live.maxY)]
                 }
                 answer(out)
             }
