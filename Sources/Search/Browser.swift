@@ -926,10 +926,29 @@ final class Browser: NSObject, ObservableObject {
 
     /// Both the page in front of you and the one that loads next time.
     private func redress() {
-        guard let tab = active else { return }
-        let css = curtain.css(on: hereHost)
-        tab.arm(hiding: css)
-        tab.applyVeils(css)
+        guard let host = hereHost else { return }
+        reveil(host)
+    }
+
+    /// A site's hidden things as they now stand, into every open page of
+    /// it and the next page each loads: this window's tabs, other windows',
+    /// a site's sized pop-up window, a small window's, a peek's. Only the
+    /// page they were picked on took them, and the same site in a pop-up
+    /// window kept showing them until it was reloaded (idea 1142). A private
+    /// tab keeps what it took off for itself as well.
+    private func reveil(_ host: String) {
+        let css = curtain.css(on: host)
+        func dress(_ tab: Tab) {
+            guard curtain.host(of: tab.address) == host else { return }
+            tab.arm(hiding: css)
+            guard tab.built != nil else { return }
+            let passing = Browsers.all.lazy.map { $0.passingCSS(tab.id) }.first { !$0.isEmpty } ?? ""
+            tab.applyVeils(css + passing)
+        }
+        for browser in Browsers.all {
+            for tab in browser.tabs + browser.parkedTabs + [browser.peekTab].compactMap({ $0 }) { dress(tab) }
+        }
+        for little in LittleWindow.all { dress(little.tab) }
     }
 
     // MARK: - passwords
@@ -7675,9 +7694,7 @@ final class Browser: NSObject, ObservableObject {
                 return
             }
             curtain.hide(selector, label: label, note: note, on: host)
-            let css = curtain.css(on: host)
-            tab.arm(hiding: css)
-            tab.applyVeils(css)
+            reveil(host)
             // Said once the page shows it gone, not before: a rule the page
             // outranks was announced as hidden, and listed, while the thing
             // stayed in front of you (#1270). One that didn't take is
@@ -7688,9 +7705,7 @@ final class Browser: NSObject, ObservableObject {
                 if let veil = curtain.veils(on: host).first(where: { $0.selector == selector }) {
                     curtain.restore(veil, on: host)
                 }
-                let css = curtain.css(on: host)
-                tab.arm(hiding: css)
-                tab.applyVeils(css)
+                reveil(host)
                 announce(Self.keptOnScreen)
             }
         }
@@ -8837,7 +8852,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
 
         // The next document gets this site's stylesheet of hidden things,
         // decided here because here is the last moment before it loads.
-        if action.targetFrame?.isMainFrame ?? true, let tab = tab(for: webView) {
+        // A peek's or a small window's page as well, which is in no row:
+        // tab(for:) left it without them, and without the blocker's say
+        // for the site, until something else re-armed it (idea 1142).
+        if action.targetFrame?.isMainFrame ?? true, let tab = popupTab(for: webView) {
             let host = curtain.host(of: url)
             tab.arm(hiding: curtain.css(on: host), to: url)
             // And the blocker, on or off for where it is going.

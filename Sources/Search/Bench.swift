@@ -732,7 +732,8 @@ final class Bench {
                     "noisy": tab?.noisy ?? false, "sounding": browser.sounding.count])
 
         case "eval":
-            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            // "little": true, in the newest small window's page.
+            guard let tab = page(request, in: browser) else { answer(missing(request)); return }
             guard let js = request["js"] as? String else { answer(["error": "eval needs js"]); return }
             house(tab)
             // Search's own world is where its page scripts live (see Web.world).
