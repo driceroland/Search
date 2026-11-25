@@ -1189,7 +1189,15 @@ enum SpaceMenu {
         }
         var index = 0
         let several = lists.count > 1
-        menu.addItem(.sectionHeader(title: several ? "Profiles and Spaces" : "Spaces"))
+        let title = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        title.attributedTitle = NSAttributedString(string: several ? "Profiles and Spaces" : "Spaces", attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: NSColor.labelColor,
+        ])
+        title.isEnabled = false
+        menu.autoenablesItems = false
+        menu.addItem(title)
+        menu.addItem(.separator())
         for (at, list) in lists.enumerated() where !list.spaces.isEmpty {
             if several, let name = list.name {
                 if at > 0 { menu.addItem(.separator()) }
@@ -1208,7 +1216,7 @@ enum SpaceMenu {
             let edit = NSMenu()
             edit.autoenablesItems = false
             addEdits(to: edit, for: here)
-            let editing = NSMenuItem(title: "Edit “\(here.name)”", action: nil, keyEquivalent: "")
+            let editing = NSMenuItem(title: "Edit Space", action: nil, keyEquivalent: "")
             editing.submenu = edit
             menu.addItem(.separator())
             menu.addItem(editing)

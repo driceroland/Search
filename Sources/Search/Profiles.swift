@@ -328,7 +328,13 @@ enum ProfileMenu {
 
     /// Its items, for the badge's menu and the dot's.
     static func items(for browser: Browser) -> [NSMenuItem] {
-        var items: [NSMenuItem] = [.sectionHeader(title: "Profiles")]
+        let title = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        title.attributedTitle = NSAttributedString(string: "Profiles", attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: NSColor.labelColor,
+        ])
+        title.isEnabled = false
+        var items: [NSMenuItem] = [title, .separator()]
         for profile in Profiles.shared.list {
             items.append(item(profile.name, checked: profile.id == browser.profileID) {
                 if profile.id != browser.profileID { Browsers.open(profile: profile.id) }
@@ -384,14 +390,14 @@ struct ProfileList: View {
                     SpaceRows(browser: window)
                 } else {
                     ForEach(profiles.spaces(of: profile.id)) { space in
-                        Rule(inset: SettingsPanel.textInset)
+                        Rule(inset: ProfileGrid.text)
                         SpaceLine(symbol: space.symbol, name: space.name, rename: nil, remove: nil)
                     }
-                    Rule(inset: SettingsPanel.textInset)
+                    Rule(inset: ProfileGrid.text)
                     Text("Open the profile to add or change its spaces")
                         .font(.system(size: 11.5))
                         .foregroundStyle(Palette.muted)
-                        .padding(.leading, SettingsPanel.textInset)
+                        .padding(.leading, ProfileGrid.text)
                         .padding(.vertical, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -416,7 +422,7 @@ private struct SpaceRows: View {
 
     var body: some View {
         ForEach(browser.spaces) { space in
-            Rule(inset: SettingsPanel.textInset)
+            Rule(inset: ProfileGrid.text)
             SpaceLine(
                 symbol: space.symbol, name: space.name,
                 rename: { browser.renameSpace(space.id, to: $0) },
@@ -430,8 +436,8 @@ private struct SpaceRows: View {
                     }
                 } : nil)
         }
-        Rule(inset: SettingsPanel.textInset)
-        AddLine(title: "New Space…", inset: SettingsPanel.textInset) {
+        Rule(inset: ProfileGrid.text)
+        AddLine(title: "New Space…") {
             Ask.newSpace(then: { name, shared in
                 browser.addSpace(named: name.isEmpty ? "Space \(browser.spaces.count + 1)" : name, sharesSignIns: shared)
             }, cancelled: {})
@@ -447,11 +453,11 @@ private struct SpaceLine: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: ProfileGrid.gap) {
             Image(systemName: symbol)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(Palette.ink.opacity(0.7))
-                .frame(width: 18)
+                .frame(width: ProfileGrid.avatar)
             if let rename {
                 InlineName(name: name, commit: rename)
             } else {
@@ -463,12 +469,23 @@ private struct SpaceLine: View {
                     .opacity(hovering ? 1 : 0)
             }
         }
-        .padding(.leading, SettingsPanel.textInset)
-        .padding(.trailing, 16)
+        .padding(.leading, ProfileGrid.icon)
+        .padding(.trailing, ProfileGrid.trailing)
         .frame(minHeight: 40)
         .contentShape(Rectangle())
+        .rowHover(hovering)
         .onHover { hovering = $0 }
     }
+}
+
+private enum ProfileGrid {
+    static let leading: CGFloat = 12
+    static let chevron: CGFloat = 14
+    static let avatar: CGFloat = 24
+    static let gap: CGFloat = 10
+    static let trailing: CGFloat = 16
+    static let icon: CGFloat = leading + chevron + gap
+    static let text: CGFloat = icon + avatar + gap
 }
 
 private struct InlineName: View {
@@ -486,7 +503,7 @@ private struct InlineName: View {
             .focused($focused)
             .padding(.horizontal, 6)
             .frame(height: 24)
-            .background((focused || hovering) ? Palette.wash : .clear,
+            .background(focused ? Palette.wash : .clear,
                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .padding(.leading, -6)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -528,21 +545,20 @@ private struct QuickRemove: View {
 
 private struct AddLine: View {
     let title: String
-    let inset: CGFloat
     let act: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: act) {
-            HStack(spacing: 10) {
+            HStack(spacing: ProfileGrid.gap) {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .medium))
-                    .frame(width: 18)
+                    .frame(width: ProfileGrid.avatar)
                 Text(title).font(.system(size: 13))
                 Spacer(minLength: 0)
             }
             .foregroundStyle(hovering ? Palette.ink : Palette.ink.opacity(0.75))
-            .padding(.leading, inset)
+            .padding(.leading, ProfileGrid.icon)
             .padding(.trailing, 16)
             .frame(minHeight: 40)
             .rowHover(hovering)
@@ -568,18 +584,19 @@ private struct ProfileRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: ProfileGrid.gap) {
             Button(action: toggle) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(Palette.muted)
                     .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .frame(width: 14, height: 24)
+                    .frame(width: ProfileGrid.chevron, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(expanded ? "Hide spaces of \(profile.name)" : "Show spaces of \(profile.name)")
             ProfileIconPicker(profile: profile)
+                .frame(width: ProfileGrid.avatar)
             VStack(alignment: .leading, spacing: 2) {
                 InlineName(name: profile.name) { Profiles.shared.rename(profile.id, to: $0) }
                 Text(detail)
@@ -599,10 +616,11 @@ private struct ProfileRow: View {
             }
             if !current { Pill("Open") { Browsers.open(profile: profile.id) } }
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 16)
+        .padding(.leading, ProfileGrid.leading)
+        .padding(.trailing, ProfileGrid.trailing)
         .padding(.vertical, 12)
         .contentShape(Rectangle())
+        .rowHover(hovering)
         .onHover { hovering = $0 }
     }
 }
@@ -612,17 +630,17 @@ private struct NewProfileRow: View {
 
     var body: some View {
         Button { ProfileMenu.askNew() } label: {
-            HStack(spacing: 14) {
+            HStack(spacing: ProfileGrid.gap) {
                 Image(systemName: "plus")
                     .font(.system(size: 13, weight: .medium))
-                    .frame(width: 20)
+                    .frame(width: ProfileGrid.avatar)
                 Text("New Profile…")
                     .font(.system(size: 13))
                 Spacer(minLength: 0)
             }
             .foregroundStyle(hovering ? Palette.ink : Palette.ink.opacity(0.8))
-            .padding(.leading, 14)
-            .padding(.trailing, 16)
+            .padding(.leading, ProfileGrid.icon)
+            .padding(.trailing, ProfileGrid.trailing)
             .padding(.vertical, 15)
             .rowHover(hovering)
             .contentShape(Rectangle())
@@ -638,7 +656,7 @@ struct ProfileIconPicker: View {
 
     var body: some View {
         Button { open.toggle() } label: {
-            ProfileAvatar(profile: profile, size: 26, emphasis: open)
+            ProfileAvatar(profile: profile, size: 24, emphasis: open)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
