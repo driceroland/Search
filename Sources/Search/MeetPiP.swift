@@ -92,7 +92,7 @@ enum MeetPiP {
           function err(where, x) {
             if (errs++ > 40) return;
             var text = '';
-            try { text = (x && (x.stack || x.message)) || String(x); } catch (e) {}
+            try { text = x && typeof x === 'object' ? (x.name || '') + ': ' + (x.message || '') + ' @ ' + String(x.stack || '').slice(0, 160) : String(x); } catch (e) {}
             say({ kind: 'err:' + where + ':' + text.replace(/\\s+/g, ' ').slice(0, 300) });
           }
           listen.call(window, 'error', function (e) { err('error', e.error || e.message); });
@@ -146,6 +146,7 @@ enum MeetPiP {
             if (current && !current.closed) { try { current.close(); } catch (e) {} }
             current = null;
             say({ kind: 'ask', width: width, height: height });
+            say({ kind: 'request:' + width + 'x' + height });
             // Search turns this window into the floating panel. Refused —
             // no click, or Search's switch off — it is null.
             var w = open.call(window, '', '_blank', 'popup,width=' + width + ',height=' + height);
@@ -197,10 +198,33 @@ enum MeetPiP {
               });
             }
           } catch (e) {}
+          // Meet opens its window by itself ('contentoccluded') only when a
+          // setting of its own allows it; asked as a person asks Chrome's own
+          // button ('useraction'), it opens it.
           listen.call(window, ENTER, function () {
-            if (!handler || (current && !current.closed)) return;
-            try { handler({ action: 'enterpictureinpicture', enterPictureInPictureReason: 'contentoccluded' }); } catch (e) {}
+            if (!handler || (current && !current.closed)) { say({ kind: 'enter:skipped' }); return; }
+            say({ kind: 'enter:called' });
+            try {
+              var r = handler({ action: 'enterpictureinpicture', enterPictureInPictureReason: 'useraction' });
+              if (r && typeof r.then === 'function') r.then(function () { say({ kind: 'enter:done' }); }, function (e) { err('enter', e); });
+            } catch (e) { err('enter', e); }
           });
+
+          // Chrome resolves these; WebKit may refuse them, and Meet then turns
+          // the camera off. Refusals are logged and swallowed.
+          try {
+            ['setCameraActive', 'setMicrophoneActive'].forEach(function (name) {
+              var mp = window.MediaSession && MediaSession.prototype, f = mp && mp[name];
+              if (typeof f !== 'function') return;
+              Object.defineProperty(mp, name, {
+                value: function () {
+                  var r;
+                  try { r = f.apply(this, arguments); } catch (e) { err(name, e); return Promise.resolve(); }
+                  return Promise.resolve(r).catch(function (e) { err(name, e); });
+                }, writable: true, configurable: true
+              });
+            });
+          } catch (e) {}
         })();
         """
     }
