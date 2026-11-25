@@ -392,8 +392,7 @@ struct ProfileList: View {
                     let list = profiles.spaces(of: profile.id)
                     ForEach(list) { space in
                         Rule(inset: ProfileGrid.text)
-                        SpaceLine(symbol: space.symbol, name: space.name, rename: nil,
-                                  remove: list.count == 1 ? lastSpaceRemove(profile: profile.id, space: space.name) : nil)
+                        SpaceLine(symbol: space.symbol, name: space.name, rename: nil, remove: nil)
                     }
                     Rule(inset: ProfileGrid.text)
                     Text("Open the profile to add or change its spaces")
@@ -419,19 +418,6 @@ struct ProfileList: View {
     }
 }
 
-@MainActor
-private func lastSpaceRemove(profile id: UUID, space: String) -> (() -> Void)? {
-    guard id != Profile.personalID else { return nil }
-    let profile = Profiles.shared.profile(id)
-    return {
-        Ask.sure("Delete “\(profile.name)”?",
-                 detail: "“\(space)” is its last space. The profile's windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac.",
-                 confirm: "Delete", returnCancels: true) {
-            Profiles.shared.delete(id)
-        }
-    }
-}
-
 private struct SpaceRows: View {
     @ObservedObject var browser: Browser
 
@@ -449,7 +435,7 @@ private struct SpaceRows: View {
                              confirm: "Delete") {
                         browser.deleteSpace(space.id)
                     }
-                } : lastSpaceRemove(profile: browser.profileID, space: space.name))
+                } : nil)
         }
         Rule(inset: ProfileGrid.text)
         AddLine(title: "New Space…") {
@@ -465,6 +451,7 @@ private struct SpaceLine: View {
     let name: String
     let rename: ((String) -> Void)?
     let remove: (() -> Void)?
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: ProfileGrid.gap) {
@@ -480,11 +467,14 @@ private struct SpaceLine: View {
             Spacer(minLength: 8)
             if let remove {
                 QuickRemove(label: "Delete \(name)", act: remove)
+                    .opacity(hovering ? 1 : 0)
             }
         }
         .padding(.leading, ProfileGrid.text)
         .padding(.trailing, ProfileGrid.trailing)
         .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 
@@ -595,6 +585,7 @@ private struct ProfileRow: View {
     let deletable: Bool
     let expanded: Bool
     let toggle: () -> Void
+    @State private var hovering = false
 
     private var detail: String {
         let count = spaces == 1 ? "1 space" : "\(spaces) spaces"
@@ -630,36 +621,26 @@ private struct ProfileRow: View {
                         Profiles.shared.delete(profile.id)
                     }
                 }
+                .opacity(hovering ? 1 : 0)
             }
             if !current { Pill("Open") { Browsers.open(profile: profile.id) } }
         }
         .padding(.leading, ProfileGrid.leading)
         .padding(.trailing, ProfileGrid.trailing)
         .padding(.vertical, ProfileGrid.edge)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 
 private struct NewProfileRow: View {
-    @State private var hovering = false
-
     var body: some View {
-        Button { ProfileMenu.askNew() } label: {
-            HStack(spacing: ProfileGrid.gap) {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: ProfileGrid.avatar)
-                Text("New Profile…")
-                    .font(.system(size: 13))
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(hovering ? Palette.ink : Palette.ink.opacity(0.8))
-            .padding(.leading, ProfileGrid.icon)
-            .padding(.trailing, ProfileGrid.trailing)
-            .padding(.vertical, ProfileGrid.edge)
-            .contentShape(Rectangle())
+        HStack {
+            Spacer(minLength: 0)
+            Pill("New Profile…") { ProfileMenu.askNew() }
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .padding(.horizontal, ProfileGrid.trailing)
+        .padding(.vertical, 12)
     }
 }
 
