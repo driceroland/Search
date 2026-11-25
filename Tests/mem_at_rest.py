@@ -22,8 +22,9 @@ process's `footprint`, `vmmap --summary` and `heap -s` there.
 --page: the first real page after that rest, the cost of anything put off
 until a page needs it. The world is welcomed and has the bench on; after
 --settle seconds (default 10 with --page) a local page is opened in a
-background tab and the time from the request to its load is taken, with
-the processes there before and after.
+background tab and the time from the request to its load event is taken
+(page_ms; start_ms to the navigation's start, on the page's own clock),
+with the processes there before and after.
 
 The app is hidden again every quarter second while it runs and each round
 says whether a window of it was ever on a screen or frontmost: nothing here
@@ -257,17 +258,21 @@ def page_round(rnd, settle):
         time.sleep(0.05)
     time.sleep(settle)
     before, total_before = group(pid)
+    sent = time.time() * 1000
     t0 = time.monotonic()
     tab = sv.cmd({"do": "open", "url": f"{sv.BASE}/first-page"})
     opened = time.monotonic()
     sv.cmd({"do": "wait", "id": tab["id"], "seconds": 20})
     loaded = time.monotonic()
-    nav = sv.ev(tab["id"], "JSON.stringify((e => e && {start: e.startTime, response: e.responseEnd, "
-                           "dom: e.domContentLoadedEventEnd, load: e.loadEventEnd})(performance.getEntriesByType('navigation')[0]))")
+    nav = json.loads(sv.ev(tab["id"], "JSON.stringify((e => ({origin: performance.timeOrigin, response: e.responseEnd, "
+                                      "dom: e.domContentLoadedEventEnd, load: e.loadEventEnd}))(performance.getEntriesByType('navigation')[0]))"))
     time.sleep(1)
     after, total_after = group(pid)
-    out = {"round": rnd, "page_ms": round((loaded - t0) * 1000), "open_ms": round((opened - t0) * 1000),
-           "nav": json.loads(nav) if nav else None,
+    # From the request to the page's load event, on the page's own clock:
+    # the processes a first page has to start, then the navigation itself.
+    out = {"round": rnd, "page_ms": round(nav["origin"] + nav["load"] - sent),
+           "start_ms": round(nav["origin"] - sent), "response_ms": round(nav["origin"] + nav["response"] - sent),
+           "open_ms": round((opened - t0) * 1000), "wait_ms": round((loaded - t0) * 1000),
            "procs_before": [n for _, _, n in before], "procs_after": [n for _, _, n in after],
            "MB_before": mb(total_before), "MB_after": mb(total_after),
            "onscreen": keeper.onscreen, "frontmost": keeper.front}
