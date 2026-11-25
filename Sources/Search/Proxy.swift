@@ -268,6 +268,18 @@ final class BrowserProxy: ObservableObject {
     private let stores = NSHashTable<WKWebsiteDataStore>.weakObjects()
     private static let key = "network.proxy"
 
+    /// The extension whose chrome.proxy settings are followed, through the
+    /// relay (ExtensionProxy.swift). Only while nothing is set here: the
+    /// proxy typed into Settings wins.
+    @Published private(set) var extensionInControl: String?
+    /// Its name, for Settings.
+    @Published private(set) var extensionName: String?
+    private var relay: ExtensionProxyRelay?
+    private var relayPort: UInt16?
+    /// The holder and what it set, as last acted on, so a change to any
+    /// other setting doesn't start the relay over.
+    private var followed: (id: String, value: NSObject?)?
+
     init(defaults: UserDefaults = Store.settings,
          password: String? = nil,
          keep: @escaping (String) throws -> Void = { try ProxySecret.write($0) },
@@ -283,6 +295,87 @@ final class BrowserProxy: ObservableObject {
         ProxyNetwork.keep(value.configuration(password: self.password))
     }
 
+    /// What stores and sessions are given: the proxy set here, else the
+    /// relay while an extension holds the proxy, else nothing.
+    private var effective: ProxyConfiguration? {
+        if let mine = value.configuration(password: password) { return mine }
+        guard extensionInControl != nil, let number = relayPort, let port = NWEndpoint.Port(rawValue: number) else { return nil }
+        var proxy = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: port))
+        // The relay down means the extension's rules can't be followed:
+        // a page fails rather than going around a VPN's proxy.
+        proxy.allowFailover = false
+        proxy.excludedDomains = ProxySettingsValue.direct
+        return proxy
+    }
+
+    private func apply() {
+        let proxy = effective
+        ProxyNetwork.keep(proxy)
+        let configurations = [proxy].compactMap { $0 }
+        for store in stores.allObjects { Self.put(configurations, on: store) }
+    }
+
+    /// A store with no proxy, given none, is left alone: setting even an
+    /// empty list starts WebKit's network process (see attach), and this
+    /// runs at launch whether or not an extension holds the proxy.
+    private static func put(_ configurations: [ProxyConfiguration], on store: WKWebsiteDataStore) {
+        guard !configurations.isEmpty || !store.proxyConfigurations.isEmpty else { return }
+        store.proxyConfigurations = configurations
+    }
+
+    /// The extension, on, installed last of those that set a proxy Search
+    /// can follow, as Chrome gives the proxy to the most recently installed.
+    @available(macOS 15.4, *)
+    static func controller(in owner: Extensions) -> String? {
+        owner.installed.last { item in
+            guard item.enabled, let set = Extensions.settings(for: item.id)["proxy.settings"] else { return false }
+            return (try? ExtensionProxyRules.read(set)) != nil
+        }?.id
+    }
+
+    /// Looked at again whenever an extension sets or clears the proxy, is
+    /// turned on or off, or removed.
+    @available(macOS 15.4, *)
+    func extensionsChanged(_ owner: Extensions) {
+        let holder = Self.controller(in: owner)
+        let set = holder.flatMap { Extensions.settings(for: $0)["proxy.settings"] } as? NSObject
+        if followed?.id == holder, followed?.value == set { return }
+        followed = holder.map { ($0, set) }
+        extensionName = owner.installed.first { $0.id == holder }?.name
+        guard let holder, let rules = try? ExtensionProxyRules.read(set) else {
+            extensionInControl = nil
+            relay?.stop()
+            relay = nil
+            relayPort = nil
+            apply()
+            return
+        }
+        extensionInControl = holder
+        if let relay {
+            relay.rules = rules
+            apply()
+            return
+        }
+        let made = ExtensionProxyRelay { await BrowserProxy.signIn($0) }
+        made.rules = rules
+        relay = made
+        made.start { port in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    let proxy = BrowserProxy.shared
+                    guard proxy.relay === made else { return }
+                    proxy.relayPort = port
+                    proxy.apply()
+                }
+            }
+        }
+    }
+
+    @available(macOS 15.4, *)
+    private static func signIn(_ challenge: ProxyChallenge) async -> ProxyCredentials? {
+        await ExtensionProxyAuth.ask(challenge, controller: shared.extensionInControl)
+    }
+
     /// Called where a store is made, not where one is read: `Store.websites`
     /// hands out WebKit's default store on every read, and attaching there
     /// meant hopping to the main actor inside a getter that is read off it.
@@ -294,9 +387,7 @@ final class BrowserProxy: ObservableObject {
     func attach(_ store: WKWebsiteDataStore) {
         guard !stores.contains(store) else { return }
         stores.add(store)
-        let configurations = [value.configuration(password: password)].compactMap { $0 }
-        guard !configurations.isEmpty || !store.proxyConfigurations.isEmpty else { return }
-        store.proxyConfigurations = configurations
+        Self.put([effective].compactMap { $0 }, on: store)
     }
 
     func save(_ proposed: ProxySettingsValue, password: String) throws {
@@ -310,10 +401,7 @@ final class BrowserProxy: ObservableObject {
         defaults.set(try JSONEncoder().encode(proposed), forKey: Self.key)
         self.password = secret
         value = proposed
-        let proxy = proposed.configuration(password: secret)
-        ProxyNetwork.keep(proxy)
-        let configurations = [proxy].compactMap { $0 }
-        for store in stores.allObjects { store.proxyConfigurations = configurations }
+        apply()
     }
 
     var savedPassword: String { password }
@@ -344,7 +432,9 @@ struct ProxySettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Line("Send everything through a proxy", draft.mode == .system ? "Off: Search follows the Mac's own network settings." : note) {
+            Line("Send everything through a proxy", draft.mode != .system ? note
+                 : proxy.extensionName.map { "Off: \($0) sets the proxy, as an extension can. Turning one on here takes over from it." }
+                 ?? "Off: Search follows the Mac's own network settings.") {
                 Picker("Proxy", selection: $draft.mode) {
                     ForEach(ProxySettingsValue.Mode.allCases) { Text($0.title).tag($0) }
                 }

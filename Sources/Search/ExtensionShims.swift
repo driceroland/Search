@@ -6132,7 +6132,7 @@ enum ExtensionShims {
             guard !family.isEmpty, allowed(id, context: context).contains(family) else {
                 throw Unsupported(what: "The extension never asked for \u{201C}\(family)\u{201D}")
             }
-            return setting(api, first as? [String: Any] ?? [:], extension: id, owner: owner)
+            return try setting(api, first as? [String: Any] ?? [:], extension: id, owner: owner)
         }
 
         // What leaves this app is answered here, not in the injected script:
@@ -7118,26 +7118,42 @@ enum ExtensionShims {
     static var awake: [String: IOPMAssertionID] = [:]
 
     /// chrome.privacy and chrome.proxy: what each extension set, kept across
-    /// launches as Chrome keeps it. Search acts on one of them — an
+    /// launches as Chrome keeps it. Search acts on two of them — an
     /// extension turning the browser's own offer to save passwords off,
-    /// which is how every password manager asks Chrome to step aside.
-    private static func setting(_ api: String, _ details: [String: Any], extension id: String, owner: Extensions) -> Any? {
+    /// which is how every password manager asks Chrome to step aside, and
+    /// the proxy (ExtensionProxy.swift).
+    private static func setting(_ api: String, _ details: [String: Any], extension id: String, owner: Extensions) throws -> Any? {
         let parts = api.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return nil }
         let name = parts[1]
         var mine = Extensions.settings(for: id)
         switch parts[0] {
         case "setting.set":
+            // A proxy Search can't follow is refused now, as Chrome refuses
+            // a malformed one, rather than taken and never used.
+            if name == "proxy.settings" { _ = try ExtensionProxyRules.read(details["value"]) }
             mine[name] = details["value"]
         case "setting.clear":
             mine[name] = nil
         default:
             let value = mine[name] ?? defaultSetting(name, owner: owner)
-            return ["value": value ?? NSNull(), "levelOfControl": mine[name] != nil ? "controlled_by_this_extension" : "controllable_by_this_extension"]
+            return ["value": value ?? NSNull(), "levelOfControl": levelOfControl(name, set: mine[name] != nil, by: id, owner: owner)]
         }
         Extensions.setSettings(mine, for: id)
+        if name == "proxy.settings" { BrowserProxy.shared.extensionsChanged(owner) }
         owner.objectWillChange.send()
         return nil
+    }
+
+    /// Whose a setting is, as Chrome says it. The proxy can be held by
+    /// someone else: the proxy typed into Settings, which no extension
+    /// overrides, or the extension installed last of those that set one.
+    private static func levelOfControl(_ name: String, set: Bool, by id: String, owner: Extensions) -> String {
+        if name == "proxy.settings" {
+            if BrowserProxy.shared.value.mode != .system { return "not_controllable" }
+            if let holder = BrowserProxy.controller(in: owner), holder != id { return "controlled_by_other_extensions" }
+        }
+        return set ? "controlled_by_this_extension" : "controllable_by_this_extension"
     }
 
     private static func defaultSetting(_ name: String, owner: Extensions) -> Any? {
