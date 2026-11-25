@@ -817,8 +817,15 @@ final class Tab: ObservableObject, Identifiable {
     /// at the head of the row and gives up its title for that letter — which
     /// is all you need for the five or six pages you keep open all day.
     @Published var pin: String? {
-        didSet { if pin == nil, oldValue != nil { letGo = Date() } }
+        didSet {
+            if pin == nil, oldValue != nil { letGo = Date() }
+            if (pin == nil) != (oldValue == nil) { Tab.membership &+= 1 }
+        }
     }
+    /// Counts every change of any tab's group or of whether it is a pin:
+    /// what the row worked out by group stays good until it moves
+    /// (Browser.grouped).
+    static var membership: UInt64 = 0
     /// For a pin, the page it was pinned at: a double-click on it goes back
     /// there (Browser.goHome).
     var home: URL?
@@ -856,7 +863,10 @@ final class Tab: ObservableObject, Identifiable {
 
     /// The group that holds this ordinary tab in the sidebar.
     @Published var groupID: UUID? {
-        didSet { if groupID == nil, oldValue != nil { letGo = Date() } }
+        didSet {
+            if groupID == nil, oldValue != nil { letGo = Date() }
+            if groupID != oldValue { Tab.membership &+= 1 }
+        }
     }
 
     /// A name you gave it, in place of whatever the page calls itself. It
