@@ -174,6 +174,22 @@ final class ApplePasswordsTests: XCTestCase {
         XCTAssertThrowsError(try AppleMessages.readVerify(reply(["HAMK": NSNull()]), client, proof: proof))
     }
 
+    /// Idea 1206: each Apple Passwords row under a sign-in box names its
+    /// entry, by its title or else its site, not just "Apple Passwords".
+    func testRowDetailNamesTheEntry() throws {
+        let read = try AppleMessages.readLoginNames(["STATUS": 0, "Entries": [
+            ["USR": "ada", "sites": ["mail.example.test"], "title": "Work mail"],
+            ["USR": "bob", "sites": ["https://shop.example.test/login", "example.test"]],
+            ["USR": "cy", "sites": [], "title": "  "],
+        ]])
+        XCTAssertEqual(read.map(\.detail), [
+            "Work mail · Apple Passwords",
+            "shop.example.test · Apple Passwords",
+            "Apple Passwords",
+        ])
+        XCTAssertEqual(AppleLogin(user: "dan", sites: ["", "example.test"]).detail, "example.test · Apple Passwords")
+    }
+
     func testReadingAnswers() throws {
         let names = try AppleMessages.readLoginNames(["STATUS": 0, "Entries": [
             ["USR": "ada@example.test", "sites": ["example.test"]],

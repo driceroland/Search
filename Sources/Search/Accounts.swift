@@ -129,9 +129,9 @@ struct AccountList: View {
                 name: login.user.isEmpty ? "No name" : login.user, detail: login.host, lit: lit) { browser.choose(login) }
         case .apple(let login):
             // The Mac's Passwords app, when turned on (ApplePasswords.swift):
-            // marked as Apple's.
+            // the entry's title or site, marked as Apple's.
             Row(mark: .letter(login.user.first.map { String($0).uppercased() } ?? "•"),
-                name: login.user.isEmpty ? "No name" : login.user, detail: "Apple Passwords", lit: lit) { browser.choose(login) }
+                name: login.user.isEmpty ? "No name" : login.user, detail: login.detail, lit: lit) { browser.choose(login) }
         case .code(let code):
             Row(mark: .symbol("number"), name: code.user.isEmpty ? "Verification code" : code.user,
                 detail: code.user.isEmpty ? "Apple Passwords" : "Verification code · Apple Passwords", lit: lit) { browser.choose(code) }

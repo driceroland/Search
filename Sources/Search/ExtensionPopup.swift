@@ -400,7 +400,16 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
                 guard let self, web === self.web, let popover = self.popover,
                       case .success(let value) = result, let pair = value as? [Double], pair.count == 2 else { return }
                 let wanted = NSSize(width: pair[0], height: pair[1])
-                if !self.shown, !force, max(wanted.width, wanted.height) <= 25 { return }
+                // Still empty when measured regardless, a second after it
+                // loaded or later: shown at the size it stands at, not shrunk
+                // to the 25-point square. NordPass's popup is empty until its
+                // worker answers: it came up at its old size, then as a
+                // speck that looked like no popup at all, kept for every
+                // opening after (idea 1179).
+                if !self.shown, max(wanted.width, wanted.height) <= 25 {
+                    if force { self.reveal() }
+                    return
+                }
                 let now = popover.contentSize
                 if !self.shown || abs(wanted.width - now.width) > 1 || abs(wanted.height - now.height) > 1 { self.apply(wanted) }
             }
@@ -417,7 +426,8 @@ final class ExtensionPopup: NSObject, WKUIDelegate, WKNavigationDelegate, NSPopo
             popover.contentViewController?.view.setFrameSize(size)
             if shown { web?.frame = NSRect(origin: .zero, size: size) }
         }
-        if let id = extensionID, ExtensionPopup.lastSize[id] != size { ExtensionPopup.lastSize[id] = size }
+        // The 25-point square is an empty page's, never one to start from.
+        if let id = extensionID, ExtensionPopup.lastSize[id] != size, max(size.width, size.height) > 25 { ExtensionPopup.lastSize[id] = size }
         reveal()
     }
 

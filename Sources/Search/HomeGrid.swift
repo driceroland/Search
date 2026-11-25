@@ -1,7 +1,7 @@
 import SwiftUI
 
 // A blank tab's grid: the sites of the bookmark folder called Home, each a
-// tile with its saved title. Off unless Settings › Tabs turns it on; nothing
+// tile with its saved title. On unless Settings › Tabs turns it off; nothing
 // is drawn without such a folder.
 struct HomeGrid: View {
     let browser: Browser

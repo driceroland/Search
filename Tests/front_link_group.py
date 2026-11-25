@@ -68,7 +68,9 @@ def click(tab, anchor, wait=1.2):
 
 
 def run(t, place):
-    sv.setup(sidebar=True, **{"tabs.groups": True})
+    # Links opened in front go to the end of the row here: beside their
+    # page is on by default since 25 Nov 2026 (front_links_beside.py).
+    sv.setup(sidebar=True, **{"tabs.groups": True, "tabs.frontBeside": False})
     if place != "next":
         subprocess.run(["defaults", "write", sv.SUITE, "tabs.newPlace", place], check=True)
     sv.launch()
@@ -100,7 +102,9 @@ def run(t, place):
 
 def run_loose(t):
     """Out of a tab in no group, nothing changes: the end of the row."""
-    sv.setup(sidebar=True, **{"tabs.groups": True})
+    # Links opened in front go to the end of the row here: beside their
+    # page is on by default since 25 Nov 2026 (front_links_beside.py).
+    sv.setup(sidebar=True, **{"tabs.groups": True, "tabs.frontBeside": False})
     sv.launch()
     try:
         s = sv.page("links")

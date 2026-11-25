@@ -58,6 +58,30 @@ final class ProfilesTests: XCTestCase {
         XCTAssertEqual(Spaces.read(profile: Profile.personalID).map(\.id), [work.id, Space.firstID])
     }
 
+    func testSettingsProfileMovesPersistAndChangeMergedSpaceOrder() {
+        let orderKept = Store.settings.object(forKey: "spaces.orderKept")
+        defer { Store.settings.set(orderKept, forKey: "spaces.orderKept") }
+        let made = Profiles.shared.add(named: "Ordered profile")
+        defer { Profiles.shared.delete(made.id) }
+        let second = Space(id: UUID(), name: "Second", colour: 0, profile: made.id)
+        Spaces.write(Spaces.read() + [second])
+        let prefs = Shared.prefs
+        let oneWindow = prefs.profilesInOneWindow
+        defer { prefs.profilesInOneWindow = oneWindow }
+        prefs.profilesInOneWindow = true
+        let browser = Browser(record: WindowRecord(space: Space.firstID))
+        defer { browser.closeAll() }
+
+        let before = Profiles.shared.list.map(\.id)
+        Profiles.shared.move(made.id, by: -1)
+        var expected = before
+        expected.swapAt(expected.count - 1, expected.count - 2)
+        XCTAssertEqual(Profiles.shared.list.map(\.id), expected)
+        XCTAssertEqual(Profiles.read().map(\.id), expected)
+        let expectedSpaces = expected.flatMap { Spaces.read(profile: $0).map(\.id) }
+        XCTAssertEqual(browser.everySpace.map(\.id), expectedSpaces)
+    }
+
     func testAFileWithoutTheFirstSpaceStillLeavesItsHomeReachable() throws {
         Store.settings.removeObject(forKey: "spaces.orderKept")
         let work = Space(id: UUID(), name: "Work", colour: 0, sharesSignIns: false)

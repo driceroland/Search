@@ -4,9 +4,9 @@ import Foundation
 // handful of words that mean "go here in the app" rather than "go here on
 // the web". Only the whole word runs on Return, so a search that starts
 // with one still searches; part of a word is just offered lower in the
-// list. Off by default (Settings › Spaces & Pins ›
-// Opening and starting › Address bar commands): nobody typing "settings" into a browser
-// expects the app to open its own panel instead of asking Google.
+// list. On unless turned off (Settings › Spaces & Pins › Opening and
+// starting › Address bar commands), since 25 Nov 2026 (Drice): whoever
+// wants "settings" alone sent to their search engine turns it off.
 //
 // With it on, every menu command (Shortcuts.swift's Command) is offered
 // too, as in Arc's Command Bar, found by the words of its name, and every
@@ -141,13 +141,13 @@ enum AddressCommand: Equatable {
     private static let needsPage: Set<String> = [
         "file.share", "file.savePage", "file.exportPDF", "file.print", "edit.copyCleanLink", "view.reader",
         "view.summarize", "view.ask", "tabs.duplicate", "tabs.copyAddress", "tabs.copyMarkdown", "bookmarks.add",
-        "view.style",
+        "view.style", "view.developerMode",
     ]
     /// More words for a few, the ones other browsers use.
     private static let alsoCalled: [String: String] = [
         "view.reader": "reader view", "tabs.mute": "mute", "view.float": "picture in picture pip",
         "view.inspector": "devtools developer tools", "bookmarks.add": "bookmark", "view.hide": "zapper",
-        "view.style": "boost css",
+        "view.style": "boost css", "view.developerMode": "dev localhost cache inspector",
     ]
 
     /// A menu command, offered only where the menu has it, and enabled.
