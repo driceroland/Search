@@ -1196,6 +1196,9 @@ struct ContentView: View {
             .onChange(of: browser.prefs.columnWidth) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
+            .onChange(of: browser.liftsLights) { _, _ in
+                DispatchQueue.main.async { Lights.refresh(window); measureLights() }
+            }
             // On the right, the lights sit in the column's corner, which
             // moves with its edge.
             .onChange(of: edges.side) { _, _ in
@@ -1496,10 +1499,13 @@ struct ContentView: View {
         let edges = self.edges
         Lights.keep(window, centreX: { window in
             let lead = browser.prefs.iconColumn ? Metrics.iconColumn / 2 : Lights.centre.x
-            return browser.prefs.sidebar && browser.prefs.sidePosition == .right
-                ? window.frame.width - (edges.side ?? browser.prefs.columnWidth) + lead
-                : lead
-        }, vertical: { _ in browser.prefs.iconColumn }) { measureLights() }
+            let right = browser.prefs.sidebar && browser.prefs.sidePosition == .right
+            let inset = browser.liftsLights ? Metrics.floatGap : 0
+            return right
+                ? window.frame.width - (edges.side ?? browser.prefs.columnWidth) + lead - inset
+                : lead + inset
+        }, vertical: { _ in browser.prefs.iconColumn },
+           down: { _ in browser.liftsLights ? Metrics.floatGap : 0 }) { measureLights() }
         DispatchQueue.main.async { measureLights() }
 
         // The traffic lights are drawn — measured, they paint themselves — but

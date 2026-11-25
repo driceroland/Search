@@ -27,12 +27,13 @@ final class Lights: NSObject {
     /// `vertical`: the three one above the other, for a column too narrow
     /// to hold them side by side (the column of icons, Metrics.iconColumn).
     static func keep(_ window: NSWindow, centreX: @escaping (NSWindow) -> CGFloat,
-                     vertical: @escaping (NSWindow) -> Bool = { _ in false }, moved: @escaping () -> Void) {
+                     vertical: @escaping (NSWindow) -> Bool = { _ in false },
+                     down: @escaping (NSWindow) -> CGFloat = { _ in 0 }, moved: @escaping () -> Void) {
         // A freed window's entry goes, and with it the one a new window at
         // the same address would otherwise be taken for.
         kept = kept.filter { $0.value.window != nil }
         guard kept[ObjectIdentifier(window)] == nil else { return }
-        kept[ObjectIdentifier(window)] = Lights(window, centreX: centreX, vertical: vertical, moved: moved)
+        kept[ObjectIdentifier(window)] = Lights(window, centreX: centreX, vertical: vertical, down: down, moved: moved)
     }
 
     static func refresh(_ window: NSWindow?) {
@@ -51,6 +52,7 @@ final class Lights: NSObject {
     private let moved: () -> Void
     private let centreX: (NSWindow) -> CGFloat
     private let vertical: (NSWindow) -> Bool
+    private let down: (NSWindow) -> CGFloat
     private var placing = false
     /// AppKit's own spacing between the three, read once from its first
     /// layout and kept. Read again on every pass, it was caught while AppKit
@@ -61,10 +63,11 @@ final class Lights: NSObject {
     private let spacing: CGFloat
 
     private init(_ window: NSWindow, centreX: @escaping (NSWindow) -> CGFloat,
-                 vertical: @escaping (NSWindow) -> Bool, moved: @escaping () -> Void) {
+                 vertical: @escaping (NSWindow) -> Bool, down: @escaping (NSWindow) -> CGFloat, moved: @escaping () -> Void) {
         self.window = window
         self.centreX = centreX
         self.vertical = vertical
+        self.down = down
         self.moved = moved
         let row = [NSWindow.ButtonType.closeButton, .miniaturizeButton].compactMap { window.standardWindowButton($0) }
         let measured = row.count == 2 ? row[1].frame.minX - row[0].frame.minX : 0
@@ -109,7 +112,7 @@ final class Lights: NSObject {
     /// How tall the title bar is: the strip's height, or, with the three
     /// stacked, as tall as they need.
     private func band(_ window: NSWindow) -> CGFloat {
-        vertical(window) ? Metrics.iconLights : Metrics.strip
+        (vertical(window) ? Metrics.iconLights : Metrics.strip) + down(window)
     }
 
     /// Where one button goes: along the row, or down the column, the
@@ -118,10 +121,10 @@ final class Lights: NSObject {
         let size = button.frame.size
         if vertical(window) {
             return NSPoint(x: centreX(window) - size.width / 2,
-                           y: bar.bounds.height - (Lights.stackTop + CGFloat(index) * spacing) - size.height / 2)
+                           y: bar.bounds.height - (Lights.stackTop + down(window) + CGFloat(index) * spacing) - size.height / 2)
         }
         return NSPoint(x: centreX(window) - size.width / 2 + CGFloat(index) * spacing,
-                       y: bar.bounds.height - Lights.centre.y - size.height / 2)
+                       y: bar.bounds.height - Lights.centre.y - down(window) - size.height / 2)
     }
 
     /// The close button's centre from the top, with the three stacked.

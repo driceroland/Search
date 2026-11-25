@@ -194,6 +194,7 @@ enum Metrics {
     /// window's edges (and from the column, folded away), and its corners
     /// this round.
     static let cardGap: CGFloat = 14
+    static let floatGap: CGFloat = 6
     static let edgeGap: CGFloat = 10
     static let columnRowInset: CGFloat = 10
     static let cardRadius: CGFloat = 10

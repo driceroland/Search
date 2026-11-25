@@ -327,8 +327,7 @@ extension Browser {
         // Out, or still sliding back in: where it lies.
         func lies() -> Bool {
             if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
-            // A floating card stands a gap in, its edge to pull just past it.
-            let reach = prefs.columnWidth + (asCards ? Metrics.cardGap + 5 : 0)
+            let reach = prefs.columnWidth + (floatsColumn ? Metrics.floatGap + 5 : 0)
             return right ? point.x >= size.width - reach : point.x <= reach
         }
         if peeking { return lies() }
@@ -598,13 +597,11 @@ struct Fold: View {
         browser.folded && !browser.peeking
     }
 
-    /// The column out over the page as a floating card (see body).
     private var floating: Bool {
-        folding && browser.asCards
+        folding && browser.floatsColumn
     }
 
-    /// How far the column is slid off the window's edge: all of it, the
-    /// floating card's gap included.
+    /// How far the column is slid off the window's edge: all of it.
     private var columnOffset: CGFloat {
         guard lightsOff, !browser.fadeHeld else { return 0 }
         return columnAway
@@ -612,7 +609,7 @@ struct Fold: View {
 
     /// The column's offset wholly off the window's edge.
     private var columnAway: CGFloat {
-        let away = prefs.columnWidth + (floating ? Metrics.cardGap : 0)
+        let away = prefs.columnWidth + (floating ? Metrics.floatGap : 0)
         return onRight ? away : -away
     }
 
@@ -681,7 +678,7 @@ struct Fold: View {
             let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
             // Floating, the column stands a gap in from the edge, and its
             // edge to pull reaches half its width past it.
-            let reach = prefs.sidebar ? prefs.columnWidth + (floating ? Metrics.cardGap + 5 : 0) : Metrics.strip
+            let reach = prefs.sidebar ? prefs.columnWidth + (floating ? Metrics.floatGap + 5 : 0) : Metrics.strip
             // An extension's popup hangs from its button in the column: the
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).

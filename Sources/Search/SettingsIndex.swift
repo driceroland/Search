@@ -217,6 +217,10 @@ enum SettingsIndex {
         .init(id: "sidebar.hides", group: "window", icon: "sidebar.squares.left",
               title: "Hide the column until the pointer reaches the edge", detail: "The page takes the whole window; ⌘S keeps the tabs out",
               keys: ["sidebar.hides"], words: ["auto hide", "sidebar"], parent: "tabs.layout"),
+        .init(id: "sidebar.floats", group: "window", icon: "rectangle.portrait.on.rectangle.portrait",
+              title: "Float the column over the page", detail: "Out from the edge as a rounded card with room around it",
+              more: "Off, the hidden column slides out flush against the window's edge.",
+              keys: ["sidebar.floats"], words: ["float", "floating", "card", "hover", "edge", "sidebar", "arc"], parent: "sidebar.hides"),
         .init(id: "sidebar.slides", group: "window", icon: "rectangle.lefthalf.inset.filled.arrow.left",
               title: "Slide the column in and out", detail: "A gentler slide when ⌘S or the window's edge brings the column out or puts it away",
               more: "With Reduce Motion on in System Settings › Accessibility › Display, the column fades in and out instead. With Reduce animations on, it comes and goes at once.",
@@ -842,10 +846,12 @@ enum SettingsIndex {
         case "pages.dusk": return prefs.look != .light
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
+        case "sidebar.player.scroll": return prefs.sidebar && !prefs.sideIcons && prefs.showsPlayer
         case "icons.peek": return prefs.iconColumn
         case "icons.peek.delay": return prefs.iconColumn && prefs.iconPeeks
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
+        case "sidebar.floats": return prefs.sidebar && prefs.cards
         case "address.width": return prefs.addressLine && !prefs.sidebar
         case "tabs.clickKeepsName": return prefs.addressLine && !prefs.iconColumn
         // A click that edits nothing has no card to leave out.
@@ -892,10 +898,13 @@ enum SettingsIndex {
         case "profiles.oneWindow": return "Only with more than one profile"
         case "spaces.links", "links.ask", "spaces.buttons": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"
+        case "sidebar.player.scroll": return "Only with What's playing in other tabs on, and titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent", "newtab.arc": return "Only with the new tab in a floating field"
         case "mail.default": return "Only with a webmail chosen for email links"
-        case "links.peek.stays": return "Only when links or pins open peeks"
+        case "links.peek.stays", "links.peek.dim": return "Only when links or pins open peeks"
+        case "links.peek.dimSide": return "Only with Dim the page behind a peek on and the tabs down a side"
+        case "sidebar.floats": return "Only with the page as a card and the tabs down a side"
         case "launcher.key": return "Only with the address field from any app on"
         case "bookmarks.side": return "Only with the bookmarks bar shown and the tabs down a side"
         default: return "Only with the tabs down a side"
