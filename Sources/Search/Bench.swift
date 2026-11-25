@@ -4090,6 +4090,12 @@ final class Bench {
                 guard windows.indices.contains(n) else { answer(["error": "no window \(n)"]); return }
                 windows[n].panel.performClose(nil)
                 answer(["open": MeetPiPWindow.all.count])
+            case "shot":
+                // A PNG of the Nth window's page, drawn off screen as `shot`
+                // draws a tab's: the panel stays where it is, never shown.
+                guard windows.indices.contains(n) else { answer(["error": "no window \(n)"]); return }
+                let path = (request["path"] as? String) ?? NSTemporaryDirectory() + "search-bench-meetpip-\(n).png"
+                shoot(windows[n].web, to: URL(fileURLWithPath: path), width: request["width"] as? Double, answer)
             default:
                 answer(["on": MeetPiP.on, "windows": windows.map(\.state),
                         "armed": (browser.tabs + browser.parkedTabs).filter(\.meetPiPArmed).map(\.id.uuidString),
