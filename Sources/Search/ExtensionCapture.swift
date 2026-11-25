@@ -409,7 +409,7 @@ final class ExtensionCapture: NSObject, WKScriptMessageHandlerWithReply, Observa
         guard now != recordings else { return }
         recordings = now
         // The pill, and the mark on each recording tab (RecordingIndicator).
-        RecordingIndicator.shared.update(now.map { RecordingLine(id: $0.id, name: $0.name, what: $0.what) },
+        RecordingIndicator.shared.update(now.map { RecordingLine(id: $0.id, name: $0.name, what: $0.what, dismissible: $0.site) },
                                          pages: now.flatMap { webViews(of: $0.id) })
     }
 

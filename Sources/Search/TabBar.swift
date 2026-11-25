@@ -2160,6 +2160,11 @@ struct TabPress: ViewModifier {
     /// Told when the button goes down on the tab and comes back up, whatever
     /// the press goes on to do, for the tab to give under it (see Give).
     var pressing: Binding<Bool>? = nil
+    /// The second press of a double-click, told whether the first one
+    /// opened the tab (see PinDouble): answered from the press itself, as
+    /// the first press makes the tab the one on screen and draws it anew,
+    /// and a tap counting to two lost its first tap there.
+    var again: ((Bool) -> Void)? = nil
     let act: () -> Void
 
     /// How far the hand may go before the press gives way to the row's
@@ -2196,9 +2201,17 @@ struct TabPress: ViewModifier {
                 DispatchQueue.main.async { selected = false }
                 return
             }
+            // Whether the press before this one, a double-click's first,
+            // opened the tab.
+            let opened = TabPress.openedAt.map { ProcessInfo.processInfo.systemUptime - $0 < NSEvent.doubleClickInterval } ?? false
             TabPress.openedAt = nil
             guard enabled, TabClick.flags.intersection([.command, .control, .shift, .option]).isEmpty,
                   !TabPress.otherButton else { return }
+            if let again, TabClick.clicks == 2 {
+                selected = false
+                again(opened)
+                return
+            }
             selected = !active
             if selected {
                 TabPress.openedAt = ProcessInfo.processInfo.systemUptime
@@ -2286,6 +2299,8 @@ struct ModifiedTabClick: ViewModifier {
 @MainActor
 enum TabClick {
     private static var last: (flags: NSEvent.ModifierFlags, at: TimeInterval)?
+    /// The left button's last press: how many clicks AppKit counted it as.
+    private static var down: (count: Int, at: TimeInterval)?
     /// How long a click's keys are its own: a press answers on the way down
     /// and a tap on the way up, well within this.
     static let fresh: TimeInterval = 0.5
@@ -2293,7 +2308,10 @@ enum TabClick {
     static let watching: Any? = NSEvent.addLocalMonitorForEvents(
         matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]
     ) { event in
-        MainActor.assumeIsolated { TabClick.last = (event.modifierFlags, event.timestamp) }
+        MainActor.assumeIsolated {
+            TabClick.last = (event.modifierFlags, event.timestamp)
+            if event.type == .leftMouseDown { TabClick.down = (event.clickCount, event.timestamp) }
+        }
         return event
     }
 
@@ -2302,8 +2320,15 @@ enum TabClick {
         return NSEvent.modifierFlags
     }
 
+    /// The clicks the press just made is the latest of, as AppKit counts
+    /// them (2 for a double-click's second), or 1 for none just made.
+    static var clicks: Int {
+        if let down, ProcessInfo.processInfo.systemUptime - down.at < fresh { return down.count }
+        return 1
+    }
+
     /// For tests: no click remembered.
-    static func forget() { last = nil }
+    static func forget() { last = nil; down = nil }
 }
 
 /// ⌥ and the click, nothing else held: Split View (Browser.optionClick).

@@ -349,24 +349,53 @@ enum ProfileMenu {
 // MARK: - Settings
 
 /// Settings › Spaces & Pins: once there is more than one profile, each
-/// with its spaces, Open, Rename… and Delete…, under the Profiles row.
+/// with its spaces, arrows to move it, Open, Rename… and Delete…, under the
+/// Profiles row. The order is the one profiles keep everywhere else.
 struct ProfileList: View {
     @ObservedObject var browser: Browser
     @ObservedObject var profiles = Profiles.shared
 
     var body: some View {
         if profiles.several {
-            ForEach(profiles.list) { profile in
+            ForEach(Array(profiles.list.enumerated()), id: \.element.id) { index, profile in
                 Rule()
                 ProfilesSettings.Row(profile: profile, current: profile.id == browser.profileID,
-                                     spaces: profiles.spaces(of: profile.id).map(\.name))
+                                     spaces: profiles.spaces(of: profile.id).map(\.name),
+                                     index: index, count: profiles.list.count)
             }
         }
     }
 }
 
-/// Profiles in a card of its own: New Profile…, and once there is more
-/// than one, each with its spaces, Rename… and Delete….
+private struct OrderButtons: View {
+    let name: String
+    let index: Int
+    let count: Int
+    let move: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            button("chevron.up", label: "Move \(name) up", enabled: index > 0, step: -1)
+            button("chevron.down", label: "Move \(name) down", enabled: index + 1 < count, step: 1)
+        }
+    }
+
+    private func button(_ symbol: String, label: String, enabled: Bool, step: Int) -> some View {
+        Button { move(step) } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.3)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// Profiles in a card of its own.
 struct ProfilesSettings: View {
     @ObservedObject var browser: Browser
     @ObservedObject var profiles = Profiles.shared
@@ -376,12 +405,7 @@ struct ProfilesSettings: View {
             Line("Profiles", "Separate sets of spaces, each with its own sign-ins, history and bookmarks, in windows of their own. Extensions, passwords and settings are shared.") {
                 Pill("New Profile…") { ProfileMenu.askNew() }
             }
-            if profiles.several {
-                ForEach(profiles.list) { profile in
-                    Rule()
-                    Row(profile: profile, current: profile.id == browser.profileID, spaces: profiles.spaces(of: profile.id).map(\.name))
-                }
-            }
+            ProfileList(browser: browser)
         }
     }
 
@@ -389,10 +413,17 @@ struct ProfilesSettings: View {
         let profile: Profile
         let current: Bool
         let spaces: [String]
+        let index: Int
+        let count: Int
 
         var body: some View {
             Line(profile.name + (current ? " — this window" : ""), spaces.joined(separator: ", ")) {
                 HStack(spacing: 6) {
+                    if count > 1 {
+                        OrderButtons(name: profile.name, index: index, count: count) { step in
+                            Profiles.shared.move(profile.id, by: step)
+                        }
+                    }
                     if !current { Pill("Open") { Browsers.open(profile: profile.id) } }
                     Pill("Rename…") {
                         Ask.name("Rename Profile", placeholder: profile.name, initial: profile.name, confirm: "Rename") {
