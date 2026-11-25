@@ -169,13 +169,27 @@ enum Web {
         unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, on)
     }
 
-    /// WebKit's ⌫ as Back and ⇧⌫ as Forward, off as in Safari. Back is ⌘[,
-    /// or what Settings gives it.
+    /// WebKit's ⌫ as Back and ⇧⌫ as Forward, off as in Safari (#1161).
+    /// Back is ⌘[, or what Settings gives it. Settings › Keyboard & Mouse ›
+    /// Backspace goes back turns it on (idea 1120): WebKit then goes back
+    /// only for a ⌫ nothing in the page took — not in a field or editable
+    /// text, not one the page stopped — with no ⌘, ⌥ or ⌃ held.
     static func backspaceStays(_ preferences: WKPreferences) {
+        backspace(preferences, goesBack: Store.settings.bool(forKey: Preferences.backspaceKey))
+    }
+
+    static func backspace(_ preferences: WKPreferences, goesBack: Bool) {
         let set = NSSelectorFromString("_setBackspaceKeyNavigationEnabled:")
         guard preferences.responds(to: set) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
-        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, false)
+        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, goesBack)
+    }
+
+    /// The switch turned: every page open now follows it, without a reload.
+    /// A page's preferences are its configuration's, shared, and WebKit
+    /// hands a change on to the page.
+    @MainActor static func backspaceEverywhere() {
+        for page in pages.allObjects { backspaceStays(page.configuration.preferences) }
     }
 }
 

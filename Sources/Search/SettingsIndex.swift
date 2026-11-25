@@ -642,6 +642,10 @@ enum SettingsIndex {
               title: "⌥-click a link opens it in Split View", detail: "Its page beside the one you're reading, as Open Link in Split View",
               more: "Off, ⌥-click follows the link as a click does. In Safari it downloads the link instead.",
               keys: ["links.optionSplit"], words: ["option click", "alt click", "split", "side by side", "link", "open beside"]),
+        .init(id: "keys.backspaceBack", group: "mouse", icon: "delete.left",
+              title: "Backspace goes back", detail: "⌫ goes back a page and ⇧⌫ forward, as older browsers did",
+              more: "Only when you aren't typing in a field or editable text, and with no other key held. Off, as in Safari: ⌘[ goes back.",
+              keys: ["keys.backspaceBack"], words: ["backspace", "delete key", "back", "previous page", "go back", "history", "keyboard"]),
         .init(id: "autoscroll", group: "mouse", icon: "arrow.up.and.down.circle",
               title: "Scroll with the middle button", detail: "Click the wheel, then move the mouse to scroll, as on Windows",
               keys: ["autoscroll"], words: ["middle click", "autoscroll", "wheel"]),
@@ -1081,6 +1085,7 @@ extension SettingsIndex {
             "pins.home": prefs.pinsGoHome,
             "pins.peek": prefs.pinsPeek,
             "pins.linksNewTab": prefs.pinLinksOpenTabs,
+            "keys.backspaceBack": prefs.backspaceGoesBack,
             "links.peek": prefs.peekChoice.rawValue,
             "pages.120": prefs.fastPages.rawValue,
             "swipe.history": prefs.holdsHistory,
@@ -1126,6 +1131,9 @@ extension SettingsIndex {
         case "pins.linksNewTab":
             guard let on = value as? Bool else { return false }
             prefs.pinLinksOpenTabs = on
+        case "keys.backspaceBack":
+            guard let on = value as? Bool else { return false }
+            prefs.backspaceGoesBack = on
         case "sidebar.slides":
             guard let on = value as? Bool else { return false }
             prefs.slidesColumn = on

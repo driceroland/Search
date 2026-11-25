@@ -1444,7 +1444,23 @@ final class Bench {
                 if pressed.contains(where: { PageView.same($0, event) }) { resent += 1 }
                 return event
             }
-            PageHands.type(text, into: view) { pressed.append($0) }
+            // "code": one key by its code (51 is ⌫), with "mods" held:
+            // shift, option, command, control.
+            if let code = request["code"] as? Int {
+                var flags: NSEvent.ModifierFlags = []
+                for name in request["mods"] as? [String] ?? [] {
+                    switch name {
+                    case "shift": flags.insert(.shift)
+                    case "option": flags.insert(.option)
+                    case "command": flags.insert(.command)
+                    case "control": flags.insert(.control)
+                    default: break
+                    }
+                }
+                _ = PageHands.key(view, code: UInt16(code), characters: text, flags: flags) { pressed.append($0) }
+            } else {
+                PageHands.type(text, into: view) { pressed.append($0) }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 if let watch { NSEvent.removeMonitor(watch) }
                 answer(["typed": text, "sentBackUnused": resent, "quieted": PageView.quieted - before])

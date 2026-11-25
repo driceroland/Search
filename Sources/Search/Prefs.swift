@@ -841,6 +841,17 @@ final class Preferences: ObservableObject {
     @Published var optionClickSplits: Bool {
         didSet { store.set(optionClickSplits, forKey: "links.optionSplit") }
     }
+    /// ⌫ goes back a page and ⇧⌫ forward, as Safari once had it: only when
+    /// no field or editable text has the keys and nothing else is held,
+    /// which WebKit decides (see Web.backspace). Off unless asked for, as
+    /// in Safari (#1161; idea 1120).
+    @Published var backspaceGoesBack: Bool {
+        didSet {
+            store.set(backspaceGoesBack, forKey: Preferences.backspaceKey)
+            Web.backspaceEverywhere()
+        }
+    }
+    nonisolated static let backspaceKey = "keys.backspaceBack"
     /// Pins as in Arc: a link from a pinned tab to another site opens in a
     /// peek, so the pin stays on its page (see Peek.swift), and ⌘W takes it
     /// back to the page it was pinned at. Half of "Pins keep their site"
@@ -1497,6 +1508,7 @@ final class Preferences: ObservableObject {
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")
         optionClickSplits = store.bool(forKey: "links.optionSplit")
+        backspaceGoesBack = store.bool(forKey: Preferences.backspaceKey)
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
         readerFollowsLook = store.bool(forKey: "reader.follows")
