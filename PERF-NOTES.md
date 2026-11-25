@@ -124,3 +124,22 @@ Commits (footprint after 30 s idle, interleaved A/B):
 - Open: the slope is launch churn left as fragmentation, run-loop SwiftUI updates (494 MB allocated in
   the first 10 s at 400 tabs vs 85 at 50); find which updates repeat per tab (preloadSpaces one space a
   turn, each `tabs +=` re-evaluating SideBar, LiveLensKey's reduce) before cutting.
+
+## At rest (25-26 Nov, branch mem-at-rest, on mem-many-tabs)
+Bench: Tests/mem_at_rest.py, the site comparison's method (fresh world, `open -n -g -j`, SEARCH_MEASURE=1,
+footprint summed over Search and every process it is responsible for after 30 s; 3 rounds, medians).
+- 1.0.21 (comparison, 25 Nov): 66 MB / 3 (Search 56, Networking 5.7, GPU 4.5). No WebContent at rest.
+- mem-many-tabs base: 52.1 / 3 (Search 41.9: the window snapshot was most of the difference).
+- No GPU process: the blank tab's PageView was built 1 s after launch (frontBlank); WebPageProxy's
+  creation starts the GPU process (WebContent waits for the first load). Now built at the first key typed
+  into its field (warmBlank): 46.7 / 2.
+- No Networking: started by Preferences.init's followCookies (`_setCookieAcceptPolicy`) and by
+  BrowserProxy.attach setting an empty proxyConfigurations list (each alone starts it; found with env
+  switches in a diagnostic build). Policy now owed until Store.network(); empty proxy lists not set: 40.8 / 1.
+- First page cost of a cold network process: the WebContent process waits ~110 ms for it before the
+  navigation starts (log: all three helpers finish launching together, then WebPage::loadRequest).
+  Hidden by starting it at the first click/key (NSEvent local monitor), on restore, on a GetURL event;
+  typed path unchanged (~215 ms from Return either way, interleaved); script/agent/link path +~110 ms once.
+- What is left, Search alone 40.8 MB: MALLOC_SMALL 27 MB dirty for ~21 MB live (launch churn kept as
+  fragmentation), Swift metadata 3.3 MB, SwiftUI's menu bar ~2 MB (823 PlatformItemList.Item arrays),
+  frameworks' __DATA ~6 MB, GLDDeviceRec 0.5 MB (an OpenGL device someone opens), WebKit malloc 1 MB.
