@@ -34,6 +34,8 @@ Not in this version, kept on main for a later one:
 ### Added
 
 - Settings › Keyboard & Mouse › Backspace goes back, off unless turned on: ⌫ goes back a page and ⇧⌫ forward, as older browsers did, only when you aren't typing in a field or editable text and with no other key held. Pages already open follow the switch at once. Found by searching Settings for "backspace". `python3 Tests/backspace_back.py` (idea 1120)
+- Settings › Spaces & Pins › Hide the page behind the field, off unless turned on: ⌘T's and ⌘L's field comes over a plain ground, the page out of sight, instead of the page dimmed and showing through, which some find busy. With The field in the middle of the window too. A plain cover, nothing worked out from the page, so it costs nothing while the page moves. (idea 1061)
+
 
 ## 1.0.20 — 24 November 2026
 

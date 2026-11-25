@@ -1243,6 +1243,12 @@ final class Preferences: ObservableObject {
     @Published var fieldOnWindow: Bool {
         didSet { store.set(fieldOnWindow, forKey: "field.window") }
     }
+    /// The page behind ⌘T's and ⌘L's field covered whole, rather than
+    /// dimmed and still showing through: for whoever finds it busy. A plain
+    /// cover, nothing worked out from the page. Off unless asked for.
+    @Published var fieldHidesPage: Bool {
+        didSet { store.set(fieldHidesPage, forKey: "field.hidesPage") }
+    }
     /// The address field from any app, as Spotlight's comes: a key of your
     /// own raises it over the app in front, and Return opens what was typed
     /// in Search (see Launcher.swift). Off unless asked for, and no key
@@ -1475,6 +1481,7 @@ final class Preferences: ObservableObject {
         handoff = store.bool(forKey: "handoff")
         floatingNewTab = store.bool(forKey: "newtab.floating")
         fieldOnWindow = store.bool(forKey: "field.window")
+        fieldHidesPage = store.bool(forKey: "field.hidesPage")
         launcher = store.bool(forKey: "launcher.on")
         launcherLittle = store.bool(forKey: "launcher.little")
         launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
