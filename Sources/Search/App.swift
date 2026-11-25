@@ -1479,6 +1479,12 @@ struct ContentView: View {
             window.isExcludedFromWindowsMenu = false
         }
         window.tabbingMode = .disallowed
+        // No picture of the window for macOS's state restoration: Search
+        // brings its windows back itself, from its own files. AppKit drew
+        // one a while after launch and after each change, a buffer the
+        // window's size in pixels (16 MB for a 1280-point window, 60 for a
+        // 5K screen) that the allocator then kept as part of the app.
+        window.disableSnapshotRestoration()
         // Light or dark is the app's to say (Settings › Appearance); the
         // window only has to be the ground colour that goes with it.
         window.titlebarAppearsTransparent = true
