@@ -775,7 +775,12 @@ struct ContentView: View {
         } else if let tab = browser.active {
             Page(tab: tab, corner: cardCorner, browser: browser)
                 .overlay {
-                    if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
+                    if browser.prefs.showsLinks {
+                        // Beside the downloads tab at the window's edge, not under it.
+                        let room = browser.downloadsEdge ? DownloadFlight.edgeRoom : 0
+                        LinkBubble(status: browser.linkStatus,
+                                   leadingRoom: sideOnRight ? 0 : room, trailingRoom: sideOnRight ? room : 0)
+                    }
                 }
                 // Developer Mode's bar, for a site in it (DevMode.swift).
                 .overlay(alignment: .bottomTrailing) { DevBar(browser: browser, tab: tab) }

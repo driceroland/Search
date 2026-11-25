@@ -47,6 +47,9 @@ enum DownloadFlight {
     static let edgeSize: CGFloat = 24
     static let edgeInset: CGFloat = 12
     static let edgeTravel: CGFloat = 36
+    /// How far the link bubble at the page's foot moves over while the tab
+    /// is there, which stands where the bubble's corner is (LinkBubble).
+    static let edgeRoom: CGFloat = edgeSize + 10
 
     static func duration(light: Bool) -> Double { light ? lightDuration : duration }
 
