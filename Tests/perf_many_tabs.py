@@ -48,6 +48,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import split_view as sv  # noqa: E402
 
 sv.use("perf-many-tabs")
+# Another build of the app to time (a copy kept for before/after).
+if os.environ.get("PERF_APP"):
+    sv.APP = os.environ["PERF_APP"]
 IDS = [sv.FIRST_SPACE.upper(), "5E4C0000-0000-4000-8000-0000000020B2", "5E4C0000-0000-4000-8000-0000000020B3"]
 SHARE = [0.5, 0.3, 0.2]
 
