@@ -253,7 +253,10 @@ def med(xs):
 
 
 def summ(rs, keys=("callMs", "longestMs", "busyMs")):
-    return {k: med([r[k] for r in rs]) for k in keys} | {"maxLongestMs": max((r["longestMs"] for r in rs), default=None)}
+    out = {k: med([r[k] for r in rs]) for k in keys} | {"maxLongestMs": max((r["longestMs"] for r in rs), default=None)}
+    if all("rows" in r for r in rs):
+        out["rows"] = med([r["rows"] for r in rs])
+    return out
 
 
 ONLY = None
