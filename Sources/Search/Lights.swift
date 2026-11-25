@@ -52,6 +52,17 @@ final class Lights: NSObject {
     private let centreX: (NSWindow) -> CGFloat
     private let vertical: (NSWindow) -> Bool
     private var placing = false
+    /// A move heard while placing, to be looked at once the pass is over.
+    /// Most are the pass's own, so a look follows nearly every pass that
+    /// moves a button. But AppKit seems to lay the title bar out again
+    /// inside a pass too: with a window manager sizing the window the moment
+    /// it opens (OmniWM, for one), the zoom button was left where AppKit lays
+    /// it out on about half of launches, and with that move dropped, nothing
+    /// came after it to put the button right. The look is made on the next turn of the main loop, and
+    /// a pass started by it may start only one more, so the two of them
+    /// cannot go on taking the button from each other.
+    private var heard = false
+    private var retries = 0
     /// AppKit's own spacing between the three, read once from its first
     /// layout and kept. Read again on every pass, it was caught while AppKit
     /// was halfway through putting them back after a resize — one button
@@ -128,13 +139,30 @@ final class Lights: NSObject {
     static let stackTop: CGFloat = 22
 
     @objc private func place() {
+        if !placing { retries = 0 }
+        placeOnce()
+    }
+
+    private func placeOnce() {
+        if placing { heard = true; return }
         // Full screen keeps its title bar in a window of its own, laid out by
         // macOS; it is left to it.
-        guard !placing, let window, !window.styleMask.contains(.fullScreen) else { return }
+        guard let window, !window.styleMask.contains(.fullScreen) else { return }
         let buttons = self.buttons
         guard buttons.count == 3, let bar = buttons[0].superview, let container = bar.superview else { return }
         placing = true
-        defer { placing = false }
+        heard = false
+        defer {
+            placing = false
+            if heard, retries < 2 {
+                heard = false
+                retries += 1
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.misplaced() else { return }
+                    self.placeOnce()
+                }
+            }
+        }
 
         // A title bar as tall as the strip, so the buttons can sit lower in it.
         let height = band(window)
