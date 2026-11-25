@@ -745,6 +745,7 @@ struct SettingsPanel: View {
             ))
         case "tabs.clickAddressOnly": Switch(on: $prefs.tabClickAddressOnly)
         case "tabs.clickKeepsName": Switch(on: $prefs.tabClickKeepsName)
+        case "tabs.clickRenames": Switch(on: $prefs.tabClickRenames)
         case "note.groups", "note.awake": Always()
         default: EmptyView()
         }
