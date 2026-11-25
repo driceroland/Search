@@ -133,12 +133,21 @@ final class Dusk: ObservableObject {
         // colours: for comparing the two, set by hand.
         let mode = Store.settings.string(forKey: "dusk.mode") ?? "colours"
         let known: Bool? = light ? false : seen[host]
-        let config: [String: Any] = ["on": true, "host": host, "mode": mode,
+        let config: [String: Any] = ["on": true, "host": host, "mode": mode, "filter": Dusk.filters(host),
                                      "choice": (chosen ?? sites[host]).map { $0 as Any } ?? NSNull(),
                                      "known": known.map { $0 as Any } ?? NSNull()]
         guard let data = try? JSONSerialization.data(withJSONObject: config),
               let json = String(data: data, encoding: .utf8) else { return "{\"on\":false}" }
         return json
+    }
+
+    /// Whether the filter may stand in for the colours on `host`. Not on
+    /// Google's editors (Docs, Sheets, Slides): the document is drawn in a
+    /// canvas and the slides in pictures the filter keeps, so it turned only
+    /// the bars around them over, and the colours give up on their styles.
+    /// There a page the colours can't do is left as the site made it.
+    nonisolated static func filters(_ host: String) -> Bool {
+        host != "docs.google.com"
     }
 
     /// Whether a page is dark, from outside it: a picture of what it shows,
@@ -277,7 +286,11 @@ final class Dusk: ObservableObject {
         // frame, so the page is never seen white while they are made. Both
         // change here, in one go, so no frame falls between them.
         var painted = shown && !!paint && paint.ready();
-        filtering = shown && !painted;
+        // Where the filter isn't wanted (Dusk.filters), a page the colours
+        // can't do, or gave up on, is left alone; one they are still making
+        // stays as it is until they are ready.
+        if (shown && !paint && config.filter === false) shown = false;
+        filtering = shown && !painted && config.filter !== false;
         // The filter's sheet only while it shows: a page it doesn't darken
         // has none of ours in it.
         if (filtering) attach();
@@ -483,6 +496,14 @@ final class Dusk: ObservableObject {
         writes.forEach(function (w) { if (!w[0].hasAttribute(w[1])) w[0].setAttribute(w[1], w[2]); });
       };
       var look = function (el) {
+        // An SVG drawing a picture (a slide's thumbnail, a chart with a
+        // photo in it) is one too, under the filter: marked, so it is
+        // turned back whole. An icon, with no picture in it, turns with
+        // the page.
+        if (el.tagName === 'svg' && filtering && !el.hasAttribute(KEEP)) {
+          if (el.querySelector('image')) picture(el, true);
+          return NodeFilter.FILTER_REJECT;
+        }
         if (skip[el.tagName] || el.hasAttribute(filtering ? KEEP : OVER)) return NodeFilter.FILTER_REJECT;
         if (tags[el.tagName]) {
           picture(el, false);

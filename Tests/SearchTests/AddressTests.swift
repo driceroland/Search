@@ -60,6 +60,19 @@ final class AddressTests: XCTestCase {
             XCTAssertNil(Address.file(from: text), text)
         }
     }
+
+    func testLocalHostnamesIgnoreCase() {
+        let addresses = [
+            "LOCALHOST:3000/Status?item=ABC#Top",
+            "Dev.LocalHost:3000/Dashboard",
+            "Printer.LOCAL:8080/Status",
+        ]
+        for address in addresses {
+            XCTAssertEqual(Address.url(from: address)?.absoluteString, "http://" + address)
+        }
+        XCTAssertEqual(Address.url(from: "https://LOCALHOST:3000")?.absoluteString, "https://LOCALHOST:3000")
+        XCTAssertEqual(Address.url(from: "Example.COM/Status")?.absoluteString, "https://Example.COM/Status")
+    }
 }
 
 @MainActor
