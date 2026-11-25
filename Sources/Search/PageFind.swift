@@ -690,7 +690,7 @@ final class PageFind {
     // stay on screen, or stay off it, until something else was drawn.
     const findRules = "::highlight(search-find-match) { background-color: #ffff00; color: #000; text-decoration: none; text-shadow: none; }"
         + "::highlight(search-find-current) { background-color: #ff9632; color: #000; text-decoration: none; text-shadow: none; }";
-    const quietSelection = "::selection { background-color: transparent; }";
+    const quietSelection = "::selection { background-color: transparent; color: #000; }";
 
     // Where Settings asks for it, the page is under a faint veil while
     // finding, all but the current match: cast by the shadow of an invisible
