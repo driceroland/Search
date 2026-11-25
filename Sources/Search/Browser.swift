@@ -5140,6 +5140,9 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func select(_ tab: Tab, floatPrevious: Bool = true, unfoldGroup: Bool = true) {
+        // Paused from the player and gone to: the pause is the page's now,
+        // to play from its own button (Player.swift).
+        if tab.stilled { tab.handPause() }
         if let pair = split(for: tab), activeSplit?.id == pair.id, activeID != tab.id {
             focusPane(tab)
             return

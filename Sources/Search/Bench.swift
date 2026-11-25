@@ -476,6 +476,14 @@ final class Bench {
                 answer(["positions": seen, "last": seen.last?[1] ?? -1, "smooth": WheelGlide.on])
             }
 
+        case "mute":
+            // The tab's speaker turned off, as its button would: for probes,
+            // whose media must never be heard. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "mute only works on a --test run"]); return }
+            guard let tab = find(request, in: browser) else { answer(missing(request)); return }
+            if !tab.muted { tab.toggleMute() }
+            answer(["muted": tab.muted])
+
         case "sleep":
             // Now rather than after half an hour, but past every other check
             // a tab has to clear — the answer says which one kept it awake.
@@ -747,7 +755,7 @@ final class Bench {
                 switch act {
                 case "still": tab.still()
                 case "play": tab.playAgain()
-                case "away": tab.stilled = false
+                case "away": tab.handPause()
                 case "go": browser.select(tab)
                 default: answer(["error": "act is still, play, away or go"]); return
                 }

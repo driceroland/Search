@@ -15,6 +15,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - On by default now, for everyone who never touched the switch as well as for new installs, and each can still be turned off in Settings: Try HTTPS first, sized pop-ups in small windows, links opened in front go beside their page, address bar commands, ⌘Z reopens a closed tab, space and arrow keys control videos, swipe back closes a tab a link opened, smooth scrolling with a mouse wheel, reading mode follows light and dark, Capture pages, your own style for a site, the Home bookmarks on a new tab, a loading line with the tabs hidden, save power in Low Power Mode, minimize the floating video, folders in pinned rows, what's playing in other tabs, and counts on pins. Show inline predictions follows the Mac's own setting until you choose in Edit › Spelling and Grammar. The What's New card no longer offers these switches.
 
+### Fixed
+
+- What's playing in other tabs: paused from the sidebar, a music site's player (SoundCloud, YouTube Music and others that keep their sound out of a script's reach) no longer disappears. It stays with its play button and plays again from where it was; going to the tab, putting it away or leaving the page hands the pause back to the page.
+
 ### Held back
 
 Not in this version, kept on main for a later one:

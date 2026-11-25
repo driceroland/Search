@@ -19,10 +19,13 @@ import SwiftUI
 //
 // The pause looks in the page and in each frame below it that played (the
 // frames MediaKeys keeps), pauses what plays and remembers it; then WebKit
-// pauses whatever a script can't reach — a player in a shadow root, one
-// never put in the page. Only what was remembered can be played again, so
-// with nothing remembered the row goes once the page is quiet, rather than
-// offer a play that would do nothing.
+// suspends whatever a script can't reach — a player in a shadow root, one
+// never put in the page, as on most music sites. The play lifts that
+// suspension, which resumes only what it held, and plays what was
+// remembered. So the row always stays, with its play. Gone to, put away
+// with its cross, or its page leaving, the pause is handed to the page: the
+// suspended players paused as by their own buttons and the suspension
+// lifted, so the page plays as it would and the next page holds nothing.
 
 enum Player {
     /// What plays here, paused and remembered: the page sees its media
@@ -105,7 +108,7 @@ struct PlayerRow: View {
             if tab.stilled && hovering {
                 // Paused from here and not wanted again: the row goes until
                 // the tab plays again.
-                PlayerButton(symbol: "xmark", help: "Put Away") { tab.stilled = false }
+                PlayerButton(symbol: "xmark", help: "Put Away") { tab.handPause() }
                     .transition(.opacity)
             }
             PlayerButton(symbol: tab.stilled ? "play.fill" : "pause.fill", help: tab.stilled ? "Play" : "Pause") {
