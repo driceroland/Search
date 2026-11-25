@@ -1567,7 +1567,7 @@ final class Preferences: ObservableObject {
         let videoKeys = store.bool(forKey: "video.keys")
         self.videoKeys = videoKeys
         VideoKeys.on = videoKeys
-        let meetPiP = store.bool(forKey: "meet.pip")
+        let meetPiP = store.object(forKey: "meet.pip") as? Bool ?? true
         self.meetPiP = meetPiP
         MeetPiP.on = meetPiP
         let glides = store.bool(forKey: "wheel.smooth")

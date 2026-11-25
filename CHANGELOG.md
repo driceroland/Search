@@ -13,7 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
-- Google Meet's own mini window, off unless you turn it on in Settings › Videos: leave a Meet call's tab and the call comes along in a small window in the corner of the screen, with Meet's own tiles and buttons (mute, camera, leave), as in Chrome. It closes when you go back to the call; Meet's own picture-in-picture button opens it too. Meet only offers it to Chrome, so with the switch on Meet is told Search is Chrome.
+- Google Meet's own mini window (on; Settings › Videos turns it off): leave a Meet call's tab and the call comes along in a small window in the corner of the screen, with Meet's own tiles and buttons (mute, camera, leave), as in Chrome. It closes when you go back to the call; Meet's own picture-in-picture button opens it too. Meet only offers it to Chrome, so with the switch on Meet is told Search is Chrome.
 
 ### Held back
 

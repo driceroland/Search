@@ -16,7 +16,7 @@ import WebKit
 // WebKit has neither (WebKit/standards-positions#41), and Meet only offers
 // the window to a browser that says it is Chrome 120 or later: it reads
 // navigator.userAgent. So, only on meet.google.com and only with Settings ›
-// Videos › "Google Meet's own mini window" on (off unless asked for):
+// Videos › "Google Meet's own mini window" on (on unless turned off):
 //
 // - in the page's own world, before Meet's scripts, navigator says Chrome,
 //   documentPictureInPicture stands in as Chrome's does, and the
@@ -34,7 +34,7 @@ import WebKit
 // source, never hidden (see LiveRate.swift).
 
 enum MeetPiP {
-    /// Settings › Videos. Off unless asked for.
+    /// Settings › Videos. On unless turned off.
     @MainActor static var on = false
 
     /// Where it applies: Meet only. A test run may add one host of its own.
