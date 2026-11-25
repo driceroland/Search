@@ -1652,8 +1652,17 @@ struct TabAddressField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSTextField {
         // The caret kept clear of the field's end (RoomyField).
-        let field = RoomyField()
+        let field = browser.renamingTab ? RoomyField() : WebsiteAddressField()
         field.delegate = context.coordinator
+        if let addressField = field as? WebsiteAddressField {
+            addressField.canPasteAndGo = { [weak coordinator = context.coordinator] in
+                guard let coordinator, let tab = coordinator.tab else { return false }
+                return coordinator.browser.editingTab == tab && !coordinator.browser.renamingTab
+            }
+            addressField.pasteAndGo = { [weak coordinator = context.coordinator] url in
+                coordinator?.browser.commitTabEdit(address: url)
+            }
+        }
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none

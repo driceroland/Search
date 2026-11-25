@@ -378,9 +378,9 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     /// typed opened in a new tab of the window in front — one brought back
     /// if none is open — and Search in front of the app the field was
     /// raised over. The same order as Browser.submit.
-    func submit() {
+    func submit(address: URL? = nil) {
         guard up, let target = target ?? Browsers.front else { return }
-        let chosen = picked.flatMap { offers.indices.contains($0) ? offers[$0] : nil }
+        let chosen = address == nil ? picked.flatMap { offers.indices.contains($0) ? offers[$0] : nil } : nil
 
         if let chosen, let id = chosen.tab,
            let owner = Browsers.all.first(where: { browser in browser.tabs.contains { $0.id == id } }) {
@@ -391,7 +391,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         }
 
         // A command is only ever on top, and there it is what Return does.
-        if case .command(let command) = (chosen ?? offers.first)?.kind {
+        if address == nil, case .command(let command) = (chosen ?? offers.first)?.kind {
             dismiss(keeping: false)
             let browser = Browsers.ensureWindow()
             command.run(on: browser)
@@ -401,7 +401,9 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         }
 
         let url: URL?
-        if let chosen {
+        if let address {
+            url = address
+        } else if let chosen {
             url = chosen.url
         } else if let ending {
             url = Address.url(from: typed + ending)
@@ -583,8 +585,12 @@ private struct LauncherField: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(launcher: launcher) }
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+        let field = WebsiteAddressField()
         field.delegate = context.coordinator
+        field.canPasteAndGo = { [weak coordinator = context.coordinator] in coordinator?.launcher.up == true }
+        field.pasteAndGo = { [weak coordinator = context.coordinator] url in
+            coordinator?.launcher.submit(address: url)
+        }
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
