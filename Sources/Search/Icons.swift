@@ -750,12 +750,14 @@ final class Favicons {
 /// What stands for a page when there is no room for its title: the site's
 /// icon if there is one, and a letter in a faint square until there is.
 struct Mark: View {
+    @Environment(\.greys) private var greys
     let icon: NSImage?
     let letter: String
     var size: CGFloat = 16
     var dim = false
     /// Full ink for the letter (Settings › Appearance › Tabs › High contrast
-    /// text), instead of the soft grey a resting mark usually wears.
+    /// text), instead of the soft grey a resting mark usually wears: the
+    /// ground's own, as the doors' (see Door), so it still reads on glass.
     var contrast = false
 
     var body: some View {
@@ -779,7 +781,7 @@ struct Mark: View {
             } else {
                 Text(letter)
                     .font(.system(size: size * 0.56, weight: .medium))
-                    .foregroundStyle(contrast ? Palette.ink : Palette.muted)
+                    .foregroundStyle(contrast ? Palette.ink : greys.muted)
                     .frame(width: size, height: size)
                     .background(
                         RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
