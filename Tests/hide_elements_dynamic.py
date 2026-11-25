@@ -16,6 +16,8 @@ The pages, all built 200 ms after load, as a grocery site's list is:
   near      next visit, a product of almost the same name in its place
   ids       cards that carry their own product id
   legacy    a rule saved by 1.0.21 and before, still worn
+  promos    ⌥-click: every card like it goes, and more of them next visit
+            (idea 1195)
 """
 import json
 import sys
@@ -35,9 +37,9 @@ CART = ["Pommes Golden 1kg", "Jus d'orange 1L", "Riz basmati 1kg", "Œufs x12",
         "Farine T55 1kg", "Sucre 1kg", "Thé vert x20"]
 
 
-def card(name, price, button, pid=None):
+def card(name, price, button, pid=None, kind="card"):
     data = f" data-product-id='{pid}'" if pid else ""
-    return (f"<div class=card{data} style='padding:14px;margin:6px;width:220px;height:90px;background:#eee'>"
+    return (f"<div class='{kind}'{data} style='padding:14px;margin:6px;width:220px;height:90px;background:#eee'>"
             f"<h3>{name}</h3><span>{price} €</span> <button>{button}</button></div>")
 
 
@@ -57,6 +59,12 @@ LAYOUTS = {
     "gone": (lambda: grid([0, 1, 2, 3]), lambda: grid([0, 1, 3, 4])),
     "near": (lambda: grid([0, 1, 2, 3]),
              lambda: grid([0, 1, 2, 3]).replace(PRODUCTS[2], "Pâtes Panzani 500g").replace("3,05", "2,15")),
+    "promos": (lambda: "<div class=grid>" + "".join(
+                   card(n, "1,00", "Ajouter", kind="card promo" if i % 2 else "card") for i, n in enumerate(PRODUCTS))
+               + "<p id=plain style='height:30px'>Livraison offerte</p></div>",
+               lambda: "<div class=grid>" + "".join(
+                   card(n, "1,00", "Ajouter", kind="card promo" if i % 2 == 0 else "card") for i, n in enumerate(PRODUCTS))
+               + "</div>"),
     "ids": (lambda: grid([0, 1, 2, 3], ids=True), lambda: cart() + grid([3, 2, 1, 0], ids=True)),
 }
 visits = {}
@@ -178,6 +186,36 @@ def built_later(name, title, expect):
     return case
 
 
+def case_all_like_it(t):
+    """⌥-click: every card like the one picked, counted first, and new ones on later visits (idea 1195)"""
+    sv.setup(sidebar=True); sv.launch()
+    tab = open_page("promos")
+    hiding(True)
+    ev(tab, POINT % json.dumps(PRODUCTS[1]), world="search")
+    # ⌥ goes down while the pointer rests there: the outline counts them.
+    ev(tab, "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Alt', altKey: true, bubbles: true}))", world="search")
+    said = ev(tab, "document.documentElement.lastElementChild.textContent", world="search")
+    t.ok("with ⌥ the outline says how many", said.endswith("all 2 like it"), said)
+    ev(tab, PRESS.replace("cancelable: true", "cancelable: true, altKey: true"), world="search")
+    time.sleep(0.8)
+    hiding(False)
+    t.ok("every promo goes, and only those", ev(tab, GONE) == f"{PRODUCTS[1]}|{PRODUCTS[3]}", ev(tab, GONE))
+    t.ok("said so", state()["announced"].startswith("Hidden"), state()["announced"])
+    t.ok("one line in the list, a pattern", [v["selector"] for v in kept()] == ["div.card.promo"], kept())
+    reload(tab)
+    t.ok("next visit, the new promos go too", ev(tab, GONE) == f"{PRODUCTS[0]}|{PRODUCTS[2]}|{PRODUCTS[4]}", ev(tab, GONE))
+    # Nothing else like it: said, and nothing hidden or kept.
+    reload(tab)
+    hiding(True)
+    ev(tab, "window.__probeAt = (function () { var r = document.querySelector('.grid').getBoundingClientRect();"
+            " return [r.right - 2, r.bottom - 2]; })()", world="search")
+    ev(tab, PRESS.replace("cancelable: true", "cancelable: true, altKey: true"), world="search")
+    time.sleep(0.8)
+    hiding(False)
+    t.ok("⌥ on a thing with nothing like it: said", "nothing else here looks like it" in state()["announced"], state()["announced"])
+    t.ok("and nothing more kept", len(kept()) == 1, kept())
+
+
 def case_legacy(t):
     """a rule saved before (a selector alone) is still worn"""
     sv.setup(sidebar=True)
@@ -197,6 +235,7 @@ def main():
              built_later("gone", PRODUCTS[2], ""),               # not there at all
              built_later("near", PRODUCTS[2], ""),               # another product where it was
              built_later("ids", PRODUCTS[2], PRODUCTS[2]),       # cards that carry an id
+             case_all_like_it,
              case_legacy]
     only = sys.argv[1:]
     for case in cases:

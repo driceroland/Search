@@ -245,7 +245,7 @@ enum Veiling {
     /// Nothing the same enough, nothing hidden: a missed hide is put right
     /// with one more pick, a wrong one hides what you came for.
     static let marks = """
-    if (!window.__officePrint) {
+    if (!window.__officePrint) (function () {
       // Its kind, the picture it carries, and what it says, from the
       // document rather than the screen, so a hidden thing reads the same.
       window.__officePrint = function (el) {
@@ -318,7 +318,7 @@ enum Veiling {
         }
         pass();
       };
-    }
+    })();
     """
 
     /// The pointing mode. Loaded on every page but asleep: it costs one closure
@@ -330,6 +330,10 @@ enum Veiling {
       // What the pointer is over, and the things ↓ steps back into once ↑
       // has made the outline wider than that.
       var under = null, trail = [];
+      // ⌥ held: the press takes every element like the one outlined (idea
+      // 1195), as Arc's "Zap all related" does, and the outline says how
+      // many that is before anything goes.
+      var all = false;
 
       \(sheets)
       \(marks)
@@ -356,7 +360,7 @@ enum Veiling {
         box.style.top = r.top + 'px';
         box.style.width = r.width + 'px';
         box.style.height = r.height + 'px';
-        tag.textContent = name(el);
+        tag.textContent = name(el) + (all ? ' · ' + likeIt(el) : '');
         // Above the element if there is sky above it, tucked inside its top
         // edge if there isn't — an element flush with the top of the window
         // would otherwise have its name cut off by the window.
@@ -507,8 +511,21 @@ enum Veiling {
         return only(whole, el) ? { s: whole, p: print, f: family(el) } : null;
       }
 
+      // How many are like it, in words, for the outline while ⌥ is held.
+      function likeIt(el) {
+        var n = alike(el);
+        return n > 1 ? 'all ' + n + ' like it' : 'nothing else like it';
+      }
+
+      function alike(el) {
+        var kind = family(el);
+        if (!kind) return 0;
+        try { return document.querySelectorAll(kind).length; } catch (e) { return 0; }
+      }
+
       function onMove(e) {
         if (!live) return;
+        all = e.altKey;
         var el = document.elementFromPoint(e.clientX, e.clientY);
         if (!el || el === frame || el === document.documentElement || el === document.body) return;
         // Still over the same thing: a wider choice made with ↑ stays,
@@ -524,6 +541,12 @@ enum Veiling {
       // lands on what is innermost — the words of a cookie banner, not the
       // banner — and hiding those left the banner where it was (#1270).
       function onKey(e) {
+        if (live && e.key === 'Alt') {
+          all = e.type === 'keydown';
+          if (target) place(target);
+          return;
+        }
+        if (e.type !== 'keydown') return;
         if (!live || !target || e.metaKey || e.ctrlKey || e.altKey) return;
         if (e.key === 'ArrowUp') {
           var up = target.parentElement;
@@ -561,6 +584,22 @@ enum Veiling {
         var el = target || document.elementFromPoint(e.clientX, e.clientY);
         if (!el || el === frame || el === document.documentElement || el === document.body) return;
         try {
+          if (e.altKey) {
+            // Every one like it, now and on later visits, new ones too: a
+            // pattern, not one thing, so it is worn as it is, unchecked.
+            var n = alike(el);
+            if (n < 2) throw 'nothing else here looks like it';
+            window.webkit.messageHandlers.officeVeil.postMessage({
+              selector: family(el),
+              label: 'All like “' + name(el) + '” (' + n + ')',
+              note: shape(el)
+            });
+            target = null;
+            under = null;
+            trail = [];
+            if (frame) frame.style.display = 'none';
+            return;
+          }
           var sel = selectorFor(el);
           if (!sel) throw 'it has no name of its own on this page';
           window.webkit.messageHandlers.officeVeil.postMessage({
@@ -585,6 +624,7 @@ enum Veiling {
       function off() {
         if (!live) return;
         live = false;
+        all = false;
         target = null;
         under = null;
         trail = [];
@@ -593,6 +633,7 @@ enum Veiling {
         document.removeEventListener('mousemove', onMove, true);
         document.removeEventListener('pointermove', onMove, true);
         document.removeEventListener('keydown', onKey, true);
+        document.removeEventListener('keyup', onKey, true);
         window.removeEventListener('pagehide', off);
         presses.forEach(function (kind) {
           document.removeEventListener(kind, kind === 'pointerdown' ? onPress : swallow, true);
@@ -609,6 +650,7 @@ enum Veiling {
           document.addEventListener('mousemove', onMove, true);
           document.addEventListener('pointermove', onMove, true);
           document.addEventListener('keydown', onKey, true);
+          document.addEventListener('keyup', onKey, true);
           // The page going away ends the pointing with it. Kept for Back,
           // it would have come back still swallowing every click, with
           // Search no longer pointing at anything.
