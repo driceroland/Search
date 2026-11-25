@@ -169,6 +169,8 @@ final class Links: NSObject, NSApplicationDelegate {
             Launcher.shared.start()
             // Live folders fetched, and kept fresh (LiveFolders.swift).
             LiveFolders.start()
+            // Back to a page's full screen after ⌘Tab (FullScreenReturn.swift).
+            FullScreenReturn.start()
         }
         let plain = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
         guard !plain else { return }
