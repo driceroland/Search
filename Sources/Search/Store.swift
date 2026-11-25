@@ -78,6 +78,30 @@ enum Store {
         unsafeBitCast(store.method(for: set), to: Setter.self)(store, set, !keepsSignIns)
     }
 
+    /// Something done to a page through Search's own controls on its behalf
+    /// — the floating video's play, pause and skip, the player at the foot
+    /// of the sidebar, ⇧⌘M — counted as using the site, as a click on the
+    /// page is. Tracking prevention (above) wipes a site it counts as a
+    /// tracker once nobody has used it for 30 days, and youtube.com, framed
+    /// on every other site, is one: someone who only ever watched, pausing
+    /// from the floating video, was signed out every few weeks. A script
+    /// run in the page never counts, even with the gesture WebKit lends it
+    /// (measured), so it is told so through a name outside the public
+    /// framework, the one Safari's own testing uses. Only for a site's own
+    /// http(s) page, and only while tracking prevention is on.
+    @MainActor static func interacted(with web: WKWebView) {
+        guard !keepsSignIns, let url = web.url else { return }
+        interacted(with: url, in: web.configuration.websiteDataStore)
+    }
+
+    @MainActor static func interacted(with url: URL, in store: WKWebsiteDataStore, done: @escaping () -> Void = {}) {
+        let log = NSSelectorFromString("_logUserInteraction:completionHandler:")
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host() != nil,
+              store.responds(to: log) else { return done() }
+        typealias Log = @convention(c) (AnyObject, Selector, NSURL, @escaping @convention(block) () -> Void) -> Void
+        unsafeBitCast(store.method(for: log), to: Log.self)(store, log, url as NSURL, done)
+    }
+
     /// Off, the store's cookie policy is Always too: left as it was, it took
     /// cookies only from the page's own site, and a site framed in another —
     /// a Kaltura video in a Brightspace course — still got none. WebKit keeps
