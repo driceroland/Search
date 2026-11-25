@@ -65,6 +65,34 @@ final class FetchEntryTests: XCTestCase {
         XCTAssertTrue(entry.canRetry)
     }
 
+    func testADownloadThatStopsMovingSaysStalledUntilBytesComeAgain() async throws {
+        let entry = FetchEntry(name: "archive.zip", request: nil, webView: makeWebView())
+        entry.stallAfter = 0.05
+        let progress = Progress(totalUnitCount: 100)
+        progress.completedUnitCount = 10
+        entry.record(progress, trackFile: false)
+        XCTAssertFalse(entry.stalled)
+
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertTrue(entry.stalled)
+
+        progress.completedUnitCount = 20
+        entry.record(progress, trackFile: false)
+        XCTAssertFalse(entry.stalled)
+    }
+
+    func testAStalledDownloadThatFailsIsNoLongerStalled() async throws {
+        let entry = FetchEntry(name: "archive.zip", request: nil, webView: makeWebView())
+        entry.stallAfter = 0.05
+        let progress = Progress(totalUnitCount: 100)
+        progress.completedUnitCount = 10
+        entry.record(progress, trackFile: false)
+        entry.failed(NSError(domain: "DownloadFixture", code: 1), resumeData: nil)
+
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertFalse(entry.stalled)
+    }
+
     func testPauseWithoutResumeDataBecomesRetryableWithVisibleReason() async throws {
         let webView = makeWebView()
         let request = URLRequest(url: URL(string: "https://example.test/archive.zip")!)
