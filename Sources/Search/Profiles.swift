@@ -392,7 +392,8 @@ struct ProfileList: View {
                     let list = profiles.spaces(of: profile.id)
                     ForEach(list) { space in
                         Rule(inset: ProfileGrid.text)
-                        SpaceLine(symbol: space.symbol, name: space.name, rename: nil, remove: nil)
+                        SpaceLine(symbol: space.symbol, name: space.name, rename: nil,
+                                  remove: list.count == 1 ? lastSpaceRemove(profile: profile.id, space: space.name) : nil)
                     }
                     Rule(inset: ProfileGrid.text)
                     Text("Open the profile to add or change its spaces")
@@ -404,7 +405,7 @@ struct ProfileList: View {
                 }
             }
         }
-        Rule()
+        Rectangle().fill(Palette.divider).frame(height: 1)
         NewProfileRow()
     }
 
@@ -415,6 +416,19 @@ struct ProfileList: View {
             return open.contains(Self.closedMark) ? open.contains(id) : true
         }
         return open.contains(id)
+    }
+}
+
+@MainActor
+private func lastSpaceRemove(profile id: UUID, space: String) -> (() -> Void)? {
+    guard id != Profile.personalID else { return nil }
+    let profile = Profiles.shared.profile(id)
+    return {
+        Ask.sure("Delete “\(profile.name)”?",
+                 detail: "“\(space)” is its last space. The profile's windows close, its spaces go with their tabs and pins, and its cookies, sign-ins, history and bookmarks are erased from this Mac.",
+                 confirm: "Delete", returnCancels: true) {
+            Profiles.shared.delete(id)
+        }
     }
 }
 
@@ -435,7 +449,7 @@ private struct SpaceRows: View {
                              confirm: "Delete") {
                         browser.deleteSpace(space.id)
                     }
-                } : nil)
+                } : lastSpaceRemove(profile: browser.profileID, space: space.name))
         }
         Rule(inset: ProfileGrid.text)
         AddLine(title: "New Space…") {
