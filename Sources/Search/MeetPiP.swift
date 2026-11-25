@@ -73,10 +73,7 @@ enum MeetPiP {
 
           // Meet offers its window only to Chrome, which it tells by
           // navigator.userAgent. Here only: every other site sees Search.
-          var uaWas = null, avWas = null;
           try {
-            uaWas = Object.getOwnPropertyDescriptor(Navigator.prototype, 'userAgent');
-            avWas = Object.getOwnPropertyDescriptor(Navigator.prototype, 'appVersion');
             var ua = navigator.userAgent;
             if (!/ Chrome\\//.test(ua)) {
               var chrome = ua.replace(/ Version\\/[\\d.]+.*$/, '').replace(/ Safari\\/[\\d.]+$/, '') +
@@ -193,17 +190,6 @@ enum MeetPiP {
                   say({ kind: 'action:' + String(action).slice(0, 40) + (typeof h === 'function' ? '' : ':null') });
                   if (action === 'enterpictureinpicture') {
                     handler = typeof h === 'function' ? h : null;
-                    // Meet has armed its window: from here on it is told the
-                    // truth again, so the rest of the call (camera, effects)
-                    // takes the way Safari gets.
-                    if (handler && uaWas) {
-                      try {
-                        Object.defineProperty(Navigator.prototype, 'userAgent', uaWas);
-                        if (avWas) Object.defineProperty(Navigator.prototype, 'appVersion', avWas);
-                        uaWas = null;
-                        say({ kind: 'ua:restored' });
-                      } catch (e) {}
-                    }
                     say({ kind: handler ? 'armed' : 'disarmed' });
                     return;
                   }
