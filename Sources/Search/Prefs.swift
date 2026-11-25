@@ -612,6 +612,14 @@ final class Preferences: ObservableObject {
             HTTPSFirst.on = triesHTTPSFirst
         }
     }
+    /// Known cookie banners answered with the site's own refusal (see
+    /// CookieBanners.swift). Off unless turned on.
+    @Published var refusesCookieBanners: Bool {
+        didSet {
+            store.set(refusesCookieBanners, forKey: "privacy.cookieBanners")
+            CookieBanners.on = refusesCookieBanners
+        }
+    }
     /// Ad-click IDs taken off links before the page loads (see
     /// Privacy.swift). On unless turned off.
     @Published var removesClickIDs: Bool {
@@ -1417,6 +1425,9 @@ final class Preferences: ObservableObject {
         let https = store.bool(forKey: "privacy.httpsFirst")
         triesHTTPSFirst = https
         HTTPSFirst.on = https
+        let refuses = store.bool(forKey: "privacy.cookieBanners")
+        refusesCookieBanners = refuses
+        CookieBanners.on = refuses
         let removes = store.object(forKey: "privacy.clickIDs") as? Bool ?? true
         removesClickIDs = removes
         ClickIDs.on = removes

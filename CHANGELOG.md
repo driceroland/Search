@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Settings › Privacy › Refuse cookie banners, off unless turned on: where a page's cookie banner is one Search knows — OneTrust, Didomi, Cookiebot, iubenda or Usercentrics — Search says no for you, through the banner's own API where it has one and its refuse button otherwise, so the site keeps the answer and a page held still behind its banner scrolls again. Never yes: a banner Search doesn't know, one with no refuse button on its first screen, and one whose no is a paid subscription are left as they are. It looks for ten seconds from the page's start, answers once, and sends nothing anywhere. Private tabs follow the switch; pausing Shield for a site pauses it there too. `swift test --filter CookieBannersTests`, `python3 Tests/cookie_banners.py` ([#1582](https://github.com/driceroland/Search/issues/1582))
+
 ### Held back
 
 Not in this version, kept on main for a later one:
