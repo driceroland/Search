@@ -266,6 +266,8 @@ final class BrowserProxy: ObservableObject {
     /// space's store is held by Spaces. Spaces.everyStore is not enough on
     /// its own, since a private tab's is left out of it on purpose.
     private let stores = NSHashTable<WKWebsiteDataStore>.weakObjects()
+    /// Those of them that are a private tab's.
+    private let privateStores = NSHashTable<WKWebsiteDataStore>.weakObjects()
     private static let key = "network.proxy"
 
     /// The extension whose chrome.proxy settings are followed, through the
@@ -278,7 +280,9 @@ final class BrowserProxy: ObservableObject {
     private var relayPort: UInt16?
     /// The holder and what it set, as last acted on, so a change to any
     /// other setting doesn't start the relay over.
-    private var followed: (id: String, value: NSObject?)?
+    private var followed: (id: String, value: NSObject?, goesPrivate: Bool)?
+    /// The extension in control is let into private tabs.
+    private var goesPrivate = false
 
     init(defaults: UserDefaults = Store.settings,
          password: String? = nil,
@@ -296,11 +300,20 @@ final class BrowserProxy: ObservableObject {
     }
 
     /// What stores and sessions are given: the proxy set here, else the
-    /// relay while an extension holds the proxy, else nothing.
-    private var effective: ProxyConfiguration? {
+    /// relay while an extension holds the proxy, else nothing. A private
+    /// tab's store gets the relay only when the extension is let into
+    /// private tabs; otherwise it goes as if no extension had set a proxy,
+    /// as Chrome's incognito does.
+    private func effective(private inPrivate: Bool = false) -> ProxyConfiguration? {
         if let mine = value.configuration(password: password) { return mine }
-        guard extensionInControl != nil, let number = relayPort, let port = NWEndpoint.Port(rawValue: number) else { return nil }
+        guard extensionInControl != nil, !inPrivate || goesPrivate else { return nil }
+        // Until the relay listens (at launch, or if it can't), port 1,
+        // which refuses: nothing goes around a VPN's rules meanwhile.
+        let port = relayPort.flatMap { NWEndpoint.Port(rawValue: $0) } ?? 1
         var proxy = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: port))
+        if let relay {
+            proxy.applyCredential(username: ExtensionProxyRelay.username, password: inPrivate ? relay.privateSecret : relay.secret)
+        }
         // The relay down means the extension's rules can't be followed:
         // a page fails rather than going around a VPN's proxy.
         proxy.allowFailover = false
@@ -309,10 +322,10 @@ final class BrowserProxy: ObservableObject {
     }
 
     private func apply() {
-        let proxy = effective
-        ProxyNetwork.keep(proxy)
-        let configurations = [proxy].compactMap { $0 }
-        for store in stores.allObjects { Self.put(configurations, on: store) }
+        ProxyNetwork.keep(effective())
+        for store in stores.allObjects {
+            Self.put([effective(private: privateStores.contains(store))].compactMap { $0 }, on: store)
+        }
     }
 
     /// A store with no proxy, given none, is left alone: setting even an
@@ -339,8 +352,11 @@ final class BrowserProxy: ObservableObject {
     func extensionsChanged(_ owner: Extensions) {
         let holder = Self.controller(in: owner)
         let set = holder.flatMap { Extensions.settings(for: $0)["proxy.settings"] } as? NSObject
-        if followed?.id == holder, followed?.value == set { return }
-        followed = holder.map { ($0, set) }
+        let goes = holder.flatMap { owner.contexts[$0] }.map(Extensions.mayGoPrivate) ?? false
+        if followed?.id == holder, followed?.value == set, followed?.goesPrivate == goes { return }
+        if followed?.id != holder { relay?.forgetSignIns() }
+        followed = holder.map { ($0, set, goes) }
+        goesPrivate = goes
         extensionName = owner.installed.first { $0.id == holder }?.name
         guard let holder, let rules = try? ExtensionProxyRules.read(set) else {
             extensionInControl = nil
@@ -384,10 +400,11 @@ final class BrowserProxy: ObservableObject {
     /// even an empty list starts WebKit's network process, and Search at
     /// rest on a new tab ran it for nothing (5.7 MB). `save` still reaches
     /// every store attached here.
-    func attach(_ store: WKWebsiteDataStore) {
+    func attach(_ store: WKWebsiteDataStore, private inPrivate: Bool = false) {
         guard !stores.contains(store) else { return }
         stores.add(store)
-        Self.put([effective].compactMap { $0 }, on: store)
+        if inPrivate { privateStores.add(store) }
+        Self.put([effective(private: inPrivate)].compactMap { $0 }, on: store)
     }
 
     func save(_ proposed: ProxySettingsValue, password: String) throws {

@@ -216,12 +216,17 @@ final class ExtensionProxyTests: XCTestCase {
         return try XCTUnwrap(port)
     }
 
+    /// What WebKit signs in to a relay with.
+    private func signIn(_ relay: ExtensionProxyRelay, private inPrivate: Bool = false) -> String {
+        ProxyCredentials(username: ExtensionProxyRelay.username, password: inPrivate ? relay.privateSecret : relay.secret).header + "\r\n"
+    }
+
     /// Opens a tunnel through the relay and says "ping" down it.
-    private func ping(through relay: UInt16, to target: String) async throws -> (String, String) {
+    private func ping(through relay: UInt16, to target: String, signIn: String) async throws -> (String, String) {
         let client = NWConnection(to: .hostPort(host: "127.0.0.1", port: .init(rawValue: relay)!), using: .tcp)
         defer { client.cancel() }
         try await client.ready(on: .global())
-        try await client.sendAll(Data("CONNECT \(target) HTTP/1.1\r\nHost: \(target)\r\n\r\n".utf8))
+        try await client.sendAll(Data("CONNECT \(target) HTTP/1.1\r\nHost: \(target)\r\n\(signIn)\r\n".utf8))
         let (head, _) = try await client.readHead()
         let status = String(decoding: head, as: UTF8.self).components(separatedBy: "\r\n").first ?? ""
         guard status.contains(" 200 ") else { return (status, "") }
@@ -244,14 +249,14 @@ final class ExtensionProxyTests: XCTestCase {
         let port = try await start(relay)
         defer { relay.stop() }
 
-        var (status, back) = try await ping(through: port, to: "tailchrome-proxy-auth.invalid:443")
+        var (status, back) = try await ping(through: port, to: "tailchrome-proxy-auth.invalid:443", signIn: signIn(relay))
         XCTAssertTrue(status.contains("200"), status)
         XCTAssertEqual(back, "ping")
         XCTAssertEqual(asked.all, ["127.0.0.1:\(proxy.port) helper https://tailchrome-proxy-auth.invalid/"])
         XCTAssertEqual(seen.all.count, 2, "once without a sign-in, once with")
 
         // The sign-in is kept for that proxy: the next tunnel isn't asked about.
-        (status, back) = try await ping(through: port, to: "nas.tail0000.ts.net:443")
+        (status, back) = try await ping(through: port, to: "nas.tail0000.ts.net:443", signIn: signIn(relay))
         XCTAssertEqual(back, "ping")
         XCTAssertEqual(asked.all.count, 1)
         XCTAssertTrue(seen.all.last?.hasPrefix("CONNECT nas.tail0000.ts.net:443 ") == true)
@@ -268,9 +273,9 @@ final class ExtensionProxyTests: XCTestCase {
             """, "mandatory": true]])
         let port = try await start(relay)
         defer { relay.stop() }
-        var (status, _) = try await ping(through: port, to: "example.com:443")
+        var (status, _) = try await ping(through: port, to: "example.com:443", signIn: signIn(relay))
         XCTAssertTrue(status.contains("407"), status)
-        (status, _) = try await ping(through: port, to: "blocked.example:443")
+        (status, _) = try await ping(through: port, to: "blocked.example:443", signIn: signIn(relay))
         XCTAssertTrue(status.contains("502"), status)
     }
 
@@ -318,7 +323,7 @@ final class ExtensionProxyTests: XCTestCase {
         let client = NWConnection(to: .hostPort(host: "127.0.0.1", port: .init(rawValue: port)!), using: .tcp)
         defer { client.cancel() }
         try await client.ready(on: .global())
-        try await client.sendAll(Data("CONNECT tailchrome-proxy-auth.invalid:80 HTTP/1.1\r\nHost: tailchrome-proxy-auth.invalid:80\r\n\r\n".utf8))
+        try await client.sendAll(Data("CONNECT tailchrome-proxy-auth.invalid:80 HTTP/1.1\r\nHost: tailchrome-proxy-auth.invalid:80\r\n\(signIn(relay))\r\n".utf8))
         let (tunnel, _) = try await client.readHead()
         XCTAssertTrue(String(decoding: tunnel, as: UTF8.self).hasPrefix("HTTP/1.1 200"))
         try await client.sendAll(Data("HEAD / HTTP/1.1\r\nHost: tailchrome-proxy-auth.invalid\r\n\r\n".utf8))
@@ -350,9 +355,77 @@ final class ExtensionProxyTests: XCTestCase {
             """]])
         let port = try await start(relay)
         defer { relay.stop() }
-        var (_, back) = try await ping(through: port, to: "127.0.0.1:\(echo.port)")
+        var (_, back) = try await ping(through: port, to: "127.0.0.1:\(echo.port)", signIn: signIn(relay))
         XCTAssertEqual(back, "ping", "direct")
-        (_, back) = try await ping(through: port, to: "somewhere.example:443")
+        (_, back) = try await ping(through: port, to: "somewhere.example:443", signIn: signIn(relay))
         XCTAssertEqual(back, "ping", "through SOCKS5")
+    }
+
+    /// 127.0.0.1 is open to every app on this Mac: only Search, signed in
+    /// with the relay's secret, is let through, and a private tab's secret
+    /// is told apart so other extensions can be kept from hearing of it.
+    func testOnlySearchMayUseTheRelay() async throws {
+        let echo = try await echo()
+        let proxy = try await signedProxy(to: echo.port, seen: Counter())
+        let asked = Counter()
+        let relay = ExtensionProxyRelay { challenge in
+            asked.add(challenge.inPrivate ? "private" : "ordinary")
+            return ProxyCredentials(username: "user", password: "secret")
+        }
+        relay.rules = try ExtensionProxyRules.read(["mode": "pac_script", "pacScript": [
+            "data": "function FindProxyForURL(url, host) { return 'PROXY 127.0.0.1:\(proxy.port)'; }", "mandatory": true]])
+        let port = try await start(relay)
+        defer { relay.stop() }
+
+        var (status, _) = try await ping(through: port, to: "nas.tail0000.ts.net:443", signIn: "")
+        XCTAssertTrue(status.contains("407"), status)
+        let stranger = ProxyCredentials(username: ExtensionProxyRelay.username, password: "guess").header + "\r\n"
+        (status, _) = try await ping(through: port, to: "nas.tail0000.ts.net:443", signIn: stranger)
+        XCTAssertTrue(status.contains("407"), status)
+        XCTAssertEqual(asked.all, [], "the extension's proxy is never reached")
+
+        var back: String
+        (status, back) = try await ping(through: port, to: "nas.tail0000.ts.net:443", signIn: signIn(relay, private: true))
+        XCTAssertEqual(back, "ping")
+        XCTAssertEqual(asked.all, ["private"])
+        (status, back) = try await ping(through: port, to: "nas.tail0000.ts.net:443", signIn: signIn(relay))
+        XCTAssertEqual(back, "ping")
+    }
+
+    /// A sign-in isn't handed on when another extension takes the proxy.
+    func testSignInsAreForgottenOnHandover() async throws {
+        let echo = try await echo()
+        let proxy = try await signedProxy(to: echo.port, seen: Counter())
+        let asked = Counter()
+        let relay = ExtensionProxyRelay { _ in
+            asked.add("asked")
+            return ProxyCredentials(username: "user", password: "secret")
+        }
+        relay.rules = try ExtensionProxyRules.read(["mode": "fixed_servers", "rules": [
+            "singleProxy": ["scheme": "http", "host": "127.0.0.1", "port": Int(proxy.port)]]])
+        let port = try await start(relay)
+        defer { relay.stop() }
+        _ = try await ping(through: port, to: "a.example:443", signIn: signIn(relay))
+        _ = try await ping(through: port, to: "b.example:443", signIn: signIn(relay))
+        XCTAssertEqual(asked.all.count, 1)
+        relay.forgetSignIns()
+        let (_, back) = try await ping(through: port, to: "c.example:443", signIn: signIn(relay))
+        XCTAssertEqual(back, "ping")
+        XCTAssertEqual(asked.all.count, 2)
+    }
+
+    /// A script that never returns is stopped, and the context still
+    /// answers the next question.
+    func testALoopingPACScriptIsStopped() throws {
+        let script = PACScript("""
+            function FindProxyForURL(url, host) {
+              if (host === "loop") { while (true) {} }
+              return "DIRECT";
+            }
+            """)
+        let started = Date()
+        XCTAssertNil(script.findNow(url: "https://loop/", host: "loop"))
+        XCTAssertLessThan(Date().timeIntervalSince(started), PACScript.limit + 2)
+        XCTAssertEqual(script.findNow(url: "https://a/", host: "a"), "DIRECT")
     }
 }

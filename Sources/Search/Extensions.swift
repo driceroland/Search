@@ -1725,6 +1725,7 @@ final class Extensions: NSObject, ObservableObject {
     func setPrivate(_ id: String, _ on: Bool) {
         guard let context = contexts[id] else { return }
         Store.settings.set(on, forKey: "extensions.private.\(id)")
+        BrowserProxy.shared.extensionsChanged(self)
         let allowed = Extensions.mayGoPrivate(context)
         guard context.hasAccessToPrivateData != allowed else { return }
         context.hasAccessToPrivateData = allowed

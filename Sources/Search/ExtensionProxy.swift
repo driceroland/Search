@@ -29,6 +29,15 @@ import WebKit
 // Among extensions, the last installed of those that set one is in control,
 // as in Chrome. This Mac's own names (localhost, 127.0.0.1) stay direct,
 // as Chrome keeps them.
+//
+// The relay is a way into whatever the extension's proxy reaches, already
+// signed in, and 127.0.0.1 is open to every app on this Mac. So WebKit signs
+// in to it with a secret made at each launch, and anything else is turned
+// away; a private tab's store has a secret of its own, so the relay knows
+// which requests came from one. Private tabs go through an extension's
+// proxy only when that extension is let into them, as in Chrome. While the
+// relay isn't listening (at launch, or if it can't), stores are pointed at
+// a port that refuses: a VPN's rules are never gone around.
 
 /// One way out for a connection, as a PAC result or fixed_servers names it.
 enum ProxyRoute: Equatable {
@@ -259,9 +268,25 @@ final class PACScript: @unchecked Sendable {
         return answer.toString()
     }
 
+    /// The longest a script may run for one answer, in seconds. One that
+    /// loops would otherwise hold the queue, and with it every connection
+    /// waiting on an answer, until the extension is turned off.
+    static let limit = 2.0
+
+    /// JavaScriptCore's own time limit for a group of contexts: exported,
+    /// though not in its public headers. A script that runs past it is
+    /// stopped as if it had thrown. Without it, a looping script still holds
+    /// only the PAC queue, never the main thread.
+    private typealias SetLimit = @convention(c) (OpaquePointer?, Double, OpaquePointer?, UnsafeMutableRawPointer?) -> Void
+    private static let setLimit: SetLimit? = {
+        let core = dlopen("/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore", RTLD_NOW)
+        return dlsym(core, "JSContextGroupSetExecutionTimeLimit").map { unsafeBitCast($0, to: SetLimit.self) }
+    }()
+
     private func load() {
         guard let made = JSContext() else { return }
         made.name = "PAC"
+        Self.setLimit?(JSContextGetGroup(made.jsGlobalContextRef), Self.limit, nil, nil)
         let resolve: @convention(block) (String) -> Any = { host in PACScript.resolve(host) ?? NSNull() }
         made.setObject(resolve, forKeyedSubscript: "dnsResolve" as NSString)
         let mine: @convention(block) () -> String = { PACScript.myAddress() }
@@ -421,6 +446,8 @@ struct ProxyChallenge: Sendable {
     let proxyPort: UInt16
     let realm: String
     let scheme: String
+    /// From a private tab: only extensions let into them may hear of it.
+    var inPrivate = false
 }
 
 /// The proxy every store and session is pointed at while an extension holds
@@ -436,6 +463,11 @@ final class ExtensionProxyRelay: @unchecked Sendable {
     private var live: [ObjectIdentifier: NWConnection] = [:]
     /// Asked when a proxy answers 407; nil means no sign-in.
     let authenticate: @Sendable (ProxyChallenge) async -> ProxyCredentials?
+    /// What WebKit signs in to the relay with (see the top of this file):
+    /// one secret for ordinary tabs, one for private tabs.
+    static let username = "search"
+    let secret = UUID().uuidString
+    let privateSecret = UUID().uuidString
 
     init(authenticate: @escaping @Sendable (ProxyChallenge) async -> ProxyCredentials?) {
         self.authenticate = authenticate
@@ -448,6 +480,24 @@ final class ExtensionProxyRelay: @unchecked Sendable {
     var rules: ExtensionProxyRules? {
         get { lock.withLock { current } }
         set { lock.withLock { current = newValue } }
+    }
+
+    /// When another extension takes over the proxy: what the last one
+    /// signed in to isn't the new one's to use.
+    func forgetSignIns() {
+        lock.withLock { credentials = [:] }
+    }
+
+    /// Which of Search's own sign-ins a request carries: false for an
+    /// ordinary tab's, true for a private tab's, nil for neither.
+    func signedIn(_ head: Data) -> Bool? {
+        let text = String(decoding: head, as: UTF8.self)
+        for line in text.components(separatedBy: "\r\n") where line.lowercased().hasPrefix("proxy-authorization:") {
+            let given = "Proxy-Authorization: " + line.dropFirst("proxy-authorization:".count).trimmingCharacters(in: .whitespaces)
+            if given == ProxyCredentials(username: Self.username, password: secret).header { return false }
+            if given == ProxyCredentials(username: Self.username, password: privateSecret).header { return true }
+        }
+        return nil
     }
 
     /// Starts listening on 127.0.0.1 and says the port once it is known.
@@ -489,8 +539,8 @@ final class ExtensionProxyRelay: @unchecked Sendable {
     }
 
     /// Answers the client with a status of the relay's own and lets it go.
-    private func refuse(_ client: NWConnection, _ status: String) async {
-        try? await client.sendAll(Data("HTTP/1.1 \(status)\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".utf8))
+    private func refuse(_ client: NWConnection, _ status: String, also: String = "") async {
+        try? await client.sendAll(Data("HTTP/1.1 \(status)\r\n\(also)Connection: close\r\nContent-Length: 0\r\n\r\n".utf8))
         drop(client)
     }
 
@@ -510,6 +560,8 @@ final class ExtensionProxyRelay: @unchecked Sendable {
         /// For a plain request: the head to send on, in origin form, without
         /// the Proxy- headers that were for this relay.
         let forward: Data?
+        /// Signed in with a private tab's secret.
+        var inPrivate = false
 
         static func read(_ data: Data) -> Head? {
             guard let text = String(data: data, encoding: .isoLatin1) else { return nil }
@@ -537,11 +589,20 @@ final class ExtensionProxyRelay: @unchecked Sendable {
     }
 
     private func serve(_ client: NWConnection) async {
-        guard let (headData, rest) = try? await client.readHead(),
-              let head = Head.read(headData) else {
+        // A client that opens a connection and says nothing is let go.
+        let said = Once()
+        queue.asyncAfter(deadline: .now() + 30) { [weak self] in said.run { self?.drop(client) } }
+        let read = try? await client.readHead()
+        said.run {}
+        guard let (headData, rest) = read, var head = Head.read(headData) else {
             await refuse(client, "400 Bad Request")
             return
         }
+        guard let inPrivate = signedIn(headData) else {
+            await refuse(client, "407 Proxy Authentication Required", also: "Proxy-Authenticate: Basic realm=\"Search\"\r\n")
+            return
+        }
+        head.inPrivate = inPrivate
         let routes = await rules?.routes(url: head.url, host: head.host) ?? [.direct]
         // A plain http:// address goes to an HTTP proxy as Chrome sends it:
         // the request itself, its full address on the first line, not a
@@ -702,7 +763,8 @@ final class ExtensionProxyRelay: @unchecked Sendable {
         keep(nil, for: key)
         guard asked < 2 else { return false }
         let (scheme, realm) = Self.challenge(answer)
-        let challenge = ProxyChallenge(url: head.url, method: method, proxyHost: host, proxyPort: port, realm: realm, scheme: scheme)
+        let challenge = ProxyChallenge(url: head.url, method: method, proxyHost: host, proxyPort: port, realm: realm,
+                                       scheme: scheme, inPrivate: head.inPrivate)
         guard let given = await authenticate(challenge) else { return false }
         asked += 1
         keep(given, for: key)
@@ -937,11 +999,13 @@ enum ExtensionProxyAuth {
     private final class Ear {
         let extensionID: String
         let port: WKWebExtension.MessagePort
+        weak var context: WKWebExtensionContext?
         var listening = false
         var worker = false
-        init(extensionID: String, port: WKWebExtension.MessagePort) {
+        init(extensionID: String, port: WKWebExtension.MessagePort, context: WKWebExtensionContext) {
             self.extensionID = extensionID
             self.port = port
+            self.context = context
         }
     }
 
@@ -961,7 +1025,7 @@ enum ExtensionProxyAuth {
             throw ExtensionShims.Unsupported(what: "The extension never asked for \u{201C}webRequestAuthProvider\u{201D}")
         }
         for (key, ear) in ears where ear.port.isDisconnected { ears[key] = nil }
-        let ear = Ear(extensionID: id, port: port)
+        let ear = Ear(extensionID: id, port: port, context: context)
         let key = ObjectIdentifier(ear)
         ears[key] = ear
         port.messageHandler = { message, _ in
@@ -1007,7 +1071,9 @@ enum ExtensionProxyAuth {
     static func ask(_ challenge: ProxyChallenge, controller: String?) async -> ProxyCredentials? {
         var order = [String]()
         if let controller { order.append(controller) }
-        for ear in ears.values where ear.listening && !order.contains(ear.extensionID) { order.append(ear.extensionID) }
+        for ear in ears.values where ear.listening && !order.contains(ear.extensionID) && mayHear(ear, of: challenge) {
+            order.append(ear.extensionID)
+        }
         for id in order {
             if listening(id).isEmpty, id == controller {
                 wake(id)
@@ -1018,6 +1084,14 @@ enum ExtensionProxyAuth {
             }
         }
         return nil
+    }
+
+    /// Another extension hears of a request only as Chrome would tell it:
+    /// with access to its address, and let into private tabs if it is from
+    /// one. The one in control is always asked; its rules saw it already.
+    private static func mayHear(_ ear: Ear, of challenge: ProxyChallenge) -> Bool {
+        guard let context = ear.context, let url = URL(string: challenge.url), context.hasAccess(to: url) else { return false }
+        return !challenge.inPrivate || Extensions.mayGoPrivate(context)
     }
 
     private static func ask(_ ear: Ear, _ challenge: ProxyChallenge) async -> ProxyCredentials? {
