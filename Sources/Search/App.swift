@@ -726,9 +726,11 @@ struct ContentView: View {
             // The bookmarks bar, under the strip or beside the column's top —
             // there on the window's ground above the page's card, and no wider.
             if barShown {
+                // The pointer reaching an auto-hidden sidebar's edge brings it over the bar.
+                let side = chrome.width + (browser.folded && browser.prefs.sideHides ? Fold.hiddenEdge : 0)
                 BookmarksBar(browser: browser, bookmarks: browser.bookmarks, onFrame: cards)
-                    .padding(.leading, sideOnRight ? farGap : chrome.width)
-                    .padding(.trailing, sideOnRight ? chrome.width : farGap)
+                    .padding(.leading, sideOnRight ? farGap : side)
+                    .padding(.trailing, sideOnRight ? side : farGap)
                     .padding(.top, band)
                     .transition(.opacity)
             }
@@ -919,11 +921,10 @@ struct ContentView: View {
             .transition(.opacity)
     }
 
-    /// The bookmarks bar is up: asked for, there are bookmarks, the tabs
-    /// aren't folded away or under a video filling the screen, and it isn't
-    /// in the column instead (SideBookmarks).
+    /// The top bar is up when the tab and fold allow it, there are bookmarks,
+    /// and the page isn't filling the screen.
     private var barShown: Bool {
-        browser.bookmarksBarForTab && !browser.prefs.sideBookmarks && !browser.bookmarks.isEmpty && !browser.folded
+        browser.bookmarksBarForTab && !browser.prefs.sideBookmarks && !browser.bookmarks.isEmpty
             && fullscreenTab == nil
     }
 

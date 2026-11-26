@@ -9,7 +9,8 @@ window shown or brought forward, everything removed afterwards.
 Off, as it starts: the bar stays above every page. On: the bar is above a
 new tab only; a page opened in it takes the bar away, and the page starts
 that much higher in the window; going back to a new tab brings it back.
-With the bar itself hidden, the setting shows nothing.
+With the bar itself hidden, the setting shows nothing. With the tabs down
+a side folded away (or peeking), a new tab keeps its bar (#1625).
 """
 import json
 import os
@@ -53,10 +54,37 @@ def main():
             blank = bar()
             fresh = next(x["id"] for x in sv.cmd({"do": "tabs"})["tabs"] if x.get("active"))
             t.ok(f"{where}: a new tab has the bar", blank["barForTab"] is True and blank["active"] == "", blank)
+
+            sv.cmd({"do": "ui", "folded": True})
+            kept = bar()
+            t.ok(f"{where}: folded away, a new tab keeps its bar in the column layout only", kept["barForTab"] is sidebar, kept)
+            if sidebar:
+                frame = kept["frames"][0]
+                t.ok("column: the folded bar is drawn across the room that opens up",
+                     frame[2] > 0 and frame[0] < blank["frames"][0][0] - 30, (frame, blank["frames"][0]))
+                sv.cmd({"do": "ui", "peek": True})
+                peeking = bar()
+                t.ok("column: an edge peek leaves the new tab's bar in place",
+                     peeking["barForTab"] is True and peeking["frames"][0] == frame, peeking)
+                sv.cmd({"do": "ui", "peek": False})
+                sv.cmd({"do": "ui", "hides": True})
+                auto = bar()
+                t.ok("column: the bar clears the auto-hidden sidebar's edge",
+                     auto["barForTab"] is True and auto["frames"][0][0] >= frame[0] + 20, auto)
+                sv.cmd({"do": "ui", "hides": False})
+                time.sleep(0.5)
+                sv.cmd({"do": "ui", "folded": True})
+
             sv.cmd({"do": "go", "id": fresh, "url": f"{sv.BASE}/later"}); time.sleep(1.2)
             went = bar()
-            t.ok(f"{where}: a page opened in the new tab takes it away", went["barForTab"] is False and went["active"].endswith("/later"), went)
-            t.ok(f"{where}: …and the page moves up, as drawn", went["pageTop"] == on["pageTop"], (went["pageTop"], on["pageTop"], blank["pageTop"]))
+            t.ok(f"{where}: a page opened in the folded new tab has no bar",
+                 went["barForTab"] is False and went["active"].endswith("/later"), went)
+            always = bar(newTabOnly=False)
+            t.ok(f"{where}: with the bar on every page, folding still takes it away", always["barForTab"] is False, always)
+            sv.cmd({"do": "ui", "folded": False})
+            unfolded = bar(newTabOnly=True)
+            t.ok(f"{where}: the page starts at the same height as before",
+                 unfolded["pageTop"] == on["pageTop"], (unfolded["pageTop"], on["pageTop"]))
             sv.sp("select", id=page); time.sleep(0.4)
             back = bar(newTabOnly=False)
             t.ok(f"{where}: switched off again, the bar is back above the page", back["barForTab"] is True and back["pageTop"] == off["pageTop"], back)

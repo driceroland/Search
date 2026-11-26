@@ -1,11 +1,16 @@
 import SwiftUI
 
 extension Browser {
-    /// The bar above the page asked for, for the tab on screen: with
-    /// Settings › Show the bookmarks bar only on new tabs, only while that
-    /// tab is a new one (idea 1082).
+    /// The bar above the page, as asked for the tab on screen and the fold.
     var bookmarksBarForTab: Bool {
-        prefs.bookmarksBar && (!prefs.bookmarksNewTabOnly || (active?.isBlank ?? true))
+        guard prefs.bookmarksBar else { return false }
+        // Folded away, the bar goes with the tabs, except on a new tab when
+        // it is asked for on new tabs only: there it is the way to the
+        // bookmarks with the column out of sight (#1625).
+        if folded {
+            return prefs.sidebar && prefs.bookmarksNewTabOnly && active?.isBlank == true
+        }
+        return !prefs.bookmarksNewTabOnly || (active?.isBlank ?? true)
     }
 }
 
@@ -17,7 +22,8 @@ extension Browser {
 //
 // Off unless asked for — Settings › Tabs, or Bookmarks › Show Bookmarks Bar
 // — since the page gives up a strip of its height to it. It goes with the
-// tabs when they fold away (⌘S) and when a video takes the screen.
+// tabs when they fold away (⌘S), except on a new tab with Show the
+// bookmarks bar only on new tabs. A video filling the screen takes the bar away.
 //
 // Icons only (idea 980), also off unless asked for: every bookmark as its
 // icon alone, its name on hover, as Edge's "Show icons only" and Vivaldi's
