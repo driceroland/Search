@@ -935,6 +935,9 @@ enum ExtensionShims {
       // made over another, profiles in one window), and the tab at that
       // place tells them apart.
       const placeOf = (t, known) => ({ i: t.index, w: known.get(t.windowId), u: t.url || t.pendingUrl || "" });
+      // The name a framed page's tabs.connect goes to the worker under,
+      // before the tab and the port's own name (see `embedded`).
+      const tabsConnectRelay = "search-tabs-connect:";
       const event = () => {
         const listeners = new Set();
         return {
@@ -2744,8 +2747,59 @@ enum ExtensionShims {
             if (name === "constructor" || /^on[A-Z]/.test(name)) continue;
             let f; try { f = ns[name]; } catch (e) { continue; }
             if (typeof f !== "function") continue;
-            // A port can't be carried over: one that closes at once, as
-            // Chrome's does when nothing answers, rather than a dead process.
+            // A port to a tab goes through the worker, which opens the real
+            // one and carries what passes both ways (see `tabsConnectRelay`).
+            // ADI Element Selector's panel, framed in the site, connects to
+            // its own tab's content script so, and showed only its fallback
+            // note while the port closed at once.
+            if (space === "tabs" && name === "connect" && hasWorker && typeof runtime.connect === "function") {
+              own(name, (tabId, info) => {
+                const given = info && typeof info === "object" ? info : {};
+                const to = { tabId, name: typeof given.name === "string" ? given.name : "" };
+                if (typeof given.frameId === "number") to.frameId = given.frameId;
+                if (typeof given.documentId === "string") to.documentId = given.documentId;
+                const relay = runtime.connect({ name: tabsConnectRelay + JSON.stringify(to) });
+                const port = { name: to.name, sender: undefined, onMessage: event(), onDisconnect: event() };
+                let open = true, gone = null;
+                const close = () => {
+                  if (!open) return;
+                  open = false;
+                  if (gone) put(runtime, "lastError", { message: gone });
+                  try { for (const f of [...port.onDisconnect.listeners]) { try { f(port); } catch (e) { setTimeout(() => { throw e; }); } } }
+                  finally { if (gone) { try { delete runtime.lastError; } catch (e) {} } }
+                };
+                port.postMessage = (message) => {
+                  if (!open) throw new Error("Attempting to use a disconnected port object");
+                  relay.postMessage({ __searchRelayed: message });
+                };
+                // Its own disconnect tells only the other end, as in Chrome.
+                // Said in words first: WebKit never tells the worker that a
+                // port from a page framed in a website was disconnected, so
+                // the content script would never have heard it. The same
+                // when the frame goes away.
+                const bye = () => {
+                  if (!open) return;
+                  open = false;
+                  root.removeEventListener("pagehide", bye);
+                  try { relay.postMessage({ __searchBye: true }); } catch (e) {}
+                  try { relay.disconnect(); } catch (e) {}
+                };
+                port.disconnect = bye;
+                root.addEventListener("pagehide", bye);
+                relay.onMessage.addListener((message) => {
+                  if (!open || !message || typeof message !== "object") return;
+                  if (typeof message.__searchGone === "string") { gone = message.__searchGone; return; }
+                  if (!("__searchRelayed" in message)) return;
+                  for (const f of [...port.onMessage.listeners]) { try { f(message.__searchRelayed, port); } catch (e) { setTimeout(() => { throw e; }); } }
+                });
+                relay.onDisconnect.addListener(() => { root.removeEventListener("pagehide", bye); close(); });
+                return port;
+              });
+              continue;
+            }
+            // Any other port can't be carried over: one that closes at once,
+            // as Chrome's does when nothing answers, rather than a dead
+            // process.
             if (name === "connect") {
               own(name, (...args) => {
                 const port = { name: (args.find((a) => a && typeof a === "object") || {}).name || "", sender: undefined,
@@ -5304,6 +5358,74 @@ enum ExtensionShims {
         });
         put(onConnect, "removeListener", (listener) => remove.call(onConnect, wrapped.get(listener) || listener));
         put(onConnect, "hasListener", (listener) => has.call(onConnect, wrapped.get(listener) || listener));
+
+        // A framed page's tabs.connect, brought here (see `embedded`): the
+        // worker opens the port to the tab and carries what passes, and a
+        // disconnect, both ways. Only for the extension's own pages, and
+        // never shown to the extension's own onConnect listeners.
+        if (background && chrome.tabs && typeof chrome.tabs.connect === "function") {
+          const tabs = chrome.tabs;
+          const tabsConnect = tabs.connect;
+          const relays = onConnect.addListener;
+          relays.call(onConnect, (port) => {
+            if (!port || !String(port.name).startsWith(tabsConnectRelay)) return;
+            if (!fromOwn(port)) { try { port.disconnect(); } catch (e) {} return; }
+            let to;
+            try { to = JSON.parse(port.name.slice(tabsConnectRelay.length)); } catch (e) {}
+            if (!to || typeof to.tabId !== "number") { try { port.disconnect(); } catch (e) {} return; }
+            const info = { name: typeof to.name === "string" ? to.name : "" };
+            if (typeof to.frameId === "number") info.frameId = to.frameId;
+            if (typeof to.documentId === "string") info.documentId = to.documentId;
+            let open = true;
+            const fail = (message) => {
+              if (!open) return;
+              open = false;
+              try { if (message) port.postMessage({ __searchGone: message }); } catch (e) {}
+              try { port.disconnect(); } catch (e) {}
+            };
+            let inner;
+            try { inner = tabsConnect.call(tabs, to.tabId, info); } catch (e) { fail(String(e && e.message || e)); return; }
+            inner.onMessage.addListener((message) => { if (open) { try { port.postMessage({ __searchRelayed: message }); } catch (e) {} } });
+            inner.onDisconnect.addListener(() => {
+              const error = runtime.lastError;
+              fail(error ? String(error.message || error) : "");
+            });
+            port.onMessage.addListener((message) => {
+              if (!open || !message || typeof message !== "object") return;
+              // The frame's disconnect, which WebKit doesn't carry (see the
+              // frame's end, under `embedded`).
+              if (message.__searchBye === true) {
+                open = false;
+                try { inner.disconnect(); } catch (e) {}
+                try { port.disconnect(); } catch (e) {}
+                return;
+              }
+              if (!("__searchRelayed" in message)) return;
+              try { inner.postMessage(message.__searchRelayed); } catch (e) {}
+            });
+            port.onDisconnect.addListener(() => {
+              if (!open) return;
+              open = false;
+              try { inner.disconnect(); } catch (e) {}
+            });
+          });
+          const hidden = new WeakMap();
+          const shown = onConnect.addListener, unshown = onConnect.removeListener, asked = onConnect.hasListener;
+          put(onConnect, "addListener", (listener, ...rest) => {
+            if (typeof listener !== "function") return shown.call(onConnect, listener, ...rest);
+            let w = hidden.get(listener);
+            if (!w) {
+              w = (port, ...more) => {
+                if (port && String(port.name).startsWith(tabsConnectRelay)) return;
+                return listener(port, ...more);
+              };
+              hidden.set(listener, w);
+            }
+            return shown.call(onConnect, w, ...rest);
+          });
+          put(onConnect, "removeListener", (listener) => unshown.call(onConnect, hidden.get(listener) || listener));
+          put(onConnect, "hasListener", (listener) => asked.call(onConnect, hidden.get(listener) || listener));
+        }
       }
 
       // Members of namespaces WebKit has.
