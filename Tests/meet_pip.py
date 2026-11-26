@@ -187,6 +187,17 @@ try:
     t.ok("the moved video keeps playing (time goes on)", a[0] and b[0] and not b[0]["paused"] and b[0]["t"] > a[0]["t"] + 1, (a[0], b[0]))
     t.ok("the moved video's picture changes (new frames)", a[0] and b[0] and b[0]["px"] != a[0]["px"], (a[0], b[0]))
     t.ok("the camera video made there plays", a[1] and b[1] and not b[1]["paused"] and b[1]["t"] > a[1]["t"] + 1 and b[1]["w"] > 0, (a[1], b[1]))
+    # Camera and microphone stay live while the window is open: WebKit must
+    # neither end nor mute Meet's capture (setCameraActive/setMicrophoneActive).
+    LIVE = ("JSON.stringify(stream.getTracks().map(function (k) {"
+            " return {kind: k.kind, state: k.readyState, muted: k.muted, enabled: k.enabled, label: k.label}; }))")
+    live0 = json.loads(sv.ev(call, LIVE) or "[]"); time.sleep(5)
+    live1 = json.loads(sv.ev(call, LIVE) or "[]")
+    t.ok("camera and microphone are WebKit's pretend ones", sorted(k["kind"] for k in live1) == ["audio", "video"]
+         and all("Mock" in k["label"] or "mock" in k["label"].lower() for k in live1), live1)
+    t.ok("camera and microphone stay live, unmuted and on, 5 s into the open window",
+         len(live1) == 2 and all(k["state"] == "live" and not k["muted"] and k["enabled"] for k in live0 + live1)
+         and len(mp()["windows"]) == 1, (live0, live1))
     mp("tap", selector="#mute")
     t.ok("a real click on its Mute calls the page's own function", until(lambda: sv.ev(call, "calls.mute") == 1), sv.ev(call, "JSON.stringify(calls)"))
     t.ok("which acted on the call (the microphone track off)", sv.ev(call, "stream.getAudioTracks()[0].enabled") is False)
