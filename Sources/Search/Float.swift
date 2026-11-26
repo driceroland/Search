@@ -978,11 +978,13 @@ final class Float {
     }
 }
 
-/// Sites with a player worth following into the little window.
+/// Sites people go to to watch, where the site card offers Don't Float
+/// Videos Here even before anything plays (SiteCard's `grounded`).
 ///
-/// Anywhere else, a playing video is as likely to be a background as a film,
-/// and the difference isn't something a script can tell from the outside. So
-/// the list is of places people go to watch, and the shortcut covers the rest.
+/// It no longer decides what floats on its own: Isolate.real does, on any
+/// site, by the video itself (heard, big enough, longer than a loop, not a
+/// preview). Only these sites' videos floated before, and Video.js, Plyr or
+/// a broadcaster's own player stayed in their tab (idea 1248).
 enum Players {
     /// A host suffix, and for a few shops that also stream, the path that
     /// separates the film from the product page.

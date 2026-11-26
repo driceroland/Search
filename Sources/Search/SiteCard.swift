@@ -485,12 +485,13 @@ struct SiteCard: View {
     }
 
     /// Whether the site's videos float out on their own (see Grounded).
-    /// Only on a site they would float from, with one of Settings › General's
+    /// Only on a streaming site, or one playing a video now (they float
+    /// from any site since idea 1248), with one of Settings › General's
     /// Float the video switches on, and not in a private tab.
     @ViewBuilder private var grounded: some View {
         if !tab.shy, browser.prefs.floatsOnLeave || browser.prefs.floatsAway,
            let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased()),
-           Players.knows(url), let host = url.host() {
+           Players.knows(url) || tab.playingVideo || tab.noisy, let host = url.host() {
             Ground(host: host)
         }
     }

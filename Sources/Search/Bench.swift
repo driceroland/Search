@@ -4360,6 +4360,28 @@ final class Bench {
                 answer(["showing": browser.floater.showing])
                 return
             }
+            // Over to another tab (`to`), as ⌃Tab goes, with Float the video
+            // on its own deciding whether the active tab's video comes along
+            // (idea 1248). Unlike `film float` via "switch", the page is not
+            // taken for a player's: the real site's own answer is under test.
+            if request["action"] as? String == "leave" {
+                guard let to = find(["id": request["to"] as Any], in: browser) else { answer(["error": "float leave needs `to`, another tab"]); return }
+                Float.benchAway = NSPoint(x: -20000, y: -20000)
+                if let tab = browser.active {
+                    let occlusion = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+                    if tab.web.responds(to: occlusion) {
+                        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+                        unsafeBitCast(tab.web.method(for: occlusion), to: Setter.self)(tab.web, occlusion, false)
+                    }
+                }
+                let playing = browser.active?.playingVideo ?? false
+                browser.select(to)
+                DispatchQueue.main.asyncAfter(deadline: .now() + (request["wait"] as? Double ?? 1.5)) {
+                    answer(["showing": browser.floater.showing, "playing": playing,
+                            "floating": browser.tabs.first { $0.id == browser.floating }.map(Bench.short) ?? ""])
+                }
+                return
+            }
             // The active tab's video out, as ⇧⌘P lifts it, into the little
             // window off every screen.
             if request["action"] as? String == "lift" {

@@ -7537,7 +7537,7 @@ final class Browser: NSObject, ObservableObject {
             else if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             return
         }
-        if quietly, !Players.knows(tab.address) || tab.pageAddress?.host().map(Grounded.holds) == true {
+        if quietly, tab.pageAddress?.host().map(Grounded.holds) == true {
             if let otherwise { picture(otherwise, quietly: quietly, toggle: toggle, spaceRequest: spaceRequest) }
             else if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             return
@@ -7622,14 +7622,16 @@ final class Browser: NSObject, ObservableObject {
             if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             return
         }
-        // On its own, only from a site whose video is the point of the site.
-        // A hero background on a studio's home page is a video too, and it
-        // followed people around the desktop. Nor from one you grounded in
-        // its site card. ⌘⇧P still lifts from anywhere.
+        // On its own, only a video somebody watches (Isolate.real: heard,
+        // big enough, longer than a loop, not a preview), from any site: a
+        // hero background on a studio's home page plays muted, and stays.
+        // Only streaming sites' did before, and players elsewhere (Video.js,
+        // Plyr, a broadcaster's own) stayed behind (idea 1248). Nor from a
+        // site you grounded in its site card. ⌘⇧P still lifts from anywhere.
         // And only with a video playing there, as the page says (see
         // MediaKeys.watch): leaving a paused one on YouTube took a picture
         // of the page and a look through it, 20 to 30 ms, for nothing.
-        if quietly, !Players.knows(tab.address) || tab.pageAddress?.host().map(Grounded.holds) == true
+        if quietly, tab.pageAddress?.host().map(Grounded.holds) == true
             || !(tab.playingVideo || tab.noisy) {
             if let otherwise { lift(otherwise, quietly: quietly, spaceRequest: spaceRequest) }
             else if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
