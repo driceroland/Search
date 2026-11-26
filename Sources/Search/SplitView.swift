@@ -211,7 +211,12 @@ private struct PaneLayers: View {
         .overlay {
             // Over the page the link is on, focused or not.
             if browser.prefs.showsLinks {
-                LinkBubble(status: browser.linkStatus, page: paired ? tab.built : nil)
+                // Beside the downloads tab at the window's edge, not under
+                // it (DownloadFlight.swift).
+                let room = browser.downloadsEdge ? DownloadFlight.edgeRoom : 0
+                let right = browser.prefs.sidebar && browser.prefs.sidePosition == .right
+                LinkBubble(status: browser.linkStatus, page: paired ? tab.built : nil,
+                           leadingRoom: right ? 0 : room, trailingRoom: right ? room : 0)
             }
         }
         // The accounts under a sign-in box are the stage's (PaneStage.showAccounts):

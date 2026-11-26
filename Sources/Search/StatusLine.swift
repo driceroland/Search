@@ -123,6 +123,10 @@ struct LinkBubble: View {
     /// With two pages up, the one this bubble stands over: it shows only a
     /// link on that page.
     var page: NSView? = nil
+    /// Room kept clear at the page's bottom corners: the downloads tab at
+    /// the window's edge, the column folded away (DownloadFlight.swift).
+    var leadingRoom: CGFloat = 0
+    var trailingRoom: CGFloat = 0
 
     var body: some View {
         GeometryReader { space in
@@ -145,7 +149,8 @@ struct LinkBubble: View {
                                    alignment: status.onRight ? .trailing : .leading)
                         if !status.onRight { Spacer(minLength: 0) }
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.leading, 10 + leadingRoom)
+                    .padding(.trailing, 10 + trailingRoom)
                     .padding(.bottom, 10)
                 }
                 .transition(.opacity)
@@ -153,5 +158,6 @@ struct LinkBubble: View {
         }
         .allowsHitTesting(false)
         .animation(Motion.timed(.easeOut(duration: 0.12)), value: status.destination == nil)
+        .animation(Motion.quick, value: leadingRoom + trailingRoom)
     }
 }

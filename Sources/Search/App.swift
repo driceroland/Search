@@ -785,7 +785,12 @@ struct ContentView: View {
         } else if let tab = browser.active {
             Page(tab: tab, corner: cardCorner, browser: browser)
                 .overlay {
-                    if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
+                    if browser.prefs.showsLinks {
+                        // Beside the downloads tab at the window's edge, not under it.
+                        let room = browser.downloadsEdge ? DownloadFlight.edgeRoom : 0
+                        LinkBubble(status: browser.linkStatus,
+                                   leadingRoom: sideOnRight ? 0 : room, trailingRoom: sideOnRight ? room : 0)
+                    }
                 }
                 // Developer Mode's bar, for a site in it (DevMode.swift).
                 .overlay(alignment: .bottomTrailing) { DevBar(browser: browser, tab: tab) }
@@ -1179,6 +1184,14 @@ struct ContentView: View {
                 }
             }
             .overlay { panels }
+            // A new download's file on its way to the downloads button.
+            // Only with Settings › Appearance › Animate downloads on: off, nothing
+            // here watches the downloads at all.
+            .overlay {
+                if browser.prefs.animatesDownloads || browser.downloadsEdge {
+                    DownloadFlightLayer(browser: browser, fetches: browser.fetches, onRight: sideOnRight)
+                }
+            }
             .overlay { switcherOverlay }
             .overlay(alignment: .topTrailing) {
                 if let job = browser.fileImport { ImportProgress(browser: browser, job: job) }
@@ -1572,6 +1585,11 @@ struct ContentView: View {
                 guard let window, event.window === window else { return event }
                 Browser.lastClose = nil
                 Browser.lastMove = nil
+                // Where a download a click starts sets off from (DownloadFlight).
+                if event.type != .otherMouseDown, let height = window.contentView?.bounds.height {
+                    let at = event.locationInWindow
+                    browser.lastPress = (CGPoint(x: at.x, y: height - at.y), CACurrentMediaTime())
+                }
                 // A click on the tab switcher, in this window only (see
                 // Browser.clickTabSwitcher), turned into the top-left
                 // coordinates SwiftUI's frames are in.
