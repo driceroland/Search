@@ -646,6 +646,10 @@ struct SettingsPanel: View {
                 get: { prefs.compactStrip },
                 set: { on in withAnimation(Motion.glide) { prefs.compactStrip = on } }
             ))
+        case "tabs.frosted": Switch(on: $prefs.frostedStrip)
+        case "tabs.frosted.blur": Slider(value: $prefs.frostedBlur, in: 0...1).controlSize(.small).frame(width: 160)
+        case "tabs.frosted.tint": Slider(value: $prefs.frostedTint, in: 0...1).controlSize(.small).frame(width: 160)
+        case "tabs.frosted.line": Switch(on: $prefs.frostedLine)
         case "tabs.liquid": Switch(on: $prefs.liquidTabs)
         case "sidebar.roomy":
             Switch(on: Binding(

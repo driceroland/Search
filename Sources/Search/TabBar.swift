@@ -327,7 +327,7 @@ struct TabBar: View {
                 // The space's colour, if it has one, over whatever ground the
                 // row lies on: the window's, or the one it brings along when
                 // it comes down over the page. On glass the glass wears it.
-                if !browser.glassUnder { SpaceWash(look: browser.wash) }
+                if !browser.glassUnder, !browser.frostsStrip { SpaceWash(look: browser.wash) }
                 if browser.prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }

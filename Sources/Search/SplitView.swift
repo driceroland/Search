@@ -13,6 +13,10 @@ struct SplitStage: View {
     /// told with the rest of the chrome, in the same pass (see
     /// ContentView.immersing), never on the stage's own.
     var immersed: Tab.ID? = nil
+    /// How much of the stage's top lies under the frosted strip (see
+    /// Frosted.swift): the pages run on beneath it, and what is drawn over
+    /// them keeps to the room below.
+    var reach: CGFloat = 0
     @ObservedObject private var drag = TabDrag.shared
     /// Where each page on screen is, as the stage last said.
     @State private var frames: [Tab.ID: CGRect] = [:]
@@ -51,7 +55,8 @@ struct SplitStage: View {
             accounts: browser.suggesting.map { (browser, $0) },
             pairing: browser.applePairing.map { (browser, $0) },
             corner: corner,
-            immersed: immersed
+            immersed: immersed,
+            reach: reach
         )
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {

@@ -34,12 +34,15 @@ struct PaneStageView: NSViewRepresentable {
     var corner: CGFloat = 0
     /// The page filling the screen, if one is (see SplitStage.immersed).
     var immersed: Tab.ID? = nil
+    /// How much of the stage's top is under the frosted strip.
+    var reach: CGFloat = 0
 
     func makeNSView(context: Context) -> PaneStage { PaneStage() }
 
     func updateNSView(_ stage: PaneStage, context: Context) {
         stage.corner = corner
         stage.immersedID = immersed
+        stage.reach = reach
         stage.onCommit = commit
         stage.onFocus = focus
         stage.onFrames = frames
@@ -53,6 +56,13 @@ struct PaneStageView: NSViewRepresentable {
 }
 
 final class PaneStage: NSView {
+    /// How much of this stage's top is under the frosted strip (Frosted.swift).
+    /// A lone page runs the stage's full height and is told its top is
+    /// covered; what is drawn over it keeps to the room below. Two pages
+    /// share the room as they always did.
+    var reach: CGFloat = 0 {
+        didSet { if reach != oldValue { needsLayout = true } }
+    }
     /// Each page's corners, as a card (see CardEdge): with the tabs down the
     /// side, each page on the stage is a card of its own, with the window's
     /// ground in the gutter between two.
@@ -467,20 +477,27 @@ final class PaneStage: NSView {
             }
             for line in lines.dropFirst(max(0, tabs.count - 1)) { line.isHidden = true }
         } else {
-            for index in tabs.indices where shown(index) { frames[index] = area }
+            let under = min(max(0, reach), area.height)
+            let page = CGRect(x: area.minX, y: area.minY + under, width: area.width, height: area.height - under)
+            for index in tabs.indices where shown(index) { frames[index] = page }
             for line in lines { line.isHidden = true }
         }
+        let under = paired ? 0 : min(max(0, reach), area.height)
         for (index, slot) in slots.enumerated() {
             let frame = index < frames.count ? frames[index] : .zero
             let visible = index < tabs.count && shown(index) && frame.width > 0
+            // The page itself, under the strip's reach.
+            let held = frame.width > 0 ? CGRect(x: frame.minX, y: frame.minY - under,
+                                                width: frame.width, height: frame.height + under) : frame
+            if slot.inset != under { slot.inset = under }
             slot.isHidden = !visible
             // Grown, by a page not already covered for it by ⌘S's cover.
             if visible, slot.frame.width > 0,
-               frame.width > slot.frame.width + 0.5 || frame.height > slot.frame.height + 0.5,
+               held.width > slot.frame.width + 0.5 || held.height > slot.frame.height + 0.5,
                !((page(tabs[index]) as? WKWebView).map { FoldCover.coming.contains($0) } ?? false) {
                 grew = true
             }
-            if slot.frame != frame { slot.frame = frame }
+            if slot.frame != held { slot.frame = held }
             if index < shadows.count {
                 // Pages run the stage's full height, so its flip is no matter.
                 let shadow = shadows[index]

@@ -128,10 +128,10 @@ struct BookmarksBar: View {
             ZStack {
                 // On glass the window's ground, colour and all, shows
                 // through (Glass.swift).
-                if !browser.glassy { onFrame ? Palette.frame : Palette.ground }
+                if !browser.glassy, !browser.frostsStrip { onFrame ? Palette.frame : Palette.ground }
                 // The tabs' wash carried on under them, or the colour
                 // stopped at the bar's edge.
-                if !browser.glassy { SpaceWash(look: browser.wash) }
+                if !browser.glassy, !browser.frostsStrip { SpaceWash(look: browser.wash) }
             }
         }
         .overlay(alignment: .bottom) {

@@ -162,6 +162,27 @@ final class Preferences: ObservableObject {
         didSet { store.set(compactStrip, forKey: "tabs.compact") }
     }
 
+    /// The tab strip as frosted glass, the page running on beneath it so what
+    /// scrolls under it shows through blurred (see Frosted.swift). With the
+    /// tabs across the top; off unless asked for.
+    @Published var frostedStrip: Bool {
+        didSet { store.set(frostedStrip, forKey: "tabs.frosted") }
+    }
+    /// How far the page is blurred under the frosted strip: nought, a light
+    /// soften; one, frosted until only its colours are left.
+    @Published var frostedBlur: Double {
+        didSet { store.set(frostedBlur, forKey: "tabs.frosted.blur") }
+    }
+    /// How much of the window's ground lies over the blurred page: nought,
+    /// the page's own colours; one, all but the plain ground.
+    @Published var frostedTint: Double {
+        didSet { store.set(frostedTint, forKey: "tabs.frosted.tint") }
+    }
+    /// The hairline along the frosted strip's lower edge. On unless turned off.
+    @Published var frostedLine: Bool {
+        didSet { store.set(frostedLine, forKey: "tabs.frosted.line") }
+    }
+
     /// A local socket a script can drive the browser through, in tabs of its
     /// own. Off unless asked for — in Settings, which is also what leaves
     /// the mark it needs at launch (see Bench.Consent).
@@ -1336,6 +1357,10 @@ final class Preferences: ObservableObject {
         Preferences.settleLittleLinks(in: store)
         navigationLeft = store.bool(forKey: "toolbar.left")
         compactStrip = store.bool(forKey: "tabs.compact")
+        frostedStrip = store.bool(forKey: "tabs.frosted")
+        frostedBlur = (store.object(forKey: "tabs.frosted.blur") as? Double).map { min(1, max(0, $0)) } ?? 0.3
+        frostedTint = (store.object(forKey: "tabs.frosted.tint") as? Double).map { min(1, max(0, $0)) } ?? 0.35
+        frostedLine = store.object(forKey: "tabs.frosted.line") as? Bool ?? true
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
         // The Mac's own unless asked otherwise — a Mac in dark mode expects
@@ -1708,6 +1733,10 @@ final class Preferences: ObservableObject {
         take(\.homeTuning, "home.tuning", HomeTuning.read(store.string(forKey: "home.tuning")), or: HomeTuning())
         take(\.navigationLeft, store.bool(forKey: "toolbar.left"))
         take(\.compactStrip, store.bool(forKey: "tabs.compact"))
+        take(\.frostedStrip, store.bool(forKey: "tabs.frosted"))
+        take(\.frostedBlur, "tabs.frosted.blur", (store.object(forKey: "tabs.frosted.blur") as? Double).map { min(1, max(0, $0)) }, or: 0.3)
+        take(\.frostedTint, "tabs.frosted.tint", (store.object(forKey: "tabs.frosted.tint") as? Double).map { min(1, max(0, $0)) }, or: 0.35)
+        take(\.frostedLine, "tabs.frosted.line", store.object(forKey: "tabs.frosted.line") as? Bool, or: true)
         take(\.sidebar, "sidebar", store.object(forKey: "sidebar") as? Bool,
              or: store.string(forKey: "manner").map { $0 == "side" } ?? SidebarDefault.fresh(testing: Store.testing))
         take(\.sidePosition, "sidebar.position", store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init),

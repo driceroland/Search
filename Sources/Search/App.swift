@@ -699,7 +699,7 @@ struct ContentView: View {
                 .padding(.bottom, laidFar)
                 .padding(.leading, sideOnRight ? 0 : roomed.width)
                 .padding(.trailing, sideOnRight ? roomed.width : 0)
-                .padding(.top, roomed.height)
+                .padding(.top, max(0, roomed.height - reach))
                 // On whole pixels as it slides: between them, the page was
                 // drawn resampled, soft, for the length of the slide.
                 .modifier(PixelOffset(offset: CGSize(width: sideOnRight ? farGap - laidFar : chrome.width - roomed.width,
@@ -717,6 +717,14 @@ struct ContentView: View {
 
             // The column of tabs is Fold's, in its place beside the page or
             // folded away (see Fold.swift).
+
+            // The page runs on under the strip and the bookmarks bar, fading
+            // out as it climbs (see Frosted.swift).
+            if reach > 0 {
+                FrostedStrip(prefs: browser.prefs)
+                    .frame(height: reach)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
 
             if !browser.prefs.sidebar, !browser.folded, fullscreenTab == nil {
                 TabBar(browser: browser)
@@ -781,7 +789,7 @@ struct ContentView: View {
     @ViewBuilder
     private var stage: some View {
         if browser.prefs.splitView {
-            SplitStage(browser: browser, corner: cardCorner, immersed: fullscreenTab?.id)
+            SplitStage(browser: browser, corner: cardCorner, immersed: fullscreenTab?.id, reach: reach)
         } else if let tab = browser.active {
             Page(tab: tab, corner: cardCorner, browser: browser)
                 .overlay {
@@ -845,6 +853,13 @@ struct ContentView: View {
     /// The column's width folded away: the room ⌘S gives the page before
     /// the column slides (see Browser.toggleFold).
     private var foldedWidth: CGFloat { 0 }
+
+    /// How far the page runs up under the frosted strip and the bookmarks bar
+    /// (see Frosted.swift): all of what the strip takes from it, or none.
+    private var reach: CGFloat {
+        guard browser.frostsStrip, fullscreenTab == nil else { return 0 }
+        return Metrics.strip + (barShown ? BookmarksBar.height : 0)
+    }
 
     /// The column folded away with the page as a card: the card takes the
     /// whole window, with no gap around it and square corners. Out over the

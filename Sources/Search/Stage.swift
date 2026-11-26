@@ -265,7 +265,6 @@ private struct HistoryList: View {
 struct WebStage: NSViewRepresentable {
     let page: NSView?
     var corner: CGFloat = 0
-
     // The hosted page's previous bounds are not an ideal size for this layout.
     // Accept the offered room so a window can shrink around its browser chrome.
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: StageView, context: Context) -> CGSize? {
@@ -295,6 +294,18 @@ final class StageView: NSView {
     /// Now there is one fact and one rule: show `wanted`, and put that right on
     /// every layout. Nothing to fall out of step with.
     private weak var wanted: NSView?
+
+    /// How much of the page's top is under the frosted strip (Frosted.swift),
+    /// which the page is told, so it begins below and scrolls up under it.
+    var inset: CGFloat = 0
+
+    /// The page told how much of its top is covered. Not with the Web
+    /// Inspector docked, which WebKit lays out beside the page itself.
+    private func cover(_ view: NSView, docked: Bool) {
+        guard let web = view as? WKWebView, FrostedStrip.canInset(web) else { return }
+        let top = docked ? 0 : max(0, inset)
+        if FrostedStrip.inset(of: web) != top { FrostedStrip.setInset(top, of: web) }
+    }
 
     /// A page on its way out to the floating window (Browser.lift), kept
     /// here unseen under the one on show until the little window takes it,
@@ -656,9 +667,11 @@ final class StageView: NSView {
         // With the inspector docked, WebKit lays the page and it out side by
         // side as this view changes size; setting the page's frame here would
         // cover the inspector.
-        if !(docked && subviews.contains(where: Self.isInspector)) {
+        let beside = docked && subviews.contains(where: Self.isInspector)
+        if !beside {
             wanted.frame = bounds
         }
+        cover(wanted, docked: beside)
     }
 
     /// A page on a call, kept: unseen, at the stage's size, and never the

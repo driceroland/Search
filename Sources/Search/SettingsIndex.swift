@@ -231,6 +231,19 @@ enum SettingsIndex {
               title: "Shorter tab bar", detail: "Only a few points above and below the tabs, for more of the page",
               keys: ["tabs.compact"], words: ["compact", "slim", "thin", "height", "padding", "tab bar", "toolbar"],
               parent: "tabs.layout"),
+        .init(id: "tabs.frosted", group: "window", icon: "square.stack.3d.down.right",
+              title: "Frosted tab bar", detail: "The page scrolls on under the tabs, blurred, like frosted glass",
+              keys: ["tabs.frosted"], words: ["translucent", "transparent", "blur", "frosted", "glass", "material", "scroll", "header", "tab bar"],
+              parent: "tabs.layout"),
+        .init(id: "tabs.frosted.blur", group: "window", icon: "aqi.medium",
+              title: "Blur", detail: "From a light soften to frosted until only the colours show",
+              keys: ["tabs.frosted.blur"], words: ["blur", "strength", "frost", "radius", "soft", "tab bar"], parent: "tabs.frosted"),
+        .init(id: "tabs.frosted.tint", group: "window", icon: "circle.lefthalf.filled",
+              title: "Tint", detail: "How much of the window's colour lies over the page, from clear to nearly solid",
+              keys: ["tabs.frosted.tint"], words: ["tint", "opacity", "transparency", "colour", "color", "veil", "tab bar"], parent: "tabs.frosted"),
+        .init(id: "tabs.frosted.line", group: "window", icon: "minus",
+              title: "Line under the tab bar", detail: "A hairline where the page goes on below",
+              keys: ["tabs.frosted.line"], words: ["line", "hairline", "border", "divider", "separator", "tab bar"], parent: "tabs.frosted"),
         .init(id: "address.shown", group: "window", icon: "link",
               title: "Always show the address bar", detail: "The page's full address, to type in",
               keys: ["address.shown"], words: ["address bar", "url", "location", "url bar", "omnibox", "full address"]),
@@ -868,6 +881,9 @@ enum SettingsIndex {
         case "bookmarks.iconsOnly", "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
+        case "tabs.frosted": return FrostedStrip.available && !prefs.sidebar
+        case "tabs.frosted.blur", "tabs.frosted.tint", "tabs.frosted.line":
+            return FrostedStrip.available && !prefs.sidebar && prefs.frostedStrip
         case "profiles.oneWindow": return Profiles.shared.several
         case "spaces.links", "links.ask", "spaces.buttons": return prefs.usesSpaces
         case "tabs.frontBeside": return prefs.newTabPlace == .next
@@ -887,6 +903,10 @@ enum SettingsIndex {
         case "pages.dusk": return "Only while Search isn't set to Light"
         case "inspector.dark": return "Only while Search isn't set to Dark"
         case "toolbar.left", "tabs.compact", "address.width": return "Only with the tabs across the top"
+        case "tabs.frosted":
+            return FrostedStrip.available ? "Only with the tabs across the top" : "This WebKit can't start a page below the tab bar"
+        case "tabs.frosted.blur", "tabs.frosted.tint", "tabs.frosted.line":
+            return MainActor.assumeIsolated { Shared.prefs.sidebar } ? "Only with the tabs across the top" : "Only with Frosted tab bar on"
         case "sidebar.roomy", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return "Only with titles in the column"
         case "tabs.liquid": return LiquidTab.available ? "Only with titles in the column, or the tabs across the top" : "Liquid Glass needs macOS 26"
         case "window.glass.style": return GlassStyle.liquidAvailable ? "Only with Glass on" : "Liquid Glass needs macOS 26"
