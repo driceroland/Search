@@ -3209,6 +3209,7 @@ final class Browser: NSObject, ObservableObject {
             Spaces.seedHistories()
             Shield.shared.enabled = prefs.shielded
             Shield.shared.compile()
+            CaptivePortal.shared.start()
             if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
             if prefs.bench {
                 Bench.shared.start(for: self)
@@ -10194,6 +10195,10 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             return
         }
         tab.didCommit()
+
+        CaptivePortal.shared.learn(from: webView.url, in: tab.id)
+        if CaptivePortal.shared.portalURL != nil { CaptivePortal.shared.checkNow() }
+
         // A new document has a picker of its own, asleep: pointing ends with
         // the page it was in. Left on, the hint stayed up over a page that
         // took no picks, and the next ⇧⌘H put away what seemed not there.
@@ -10323,6 +10328,11 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // as in Safari, while the video plays. Answered as a failure, it
         // covered the playing video with "The page didn't load".
         guard !(nsError.domain == "WebKitErrorDomain" && code == 204) else { return }
+
+        if nsError.domain == NSURLErrorDomain, CaptivePortal.looksLikeGateway(code) {
+            CaptivePortal.shared.checkNow()
+        }
+
         // A page that never arrived: the tab says where it was going, as
         // WebKit's error has it (idea 1080), before the failure goes up.
         if provisional { tab?.failed(at: nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL) }

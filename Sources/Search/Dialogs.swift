@@ -296,22 +296,36 @@ extension Browser {
             return
         }
         // Over its own tab only, as a page's own questions are (see ask).
-        ask(from: webView, show: {
-            let alert = NSAlert()
-            alert.messageText = "\(host) can't prove who it is"
-            alert.informativeText = "Its certificate isn't trusted by this Mac. Someone could be reading what you send. Continue only if you know why it looks like this."
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Go Back")
-            alert.addButton(withTitle: "Continue Anyway")
-            Dialogs.show(alert, over: webView) { answer in
-                guard answer == .alertSecondButtonReturn else {
-                    completionHandler(.cancelAuthenticationChallenge, nil)
-                    return
+        func question() {
+            ask(from: webView, show: {
+                let alert = NSAlert()
+                alert.messageText = "\(host) can't prove who it is"
+                alert.informativeText = "Its certificate isn't trusted by this Mac. Someone could be reading what you send. Continue only if you know why it looks like this."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Go Back")
+                alert.addButton(withTitle: "Continue Anyway")
+                Dialogs.show(alert, over: webView) { answer in
+                    guard answer == .alertSecondButtonReturn else {
+                        completionHandler(.cancelAuthenticationChallenge, nil)
+                        return
+                    }
+                    Dialogs.excused.insert(excuse)
+                    completionHandler(.useCredential, URLCredential(trust: trust))
                 }
-                Dialogs.excused.insert(excuse)
-                completionHandler(.useCredential, URLCredential(trust: trust))
+            }, drop: { completionHandler(.cancelAuthenticationChallenge, nil) })
+        }
+        guard CaptivePortal.shared.mayBeIntercepted(host) else {
+            question()
+            return
+        }
+        Task { @MainActor in
+            if await CaptivePortal.shared.confirm() {
+                tab.failure = "This Wi-Fi needs you to sign in first."
+                completionHandler(.cancelAuthenticationChallenge, nil)
+            } else {
+                question()
             }
-        }, drop: { completionHandler(.cancelAuthenticationChallenge, nil) })
+        }
     }
 
     /// A site behind a name and a password — a staging server, a router. One

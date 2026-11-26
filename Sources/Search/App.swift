@@ -1016,6 +1016,7 @@ struct ContentView: View {
             // A coding agent's question; never anything over the page once
             // it is answered (AgentBanner).
             AgentBar(browser: browser)
+            CaptivePortalBar(browser: browser)
             if let ask = browser.asking {
                 Group {
                     if ask.screen { ScreenQuestion(browser: browser, ask: ask) }
