@@ -575,6 +575,10 @@ final class Browser: NSObject, ObservableObject {
     /// not, and what is in it.
     @Published var sidePanelShown = false
     @Published var sidePanel: SidePanelContent?
+    /// What Find a setting held in each Settings tab, for the tab to have
+    /// it again when it is gone back to (SettingsPanel.tabID). Not
+    /// published: only the panel reads it, as it appears.
+    var settingsQueries: [UUID: String] = [:]
     /// The Settings page it opens on next.
     var settingsPage: SettingsPanel.Page {
         get {

@@ -16,6 +16,10 @@ struct SettingsPanel: View {
     var asked: String? = nil
     /// Words already in Find a setting when it opens (previews).
     var found: String? = nil
+    /// The Settings tab this is drawn in: what Find a setting holds is kept
+    /// for it, as only the tab on screen is drawn and going to another tab
+    /// took the panel, and the words, away (#1655).
+    var tabID: UUID? = nil
     @Environment(\.asTab) private var asTab
 
     @ObservedObject private var updater = Updater.shared
@@ -111,7 +115,12 @@ struct SettingsPanel: View {
             if asTab { tabbed } else { card }
         }
         .onChange(of: browser.settingsFind) { _, _ in finding = true }
-        .onAppear { if let found { query = found } }
+        .onAppear {
+            if let found { query = found } else if let tabID, let kept = browser.settingsQueries[tabID] { query = kept }
+        }
+        .onChange(of: query) { _, words in
+            if let tabID { browser.settingsQueries[tabID] = words.isEmpty ? nil : words }
+        }
     }
 
     /// In a tab of its own (see InternalPages.swift): the sections down the
