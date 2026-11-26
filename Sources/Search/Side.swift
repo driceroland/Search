@@ -628,7 +628,7 @@ struct SideBar: View {
                     // every space, so it stays put while the rows under it
                     // scroll, and while a swipe brings another space in.
                     if showsMarks {
-                        SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons)
+                        SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons, lined: marksLined)
                     }
                     // A row too long for the window scrolls between the pins
                     // and the foot, rather than running under the lights at one
@@ -808,8 +808,8 @@ struct SideBar: View {
         let pinLines = folders.isEmpty ? listed.map { PinRowLine.pin($0, depth: 0) }
             : Browser.pinRowLines(listed, folders: folders, showing: row.active)
         let (groups, rest) = row.drawn(groupsOn: prefs.usesTabGroups, splitView: prefs.splitView)
-        let (lines, tints) = previewLines(row, pins: pinLines, groups: groups, rest: rest,
-                                         keeps: showsLine(kept: pins.count + listed.count + groups.count, listed: listed.count, loose: rest.filter { !$0.isBlank }.count))
+        let keeps = showsLine(kept: pins.count + listed.count + groups.count, listed: listed.count, loose: rest.filter { !$0.isBlank }.count)
+        let (lines, tints) = previewLines(row, pins: pinLines, groups: groups, rest: rest, keeps: keeps)
         let cells = pinCells(pins.count)
         return VStack(alignment: .leading, spacing: 0) {
             if !pins.isEmpty {
@@ -824,7 +824,8 @@ struct SideBar: View {
                 .padding(.bottom, 10)
             }
             if showsMarks {
-                SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons)
+                SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons,
+                              lined: !keeps || !pinLines.isEmpty || !groups.isEmpty)
                     .allowsHitTesting(false)
             }
             // Scrolled as the column will be once the space lands, its tab
@@ -981,7 +982,16 @@ struct SideBar: View {
     /// The bookmarks bar in the column (SideBookmarks), when it is there.
     private var showsMarks: Bool { prefs.sideBookmarks && !browser.bookmarks.isEmpty }
     private var marksHeight: CGFloat {
-        showsMarks ? SideBookmarks.height(browser.bookmarks.roots.count, row: rowHeight) : 0
+        showsMarks ? SideBookmarks.height(browser.bookmarks.roots.count, row: rowHeight, lined: marksLined) : 0
+    }
+    /// The bookmarks' line under them, unless the keep line comes straight
+    /// after: no pinned row, folder or group between (idea 1255). The one
+    /// left is the keep line, which has Clear.
+    private var marksLined: Bool {
+        let between = (prefs.showsPinRows && (!browser.listedPins.isEmpty || browser.showsPinFolderRows))
+            || (prefs.usesTabGroups && !browser.tabGroups.isEmpty)
+        return between || !showsLine(kept: keptCount, listed: browser.listedPins.count,
+                                     loose: looseTabs.filter { !$0.isBlank }.count)
     }
 
     /// The pinned rows, the loose tabs and the row that makes another, added
