@@ -414,6 +414,14 @@ struct Fold: View {
     /// grazing it on the way up doesn't bring it out.
     static let dwell: TimeInterval = 0.05
 
+    /// Whether the edge brings the column (or the strip) out with these
+    /// mouse buttons down: not while the left one is held. The edge is
+    /// watched on drags too, and a drag in the page that reached it — a
+    /// text selection, cells, a row, or a page's own sidebar along the same
+    /// edge pulled open (Airtable's lies 6 points in) — had the column slide
+    /// out over it on the way.
+    static func edgeBrings(pressed buttons: Int) -> Bool { buttons & 1 == 0 }
+
     /// Whether the pointer, from `last` to `point` in the window's own
     /// coordinates, is still going up: on its way past the strip's edge to
     /// the menu bar rather than come to rest on it. Against the screen's
@@ -733,6 +741,10 @@ struct Fold: View {
             if over != inside { inside = over }
             peek(over)
         } else if inWindow, distance < (prefs.sidebar && prefs.sideHides ? Fold.hiddenEdge : Fold.edge),
+                  // Not with the button held: a drag in the page, a text
+                  // selection or Airtable's own sidebar edge pulled, came
+                  // to the edge and the column slid out over it mid-drag.
+                  Fold.edgeBrings(pressed: NSEvent.pressedMouseButtons),
                   // In full screen, not from the corner where macOS brings
                   // the window's buttons down with the menu bar: the column
                   // came out over them there, on the way to the red one (#241).
@@ -820,6 +832,8 @@ struct Fold: View {
         pass()
         let coming = DispatchWorkItem {
             arriving = nil
+            // Pressed during the wait: the hand is at work in the page.
+            guard resting || Fold.edgeBrings(pressed: NSEvent.pressedMouseButtons) else { return }
             peek(true)
         }
         arriving = coming
