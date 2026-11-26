@@ -7523,7 +7523,7 @@ enum ExtensionAuth {
         Task { @MainActor [weak tab] in
             try? await Task.sleep(for: .seconds(4))
             guard let tab, tab.held == url else { return }
-            tab.failure = "No site at that address."
+            tab.failure = DNSRetryPolicy.gaveUp
         }
         return true
     }

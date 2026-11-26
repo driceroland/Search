@@ -616,6 +616,17 @@ final class Bench {
                     // (PinIconHome): its centre, from the window's top left.
                     "icon": PinIconHome.centre(of: tab.id).map { $0 as Any } ?? NSNull()])
 
+        case "dnsfail":
+            // Test run: the next TIMES loads of HOST fail as if its name
+            // couldn't be looked up (DNSRetry); "network": true, as if the
+            // Mac's network had just changed. What is left to fail.
+            guard Store.testing else { answer(["error": "dnsfail only works on a --test run"]); return }
+            if let host = (request["host"] as? String)?.lowercased() {
+                DNSRetry.testFailures[host] = request["times"] as? Int ?? 1
+            }
+            if request["network"] as? Bool == true { DNSRetry.networkChanged() }
+            answer(["left": DNSRetry.testFailures])
+
         case "select":
             // Picking a tab takes the window over, which the bench never does
             // to someone using it: only on a SEARCH_PROBE run.
@@ -7131,6 +7142,10 @@ final class Bench {
             "loading": tab.loading,
             // The failure up over the page instead of it, "" for none.
             "failure": tab.failure ?? "",
+            // Tries made at a page that couldn't be found, and whether
+            // another is still to come (DNSRetry).
+            "dnsTries": tab.dnsRetry.done,
+            "dnsPending": tab.dnsRetry.pending,
             "hollow": tab.hollow,
             "view": tab.built?.url?.absoluteString ?? "",
             "bench": tab.bench,

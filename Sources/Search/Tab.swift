@@ -478,9 +478,17 @@ final class Tab: ObservableObject, Identifiable {
             if failure == nil {
                 dead = false
                 if failedAt != nil { failedAt = nil }
+                // A page came, or the tab went elsewhere: no more tries.
+                if dnsRetryMade { dnsRetry.stop() }
             }
         }
     }
+    /// Tries at a page that failed on its lookup (DNSRetry.swift).
+    private(set) lazy var dnsRetry: DNSRetry = {
+        dnsRetryMade = true
+        return DNSRetry(tab: self)
+    }()
+    private var dnsRetryMade = false
     /// How far down the page you are, nought to one. The tab's own pill fills
     /// with it. Kept apart from the rest of the tab (see Reading): it changes
     /// all the way down a page, and only the fill has any use for it.
@@ -3218,8 +3226,12 @@ final class PageView: WKWebView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         gateTrackingAreas()
-        // In sight now: a load waiting its turn starts (LoadTurns).
-        if LoadTurns.inSight(self) { LoadTurns.shared.shown(self) }
+        // In sight now: a load waiting its turn starts (LoadTurns), and so
+        // does a try at a site that couldn't be found (DNSRetry).
+        if LoadTurns.inSight(self) {
+            LoadTurns.shared.shown(self)
+            DNSRetry.shown(self)
+        }
         guard window != nil, onWindow != nil else { return }
         // Not in this very step: the stage puts the view in its window and
         // only then gives it its size, and a page asked to load before that
