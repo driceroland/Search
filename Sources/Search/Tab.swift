@@ -1361,6 +1361,12 @@ final class Tab: ObservableObject, Identifiable {
         // Every frame, in the page's own world and ahead of its scripts: a
         // live player's speed nudges go through it (see LiveRate.swift).
         add(LiveRate.script, .atDocumentStart, mainFrameOnly: false, in: .page)
+        // Every frame, in the page's own world and ahead of its scripts, only
+        // with Keep full screen in the window on: a page's full screen fills
+        // the window rather than the screen (see PageFullScreen.swift).
+        if PageFullScreen.inWindow {
+            add(PageFullScreen.script, .atDocumentStart, mainFrameOnly: false, in: .page)
+        }
         // Only on Meet, with Settings › Videos › Google Meet's own mini
         // window on: Chrome's little window for a call (see MeetPiP.swift).
         if MeetPiP.applies(url ?? pageAddress) {
