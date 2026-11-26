@@ -202,4 +202,47 @@ final class TabCloseTests: XCTestCase {
         XCTAssertEqual(browser.activeID, b.id)
         XCTAssertTrue(other.tabs.contains { $0.id == a.id })
     }
+
+    func testClosingBlankTabBesidePutDownPinAndSleepingTabDoesNotWakePin() {
+        let pin = tab("Pin")
+        let normal = tab("Normal")
+        browser.showRow([pin, normal], active: normal.id)
+        browser.pin(pin)
+        defer { browser.unpin(pin) }
+
+        browser.select(pin)
+        normal.rest()
+        XCTAssertTrue(normal.asleep)
+
+        browser.closeTab(pin)
+        XCTAssertTrue(pin.asleep)
+        guard let blank = browser.active, blank.isBlank else {
+            return XCTFail("expected a blank new tab after putting the pin down")
+        }
+
+        browser.closeTab(blank)
+        XCTAssertEqual(browser.activeID, normal.id)
+        XCTAssertTrue(pin.asleep)
+    }
+
+    func testClosingBlankTabSkipsPutDownPinNeighbourWithSwitchOff() {
+        browser.prefs.closeGoesBack = false
+        let pin = tab("Pin")
+        let normal = tab("Normal")
+        browser.showRow([pin, normal], active: normal.id)
+        browser.pin(pin)
+        defer { browser.unpin(pin) }
+
+        browser.select(pin)
+        normal.rest()
+        browser.closeTab(pin)
+        XCTAssertTrue(pin.asleep)
+        guard let blank = browser.active, blank.isBlank else {
+            return XCTFail("expected a blank new tab after putting the pin down")
+        }
+
+        browser.closeTab(blank)
+        XCTAssertEqual(browser.activeID, normal.id)
+        XCTAssertTrue(pin.asleep)
+    }
 }

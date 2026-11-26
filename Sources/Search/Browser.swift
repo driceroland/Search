@@ -5646,7 +5646,10 @@ final class Browser: NSObject, ObservableObject {
             let back = tabBefore(tab)
             let before = goingBack || prefs.closeGoesBack || tab.page != nil ? back
                 : back.flatMap { $0.id == tab.opener ? $0 : nil }
-            select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
+            let neighbour = tabs[index...].first(where: { !isPutDown($0) })
+                ?? tabs[..<index].last(where: { !isPutDown($0) })
+                ?? tabs[min(index, tabs.count - 1)]
+            select(partner ?? before ?? neighbour)
         }
         rememberSession()
     }
@@ -6746,9 +6749,17 @@ final class Browser: NSObject, ObservableObject {
         select(tab, unfoldGroup: false)
     }
 
+    /// A pin put down or a grouped tab put away holds no page and is drawn
+    /// dimmed as closed, distinct from a loose tab put to sleep for memory.
+    private func isPutDown(_ tab: Tab) -> Bool {
+        tab.asleep && (tab.pin != nil || (prefs.usesTabGroups && group(of: tab) != nil))
+    }
+
     /// The tab last left that is still in the row, other than `tab`.
+    /// Never a pin put down or a grouped tab put away, so closing a tab never
+    /// wakes a closed pin back up (#1656).
     func tabBefore(_ tab: Tab) -> Tab? {
-        let row = tabs.filter(standsInRow)
+        let row = tabs.filter { standsInRow($0) && !isPutDown($0) }
         guard let id = tabSwitcher.lastLeft(among: Set(row.map(\.id)), other: tab.id) else { return nil }
         return row.first { $0.id == id }
     }
