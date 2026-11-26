@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With the Fabric web clipper installed, pages no longer reload in a loop. Fabric's script, put into every page, defines a property on the page's local storage in a way that crashes WebKit's page process outright; Search loaded the crashed page again, Fabric's script ran again, and so on. Such a define is now completed as Chrome reads it before it reaches WebKit, for the scripts an extension puts into pages. `python3 Tests/extension_storage_define.py` (reported by email, idea 1199)
 - Closing the last tab that isn't a pin now leaves a new, empty tab instead of taking you into a pinned tab, as it comes: Settings › Tabs › Leave a new tab when the last tab closes is on unless you turn it off. `swift test --filter LastTabNewTabTests` ([#1577](https://github.com/driceroland/Search/issues/1577))
 - A video in full screen can be shared from Discord, Zoom or Google Meet: the window it plays in now carries the page's title, so screen-share pickers list it. WebKit's full-screen window had no name, and the pickers offered only the browser's window, which shows the blurred page under "Click to Exit Full Screen".
 - ⌘T onto an extension's new tab page puts the keys in the address field, empty, over the page, as a blank new tab does: they stayed in the page, and typing did nothing until ⌘L. Escape puts the field away and leaves the extension's page. `python3 Tests/newtab_extension_focus.py` ([#1627](https://github.com/driceroland/Search/issues/1627), idea 1269) Thanks [@suren1986](https://github.com/suren1986)

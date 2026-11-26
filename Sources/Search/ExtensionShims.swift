@@ -39,6 +39,12 @@ enum ExtensionShims {
     /// Search's passkey patch, put first in every script an extension runs in
     /// a page's own world (see Passkeys.swift, and `first` in the script).
     nonisolated static let passkeys = "search-passkeys.js"
+    /// Put before a file an extension injects with scripting.executeScript
+    /// in its isolated world, where no shim runs: only `storageGuard`.
+    nonisolated static let guardFile = "search-guard.js"
+    /// What the guard file leaves as its result, by which its entries are
+    /// told from the extension's own in what executeScript answers.
+    nonisolated static let guardMark = "__search-guard__"
     /// The first line of a worker that already carries the shim.
     nonisolated static let marker = "/* Search: Chrome APIs WebKit lacks, filled in (ExtensionShims.swift) */"
     nonisolated static let ender = "/* Search: end of shim */"
@@ -121,6 +127,7 @@ enum ExtensionShims {
         try script.write(to: folder.appendingPathComponent(file), atomically: true, encoding: .utf8)
         try contentShim(script).write(to: folder.appendingPathComponent(contentFile), atomically: true, encoding: .utf8)
         try PasskeyRelay.page.write(to: folder.appendingPathComponent(passkeys), atomically: true, encoding: .utf8)
+        try (storageGuard + "\"\(guardMark)\";\n").write(to: folder.appendingPathComponent(guardFile), atomically: true, encoding: .utf8)
 
         // Native messaging is how the shim reaches the browser; user scripts
         // are carried out through WebKit's registered content scripts, which
@@ -575,6 +582,66 @@ enum ExtensionShims {
         return "if (!globalThis.__searchShim) " + String(full[..<end.lowerBound]) + "})();\n"
     }
 
+    /// WebKit's web process crashes (JSStorage::defineOwnProperty, a null
+    /// read) when a script defines a property on localStorage or
+    /// sessionStorage with a descriptor that has `writable` but no `value`.
+    /// In an isolated world nothing catches it: the page's process dies,
+    /// Search loads the page again, the extension injects its script again,
+    /// and the page reloads in a loop. Fabric's web clipper does exactly
+    /// that on every page (`Object.defineProperty(localStorage, "getItem",
+    /// { writable: true })`, idea 1199). So such a define is completed as
+    /// Chrome reads it (WebIDL: a data descriptor sets the named item to its
+    /// value, undefined when it has none; any other is refused) before it
+    /// reaches WebKit. Nothing else about defineProperty changes.
+    nonisolated static let storageGuard = #"""
+    (() => {
+      const root = globalThis;
+      if (root.__searchStorageGuard || typeof root.Storage !== "function") return;
+      try { Object.defineProperty(root, "__searchStorageGuard", { value: true }); } catch (e) { return; }
+      const Storage = root.Storage, define = Object.defineProperty, defineAll = Object.defineProperties, reflect = Reflect.defineProperty;
+      const own = Object.prototype.hasOwnProperty;
+      // undefined: not a define this guard touches; false: refused; else the
+      // descriptor to hand WebKit.
+      const mend = (target, key, desc) => {
+        if (typeof key === "symbol" || !desc || typeof desc !== "object") return undefined;
+        let storage = false;
+        try { storage = target instanceof Storage; } catch (e) {}
+        if (!storage) return undefined;
+        if (own.call(desc, "get") || own.call(desc, "set")) return false;
+        if (own.call(desc, "value")) return undefined;
+        if (!own.call(desc, "writable")) return false;
+        return { ...desc, value: undefined };
+      };
+      const refused = (key) => new TypeError("Cannot define property " + String(key) + " on Storage");
+      define(Object, "defineProperty", { configurable: true, writable: true, value: {
+        defineProperty(target, key, desc) {
+          const m = mend(target, key, desc);
+          if (m === false) throw refused(key);
+          return define(target, key, m || desc);
+        } }.defineProperty });
+      define(Reflect, "defineProperty", { configurable: true, writable: true, value: {
+        defineProperty(target, key, desc) {
+          const m = mend(target, key, desc);
+          if (m === false) return false;
+          return reflect(target, key, m || desc);
+        } }.defineProperty });
+      define(Object, "defineProperties", { configurable: true, writable: true, value: {
+        defineProperties(target, props) {
+          let storage = false;
+          try { storage = target instanceof Storage; } catch (e) {}
+          if (!storage || !props || typeof props !== "object") return defineAll(target, props);
+          for (const key of Reflect.ownKeys(props)) {
+            if (!Object.prototype.propertyIsEnumerable.call(props, key)) continue;
+            const desc = props[key];
+            const m = mend(target, key, desc);
+            if (m === false) throw refused(key);
+            define(target, key, m || desc);
+          }
+          return target;
+        } }.defineProperties });
+    })();
+    """#
+
     /// Defines only what is missing, so the day WebKit implements an API,
     /// WebKit's is the one used.
     nonisolated static let script = #"""
@@ -681,6 +748,11 @@ enum ExtensionShims {
       // mended there, no API that Chrome doesn't give content scripts either.
       const inContent = typeof location !== "undefined" && !/^(chrome|webkit)-extension:$/.test(location.protocol);
       const runtime = chrome.runtime;
+      // A define on localStorage that crashes the page's process (see
+      // storageGuard), for content scripts.
+      if (inContent) {
+    \#(storageGuard)
+      }
       // A <script src> of the extension's own that a content script puts in
       // the page runs there whatever the page's Content Security Policy, in
       // Chrome. WebKit holds it to the page's: YouTube's script-src names no
@@ -4489,6 +4561,30 @@ enum ExtensionShims {
             const kept = spec.filter((s) => s === "requestHeaders" || s === "responseHeaders" || s === "requestBody");
             try { return add(heard, filter, kept); } catch (e) { if (/startup/i.test(String(e && e.message))) throw e; return add(heard, filter); }
           } catch (e) { late(e); }
+        });
+      }
+
+      // A file injected into a website's isolated world runs with no shim
+      // before it: the guard against WebKit's localStorage crash goes first
+      // (see storageGuard; Fabric's clipper reloaded every page in a loop).
+      // The extension's own files still run last, so the result is theirs.
+      if (!inContent && chrome.scripting && typeof chrome.scripting.executeScript === "function") {
+        const executeScript = chrome.scripting.executeScript.bind(chrome.scripting);
+        // WebKit answers with an entry for each file in each frame, so the
+        // guard's own entries, which carry its mark, are taken out again.
+        const mark = "\#(guardMark)";
+        put(chrome.scripting, "executeScript", (...args) => {
+          const injection = args[0];
+          if (!injection || typeof injection !== "object" || !Array.isArray(injection.files) || !injection.files.length
+              || String(injection.world || "ISOLATED").toUpperCase() === "MAIN"
+              || injection.files.some((f) => String(f).replace(/^\/+/, "") === "\#(guardFile)")) {
+            return executeScript(...args);
+          }
+          const callback = typeof args[args.length - 1] === "function" ? args.pop() : null;
+          const p = Promise.resolve(executeScript({ ...injection, files: ["\#(guardFile)", ...injection.files] }))
+            .then((results) => Array.isArray(results) ? results.filter((r) => !(r && r.result === mark)) : results);
+          if (!callback) return p;
+          p.then((r) => callback(r), (e) => withLastError(e, callback));
         });
       }
 
