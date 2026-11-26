@@ -294,6 +294,16 @@ enum HomeRender {
 
 /// The background itself: a rendered image, or the chosen picture.
 struct HomeBackground: View {
+    /// Whether a theme lies behind a blank tab: a chosen picture that can't
+    /// be read shows as Off.
+    @MainActor static func behind(_ prefs: Preferences) -> Bool {
+        switch prefs.homeTheme {
+        case .off: return false
+        case .custom: return load(prefs.homeThemeImage) != nil
+        default: return true
+        }
+    }
+
     let theme: HomeTheme
     var tuning = HomeTuning()
     var image: String?

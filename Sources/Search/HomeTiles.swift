@@ -459,6 +459,7 @@ struct HomeTiles: View {
         .frame(height: HomeTiles.chipHeight)
         // Focused by keys, as hovered: the fill a shade deeper.
         .background(Capsule(style: .continuous).fill(lit ? Palette.ink.opacity(0.07) : Palette.ink.opacity(0.035)))
+        .background(WallBacking(shape: Capsule(style: .continuous)))
         .overlay(alignment: .topTrailing) {
             // Hovered, a small × to take it off; right-click for the rest.
             if editable, hovered == tile.id, dragged == nil {
@@ -576,6 +577,7 @@ struct HomeTiles: View {
         .frame(height: HomeTiles.chipHeight)
         // Fainter than a site's chip until hovered or focused.
         .background(Capsule(style: .continuous).fill(lit ? Palette.ink.opacity(0.07) : Palette.ink.opacity(0.02)))
+        .background(WallBacking(shape: Capsule(style: .continuous)))
         .contentShape(Capsule())
         .onHover { addHovered = $0 }
         .onTapGesture { begin(.new) }
