@@ -1143,7 +1143,11 @@ final class Tab: ObservableObject, Identifiable {
 
         watch = [
             web.observe(\.title, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.title = self?.built?.title ?? "" }
+                MainActor.assumeIsolated {
+                    self?.title = self?.built?.title ?? ""
+                    // Its full-screen window keeps its name (FullScreenTitle.swift).
+                    if let page = self?.built, page.fullscreenState == .inFullscreen { FullScreenTitle.follow(page) }
+                }
             },
             web.observe(\.url, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated {
@@ -1205,6 +1209,8 @@ final class Tab: ObservableObject, Identifiable {
                     guard let self, let state = self.built?.fullscreenState else { return }
                     let on = state == .enteringFullscreen || state == .inFullscreen
                     if self.immersed != on { self.immersed = on }
+                    // WebKit's full-screen window named, for screen-share pickers.
+                    if state == .inFullscreen, let page = self.built { FullScreenTitle.follow(page) }
                     // Home behind another tab: its stage puts it away.
                     if state == .notInFullscreen { self.built?.superview?.needsLayout = true }
                 }
