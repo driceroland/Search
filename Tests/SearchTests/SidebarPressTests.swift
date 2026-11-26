@@ -406,7 +406,10 @@ final class SidebarPressTests: XCTestCase {
     }
 
     private func send(_ type: NSEvent.EventType, at point: NSPoint, in window: NSWindow, clicks: Int = 1) async throws {
-        window.sendEvent(try event(type, at: point, in: window, clicks: clicks))
+        // Through the app, as a real click comes: its local event monitors
+        // see it, TabClick's among them, which reads a double-click's count
+        // from the press (idea 1216). Straight to the window, they never did.
+        NSApp.sendEvent(try event(type, at: point, in: window, clicks: clicks))
         try await Task.sleep(for: .milliseconds(30))
     }
 
