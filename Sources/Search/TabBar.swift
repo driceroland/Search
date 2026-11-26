@@ -787,6 +787,11 @@ struct PinLine: View {
 /// every page. Used here and, beside the traffic lights instead of at the
 /// far end of the row, in the sidebar.
 struct Helm: View {
+    /// A door with nowhere to go: clearly dimmed, and still there to see.
+    /// At 0.3 of the ground's own grey it all but vanished, and the row
+    /// looked as if it had lost a button (#1633).
+    static let dimmed: Double = 0.5
+
     @ObservedObject var browser: Browser
     /// One above the other, for the column of icons.
     var vertical = false
@@ -802,7 +807,7 @@ struct Helm: View {
                 if !browser.prefs.hidesForward { Door(icon: "chevron.right") {} }
                 if !browser.prefs.hidesReload { Door(icon: "arrow.clockwise") {} }
             }
-            .opacity(0.3)
+            .opacity(Helm.dimmed)
             .allowsHitTesting(false)
         }
     }
@@ -825,12 +830,12 @@ struct Helm: View {
                 if !browser.prefs.hidesBack {
                     Door(icon: "chevron.left", help: "Back", shortcut: "tabs.back", held: { Rewind.menu(tab, back: true) }) { browser.back() }
                         .disabled(!back)
-                        .opacity(back ? 1 : 0.3)
+                        .opacity(back ? 1 : Helm.dimmed)
                 }
                 if !browser.prefs.hidesForward {
                     Door(icon: "chevron.right", help: "Forward", shortcut: "tabs.forward", held: { Rewind.menu(tab, back: false) }) { browser.forward() }
                         .disabled(!forward)
-                        .opacity(forward ? 1 : 0.3)
+                        .opacity(forward ? 1 : Helm.dimmed)
                 }
                 // Reload, or stop while it is still coming.
                 if !browser.prefs.hidesReload {
@@ -843,7 +848,7 @@ struct Helm: View {
                     if tab.loading { tab.stop() } else { browser.reload() }
                 }
                 .disabled(!tab.isWeb)
-                .opacity(tab.isWeb ? 1 : 0.3)
+                .opacity(tab.isWeb ? 1 : Helm.dimmed)
                 // The menu's second item is the reason for it: ⌥⌘R has no
                 // button. Nothing to offer while the door is Stop.
                 .contextMenu {
