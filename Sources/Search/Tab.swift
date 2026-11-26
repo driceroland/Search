@@ -1738,9 +1738,15 @@ final class Tab: ObservableObject, Identifiable {
         let token = loadGeneration
         Shield.shared.whenReady { [weak self] in
             guard let self, self.loadGeneration == token else { return }
-            self.web.open(url)
-            // Back, from a page that came out of one of Search's own, goes there.
-            self.steps()
+            // Out of sight, in its turn (LoadTurns).
+            let view = self.web
+            view.inTurn { [weak self, weak view] in
+                guard let self, let view, self.loadGeneration == token, self.built === view else { return false }
+                view.open(url)
+                // Back, from a page that came out of one of Search's own, goes there.
+                self.steps()
+                return true
+            }
         }
     }
 
@@ -2035,33 +2041,39 @@ final class Tab: ObservableObject, Identifiable {
             }
             return
         }
-        // A tab that slept has its own history to go back to — the page, its
-        // back list and its scroll position, in one. Anything else starts
-        // from the address. A file does too: its history comes back without
-        // the folder it may read, and showed nothing.
-        if let state, !url.isFileURL {
-            view.interactionState = state
-        } else {
-            view.open(url)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self, weak view] in
-            // A page that has said why it isn't there (recoverFromCrash gave
-            // up, or it never arrived) isn't asked for again behind that.
-            guard let self, let view, self.loadGeneration == token, self.built === view, self.failure == nil else { return }
-            guard self.built?.url?.absoluteString != "about:blank" else {
+        // Out of sight, in its turn (LoadTurns): the check after it too,
+        // timed from when it was asked for.
+        view.inTurn { [weak self, weak view] in
+            guard let self, let view, self.loadGeneration == token, self.built === view else { return false }
+            // A tab that slept has its own history to go back to — the page, its
+            // back list and its scroll position, in one. Anything else starts
+            // from the address. A file does too: its history comes back without
+            // the folder it may read, and showed nothing.
+            if let state, !url.isFileURL {
+                view.interactionState = state
+            } else {
                 view.open(url)
-                return
             }
-            view.evaluateJavaScript("document.readyState") { [weak self, weak view] _, error in
-                MainActor.assumeIsolated {
-                    guard let self, let view, self.loadGeneration == token, self.built === view, self.failure == nil,
-                          let error = error as NSError? else { return }
-                    guard error.domain == WKErrorDomain,
-                          error.code == WKError.webContentProcessTerminated.rawValue
-                    else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self, weak view] in
+                // A page that has said why it isn't there (recoverFromCrash gave
+                // up, or it never arrived) isn't asked for again behind that.
+                guard let self, let view, self.loadGeneration == token, self.built === view, self.failure == nil else { return }
+                guard self.built?.url?.absoluteString != "about:blank" else {
                     view.open(url)
+                    return
+                }
+                view.evaluateJavaScript("document.readyState") { [weak self, weak view] _, error in
+                    MainActor.assumeIsolated {
+                        guard let self, let view, self.loadGeneration == token, self.built === view, self.failure == nil,
+                              let error = error as NSError? else { return }
+                        guard error.domain == WKErrorDomain,
+                              error.code == WKError.webContentProcessTerminated.rawValue
+                        else { return }
+                        view.open(url)
+                    }
                 }
             }
+            return true
         }
     }
 
@@ -2081,7 +2093,12 @@ final class Tab: ObservableObject, Identifiable {
         // address is what to show, and reload alone would have nothing to do.
         if hollow, let address {
             loadGeneration &+= 1
-            web.open(address)
+            let token = loadGeneration, view = web
+            view.inTurn { [weak self, weak view] in
+                guard let self, let view, self.loadGeneration == token, self.built === view else { return false }
+                view.open(address)
+                return true
+            }
             return
         }
         guard let built else { return }
@@ -2202,15 +2219,19 @@ final class Tab: ObservableObject, Identifiable {
             return
         }
         // A file is read again with the folder it may read (see open).
-        if let address, hollow || address.isFileURL {
-            loadGeneration &+= 1
-            web.open(address)
-        } else if fromOrigin {
-            loadGeneration &+= 1
-            web.reloadFromOrigin()
-        } else {
-            loadGeneration &+= 1
-            web.reload()
+        // Out of sight, in its turn (LoadTurns).
+        loadGeneration &+= 1
+        let token = loadGeneration, view = web, again = address.flatMap { hollow || $0.isFileURL ? $0 : nil }
+        view.inTurn { [weak self, weak view] in
+            guard let self, let view, self.loadGeneration == token, self.built === view else { return false }
+            if let again {
+                view.open(again)
+            } else if fromOrigin {
+                view.reloadFromOrigin()
+            } else {
+                view.reload()
+            }
+            return true
         }
     }
     func stop() {
@@ -3191,9 +3212,14 @@ final class PageView: WKWebView {
         gateTrackingAreas()
     }
 
+    /// `load` now, or in its turn while the page is out of sight (LoadTurns).
+    func inTurn(_ load: @escaping LoadTurns.Load) { LoadTurns.shared.start(self, load) }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         gateTrackingAreas()
+        // In sight now: a load waiting its turn starts (LoadTurns).
+        if LoadTurns.inSight(self) { LoadTurns.shared.shown(self) }
         guard window != nil, onWindow != nil else { return }
         // Not in this very step: the stage puts the view in its window and
         // only then gives it its size, and a page asked to load before that

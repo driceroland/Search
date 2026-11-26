@@ -1,3 +1,4 @@
+import Combine
 import AppKit
 import AuthenticationServices
 import LocalAuthentication
@@ -397,7 +398,9 @@ final class Bench {
             let shy = request["private"] as? Bool == true
             guard !shy || Store.testing else { answer(["error": "open private only works on a --test run"]); return }
             let tab = browser.benchOpen(url, shy: shy)
-            house(tab)
+            // "room": false, left out of every window, as a tab you aren't
+            // looking at is: not laid out, and loading in its turn (LoadTurns).
+            if request["room"] as? Bool != false { house(tab) }
             answer(describe(tab))
 
         case "go":
@@ -490,6 +493,82 @@ final class Bench {
             // a tab has to clear — the answer says which one kept it awake.
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             browser.sleep(tab) { said in answer(["said": said, "asleep": tab.asleep]) }
+
+        case "reload":
+            // Every tab the bench opened, reloaded at once, as a run of ⌘R
+            // over many tabs would. Test runs only.
+            guard Store.testing else { answer(["error": "reload is for test runs"]); return }
+            let mine = browser.tabs.filter(\.bench)
+            mine.forEach { $0.reload() }
+            answer(["reloaded": mine.count])
+
+        case "turns":
+            // Pages out of sight loading in their turn, and waiting for one
+            // (LoadTurns), beside the tabs whose pages say they are loading.
+            answer(["at": LoadTurns.at, "inTurn": LoadTurns.shared.loadingCount, "waiting": LoadTurns.shared.waitingCount,
+                    "loading": browser.tabs.filter(\.loading).count,
+                    "webLoading": browser.tabs.filter { $0.built?.isLoading == true }.count])
+
+        case "passes":
+            // Each pass of the main run loop for "seconds", with the column's
+            // rows, the column and the window drawn again in it, and how many
+            // times the window (Browser) and its tabs said they changed: what
+            // pages loading in the tabs cost the window. "swipe": DX points
+            // over the column, a frame apart, "after" seconds in. Test runs only.
+            guard Store.testing else { answer(["error": "passes is for test runs"]); return }
+            let seconds = request["seconds"] as? Double ?? 3
+            let start = CFAbsoluteTimeGetCurrent()
+            var told: [Double] = []
+            var tabsTold = 0
+            var watching: [AnyCancellable] = [browser.objectWillChange.sink { _ in
+                told.append(((CFAbsoluteTimeGetCurrent() - start) * 1000).rounded())
+            }]
+            for tab in browser.tabs { watching.append(tab.objectWillChange.sink { _ in tabsTold += 1 }) }
+            Bench.bodies = [:]
+            var drawn: [String: Int] = [:]
+            var woke: CFAbsoluteTime = 0
+            // The main thread's own time on a processor in each pass: far
+            // under the pass's length, it was ready but kept waiting.
+            var wokeCPU: UInt64 = 0
+            var passes: [[String: Any]] = []
+            let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { _, _ in
+                woke = CFAbsoluteTimeGetCurrent()
+                wokeCPU = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            }
+            let rest = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
+                let now = CFAbsoluteTimeGetCurrent()
+                let began = woke > 0 ? woke : start
+                let cpu = wokeCPU > 0 ? Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - wokeCPU) / 1e6 : 0
+                wokeCPU = 0
+                var pass: [String: Any] = ["at": ((began - start) * 1000).rounded(), "ms": ((now - began) * 10000).rounded() / 10,
+                                           "cpu": (cpu * 10).rounded() / 10]
+                for (name, n) in Bench.bodies where n != drawn[name, default: 0] {
+                    pass[name] = n - drawn[name, default: 0]
+                }
+                drawn = Bench.bodies
+                passes.append(pass)
+                woke = 0
+            }
+            let observers = [wake, rest].compactMap { $0 }
+            for observer in observers { CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes) }
+            if let dx = request["swipe"] as? Double {
+                func step(_ n: Int) {
+                    if n == 0 {
+                        SpaceSwipe.shared.start(for: browser)
+                        SpaceSwipe.shared.began()
+                    }
+                    guard n < 12 else { SpaceSwipe.shared.ended(); return }
+                    SpaceSwipe.shared.moved(along: dx / 12)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 120) { step(n + 1) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + (request["after"] as? Double ?? 0.5)) { step(0) }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+                for observer in observers { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+                watching.removeAll()
+                answer(["passes": passes, "browserTold": told, "tabsTold": tabsTold,
+                        "loading": browser.tabs.filter(\.loading).count, "turns": LoadTurns.at])
+            }
 
         case "openmark":
             // A bookmark opened as the bar opens one. Only on a SEARCH_PROBE run.
