@@ -1002,6 +1002,14 @@ struct SettingsPanel: View {
                     }
                 }
             }
+        case "bench":
+            if prefs.bench, !Store.testing {
+                Rule()
+                Line("Bench token", "Copy it after opening the bench or restarting Search") {
+                    Pill("Copy Token") { browser.copyBenchToken() }
+                }
+                .under()
+            }
         case "agents":
             if !searched, prefs.agents { RememberedAgents() }
         case "devtools":

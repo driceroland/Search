@@ -2,13 +2,14 @@ import Combine
 import AppKit
 import AuthenticationServices
 import LocalAuthentication
+import Security
 import SwiftUI
 import WebKit
 
 // A way for a script on this Mac to drive the browser you already have open,
 // in tabs of its own, without ever taking the window from you.
 //
-// Off unless switched on in Settings › General. On, the app listens on a Unix
+// Off unless switched on in Settings › About › Developer. On, the app listens on a Unix
 // socket in its own folder — readable by this user and nobody else, and the
 // other end is checked for the same uid before a word is read. One JSON
 // object per line in, one per line out, one request per connection. The
@@ -44,6 +45,7 @@ final class Bench {
 
     /// True while something is listening.
     private(set) var running = false
+    private(set) var token: String?
 
     /// How many times each view that counts itself was built ("hoversweep").
     /// Test runs only; anywhere else counting is one check of a constant.
@@ -150,6 +152,8 @@ final class Bench {
 
     func start(for browser: Browser) {
         guard !running else { return }
+        let token = Store.testing ? nil : Bench.makeToken()
+        guard Store.testing || token != nil else { return }
         self.browser = browser
         if Store.testing { Bench.watchScreens() }
         // Nor App Nap, which a test run behind other windows falls into.
@@ -186,14 +190,16 @@ final class Bench {
 
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)
         source.setEventHandler { [weak self] in self?.accept() }
-        source.resume()
         accepting = source
         listener = fd
+        self.token = token
         running = true
+        source.resume()
     }
 
     func stop() {
         guard running else { return }
+        token = nil
         accepting?.cancel()
         accepting = nil
         close(listener)
@@ -309,7 +315,24 @@ final class Bench {
 
     // MARK: - the commands
 
+    /// Keep a token only while the bench is open so closing it ends access.
+    static func makeToken() -> String? {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { return nil }
+        return bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func authorized(_ request: [String: Any], token: String?, testing: Bool) -> Bool {
+        if testing { return true }
+        guard let token else { return false }
+        return request["token"] as? String == token
+    }
+
     private func handle(_ request: [String: Any], _ given: @escaping ([String: Any]) -> Void) {
+        guard Bench.authorized(request, token: token, testing: Store.testing) else {
+            given(["error": "Bench token required or expired — copy it in Settings › About › Developer"])
+            return
+        }
         // One answer, and always one: a page that never replies to a script
         // would otherwise hold the bench — every later command waits behind it.
         var answered = false
