@@ -755,7 +755,7 @@ struct FetchDoor: View {
                             .trim(from: 0, to: max(0.02, fraction))
                             .stroke(Palette.ink.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                             .rotationEffect(.degrees(-90))
-                            .animation(.easeOut(duration: 0.2), value: fraction)
+                            .animation(Motion.timed(.easeOut(duration: 0.2)), value: fraction)
                     } else {
                         // No size given: turning, on Core Animation's time.
                         Ring(size: 12)

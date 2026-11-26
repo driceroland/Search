@@ -295,7 +295,7 @@ struct ReadingFill: View {
         Rectangle()
             .fill(Palette.ink.opacity(0.055))
             .frame(width: width * meter.value)
-            .animation(.easeOut(duration: 0.15), value: meter.value)
+            .animation(Motion.timed(.easeOut(duration: 0.15)), value: meter.value)
     }
 }
 

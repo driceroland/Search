@@ -109,8 +109,14 @@ extension Browser {
         // what WebKit hadn't drawn yet came in from the far edge as a bar
         // of the web view's own ground, black or white with the theme. Out
         // over the far edge, where the room goes, nothing of it shows.
+        // Under Reduce Motion or Reduce animations too, where the column
+        // then goes at once: gone before the page was drawn, its place was
+        // a flat band of the page's ground until WebKit caught up (idea
+        // 1254). It now goes the moment the page is there, still in a
+        // single step. Not when it fades instead (Motion.fadesColumn),
+        // which gives the page its room at once and fades over it.
         let pages = shownPages
-        if !folded, prefs.sidebar, !Motion.reduced, !pages.isEmpty {
+        if !folded, prefs.sidebar, !Motion.fadesColumn, !pages.isEmpty {
             let ticket = foldTicket
             foldingAway = true
             Browser.drawn(pages, within: 0.12) { [weak self] in
