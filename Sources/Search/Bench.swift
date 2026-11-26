@@ -201,6 +201,7 @@ final class Bench {
         clients.values.forEach { $0.drop() }
         clients = [:]
         running = false
+        Bench.unwatchScreens()
         // The tabs a script left open go with it.
         if let browser {
             for tab in browser.tabs where tab.bench && !tab.agent { browser.close(tab) }
@@ -7121,6 +7122,14 @@ final class Bench {
                 pagesShown = false
             }
         })
+    }
+    /// The watch over, with the bench that started it: in a unit test run a
+    /// test that opens the bench for a moment (LauncherTests) left it on, and
+    /// every later test's window coming onto a screen hid the whole app, its
+    /// windows no longer visible (NoWindowsTests, in full runs only).
+    static func unwatchScreens() {
+        watching.forEach(NotificationCenter.default.removeObserver)
+        watching.removeAll()
     }
     /// Where `film float` lends the tab's stage, off every screen.
     private var hall: NSWindow?
