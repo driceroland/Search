@@ -709,14 +709,15 @@ struct Fold: View {
         // while it is still beside the window on that side.
         let flingHeld = prefs.sidebar && now < pointer.flungUntil && past > 0
             && point.y >= 0 && point.y < size.height
+        let frontColumn = Fold.frontColumn(sidebar: prefs.sidebar, key: window.isKeyWindow, main: window.isMainWindow)
         if browser.peeking {
             pass()
-            // Only this window counts, not another app's window over it. One
-            // of this app's own windows, such as a popover opened from the
-            // column, counts as the column.
+            // Where the pointer is decides for the column in front, as at
+            // its edge below. Still ask what's under it: a popover opened
+            // from the column holds it out even past its width.
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
-            let onWindow = top == window.windowNumber
-            let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
+            let onWindow = frontColumn || top == window.windowNumber
+            let onOwnPanel = top != window.windowNumber && NSApp.windows.contains { $0.windowNumber == top }
             // Floating, the column stands a gap in from the edge, and its
             // edge to pull reaches half its width past it.
             let reach = prefs.sidebar ? prefs.columnWidth + (floating ? Metrics.cardGap + 5 : 0) : Metrics.strip
@@ -736,9 +737,12 @@ struct Fold: View {
                   // the window's buttons down with the menu bar: the column
                   // came out over them there, on the way to the red one (#241).
                   !(prefs.sidebar && window.styleMask.contains(.fullScreen) && size.height - point.y < Fold.fullScreenCorner) {
-            // Which window is under the pointer is asked only here, at the
-            // edge: another app's window over it doesn't bring the column out.
-            guard NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber
+            // Ask what's under the pointer only when the column's window
+            // isn't in front: another app's window over it shouldn't bring
+            // it out. In front, a window manager's floating panel can
+            // cover the screen's outermost points without covering the column,
+            // so position decides, even with picture in picture over the edge.
+            guard frontColumn || NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber
             else { return pass() }
             if !prefs.sidebar, Fold.rising(from: last, to: point) { pass() }
             if arriving == nil { arrive() }
@@ -769,6 +773,10 @@ struct Fold: View {
         } else {
             pass()
         }
+    }
+
+    static func frontColumn(sidebar: Bool, key: Bool, main: Bool) -> Bool {
+        sidebar && (key || main)
     }
 
     /// Whether a move of the pointer from `last` to `point`, both in the
