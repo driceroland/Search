@@ -57,6 +57,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Past searches on sites that put the words in the address, such as Spotify, now keep searches with a slash in them (AC/DC). Search had mistaken the slash in the words for a step into another page. `swift test --filter SiteSearchTests` Thanks [@kevkoa2106](https://github.com/kevkoa2106) ([#1637](https://github.com/driceroland/Search/pull/1637))
 - YouTube's hold for 2x stalls the video much less when you let go. Letting go went straight back to normal speed, and WebKit rebuilds the sound at every switch onto normal speed. On YouTube, Search now plays normal speed a hair off exactly 1 once the speed has changed, as it already does for live video. (issue 1588, idea 1226) Thanks [@kevkoa2106](https://github.com/kevkoa2106) ([#1638](https://github.com/driceroland/Search/pull/1638))
 - Putting away a pin or a pinned split in the background keeps you on the tab you were looking at. `swift test --filter 'TabCloseTests|PinSplitTests'` Thanks [@kudala-bharani](https://github.com/kudala-bharani) ([#1624](https://github.com/driceroland/Search/pull/1624))
+- The line at the window's foot that says a file is saved, with Show in Finder, now comes into focus and goes out of it, blurring and scaling as it fades in and out, where it rose from the edge and then vanished at once. With Reduce Motion it fades in and out, where it came and went at once. Thanks [@jolly-0806](https://github.com/jolly-0806) ([#1617](https://github.com/driceroland/Search/pull/1617))
 
 ### Added
 

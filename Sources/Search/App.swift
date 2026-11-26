@@ -1329,7 +1329,7 @@ struct ContentView: View {
 
     // MARK: - the window
 
-    /// A line that rises from the bottom, says one thing, and leaves.
+    /// A line at the bottom that comes into focus, says one thing, and goes.
     @ViewBuilder
     private var announcement: some View {
         if let text = browser.announcement {
@@ -1352,8 +1352,12 @@ struct ContentView: View {
                 .background(Palette.ground, in: Capsule())
                 .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
                 .shadow(color: .black.opacity(0.10), radius: 18, y: 6)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .animation(Motion.settle, value: browser.announcement)
+                // Comes into focus where it stands, and goes out of it: no
+                // travel, so it doesn't rise from or sink into the edge. With
+                // Reduce Motion, a plain fade.
+                .transition(Motion.reduced ? .opacity
+                            : .modifier(active: Focus(blur: 8, scale: 0.9, opacity: 0),
+                                        identity: Focus(blur: 0, scale: 1, opacity: 1)))
         }
     }
 
@@ -2457,5 +2461,17 @@ private struct ImportProgress: View {
             .buttonStyle(.plain)
             .disabled(job.cancelling)
         }
+    }
+}
+
+/// Out of focus, smaller and clear, or none of those: the Saved line's way
+/// in and out.
+private struct Focus: ViewModifier {
+    let blur: CGFloat
+    let scale: CGFloat
+    let opacity: Double
+
+    func body(content: Content) -> some View {
+        content.blur(radius: blur).scaleEffect(scale).opacity(opacity)
     }
 }

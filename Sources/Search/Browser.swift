@@ -2864,13 +2864,25 @@ final class Browser: NSObject, ObservableObject {
         return "[\(text)](\(url.absoluteString))"
     }
 
+    /// How the Saved line comes and goes: its spring, or with Reduce Motion
+    /// a short fade, which moves nothing.
+    static var lineMotion: Animation { Motion.settle ?? .easeOut(duration: 0.2) }
+
     func announce(_ text: String, file: URL? = nil) {
-        announcement = text
-        announcedFile = file
+        // Its coming and going animated here, where it is put up and taken
+        // away: an animation on the line itself began only once it was
+        // there, so it came in half-animated, juddering, and went with none.
+        // One already up takes the new words at once.
+        withAnimation(announcement == nil ? Browser.lineMotion : nil) {
+            announcement = text
+            announcedFile = file
+        }
         hush?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            self?.announcement = nil
-            self?.announcedFile = nil
+            withAnimation(Browser.lineMotion) {
+                self?.announcement = nil
+                self?.announcedFile = nil
+            }
         }
         hush = work
         DispatchQueue.main.asyncAfter(deadline: .now() + (file == nil ? 1.7 : 4), execute: work)
