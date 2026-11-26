@@ -383,17 +383,24 @@ struct Parked {
         }
         let front = splits.first { pair in active.map(pair.tabs.contains) ?? false }?.left ?? active
         let kept = groupsOn ? (groups ?? []) : []
-        var shown: [DrawnGroup] = []
-        var inGroups = Set<UUID>()
-        for group in kept {
-            let members = tabs.filter { $0.pin == nil && $0.groupID == group.id && stands($0) }
-            // A group lasts as long as its tabs (see removeEmptyGroup).
-            guard !members.isEmpty else { continue }
-            inGroups.insert(group.id)
-            shown.append(DrawnGroup(group: group, tabs: group.collapsed ? members.filter { $0.id == front } : members))
+        // One walk of the row, each tab into its group or among the loose:
+        // walked once for each group, a long row in many groups was walked
+        // a dozen times every time the map was drawn.
+        let keptIDs = Set(kept.map(\.id))
+        var members: [UUID: [Tab]] = [:]
+        var loose: [Tab] = []
+        for tab in tabs where tab.pin == nil && stands(tab) {
+            if let id = tab.groupID, keptIDs.contains(id) {
+                members[id, default: []].append(tab)
+            } else {
+                loose.append(tab)
+            }
         }
-        let loose = tabs.filter { tab in
-            tab.pin == nil && stands(tab) && !(tab.groupID.map(inGroups.contains) ?? false)
+        var shown: [DrawnGroup] = []
+        for group in kept {
+            // A group lasts as long as its tabs (see removeEmptyGroup).
+            guard let inside = members[group.id], !inside.isEmpty else { continue }
+            shown.append(DrawnGroup(group: group, tabs: group.collapsed ? inside.filter { $0.id == front } : inside))
         }
         return (shown, loose)
     }

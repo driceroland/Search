@@ -285,6 +285,71 @@ struct EdgeGrip: View {
     }
 }
 
+/// An edge that resizes: the left-right cursor and hover, kept by AppKit.
+/// SwiftUI's onHover with NSCursor push and pop missed the edge when the
+/// pointer came in fast or from a page, and the page's own cursor then won,
+/// so the edge only sometimes took the pointer. A cursor rect, and a
+/// tracking area that sets the cursor on every move, hold it the whole time
+/// the pointer is over the edge, as the split divider does (PaneStage.swift).
+/// The view lets clicks through to the SwiftUI drag under it.
+struct ResizeEdgeCursor: NSViewRepresentable {
+    let hover: (Bool) -> Void
+
+    func makeNSView(context: Context) -> EdgeCursorView {
+        let view = EdgeCursorView()
+        view.hover = hover
+        return view
+    }
+
+    func updateNSView(_ view: EdgeCursorView, context: Context) {
+        view.hover = hover
+    }
+
+    final class EdgeCursorView: NSView {
+        var hover: ((Bool) -> Void)?
+        private var inside = false
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: .resizeLeftRight)
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(
+                rect: .zero,
+                options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInActiveApp, .inVisibleRect],
+                owner: self, userInfo: nil))
+            window?.invalidateCursorRects(for: self)
+        }
+
+        override func cursorUpdate(with event: NSEvent) { NSCursor.resizeLeftRight.set() }
+        override func mouseMoved(with event: NSEvent) { NSCursor.resizeLeftRight.set() }
+
+        override func mouseEntered(with event: NSEvent) {
+            NSCursor.resizeLeftRight.set()
+            set(true)
+        }
+
+        override func mouseExited(with event: NSEvent) { set(false) }
+
+        private func set(_ on: Bool) {
+            guard on != inside else { return }
+            inside = on
+            hover?(on)
+        }
+    }
+}
+
+extension View {
+    /// The left-right cursor over this view, and whether the pointer is on it.
+    func resizeEdge(hover: @escaping (Bool) -> Void) -> some View {
+        overlay(ResizeEdgeCursor(hover: hover))
+    }
+}
+
 // One spring for anything that moves between two places, one for anything that
 // arrives or leaves. Using the same two everywhere is most of why a thing feels
 // like a single piece of software rather than a pile of views.

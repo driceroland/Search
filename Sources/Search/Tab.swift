@@ -295,7 +295,7 @@ struct ReadingFill: View {
         Rectangle()
             .fill(Palette.ink.opacity(0.055))
             .frame(width: width * meter.value)
-            .animation(.easeOut(duration: 0.15), value: meter.value)
+            .animation(Motion.timed(.easeOut(duration: 0.15)), value: meter.value)
     }
 }
 
@@ -321,7 +321,25 @@ final class Tab: ObservableObject, Identifiable {
     /// view's `configuration` is a copy made afresh at every reading, which
     /// cost more than everything else done at a link followed.
     private(set) var contentController: WKUserContentController?
-    private var configuration: WKWebViewConfiguration
+    /// How its page is to be made. A tab brought back from the last
+    /// session has none until it is built: each configuration is a few
+    /// WebKit objects (preferences, a content controller, the page's own
+    /// preferences), and with hundreds of tabs that sleep all day they were
+    /// most of what a tab cost. Only the store is decided at once, because
+    /// it says where the tab's sign-ins are (see `store`).
+    private var made: WKWebViewConfiguration?
+    private var configuration: WKWebViewConfiguration {
+        get {
+            if let made { return made }
+            let config = Web.configuration(shy: shy, store: store)
+            made = config
+            return config
+        }
+        set {
+            made = newValue
+            store = newValue.websiteDataStore
+        }
+    }
     let extensionReturn = ExtensionReturnNavigation()
 
     /// Whether its page was made with the extension controller in it — every
@@ -330,7 +348,7 @@ final class Tab: ObservableObject, Identifiable {
     @available(macOS 15.4, *)
     var carriesExtensions: Bool { configuration.webExtensionController != nil }
     /// Where its cookies and sign-ins are kept.
-    var store: WKWebsiteDataStore { configuration.websiteDataStore }
+    private(set) var store: WKWebsiteDataStore
     /// Whoever handles navigation and windows for this page; applied when
     /// the page is built, whenever that is.
     weak var delegate: (WKNavigationDelegate & WKUIDelegate)? {
@@ -344,8 +362,8 @@ final class Tab: ObservableObject, Identifiable {
     private var pageDelegate: NSObject?
 
     private func uiDelegate(_ delegate: (WKNavigationDelegate & WKUIDelegate)?) -> WKUIDelegate? {
-        guard #available(macOS 15.4, *), let pages = MainActor.assumeIsolated({ Extensions.pages }),
-              configuration.userContentController === pages else { return delegate }
+        guard #available(macOS 15.4, *), let config = made, let pages = MainActor.assumeIsolated({ Extensions.pages }),
+              config.userContentController === pages else { return delegate }
         let made = pageDelegate as? ExtensionPageDelegate ?? ExtensionPageDelegate()
         made.next = delegate
         pageDelegate = made
@@ -685,6 +703,8 @@ final class Tab: ObservableObject, Identifiable {
 
     /// What the page hands back when you point at something and click it.
     var onPick: ((Tab, Veil) -> Void)?
+    /// What the page hands back when you drag it instead: moved or resized.
+    var onShape: ((Tab, Veil) -> Void)?
     /// The page has a sign-in on it; the page has just sent one.
     var onSignIn: ((Tab) -> Void)?
     /// The caret has entered or left one of the sign-in boxes; where the box
@@ -817,8 +837,15 @@ final class Tab: ObservableObject, Identifiable {
     /// at the head of the row and gives up its title for that letter — which
     /// is all you need for the five or six pages you keep open all day.
     @Published var pin: String? {
-        didSet { if pin == nil, oldValue != nil { letGo = Date() } }
+        didSet {
+            if pin == nil, oldValue != nil { letGo = Date() }
+            if (pin == nil) != (oldValue == nil) { Tab.membership &+= 1 }
+        }
     }
+    /// Counts every change of any tab's group or of whether it is a pin:
+    /// what the row worked out by group stays good until it moves
+    /// (Browser.grouped).
+    static var membership: UInt64 = 0
     /// For a pin, the page it was pinned at: a double-click on it goes back
     /// there (Browser.goHome).
     var home: URL?
@@ -856,7 +883,10 @@ final class Tab: ObservableObject, Identifiable {
 
     /// The group that holds this ordinary tab in the sidebar.
     @Published var groupID: UUID? {
-        didSet { if groupID == nil, oldValue != nil { letGo = Date() } }
+        didSet {
+            if groupID == nil, oldValue != nil { letGo = Date() }
+            if groupID != oldValue { Tab.membership &+= 1 }
+        }
     }
 
     /// A name you gave it, in place of whatever the page calls itself. It
@@ -1000,7 +1030,19 @@ final class Tab: ObservableObject, Identifiable {
     init(shy: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil) {
         self.shy = shy
         self.bench = bench
-        self.configuration = configuration ?? Web.configuration(shy: shy)
+        let configuration = configuration ?? Web.configuration(shy: shy)
+        made = configuration
+        store = configuration.websiteDataStore
+        if Store.testing { Tab.live.add(self) }
+    }
+
+    /// A tab of space `space` whose configuration is made only when its
+    /// page is: one brought back from the last session, most of which are
+    /// never opened before the next quit.
+    init(space: UUID) {
+        shy = false
+        bench = false
+        store = Spaces.store(for: space)
         if Store.testing { Tab.live.add(self) }
     }
 
@@ -1103,7 +1145,11 @@ final class Tab: ObservableObject, Identifiable {
 
         watch = [
             web.observe(\.title, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.title = self?.built?.title ?? "" }
+                MainActor.assumeIsolated {
+                    self?.title = self?.built?.title ?? ""
+                    // Its full-screen window keeps its name (FullScreenTitle.swift).
+                    if let page = self?.built, page.fullscreenState == .inFullscreen { FullScreenTitle.follow(page) }
+                }
             },
             web.observe(\.url, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated {
@@ -1165,6 +1211,8 @@ final class Tab: ObservableObject, Identifiable {
                     guard let self, let state = self.built?.fullscreenState else { return }
                     let on = state == .enteringFullscreen || state == .inFullscreen
                     if self.immersed != on { self.immersed = on }
+                    // WebKit's full-screen window named, for screen-share pickers.
+                    if state == .inFullscreen, let page = self.built { FullScreenTitle.follow(page) }
                     // Home behind another tab: its stage puts it away.
                     if state == .notInFullscreen { self.built?.superview?.needsLayout = true }
                 }
@@ -1383,7 +1431,11 @@ final class Tab: ObservableObject, Identifiable {
             """, arguments: ["selector": selector]) { shows in then(shows as? Bool ?? false) }
     }
 
-    func startPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on()") }
+    /// `shaping`: a drag moves or resizes what is outlined, a click still
+    /// hides it (Settings › Browsing › Pages).
+    func startPicking(shaping: Bool = false) {
+        web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on(\(shaping))")
+    }
     func stopPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.off()") }
 
     func foundSignIn() { onSignIn?(self) }
@@ -1582,6 +1634,10 @@ final class Tab: ObservableObject, Identifiable {
         onPick?(self, veil)
     }
 
+    func shaped(_ veil: Veil) {
+        onShape?(self, veil)
+    }
+
     /// Show one hidden thing while the pointer rests on its row in the list.
     func peek(_ selector: String, keeping css: String) {
         web.evaluateInSearch(
@@ -1776,7 +1832,8 @@ final class Tab: ObservableObject, Identifiable {
     /// WebKit fixes it then — and its next page follows through its own
     /// autoplay policy (see Autoplay.apply).
     func playbackChanged() {
-        configuration.mediaTypesRequiringUserActionForPlayback = Web.playback
+        // One not made yet is made with what Settings says then.
+        made?.mediaTypesRequiringUserActionForPlayback = Web.playback
     }
 
     /// A document without hand-edited fields (including a PDF or image) has nothing to ask.
@@ -2206,6 +2263,7 @@ final class Tab: ObservableObject, Identifiable {
         onZoom = nil
         onLink = nil
         onPick = nil
+        onShape = nil
         onPickEnd = nil
         onSignIn = nil
         onField = nil
@@ -2574,6 +2632,14 @@ final class MiddleRelay: NSObject, WKScriptMessageHandler {
 
 /// A web view that reads the two-finger swipe for itself.
 final class PageView: WKWebView {
+    /// Before WebKit can load anything into its store (Store.network).
+    override init(frame: CGRect, configuration: WKWebViewConfiguration) {
+        Store.network()
+        super.init(frame: frame, configuration: configuration)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
     var draftFrames: [WKFrameInfo] = []
 
     var onMenuClosed: (() -> Void)?
@@ -2963,6 +3029,34 @@ final class PageView: WKWebView {
         let took = super.becomeFirstResponder()
         if took { onKeys?() }
         return took
+    }
+
+    override func resignFirstResponder() -> Bool {
+        // The page keeps its selection when the keys go elsewhere in the
+        // window, as a page in a window that isn't in front keeps it in
+        // Safari (idea 1176). WebKit's default clears it, and when the keys
+        // come back it puts the caret at the very start of the box being
+        // written in: a Google Doc beside another page jumped up, or to its
+        // top, when clicked again after copying from the other one, and a
+        // caret left for the address field came back at the start. WebKit
+        // forgets the setting on a new page, so it is said each time.
+        if let keep = Self.keepSelection, let page = Self.pageRef(of: self) { keep(page, true) }
+        return super.resignFirstResponder()
+    }
+
+    private typealias PageRef = @convention(c) (AnyObject, Selector) -> UnsafeRawPointer?
+
+    /// WKPageSetMaintainsInactiveSelection, WebKit's C call for it; nil if
+    /// it's gone, and pages clear their selection as before.
+    private static let keepSelection: (@convention(c) (UnsafeRawPointer, Bool) -> Void)? = {
+        let webkit = dlopen("/System/Library/Frameworks/WebKit.framework/WebKit", RTLD_NOW)
+        return dlsym(webkit, "WKPageSetMaintainsInactiveSelection").map { unsafeBitCast($0, to: (@convention(c) (UnsafeRawPointer, Bool) -> Void).self) }
+    }()
+
+    private static func pageRef(of web: WKWebView) -> UnsafeRawPointer? {
+        let selector = NSSelectorFromString("_pageRefForTransitionToWKWebView")
+        guard web.responds(to: selector), let method = class_getMethodImplementation(type(of: web), selector) else { return nil }
+        return unsafeBitCast(method, to: PageRef.self)(web, selector)
     }
 
     /// The keys handed to a page as a click on it would leave them: the

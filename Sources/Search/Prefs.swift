@@ -768,6 +768,18 @@ final class Preferences: ObservableObject {
         didSet { store.set(capturesPages, forKey: "pages.capture") }
     }
 
+    /// Capture… only copies the picture, with no PNG left in the downloads
+    /// folder (idea 1250). Off unless asked for: by default it does both.
+    @Published var copiesCapturesOnly: Bool {
+        didSet { store.set(copiesCapturesOnly, forKey: "pages.capture.copyOnly") }
+    }
+    /// Hide Elements moves and resizes too: a drag on what is outlined, or
+    /// on its right or bottom edge (see Veiling.picker). Off unless turned
+    /// on; off, a press hides at once, as it always has.
+    @Published var hidingShapes: Bool {
+        didSet { store.set(hidingShapes, forKey: "hiding.shapes") }
+    }
+
     /// Your own style for a site, Edit Site Style… in the View menu (see
     /// SiteStyles.swift). On unless turned off; off, the styles are kept.
     @Published var sitesStyles: Bool {
@@ -879,6 +891,13 @@ final class Preferences: ObservableObject {
     /// follows the link as before.
     @Published var optionClickSplits: Bool {
         didSet { store.set(optionClickSplits, forKey: "links.optionSplit") }
+    }
+    /// A small capsule over the page of a split under the pointer, with
+    /// what the divider's menu and the Tabs menu already do to it: move it
+    /// left or right, take it out of the split, close it (SplitControls.swift).
+    /// Something more drawn over a page, so off unless asked for.
+    @Published var splitControls: Bool {
+        didSet { store.set(splitControls, forKey: "split.controls") }
     }
     /// ⌫ goes back a page and ⇧⌫ forward, as Safari once had it: only when
     /// no field or editable text has the keys and nothing else is held,
@@ -1579,6 +1598,7 @@ final class Preferences: ObservableObject {
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")
         optionClickSplits = store.bool(forKey: "links.optionSplit")
+        splitControls = store.bool(forKey: "split.controls")
         backspaceGoesBack = store.bool(forKey: Preferences.backspaceKey)
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
@@ -1607,6 +1627,8 @@ final class Preferences: ObservableObject {
         Dusk.shared.on = dusk
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         capturesPages = store.object(forKey: "pages.capture") as? Bool ?? true
+        copiesCapturesOnly = store.bool(forKey: "pages.capture.copyOnly")
+        hidingShapes = store.bool(forKey: "hiding.shapes")
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         let styles = store.object(forKey: "sites.styles") as? Bool ?? true
         sitesStyles = styles

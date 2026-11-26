@@ -504,6 +504,7 @@ final class Fetches: ObservableObject {
     /// and no others. It shows no page and runs no extension.
     private static func view(for entry: FetchEntry, store: WKWebsiteDataStore) -> (WKWebView, Bool) {
         if let page = entry.webView, page.configuration.websiteDataStore === store { return (page, false) }
+        Store.network()
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = store
         configuration.processPool = Web.pool
@@ -843,7 +844,7 @@ struct FetchGlyph: View {
                     .trim(from: 0, to: max(0.02, fraction))
                     .stroke(ink.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                    .animation(.easeOut(duration: 0.2), value: fraction)
+                    .animation(Motion.timed(.easeOut(duration: 0.2)), value: fraction)
             } else {
                 // No size given: turning, on Core Animation's time.
                 Ring(size: 12)

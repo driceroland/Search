@@ -635,6 +635,8 @@ final class Extensions: NSObject, ObservableObject {
 
     @discardableResult
     private func load(_ item: Installed) async -> Bool {
+        // Its pages and worker load into the websites' store (Store.network).
+        Store.network()
         let ticket = loadTickets[item.id, default: 0] + 1
         loadTickets[item.id] = ticket
         if let forgetting = forgetting[item.id] { await forgetting.value }
@@ -2920,6 +2922,7 @@ private final class HiddenPage: NSObject, WKNavigationDelegate {
     private var loaded: CheckedContinuation<Bool, Never>?
 
     init(_ configuration: WKWebViewConfiguration) {
+        Store.network()
         web = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         web.navigationDelegate = self

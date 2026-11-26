@@ -384,6 +384,7 @@ final class SidePanelPages: NSObject {
         drop(in: browser)
         // The window's profile's store for that space: signed in where
         // this window's tabs are, never another profile's.
+        Store.network()
         let configuration = Web.configuration(space: space, store: browser.panelStore(space))
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 380, height: 600), configuration: configuration)

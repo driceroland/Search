@@ -18,6 +18,9 @@ struct SplitStage: View {
     @State private var frames: [Tab.ID: CGRect] = [:]
     /// The page under the pointer, with two up.
     @State private var hovered: Tab.ID?
+    /// The pointer is on a page's controls (SplitControls.swift): they stay
+    /// up even where the stage no longer says it is over that page.
+    @State private var onControls: Tab.ID?
 
     var body: some View {
         // The page of a space on its way in, already (Browser.pageAhead).
@@ -62,6 +65,24 @@ struct SplitStage: View {
                             .frame(width: frame.width, height: frame.height)
                             .offset(x: frame.minX, y: frame.minY)
                     }
+                }
+                // Move, take out or close the page under the pointer, with
+                // Settings › Keyboard & Mouse › Controls over a page in Split
+                // View on. Not while a tab is carried over the pages.
+                if browser.prefs.splitControls, split != nil, shown.count > 1, drag.preview == nil {
+                    ZStack(alignment: .topLeading) {
+                        ForEach(Array(shown.enumerated()), id: \.element.id) { index, tab in
+                            if let frame = frames[tab.id], hovered == tab.id || onControls == tab.id {
+                                SplitPaneControls(browser: browser, tab: tab, index: index, count: shown.count)
+                                    .onHover { on in onControls = on ? tab.id : (onControls == tab.id ? nil : onControls) }
+                                    .frame(width: frame.width)
+                                    .padding(.top, 8)
+                                    .offset(x: frame.minX, y: frame.minY)
+                                    .transition(.opacity)
+                            }
+                        }
+                    }
+                    .animation(Motion.quick, value: hovered)
                 }
                 // Over a page it could split, before the hand is at an edge
                 // or has stopped: where letting go would split it. Gone once
