@@ -65,7 +65,9 @@ def typing(times=3):
 def main():
     t = sv.T()
     try:
-        sv.setup(sidebar=True, splitView=True)
+        # Try HTTPS first is on by default since 25 Nov 2026: off here, or
+        # http://example.com arrives over https and is rightly not warned of.
+        sv.setup(sidebar=True, splitView=True, **{"privacy.httpsFirst": False})
         sv.launch()
         first = next(iter(tabs()))
         sv.cmd({"do": "go", "id": first, "url": f"http://localhost:{PORT}/one"})

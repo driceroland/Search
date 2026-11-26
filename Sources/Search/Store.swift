@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import WebKit
 
@@ -14,10 +15,14 @@ enum Store {
     /// is not belt and braces: a development build launched from a terminal
     /// once wrote over somebody's real session, and asking a person to
     /// remember a flag is not a safeguard.
-    static var testing: Bool {
-        if ProcessInfo.processInfo.environment["SEARCH_PROBE"] != nil { return true }
-        return Bundle.main.executablePath?.contains("/.build/") == true
-    }
+    ///
+    /// Asked a hundred thousand times in a launch's first seconds with
+    /// hundreds of tabs: read with getenv, not ProcessInfo's environment,
+    /// which is a fresh dictionary of every variable at each call (13 MB
+    /// allocated and freed again in ten seconds at 400 tabs), and still
+    /// read each time, as a unit test sets SEARCH_PROBE before its world.
+    static var testing: Bool { getenv("SEARCH_PROBE") != nil || fromBuildFolder }
+    private static let fromBuildFolder = Bundle.main.executablePath?.contains("/.build/") == true
 
     /// Which test world a test run lives in. SEARCH_PROBE=1, or a run from
     /// the build folder, is the test world, "Search (test)". SEARCH_PROBE=
@@ -38,7 +43,7 @@ enum Store {
     /// the way WebKit slows them, App Nap left to macOS — so what gets
     /// measured is what people get.
     static var measuring: Bool {
-        testing && ProcessInfo.processInfo.environment["SEARCH_MEASURE"] != nil
+        testing && getenv("SEARCH_MEASURE") != nil
     }
 
     /// Cookies, sign-ins, caches. WebKit keeps its default store per bundle,
@@ -71,6 +76,7 @@ enum Store {
     /// The switch through a name outside the public framework — Safari's
     /// "Prevent cross-site tracking" is the same one.
     @MainActor static func followSignIns(_ store: WKWebsiteDataStore) {
+        guard networking else { owedSignIns.add(store); return }
         followCookies(store)
         let set = NSSelectorFromString("_setResourceLoadStatisticsEnabled:")
         guard store.responds(to: set) else { return }
@@ -108,12 +114,58 @@ enum Store {
     /// the policy with the store, so it is set back when the switch is on, and
     /// at launch for every store, which an earlier run may have left at Always.
     @MainActor static func followCookies(_ store: WKWebsiteDataStore) {
+        guard networking else { owedCookies.add(store); return }
         let jar = store.httpCookieStore
         let policy = NSSelectorFromString("_setCookieAcceptPolicy:completionHandler:")
         guard jar.responds(to: policy) else { return }
         typealias Policy = @convention(c) (AnyObject, Selector, UInt, @escaping @convention(block) () -> Void) -> Void
         let accept: HTTPCookie.AcceptPolicy = keepsSignIns ? .always : .onlyFromMainDocumentDomain
         unsafeBitCast(jar.method(for: policy), to: Policy.self)(jar, policy, accept.rawValue) {}
+    }
+
+    /// Whether anything has needed WebKit's network process yet. Telling a
+    /// store its cookie policy starts that process, and it was told at
+    /// launch: a browser at rest on a new tab ran com.apple.WebKit.Networking
+    /// (5.7 MB) for nothing. Until a page is restored at launch, the first
+    /// click or key (`networkOnFirstInput`), a link from another app, the
+    /// first page view, an extension's loading or a download (`network()`),
+    /// what the stores are to be told waits here, and is told then, before
+    /// anything loads into them.
+    @MainActor private(set) static var networking = false
+    @MainActor private static let owedCookies = NSHashTable<WKWebsiteDataStore>.weakObjects()
+    @MainActor private static let owedSignIns = NSHashTable<WKWebsiteDataStore>.weakObjects()
+
+    /// Called before anything is loaded into a website store: from then on
+    /// stores are told at once, and those that waited are told now.
+    @MainActor static func network() {
+        guard !networking else { return }
+        networking = true
+        if let monitor = firstInput { NSEvent.removeMonitor(monitor) }
+        firstInput = nil
+        let signIns = owedSignIns.allObjects
+        let cookies = owedCookies.allObjects.filter { !owedSignIns.contains($0) }
+        owedSignIns.removeAllObjects()
+        owedCookies.removeAllObjects()
+        signIns.forEach(followSignIns)
+        cookies.forEach(followCookies)
+    }
+
+    /// Started cold with the first page, WebKit's network process held it
+    /// back about 110 ms (the page's own process waits for it before it can
+    /// start), so it is started at the first sign of one coming: a click or
+    /// a key anywhere in Search, ahead of the button's release or the Return
+    /// that loads it. A browser left alone on its new tab never starts it.
+    /// Measured (Tests/mem_at_rest.py --page): typed into the new tab, the
+    /// first page is as quick as before; asked for with no click or key
+    /// first (a link from another app, an agent), it is ~110 ms later, once.
+    @MainActor private static var firstInput: Any?
+
+    @MainActor static func networkOnFirstInput() {
+        guard !networking, firstInput == nil else { return }
+        firstInput = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]) { event in
+            MainActor.assumeIsolated { network() }
+            return event
+        }
     }
 
     /// A test copy of the app under a bundle id of its own has a WebKit

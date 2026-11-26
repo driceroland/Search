@@ -6,7 +6,8 @@ worktree. With Settings › Tabs › Leave a new tab when the last tab closes,
 and only pins left beside it, the tab on screen closed leaves a new tab in
 its place, not a pin; the pins stay, and ⇧⌘T brings the page back. Closed
 in the background, it takes nothing from the pin on screen. With another
-ordinary tab left, the neighbour is picked as before. With the switch off,
+ordinary tab left, the neighbour is picked as before. On unless turned off
+(26 Nov 2026, #1577); with the switch off,
 a pin is picked, as it always was.
 """
 import sys
@@ -41,7 +42,8 @@ def only(*keep):
 def main():
     t = sv.T()
     try:
-        sv.setup(**{"tabs.newAfterLast": True}); sv.launch()
+        # On as it comes (26 Nov 2026, #1577): nothing set.
+        sv.setup(); sv.launch()
         a = sv.page("a"); p = sv.page("p")
         sv.cmd({"do": "pin", "id": a}); sv.cmd({"do": "pin", "id": p})
         b = sv.page("b")
@@ -76,8 +78,8 @@ def main():
         t.ok("with another tab left, that one is picked", st["activeID"] == e, st)
         t.ok("and no new tab is made for it", loose(st) == [e], st["tabs"])
 
-        # The switch off, as it comes: a pin is picked, as before.
-        sv.quit(); sv.setup(); sv.launch()
+        # The switch turned off: a pin is picked, as before.
+        sv.quit(); sv.setup(**{"tabs.newAfterLast": False}); sv.launch()
         a = sv.page("a"); sv.cmd({"do": "pin", "id": a})
         b = sv.page("b")
         only(b)

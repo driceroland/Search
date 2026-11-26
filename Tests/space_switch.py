@@ -64,7 +64,11 @@ def start(rows, **prefs):
 def landed(r):
     """The column's scroll from the pass that took the space on, as it is
     shown: before, the map's rows stand in for it."""
-    took = next((p["at"] for p in r["passes"] if p["rows"] >= 50), None)
+    # The pass the space was taken in: by its name where the bench says
+    # it; by the rows made otherwise (only those in sight are made since
+    # perf-many-tabs, fewer than 50 for a long space).
+    took = next((p["at"] for p in r["passes"] if p.get("space") == r["space"]), None) if any("space" in p for p in r["passes"]) \
+        else next((p["at"] for p in r["passes"] if p["rows"] >= 50), None)
     return [p["offset"] for p in r["passes"]
             if took is not None and "offset" in p and p["at"] >= took and p.get("shown", True)]
 
