@@ -295,6 +295,26 @@ final class PinDragTests: XCTestCase {
         XCTAssertEqual(browser.squarePins.map(\.id), [t[3], t[0]].map(\.id))
     }
 
+    func testFirstPinnedRowMadeWithNoneYet() async throws {
+        let browser = makeBrowser(count: 4, rows: true)
+        let t = browser.tabs
+        browser.pin(t[0])
+        browser.select(t[1])
+        let window = makeWindow(browser)
+        try await settle()
+        // Grid 34 + 10; no pinned row; the line 18 + 2; the rows.
+        let rowsTop = Metrics.strip + 44
+        try await drag(from: point(x: 70, y: rowsTop + 20 + 30 + 14, in: window), through: [
+            point(x: 70, y: rowsTop + 20, in: window),
+            point(x: 70, y: rowsTop + 4, in: window),
+            point(x: 70, y: rowsTop + 3, in: window),
+        ], in: window)
+        XCTAssertNotNil(t[2].pin)
+        XCTAssertTrue(t[2].listed, "a pinned row, the first")
+        XCTAssertEqual(browser.listedPins.map(\.id), [t[2].id])
+        XCTAssertEqual(browser.squarePins.map(\.id), [t[0].id])
+    }
+
     func testAPairRowGetsNoPlaceInTheGrid() async throws {
         let browser = makeBrowser(count: 4)
         let t = browser.tabs

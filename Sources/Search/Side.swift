@@ -1822,7 +1822,7 @@ struct SideBar: View {
         let listedShown = rowsOn && (!browser.listedPins.isEmpty || isListedGhost || browser.showsPinFolderRows)
         let zone = PinDrop.zone(point, width: width - 20,
                                 gridBottom: gridShown ? frames.grid?.maxY : nil,
-                                listed: listedShown ? frames.listed : nil)
+                                listed: listedShown ? frames.listed : (rowsOn ? firstRowBand : nil))
         switch zone {
         case .none:
             return nil
@@ -1855,6 +1855,24 @@ struct SideBar: View {
             let heights = loose.map { browser.split(for: $0) != nil ? rowHeight * 2 : rowHeight }
             return .loose(PinDrop.rowSlot(y: point.y - top, heights: heights, gap: SideBar.gap, ghost: ghost))
         }
+    }
+
+    /// With no pinned row yet, their block is drawn at no height, and the
+    /// zone took nothing for it: a tab carried there went among the tabs or
+    /// the squares, never a row. The band between the squares and the
+    /// tabs stands in for it: from the top of the rows down to the middle
+    /// of the line over the tabs, when it is the first thing there, or a
+    /// few points in otherwise (a group's heading, the first tab), so a
+    /// tab nudged at the top of its rows stays one.
+    private var firstRowBand: CGRect? {
+        guard let listed = frames.listed else { return nil }
+        let first = columnPlan().units.first
+        let reach: CGFloat = if case .keep? = first?.kind {
+            frames.rows.minY - listed.minY + (first?.y ?? 0) + KeepLine.height / 2
+        } else {
+            PinDrop.gridSlack
+        }
+        return CGRect(x: listed.minX, y: listed.minY, width: listed.width, height: max(reach, PinDrop.gridSlack))
     }
 
     private var isListedGhost: Bool {
