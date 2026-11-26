@@ -2624,6 +2624,7 @@ final class Bench {
             guard let window = browser.window else { answer(["error": "no window"]); return }
             if let on = request["iconsOnly"] as? Bool { browser.prefs.bookmarksIconsOnly = on }
             if let on = request["newTabOnly"] as? Bool { browser.prefs.bookmarksNewTabOnly = on }
+            if let on = request["foldedNewTabs"] as? Bool { browser.prefs.bookmarksOnFoldedNewTabs = on }
             if let width = request["width"] as? Double {
                 var frame = window.frame
                 frame.size.width = width

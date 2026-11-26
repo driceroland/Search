@@ -683,6 +683,7 @@ struct SettingsPanel: View {
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
         case "bookmarks.iconsOnly": Switch(on: $prefs.bookmarksIconsOnly)
         case "bookmarks.newTabOnly": Switch(on: $prefs.bookmarksNewTabOnly)
+        case "bookmarks.foldedNewTabs": Switch(on: $prefs.bookmarksOnFoldedNewTabs)
         case "bookmarks.side":
             Switch(on: Binding(
                 get: { prefs.bookmarksInSidebar },

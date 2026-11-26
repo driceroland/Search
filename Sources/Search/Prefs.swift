@@ -998,6 +998,10 @@ final class Preferences: ObservableObject {
     @Published var bookmarksNewTabOnly: Bool {
         didSet { store.set(bookmarksNewTabOnly, forKey: "bookmarks.newTabOnly") }
     }
+    /// Keep the top bookmarks bar above a blank tab while the sidebar is folded.
+    @Published var bookmarksOnFoldedNewTabs: Bool {
+        didSet { store.set(bookmarksOnFoldedNewTabs, forKey: "bookmarks.foldedNewTabs") }
+    }
     /// Whether the bookmarks bar is in the column now: the bar shown, asked
     /// for there, and the tabs down a side. With the bar hidden it is hidden
     /// in the column too (Show Bookmarks Bar still says where it is); with
@@ -1591,6 +1595,7 @@ final class Preferences: ObservableObject {
         bookmarksInSidebar = store.bool(forKey: "bookmarks.side")
         bookmarksIconsOnly = store.bool(forKey: "bookmarks.iconsOnly")
         bookmarksNewTabOnly = store.bool(forKey: "bookmarks.newTabOnly")
+        bookmarksOnFoldedNewTabs = store.bool(forKey: "bookmarks.foldedNewTabs")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
         downloadsOpening = store.string(forKey: "downloads.open").flatMap(DownloadsOpening.init(rawValue:)) ?? .tab
         let links = store.object(forKey: "links.show") as? Bool ?? true
@@ -1742,6 +1747,7 @@ final class Preferences: ObservableObject {
         take(\.bookmarksInSidebar, store.bool(forKey: "bookmarks.side"))
         take(\.bookmarksIconsOnly, store.bool(forKey: "bookmarks.iconsOnly"))
         take(\.bookmarksNewTabOnly, store.bool(forKey: "bookmarks.newTabOnly"))
+        take(\.bookmarksOnFoldedNewTabs, store.bool(forKey: "bookmarks.foldedNewTabs"))
         take(\.alwaysShowsDownloads, store.bool(forKey: "downloads.button"))
     }
 

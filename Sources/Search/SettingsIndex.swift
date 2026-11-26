@@ -320,6 +320,11 @@ enum SettingsIndex {
               more: "The bar comes back as soon as the tab on screen is a new one.",
               keys: ["bookmarks.newTabOnly"], words: ["favorites bar", "bookmarks toolbar", "new tab", "only", "hide", "chrome", "edge"],
               parent: "bookmarks.bar"),
+        .init(id: "bookmarks.foldedNewTabs", group: "tablook", icon: "sidebar.left",
+              title: "Keep the bookmarks bar on new tabs with the sidebar hidden",
+              detail: "Shows the bar above a blank tab while the sidebar is folded",
+              keys: ["bookmarks.foldedNewTabs"], words: ["favorites bar", "bookmarks toolbar", "blank tab", "sidebar", "fold", "hide", "⌘S"],
+              parent: "bookmarks.bar"),
         .init(id: "motion.light", group: "motion", icon: "leaf",
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
@@ -862,6 +867,7 @@ enum SettingsIndex {
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
         case "bookmarks.iconsOnly", "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
+        case "bookmarks.foldedNewTabs": return prefs.sidebar && prefs.bookmarksBar && !prefs.sideBookmarks
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
@@ -900,6 +906,7 @@ enum SettingsIndex {
         case "links.peek.stays": return "Only when links or pins open peeks"
         case "launcher.key": return "Only with the address field from any app on"
         case "bookmarks.side": return "Only with the bookmarks bar shown and the tabs down a side"
+        case "bookmarks.foldedNewTabs": return "Only with tabs down a side and the bookmarks bar above the page"
         default: return "Only with the tabs down a side"
         }
     }
