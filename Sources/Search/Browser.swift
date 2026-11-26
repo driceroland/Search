@@ -5590,7 +5590,15 @@ final class Browser: NSObject, ObservableObject {
         // the window, holding the groups, stays open.
         let kept: (Tab) -> Bool = { $0.pin != nil || self.group(of: $0) != nil }
         let besideGroups = tabs.contains { $0.id != tab.id && $0.pin == nil && self.group(of: $0) != nil }
-        let onlyPins = prefs.newTabAfterLast && !tabs.contains { $0.id != tab.id && $0.pin == nil }
+        // An empty tab closed beside a pin still open (⌘T over the pin, then
+        // ⌘W) goes back to that pin, as before, rather than closing the window:
+        // it isn't a page, and the pin is where you were (#1577). Closing the
+        // last real page still leaves a new tab, and with only pins put down
+        // beside it, it closes the window below (#1480).
+        let onlyPinsBeside = !tabs.contains { $0.id != tab.id && $0.pin == nil }
+        let backToPin = tab.isBlank && !besideGroups && onlyPinsBeside
+            && tabs.contains { $0.id != tab.id && $0.pin != nil && !$0.asleep }
+        let onlyPins = prefs.newTabAfterLast && !backToPin && onlyPinsBeside
         let onlyKept = besideGroups && !kept(tab) && !tabs.contains { $0.id != tab.id && !kept($0) }
         if activeID == tab.id, onlyPins || onlyKept {
             if tab.isBlank {
@@ -5646,7 +5654,12 @@ final class Browser: NSObject, ObservableObject {
             let back = tabBefore(tab, awake: true)
             let before = goingBack || prefs.closeGoesBack || tab.page != nil ? back
                 : back.flatMap { $0.id == tab.opener ? $0 : nil }
-            select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
+            // The empty tab closed beside a pin still open: that pin, the one
+            // viewed last if it is one, never a pin put down (see backToPin).
+            let openPin = backToPin
+                ? (back.flatMap { $0.pin != nil && !$0.asleep ? $0 : nil } ?? tabs.first { $0.pin != nil && !$0.asleep })
+                : nil
+            select(partner ?? openPin ?? before ?? tabs[min(index, tabs.count - 1)])
         }
         rememberSession()
     }

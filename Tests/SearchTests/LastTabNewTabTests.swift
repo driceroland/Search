@@ -34,6 +34,23 @@ final class LastTabNewTabTests: XCTestCase {
         }
     }
 
+    /// ⌘T over a pin still open, then ⌘W: back to that pin, the window kept.
+    /// The empty tab isn't a page, and closing it closed the window.
+    func testAnEmptyTabBesideAnOpenPinGoesBackToIt() throws {
+        try withPinsAndOneTab(newTabAfterLast: true) { browser, pins, tab in
+            browser.closeTab(tab)
+            let pin = pins[0]
+            browser.select(pin)
+            XCTAssertFalse(pin.asleep, "the pin is open")
+            browser.newTab()
+            let fresh = try XCTUnwrap(browser.active)
+            XCTAssertTrue(fresh.isBlank)
+            browser.closeTab(fresh)
+            XCTAssertEqual(browser.active?.id, pin.id, "back to the open pin")
+            XCTAssertFalse(browser.tabs.contains { $0.id == fresh.id }, "the empty tab is gone")
+        }
+    }
+
     func testTurnedOffAPinIsPicked() throws {
         try withPinsAndOneTab(newTabAfterLast: false) { browser, pins, tab in
             browser.closeTab(tab)
