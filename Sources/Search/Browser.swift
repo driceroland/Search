@@ -5433,13 +5433,14 @@ final class Browser: NSObject, ObservableObject {
         if floating == tab.id { land(covering: false) }
 
         // A pinned tab is not closed by ⌘W — it is put down. The letter keeps
-        // its place, the page is let go, and you land on whatever you were
-        // looking at before. Only Unpin takes it out of the row.
+        // its place and the page is let go. If it was on screen, you land on
+        // whatever you were looking at before. Only Unpin takes it out of the row.
         if tab.pin != nil {
             // Put down is also gone home with Settings › Tabs › Pins stay on
             // their site, as Arc's pins are: the pin wakes on the page it was
             // pinned at, not wherever its links had taken it.
             let going = together.map { pair in tabs.filter { pair.contains($0.id) } } ?? [tab]
+            let activePin = going.first { $0.id == activeID }
             for each in going {
                 let home = prefs.pinsGoHome || prefs.pinsPeek ? each.home : nil
                 // A pin on an extension's page has that extension's
@@ -5452,7 +5453,7 @@ final class Browser: NSObject, ObservableObject {
                     && home.map { Browser.extensionHost(of: $0) == nil } == true
                 each.rest(at: home, websiteConfiguration: leavesExtension ? websiteConfiguration(for: each) : nil)
             }
-            leave(tab)
+            if let activePin { leave(activePin) }
             writeSession(now: true)
             return
         }
