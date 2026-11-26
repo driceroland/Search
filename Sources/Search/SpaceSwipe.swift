@@ -163,9 +163,18 @@ final class SpaceSwipe {
     /// space past the last one, but not while there is only one space. Spaces
     /// just turned on, a stroke over the tabs brought a nameless card that
     /// looked like a second space nobody made; New Space… still opens it.
-    private func furthest(_ browser: Browser) -> Int {
-        browser.spaces.count > 1 || browser.makingSpace ? browser.spaces.count : browser.spaces.count - 1
+    /// A stroke of the fingers (`stroke`) does reach it with one space, but
+    /// only a long, deliberate one (ended, alone): with no way past the one
+    /// space, the swipe Settings offers for spaces sprang back and seemed
+    /// broken (#1610). A wheel's notch or a mouse's button has no length to
+    /// tell a stray one by, and stays short of it.
+    private func furthest(_ browser: Browser, stroke: Bool = false) -> Int {
+        browser.spaces.count > 1 || browser.makingSpace || stroke ? browser.spaces.count : browser.spaces.count - 1
     }
+
+    /// How many times `enough` a stroke takes to bring the card for a new
+    /// space: twice past the last of several, three times past the only one.
+    static func toCard(alone: Bool) -> CGFloat { alone ? 3 : 2 }
 
     /// With profiles in one window, past this window's first space or its
     /// last: the space of the profile that comes before or after.
@@ -554,9 +563,10 @@ final class SpaceSwipe {
         // as the fingers let go. Only the distance counted, and a quick
         // stroke, over before it had gone far, snapped back as if not made.
         let flick = abs(travel) >= 12 && abs(speed) > 400 && (speed < 0) == (travel < 0)
-        // The card for a new space takes a longer stroke, and no flick.
+        // The card for a new space takes a longer stroke, and no flick;
+        // longer still past the only space (furthest).
         let far = toCard(travel, in: browser)
-            ? abs(travel) >= 2 * SpaceSwipe.enough(for: browser)
+            ? abs(travel) >= SpaceSwipe.toCard(alone: browser.spaces.count == 1) * SpaceSwipe.enough(for: browser)
             : abs(travel) >= SpaceSwipe.enough(for: browser) || flick
         // Fingers to the left, or up, bring what is next.
         let target = cancelled || !far ? here : here + (travel < 0 ? 1 : -1)
@@ -564,7 +574,7 @@ final class SpaceSwipe {
             leave(browser, for: other, step: target - here)
             return
         }
-        guard target != here, target >= 0, target <= furthest(browser) else {
+        guard target != here, target >= 0, target <= furthest(browser, stroke: true) else {
             // Back where they were: the space on screen, or on its way in.
             if let coming = browser.spaceComing, !browser.makingSpace, !Motion.reduced {
                 letGoSpeed = speed
@@ -586,7 +596,7 @@ final class SpaceSwipe {
     /// card for a new space they go heavily, for it not to come by chance.
     private func resisted(_ travel: CGFloat, in browser: Browser) -> CGFloat {
         let here = shown(browser)
-        let blocked = (travel > 0 && here == 0 && browser.profileBeyond(-1) == nil) || (travel < 0 && here >= furthest(browser))
+        let blocked = (travel > 0 && here == 0 && browser.profileBeyond(-1) == nil) || (travel < 0 && here >= furthest(browser, stroke: true))
         return blocked ? travel / 4 : toCard(travel, in: browser) ? travel * 0.6 : travel
     }
 
