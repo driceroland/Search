@@ -231,7 +231,7 @@ final class HomeTilesTests: XCTestCase {
         XCTAssertNil(browser.addTile(name: "A", typed: "a.example"))
         XCTAssertEqual(browser.addTile(name: "J", typed: "javascript:alert(1)"), .scheme)
         XCTAssertEqual(HomeTiles.count(browser), 2)
-        XCTAssertEqual(HomeTiles.height(browser), HomeTiles.tileHeight, "one row of six")
+        XCTAssertEqual(HomeTiles.height(browser), HomeTiles.chipHeight, "one line of chips")
 
         browser.newShyTab()
         XCTAssertEqual(browser.active?.shy, true)
@@ -251,12 +251,26 @@ final class HomeTilesTests: XCTestCase {
         defer { browser.prefs.homeTiles = was; browser.bookmarks.adopt(saved); browser.closeAll() }
         browser.prefs.homeTiles = true
         browser.bookmarks.adopt([.folder("Home", (0..<12).map { .site("S\($0)", url("https://s\($0).example/")) })])
-        let h = HomeTiles.tileHeight, g = HomeTiles.gap
-        XCTAssertEqual(HomeTiles.height(browser), 2 * h + g, "twelve: two rows of six, no +")
-        XCTAssertEqual(HomeTiles.height(browser, width: 260), 4 * h + 3 * g, "three to a row when narrow")
-        XCTAssertEqual(HomeGrid.height(browser), HomeTiles.height(browser), "what lies under it makes room for the tiles")
-        XCTAssertEqual(HomeTiles.columns(1000), 6)
-        XCTAssertEqual(HomeTiles.columns(100), 3)
+        let h = HomeTiles.chipHeight, g = HomeTiles.gap
+        let widths = HomeTiles.widths(browser)
+        XCTAssertEqual(widths.count, 12, "twelve chips, no +")
+        let lines = HomeTiles.lines(widths, in: Metrics.fieldWidth)
+        XCTAssertTrue((2...3).contains(lines), "twelve short names: two or three lines in the field's width, got \(lines)")
+        XCTAssertEqual(HomeTiles.height(browser), CGFloat(lines) * h + CGFloat(lines - 1) * g)
+        let narrow = HomeTiles.lines(widths, in: 200)
+        XCTAssertGreaterThan(narrow, lines, "more lines when narrow")
+        XCTAssertEqual(HomeTiles.height(browser, width: 200), CGFloat(narrow) * h + CGFloat(narrow - 1) * g)
+        XCTAssertEqual(HomeGrid.height(browser), HomeTiles.height(browser), "what lies under it makes room for the chips")
+        // The wrap rule itself.
+        XCTAssertEqual(HomeTiles.lines([], in: 100), 0)
+        XCTAssertEqual(HomeTiles.lines([40, 40], in: 86), 1, "40 + 6 + 40 fits")
+        XCTAssertEqual(HomeTiles.lines([40, 40], in: 85), 2)
+        XCTAssertEqual(HomeTiles.lines([500], in: 100), 1, "one too wide still takes one line")
+        // A long name is cut at the chip's label width.
+        XCTAssertEqual(HomeTiles.labelFit(String(repeating: "W", count: 60)), HomeTiles.labelWidth)
+        XCTAssertLessThan(HomeTiles.chipWidth("Mail"), HomeTiles.chipWidth(String(repeating: "W", count: 60)))
+        XCTAssertEqual(HomeTiles.chipWidth(String(repeating: "W", count: 60)),
+                       ceil(HomeTiles.padding * 2 + HomeTiles.iconSize + HomeTiles.iconGap + HomeTiles.labelWidth))
     }
 
     // MARK: pictures
@@ -271,7 +285,7 @@ final class HomeTilesTests: XCTestCase {
         let was = browser.prefs.homeTiles
         defer { browser.prefs.homeTiles = was; browser.bookmarks.adopt(saved); browser.closeAll() }
         browser.prefs.homeTiles = true
-        let names = ["Mail", "Calendar", "News", "GitHub", "Figma", "Music", "Docs", "Maps", "Photos", "Weather", "Notes", "Translate"]
+        let names = ["Mail", "Calendar", "News", "GitHub", "Figma", "Music", "Docs", "Maps", "Photos", "Weather", "Notes", "The Very Long Name of a Newspaper Site"]
         // Two icons known, as browsing would have left them; the rest letters.
         for (host, colour) in [("mail.example", NSColor.systemBlue), ("github.example", NSColor.black)] {
             let data = icon(colour)
@@ -280,7 +294,7 @@ final class HomeTilesTests: XCTestCase {
         let out = ProcessInfo.processInfo.environment["TILES_SHOTS"].map { URL(fileURLWithPath: $0) }
         for count in [0, 1, 6, 12] {
             browser.bookmarks.adopt(count == 0 ? [] : [.folder("Home", names.prefix(count).map {
-                .site($0, url("https://\($0.lowercased()).example/"))
+                .site($0, url("https://\($0.lowercased().filter(\.isLetter)).example/"))
             })])
             for dark in [false, true] {
                 let png = picture(HomePage(browser: browser), dark: dark)
@@ -288,7 +302,7 @@ final class HomeTilesTests: XCTestCase {
                 try out.map { try png.write(to: $0.appendingPathComponent("tiles-\(count)-\(dark ? "dark" : "light").png")) }
             }
         }
-        browser.bookmarks.adopt([.folder("Home", names.prefix(3).map { .site($0, url("https://\($0.lowercased()).example/")) })])
+        browser.bookmarks.adopt([.folder("Home", names.prefix(3).map { .site($0, url("https://\($0.lowercased().filter(\.isLetter)).example/")) })])
         for dark in [false, true] {
             let png = picture(HomePage(browser: browser, editing: .new), dark: dark)
             try out.map { try png.write(to: $0.appendingPathComponent("tiles-editor-\(dark ? "dark" : "light").png")) }
@@ -297,7 +311,7 @@ final class HomeTilesTests: XCTestCase {
         let shy = picture(HomePage(browser: browser), dark: false)
         try out.map { try shy.write(to: $0.appendingPathComponent("tiles-private.png")) }
         // Narrow window: three to a row.
-        browser.bookmarks.adopt([.folder("Home", names.map { .site($0, url("https://\($0.lowercased()).example/")) })])
+        browser.bookmarks.adopt([.folder("Home", names.map { .site($0, url("https://\($0.lowercased().filter(\.isLetter)).example/")) })])
         let narrow = picture(HomePage(browser: browser, field: false), dark: false, size: NSSize(width: 340, height: 620))
         try out.map { try narrow.write(to: $0.appendingPathComponent("tiles-narrow.png")) }
     }
