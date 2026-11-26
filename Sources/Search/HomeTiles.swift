@@ -445,7 +445,7 @@ struct HomeTiles: View {
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(lit ? Palette.ink : Palette.muted)
                         .frame(width: HomeTiles.iconSize, height: HomeTiles.iconSize)
-                        .background(RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(Palette.ink.opacity(0.07)))
+                        .background(RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(Palette.ink.opacity(0.05)))
                 }
             }
             Text(verbatim: label)
@@ -458,7 +458,7 @@ struct HomeTiles: View {
         .padding(.horizontal, HomeTiles.padding)
         .frame(height: HomeTiles.chipHeight)
         // Focused by keys, as hovered: the fill a shade deeper.
-        .background(Capsule(style: .continuous).fill(lit ? Palette.ink.opacity(0.11) : Palette.wash))
+        .background(Capsule(style: .continuous).fill(lit ? Palette.ink.opacity(0.07) : Palette.ink.opacity(0.035)))
         .overlay(alignment: .topTrailing) {
             // Hovered, a small × to take it off; right-click for the rest.
             if editable, hovered == tile.id, dragged == nil {
@@ -575,7 +575,7 @@ struct HomeTiles: View {
         .padding(.horizontal, HomeTiles.padding)
         .frame(height: HomeTiles.chipHeight)
         // Fainter than a site's chip until hovered or focused.
-        .background(Capsule(style: .continuous).fill(lit ? Palette.ink.opacity(0.11) : Palette.ink.opacity(0.035)))
+        .background(Capsule(style: .continuous).fill(lit ? Palette.ink.opacity(0.07) : Palette.ink.opacity(0.02)))
         .contentShape(Capsule())
         .onHover { addHovered = $0 }
         .onTapGesture { begin(.new) }
