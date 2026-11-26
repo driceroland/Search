@@ -1270,11 +1270,6 @@ final class Preferences: ObservableObject {
         aiModels[provider.rawValue] = name
     }
 
-    /// With the tabs folded away (⌘S), a line along the page's top while it
-    /// loads, as Arc's (idea 269). On unless turned off.
-    @Published var showsLoadingLine: Bool {
-        didSet { store.set(showsLoadingLine, forKey: "fold.loadingLine") }
-    }
     /// Two pages share one place in the tab row.
     /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
     /// adds a command, so there is no switch. Still a property, for the
@@ -1452,8 +1447,6 @@ final class Preferences: ObservableObject {
         hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        showsLoadingLine = store.object(forKey: "fold.loadingLine") as? Bool ?? true
         lazyTabs = store.bool(forKey: "tabs.lazy")
         // On for everyone who never touched it (Drice, 26 Nov 2026, #1577).
         newTabAfterLast = store.object(forKey: "tabs.newAfterLast") as? Bool ?? true

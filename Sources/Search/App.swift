@@ -691,10 +691,14 @@ struct ContentView: View {
             // square; it grows into that and back with the column's slide.
             stage
                 .modifier(DevToolsStage(browser: browser))
-                // The tabs folded away: a line says the page is coming
-                // (Settings, idea 269), clear of the card's round corners.
+                // A line along the page's top says the page is coming, as
+                // Arc's (idea 269), clear of the card's round corners: with
+                // the tabs folded away, where nothing else said it, and with
+                // them in sight too, where it is in the line of sight and
+                // says how far along the page is (#1650, idea 1281). For
+                // everyone, no switch.
                 .overlay(alignment: .top) {
-                    if browser.folded, browser.prefs.showsLoadingLine, fullscreenTab == nil, let tab = browser.active {
+                    if fullscreenTab == nil, let tab = browser.active {
                         TabLoadingLine(tab: tab)
                             .padding(.horizontal, cardCorner)
                     }

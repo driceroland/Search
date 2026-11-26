@@ -693,7 +693,6 @@ struct SettingsPanel: View {
         case "tabs.highContrast": Switch(on: $prefs.highContrastText)
         case "tabs.reading": Switch(on: $prefs.showsReading)
         case "tabs.pinCounts": Switch(on: $prefs.showsPinCounts)
-        case "fold.loadingLine": Switch(on: $prefs.showsLoadingLine)
         case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
         case "bookmarks.iconsOnly": Switch(on: $prefs.bookmarksIconsOnly)

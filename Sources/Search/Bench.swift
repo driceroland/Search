@@ -2357,6 +2357,23 @@ final class Bench {
                         "ungated": web.trackingAreas.filter { $0.owner !== web && !($0.owner is PointerGate) }.count])
             }
 
+        case "loadingline":
+            // The line along the page's top while it loads (idea 269, #1650):
+            // each one in the window, whether it shows, how far along, and
+            // where, in the window's points from its top left.
+            guard let window = browser.window, let root = window.contentView else { answer(["error": "no window"]); return }
+            var lines: [[String: Any]] = []
+            func walk(_ view: NSView) {
+                if let line = view as? LoadingLine.LineView {
+                    let f = line.convert(line.bounds, to: nil)
+                    lines.append(["shown": line.shown, "fraction": line.fraction,
+                                  "frame": [f.minX, window.frame.height - f.maxY, f.width, f.height]])
+                }
+                view.subviews.forEach(walk)
+            }
+            walk(root)
+            answer(["lines": lines, "folded": browser.folded, "sidebar": browser.prefs.sidebar])
+
         case "hit":
             // What a press at a point of the window lands on, and whether
             // AppKit would carry the window off on a drag from there — the
