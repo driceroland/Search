@@ -920,7 +920,7 @@ final class Float {
             tuck.image = glyph("plus", 11)
             hideTransport(true)
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.18
+                context.duration = Motion.reduced ? 0 : 0.18
                 window.animator().setFrame(target, display: false)
             }
         }
@@ -933,7 +933,7 @@ final class Float {
             tuck.image = glyph("minus", 11)
             hideTransport(false)
             NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.18
+                context.duration = Motion.reduced ? 0 : 0.18
                 window.animator().setFrame(home, display: false)
             }, completionHandler: {
                 window.minSize = min

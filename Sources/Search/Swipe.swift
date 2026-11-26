@@ -159,9 +159,13 @@ enum Swipe {
       // included, as Chrome reads it. Google Sheets does: its grid scrolls
       // in its own frames and doesn't always take the wheel event, so a
       // swipe at column A, or one its handler let through, went back (idea 990).
+      // Only sideways, though: the same word for both ways, as in
+      // `html, body { overscroll-behavior: none }`, is a page that doesn't
+      // want to bounce, and Safari still swipes there (idea 1249).
       function rootHolds() {
-        var b = getComputedStyle(document.documentElement).overscrollBehaviorX;
-        return b === 'none' || b === 'contain';
+        var s = getComputedStyle(document.documentElement);
+        var held = function (b) { return b === 'none' || b === 'contain'; };
+        return held(s.overscrollBehaviorX) && !held(s.overscrollBehaviorY);
       }
 
       window.addEventListener('wheel', function (e) {
