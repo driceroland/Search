@@ -638,7 +638,8 @@ struct SideBar: View {
                     // every space, so it stays put while the rows under it
                     // scroll, and while a swipe brings another space in.
                     if showsMarks {
-                        SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons, lined: marksLined)
+                        SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons, room: width - 20,
+                                      lined: marksLined)
                     }
                     // A row too long for the window scrolls between the pins
                     // and the foot, rather than running under the lights at one
@@ -834,7 +835,7 @@ struct SideBar: View {
                 .padding(.bottom, 10)
             }
             if showsMarks {
-                SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons,
+                SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons, room: width - 20,
                               lined: !keeps || !pinLines.isEmpty || !groups.isEmpty)
                     .allowsHitTesting(false)
             }
@@ -992,7 +993,10 @@ struct SideBar: View {
     /// The bookmarks bar in the column (SideBookmarks), when it is there.
     private var showsMarks: Bool { prefs.sideBookmarks && !browser.bookmarks.isEmpty }
     private var marksHeight: CGFloat {
-        showsMarks ? SideBookmarks.height(browser.bookmarks.roots.count, row: rowHeight, lined: marksLined) : 0
+        guard showsMarks else { return 0 }
+        let lines = SideBookmarks.lines(browser.bookmarks.roots, tiles: SideBookmarks.tiles(prefs, compact: icons),
+                                        room: width - 20, row: rowHeight)
+        return SideBookmarks.height(lines.count, row: rowHeight, lined: marksLined)
     }
     /// The bookmarks' line under them, unless the keep line comes straight
     /// after: no pinned row, folder or group between (idea 1255). The one

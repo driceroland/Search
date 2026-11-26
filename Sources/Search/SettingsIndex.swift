@@ -308,7 +308,7 @@ enum SettingsIndex {
               parent: "bookmarks.bar"),
         .init(id: "bookmarks.iconsOnly", group: "tablook", icon: "square.grid.2x2",
               title: "Show icons only on the bookmarks bar", detail: "Each bookmark as its site's icon, its name on hover",
-              more: "Folders keep their names. A bookmark you renamed to nothing already shows its icon alone.",
+              more: "Folders keep their names. With the bookmarks in the sidebar, they sit side by side there as tiles. A bookmark you renamed to nothing already shows its icon alone.",
               keys: ["bookmarks.iconsOnly"], words: ["favorites bar", "bookmarks toolbar", "favicons", "compact", "icon only", "names", "titles"],
               parent: "bookmarks.bar"),
         .init(id: "bookmarks.newTabOnly", group: "tablook", icon: "plus.square",
@@ -882,7 +882,9 @@ enum SettingsIndex {
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
-        case "bookmarks.iconsOnly", "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
+        // Icons only: on the bar above the page or in the column alike.
+        case "bookmarks.iconsOnly": return prefs.bookmarksBar
+        case "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
