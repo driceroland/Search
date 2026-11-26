@@ -423,7 +423,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     private func copy(markdown: Bool) {
         guard let url = tab.address else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(markdown ? Browser.markdownLink(tab.label, url) : url.absoluteString, forType: .string)
+        NSPasteboard.general.setString(markdown ? Browser.markdownLink(Browser.ownTitle(of: tab), url) : url.absoluteString, forType: .string)
         note.say(markdown ? "Link copied" : "Address copied")
     }
 

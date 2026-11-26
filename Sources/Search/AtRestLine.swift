@@ -93,6 +93,7 @@ struct TitleAtRest: View {
     var dim = false
     /// The tab it is on, for a row drawn for the bench (RecordsTitle).
     var record: UUID? = nil
+    var tidy: String? = nil
 
     private var on: Bool { shown && rest != nil }
 
@@ -103,6 +104,7 @@ struct TitleAtRest: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .foregroundStyle(colour)
+                .modifier(TidyGlint(tidy: tidy == label ? tidy : nil))
                 .modifier(RecordsTitle(key: record.map { "\($0.uuidString.prefix(8).lowercased())/title" },
                                        title: .init(text: label, size: size, shown: !(on && !hovering))))
                 .opacity(on && !hovering ? 0 : 1)

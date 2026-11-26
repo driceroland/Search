@@ -210,7 +210,7 @@ extension Browser {
     @discardableResult
     func addTile(from tab: Tab) -> TileAddress.Problem? {
         guard prefs.homeTiles, !tab.shy, let url = tab.address else { return .notAddress }
-        switch bookmarks.addTile(name: tab.label, url: url) {
+        switch bookmarks.addTile(name: Browser.ownTitle(of: tab), url: url) {
         case .success:
             announce("Added to new tabs")
             return nil

@@ -108,11 +108,11 @@ enum SettingsIndex {
 
     static func group(_ id: String) -> SettingsGroup? { groups.first { $0.id == id } }
     static func groups(of page: SettingsPanel.Page) -> [SettingsGroup] { groups.filter { $0.page == page } }
-    static func items(in group: String) -> [SettingsItem] { items.filter { $0.group == group && !$0.findOnly } }
+    static func items(in group: String) -> [SettingsItem] { catalog.filter { $0.group == group && !$0.findOnly && offered($0) } }
 
     // MARK: - rows
 
-    static let items: [SettingsItem] = ([
+    private static let catalog: [SettingsItem] = [
         // General
         .init(id: "general.default", group: "browser", icon: "link.badge.plus",
               title: "Open links from other apps", detail: "Make Search the browser Mail, Slack and the rest send links to",
@@ -414,6 +414,10 @@ enum SettingsIndex {
               more: "A click on the tab you're on opens its name to type over, as Rename in its right-click menu does, instead of its address. Edit its address with ⌘L.",
               keys: ["tabs.clickRenames"],
               words: ["rename", "name", "title", "double click", "click", "tab name"]),
+        .init(id: "tabs.tidy", group: "tabbar", icon: "sparkles",
+              title: "Tidy tab titles", detail: "Apple Intelligence shortens long page titles to what the page is about",
+              more: "Made on this Mac by the model built into macOS: nothing about the page leaves it. A tab you named keeps its name, and a page's own title comes back when it changes, until that one is tidied too.",
+              keys: ["tabs.tidy"], words: ["apple intelligence", "ai", "title", "short", "clean", "tidy", "arc"]),
         .init(id: "tabs.mirror", group: "tabwindows", icon: "rectangle.on.rectangle",
               title: "Same tabs in every window", detail: "Each window lists the same open tabs in a space, as it lists the same pins",
               more: "A tab opened, closed, moved, grouped or renamed in one window is so in the others. Each window shows the page on its own, so the same tab can be open in two windows at once. Private tabs stay in their window, and closing a window leaves its tabs in the others.",
@@ -825,7 +829,9 @@ enum SettingsIndex {
         .init(id: "note.flick", group: "video", icon: "hand.raised.fingers.spread",
               title: "Flick the floating video to a corner", detail: "Always there: two fingers send it to the corner they point at",
               keys: ["float.flicks"], words: ["flick", "corner"], kind: .note, findOnly: true),
-    ] as [SettingsItem]).filter(offered)
+    ]
+
+    static var items: [SettingsItem] { catalog.filter(offered) }
 
     /// Rows for a feature this Mac's WebKit doesn't have aren't listed at
     /// all, on the page or in the find field (see Privacy.swift).
@@ -834,11 +840,12 @@ enum SettingsIndex {
         case "privacy.clickIDs": return ClickIDs.possible
         case "privacy.gpc": return PrivacySignal.possible
         case "privacy.httpsFirst": return HTTPSFirst.possible
+        case "tabs.tidy": return TidyTitles.available
         default: return true
         }
     }
 
-    static func item(_ id: String) -> SettingsItem? { items.first { $0.id == id } }
+    static func item(_ id: String) -> SettingsItem? { catalog.first { $0.id == id && offered($0) } }
 
     // MARK: - finding
 
