@@ -1369,7 +1369,7 @@ final class Preferences: ObservableObject {
         Preferences.settleLittleLinks(in: store)
         navigationLeft = store.bool(forKey: "toolbar.left")
         compactStrip = store.bool(forKey: "tabs.compact")
-        detectsCaptivePortals = store.object(forKey: "network.captivePortal") as? Bool ?? true
+        detectsCaptivePortals = store.object(forKey: "network.captivePortal") as? Bool ?? false
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
         // The Mac's own unless asked otherwise — a Mac in dark mode expects
@@ -1748,7 +1748,7 @@ final class Preferences: ObservableObject {
         take(\.homeTuning, "home.tuning", HomeTuning.read(store.string(forKey: "home.tuning")), or: HomeTuning())
         take(\.navigationLeft, store.bool(forKey: "toolbar.left"))
         take(\.compactStrip, store.bool(forKey: "tabs.compact"))
-        take(\.detectsCaptivePortals, store.object(forKey: "network.captivePortal") as? Bool ?? true)
+        take(\.detectsCaptivePortals, store.object(forKey: "network.captivePortal") as? Bool ?? false)
         take(\.sidebar, "sidebar", store.object(forKey: "sidebar") as? Bool,
              or: store.string(forKey: "manner").map { $0 == "side" } ?? SidebarDefault.fresh(testing: Store.testing))
         take(\.sidePosition, "sidebar.position", store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init),
