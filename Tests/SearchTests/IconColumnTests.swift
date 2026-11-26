@@ -49,10 +49,10 @@ final class IconColumnTests: XCTestCase {
             XCTAssertEqual(frame.minX, 10)
             XCTAssertLessThanOrEqual(frame.maxX, window.frame.width)
         }
-        // The title; on the tab you're on, where it is too, as its row says at rest.
+        // The title and, on every tile, where the page is: a tile has no
+        // room to say it (X, 26 Nov).
         let tips = browser.tabs.compactMap { IconTiles.tips[$0.id] }
-        XCTAssertEqual(Array(tips.prefix(3)), ["one", "two", "three"])
-        XCTAssertEqual(tips.last, browser.prefs.showsAddress ? "four\nexample.com" : "four")
+        XCTAssertEqual(tips, ["one", "two", "three", "four"].map { "\($0)\nexample.com" })
         // A pulled width is kept, not used.
         XCTAssertGreaterThanOrEqual(browser.prefs.sideWidth, Metrics.sideMin)
     }
@@ -99,20 +99,55 @@ final class IconColumnTests: XCTestCase {
         XCTAssertEqual(IconTiles.tips[right], "three")
     }
 
-    func testHoveredActiveTileClosesWithoutOpeningAddressField() async throws {
+    /// The cross sits in a corner, small, clear of the middle a click to
+    /// pick the tab (or open its address) lands on.
+    func testTheCrossIsInACornerClearOfTheMiddle() {
+        let cross = IconTile.crossFrame, tile = Metrics.iconTile
+        let centre = CGPoint(x: tile / 2, y: tile / 2)
+        XCTAssertFalse(cross.contains(centre))
+        XCTAssertLessThanOrEqual(cross.maxX, tile / 3, "in the leading third")
+        XCTAssertLessThanOrEqual(cross.maxY, tile / 3, "in the top third")
+        // The mark (16 pt in the middle) is left all but a sliver.
+        let mark = CGRect(x: centre.x - 8, y: centre.y - 8, width: 16, height: 16)
+        let shared = cross.intersection(mark)
+        XCTAssertLessThanOrEqual(shared.width * shared.height, 4)
+        XCTAssertLessThan(cross.width * cross.height, tile * tile * 0.2)
+        XCTAssertGreaterThanOrEqual(IconTile.crossDwell, .milliseconds(400), "a pass over the column is quicker")
+    }
+
+    func testHoveredActiveTileClosesOnlyFromTheCornerAfterTheDwell() async throws {
         let browser = makeBrowser(count: 3)
         let tab = try XCTUnwrap(browser.active)
         let window = makeWindow(browser)
         try await settle()
         let frame = try XCTUnwrap(IconTiles.frames[tab.id])
         Bench.hoverRows[tab.id]?(true)
-        try await settle()
-        XCTAssertEqual(IconTiles.frames[tab.id], frame)
+        // At once, the corner is still the tile's: nothing closes.
+        try await Task.sleep(for: .milliseconds(100))
+        try await click(corner(frame), in: window)
+        XCTAssertTrue(browser.tabs.contains { $0.id == tab.id }, "no cross before the dwell")
+        if browser.editing { browser.edit() }
+        try await Task.sleep(for: .milliseconds(700))
+        // Long after the dwell, a click in the middle is still the tab's.
         try await click(frame, in: window)
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertTrue(browser.tabs.contains { $0.id == tab.id }, "a click in the middle never closes")
+        if browser.editing { browser.edit() }
+        // ⌘L (Open Address…): the field over the page, with the address in it.
+        browser.edit()
+        XCTAssertTrue(browser.editing)
+        XCTAssertTrue(browser.typed.contains("example.com/"), browser.typed)
+        browser.edit()
+        // The cross, in its corner, closes.
+        Bench.hoverRows[tab.id]?(false)
+        Bench.hoverRows[tab.id]?(true)
+        try await Task.sleep(for: .milliseconds(700))
+        try await click(corner(frame), in: window)
         XCTAssertFalse(browser.tabs.contains { $0.id == tab.id })
         XCTAssertEqual(browser.tabs.count, 2)
         XCTAssertEqual(browser.ghosts.last?.url, tab.address)
         XCTAssertNil(browser.editingTab)
+        _ = window
     }
 
     func testHoveredBackgroundTileSelectsBeforeItCanClose() async throws {
@@ -122,13 +157,18 @@ final class IconColumnTests: XCTestCase {
         try await settle()
         let frame = try XCTUnwrap(IconTiles.frames[tab.id])
         Bench.hoverRows[tab.id]?(true)
-        try await settle()
-        try await click(frame, in: window)
+        try await Task.sleep(for: .milliseconds(800))
+        try await click(corner(frame), in: window)
         XCTAssertEqual(browser.activeID, tab.id)
         XCTAssertEqual(browser.tabs.count, 3, "The selecting click must not also close the tab")
         XCTAssertTrue(browser.ghosts.isEmpty)
         XCTAssertNil(browser.editingTab)
-        try await click(frame, in: window)
+        // Picked, its cross waits the dwell again.
+        try await click(corner(frame), in: window)
+        XCTAssertEqual(browser.tabs.count, 3, "no cross the instant it is picked")
+        if browser.editing { browser.edit() }
+        try await Task.sleep(for: .milliseconds(700))
+        try await click(corner(frame), in: window)
         XCTAssertFalse(browser.tabs.contains { $0.id == tab.id })
     }
 
@@ -140,8 +180,8 @@ final class IconColumnTests: XCTestCase {
         try await settle()
         browser.focusPane(right)
         Bench.hoverRows[right.id]?(true)
-        try await settle()
-        try await click(try XCTUnwrap(IconTiles.frames[right.id]), in: window)
+        try await Task.sleep(for: .milliseconds(800))
+        try await click(corner(try XCTUnwrap(IconTiles.frames[right.id])), in: window)
         XCTAssertEqual(browser.tabs.count, 2)
         XCTAssertTrue(browser.tabs.contains { $0.id == left.id })
         XCTAssertFalse(browser.tabs.contains { $0.id == right.id })
@@ -150,6 +190,11 @@ final class IconColumnTests: XCTestCase {
     }
 
     // MARK: -
+
+    /// The cross's middle, as a frame to click the middle of.
+    private func corner(_ frame: CGRect) -> CGRect {
+        IconTile.crossFrame.offsetBy(dx: frame.minX, dy: frame.minY)
+    }
 
     private func click(_ frame: CGRect, in window: NSWindow) async throws {
         let centre = point(frame.midX, frame.midY, window)

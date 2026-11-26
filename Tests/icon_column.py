@@ -6,7 +6,7 @@ split suite's harness: started hidden in a world of its own, no window made,
 shown or brought forward, everything removed afterwards. Checked through
 the bench (`icons`, `split`): the setting turns the rows into tiles of a
 fixed narrow width, the lights stack in the column, a tile's tooltip is its
-title (and what the row would have said beside it), a drag still moves a
+title and its page's host (and what the row would have said beside it), a drag still moves a
 tab, a pair is one tile of two marks, a group's tiles fold with it, and
 turning it off gives the column its pulled width back. What can only be
 seen — the tooltip's delay, the look — is on the RC list.
@@ -69,7 +69,8 @@ try:
 
     # The tooltip: the title, nothing sliding out.
     t.ok("tooltip: a tab's title", ts[b]["tip"].split("\n")[0] == "b", ts[b]["tip"])
-    t.ok("tooltip: no address on a tab you're not on", "\n" not in ts[b]["tip"], ts[b]["tip"])
+    t.ok("tooltip: every tile says where its page is, not only the tab you're on",
+         len(ts[b]["tip"].split("\n")) >= 2 and "127.0.0.1" in ts[b]["tip"].split("\n")[1], ts[b]["tip"])
     sv.sp("select", id=a); time.sleep(0.4)
     tip = settle(lambda r: "\n" in tiles(r)[a]["tip"])
     lines = tiles(tip)[a]["tip"].split("\n")
