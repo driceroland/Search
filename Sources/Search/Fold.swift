@@ -399,14 +399,24 @@ struct Fold: View {
     /// it was hard to find with the pointer; 12 is still under a page's
     /// own first line of anything to click.
     private static let top: CGFloat = 12
-    /// How long the pointer rests on the edge before the strip comes out,
-    /// whose edge is the way to the menu bar. Long enough to cross the edge,
-    /// short enough not to be waited for.
-    private static let dwell: TimeInterval = 0.15
-    /// The same for a column hidden for good: a hand on its way along the
-    /// side crosses its edge in a frame or two, and anything longer was felt
-    /// as a wait (#1279).
-    private static let columnDwell: TimeInterval = 0.05
+    /// How long the pointer rests on the edge before a column hidden for
+    /// good, or the strip across the top, comes out: a hand on its way
+    /// crosses the edge in a frame or two, and anything longer was felt as
+    /// a wait (#1279; the strip's 0.15 s too, idea 1253). The strip's edge
+    /// is also the way to the menu bar: its wait starts again for as long
+    /// as the pointer is still rising (see rising), so a pointer only
+    /// grazing it on the way up doesn't bring it out.
+    static let dwell: TimeInterval = 0.05
+
+    /// Whether the pointer, from `last` to `point` in the window's own
+    /// coordinates, is still going up: on its way past the strip's edge to
+    /// the menu bar rather than come to rest on it. Against the screen's
+    /// top, in full screen or a window under the menu bar's own edge, it
+    /// can't rise any further, and the wait runs.
+    static func rising(from last: NSPoint?, to point: NSPoint) -> Bool {
+        guard let last else { return false }
+        return point.y > last.y
+    }
 
     var body: some View {
         ZStack(alignment: onRight ? .topTrailing : .topLeading) {
@@ -724,6 +734,7 @@ struct Fold: View {
             // edge: another app's window over it doesn't bring the column out.
             guard NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber
             else { return pass() }
+            if !prefs.sidebar, Fold.rising(from: last, to: point) { pass() }
             if arriving == nil { arrive() }
         } else if flung {
             pass()
@@ -798,7 +809,7 @@ struct Fold: View {
             peek(true)
         }
         arriving = coming
-        DispatchQueue.main.asyncAfter(deadline: .now() + (prefs.sidebar ? Fold.columnDwell : Fold.dwell), execute: coming)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Fold.dwell, execute: coming)
     }
 
     /// The pointer crossed the edge without stopping.
