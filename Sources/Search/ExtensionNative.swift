@@ -42,8 +42,16 @@ enum ExtensionNative {
     @MainActor
     static func processEnded(of extensionID: String, _ why: String) {
         processEnds[extensionID] = (Date(), why)
-        let held = Live.pipes.values.filter { $0.extensionID == extensionID }.count
-        log.notice("An extension's process ended (\(why, privacy: .public)) with \(held, privacy: .public) port(s) to apps open: they go with it")
+        let held = Live.pipes.values.filter { $0.extensionID == extensionID }
+        log.notice("An extension's process ended (\(why, privacy: .public)) with \(held.count, privacy: .public) port(s) to apps open: they go with it")
+        // At once, not when WebKit gets round to saying the ports went: by
+        // then the extension's next process may be starting, and what the
+        // app was still saying would be posted into it (idea 797). Each
+        // port's own disconnect handler still logs it as it comes.
+        for live in held {
+            live.relay.close()
+            live.pipe.stop()
+        }
     }
 
     /// Why an extension let go of a port, as far as Search can tell.
@@ -132,25 +140,26 @@ enum ExtensionNative {
         pipe.onTerminated = { note in
             log.notice("Host \(name, privacy: .public) ended: \(note, privacy: .public), \(since(started), privacy: .public) after it started")
         }
+        // What the app says waits for the extension to speak on the port
+        // first (or a second), and never goes to a port that has gone:
+        // see PortRelay (idea 797).
+        let relay = PortRelay(send: { port.sendMessage($0, completionHandler: nil) },
+                              gone: { port.isDisconnected })
         pipe.onMessage = { message in
-            // Never to a port that has gone: what the app says after the
-            // extension let go (its page reloaded, its process ended) is
-            // dropped here, not handed to WebKit to deliver to a page that
-            // isn't there (idea 797).
-            DispatchQueue.main.async {
-                guard !port.isDisconnected else { return }
-                port.sendMessage(message, completionHandler: nil)
-            }
+            DispatchQueue.main.async { MainActor.assumeIsolated { relay.fromApp(message) } }
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + PortRelay.grace) { MainActor.assumeIsolated { relay.open() } }
         pipe.onExit = {
             DispatchQueue.main.async { if !port.isDisconnected { port.disconnect() } }
         }
         // Listened to before it runs: a host may answer at once. One that
         // can't run is let go as one that has exited.
-        Live.keep(pipe, for: port, of: extensionID, name: name, started: started)
+        Live.keep(pipe, for: port, of: extensionID, name: name, started: started, relay: relay)
         do { try pipe.start() } catch { pipe.stop(); throw error }
         var beating: Timer?
         port.messageHandler = { message, _ in
+            // The extension's side is there: what the app said may go.
+            MainActor.assumeIsolated { relay.heard() }
             guard let message else { return }
             // A worker's shim asking whether the port has arrived (see the
             // shim, after its WebSocket): answered here, never passed on.
@@ -189,6 +198,7 @@ enum ExtensionNative {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                 log.notice("Port to \(name, privacy: .public) closed by the extension\(failed ? " with an error" : "", privacy: .public): \(letGoReason(of: extensionID), privacy: .public), \(when, privacy: .public) after its host started; its host is stopped")
             }
+            MainActor.assumeIsolated { relay.close() }
             beating?.invalidate()
             pipe.stop()
         }
@@ -206,6 +216,7 @@ enum ExtensionNative {
         let gone = Live.pipes.values.filter { $0.port.isDisconnected }
         for live in gone {
             log.notice("Stopping host \(live.name, privacy: .public): its port went unannounced (\(letGoReason(of: live.extensionID), privacy: .public)), \(since(live.started), privacy: .public) after it started")
+            live.relay.close()
             live.pipe.stop()
         }
     }
@@ -227,6 +238,7 @@ enum ExtensionNative {
             // the extension; said above instead. Its keep-alive timer stops
             // itself once the port reads as disconnected.
             live.port.disconnectHandler = nil
+            live.relay.close()
             live.pipe.stop()
             if !live.port.isDisconnected { live.port.disconnect() }
         }
@@ -234,9 +246,9 @@ enum ExtensionNative {
 
     /// Hosts that are connected, held until they end.
     private enum Live {
-        nonisolated(unsafe) static var pipes: [ObjectIdentifier: (pipe: HostPipe, port: WKWebExtension.MessagePort, extensionID: String, worker: Bool, name: String, started: Date)] = [:]
-        static func keep(_ pipe: HostPipe, for port: WKWebExtension.MessagePort, of extensionID: String, name: String, started: Date) {
-            pipes[ObjectIdentifier(pipe)] = (pipe, port, extensionID, false, name, started)
+        nonisolated(unsafe) static var pipes: [ObjectIdentifier: (pipe: HostPipe, port: WKWebExtension.MessagePort, extensionID: String, worker: Bool, name: String, started: Date, relay: PortRelay)] = [:]
+        static func keep(_ pipe: HostPipe, for port: WKWebExtension.MessagePort, of extensionID: String, name: String, started: Date, relay: PortRelay) {
+            pipes[ObjectIdentifier(pipe)] = (pipe, port, extensionID, false, name, started, relay)
             let previous = pipe.onExit
             pipe.onExit = {
                 previous?()
