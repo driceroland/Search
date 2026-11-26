@@ -133,7 +133,14 @@ enum ExtensionNative {
             log.notice("Host \(name, privacy: .public) ended: \(note, privacy: .public), \(since(started), privacy: .public) after it started")
         }
         pipe.onMessage = { message in
-            DispatchQueue.main.async { port.sendMessage(message, completionHandler: nil) }
+            // Never to a port that has gone: what the app says after the
+            // extension let go (its page reloaded, its process ended) is
+            // dropped here, not handed to WebKit to deliver to a page that
+            // isn't there (idea 797).
+            DispatchQueue.main.async {
+                guard !port.isDisconnected else { return }
+                port.sendMessage(message, completionHandler: nil)
+            }
         }
         pipe.onExit = {
             DispatchQueue.main.async { if !port.isDisconnected { port.disconnect() } }
