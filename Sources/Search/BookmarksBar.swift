@@ -4,8 +4,11 @@ extension Browser {
     /// The bar above the page, as asked for the tab on screen and the fold.
     var bookmarksBarForTab: Bool {
         guard prefs.bookmarksBar else { return false }
+        // Folded away, the bar goes with the tabs, except on a new tab when
+        // it is asked for on new tabs only: there it is the way to the
+        // bookmarks with the column out of sight (#1625).
         if folded {
-            return prefs.sidebar && prefs.bookmarksOnFoldedNewTabs && active?.isBlank == true
+            return prefs.sidebar && prefs.bookmarksNewTabOnly && active?.isBlank == true
         }
         return !prefs.bookmarksNewTabOnly || (active?.isBlank ?? true)
     }
@@ -19,8 +22,8 @@ extension Browser {
 //
 // Off unless asked for — Settings › Tabs, or Bookmarks › Show Bookmarks Bar
 // — since the page gives up a strip of its height to it. It goes with the
-// tabs when they fold away (⌘S), with an option to keep it on blank tabs
-// with the sidebar folded. A video filling the screen takes the bar away.
+// tabs when they fold away (⌘S), except on a new tab with Show the
+// bookmarks bar only on new tabs. A video filling the screen takes the bar away.
 //
 // Icons only (idea 980), also off unless asked for: every bookmark as its
 // icon alone, its name on hover, as Edge's "Show icons only" and Vivaldi's
@@ -301,6 +304,10 @@ struct SideBookmarks: View {
     @ObservedObject var prefs: Preferences
     let bookmarks: Bookmarks
     var compact = false
+    /// Whether it draws its line under it: not with the column's keep line
+    /// (KeepLine) straight after, nothing between them, where the two read
+    /// as one line drawn twice (idea 1255).
+    var lined = true
 
     private static let gap: CGFloat = 2
     /// The line under them, and the air either side of it.
@@ -308,8 +315,8 @@ struct SideBookmarks: View {
 
     /// How tall it is drawn, for the column's sums (SideBar.rowsEnd), which
     /// can't wait for a measurement.
-    static func height(_ count: Int, row: CGFloat) -> CGFloat {
-        count == 0 ? 0 : CGFloat(count) * row + CGFloat(count - 1) * gap + line
+    static func height(_ count: Int, row: CGFloat, lined: Bool = true) -> CGFloat {
+        count == 0 ? 0 : CGFloat(count) * row + CGFloat(count - 1) * gap + (lined ? line : 0)
     }
 
     var body: some View {
@@ -319,12 +326,14 @@ struct SideBookmarks: View {
                     Row(browser: browser, prefs: prefs, bookmarks: bookmarks, node: node, compact: compact)
                 }
             }
-            Rectangle()
-                .fill(Palette.hairline)
-                .frame(height: 1)
-                // As wide as the column's own lines (KeepLine).
-                .padding(.horizontal, compact ? 8 : 10)
-                .padding(.vertical, 6)
+            if lined {
+                Rectangle()
+                    .fill(Palette.hairline)
+                    .frame(height: 1)
+                    // As wide as the column's own lines (KeepLine).
+                    .padding(.horizontal, compact ? 8 : 10)
+                    .padding(.vertical, 6)
+            }
         }
         .frame(maxWidth: .infinity)
     }

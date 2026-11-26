@@ -154,7 +154,7 @@ struct InternalPageView: View {
     private var content: some View {
         switch page.kind {
         case .settings:
-            SettingsPanel(browser: browser, prefs: browser.prefs, asked: page.detail)
+            SettingsPanel(browser: browser, prefs: browser.prefs, asked: page.detail, tabID: tab.id)
         case .history:
             HistoryPanel(browser: browser)
         case .downloads:

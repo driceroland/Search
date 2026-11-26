@@ -41,8 +41,8 @@ final class FollowFileTests: XCTestCase {
             "bookmarksInSidebar",
             // A click on the tab you're on edits its address only (idea 951).
             "tabClickAddressOnly",
-            // The top bookmarks bar on new tabs (idea 1082, #1625).
-            "bookmarksNewTabOnly", "bookmarksOnFoldedNewTabs",
+            // The bookmarks bar only on new tabs (idea 1082).
+            "bookmarksNewTabOnly",
             // A click on the tab you're on keeps its name (idea 1076).
             "tabClickKeepsName",
             // Double click to rename (#1601).

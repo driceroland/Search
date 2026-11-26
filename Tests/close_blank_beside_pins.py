@@ -7,7 +7,8 @@ down and leaves a new tab; ⌘W on that new tab used to wake the pin just put
 down, so ⌘W went pin, new tab, pin, new tab for ever. Now it closes the
 window, as it does with Leave a new tab when the last tab closes on (a
 hidden probe has no key window, so the new tab is simply still there). With
-a pin still open, ⌘T then ⌘W goes back to that pin, as before.
+a pin still open, ⌘T then ⌘W closes the window too, with Leave a new tab
+when the last tab closes on as it comes (#1577); off, it went back to the pin.
 """
 import sys
 from pathlib import Path
@@ -48,12 +49,17 @@ def main():
         a_now = next((x for x in st["tabs"] if x["id"] == a), {})
         t.ok("the pin stays down", a_now.get("asleep") is True, a_now)
 
-        # A pin still open: ⌘T then ⌘W goes back to it, as before.
+        # A pin still open: ⌘T, then ⌘W.
         sv.cmd({"do": "select", "id": a}); sv.sp("newTab")
         st = sv.sp("state"); fresh = st["activeID"]
         t.ok("⌘T over an open pin gives a new tab", fresh != a and active(st)["blank"], st)
         st = sv.sp("closeTab", id=fresh)
-        t.ok("⌘W on it goes back to the open pin", st["activeID"] == a, st)
+        # Leave a new tab when the last tab closes, on as it comes since
+        # 26 Nov 2026 (#1577): that empty tab is the last tab beside the pins,
+        # and ⌘W on it closes the window as the only tab's does (a hidden
+        # probe has no key window: the new tab is simply still there). With
+        # the switch off it went back to the pin (Tests/close_last_tab.py).
+        t.ok("⌘W on it doesn't land on the pin: it closes the window", st["activeID"] == fresh, st)
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)

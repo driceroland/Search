@@ -283,7 +283,9 @@ def case_slice1b(t):
     t.ok("its about:blank entry is dropped", not any(e["blank"] for e in st["tabs"]), [e["url"] for e in st["tabs"]])
     c = page("c")
     cmd({"do": "pin", "id": c}); sp("select", id=c); st = sp("start")
-    t.ok("pin: split with a copy, pin kept out of the pair", not any(c in p["tabs"] for p in st["splits"]) and cmd({"do": "pin", "id": c, "home": True})["pin"] != "")
+    # Its own page goes into the pair, as it is; the pin keeps a fresh tab (#1573).
+    fresh = [x for x in st["pins"] if url(st, x).endswith("/c")]
+    t.ok("pin: split with its own page, pin kept out of the pair", any(p["tabs"][0] == c for p in st["splits"]) and c not in st["pins"] and len(fresh) == 1 and not any(fresh[0] in p["tabs"] for p in st["splits"]), (st["pins"], st["splits"]))
     sp("dismiss")
     st = sp("group", id=y); g = st["groups"][-1]["id"]
     gid = dict(zip([e["id"] for e in st["tabs"]], st["groupIDs"]))
@@ -416,16 +418,20 @@ def case_slice5a(t):
     setup(splitView=True, spaces=True); launch()
     m = page("mail"); a = page("apple-apple"); b = page("apple-apple-apple"); x = page("x")
     cmd({"do": "pin", "id": m})
-    # ⌥⌘N on a pin: a copy of its page and an empty page; the pin stays
+    # ⌥⌘N on a pin: its own page and an empty page; the pin stays, with a
+    # fresh tab at its page (#1573)
     sp("select", id=m); st = sp("start"); time.sleep(0.6); st = sp("state")
     p = st["splits"][-1]
-    t.ok("⌥⌘N on a pin: the pin stays pinned, out of the pair", m in st["pins"] and m not in p["tabs"], (st["pins"], p))
-    t.ok("…its page is in the pair as a tab of its own", url(st, p["tabs"][0]).endswith("/mail"), url(st, p["tabs"][0]))
+    pin = [y for y in st["pins"] if url(st, y).endswith("/mail")]
+    t.ok("⌥⌘N on a pin: the pin stays pinned, out of the pair", len(pin) == 1 and pin[0] not in p["tabs"] and m not in st["pins"], (st["pins"], p))
+    t.ok("…its own page is in the pair as a tab of its own", p["tabs"][0] == m and url(st, m).endswith("/mail"), p)
     sp("dismiss")
-    # dragging a tab onto a pin's page: a copy, pin untouched
+    # dragging a tab onto a pin's page: its own page, pin kept
+    m = pin[0] if pin else m
     sp("select", id=m); st = sp("pair", id=x, **{"with": m}, side="right"); time.sleep(0.6); st = sp("state")
     p = [q for q in st["splits"] if x in q["tabs"]][0]
-    t.ok("a tab onto a pin's page: pair with a copy, pin kept", m in st["pins"] and m not in p["tabs"] and url(st, p["tabs"][0]).endswith("/mail"), (st["pins"], p))
+    pin = [y for y in st["pins"] if url(st, y).endswith("/mail")]
+    t.ok("a tab onto a pin's page: pair with its own page, pin kept", len(pin) == 1 and pin[0] not in p["tabs"] and p["tabs"][0] == m, (st["pins"], p))
     copy = p["tabs"][0]
     # Close Other Tabs keeps the partner
     st = sp("closeOthers", id=x)

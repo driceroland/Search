@@ -99,6 +99,22 @@ final class PinSplitTests: XCTestCase {
         XCTAssertEqual(browser.tabs.count, before, "no tab added or lost")
     }
 
+    func testPuttingAwayTheOtherPaneOfAnActivePinnedSplitLeavesIt() {
+        let browser = makeBrowser()
+        let tabs = made
+        browser.pair(tabs[1], with: tabs[0], onLeft: false)
+        browser.pin(tabs[0])
+        browser.select(tabs[2])
+        browser.select(tabs[1])
+        XCTAssertEqual(browser.activeID, tabs[1].id)
+
+        browser.closeTab(tabs[0])
+
+        XCTAssertEqual(browser.activeID, tabs[2].id)
+        XCTAssertTrue(tabs[0].asleep && tabs[1].asleep)
+        XCTAssertNotNil(browser.pinnedPair(of: tabs[0]))
+    }
+
     func testAPinnedPairStaysRowsMovesWholeAndComesOutWhole() {
         let browser = makeBrowser()
         let tabs = made
@@ -151,6 +167,84 @@ final class PinSplitTests: XCTestCase {
             Set(pair.tabs.compactMap { id in other.tabs.first { $0.id == id }?.pinID }) == ids
         }
         XCTAssertEqual(pinned.count, 1)
+    }
+
+    /// A pin's page goes into Split View as it is (#1573): the tab that held
+    /// it is the one in the pair, still where it wandered to, and the pin
+    /// starts again in its place, asleep at the page it was pinned at, with
+    /// its id, letter, folder and name. A pin still asleep since launch
+    /// goes the same way.
+    func testAPinsOwnPageGoesIntoThePairAndThePinStartsAgainAtHome() {
+        let browser = makeBrowser()
+        let tabs = made
+        browser.pin(tabs[0], listed: true)
+        browser.pin(tabs[1], listed: true)
+        let home = tabs[1].home
+        let letter = tabs[1].pin
+        let ids = browser.tabs.prefix(2).map(\.pinID)
+        let elsewhere = URL(string: "https://two.example/elsewhere")!
+        tabs[1].restore(url: elsewhere, title: "elsewhere")
+        let folder = UUID()
+        tabs[1].pinFolder = folder
+        tabs[1].name = "kept"
+
+        // A tab dropped on the pin's page, on its right.
+        browser.pair(tabs[2], with: tabs[1], onLeft: false)
+
+        XCTAssertEqual(browser.split(for: tabs[1])?.tabs, [tabs[1].id, tabs[2].id], "the pin's own tab, not a copy")
+        XCTAssertNil(tabs[1].pin)
+        XCTAssertNil(tabs[1].pinFolder)
+        XCTAssertEqual(tabs[1].address, elsewhere)
+        XCTAssertEqual(browser.pinnedCount, 2)
+        XCTAssertEqual(browser.tabs.prefix(2).map(\.pinID), ids, "both pins where they were")
+        let fresh = browser.tabs[1]
+        XCTAssertFalse(fresh === tabs[1])
+        XCTAssertEqual(fresh.pin, letter)
+        XCTAssertEqual(fresh.home, home)
+        XCTAssertEqual(fresh.address, home)
+        XCTAssertTrue(fresh.asleep, "nothing loaded for it")
+        XCTAssertTrue(fresh.listed)
+        XCTAssertEqual(fresh.pinFolder, folder)
+        XCTAssertEqual(fresh.name, "kept")
+        XCTAssertNil(browser.split(for: fresh))
+    }
+
+    /// ⌥⌘N on the pin on screen: its own page and an empty one, the pin
+    /// kept among the pins with a fresh tab.
+    func testStartingASplitOnAPinKeepsItsPage() {
+        let browser = makeBrowser()
+        let tabs = made
+        browser.pin(tabs[0])
+        let id = tabs[0].pinID
+        browser.select(tabs[0])
+        browser.startSplit()
+
+        XCTAssertEqual(browser.split(for: tabs[0])?.tabs.first, tabs[0].id)
+        XCTAssertNil(tabs[0].pin)
+        XCTAssertEqual(browser.tabs.first?.pinID, id)
+        XCTAssertNotNil(browser.tabs.first?.pin)
+        XCTAssertFalse(browser.tabs.first === tabs[0])
+    }
+
+    /// A page of a pinned split with a link opened beside it: that page goes
+    /// into the new pair, and the pinned split keeps the pin's fresh tab,
+    /// still a pinned split of two.
+    func testAPinOfAPinnedSplitLeavesItsPageAndThePinnedSplitHolds() {
+        let browser = makeBrowser()
+        let tabs = made
+        browser.pair(tabs[1], with: tabs[0], onLeft: false)
+        browser.pin(tabs[0])
+        let pinned = browser.pinnedPair(of: tabs[0])
+        XCTAssertNotNil(pinned)
+
+        browser.pair(tabs[2], with: tabs[0], onLeft: false)
+
+        let fresh = browser.tabs[0]
+        XCTAssertFalse(fresh === tabs[0])
+        XCTAssertNil(tabs[0].pin)
+        XCTAssertEqual(browser.pinnedPair(of: fresh)?.id, pinned?.id)
+        XCTAssertEqual(browser.pinnedPair(of: fresh)?.tabs, [fresh.id, tabs[1].id])
+        XCTAssertEqual(browser.split(for: tabs[2])?.tabs, [tabs[0].id, tabs[2].id])
     }
 
     func testATabOutsideASplitIsNotOffered() {

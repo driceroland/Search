@@ -16,6 +16,10 @@ struct SettingsPanel: View {
     var asked: String? = nil
     /// Words already in Find a setting when it opens (previews).
     var found: String? = nil
+    /// The Settings tab this is drawn in: what Find a setting holds is kept
+    /// for it, as only the tab on screen is drawn and going to another tab
+    /// took the panel, and the words, away (#1655).
+    var tabID: UUID? = nil
     @Environment(\.asTab) private var asTab
 
     @ObservedObject private var updater = Updater.shared
@@ -111,7 +115,16 @@ struct SettingsPanel: View {
             if asTab { tabbed } else { card }
         }
         .onChange(of: browser.settingsFind) { _, _ in finding = true }
-        .onAppear { if let found { query = found } }
+        // Find a setting takes the keys as Settings opens, as System
+        // Settings' search does: type a setting's name at once (#1611).
+        // A turn later, once the tab has taken the window's keys.
+        .onAppear {
+            if let found { query = found } else if let tabID, let kept = browser.settingsQueries[tabID] { query = kept }
+            DispatchQueue.main.async { finding = true }
+        }
+        .onChange(of: query) { _, words in
+            if let tabID { browser.settingsQueries[tabID] = words.isEmpty ? nil : words }
+        }
     }
 
     /// In a tab of its own (see InternalPages.swift): the sections down the
@@ -202,7 +215,7 @@ struct SettingsPanel: View {
     }
 
     /// Find a setting: the wash, the glass, ⌘F beside it until something
-    /// is typed. Escape empties it.
+    /// is typed. Escape empties it, and then lets go.
     private struct FindField: View {
         @Binding var text: String
         var focus: FocusState<Bool>.Binding
@@ -220,7 +233,9 @@ struct SettingsPanel: View {
                         .textFieldStyle(.plain)
                         .foregroundStyle(Palette.ink)
                         .focused(focus)
-                        .onExitCommand { text = "" }
+                        // Escape empties it; empty, it lets go of the keys,
+                        // for Tab and the arrows to move around Settings.
+                        .onExitCommand { if text.isEmpty { focus.wrappedValue = false } else { text = "" } }
                         .accessibilityLabel("Find a setting")
                 }
                 .font(.system(size: 12.5))
@@ -683,7 +698,6 @@ struct SettingsPanel: View {
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
         case "bookmarks.iconsOnly": Switch(on: $prefs.bookmarksIconsOnly)
         case "bookmarks.newTabOnly": Switch(on: $prefs.bookmarksNewTabOnly)
-        case "bookmarks.foldedNewTabs": Switch(on: $prefs.bookmarksOnFoldedNewTabs)
         case "bookmarks.side":
             Switch(on: Binding(
                 get: { prefs.bookmarksInSidebar },
@@ -691,6 +705,7 @@ struct SettingsPanel: View {
             ))
         case "motion.light": Switch(on: $prefs.lightMotion)
         case "motion.instant": Switch(on: $prefs.instantMotion)
+        case "motion.downloads": Switch(on: $prefs.animatesDownloads)
         case "note.split": Always()
         default: EmptyView()
         }
@@ -799,6 +814,7 @@ struct SettingsPanel: View {
         case "float.minimize": Switch(on: $prefs.floatMinimizes)
         case "media.click": Switch(on: $prefs.waitsForPlay)
         case "video.keys": Switch(on: $prefs.videoKeys)
+        case "meet.pip": Switch(on: $prefs.meetPiP)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
         case "fullscreen.keepsWindow": Switch(on: $prefs.keepsWindow)
         case "translate.target":
@@ -809,6 +825,8 @@ struct SettingsPanel: View {
             Steps(stops: Preferences.zooms, value: $prefs.pageZoom, home: 1) { "\(Int(($0 * 100).rounded()))%" }
         case "pages.120": Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
         case "pages.capture": Switch(on: $prefs.capturesPages)
+        case "pages.capture.copyOnly": Switch(on: $prefs.copiesCapturesOnly)
+        case "hiding.shapes": Switch(on: $prefs.hidingShapes)
         case "sites.styles": SiteStylesControl(prefs: prefs)
         case "autocorrect": Switch(on: $prefs.autocorrect)
         case "inlinePredictions": Switch(on: $prefs.inlinePredictions)
@@ -914,6 +932,7 @@ struct SettingsPanel: View {
             .fixedSize()
         case "links.peek.stays": Switch(on: $prefs.peekStays)
         case "links.optionSplit": Switch(on: $prefs.optionClickSplits)
+        case "split.controls": Switch(on: $prefs.splitControls)
         case "keys.backspaceBack": Switch(on: $prefs.backspaceGoesBack)
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "wheel.smooth": Switch(on: $prefs.wheelGlides)
@@ -1061,7 +1080,7 @@ struct SettingsPanel: View {
                 TextField("", text: Binding(
                     get: { current.template },
                     set: { draft?.template = $0 }
-                ), prompt: Text("address with %s for the words, e.g. youtube.com/results?search_query=%s").italic())
+                ), prompt: Text("e.g. https://youtube.com/results?search_query=%s").italic())
                 .textFieldStyle(.plain)
                 .onSubmit(saveDraft)
             }
@@ -1131,7 +1150,7 @@ struct SettingsPanel: View {
         let saved = Keyword(
             id: current.id,
             keyword: current.keyword.trimmingCharacters(in: .whitespacesAndNewlines),
-            template: current.template.trimmingCharacters(in: .whitespacesAndNewlines)
+            template: Keyword.address(current.template)
         )
         // One being changed keeps its place in the list.
         if let index = prefs.keywords.firstIndex(where: { $0.id == saved.id }) {

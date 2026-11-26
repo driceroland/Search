@@ -317,18 +317,17 @@ enum SettingsIndex {
               parent: "bookmarks.bar"),
         .init(id: "bookmarks.newTabOnly", group: "tablook", icon: "plus.square",
               title: "Show the bookmarks bar only on new tabs", detail: "Hidden while a page is open, as Chrome and Edge can",
-              more: "The bar comes back as soon as the tab on screen is a new one.",
+              more: "The bar comes back as soon as the tab on screen is a new one, also with the column folded away.",
               keys: ["bookmarks.newTabOnly"], words: ["favorites bar", "bookmarks toolbar", "new tab", "only", "hide", "chrome", "edge"],
-              parent: "bookmarks.bar"),
-        .init(id: "bookmarks.foldedNewTabs", group: "tablook", icon: "sidebar.left",
-              title: "Keep the bookmarks bar on new tabs with the sidebar hidden",
-              detail: "Shows the bar above a blank tab while the sidebar is folded",
-              keys: ["bookmarks.foldedNewTabs"], words: ["favorites bar", "bookmarks toolbar", "blank tab", "sidebar", "fold", "hide", "⌘S"],
               parent: "bookmarks.bar"),
         .init(id: "motion.light", group: "motion", icon: "leaf",
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
               keys: [Motion.lightKey], words: ["battery", "animations", "motion"]),
+        .init(id: "motion.downloads", group: "motion", icon: "arrow.down.circle",
+              title: "Animate downloads", detail: "A new download arcs into the downloads button, and a check shows when it's in",
+              more: "From where you clicked. Skipped with Reduce Motion; the Saved line still says when a file is in.",
+              keys: ["motion.downloads"], words: ["downloads", "animation", "arc", "fly", "checkmark", "motion"]),
         .init(id: "motion.instant", group: "motion", icon: "bolt",
               title: "Reduce animations", detail: "Switching tabs, spaces and panels happens at once, without sliding or fading",
               more: "For Search alone, whatever Reduce Motion in System Settings says. The tab ⌘1–⌘9 picks is lit at once, and the page shows at once.",
@@ -465,6 +464,10 @@ enum SettingsIndex {
         .init(id: "float.minimize", group: "video", icon: "minus.circle",
               title: "Minimize the floating video", detail: "A button tucks the floating video small. The same button brings it back",
               keys: ["float.minimize"], words: ["minimize", "pip", "collapse", "small"]),
+        .init(id: "meet.pip", group: "video", icon: "person.2.crop.square.stack",
+              title: "Google Meet's own mini window", detail: "Leave a Meet call's tab and the call comes along in a small window, with Meet's buttons",
+              more: "As in Chrome: the call's tiles and Meet's own mute, camera and leave, in a corner over every app. It closes when you go back to the call. Meet is told Search is Chrome, which it asks for.",
+              keys: ["meet.pip"], words: ["google meet", "meet", "picture in picture", "pip", "mini window", "call", "video call", "document picture-in-picture"]),
         .init(id: "media.click", group: "video", icon: "play.slash",
               title: "Videos wait for a click", detail: "Videos don't start by themselves, even without sound",
               keys: [Preferences.waitsKey], words: ["autoplay", "auto-play"]),
@@ -486,8 +489,16 @@ enum SettingsIndex {
               keys: ["pageZoom"], words: ["zoom", "size", "scale"]),
         .init(id: "pages.capture", group: "pages", icon: "camera.viewfinder",
               title: "Capture pages", detail: "Capture… in the View menu copies an area, an element or the whole page",
-              more: "Drag across an area, click an element, or choose Whole Page; Esc cancels. The picture is copied and saved as a PNG in your downloads folder, and goes nowhere else.",
+              more: "Drag across an area, click an element, or choose Whole Page; Esc cancels. The picture is copied and saved as a PNG in your downloads folder (unless Copy captures only is on), and goes nowhere else.",
               keys: ["pages.capture"], words: ["screenshot", "capture", "snapshot", "picture", "png", "arc"]),
+        .init(id: "pages.capture.copyOnly", group: "pages", icon: "doc.on.clipboard",
+              title: "Copy captures only", detail: "The picture goes on the clipboard, with no PNG saved in your downloads folder",
+              keys: ["pages.capture.copyOnly"], words: ["screenshot", "capture", "clipboard", "copy", "png", "downloads", "save"],
+              parent: "pages.capture"),
+        .init(id: "hiding.shapes", group: "pages", icon: "arrow.up.and.down.and.arrow.left.and.right",
+              title: "Move and resize with Hide Elements", detail: "Drag what is outlined to move it, its right or bottom edge to resize it",
+              more: "Kept for the site like a hidden thing, listed in Hidden on This Site and put back the same way; ⌘Z takes the last change back. A click still hides.",
+              keys: ["hiding.shapes"], words: ["hide elements", "move", "resize", "drag", "size", "position", "zap", "arc", "boost"]),
         .init(id: "sites.styles", group: "pages", icon: "paintbrush",
               title: "Your own style for a site", detail: "Edit Site Style… in the View menu puts CSS of yours on the site you're on",
               more: "Applied as you type, to every page of that site, as Arc's Boosts. CSS only: Search never runs script you write in a page. Off, every style is kept but none is worn.",
@@ -674,6 +685,10 @@ enum SettingsIndex {
               title: "⌥-click a link opens it in Split View", detail: "Its page beside the one you're reading, as Open Link in Split View",
               more: "Off, ⌥-click follows the link as a click does. In Safari it downloads the link instead.",
               keys: ["links.optionSplit"], words: ["option click", "alt click", "split", "side by side", "link", "open beside"]),
+        .init(id: "split.controls", group: "mouse", icon: "rectangle.split.2x1",
+              title: "Controls over a page in Split View", detail: "Under the pointer: move it left or right, take it out of the split, or close it",
+              more: "The same as the divider's right-click menu and the Tabs menu, closer to hand.",
+              keys: ["split.controls"], words: ["split", "side by side", "move page", "swap", "close page", "separate", "buttons", "controls"]),
         .init(id: "keys.backspaceBack", group: "mouse", icon: "delete.left",
               title: "Backspace goes back", detail: "⌫ goes back a page and ⇧⌫ forward, as older browsers did",
               more: "Only when you aren't typing in a field or editable text, and with no other key held. Off, as in Safari: ⌘[ goes back.",
@@ -867,7 +882,6 @@ enum SettingsIndex {
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
         case "bookmarks.iconsOnly", "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
-        case "bookmarks.foldedNewTabs": return prefs.sidebar && prefs.bookmarksBar && !prefs.sideBookmarks
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
@@ -877,6 +891,7 @@ enum SettingsIndex {
         case "mail.default": return prefs.webmail != .none
         case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
         case "launcher.key": return prefs.launcher
+        case "pages.capture.copyOnly": return prefs.capturesPages
         case "icloud.erase": return ICloudSync.shared.on
         default: return true
         }
@@ -906,7 +921,6 @@ enum SettingsIndex {
         case "links.peek.stays": return "Only when links or pins open peeks"
         case "launcher.key": return "Only with the address field from any app on"
         case "bookmarks.side": return "Only with the bookmarks bar shown and the tabs down a side"
-        case "bookmarks.foldedNewTabs": return "Only with tabs down a side and the bookmarks bar above the page"
         default: return "Only with the tabs down a side"
         }
     }

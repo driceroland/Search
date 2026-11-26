@@ -9,8 +9,8 @@ window shown or brought forward, everything removed afterwards.
 Off, as it starts: the bar stays above every page. On: the bar is above a
 new tab only; a page opened in it takes the bar away, and the page starts
 that much higher in the window; going back to a new tab brings it back.
-With the bar itself hidden, the setting shows nothing. The extra switch
-keeps the bar on a new tab while the column is folded or peeking.
+With the bar itself hidden, the setting shows nothing. With the tabs down
+a side folded away (or peeking), a new tab keeps its bar (#1625).
 """
 import json
 import os
@@ -56,10 +56,8 @@ def main():
             t.ok(f"{where}: a new tab has the bar", blank["barForTab"] is True and blank["active"] == "", blank)
 
             sv.cmd({"do": "ui", "folded": True})
-            folded = bar()
-            t.ok(f"{where}: folding hides the bar by default", folded["barForTab"] is False, folded)
-            kept = bar(foldedNewTabs=True)
-            t.ok(f"{where}: the new switch applies to the folded column only", kept["barForTab"] is sidebar, kept)
+            kept = bar()
+            t.ok(f"{where}: folded away, a new tab keeps its bar in the column layout only", kept["barForTab"] is sidebar, kept)
             if sidebar:
                 frame = kept["frames"][0]
                 t.ok("column: the folded bar is drawn across the room that opens up",
@@ -82,7 +80,7 @@ def main():
             t.ok(f"{where}: a page opened in the folded new tab has no bar",
                  went["barForTab"] is False and went["active"].endswith("/later"), went)
             always = bar(newTabOnly=False)
-            t.ok(f"{where}: the new switch still leaves a folded page's bar hidden", always["barForTab"] is False, always)
+            t.ok(f"{where}: with the bar on every page, folding still takes it away", always["barForTab"] is False, always)
             sv.cmd({"do": "ui", "folded": False})
             unfolded = bar(newTabOnly=True)
             t.ok(f"{where}: the page starts at the same height as before",

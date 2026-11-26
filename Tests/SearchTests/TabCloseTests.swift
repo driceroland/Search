@@ -82,6 +82,19 @@ final class TabCloseTests: XCTestCase {
         XCTAssertEqual(browser.activeID, b.id)
     }
 
+    func testPuttingAwayBackgroundPinKeepsActiveTab() {
+        let (a, _, c) = viewedBAC()
+        browser.pin(a)
+        defer { browser.unpin(a) }
+        XCTAssertFalse(a.asleep)
+
+        browser.closeTab(a)
+
+        XCTAssertEqual(browser.activeID, c.id)
+        XCTAssertTrue(a.asleep)
+        XCTAssertNotNil(a.pin)
+    }
+
     func testOrderInTheRowDoesNotMatter() {
         let (a, b, c) = viewedBAC()
         browser.move(c, to: 1)

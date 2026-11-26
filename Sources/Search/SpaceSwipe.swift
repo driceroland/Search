@@ -147,7 +147,7 @@ final class SpaceSwipe {
     /// One space on (1) or back (-1), from a button or a swipe over the tabs.
     private func go(_ step: Int, _ event: NSEvent) -> Bool {
         guard let browser = Browsers.browser(for: window(of: event)), !browser.isPopup, browser.prefs.usesSpaces,
-              !browser.folded || browser.peeking, overTabs(event, in: browser) else { return false }
+              !browser.folded || browser.peeking, overTabs(event, in: browser), !overEditing(event) else { return false }
         self.browser = browser
         let here = shown(browser)
         let target = here + step
@@ -163,9 +163,18 @@ final class SpaceSwipe {
     /// space past the last one, but not while there is only one space. Spaces
     /// just turned on, a stroke over the tabs brought a nameless card that
     /// looked like a second space nobody made; New Space… still opens it.
-    private func furthest(_ browser: Browser) -> Int {
-        browser.spaces.count > 1 || browser.makingSpace ? browser.spaces.count : browser.spaces.count - 1
+    /// A stroke of the fingers (`stroke`) does reach it with one space, but
+    /// only a long, deliberate one (ended, alone): with no way past the one
+    /// space, the swipe Settings offers for spaces sprang back and seemed
+    /// broken (#1610). A wheel's notch or a mouse's button has no length to
+    /// tell a stray one by, and stays short of it.
+    private func furthest(_ browser: Browser, stroke: Bool = false) -> Int {
+        browser.spaces.count > 1 || browser.makingSpace || stroke ? browser.spaces.count : browser.spaces.count - 1
     }
+
+    /// How many times `enough` a stroke takes to bring the card for a new
+    /// space: twice past the last of several, three times past the only one.
+    static func toCard(alone: Bool) -> CGFloat { alone ? 3 : 2 }
 
     /// With profiles in one window, past this window's first space or its
     /// last: the space of the profile that comes before or after.
@@ -377,6 +386,16 @@ final class SpaceSwipe {
         return point.y > window.frame.height - Metrics.strip
     }
 
+    /// Over the field being typed in, the address in the column or a tab's
+    /// name: a long one is moved along with two fingers, sideways as a space
+    /// is gone to, so it keeps them. The window's field editor tells which
+    /// field it is; a page's own fields are under the page, not the tabs.
+    private func overEditing(_ event: NSEvent) -> Bool {
+        guard let window = window(of: event), let editor = window.firstResponder as? NSTextView, editor.isFieldEditor,
+              let field = editor.delegate as? NSTextField, field.window === window else { return false }
+        return field.convert(field.bounds, to: nil).contains(point(of: event))
+    }
+
     /// The bench's way in (Bench "spacestroke"): a trackpad's scroll
     /// events, made up off any window, read as the monitor reads the real
     /// ones, told which window they are over and where.
@@ -400,11 +419,13 @@ final class SpaceSwipe {
         // A mouse wheel over the tabs: a notch along the spaces' axis — up or down
         // in the bar, sideways in the column — brings one space. In the column
         // only a notch more sideways than up or down: scrolling the tabs is
-        // never taken for it.
+        // never taken for it. A sideways notch brings the space two fingers
+        // swiping the same way would: a wheel turned that way sends the
+        // opposite sign to their stroke's, so its dx is read the other way.
         if !event.hasPreciseScrollingDeltas {
             let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
-            let step = browser.prefs.sidebar ? (abs(dx) > abs(dy) ? dx : 0) : dy
-            guard step != 0, overTabs(event, in: browser) else { return false }
+            let step = browser.prefs.sidebar ? (abs(dx) > abs(dy) ? -dx : 0) : dy
+            guard step != 0, overTabs(event, in: browser), !overEditing(event) else { return false }
             let now = Date()
             let rested = now.timeIntervalSince(notched) > 0.3 && now > resting
             notched = now
@@ -433,8 +454,9 @@ final class SpaceSwipe {
             fingersDown = true
             gliding = false
             ignoring = false
-            // Only a gesture that starts over the tabs.
-            guard overTabs(event, in: browser) else {
+            // Only a gesture that starts over the tabs, and not over a field
+            // being typed in: there it moves along the text (RoomyField).
+            guard overTabs(event, in: browser), !overEditing(event) else {
                 tracking = false
                 return false
             }
@@ -554,9 +576,10 @@ final class SpaceSwipe {
         // as the fingers let go. Only the distance counted, and a quick
         // stroke, over before it had gone far, snapped back as if not made.
         let flick = abs(travel) >= 12 && abs(speed) > 400 && (speed < 0) == (travel < 0)
-        // The card for a new space takes a longer stroke, and no flick.
+        // The card for a new space takes a longer stroke, and no flick;
+        // longer still past the only space (furthest).
         let far = toCard(travel, in: browser)
-            ? abs(travel) >= 2 * SpaceSwipe.enough(for: browser)
+            ? abs(travel) >= SpaceSwipe.toCard(alone: browser.spaces.count == 1) * SpaceSwipe.enough(for: browser)
             : abs(travel) >= SpaceSwipe.enough(for: browser) || flick
         // Fingers to the left, or up, bring what is next.
         let target = cancelled || !far ? here : here + (travel < 0 ? 1 : -1)
@@ -564,7 +587,7 @@ final class SpaceSwipe {
             leave(browser, for: other, step: target - here)
             return
         }
-        guard target != here, target >= 0, target <= furthest(browser) else {
+        guard target != here, target >= 0, target <= furthest(browser, stroke: true) else {
             // Back where they were: the space on screen, or on its way in.
             if let coming = browser.spaceComing, !browser.makingSpace, !Motion.reduced {
                 letGoSpeed = speed
@@ -586,7 +609,7 @@ final class SpaceSwipe {
     /// card for a new space they go heavily, for it not to come by chance.
     private func resisted(_ travel: CGFloat, in browser: Browser) -> CGFloat {
         let here = shown(browser)
-        let blocked = (travel > 0 && here == 0 && browser.profileBeyond(-1) == nil) || (travel < 0 && here >= furthest(browser))
+        let blocked = (travel > 0 && here == 0 && browser.profileBeyond(-1) == nil) || (travel < 0 && here >= furthest(browser, stroke: true))
         return blocked ? travel / 4 : toCard(travel, in: browser) ? travel * 0.6 : travel
     }
 
@@ -627,7 +650,12 @@ final class SpaceSwipe {
         }
         // From the space the column shows, taken first.
         land(browser)
-        carry(browser, to: away * width) {
+        // Carried there a frame at a time, as a space's rows are (bring):
+        // carried as one animation to their end, the last space's rows took
+        // where they stop for the place they park, out of sight four pages
+        // on, and were animated there, passing back across the column, whole,
+        // as the card came in.
+        let arrived = {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) {
@@ -640,6 +668,8 @@ final class SpaceSwipe {
                 browser.spaceSwipe = 0
             }
         }
+        if Motion.reduced { return arrived() }
+        SwipeGlide.start(browser, to: away * width, speed: letGoSpeed, done: arrived)
     }
 }
 
