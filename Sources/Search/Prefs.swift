@@ -468,7 +468,7 @@ final class Preferences: ObservableObject {
     }
     /// Closing the last tab that isn't a pin, with pins beside it, leaves a
     /// new tab instead of taking you to a pin (see Browser.close, #537).
-    /// Off unless asked for.
+    /// On unless turned off (Drice, 26 Nov 2026, #1577).
     @Published var newTabAfterLast: Bool {
         didSet { store.set(newTabAfterLast, forKey: "tabs.newAfterLast") }
     }
@@ -773,6 +773,12 @@ final class Preferences: ObservableObject {
     @Published var copiesCapturesOnly: Bool {
         didSet { store.set(copiesCapturesOnly, forKey: "pages.capture.copyOnly") }
     }
+    /// Hide Elements moves and resizes too: a drag on what is outlined, or
+    /// on its right or bottom edge (see Veiling.picker). Off unless turned
+    /// on; off, a press hides at once, as it always has.
+    @Published var hidingShapes: Bool {
+        didSet { store.set(hidingShapes, forKey: "hiding.shapes") }
+    }
 
     /// Your own style for a site, Edit Site Style… in the View menu (see
     /// SiteStyles.swift). On unless turned off; off, the styles are kept.
@@ -819,6 +825,14 @@ final class Preferences: ObservableObject {
             VideoKeys.on = videoKeys
         }
     }
+    /// Google Meet's own little window, as Chrome shows it, when you go to
+    /// another tab during a call (see MeetPiP.swift). On unless turned off.
+    @Published var meetPiP: Bool {
+        didSet {
+            store.set(meetPiP, forKey: "meet.pip")
+            MeetPiP.on = meetPiP
+        }
+    }
     /// A mouse wheel's notches glide instead of jumping (see WheelGlide.swift).
     /// On unless turned off.
     @Published var wheelGlides: Bool {
@@ -858,6 +872,12 @@ final class Preferences: ObservableObject {
             Motion.instant = instantMotion
         }
     }
+    /// A new download's file arcs from the click into the downloads button,
+    /// and a check shows in the button once it is in (DownloadFlight.swift).
+    /// Off unless turned on; Reduce Motion skips both.
+    @Published var animatesDownloads: Bool {
+        didSet { store.set(animatesDownloads, forKey: "motion.downloads") }
+    }
     /// The modifier chosen in Settings › Shortcuts; Shift-click by default.
     @Published var peekClick: PeekClick {
         didSet { store.set(peekClick.rawValue, forKey: "links.peekClick") }
@@ -879,6 +899,13 @@ final class Preferences: ObservableObject {
     /// follows the link as before.
     @Published var optionClickSplits: Bool {
         didSet { store.set(optionClickSplits, forKey: "links.optionSplit") }
+    }
+    /// A small capsule over the page of a split under the pointer, with
+    /// what the divider's menu and the Tabs menu already do to it: move it
+    /// left or right, take it out of the split, close it (SplitControls.swift).
+    /// Something more drawn over a page, so off unless asked for.
+    @Published var splitControls: Bool {
+        didSet { store.set(splitControls, forKey: "split.controls") }
     }
     /// ⌫ goes back a page and ⇧⌫ forward, as Safari once had it: only when
     /// no field or editable text has the keys and nothing else is held,
@@ -1423,7 +1450,8 @@ final class Preferences: ObservableObject {
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         showsLoadingLine = store.object(forKey: "fold.loadingLine") as? Bool ?? true
         lazyTabs = store.bool(forKey: "tabs.lazy")
-        newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
+        // On for everyone who never touched it (Drice, 26 Nov 2026, #1577).
+        newTabAfterLast = store.object(forKey: "tabs.newAfterLast") as? Bool ?? true
         keepWindowAfterLast = store.bool(forKey: "tabs.keepWindow")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
         // On for everyone who never touched it (Drice, 25 Nov 2026).
@@ -1579,6 +1607,7 @@ final class Preferences: ObservableObject {
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")
         optionClickSplits = store.bool(forKey: "links.optionSplit")
+        splitControls = store.bool(forKey: "split.controls")
         backspaceGoesBack = store.bool(forKey: Preferences.backspaceKey)
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
@@ -1608,6 +1637,7 @@ final class Preferences: ObservableObject {
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         capturesPages = store.object(forKey: "pages.capture") as? Bool ?? true
         copiesCapturesOnly = store.bool(forKey: "pages.capture.copyOnly")
+        hidingShapes = store.bool(forKey: "hiding.shapes")
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         let styles = store.object(forKey: "sites.styles") as? Bool ?? true
         sitesStyles = styles
@@ -1621,6 +1651,9 @@ final class Preferences: ObservableObject {
         let videoKeys = store.object(forKey: "video.keys") as? Bool ?? true
         self.videoKeys = videoKeys
         VideoKeys.on = videoKeys
+        let meetPiP = store.object(forKey: "meet.pip") as? Bool ?? true
+        self.meetPiP = meetPiP
+        MeetPiP.on = meetPiP
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         let glides = store.object(forKey: "wheel.smooth") as? Bool ?? true
         wheelGlides = glides
@@ -1638,6 +1671,7 @@ final class Preferences: ObservableObject {
         FrameRate.mode = fast
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         lightMotion = store.object(forKey: Motion.lightKey) as? Bool ?? true
+        animatesDownloads = store.bool(forKey: "motion.downloads")
         let instant = store.bool(forKey: Motion.instantKey)
         instantMotion = instant
         Motion.instant = instant
