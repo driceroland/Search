@@ -627,7 +627,12 @@ final class SpaceSwipe {
         }
         // From the space the column shows, taken first.
         land(browser)
-        carry(browser, to: away * width) {
+        // Carried there a frame at a time, as a space's rows are (bring):
+        // carried as one animation to their end, the last space's rows took
+        // where they stop for the place they park, out of sight four pages
+        // on, and were animated there, passing back across the column, whole,
+        // as the card came in.
+        let arrived = {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) {
@@ -640,6 +645,8 @@ final class SpaceSwipe {
                 browser.spaceSwipe = 0
             }
         }
+        if Motion.reduced { return arrived() }
+        SwipeGlide.start(browser, to: away * width, speed: letGoSpeed, done: arrived)
     }
 }
 
