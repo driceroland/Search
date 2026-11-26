@@ -35,9 +35,16 @@ final class FullScreenTitleTests: XCTestCase {
         FullScreenTitle.name(window, title: "Big Buck Bunny - YouTube", url: nil)
         XCTAssertEqual(window.title, "Big Buck Bunny - YouTube")
         XCTAssertTrue(window.isExcludedFromWindowsMenu)
-        let listed = (CGWindowListCopyWindowInfo([.optionAll], 0) as? [[String: Any]])?
-            .first { ($0[kCGWindowNumber as String] as? Int) == window.windowNumber }
-        XCTAssertEqual(listed?[kCGWindowName as String] as? String, "Big Buck Bunny - YouTube")
+        // The window server takes the name a moment later, longer on a busy Mac.
+        func listed() -> String? {
+            (CGWindowListCopyWindowInfo([.optionAll], 0) as? [[String: Any]])?
+                .first { ($0[kCGWindowNumber as String] as? Int) == window.windowNumber }?[kCGWindowName as String] as? String
+        }
+        let deadline = Date().addingTimeInterval(3)
+        while listed() != "Big Buck Bunny - YouTube", Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertEqual(listed(), "Big Buck Bunny - YouTube")
         // The title changes in full screen: so does the name.
         FullScreenTitle.name(window, title: "Next video - YouTube", url: nil)
         XCTAssertEqual(window.title, "Next video - YouTube")
