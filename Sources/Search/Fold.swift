@@ -101,8 +101,11 @@ extension Browser {
         // Pressed again before the column went: it stays.
         if foldingAway {
             foldingAway = false
+            leaveOnGlass(false)
             return
         }
+        // On glass, the column keeps it until it has gone (columnGlass).
+        if prefs.sidebar, glassy { leaveOnGlass(!folded) }
         // Going away, the page is given the column's room first, and the
         // column slides only once WebKit has drawn the page at that size.
         // Given it as the slide started, the page grew while it slid, and
@@ -125,10 +128,13 @@ extension Browser {
                     self.foldingAway = false
                     self.folded = true
                 }
+                self.leaveOnGlass(false, after: Motion.columnAway + 0.1)
             }
             return
         }
+        let away = !folded
         moveColumn(out: folded) { self.folded.toggle() }
+        if away, leavingOnGlass { leaveOnGlass(false, after: Motion.columnAway + 0.1) }
     }
 
     /// `change`, which brings the column out (`out`) or puts it away, on
@@ -293,6 +299,7 @@ extension Browser {
 
     /// The folded column out over the page, or back in.
     func peek(_ out: Bool) {
+        if out, leavingOnGlass { leaveOnGlass(false) }
         moveColumn(out: out) { self.peeking = out }
     }
 
@@ -504,7 +511,7 @@ struct Fold: View {
                         .frame(maxHeight: .infinity, alignment: .top)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
                                              strength: browser.folded && browser.peeking ? 1 : 0,
-                                             ground: !browser.glassUnder, corner: floating ? Metrics.cardRadius : 0))
+                                             ground: browser.columnGround, corner: floating ? Metrics.cardRadius : 0))
                         // Folded away beside a page that is a card, the
                         // page has the whole window, and the column comes
                         // out over it as a card of its own, as Arc's does:
