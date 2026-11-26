@@ -400,10 +400,12 @@ final class SpaceSwipe {
         // A mouse wheel over the tabs: a notch along the spaces' axis — up or down
         // in the bar, sideways in the column — brings one space. In the column
         // only a notch more sideways than up or down: scrolling the tabs is
-        // never taken for it.
+        // never taken for it. A sideways notch brings the space two fingers
+        // swiping the same way would: a wheel turned that way sends the
+        // opposite sign to their stroke's, so its dx is read the other way.
         if !event.hasPreciseScrollingDeltas {
             let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
-            let step = browser.prefs.sidebar ? (abs(dx) > abs(dy) ? dx : 0) : dy
+            let step = browser.prefs.sidebar ? (abs(dx) > abs(dy) ? -dx : 0) : dy
             guard step != 0, overTabs(event, in: browser) else { return false }
             let now = Date()
             let rested = now.timeIntervalSince(notched) > 0.3 && now > resting
