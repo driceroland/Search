@@ -157,3 +157,47 @@ final class SnapGeometryTests: XCTestCase {
         XCTAssertGreaterThan(bottom.redComponent, 0.8); XCTAssertLessThan(bottom.greenComponent, 0.4)
     }
 }
+
+/// Copy captures only (idea 1250): off unless asked for, so a capture is
+/// still copied and saved; on, it is only copied and no file is named.
+@MainActor
+final class SnapCopyOnlyTests: XCTestCase {
+    override class func setUp() {
+        TestWorld.enter()
+        super.setUp()
+    }
+
+    func testOffUnlessAskedForAndAChoiceStands() {
+        let key = "pages.capture.copyOnly"
+        let saved = Store.settings.object(forKey: key)
+        defer { Store.settings.set(saved, forKey: key) }
+        Store.settings.removeObject(forKey: key)
+        XCTAssertFalse(Preferences().copiesCapturesOnly)
+        XCTAssertNil(Store.settings.object(forKey: key), "nothing written just for reading it")
+        Store.settings.set(true, forKey: key)
+        XCTAssertTrue(Preferences().copiesCapturesOnly)
+    }
+
+    func testCopyOnlyNamesNoFile() throws {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("snap-copy-only-\(UUID().uuidString)")
+        let date = Date(timeIntervalSince1970: 0)
+        XCTAssertNil(SnapGeometry.file(copyOnly: true, in: folder, at: date))
+        let file = try XCTUnwrap(SnapGeometry.file(copyOnly: false, in: folder, at: date))
+        XCTAssertEqual(file.deletingLastPathComponent().path, folder.path)
+        XCTAssertEqual(file.lastPathComponent, SnapGeometry.fileName(date))
+    }
+
+    func testTheRowSitsUnderCapturePages() throws {
+        let row = try XCTUnwrap(SettingsIndex.item("pages.capture.copyOnly"))
+        XCTAssertEqual(row.parent, "pages.capture")
+        XCTAssertEqual(row.group, "pages")
+        XCTAssertEqual(row.keys, ["pages.capture.copyOnly"])
+        let prefs = Preferences()
+        let captures = prefs.capturesPages
+        defer { prefs.capturesPages = captures }
+        prefs.capturesPages = false
+        XCTAssertFalse(SettingsIndex.applies(row, prefs), "nothing to copy with Capture pages off")
+        prefs.capturesPages = true
+        XCTAssertTrue(SettingsIndex.applies(row, prefs))
+    }
+}

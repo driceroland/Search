@@ -1,3 +1,4 @@
+import Combine
 import AppKit
 import AuthenticationServices
 import LocalAuthentication
@@ -201,6 +202,7 @@ final class Bench {
         clients.values.forEach { $0.drop() }
         clients = [:]
         running = false
+        Bench.unwatchScreens()
         // The tabs a script left open go with it.
         if let browser {
             for tab in browser.tabs where tab.bench && !tab.agent { browser.close(tab) }
@@ -396,7 +398,9 @@ final class Bench {
             let shy = request["private"] as? Bool == true
             guard !shy || Store.testing else { answer(["error": "open private only works on a --test run"]); return }
             let tab = browser.benchOpen(url, shy: shy)
-            house(tab)
+            // "room": false, left out of every window, as a tab you aren't
+            // looking at is: not laid out, and loading in its turn (LoadTurns).
+            if request["room"] as? Bool != false { house(tab) }
             answer(describe(tab))
 
         case "go":
@@ -490,6 +494,82 @@ final class Bench {
             guard let tab = find(request, in: browser) else { answer(missing(request)); return }
             browser.sleep(tab) { said in answer(["said": said, "asleep": tab.asleep]) }
 
+        case "reload":
+            // Every tab the bench opened, reloaded at once, as a run of ⌘R
+            // over many tabs would. Test runs only.
+            guard Store.testing else { answer(["error": "reload is for test runs"]); return }
+            let mine = browser.tabs.filter(\.bench)
+            mine.forEach { $0.reload() }
+            answer(["reloaded": mine.count])
+
+        case "turns":
+            // Pages out of sight loading in their turn, and waiting for one
+            // (LoadTurns), beside the tabs whose pages say they are loading.
+            answer(["at": LoadTurns.at, "inTurn": LoadTurns.shared.loadingCount, "waiting": LoadTurns.shared.waitingCount,
+                    "loading": browser.tabs.filter(\.loading).count,
+                    "webLoading": browser.tabs.filter { $0.built?.isLoading == true }.count])
+
+        case "passes":
+            // Each pass of the main run loop for "seconds", with the column's
+            // rows, the column and the window drawn again in it, and how many
+            // times the window (Browser) and its tabs said they changed: what
+            // pages loading in the tabs cost the window. "swipe": DX points
+            // over the column, a frame apart, "after" seconds in. Test runs only.
+            guard Store.testing else { answer(["error": "passes is for test runs"]); return }
+            let seconds = request["seconds"] as? Double ?? 3
+            let start = CFAbsoluteTimeGetCurrent()
+            var told: [Double] = []
+            var tabsTold = 0
+            var watching: [AnyCancellable] = [browser.objectWillChange.sink { _ in
+                told.append(((CFAbsoluteTimeGetCurrent() - start) * 1000).rounded())
+            }]
+            for tab in browser.tabs { watching.append(tab.objectWillChange.sink { _ in tabsTold += 1 }) }
+            Bench.bodies = [:]
+            var drawn: [String: Int] = [:]
+            var woke: CFAbsoluteTime = 0
+            // The main thread's own time on a processor in each pass: far
+            // under the pass's length, it was ready but kept waiting.
+            var wokeCPU: UInt64 = 0
+            var passes: [[String: Any]] = []
+            let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, CFIndex.min) { _, _ in
+                woke = CFAbsoluteTimeGetCurrent()
+                wokeCPU = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            }
+            let rest = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in
+                let now = CFAbsoluteTimeGetCurrent()
+                let began = woke > 0 ? woke : start
+                let cpu = wokeCPU > 0 ? Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - wokeCPU) / 1e6 : 0
+                wokeCPU = 0
+                var pass: [String: Any] = ["at": ((began - start) * 1000).rounded(), "ms": ((now - began) * 10000).rounded() / 10,
+                                           "cpu": (cpu * 10).rounded() / 10]
+                for (name, n) in Bench.bodies where n != drawn[name, default: 0] {
+                    pass[name] = n - drawn[name, default: 0]
+                }
+                drawn = Bench.bodies
+                passes.append(pass)
+                woke = 0
+            }
+            let observers = [wake, rest].compactMap { $0 }
+            for observer in observers { CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes) }
+            if let dx = request["swipe"] as? Double {
+                func step(_ n: Int) {
+                    if n == 0 {
+                        SpaceSwipe.shared.start(for: browser)
+                        SpaceSwipe.shared.began()
+                    }
+                    guard n < 12 else { SpaceSwipe.shared.ended(); return }
+                    SpaceSwipe.shared.moved(along: dx / 12)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 120) { step(n + 1) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + (request["after"] as? Double ?? 0.5)) { step(0) }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+                for observer in observers { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+                watching.removeAll()
+                answer(["passes": passes, "browserTold": told, "tabsTold": tabsTold,
+                        "loading": browser.tabs.filter(\.loading).count, "turns": LoadTurns.at])
+            }
+
         case "openmark":
             // A bookmark opened as the bar opens one. Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "openmark only works on a --test run"]); return }
@@ -535,6 +615,17 @@ final class Bench {
                     // A pinned row's icon while it takes the pin home
                     // (PinIconHome): its centre, from the window's top left.
                     "icon": PinIconHome.centre(of: tab.id).map { $0 as Any } ?? NSNull()])
+
+        case "dnsfail":
+            // Test run: the next TIMES loads of HOST fail as if its name
+            // couldn't be looked up (DNSRetry); "network": true, as if the
+            // Mac's network had just changed. What is left to fail.
+            guard Store.testing else { answer(["error": "dnsfail only works on a --test run"]); return }
+            if let host = (request["host"] as? String)?.lowercased() {
+                DNSRetry.testFailures[host] = request["times"] as? Int ?? 1
+            }
+            if request["network"] as? Bool == true { DNSRetry.networkChanged() }
+            answer(["left": DNSRetry.testFailures])
 
         case "select":
             // Picking a tab takes the window over, which the bench never does
@@ -4338,6 +4429,52 @@ final class Bench {
                         }])
             }
 
+        case "meetpip":
+            // Google Meet's own little window (MeetPiP.swift), in a test run
+            // only, where it is made but never shown. "state": the windows
+            // open and which tabs gave mediaSession Chrome's handler. "eval"
+            // (js, n): in the Nth window's page. "tap" (selector, n): a real
+            // click there. "close" (n): its close button, as a hand's.
+            guard Store.testing else { answer(["error": "meetpip only works on a --test run"]); return }
+            let windows = MeetPiPWindow.all
+            let n = request["n"] as? Int ?? 0
+            switch request["action"] as? String ?? "state" {
+            case "eval":
+                guard windows.indices.contains(n), let js = request["js"] as? String else { answer(["error": "no window \(n)"]); return }
+                windows[n].web.evaluateJavaScript(js) { value, error in
+                    MainActor.assumeIsolated {
+                        if let error { answer(["error": error.localizedDescription]); return }
+                        answer(["value": Bench.plain(value)])
+                    }
+                }
+            case "tap":
+                guard windows.indices.contains(n), let selector = request["selector"] as? String else { answer(["error": "no window \(n)"]); return }
+                let view = windows[n].web
+                view.evaluateJavaScript(Bench.locate(selector)) { value, error in
+                    MainActor.assumeIsolated {
+                        guard let point = value as? [Double], point.count == 2, view.window != nil else {
+                            answer(["error": error?.localizedDescription ?? "nothing matches \(selector)"]); return
+                        }
+                        PageHands.click(view, at: point)
+                        answer(["ok": true])
+                    }
+                }
+            case "close":
+                guard windows.indices.contains(n) else { answer(["error": "no window \(n)"]); return }
+                windows[n].panel.performClose(nil)
+                answer(["open": MeetPiPWindow.all.count])
+            case "shot":
+                // A PNG of the Nth window's page, drawn off screen as `shot`
+                // draws a tab's: the panel stays where it is, never shown.
+                guard windows.indices.contains(n) else { answer(["error": "no window \(n)"]); return }
+                let path = (request["path"] as? String) ?? NSTemporaryDirectory() + "search-bench-meetpip-\(n).png"
+                shoot(windows[n].web, to: URL(fileURLWithPath: path), width: request["width"] as? Double, answer)
+            default:
+                answer(["on": MeetPiP.on, "windows": windows.map(\.state),
+                        "armed": (browser.tabs + browser.parkedTabs).filter(\.meetPiPArmed).map(\.id.uuidString),
+                        "visibleOnScreen": windows.contains { $0.panel.isVisible }])
+            }
+
         case "float":
             // The floating window's gestures, handed to it as a trackpad, a
             // wheel or a click would, on screens made up far off the real
@@ -4357,6 +4494,28 @@ final class Bench {
                 Float.benchAway = NSPoint(x: -20000, y: -20000)
                 browser.floater.lift(NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 247)))
                 answer(["showing": browser.floater.showing])
+                return
+            }
+            // Over to another tab (`to`), as ⌃Tab goes, with Float the video
+            // on its own deciding whether the active tab's video comes along
+            // (idea 1248). Unlike `film float` via "switch", the page is not
+            // taken for a player's: the real site's own answer is under test.
+            if request["action"] as? String == "leave" {
+                guard let to = find(["id": request["to"] as Any], in: browser) else { answer(["error": "float leave needs `to`, another tab"]); return }
+                Float.benchAway = NSPoint(x: -20000, y: -20000)
+                if let tab = browser.active {
+                    let occlusion = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+                    if tab.web.responds(to: occlusion) {
+                        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+                        unsafeBitCast(tab.web.method(for: occlusion), to: Setter.self)(tab.web, occlusion, false)
+                    }
+                }
+                let playing = browser.active?.playingVideo ?? false
+                browser.select(to)
+                DispatchQueue.main.asyncAfter(deadline: .now() + (request["wait"] as? Double ?? 1.5)) {
+                    answer(["showing": browser.floater.showing, "playing": playing,
+                            "floating": browser.tabs.first { $0.id == browser.floating }.map(Bench.short) ?? ""])
+                }
                 return
             }
             // The active tab's video out, as ⇧⌘P lifts it, into the little
@@ -6561,6 +6720,31 @@ final class Bench {
             else { answer(["error": "split sizes needs split UUID and sizes"]); return }
             browser.setSplitSizes(id, sizes)
             reply()
+        case "moveIn":
+            // A page's capsule › Move Left (by -1) or Move Right (by 1).
+            guard let page = tab(), let step = request["by"] as? Int else { answer(["error": "split moveIn needs id and by"]); return }
+            browser.moveInSplit(page, by: step)
+            reply()
+        case "hover":
+            // The pointer come to rest over the middle of this page, as the
+            // stage hears it move there; with no id, gone from the pages.
+            // Handed to the stage itself: a hidden window passes no moves on.
+            func stage(in view: NSView) -> PaneStage? {
+                if let stage = view as? PaneStage { return stage }
+                for sub in view.subviews { if let found = stage(in: sub) { return found } }
+                return nil
+            }
+            guard let window = browser.window, let root = window.contentView?.superview, let found = stage(in: root) else {
+                answer(["error": "no split stage in this window"]); return
+            }
+            let page = tab()
+            let point = page?.built.map { web in web.convert(NSPoint(x: web.bounds.midX, y: web.bounds.midY), to: nil) } ?? .zero
+            guard let event = NSEvent.mouseEvent(
+                with: .mouseMoved, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+            ) else { answer(["error": "split hover made no event"]); return }
+            if page == nil { found.mouseExited(with: event) } else { found.mouseMoved(with: event) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { reply() }
         case "swap": browser.swapSplit(); reply()
         case "even": browser.evenSplit(); reply()
         case "closeBoth": browser.closeSplit(); reply()
@@ -6958,6 +7142,10 @@ final class Bench {
             "loading": tab.loading,
             // The failure up over the page instead of it, "" for none.
             "failure": tab.failure ?? "",
+            // Tries made at a page that couldn't be found, and whether
+            // another is still to come (DNSRetry).
+            "dnsTries": tab.dnsRetry.done,
+            "dnsPending": tab.dnsRetry.pending,
             "hollow": tab.hollow,
             "view": tab.built?.url?.absoluteString ?? "",
             "bench": tab.bench,
@@ -7121,6 +7309,14 @@ final class Bench {
                 pagesShown = false
             }
         })
+    }
+    /// The watch over, with the bench that started it: in a unit test run a
+    /// test that opens the bench for a moment (LauncherTests) left it on, and
+    /// every later test's window coming onto a screen hid the whole app, its
+    /// windows no longer visible (NoWindowsTests, in full runs only).
+    static func unwatchScreens() {
+        watching.forEach(NotificationCenter.default.removeObserver)
+        watching.removeAll()
     }
     /// Where `film float` lends the tab's stage, off every screen.
     private var hall: NSWindow?
