@@ -231,6 +231,7 @@ final class Passkeys: NSObject {
                 reply["prf"] = Passkeys.prfReply(enabled: nil, first: SymmetricKey(data: SHA256.hash(data: Data("rehearsal".utf8))),
                                                  second: nil, for: Passkeys.pageKey(waiting.body))
             }
+            reply["largeBlob"] = Passkeys.rehearsalLargeBlob(waiting.body, kind: "get")
             return waiting.answer(reply)
         }
         let request = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: waiting.rp)
@@ -238,6 +239,7 @@ final class Passkeys: NSObject {
         request.allowedCredentials = [ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: id)]
         request.userVerificationPreference = Passkeys.verification(waiting.body["userVerification"])
         if #available(macOS 15.0, *) { request.prf = Passkeys.prfAssertion(waiting.body["prf"], allowed: [id]) }
+        request.largeBlob = Passkeys.largeBlobAssertion(waiting.body["largeBlob"])
         Passkeys.ensure { [weak self] in
             guard let self else { return }
             self.begin([request], token: waiting.token, in: web.window, answer: waiting.answer)
@@ -370,6 +372,7 @@ final class Passkeys: NSObject {
                                                  first: SymmetricKey(data: SHA256.hash(data: Data("rehearsal".utf8))),
                                                  second: nil, for: Passkeys.pageKey(body))
             }
+            if !keysOnly { reply["largeBlob"] = Passkeys.rehearsalLargeBlob(body, kind: kind) }
             return answer(reply)
         }
 
@@ -442,6 +445,7 @@ final class Passkeys: NSObject {
         platform.allowedCredentials = allowed.map { ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: $0.id) }
         platform.userVerificationPreference = verification
         if #available(macOS 15.0, *) { platform.prf = Passkeys.prfAssertion(body["prf"], allowed: Set(allowed.map(\.id))) }
+        platform.largeBlob = Passkeys.largeBlobAssertion(body["largeBlob"])
         var requests: [ASAuthorizationRequest] = [platform]
         if #available(macOS 14.4, *) {
             let key = ASAuthorizationSecurityKeyPublicKeyCredentialProvider(relyingPartyIdentifier: rp)
@@ -482,6 +486,11 @@ final class Passkeys: NSObject {
             if #available(macOS 15.0, *), let prf = body["prf"] as? [String: Any] {
                 platform.prf = Passkeys.prfValues(prf["eval"]).map { .inputValues($0) } ?? .checkForSupport
             }
+            switch (body["largeBlob"] as? [String: Any])?["support"] as? String {
+            case "required": platform.largeBlob = .supportRequired
+            case "preferred": platform.largeBlob = .supportPreferred
+            default: break
+            }
             requests.append(platform)
         }
         if attachment != "platform", #available(macOS 14.4, *) {
@@ -503,6 +512,26 @@ final class Passkeys: NSObject {
             requests.append(key)
         }
         return requests
+    }
+
+    // MARK: - data kept with a passkey
+
+    /// The page's `largeBlob` for a sign-in: read what the passkey keeps for
+    /// the site, or write it. Apple's own sign-in reads it on every passkey
+    /// sign-in, from under the field too, and sends what it reads on.
+    static func largeBlobAssertion(_ value: Any?) -> ASAuthorizationPublicKeyCredentialLargeBlobAssertionInput? {
+        guard let blob = value as? [String: Any] else { return nil }
+        if blob["read"] as? Bool == true { return .read }
+        return data(blob["write"]).map { .write($0) }
+    }
+
+    /// For a test run: what a passkey would answer to the page's
+    /// `largeBlob`, with nothing kept.
+    static func rehearsalLargeBlob(_ body: [String: Any], kind: String) -> [String: Any]? {
+        guard let blob = body["largeBlob"] as? [String: Any] else { return nil }
+        if kind == "create" { return ["supported": true] }
+        if blob["read"] as? Bool == true { return ["blob": text(Data("rehearsal blob".utf8))] }
+        return blob["write"] != nil ? ["written": true] : nil
     }
 
     // MARK: - keys derived from a passkey
@@ -796,6 +825,13 @@ extension Passkeys: ASAuthorizationControllerDelegate, ASAuthorizationController
             if #available(macOS 15.0, *), let prf = (credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion)?.prf {
                 reply["prf"] = Passkeys.prfReply(enabled: nil, first: prf.first, second: prf.second, for: prfKey)
             }
+            if let blob = (credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion)?.largeBlob {
+                switch blob.result {
+                case .read(let data): reply["largeBlob"] = ["blob": data.map { Passkeys.text($0) as Any } ?? NSNull()]
+                case .write(let success): reply["largeBlob"] = ["written": success]
+                @unknown default: break
+                }
+            }
             finish(reply)
         } else if let made = credential as? ASAuthorizationPublicKeyCredentialRegistration {
             let platform = credential as? ASAuthorizationPlatformPublicKeyCredentialRegistration
@@ -808,6 +844,7 @@ extension Passkeys: ASAuthorizationControllerDelegate, ASAuthorizationController
             if #available(macOS 15.0, *), let prf = platform?.prf {
                 reply["prf"] = Passkeys.prfReply(enabled: prf.isSupported, first: prf.first, second: prf.second, for: prfKey)
             }
+            if let blob = platform?.largeBlob { reply["largeBlob"] = ["supported": blob.isSupported] }
             finish(reply)
         } else {
             finish(Passkeys.failure("NotAllowedError", "The authenticator answered with something else."))
@@ -1026,6 +1063,23 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         return out;
       }
 
+      // The largeBlob extension, checked as the standard has it: support
+      // when a passkey is made, read or write when signing in.
+      function largeBlobInput(extensions, made, allowed) {
+        var blob = extensions && extensions.largeBlob;
+        if (!blob) return null;
+        if (made) {
+          if (blob.read !== undefined || blob.write !== undefined) throw new DOMException('largeBlob takes only support when a credential is made.', 'NotSupportedError');
+          return { support: blob.support === 'required' ? 'required' : 'preferred' };
+        }
+        if (blob.support !== undefined || (blob.read !== undefined && blob.write !== undefined)) throw new DOMException('largeBlob takes read or write when signing in.', 'NotSupportedError');
+        if (blob.read) return { read: true };
+        if (blob.write === undefined) return null;
+        // What to write goes to one passkey, named by the site.
+        if (!allowed || allowed.length !== 1) throw new DOMException('largeBlob writes to exactly one credential.', 'NotSupportedError');
+        return { write: encode(blob.write) };
+      }
+
       function descriptors(list) {
         return Array.prototype.map.call(list || [], function (c) {
           return { id: encode(c.id), transports: Array.prototype.slice.call(c.transports || []) };
@@ -1072,9 +1126,18 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
         if (made && extensions && extensions.credProps && reply.attachment === 'platform') results.credProps = { rk: true };
         // PRF outputs are bytes: made afresh for each caller, base64url in JSON.
         var prf = extensions && extensions.prf && reply.prf ? reply.prf : null;
+        // largeBlob: whether the passkey keeps one, what it kept (bytes, as
+        // PRF's are), or whether it was written.
+        var blob = extensions && extensions.largeBlob ? (reply.largeBlob || {}) : null;
+        function blobOutput(binary) {
+          if (made) return { supported: !!blob.supported };
+          if (blob.written !== undefined) return { written: !!blob.written };
+          return blob.blob ? { blob: binary ? decode(blob.blob) : blob.blob } : {};
+        }
         var attachment = reply.attachment || null;
         var jsonResults = JSON.parse(JSON.stringify(results));
         if (prf) jsonResults.prf = prfOutput(prf, made, false);
+        if (blob) jsonResults.largeBlob = blobOutput(false);
         var json = { id: reply.id, rawId: reply.id, type: 'public-key', authenticatorAttachment: attachment, clientExtensionResults: jsonResults };
         json.response = made
           ? { clientDataJSON: reply.clientDataJSON, attestationObject: reply.attestationObject, authenticatorData: reply.authenticatorData,
@@ -1088,6 +1151,7 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
           getClientExtensionResults: function () {
             var copy = JSON.parse(JSON.stringify(results));
             if (prf) copy.prf = prfOutput(prf, made, true);
+            if (blob) copy.largeBlob = blobOutput(true);
             return copy;
           },
           toJSON: function () { return JSON.parse(JSON.stringify(json)); }
@@ -1177,7 +1241,8 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
             kind: 'get', conditional: underField, challenge: encode(pk.challenge), rpId: pk.rpId || null,
             allowCredentials: descriptors(pk.allowCredentials),
             userVerification: pk.userVerification || 'preferred',
-            prf: prfInput(pk.extensions, pk.allowCredentials)
+            prf: prfInput(pk.extensions, pk.allowCredentials),
+            largeBlob: largeBlobInput(pk.extensions, false, pk.allowCredentials)
           };
         } catch (e) { return Promise.reject(e); }
         return send(request, signal, pk.extensions);
@@ -1200,7 +1265,8 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
             residentKey: selection.residentKey || (selection.requireResidentKey ? 'required' : 'discouraged'),
             userVerification: selection.userVerification || 'preferred',
             attestation: pk.attestation || 'none',
-            prf: prfInput(pk.extensions, null)
+            prf: prfInput(pk.extensions, null),
+            largeBlob: largeBlobInput(pk.extensions, true, null)
           };
         } catch (e) { return Promise.reject(e); }
         return send(request, options.signal, pk.extensions);
@@ -1224,6 +1290,7 @@ final class PasskeyRelay: NSObject, WKScriptMessageHandlerWithReply {
             c = Object.assign({}, c);
             Object.keys(c).forEach(function (k) { if (k.indexOf('extension:') === 0 && k !== 'extension:credProps') c[k] = false; });
             c['extension:prf'] = \(Passkeys.prfAvailable);
+            c['extension:largeBlob'] = true;
             return Object.assign(c, {
               conditionalCreate: false, conditionalGet: true, conditionalMediation: true, relatedOrigins: false,
               signalAllAcceptedCredentials: false, signalCurrentUserDetails: false, signalUnknownCredential: false,
