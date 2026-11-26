@@ -704,6 +704,9 @@ struct FetchDoor: View {
     @Environment(\.greys) private var greys
 
     @State private var hovering = false
+    /// The check a finished download shows for a moment, with Settings ›
+    /// Appearance › Animate downloads (DownloadFlight.check).
+    @State private var checkGone = false
     /// Its view, for the card to stand beside. Held, not drawn from.
     @State private var spot = Spot()
 
@@ -726,6 +729,9 @@ struct FetchDoor: View {
         fetches.showing || !fetches.entries.isEmpty || prefs.alwaysShowsDownloads || hanging
     }
 
+    private var wantsCheck: Bool { prefs.animatesDownloads && !Motion.reduced }
+    private var checking: Bool { fetches.done && wantsCheck && !checkGone }
+
     private func float(_ on: Bool) {
         guard on else { return DownloadsFloat.hide(for: browser, animated: true) }
         guard live, let view = spot.view, view.window != nil else { return }
@@ -737,38 +743,16 @@ struct FetchDoor: View {
         // button: an arrow at rest, the circle while a file comes in.
         if Self.shows(fetches, prefs, hanging: browser.downloadsHanging) {
             Button { browser.showDownloads(toggles: true) } label: {
-                ZStack {
-                    if !fetches.showing {
-                        Image(systemName: "arrow.down.circle")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(hovering ? Palette.ink.opacity(0.7) : Palette.muted)
-                            .transition(.opacity)
-                    } else if fetches.done {
-                        Image(systemName: "arrow.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Palette.ink.opacity(0.75))
-                            .transition(.opacity)
-                    } else if let fraction = fetches.fraction {
-                        Circle()
-                            .stroke(Palette.muted.opacity(0.3), lineWidth: 1.5)
-                        Circle()
-                            .trim(from: 0, to: max(0.02, fraction))
-                            .stroke(Palette.ink.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                            .animation(Motion.timed(.easeOut(duration: 0.2)), value: fraction)
-                    } else {
-                        // No size given: turning, on Core Animation's time.
-                        Ring(size: 12)
-                    }
-                }
-                .frame(width: 12, height: 12)
+                FetchGlyph(fetches: fetches, rest: hovering ? Palette.ink.opacity(0.7) : Palette.muted,
+                           check: checking)
                 // A quick file's ring is gone before anyone looks, and people
                 // click again. A timeline rather than a state set and set back:
                 // it rests at 1 however it ends, a second download only takes
                 // over from where the first has got to, and nothing runs after.
-                // Only the count changing starts it, and the button that a
-                // download brings in sees no change: it has its scale-in alone.
-                .keyframeAnimator(initialValue: CGFloat(1), trigger: fetches.started) { icon, scale in
+                // A download beginning beats it (below), and the button that
+                // a download brings in hears none: it has its scale-in alone.
+                // A download's flight beats it as it lands (DownloadFlight).
+                .keyframeAnimator(initialValue: CGFloat(1), trigger: browser.doorBeat) { icon, scale in
                     icon.scaleEffect(scale)
                 } keyframes: { _ in
                     let pulse = Self.pulse(reduced: Motion.reduced, light: Motion.light)
@@ -787,15 +771,85 @@ struct FetchDoor: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .shortcutHelp("Downloads", "history.downloads")
-            .background(ButtonSpot { spot.view = $0; if browser.downloadsHanging { float(true) } })
+            .background(ButtonSpot { view in
+                spot.view = view
+                if live { browser.doorSpot.view = view }
+                if browser.downloadsHanging { float(true) }
+            })
+            // Every window's button pulses as a download begins, as before;
+            // the window a flight is coming to waits for it to land.
+            .onChange(of: fetches.started) { _, _ in
+                if live, browser.flight == nil { browser.doorBeat += 1 }
+            }
+            .onChange(of: fetches.done) { _, done in
+                checkGone = false
+                guard done, wantsCheck else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + DownloadFlight.check) {
+                    withAnimation(.easeOut(duration: DownloadFlight.checkFade)) { checkGone = true }
+                }
+            }
             .onChange(of: browser.downloadsHanging) { _, on in float(on) }
             // The doors moving while the list hangs: it follows them.
-            .onChange(of: live) { _, _ in float(browser.downloadsHanging) }
-            .onDisappear { DownloadsFloat.hide(for: browser) }
+            .onChange(of: live) { _, live in
+                float(browser.downloadsHanging)
+                if live { browser.doorSpot.view = spot.view }
+            }
+            .onDisappear {
+                DownloadsFloat.hide(for: browser)
+                if browser.doorSpot.view === spot.view { browser.doorSpot.view = nil }
+            }
             .transition(.scale(scale: 0.6).combined(with: .opacity))
             .animation(Motion.quick, value: fetches.done)
+            .animation(.easeOut(duration: DownloadFlight.checkFade), value: checkGone)
             .animation(Motion.quick, value: fetches.showing)
             .animation(Motion.quick, value: hovering)
         }
+    }
+}
+
+/// What the downloads button shows: an arrow at rest, the ring while files
+/// come in, and once they are in an arrow, or with Settings › Appearance ›
+/// Animate downloads, a check for a moment. Also the tab at the window's
+/// edge, the column folded away (DownloadsEdge).
+struct FetchGlyph: View {
+    @ObservedObject var fetches: Fetches
+    /// The resting arrow's colour.
+    var rest: Color = Palette.muted
+    var ink: Color = Palette.ink
+    var check = false
+
+    var body: some View {
+        ZStack {
+            if !fetches.showing {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(rest)
+                    .transition(.opacity)
+            } else if fetches.done {
+                if check {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(ink.opacity(0.75))
+                        .transition(.opacity)
+                } else {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(ink.opacity(0.75))
+                        .transition(.opacity)
+                }
+            } else if let fraction = fetches.fraction {
+                Circle()
+                    .stroke(Palette.muted.opacity(0.3), lineWidth: 1.5)
+                Circle()
+                    .trim(from: 0, to: max(0.02, fraction))
+                    .stroke(ink.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(Motion.timed(.easeOut(duration: 0.2)), value: fraction)
+            } else {
+                // No size given: turning, on Core Animation's time.
+                Ring(size: 12)
+            }
+        }
+        .frame(width: 12, height: 12)
     }
 }

@@ -785,7 +785,12 @@ struct ContentView: View {
         } else if let tab = browser.active {
             Page(tab: tab, corner: cardCorner, browser: browser)
                 .overlay {
-                    if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
+                    if browser.prefs.showsLinks {
+                        // Beside the downloads tab at the window's edge, not under it.
+                        let room = browser.downloadsEdge ? DownloadFlight.edgeRoom : 0
+                        LinkBubble(status: browser.linkStatus,
+                                   leadingRoom: sideOnRight ? 0 : room, trailingRoom: sideOnRight ? room : 0)
+                    }
                 }
                 // Developer Mode's bar, for a site in it (DevMode.swift).
                 .overlay(alignment: .bottomTrailing) { DevBar(browser: browser, tab: tab) }
@@ -935,17 +940,20 @@ struct ContentView: View {
     /// A column being dragged wider or narrower is followed as it goes.
     private func make(room new: CGSize, after old: CGSize) {
         let now = roomed
-        // The column's edge held: the page slides with it rather than being
-        // laid out again at every width it goes through. Wider, it runs on
-        // past the window's far edge; narrower, it is resized only every 40
-        // points, each time with that much to spare. Let go, it is resized
-        // once, to its room (below).
+        // The column's edge held: the page is laid out once, as wide as the
+        // narrowest column would leave it, and from then on only slides
+        // with the edge. Its far side always reaches past the card's, which
+        // cuts it, so no strip of nothing opens there and nothing is laid
+        // out again while the edge moves: resized every 40 points, the far
+        // side jumped each time as the page caught up a frame late. Let go,
+        // it is resized once, to its room (below).
         if edges.side != nil, new.height == now.height, new.width > Metrics.cardGap {
             roomTicket += 1
-            guard new.width < now.width else { return }
+            let least = Metrics.sideMin
+            guard now.width > least else { return }
             var still = Transaction()
             still.disablesAnimations = true
-            withTransaction(still) { room = CGSize(width: max(Metrics.sideMin, new.width - 40), height: new.height) }
+            withTransaction(still) { room = CGSize(width: least, height: new.height) }
             return
         }
         // The card's far gap coming back as the column does (see
@@ -1176,6 +1184,14 @@ struct ContentView: View {
                 }
             }
             .overlay { panels }
+            // A new download's file on its way to the downloads button.
+            // Only with Settings › Appearance › Animate downloads on: off, nothing
+            // here watches the downloads at all.
+            .overlay {
+                if browser.prefs.animatesDownloads || browser.downloadsEdge {
+                    DownloadFlightLayer(browser: browser, fetches: browser.fetches, onRight: sideOnRight)
+                }
+            }
             .overlay { switcherOverlay }
             .overlay(alignment: .topTrailing) {
                 if let job = browser.fileImport { ImportProgress(browser: browser, job: job) }
@@ -1569,6 +1585,11 @@ struct ContentView: View {
                 guard let window, event.window === window else { return event }
                 Browser.lastClose = nil
                 Browser.lastMove = nil
+                // Where a download a click starts sets off from (DownloadFlight).
+                if event.type != .otherMouseDown, let height = window.contentView?.bounds.height {
+                    let at = event.locationInWindow
+                    browser.lastPress = (CGPoint(x: at.x, y: height - at.y), CACurrentMediaTime())
+                }
                 // A click on the tab switcher, in this window only (see
                 // Browser.clickTabSwitcher), turned into the top-left
                 // coordinates SwiftUI's frames are in.

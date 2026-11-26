@@ -748,16 +748,25 @@ final class CallWatch: NSObject {
 }
 
 /// What there is to say when the page never came. One line, and the only thing
-/// worth offering — another go.
+/// worth offering — another go. A second line in the message is a hint,
+/// drawn smaller under it.
 struct Trouble: View {
     let message: String
     let retry: () -> Void
 
     var body: some View {
+        let lines = message.split(separator: "\n", maxSplits: 1).map(String.init)
         VStack(spacing: 10) {
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundStyle(Palette.ink)
+            VStack(spacing: 4) {
+                Text(lines.first ?? message)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Palette.ink)
+                if lines.count > 1 {
+                    Text(lines[1])
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                }
+            }
             Button("Try again", action: retry)
                 .buttonStyle(.plain)
                 .font(.system(size: 12))
