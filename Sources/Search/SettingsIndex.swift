@@ -358,7 +358,7 @@ enum SettingsIndex {
               more: "Make a folder called Home in Bookmarks and put sites in it: a blank tab shows up to 16 of them as tiles with their names, in the order you keep them.",
               keys: ["home.grid"], words: ["home", "home page", "start page", "new tab", "speed dial", "favorites"]),
         .init(id: "home.tiles", group: "newtabs", icon: "square.grid.3x2",
-              title: "Site tiles on a new tab", detail: "Small chips under the address field, each a site\u{2019}s icon and name; add, edit, move and remove them there",
+              title: "Site tiles on a new tab", detail: "Small chips of your sites under the address field; add, edit and move them there",
               more: "Click + to add a site, or right-click a tab and choose Add to New Tabs. Right-click a chip to edit or remove it, or click the × that shows on hover; drag chips to reorder them, or select one with Tab and press ⌘ with an arrow. Up to 12. They\u{2019}re kept in your bookmark folder called Home, so each profile has its own and they sync with your bookmarks. Private tabs show them but don\u{2019}t change them, and a new tab never fetches anything for them.",
               keys: ["home.tiles"], words: ["shortcuts", "tiles", "speed dial", "top sites", "most visited", "favorites", "new tab", "start page", "home"]),
         .init(id: "tabs.undoReopens", group: "closing", icon: "arrow.uturn.backward.circle",
