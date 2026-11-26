@@ -15,7 +15,7 @@ final class DefaultsOnTests: XCTestCase {
     static let keys = ["privacy.httpsFirst", "tabs.undoReopens", "video.keys", "tabs.popupWindows", "tabs.frontBeside",
                        "tabs.swipeBackCloses", "wheel.smooth", "reader.follows", "pages.capture", "sites.styles",
                        "home.grid", "fold.loadingLine", Motion.lightKey, "float.minimize", "pins.folders", "commandbar",
-                       "sidebar.player", "tabs.pinCounts"]
+                       "sidebar.player", "tabs.pinCounts", "tabs.newAfterLast"]
     /// Still off unless turned on.
     static let offKeys = ["search.suggest", "pages.bounce", "passwords.fill.prove", "tabs.lazy", "links.little.tabs"]
 
@@ -37,7 +37,8 @@ final class DefaultsOnTests: XCTestCase {
          "pins.folders": prefs.pinFolders,
          "commandbar": prefs.commandBar,
          "sidebar.player": prefs.showsPlayer,
-         "tabs.pinCounts": prefs.showsPinCounts]
+         "tabs.pinCounts": prefs.showsPinCounts,
+         "tabs.newAfterLast": prefs.newTabAfterLast]
     }
 
     func testOnWithNoLineOffWithALineSayingOff() {

@@ -21,6 +21,9 @@ final class DeveloperSheets: ObservableObject {
     }
 
     @Published private(set) var front: Front?
+    /// The card as last laid out, and the room it had: for tests
+    /// (FullAutomation "settings"). Not published: nothing redraws for it.
+    var drawn: (card: CGSize, room: CGSize)?
 
     func present(id: UUID, content: AnyView, close: @escaping () -> Void) {
         front = Front(id: id, content: content, close: close)
@@ -107,7 +110,10 @@ private struct DeveloperItemSheetModifier<Item: Identifiable, Sheet: View>: View
 }
 
 /// Where DevTools' sheets are drawn: over the tools themselves, docked or
-/// in their own window.
+/// in their own window, and inside them, as Chrome's are: a card no bigger
+/// than the room, with less margin round it when the room is small. A
+/// panel docked down a side is 485 points wide to start with, and Settings
+/// was its own 720 × 520 whatever the room, cut off on both sides (idea 1257).
 struct DeveloperSheetLayer: View {
     @ObservedObject private var sheets = DeveloperSheets.shared
     @ObservedObject private var tools = DeveloperTools.shared
@@ -115,19 +121,28 @@ struct DeveloperSheetLayer: View {
     private var here: Bool { tools.session != nil }
 
     var body: some View {
-        ZStack {
-            if let front = sheets.front, here {
-                PanelSheet(close: front.close) {
-                    front.content
-                        .environment(\.developerDismiss, DeveloperDismissAction(close: front.close))
-                        .tint(DeveloperToolsStyle.tint)
-                        .toggleStyle(.developerCheckbox)
-                        .buttonStyle(PillStyle())
-                        .plateCard()
-                        .padding(24)
+        GeometryReader { room in
+            let margin: CGFloat = min(room.size.width, room.size.height) < 480 ? 8 : 24
+            ZStack {
+                if let front = sheets.front, here {
+                    PanelSheet(close: front.close) {
+                        front.content
+                            .environment(\.developerDismiss, DeveloperDismissAction(close: front.close))
+                            .tint(DeveloperToolsStyle.tint)
+                            .toggleStyle(.developerCheckbox)
+                            .buttonStyle(PillStyle())
+                            .plateCard()
+                            .onGeometryChange(for: CGSize.self) { $0.size } action: { [sheets] in
+                                sheets.drawn = ($0, room.size)
+                            }
+                            .frame(maxWidth: max(0, room.size.width - 2 * margin),
+                                   maxHeight: max(0, room.size.height - 2 * margin))
+                            .padding(margin)
+                    }
+                    .id(front.id)
                 }
-                .id(front.id)
             }
+            .frame(width: room.size.width, height: room.size.height)
         }
         .animation(Motion.reduced ? nil : .spring(response: 0.32, dampingFraction: 0.86), value: sheets.front?.id)
     }

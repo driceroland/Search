@@ -84,7 +84,6 @@ final class ColumnFrames {
     var grid: CGRect?
     var listed: CGRect?
     var rows: CGRect = .zero
-    var loose: CGRect?
 }
 
 /// The place opened in the grid for a tab carried there: its mark, faint,

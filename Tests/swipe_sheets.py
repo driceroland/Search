@@ -15,7 +15,9 @@ fingers to the right) with its trackpad phases and a glide after:
 - set off with a little up or down in it: as the same swipe without;
 - a page with nothing sideways: back;
 - the same, on a page whose root says overscroll-behavior-x: none or
-  contain, as Sheets' does: never back, as in Chrome.
+  contain, as Sheets' does: never back, as in Chrome;
+- a root that says none or contain both ways (a page that doesn't bounce,
+  idea 1249): back, as in Safari.
 
 Hidden, Sheets itself never scrolls (its grid moves in animation frames,
 which a hidden page doesn't get) and lets every wheel event through, so
@@ -36,7 +38,8 @@ HEAD = "<!doctype html><meta charset=utf-8><style>body{margin:0;font:14px system
 PAGES = {
     "/start": HEAD + "<title>start</title><p>start",
     "/plain": HEAD + "<title>plain</title><p>nothing sideways<script>"
-    "document.documentElement.style.overscrollBehaviorX=new URLSearchParams(location.search).get('ob')||''</script>",
+    "var q=new URLSearchParams(location.search);document.documentElement.style.overscrollBehaviorX=q.get('ob')||'';"
+    "document.documentElement.style.overscrollBehaviorY=q.get('oby')||''</script>",
     # x: where the grid starts (0 is its left edge). edge=1: at an edge the
     # handler lets the event go instead of taking it. ob: the root's
     # overscroll-behavior-x.
@@ -108,6 +111,12 @@ CASES = [
     ("grid at its edge, letting it through, root contain", "/grid?x=0&edge=1&ob=contain", SLOW, False),
     ("nothing sideways, root none", "/plain?ob=none", SLOW, False),
     ("nothing sideways, root auto", "/plain?ob=auto", SLOW, True),
+    # Both ways at once, `overscroll-behavior: none` on the root: a page
+    # that doesn't bounce, not one that keeps sideways swipes (idea 1249).
+    ("nothing sideways, root none both ways", "/plain?ob=none&oby=none", SLOW, True),
+    ("nothing sideways, root none both ways, flicked", "/plain?ob=none&oby=none", FLICK, True),
+    ("nothing sideways, root contain both ways", "/plain?ob=contain&oby=contain", SLOW, True),
+    ("nothing sideways, root none sideways, contain up and down", "/plain?ob=none&oby=contain", SLOW, True),
 ]
 
 

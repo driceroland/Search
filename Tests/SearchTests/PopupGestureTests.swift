@@ -32,6 +32,23 @@ final class PopupGestureTests: XCTestCase {
         XCTAssertFalse(permission.take(origin: "same", now: 22.1))
     }
 
+    /// Idea 1215: SharePoint's Excel frame hands "Open in Desktop App" over
+    /// a moment after the click in it; once, from that frame only, and
+    /// without spending the window the click grants.
+    func testHandOffAfterAClickInTheSameFrameOnce() {
+        var permission = PopupGesture()
+        let frame = "https://excel.officeapps.live.com:443"
+        XCTAssertFalse(permission.takeHandOff(origin: frame, now: 10))
+        permission.record(origin: frame, kind: "input", now: 10)
+        XCTAssertFalse(permission.takeHandOff(origin: "https://ads.example:443", now: 10.5))
+        XCTAssertFalse(permission.takeHandOff(origin: nil, now: 10.5))
+        XCTAssertTrue(permission.takeHandOff(origin: frame, now: 11))
+        XCTAssertFalse(permission.takeHandOff(origin: frame, now: 11.1))
+        XCTAssertTrue(permission.take(origin: frame, now: 11.2))
+        permission.record(origin: frame, kind: "input", now: 20)
+        XCTAssertFalse(permission.takeHandOff(origin: frame, now: 25.5))
+    }
+
     func testAsyncRequestCanOpenOnceWithinActivationWindow() {
         var permission = PopupGesture()
         XCTAssertFalse(permission.take(origin: "https://example.com:443", now: 10))

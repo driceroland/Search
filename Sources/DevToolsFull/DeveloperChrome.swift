@@ -77,6 +77,8 @@ struct SettingsRailRow: View {
     /// While searching: how many rows of this section match.
     let count: Int?
     let chosen: Namespace.ID
+    /// Its icon alone, the title its tooltip: in a card too narrow for both.
+    var compact = false
     let act: () -> Void
     @State private var hovering = false
 
@@ -86,8 +88,10 @@ struct SettingsRailRow: View {
                 Image(systemName: icon)
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 16)
-                Text(title)
-                    .font(.system(size: 13, weight: on ? .medium : .regular))
+                if !compact {
+                    Text(title)
+                        .font(.system(size: 13, weight: on ? .medium : .regular))
+                }
                 Spacer(minLength: 0)
                 if let count, count > 0 {
                     Text("\(count)")
@@ -116,6 +120,7 @@ struct SettingsRailRow: View {
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
+        .help(compact ? title : "")
         .onHover { hovering = $0 }
         .animation(Motion.quick, value: hovering)
     }
