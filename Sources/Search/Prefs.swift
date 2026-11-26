@@ -874,6 +874,13 @@ final class Preferences: ObservableObject {
     @Published var optionClickSplits: Bool {
         didSet { store.set(optionClickSplits, forKey: "links.optionSplit") }
     }
+    /// A small capsule over the page of a split under the pointer, with
+    /// what the divider's menu and the Tabs menu already do to it: move it
+    /// left or right, take it out of the split, close it (SplitControls.swift).
+    /// Something more drawn over a page, so off unless asked for.
+    @Published var splitControls: Bool {
+        didSet { store.set(splitControls, forKey: "split.controls") }
+    }
     /// ⌫ goes back a page and ⇧⌫ forward, as Safari once had it: only when
     /// no field or editable text has the keys and nothing else is held,
     /// which WebKit decides (see Web.backspace). Off unless asked for, as
@@ -1573,6 +1580,7 @@ final class Preferences: ObservableObject {
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")
         optionClickSplits = store.bool(forKey: "links.optionSplit")
+        splitControls = store.bool(forKey: "split.controls")
         backspaceGoesBack = store.bool(forKey: Preferences.backspaceKey)
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")

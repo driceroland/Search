@@ -913,6 +913,7 @@ struct SettingsPanel: View {
             .fixedSize()
         case "links.peek.stays": Switch(on: $prefs.peekStays)
         case "links.optionSplit": Switch(on: $prefs.optionClickSplits)
+        case "split.controls": Switch(on: $prefs.splitControls)
         case "keys.backspaceBack": Switch(on: $prefs.backspaceGoesBack)
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "wheel.smooth": Switch(on: $prefs.wheelGlides)
