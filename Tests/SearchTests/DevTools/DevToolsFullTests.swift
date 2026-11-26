@@ -90,6 +90,19 @@ final class DevToolsFullTests: XCTestCase {
         XCTAssertEqual(state["dock"] as? Bool, true, "docked beside the page")
         XCTAssertTrue(DevToolsPackages.busy(tab), "kept awake while open")
 
+        // Settings fits inside the docked panel, at its first size down a
+        // side or along the bottom and at the smallest each can be dragged
+        // to, as in Chrome; it was 720 × 520 whatever the room (idea 1257).
+        for (width, height) in [(485.0, 700.0), (270.0, 600.0), (1000.0, 338.0), (1000.0, 182.0), (1100.0, 900.0)] {
+            let settings = try await perform("settings", ["width": width, "height": height], tab)
+            let card = try XCTUnwrap(settings["card"] as? [Double], "\(width)×\(height): \(settings)")
+            let room = try XCTUnwrap(settings["room"] as? [Double], "\(settings)")
+            XCTAssertEqual(room, [width, height])
+            XCTAssertLessThanOrEqual(card[0], width - 16, "\(width)×\(height): as wide as \(card[0])")
+            XCTAssertLessThanOrEqual(card[1], height - 16, "\(width)×\(height): as tall as \(card[1])")
+            if width >= 800, height >= 600 { XCTAssertEqual(card, [720, 520], "its own size, with room for it") }
+        }
+
         // Elements: the known DOM, and the rule that styles #title.
         let styles = try await perform("elements.select", ["selector": "#title"], tab)
         let tree = try await perform("elements.tree", [:], tab)

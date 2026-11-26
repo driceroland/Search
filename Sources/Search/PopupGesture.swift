@@ -9,6 +9,8 @@ struct PopupGesture {
     private var recorded = false
     private var time: TimeInterval = 0
     private var consumed = false
+    /// Whether this interaction already handed a link to another app.
+    private var handed = false
     private var input = false
     private var menu = false
     /// The interaction was the middle button: a window the page opens for
@@ -36,6 +38,7 @@ struct PopupGesture {
         recorded = true
         time = now
         consumed = false
+        handed = false
         input = kind != "click"
         menu = kind == "menu"
         middle = pressedMiddle
@@ -65,6 +68,19 @@ struct PopupGesture {
     /// PointerLock) but opens nothing.
     func recent(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         recorded && now >= time && now - time <= 5
+    }
+
+    /// A link for another app (ms-excel:, zoommtg:…) asked for by a frame of
+    /// another site, right after a real click or key in that very frame:
+    /// Excel and Word for the web, in their officeapps.live.com frame on a
+    /// SharePoint page, hand "Open in Desktop App" over this way, from a
+    /// script a moment after the click (idea 1215). Once per interaction,
+    /// and apart from the one window it grants (take()).
+    mutating func takeHandOff(origin: String?, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        guard recorded, origin != nil, self.origin == origin,
+              !handed, now >= time, now - time <= 5 else { return false }
+        handed = true
+        return true
     }
 
     mutating func clear() {

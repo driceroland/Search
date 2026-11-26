@@ -847,7 +847,7 @@ private struct DeveloperApplicationValueEditor: View {
             }
         }
         .padding(16)
-        .frame(width: 400)
+        .frame(idealWidth: 400, maxWidth: 400)
         .interactiveDismissDisabled(saveTask != nil)
         .task { await load() }
         .onChange(of: problem) { _, problem in

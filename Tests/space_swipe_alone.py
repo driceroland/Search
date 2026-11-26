@@ -56,7 +56,7 @@ try:
     t.ok("one space, 100 points toward the card (twice a space's): it snaps back", not making(), making())
     r = sv.cmd({"do": "swipetime", "dx": -70, "steps": 3, "every": 1 / 120}); time.sleep(1.2)
     t.ok("one space, a quick 70-point flick: it snaps back", not making(), making())
-    r = sv.cmd({"do": "spacenotch", "dx": -1})
+    r = sv.cmd({"do": "spacenotch", "dx": 1})
     t.ok("one space, a wheel's notch toward the card: nothing comes", not r["making"] and not r["precise"],
          (r["making"], r["precise"]))
     sv.cmd({"do": "space", "action": "swipe", "dx": -160}); time.sleep(1.2)
@@ -72,7 +72,7 @@ try:
     sv.cmd({"do": "space", "action": "swipe", "dx": -110}); time.sleep(1.2)
     t.ok("two spaces, 110 points from the last: the card, as before", making(), making())
     back()
-    r = sv.cmd({"do": "spacenotch", "dx": -1})
+    r = sv.cmd({"do": "spacenotch", "dx": 1})
     t.ok("two spaces, a wheel's notch from the last: the card, as before", r["making"], r)
 finally:
     t.done()
