@@ -7,6 +7,13 @@ import XCTest
 /// (idea 1253). Both wait the same now; the strip's edge, which is also the
 /// way to the menu bar, starts its wait again while the pointer still rises.
 final class FoldDwellTests: XCTestCase {
+    func testOnlyTheColumnInFrontTrustsThePointersPosition() {
+        XCTAssertTrue(Fold.frontColumn(sidebar: true, key: true, main: false))
+        XCTAssertTrue(Fold.frontColumn(sidebar: true, key: false, main: true))
+        XCTAssertFalse(Fold.frontColumn(sidebar: true, key: false, main: false))
+        XCTAssertFalse(Fold.frontColumn(sidebar: false, key: true, main: true))
+    }
+
     func testTheStripWaitsNoLongerThanTheColumn() {
         XCTAssertEqual(Fold.dwell, 0.05, accuracy: 0.0001)
     }
