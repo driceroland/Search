@@ -494,8 +494,18 @@ struct SettingsPanel: View {
             return mailHandler.map { "Email links from other apps go to \($0) now" } ?? item.detail
         case "downloads.folder":
             return prefs.downloads.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
-        case "sync": return icloud.on ? "Off while Sync with iCloud is on" : sync.on ? sync.summary : item.detail
-        case "icloud": return icloud.summary(folderSyncOn: sync.on, otherwise: item.detail)
+        case "sync": return icloud.on && !sync.on ? "Off while Sync with iCloud is on" : sync.on ? sync.summary : item.detail
+        case "icloud":
+            // Which profile goes up, with more than one (idea 1330): only
+            // Personal's tabs, pins and bookmarks reach the iPhone.
+            let summary = icloud.summary(folderSyncOn: sync.on, otherwise: item.detail)
+            let front = Browsers.front.flatMap { $0.isPopup ? nil : $0 }
+            let line = icloud.on && icloud.available
+                ? ICloudSync.profileLine(several: Profiles.shared.several,
+                                         name: Profiles.shared.profile(Profile.personalID).name,
+                                         elsewhere: front.map { $0.profileID != Profile.personalID } ?? false)
+                : nil
+            return line.map { summary + "\n" + $0 } ?? summary
         case "search.engine": return searchDetail
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail
