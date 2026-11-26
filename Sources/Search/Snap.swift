@@ -9,7 +9,8 @@ import WebKit
 // outlines it — or press Whole Page. Escape, or the command again, and
 // nothing is taken. The layer is gone before WebKit draws the picture, so
 // it is never in it. The picture goes on this Mac's clipboard (not to your
-// other devices') and into your downloads folder as a PNG, and that is all:
+// other devices') and into your downloads folder as a PNG (only the
+// clipboard with Copy captures only on), and that is all:
 // nothing is sent anywhere, and from a private tab nothing else is kept —
 // its copy is marked so clipboard managers leave it out of their history.
 
@@ -172,6 +173,12 @@ enum SnapGeometry {
         format.timeZone = zone
         format.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         return "Capture \(format.string(from: date)).png"
+    }
+
+    /// Where a capture is saved in `folder`: nowhere with Copy captures
+    /// only on, when the clipboard is all it goes to.
+    static func file(copyOnly: Bool, in folder: URL, at date: Date = Date()) -> URL? {
+        copyOnly ? nil : Browser.free(fileName(date), in: folder)
     }
 
     /// The picture as a PNG at its full resolution, tagged with its size in
@@ -513,7 +520,7 @@ extension Browser {
             if Store.testing {
                 let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("search-bench-snap")
                 try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                snap(choice, in: tab, to: Browser.free(SnapGeometry.fileName(Date()), in: folder),
+                snap(choice, in: tab, folder: folder,
                      board: NSPasteboard(name: NSPasteboard.Name("search.bench.snap"))) { taken in
                     SnapGeometry.taken = taken.merging(["kind": choice.kind.rawValue]) { $1 }
                 }
@@ -533,10 +540,10 @@ extension Browser {
     }
 
     /// The bench's way in, past the layer: the same picture, written to
-    /// `file` and copied to `board` rather than to Downloads and the Mac's
-    /// clipboard.
-    func snap(_ choice: SnapGeometry.Choice, in tab: Tab, to file: URL? = nil, board: NSPasteboard = .general,
-              finished: (([String: Any]) -> Void)? = nil) {
+    /// `file` (or into `folder`, unless Copy captures only is on) and
+    /// copied to `board` rather than to Downloads and the Mac's clipboard.
+    func snap(_ choice: SnapGeometry.Choice, in tab: Tab, to file: URL? = nil, folder: URL? = nil,
+              board: NSPasteboard = .general, finished: (([String: Any]) -> Void)? = nil) {
         let web = tab.web
         let backing = web.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         guard let plan = SnapGeometry.plan(choice, zoom: web.pageZoom, backing: backing) else {
@@ -545,7 +552,7 @@ extension Browser {
             return
         }
         let passing = tab.shy
-        let file = file ?? Browser.free(SnapGeometry.fileName(Date()), in: downloadsFolder)
+        let file = file ?? SnapGeometry.file(copyOnly: prefs.copiesCapturesOnly, in: folder ?? downloadsFolder)
         let failed: (String?) -> Void = { [weak self] reason in
             self?.announce("Couldn't capture this page")
             finished?(["error": reason ?? "no picture"])
@@ -583,23 +590,25 @@ extension Browser {
         }
     }
 
-    /// The picture on the clipboard and in its file, and said so.
-    private func keep(_ image: NSImage, cropped: Bool, rect: CGRect, passing: Bool, file: URL, board: NSPasteboard,
+    /// The picture on the clipboard and in its file, if it has one, and said so.
+    private func keep(_ image: NSImage, cropped: Bool, rect: CGRect, passing: Bool, file: URL?, board: NSPasteboard,
                       failed: (String?) -> Void, finished: (([String: Any]) -> Void)?) {
         guard let data = SnapGeometry.png(image) else { return failed("no PNG") }
         SnapGeometry.copy(png: data.png, tiff: data.tiff, passing: passing, to: board)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let wrote = (try? data.png.write(to: file, options: .atomic)) != nil
+            let wrote = file.map { (try? data.png.write(to: $0, options: .atomic)) != nil } ?? false
             DispatchQueue.main.async {
                 guard let self else { return }
                 let copied = cropped ? "The top of the page copied" : "Copied"
-                if wrote {
+                if let file, wrote {
                     self.announce("\(copied) and saved to \(file.deletingLastPathComponent().lastPathComponent)", file: file)
+                } else if file == nil {
+                    self.announce(copied)
                 } else {
                     self.announce("\(copied), but couldn't save it")
                 }
                 let rep = NSBitmapImageRep(data: data.png)
-                finished?(["path": wrote ? file.path : "", "width": rep?.pixelsWide ?? 0,
+                finished?(["path": wrote ? file?.path ?? "" : "", "width": rep?.pixelsWide ?? 0,
                            "height": rep?.pixelsHigh ?? 0, "points": [image.size.width, image.size.height],
                            "rect": [rect.minX, rect.minY, rect.width, rect.height],
                            "cropped": cropped])
