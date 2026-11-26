@@ -155,6 +155,12 @@ final class Preferences: ObservableObject {
         didSet { store.set(navigationLeft, forKey: "toolbar.left") }
     }
 
+    /// A bar at the foot of the window when the Wi-Fi wants a sign-in first
+    /// (CaptivePortal). On unless turned off.
+    @Published var detectsCaptivePortals: Bool {
+        didSet { store.set(detectsCaptivePortals, forKey: "network.captivePortal") }
+    }
+
     /// The tab strip only a few points taller than its tabs, where it is
     /// otherwise a toolbar's height (Metrics.strip). With the tabs across the
     /// top; off unless asked for.
@@ -1363,6 +1369,7 @@ final class Preferences: ObservableObject {
         Preferences.settleLittleLinks(in: store)
         navigationLeft = store.bool(forKey: "toolbar.left")
         compactStrip = store.bool(forKey: "tabs.compact")
+        detectsCaptivePortals = store.object(forKey: "network.captivePortal") as? Bool ?? false
         // Carried over from when there were four ways of holding the browser
         // and this was one of them.
         // The Mac's own unless asked otherwise — a Mac in dark mode expects
@@ -1741,6 +1748,7 @@ final class Preferences: ObservableObject {
         take(\.homeTuning, "home.tuning", HomeTuning.read(store.string(forKey: "home.tuning")), or: HomeTuning())
         take(\.navigationLeft, store.bool(forKey: "toolbar.left"))
         take(\.compactStrip, store.bool(forKey: "tabs.compact"))
+        take(\.detectsCaptivePortals, store.object(forKey: "network.captivePortal") as? Bool ?? false)
         take(\.sidebar, "sidebar", store.object(forKey: "sidebar") as? Bool,
              or: store.string(forKey: "manner").map { $0 == "side" } ?? SidebarDefault.fresh(testing: Store.testing))
         take(\.sidePosition, "sidebar.position", store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init),

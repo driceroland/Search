@@ -605,6 +605,8 @@ struct SettingsPanel: View {
                 alert.addButton(withTitle: "Cancel")
                 if alert.runModal() == .alertFirstButtonReturn { icloud.erase() }
             }
+
+        case "network.captivePortal": Switch(on: $prefs.detectsCaptivePortals)
         case "quit.confirm": Switch(on: $prefs.confirmsQuit)
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)
@@ -656,6 +658,7 @@ struct SettingsPanel: View {
         case "window.glass.clear": Slider(value: $prefs.glassClear, in: 0...1).controlSize(.small).frame(width: 160)
         case "window.glass.grain": Slider(value: $prefs.glassGrain, in: 0...1).controlSize(.small).frame(width: 160)
         case "toolbar.left": Switch(on: $prefs.navigationLeft)
+
         case "tabs.compact":
             Switch(on: Binding(
                 get: { prefs.compactStrip },
