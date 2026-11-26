@@ -111,7 +111,13 @@ struct SettingsPanel: View {
             if asTab { tabbed } else { card }
         }
         .onChange(of: browser.settingsFind) { _, _ in finding = true }
-        .onAppear { if let found { query = found } }
+        // Find a setting takes the keys as Settings opens, as System
+        // Settings' search does: type a setting's name at once (#1611).
+        // A turn later, once the tab has taken the window's keys.
+        .onAppear {
+            if let found { query = found }
+            DispatchQueue.main.async { finding = true }
+        }
     }
 
     /// In a tab of its own (see InternalPages.swift): the sections down the
@@ -202,7 +208,7 @@ struct SettingsPanel: View {
     }
 
     /// Find a setting: the wash, the glass, ⌘F beside it until something
-    /// is typed. Escape empties it.
+    /// is typed. Escape empties it, and then lets go.
     private struct FindField: View {
         @Binding var text: String
         var focus: FocusState<Bool>.Binding
@@ -220,7 +226,9 @@ struct SettingsPanel: View {
                         .textFieldStyle(.plain)
                         .foregroundStyle(Palette.ink)
                         .focused(focus)
-                        .onExitCommand { text = "" }
+                        // Escape empties it; empty, it lets go of the keys,
+                        // for Tab and the arrows to move around Settings.
+                        .onExitCommand { if text.isEmpty { focus.wrappedValue = false } else { text = "" } }
                         .accessibilityLabel("Find a setting")
                 }
                 .font(.system(size: 12.5))
