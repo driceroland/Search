@@ -864,6 +864,7 @@ struct SettingsPanel: View {
         case "pins.list": Switch(on: $prefs.listsPins)
         case "pins.preview": Switch(on: $prefs.pinPreviews)
         case "pins.folders": Switch(on: $prefs.pinFolders)
+        case "pins.folderPeek": Switch(on: $prefs.pinFolderPeek)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "pins.linksNewTab": Switch(on: $prefs.pinLinksOpenTabs)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)

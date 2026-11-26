@@ -920,6 +920,9 @@ final class Tab: ObservableObject, Identifiable {
     /// what you were just reading is what you are most likely to want back.
     /// Written into the session, so a tab's time away counts across quits.
     private(set) var touched = Date()
+    /// Whether `touched` says a look at all: a tab made this run and never
+    /// looked at has only the time it was made there (see FolderPeek).
+    private(set) var looked = false
     /// When it was last let go of: unpinned, taken out of its group, its
     /// name taken away. Kept apart from `touched`, which says when you last
     /// looked, for ⌃Tab and for where ⌘W on a pin lands; letting go of a
@@ -2190,7 +2193,12 @@ final class Tab: ObservableObject, Identifiable {
         icon = nil
     }
 
-    func touch(at when: Date = Date()) { touched = when }
+    /// `looked`: false for a time that was no look, as a session keeps for
+    /// a pin never looked at.
+    func touch(at when: Date = Date(), looked: Bool = true) {
+        touched = when
+        if looked { self.looked = true }
+    }
 
     /// True when the web view holds nothing — never loaded, or emptied —
     /// while the tab still names a page. The white page, in other words.

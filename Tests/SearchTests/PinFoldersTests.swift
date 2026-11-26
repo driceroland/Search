@@ -286,6 +286,36 @@ final class PinFoldersTests: XCTestCase {
         XCTAssertEqual(PinTree.orderedIDs([(a.id, a.folder), (b.id, b.folder)], folders: [work]), [b.id, a.id])
     }
 
+    // MARK: - a folded folder's peek
+
+    /// Its own pages only, the one looked at last first; one never looked
+    /// at after them all, in the folder's order, as are two looked at at
+    /// once. Times are made up: no clock is read.
+    func testAPeekListsTheFoldersOwnPagesLookedAtLastFirst() {
+        let work = folder("Work", collapsed: true), inner = folder("Inner", in: work.id)
+        let ids = (0..<7).map { _ in UUID() }
+        let t = Date(timeIntervalSinceReferenceDate: 0)
+        let pins: [(id: UUID, folder: UUID?, looked: Date?)] = [
+            (ids[0], work.id, t), (ids[1], work.id, nil), (ids[2], work.id, t.addingTimeInterval(60)),
+            (ids[3], inner.id, t.addingTimeInterval(600)), (ids[4], nil, t.addingTimeInterval(900)),
+            (ids[5], work.id, nil), (ids[6], work.id, t),
+        ]
+        XCTAssertEqual(PinTree.peek(work.id, pins: pins, folders: [work, inner]), [ids[2], ids[0], ids[6], ids[1], ids[5]])
+        XCTAssertEqual(PinTree.peek(work.id, pins: Array(pins.reversed()), folders: [work, inner]), [ids[2], ids[6], ids[0], ids[5], ids[1]])
+    }
+
+    func testNoPeekForAnOpenLiveEmptyOrGoneFolder() {
+        let open = folder("Open"), empty = folder("Empty", collapsed: true)
+        var live = folder("Live", collapsed: true)
+        live.feed = URL(string: "https://feed.example/rss")
+        let pins: [(id: UUID, folder: UUID?, looked: Date?)] = [(UUID(), open.id, nil), (UUID(), live.id, nil)]
+        let folders = [open, empty, live]
+        XCTAssertEqual(PinTree.peek(open.id, pins: pins, folders: folders), [])
+        XCTAssertEqual(PinTree.peek(live.id, pins: pins, folders: folders), [])
+        XCTAssertEqual(PinTree.peek(empty.id, pins: pins, folders: folders), [])
+        XCTAssertEqual(PinTree.peek(UUID(), pins: pins, folders: folders), [])
+    }
+
     func testTheMenuListsFoldersSetInUnderTheirParents() {
         let work = folder("Work"), docs = folder("Docs", in: work.id), home = folder("Home")
         XCTAssertEqual(PinFolderMenu.entries([work, docs, home]).map(\.title), ["Work", "    Docs", "Home"])

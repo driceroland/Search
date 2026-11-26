@@ -4540,7 +4540,8 @@ final class Browser: NSObject, ObservableObject {
                 // Only with Same tabs in every window on: off, the file is
                 // what it always was.
                 twinID: prefs.mirrorsTabs && twinnable(tab) ? tab.twinID : nil,
-                lifted: liftedIDs.contains(tab.id) ? tab.id : nil
+                lifted: liftedIDs.contains(tab.id) ? tab.id : nil,
+                unseen: tab.pin != nil && !tab.looked && !visibleTabIDs.contains(tab.id) ? true : nil
             ))
         }
         // The tab you were on isn't kept — a private one: the one kept just
@@ -7391,7 +7392,7 @@ final class Browser: NSObject, ObservableObject {
             tab.restore(url: url, title: url == saved ? entry.title : url.host ?? "", name: entry.name,
                         state: url == saved ? entry.keepsake?.state : nil)
             // Never later than now: a clock set wrong once would keep the tab forever.
-            if let touched = entry.touched { tab.touch(at: min(touched, Date())) }
+            if let touched = entry.touched { tab.touch(at: min(touched, Date()), looked: entry.unseen != true) }
             tab.letGo = entry.letGo.map { min($0, Date()) }
             tab.muted = entry.muted
             tab.pin = entry.pin
