@@ -1078,8 +1078,24 @@ final class Extensions: NSObject, ObservableObject {
               let context = contexts[id],
               Date().timeIntervalSince(revived[id] ?? .distantPast) > 60 else { return false }
         let popup = ExtensionPopup.shared.extensionID == id ? ExtensionPopup.shared.view?.url : nil
-        guard unload(id, replacingContext: false) else { return false }
         revived[id] = Date()
+        // chrome.storage.session lives for the browser's session, and Chrome
+        // never empties it when it restarts a worker. WebKit empties it with
+        // the unload below, so a restart Search made itself signed Dashlane
+        // out (its unlocked session is kept there) in the middle of a day
+        // (idea 1322). What it held is read first, kept in memory only, and
+        // given back as the extension loads again.
+        Task { [weak self] in
+            let kept = await Extensions.sessionStorage(of: context)
+            guard let self, self.contexts[id] === context else { return }
+            self.reload(id, context, popup: popup, because: reason, keeping: kept)
+        }
+        return true
+    }
+
+    private func reload(_ id: String, _ context: WKWebExtensionContext, popup: URL?, because reason: String,
+                        keeping kept: [String: Any]?) {
+        guard unload(id, replacingContext: false) else { return }
         workersChanged()
         noteError("restarted the extension: \(reason)", for: id)
         // WebKit API objects held by existing pages address this context's
@@ -1091,6 +1107,9 @@ final class Extensions: NSObject, ObservableObject {
             installing.remove(id)
             try controller.load(context)
             contexts[id] = context
+            if let kept, !kept.isEmpty {
+                Task { await Extensions.restoreSessionStorage(kept, in: context) }
+            }
             openAside(in: context)
             watch(context)
             ShortcutStore.shared.adopt(context, id: id)
@@ -1107,7 +1126,35 @@ final class Extensions: NSObject, ObservableObject {
             }
             noteError("couldn't reload the extension: \(error.localizedDescription)", for: id)
         }
-        return true
+    }
+
+    /// What an extension holds in chrome.storage.session, read from a blank
+    /// page of its own (its pages and worker share that area), or nil when
+    /// it can't be read within a few seconds. Never written anywhere.
+    static func sessionStorage(of context: WKWebExtensionContext) async -> [String: Any]? {
+        guard context.isLoaded, let configuration = context.webViewConfiguration else { return nil }
+        let page = HiddenPage(configuration)
+        guard await page.loadBlank(at: context.baseURL, within: 3) else { return nil }
+        let value = try? await page.web.callAsyncJavaScript(
+            "return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session ? await chrome.storage.session.get(null) : null",
+            contentWorld: .page)
+        return value as? [String: Any]
+    }
+
+    /// Given back after a restart, before anything of the extension's could
+    /// have been written there since: keys it has set again meanwhile win.
+    static func restoreSessionStorage(_ kept: [String: Any], in context: WKWebExtensionContext) async {
+        guard context.isLoaded, let configuration = context.webViewConfiguration else { return }
+        let page = HiddenPage(configuration)
+        guard await page.loadBlank(at: context.baseURL, within: 3) else { return }
+        _ = try? await page.web.callAsyncJavaScript(
+            """
+            const now = await chrome.storage.session.get(null);
+            const back = {};
+            for (const key of Object.keys(kept)) if (!(key in now)) back[key] = kept[key];
+            await chrome.storage.session.set(back);
+            """,
+            arguments: ["kept": kept], contentWorld: .page)
     }
 
     struct RecordedError {
