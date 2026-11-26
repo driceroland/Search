@@ -164,7 +164,7 @@ extension Browser {
     /// and once there it is the tab, in place — the zoom seen to its end.
     func openPeekGrown() {
         guard peekTab != nil, !peekFill else { return }
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if Motion.reduced {
             peekPinch = 0
             return keepPeek(instant: true)
         }

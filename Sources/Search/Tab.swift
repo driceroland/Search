@@ -295,7 +295,7 @@ struct ReadingFill: View {
         Rectangle()
             .fill(Palette.ink.opacity(0.055))
             .frame(width: width * meter.value)
-            .animation(.easeOut(duration: 0.15), value: meter.value)
+            .animation(Motion.timed(.easeOut(duration: 0.15)), value: meter.value)
     }
 }
 
@@ -1143,7 +1143,11 @@ final class Tab: ObservableObject, Identifiable {
 
         watch = [
             web.observe(\.title, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.title = self?.built?.title ?? "" }
+                MainActor.assumeIsolated {
+                    self?.title = self?.built?.title ?? ""
+                    // Its full-screen window keeps its name (FullScreenTitle.swift).
+                    if let page = self?.built, page.fullscreenState == .inFullscreen { FullScreenTitle.follow(page) }
+                }
             },
             web.observe(\.url, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated {
@@ -1205,6 +1209,8 @@ final class Tab: ObservableObject, Identifiable {
                     guard let self, let state = self.built?.fullscreenState else { return }
                     let on = state == .enteringFullscreen || state == .inFullscreen
                     if self.immersed != on { self.immersed = on }
+                    // WebKit's full-screen window named, for screen-share pickers.
+                    if state == .inFullscreen, let page = self.built { FullScreenTitle.follow(page) }
                     // Home behind another tab: its stage puts it away.
                     if state == .notInFullscreen { self.built?.superview?.needsLayout = true }
                 }
@@ -3012,6 +3018,34 @@ final class PageView: WKWebView {
         let took = super.becomeFirstResponder()
         if took { onKeys?() }
         return took
+    }
+
+    override func resignFirstResponder() -> Bool {
+        // The page keeps its selection when the keys go elsewhere in the
+        // window, as a page in a window that isn't in front keeps it in
+        // Safari (idea 1176). WebKit's default clears it, and when the keys
+        // come back it puts the caret at the very start of the box being
+        // written in: a Google Doc beside another page jumped up, or to its
+        // top, when clicked again after copying from the other one, and a
+        // caret left for the address field came back at the start. WebKit
+        // forgets the setting on a new page, so it is said each time.
+        if let keep = Self.keepSelection, let page = Self.pageRef(of: self) { keep(page, true) }
+        return super.resignFirstResponder()
+    }
+
+    private typealias PageRef = @convention(c) (AnyObject, Selector) -> UnsafeRawPointer?
+
+    /// WKPageSetMaintainsInactiveSelection, WebKit's C call for it; nil if
+    /// it's gone, and pages clear their selection as before.
+    private static let keepSelection: (@convention(c) (UnsafeRawPointer, Bool) -> Void)? = {
+        let webkit = dlopen("/System/Library/Frameworks/WebKit.framework/WebKit", RTLD_NOW)
+        return dlsym(webkit, "WKPageSetMaintainsInactiveSelection").map { unsafeBitCast($0, to: (@convention(c) (UnsafeRawPointer, Bool) -> Void).self) }
+    }()
+
+    private static func pageRef(of web: WKWebView) -> UnsafeRawPointer? {
+        let selector = NSSelectorFromString("_pageRefForTransitionToWKWebView")
+        guard web.responds(to: selector), let method = class_getMethodImplementation(type(of: web), selector) else { return nil }
+        return unsafeBitCast(method, to: PageRef.self)(web, selector)
     }
 
     /// The keys handed to a page as a click on it would leave them: the
