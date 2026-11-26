@@ -39,7 +39,7 @@ final class CaptivePortal: NSObject, ObservableObject {
     /// learned from the last sign-in page that was opened from the bar.
     /// Falls back to this fork's campus gateway.
     static let urlKey = "network.captivePortal.url"
-    static let builtInFallback = URL(string: "https://gateway.iisertvm.ac.in:8090/httpclient.html")!
+    static let fallbackURL = URL(string: "https://example.com/")!
 
     // MARK: Probe targets
 
@@ -149,7 +149,7 @@ final class CaptivePortal: NSObject, ObservableObject {
     /// still get the ordinary question, since that is where the sign-in is?
     func isPortalHost(_ host: String) -> Bool {
         let host = host.lowercased()
-        return [portalURL, Self.savedURL, Self.builtInFallback]
+        return [portalURL, Self.savedURL, Self.fallbackURL]
             .contains { $0?.host?.lowercased() == host }
     }
 
@@ -165,7 +165,7 @@ final class CaptivePortal: NSObject, ObservableObject {
     // MARK: Actions
 
     func openPortal(in browser: Browser) {
-        let url = portalURL ?? Self.savedURL ?? Self.builtInFallback
+        let url = portalURL ?? Self.savedURL ?? Self.fallbackURL
         let tab = browser.open(url, foreground: true)
         openedFromBar.insert(tab.id)
         // Checked again as the page is used; also learned if it proves to be
@@ -237,7 +237,7 @@ final class CaptivePortal: NSObject, ObservableObject {
             // the built-in. Only brought back up when the gateway is new to
             // us: ✕ stays put until a probe has got through in between.
             if !wasBehind || portalURL != nil {
-                portalURL = found ?? Self.savedURL ?? Self.builtInFallback
+                portalURL = found ?? Self.savedURL ?? Self.fallbackURL
             }
             return true
         }

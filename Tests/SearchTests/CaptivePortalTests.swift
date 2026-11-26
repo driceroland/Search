@@ -30,7 +30,9 @@ final class CaptivePortalTests: XCTestCase {
 
     func testTheGatewaysOwnNameStillGetsTheQuestion() {
         let portal = CaptivePortal.shared
-        XCTAssertTrue(portal.isPortalHost("gateway.iisertvm.ac.in"))
-        XCTAssertFalse(portal.mayBeIntercepted("gateway.iisertvm.ac.in"))
+        Store.settings.set("https://portal.example.net:8090/login", forKey: CaptivePortal.urlKey)
+        defer { Store.settings.removeObject(forKey: CaptivePortal.urlKey) }
+        XCTAssertTrue(portal.isPortalHost("portal.example.net"))
+        XCTAssertFalse(portal.mayBeIntercepted("portal.example.net"))
     }
 }
