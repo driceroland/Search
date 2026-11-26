@@ -1175,6 +1175,7 @@ final class Extensions: NSObject, ObservableObject {
     /// Reads what was unpacked, asks, and — on yes — moves it into place and
     /// loads it. On no, nothing is left behind.
     private func admit(_ staged: URL, as id: String, fromStore: Bool, finalFolder: URL, confirm: Bool = true, source: URL? = nil, fromApp: String? = nil) async throws {
+        guard !Crx.isTheme(staged) else { throw Crx.Refused.theme }
         let found = try await WKWebExtension(resourceBaseURL: staged)
         let name = found.displayName ?? id
         let wants = Extensions.describe(found, in: staged)
