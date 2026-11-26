@@ -13,4 +13,22 @@ final class SiteSearchTests: XCTestCase {
         XCTAssertEqual(site.template, keyword.template)
         XCTAssertEqual(site.aliases, ["grk"])
     }
+
+    func testPathSearchKeepsAnEncodedSlash() throws {
+        let url = try XCTUnwrap(URL(string: "https://open.spotify.com/search/AC%2FDC"))
+        XCTAssertEqual(SiteSearch.words(in: url, searchedOn: spotify), "AC/DC")
+    }
+
+    func testPathSearchDecodesAnEncodedSpace() throws {
+        let url = try XCTUnwrap(URL(string: "https://open.spotify.com/search/daft%20punk"))
+        XCTAssertEqual(SiteSearch.words(in: url, searchedOn: spotify), "daft punk")
+    }
+
+    func testPathSearchRejectsASubpage() throws {
+        let url = try XCTUnwrap(URL(string: "https://open.spotify.com/search/a/b"))
+        XCTAssertNil(SiteSearch.words(in: url, searchedOn: spotify))
+    }
+
+    private let spotify = SearchSite(name: "Spotify", host: "open.spotify.com",
+                                     template: "https://open.spotify.com/search/%s")
 }

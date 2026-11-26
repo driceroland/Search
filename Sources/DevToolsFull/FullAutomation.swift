@@ -36,6 +36,25 @@ enum FullAutomation {
         case "dock":
             if let position = DeveloperDockPosition(rawValue: arguments["position"] as? String ?? "") { tools.dockPosition = position }
             return ["position": tools.dockPosition.rawValue]
+        case "settings":
+            // Settings opened over the dock laid out at `width` × `height`:
+            // the card's size and the room it had.
+            guard session() != nil, let host = plugin.dockView(webView: web) as? DeveloperToolsHostView else {
+                return ["error": "not docked"]
+            }
+            let size = NSSize(width: arguments["width"] as? Double ?? 485, height: arguments["height"] as? Double ?? 700)
+            host.frame = NSRect(origin: .zero, size: size)
+            DeveloperSheets.shared.drawn = nil
+            DeveloperToolsShell.shared.settingsShown = true
+            let laid = await wait(5) {
+                host.layoutSubtreeIfNeeded()
+                return DeveloperSheets.shared.drawn?.room == size
+            }
+            let drawn = DeveloperSheets.shared.drawn
+            DeveloperToolsShell.shared.settingsShown = false
+            guard laid, let drawn else { return ["error": "not laid out"] }
+            return ["card": [Double(drawn.card.width), Double(drawn.card.height)],
+                    "room": [Double(drawn.room.width), Double(drawn.room.height)]]
         case "select":
             guard let session = session(), let panel = DeveloperPanel(rawValue: arguments["panel"] as? String ?? "") else {
                 return ["error": "no such panel"]

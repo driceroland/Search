@@ -14,7 +14,8 @@ the dark theme, on the far side, until the page caught up: seen frame by
 frame in an off-screen recording at 250 ms. The room is now covered in the
 page's own colour until WebKit has drawn it (Browser.cover). Read through
 the bench's `foldtime`: covers laid, one there while the column moves, none
-left once the page is drawn. Card, edge to edge and Reduce animations.
+left once the page is drawn, and the column never gone before then.
+Card, edge to edge and Reduce animations.
 
 And ⌘S with the column out over the page (the pointer at the edge brought
 it): it stays where it is. It was put away for a frame, the page bare where
@@ -47,6 +48,11 @@ def check(label, slides=True):
         t.ok(f"{label}: covered while the column slides",
              bool(moving) and moving[0]["covered"] >= 1, [(p["at"], p["folded"], p["covered"]) for p in passes][:8])
     t.ok(f"{label}: the cover goes once the page is drawn", a.get("coveredAfter") == 0, a.get("coveredAfter"))
+    # Gone at once under Reduce animations, the column left its place a
+    # flat band of the page's ground until the page was drawn (idea 1254).
+    # It waits for the page as the slide does, up to 0.12 s for this one.
+    gone = [p["at"] for p in passes if isinstance(p.get("column"), (int, float)) and p["column"] < 0]
+    t.ok(f"{label}: the column waits for the page before it goes", bool(gone) and gone[0] >= 110, gone[:3])
     time.sleep(0.5)
     b = sv.cmd({"do": "foldtime"})
     t.ok(f"{label}: showing it lays none", not b["folded"] and b.get("covers") == 0, (b["folded"], b.get("covers")))
