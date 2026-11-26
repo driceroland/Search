@@ -9109,8 +9109,15 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         let ownSite = source?.isMainFrame == true
             || (!top.isEmpty && !asker.isEmpty && Vault.registrable(asker) == Vault.registrable(top))
         // No target frame is a new window asked for: the frame asking is
-        // judged, as for any other frame.
-        guard action.targetFrame?.isMainFrame ?? false || clicked || ownSite else {
+        // judged, as for any other frame. A frame of another site that was
+        // just clicked in is asking for you: SharePoint's Excel and Word, in
+        // a frame of officeapps.live.com, hand "Open in Desktop App" over
+        // from a script a moment after the click, and it was dropped without
+        // a word (idea 1215). Safari asks; so does Search now.
+        let clickedIn = source.map { frame in
+            popupTab(for: webView)?.popupGesture.takeHandOff(origin: PopupGesture.origin(frame)) ?? false
+        } ?? false
+        guard action.targetFrame?.isMainFrame ?? false || clicked || ownSite || clickedIn else {
             if Store.testing { Browser.handedOff.append("\(scheme): ignored") }
             return
         }
