@@ -2037,6 +2037,26 @@ final class Bench {
             }
             step(0)
 
+        case "spacenotch":
+            // One notch of a mouse wheel over the tabs (DX sideways in the
+            // column, DY in the bar across the top), a line at a time, as a
+            // wheel sends it, read by the swipe as the real one is. Back:
+            // whether it was taken, and the space and the card after.
+            guard Store.testing else { answer(["error": "spacenotch is for test runs"]); return }
+            guard let window = browser.window else { answer(["error": "no window"]); return }
+            let dx = Int32(request["dx"] as? Int ?? -1), dy = Int32(request["dy"] as? Int ?? 0)
+            SpaceSwipe.shared.start(for: browser)
+            let inWindow = browser.prefs.sidebar
+                ? NSPoint(x: min(60, browser.prefs.columnWidth / 2), y: window.frame.height / 2)
+                : NSPoint(x: window.frame.width / 2, y: window.frame.height - Metrics.strip / 2)
+            guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0),
+                  let event = NSEvent(cgEvent: cg) else { answer(["error": "no wheel event"]); return }
+            let taken = SpaceSwipe.shared.feed(event, in: window, at: inWindow)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                answer(["taken": taken, "precise": event.hasPreciseScrollingDeltas,
+                        "space": browser.space.name, "making": browser.makingSpace])
+            }
+
         case "spacestroke":
             // One stroke of two fingers over the tabs (DX sideways, DY up or
             // down for the bar across the top), as the
