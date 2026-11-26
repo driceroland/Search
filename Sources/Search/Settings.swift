@@ -817,6 +817,7 @@ struct SettingsPanel: View {
         case "meet.pip": Switch(on: $prefs.meetPiP)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
         case "fullscreen.keepsWindow": Switch(on: $prefs.keepsWindow)
+        case "fullscreen.inWindow": Switch(on: $prefs.fullScreenInWindow)
         case "translate.target":
             if PageTranslator.available { TranslateTargetPicker(prefs: prefs) }
             else { Text("Requires macOS 15").foregroundStyle(Palette.muted) }

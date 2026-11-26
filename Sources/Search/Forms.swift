@@ -1235,8 +1235,16 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       // request itself, which laid the page out at the whole window's size
       // in ours a moment before WebKit took it, and the way back then
       // started from that size.
+      // Full screen in the window (PageFullScreen.swift) is the page's own
+      // doing, in its own world, and says so only by the mark on the
+      // document: believed when a click or key asked for it, as WebKit
+      // asks, and kept until the mark goes.
+      var inWindow = false;
       function immersed() {
-        var on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        var root = document.documentElement;
+        if (!root || !root.hasAttribute('data-search-fullscreen-root')) inWindow = false;
+        else if (!inWindow) inWindow = !navigator.userActivation || navigator.userActivation.isActive;
+        var on = !!(document.fullscreenElement || document.webkitFullscreenElement) || inWindow;
         window.webkit.messageHandlers.officeForms.postMessage({
           kind: 'fullscreen', on: on
         });

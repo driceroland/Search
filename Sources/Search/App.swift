@@ -1664,7 +1664,7 @@ struct ContentView: View {
             // screen as its own button does: the key says the video is being
             // left, and the tab they went to was there only after Esc (#1042).
             if let page = ContentView.pageFillingScreen(event), ContentView.movesTab(event) {
-                page.evaluateInSearch("if (document.fullscreenElement) document.exitFullscreen(); void 0")
+                page.evaluateInSearch(PageFullScreen.leave)
             }
             // A key typed while the field is on its way is the field's (holdKey),
             // Escape in a full-screen window included.

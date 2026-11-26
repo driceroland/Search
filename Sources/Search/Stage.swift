@@ -317,7 +317,7 @@ final class StageView: NSView {
     /// How a page is asked to end its full screen: as its own button does.
     /// Its own property for the tests, which can't go full screen.
     var endFullScreen: (WKWebView) -> Void = { web in
-        web.evaluateInSearch("if (document.fullscreenElement) document.exitFullscreen(); void 0")
+        web.evaluateInSearch(PageFullScreen.leave)
     }
 
     /// How the window gets its column back from a page that fills the screen
