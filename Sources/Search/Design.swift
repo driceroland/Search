@@ -254,6 +254,12 @@ enum Metrics {
     /// of icons (Preferences.narrowStrip).
     static let narrowLine: CGFloat = 200
     static let sideMax: CGFloat = 440
+    /// How narrow the column can be pulled with Pull to any width on
+    /// (Preferences.squeezes): the icon column's own width.
+    static let sideLeast: CGFloat = 52
+    /// Pulled narrower than this, with Pull to any width on, the column lays
+    /// out as icons at the width it was pulled to (Preferences.squeezed).
+    static let squeezeLine: CGFloat = 80
 }
 
 /// The handle on an edge that pulls: the column's, the side panel's and the

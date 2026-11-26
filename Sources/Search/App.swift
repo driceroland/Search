@@ -935,7 +935,7 @@ struct ContentView: View {
         // it is resized once, to its room (below).
         if edges.side != nil, new.height == now.height, new.width > Metrics.cardGap {
             roomTicket += 1
-            let least = Metrics.sideMin
+            let least = browser.prefs.squeezes ? Metrics.sideLeast : Metrics.sideMin
             guard now.width > least else { return }
             var still = Transaction()
             still.disablesAnimations = true
@@ -1206,6 +1206,11 @@ struct ContentView: View {
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             .onChange(of: browser.prefs.columnWidth) { _, _ in
+                DispatchQueue.main.async { Lights.refresh(window); measureLights() }
+            }
+            // Pulled under the line with Pull to any width on, the lights
+            // stack as the column of icons has them, while the edge is held.
+            .onChange(of: browser.prefs.squeezed) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             // On the right, the lights sit in the column's corner, which

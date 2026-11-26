@@ -12,7 +12,7 @@ final class NarrowStripTests: XCTestCase {
         super.setUp()
     }
 
-    private let keys = ["sidebar", "sidebar.icons", "sidebar.narrowIcons", "sidebar.narrowed", "sidebar.width"]
+    private let keys = ["sidebar", "sidebar.icons", "sidebar.narrowIcons", "sidebar.narrowed", "sidebar.width", "sidebar.squeeze"]
     private var saved: [(String, Any?)] = []
 
     override func setUp() async throws {
@@ -70,6 +70,29 @@ final class NarrowStripTests: XCTestCase {
         let fromStrip = Metrics.narrowLine - SideBar.stripPull
         XCTAssertTrue(SideBar.held(fromStrip + SideBar.stripPull - 1, narrows: true).narrow)
         XCTAssertFalse(SideBar.held(fromStrip + SideBar.stripPull, narrows: true).narrow)
+    }
+
+    /// Pull to any width: off, never under sideMin, as before; on, kept
+    /// down to sideLeast, icons under the line at the width pulled to, and
+    /// turned off, back out to sideMin.
+    func testPullToAnyWidth() {
+        Store.settings.set(60.0, forKey: "sidebar.width")
+        XCTAssertEqual(Preferences().sideWidth, Metrics.sideMin, "off: a narrower width kept is not used")
+        XCTAssertEqual(SideBar.held(60, narrows: false).width, Metrics.sideMin)
+
+        Store.settings.set(true, forKey: "sidebar.squeeze")
+        let prefs = Preferences()
+        XCTAssertEqual(prefs.sideWidth, 60)
+        XCTAssertTrue(prefs.squeezed)
+        XCTAssertTrue(prefs.iconColumn)
+        XCTAssertEqual(prefs.columnWidth, 60, "icons, at the width pulled to")
+        XCTAssertEqual(SideBar.held(10, narrows: false, least: prefs.sideLeast).width, Metrics.sideLeast)
+        prefs.sideWidth = 120
+        XCTAssertFalse(prefs.squeezed)
+        XCTAssertFalse(prefs.iconColumn)
+        XCTAssertEqual(prefs.columnWidth, 120, "titles above the line")
+        prefs.squeezes = false
+        XCTAssertEqual(prefs.sideWidth, Metrics.sideMin, "off again: back out to sideMin")
     }
 
     func testIconsOnlyIsNotTheStrip() {

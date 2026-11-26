@@ -292,13 +292,34 @@ final class Preferences: ObservableObject {
     var narrowStrip: Bool { sidebar && !sideIcons && narrowsToIcons && narrowed }
     /// Whether the column is showing as icons now: down a side, and asked
     /// for, or pulled narrow enough to become the strip.
-    var iconColumn: Bool { sidebar && sideIcons || narrowStrip }
+    var iconColumn: Bool { sidebar && sideIcons || narrowStrip || squeezedColumn }
+    /// The column's edge pulls past sideMin, down to Metrics.sideLeast: its
+    /// titles clip as it narrows, back, forward and reload take a row of
+    /// their own and then stack, and under Metrics.squeezeLine it lays out
+    /// as the column of icons at the width it was pulled to. Off unless
+    /// asked for; Settings › Appearance › Tabs. Narrow to icons, when on,
+    /// has the narrow end instead.
+    @Published var squeezes: Bool {
+        didSet {
+            store.set(squeezes, forKey: "sidebar.squeeze")
+            // Off, a column pulled under sideMin comes back out to it.
+            if !squeezes, sideWidth < Metrics.sideMin { sideWidth = Metrics.sideMin }
+        }
+    }
+    /// Pulled under Metrics.squeezeLine: set while the edge is held
+    /// (SideBar.edge) and from the width kept.
+    @Published var squeezed = false
+    /// The column of icons that pulling under the line makes (squeezes).
+    var squeezedColumn: Bool { sidebar && !sideIcons && !narrowsToIcons && squeezes && squeezed }
     /// The column's width as drawn: fixed with icons only, pulled by its
     /// edge otherwise (the width pulled is kept for when titles come back),
     /// and never under the line while narrowing to the strip is on.
     var columnWidth: CGFloat {
-        iconColumn ? Metrics.iconColumn : narrowsToIcons ? max(Metrics.narrowLine, sideWidth) : sideWidth
+        squeezedColumn ? sideWidth
+            : iconColumn ? Metrics.iconColumn : narrowsToIcons ? max(Metrics.narrowLine, sideWidth) : sideWidth
     }
+    /// The narrowest the edge can be pulled to.
+    var sideLeast: CGFloat { squeezes ? Metrics.sideLeast : Metrics.sideMin }
     /// A tab playing sound out of sight shows at the foot of the sidebar,
     /// with its pause (see Player.swift). On unless turned off.
     @Published var showsPlayer: Bool {
@@ -309,7 +330,11 @@ final class Preferences: ObservableObject {
     var sideTitle: CGFloat { roomyTabs ? 14 : 12.5 }
     /// How wide the column is. Pulled by its edge, and remembered.
     @Published var sideWidth: CGFloat {
-        didSet { store.set(Double(sideWidth), forKey: "sidebar.width") }
+        didSet {
+            store.set(Double(sideWidth), forKey: "sidebar.width")
+            let under = sideWidth < Metrics.squeezeLine
+            if under != squeezed { squeezed = under }
+        }
     }
     /// With the tabs down the side, the page as a card: a little room
     /// around it and rounded corners (see CardEdge). On unless turned off,
@@ -1375,10 +1400,14 @@ final class Preferences: ObservableObject {
         foldsToIcons = store.bool(forKey: "sidebar.foldIcons")
         narrowsToIcons = store.bool(forKey: "sidebar.narrowIcons")
         narrowed = store.bool(forKey: "sidebar.narrowed")
+        let squeeze = store.bool(forKey: "sidebar.squeeze")
+        squeezes = squeeze
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         showsPlayer = store.object(forKey: "sidebar.player") as? Bool ?? true
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
-        sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
+        let kept = min(Metrics.sideMax, max(squeeze ? Metrics.sideLeast : Metrics.sideMin, CGFloat(width)))
+        sideWidth = kept
+        squeezed = kept < Metrics.squeezeLine
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
         cardsInFullScreen = store.bool(forKey: "layout.cardsFullScreen")
         addressLine = store.bool(forKey: "address.shown")
@@ -1714,8 +1743,9 @@ final class Preferences: ObservableObject {
         take(\.foldsToIcons, store.bool(forKey: "sidebar.foldIcons"))
         take(\.narrowsToIcons, store.bool(forKey: "sidebar.narrowIcons"))
         take(\.narrowed, store.bool(forKey: "sidebar.narrowed"))
+        take(\.squeezes, store.bool(forKey: "sidebar.squeeze"))
         take(\.sideWidth, "sidebar.width", (store.object(forKey: "sidebar.width") as? Double).map { CGFloat($0) }
-            .flatMap { (Metrics.sideMin...Metrics.sideMax).contains($0) ? $0 : nil }, or: Metrics.side)
+            .flatMap { (sideLeast...Metrics.sideMax).contains($0) ? $0 : nil }, or: Metrics.side)
         take(\.sidePanelWidth, "sidepanel.width", (store.object(forKey: "sidepanel.width") as? Double).map { CGFloat($0) }
             .flatMap { Preferences.sidePanelWidths.contains($0) ? $0 : nil }, or: 380)
         take(\.cards, "layout.cards", store.object(forKey: "layout.cards") as? Bool, or: true)

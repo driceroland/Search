@@ -661,6 +661,11 @@ struct SettingsPanel: View {
                 // with them rather than as a strip from long ago.
                 set: { on in withAnimation(Motion.glide) { prefs.narrowsToIcons = on; if !on { prefs.narrowed = false } } }
             ))
+        case "sidebar.squeeze":
+            Switch(on: Binding(
+                get: { prefs.squeezes },
+                set: { on in withAnimation(Motion.glide) { prefs.squeezes = on } }
+            ))
         case "sidebar.doorsUp":
             Switch(on: Binding(
                 get: { prefs.doorsUp },
