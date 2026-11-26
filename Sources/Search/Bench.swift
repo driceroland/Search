@@ -1968,10 +1968,17 @@ final class Bench {
             // event, as the trackpad's settings can send one for the stroke.
             let swipeAfter = request["swipeAfter"] as? Double
             SpaceSwipe.shared.start(for: browser)
-            // Over the column, halfway down; or over the bar across the top.
-            let inWindow = browser.prefs.sidebar
+            // Over the column, halfway down; or over the bar across the top;
+            // or, "overField", over the middle of the field being typed in.
+            var inWindow = browser.prefs.sidebar
                 ? NSPoint(x: min(60, browser.prefs.columnWidth / 2), y: window.frame.height / 2)
                 : NSPoint(x: window.frame.width / 2, y: window.frame.height - Metrics.strip / 2)
+            if request["overField"] as? Bool == true {
+                guard let editor = window.firstResponder as? NSTextView, let field = editor.delegate as? NSTextField
+                else { answer(["error": "no field is being typed in"]); return }
+                let box = field.convert(field.bounds, to: nil)
+                inWindow = NSPoint(x: box.midX, y: box.midY)
+            }
             var taken: [String] = []
             func send(_ phase: Int64, _ momentum: Int64, _ x: Double, _ y: Double = 0) {
                 guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: Int32(y), wheel2: Int32(x), wheel3: 0) else { return }
@@ -2967,6 +2974,35 @@ final class Bench {
                   let field = editor.delegate as? NSTextField
             else { answer(["error": "no field is being typed in"]); return }
             answer(Bench.caret(editor, in: field))
+
+        case "fieldscroll":
+            // Two fingers over the middle of the field being typed in: DX
+            // sideways, DY up or down, in STEPS moves, each sent to the view
+            // under them there as AppKit sends a scroll. Back: the field's
+            // geometry after, as "caret" tells it, and the view that was
+            // under them. Test runs only.
+            guard Store.testing else { answer(["error": "fieldscroll only works on a --test run"]); return }
+            guard let window = browser.window ?? Links.window, let editor = window.firstResponder as? NSTextView,
+                  let field = editor.delegate as? NSTextField, let frame = window.contentView?.superview
+            else { answer(["error": "no field is being typed in"]); return }
+            let dx = request["dx"] as? Double ?? 0, dy = request["dy"] as? Double ?? 0
+            let steps = max(1, request["steps"] as? Int ?? 5)
+            let box = field.convert(field.bounds, to: nil)
+            let under = frame.hitTest(frame.convert(NSPoint(x: box.midX, y: box.midY), from: nil))
+            // Began, changed for each move after, and ended with no move.
+            for n in 0...steps {
+                let x = n < steps ? dx / Double(steps) : 0, y = n < steps ? dy / Double(steps) : 0
+                guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: Int32(y), wheel2: Int32(x), wheel3: 0)
+                else { continue }
+                cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+                cg.setIntegerValueField(.scrollWheelEventScrollPhase, value: n == 0 ? 1 : n < steps ? 2 : 4)
+                cg.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: y)
+                cg.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: x)
+                if let event = NSEvent(cgEvent: cg) { under?.scrollWheel(with: event) }
+            }
+            var out = Bench.caret(editor, in: field)
+            out["under"] = under.map { String(describing: type(of: $0)) } ?? ""
+            answer(out)
 
         case "tab-type":
             // The field in the tab, on the tab in front: the edit begun as a
@@ -6061,6 +6097,9 @@ final class Bench {
             // The tab on screen clicked again: its address opened, as typed
             // into nothing yet, the site card under it.
             if request["opentab"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab) }
+            // The address kept in sight clicked: its field, in place, as
+            // AddressLine's own click opens it.
+            if request["inline"] as? Bool == true, !browser.editing { browser.edit(); browser.inlineEdit = true }
             // The tab's menu › Site Information… on the tab on screen.
             // `siteinfoid`: on that tab (a pin, say), as its own menu does.
             if request["siteinfo"] as? Bool == true,
