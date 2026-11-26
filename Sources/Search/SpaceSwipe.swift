@@ -147,7 +147,7 @@ final class SpaceSwipe {
     /// One space on (1) or back (-1), from a button or a swipe over the tabs.
     private func go(_ step: Int, _ event: NSEvent) -> Bool {
         guard let browser = Browsers.browser(for: window(of: event)), !browser.isPopup, browser.prefs.usesSpaces,
-              !browser.folded || browser.peeking, overTabs(event, in: browser) else { return false }
+              !browser.folded || browser.peeking, overTabs(event, in: browser), !overEditing(event) else { return false }
         self.browser = browser
         let here = shown(browser)
         let target = here + step
@@ -386,6 +386,16 @@ final class SpaceSwipe {
         return point.y > window.frame.height - Metrics.strip
     }
 
+    /// Over the field being typed in, the address in the column or a tab's
+    /// name: a long one is moved along with two fingers, sideways as a space
+    /// is gone to, so it keeps them. The window's field editor tells which
+    /// field it is; a page's own fields are under the page, not the tabs.
+    private func overEditing(_ event: NSEvent) -> Bool {
+        guard let window = window(of: event), let editor = window.firstResponder as? NSTextView, editor.isFieldEditor,
+              let field = editor.delegate as? NSTextField, field.window === window else { return false }
+        return field.convert(field.bounds, to: nil).contains(point(of: event))
+    }
+
     /// The bench's way in (Bench "spacestroke"): a trackpad's scroll
     /// events, made up off any window, read as the monitor reads the real
     /// ones, told which window they are over and where.
@@ -415,7 +425,7 @@ final class SpaceSwipe {
         if !event.hasPreciseScrollingDeltas {
             let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
             let step = browser.prefs.sidebar ? (abs(dx) > abs(dy) ? -dx : 0) : dy
-            guard step != 0, overTabs(event, in: browser) else { return false }
+            guard step != 0, overTabs(event, in: browser), !overEditing(event) else { return false }
             let now = Date()
             let rested = now.timeIntervalSince(notched) > 0.3 && now > resting
             notched = now
@@ -444,8 +454,9 @@ final class SpaceSwipe {
             fingersDown = true
             gliding = false
             ignoring = false
-            // Only a gesture that starts over the tabs.
-            guard overTabs(event, in: browser) else {
+            // Only a gesture that starts over the tabs, and not over a field
+            // being typed in: there it moves along the text (RoomyField).
+            guard overTabs(event, in: browser), !overEditing(event) else {
                 tracking = false
                 return false
             }
