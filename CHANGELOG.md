@@ -57,6 +57,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 - What's playing in other tabs: paused from the sidebar, a music site's player (SoundCloud, YouTube Music and others that keep their sound out of a script's reach) no longer disappears. It stays with its play button and plays again from where it was; going to the tab, putting it away or leaving the page hands the pause back to the page.
 
+### Added
+
+- Hide Elements can move and resize what it outlines, as well as hide it: drag the thing to move it, or its right or bottom edge, where the pointer turns into a resize cursor, to make it wider or taller. The change is kept for the site, back on every later visit, listed in Hidden on This Site as Moved or Resized and put back like anything hidden; ⌘Z takes the last change back. A click still hides, and a private tab keeps the change for that page only. Off unless turned on in Settings › Browsing › Pages › Move and resize with Hide Elements; off, a press hides at once as before. `python3 Tests/shape_elements.py`
+
 ### Held back
 
 Not in this version, kept on main for a later one:

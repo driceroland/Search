@@ -874,7 +874,7 @@ final class Browser: NSObject, ObservableObject {
         reviewing = false
         veiling = true
         picking = tab
-        tab.startPicking()
+        tab.startPicking(shaping: prefs.hidingShapes)
         // The keyboard to the page, for ↑ and ↓ (see Veiling.picker): left
         // in the address field or the column, they would never reach it.
         if let web = tab.built, let window = web.window, window.firstResponder !== web {
@@ -7817,6 +7817,20 @@ final class Browser: NSObject, ObservableObject {
                 reveil(host)
                 announce(Self.keptOnScreen)
             }
+        }
+        tab.onShape = { [weak self] tab, veil in
+            guard let self, let host = curtain.host(of: tab.address) else { return }
+            let done = veil.shape?.resized == true ? "Resized" : "Moved"
+            // A private tab writes nothing down: changed on this page only.
+            if tab.shy {
+                guard let list = Curtain.reshaped(veil, in: passingVeils[tab.id] ?? []) else { return }
+                passingVeils[tab.id] = list
+                tab.applyVeils(curtain.css(on: host) + passingCSS(tab.id))
+                return announce(done + " on this page only. ⌘Z puts it back")
+            }
+            curtain.shape(veil, on: host)
+            reveil(host)
+            announce(done + ", kept for this site. ⌘Z puts it back")
         }
         tab.onPickEnd = { [weak self] tab in
             guard let self, picking === tab else { return }

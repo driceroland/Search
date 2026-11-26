@@ -31,8 +31,33 @@ struct Veil: Codable, Identifiable, Equatable {
     /// kind and steady classes, with no place (`div.card`). Only an exact
     /// match, and only one, is hidden there.
     var family: String?
+    /// Moved or resized rather than taken off: a drag on what is outlined,
+    /// or on its right or bottom edge, with Settings › Browsing › Pages ›
+    /// Move and resize with Hide Elements on. Nil: hidden.
+    var shape: Shape?
 
     var id: String { selector }
+
+    /// Where a thing was moved to and how big it was made, in CSS pixels:
+    /// only what was changed.
+    struct Shape: Codable, Equatable {
+        var width: Double?
+        var height: Double?
+        var dx: Double?
+        var dy: Double?
+
+        /// This one's changes over an earlier one's.
+        func over(_ old: Shape?) -> Shape {
+            Shape(width: width ?? old?.width, height: height ?? old?.height,
+                  dx: dx ?? old?.dx, dy: dy ?? old?.dy)
+        }
+
+        var moved: Bool { dx != nil || dy != nil }
+        var resized: Bool { width != nil || height != nil }
+
+        /// What was done, in words, for the list of what was changed here.
+        var done: String { moved && resized ? "Moved and resized" : moved ? "Moved" : "Resized" }
+    }
 
     /// The name the page's marks give it (data-office-veiled), the same
     /// from one launch to the next.
@@ -52,11 +77,14 @@ struct Veil: Codable, Identifiable, Equatable {
     /// what the page script marked as it (Veiling.marks), and carries what
     /// to check in a comment the script reads from the same sheet.
     var rule: String {
-        guard let print else { return Curtain.rule(selector) }
+        func rule(_ selector: String) -> String {
+            shape.map { Curtain.shapeRule(selector, $0) } ?? Curtain.rule(selector)
+        }
+        guard let print else { return rule(selector) }
         let guarded: [String: String] = ["k": key, "s": selector, "p": print, "f": family ?? ""]
         // JSONEncoder writes "/" as "\/", so no "*/" ends the comment early.
         let json = (try? JSONEncoder().encode(guarded)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-        return "/*office-guard \(json)*/\n" + Curtain.rule(target)
+        return "/*office-guard \(json)*/\n" + rule(target)
     }
 }
 
@@ -83,6 +111,26 @@ final class Curtain: ObservableObject {
         list.append(veil)
         byHost[host] = list
         save()
+    }
+
+    /// One thing moved or resized (Curtain.reshaped).
+    func shape(_ veil: Veil, on host: String) {
+        guard let list = Curtain.reshaped(veil, in: byHost[host] ?? []) else { return }
+        byHost[host] = list
+        save()
+    }
+
+    /// `veil` moved or resized, kept with what was done to it before and
+    /// last in `list`, so ⌘Z takes this change back first. Nil when `list`
+    /// hides it already: there is nothing on the page to move.
+    nonisolated static func reshaped(_ veil: Veil, in list: [Veil]) -> [Veil]? {
+        guard let shape = veil.shape else { return nil }
+        let old = list.first { $0.selector == veil.selector }
+        if let old, old.shape == nil { return nil }
+        var made = veil
+        made.shape = shape.over(old?.shape)
+        made.label = (made.shape?.done ?? "Moved") + " · " + veil.label
+        return list.filter { $0.selector != veil.selector } + [made]
     }
 
     /// Put one back.
@@ -128,6 +176,24 @@ final class Curtain: ObservableObject {
     /// than taking the rule down.
     nonisolated static func rule(_ selector: String) -> String {
         ":is(\(selector)):not(#office-veiled):not(#office-veiled):not(#office-veiled) { display: none !important; }"
+    }
+
+    /// One thing moved or resized, with the same weight as a hiding rule.
+    /// Moved with `translate`, which leaves the page's own layout where it
+    /// was, so nothing around it jumps.
+    nonisolated static func shapeRule(_ selector: String, _ shape: Veil.Shape) -> String {
+        func px(_ value: Double) -> String { "\(Int(value.rounded()))px" }
+        var parts: [String] = []
+        if shape.resized { parts.append("box-sizing: border-box !important") }
+        if let width = shape.width {
+            parts += ["width: \(px(width)) !important", "max-width: none !important",
+                      "min-width: 0 !important", "flex: none !important"]
+        }
+        if let height = shape.height {
+            parts += ["height: \(px(height)) !important", "max-height: none !important", "min-height: 0 !important"]
+        }
+        if shape.moved { parts.append("translate: \(px(shape.dx ?? 0)) \(px(shape.dy ?? 0)) !important") }
+        return ":is(\(selector)):not(#office-veiled):not(#office-veiled):not(#office-veiled) { \(parts.joined(separator: "; ")); }"
     }
 
     // MARK: - the file
@@ -178,14 +244,21 @@ final class VeilRelay: NSObject, WKScriptMessageHandler {
                 tab?.pickingEnded()
             } else if let selector = body["selector"] as? String {
                 let print = body["print"] as? String, family = body["family"] as? String
-                tab?.picked(Veil(
+                // A drag rather than a click: moved or resized, not hidden.
+                let shape = (body["shape"] as? [String: Any]).map {
+                    Veil.Shape(width: $0["width"] as? Double, height: $0["height"] as? Double,
+                               dx: $0["dx"] as? Double, dy: $0["dy"] as? Double)
+                }
+                let veil = Veil(
                     selector: selector,
                     label: body["label"] as? String ?? selector,
                     note: body["note"] as? String ?? "",
                     date: Date(),
                     print: print?.isEmpty == false ? print : nil,
-                    family: family?.isEmpty == false ? family : nil
-                ))
+                    family: family?.isEmpty == false ? family : nil,
+                    shape: shape
+                )
+                if shape != nil { tab?.shaped(veil) } else { tab?.picked(veil) }
             }
         }
     }
@@ -334,6 +407,14 @@ enum Veiling {
       // 1195), as Arc's "Zap all related" does, and the outline says how
       // many that is before anything goes.
       var all = false;
+      // Moving and resizing on (Settings, off unless turned on): a press on
+      // the outlined thing waits for the button to come up, a click hiding
+      // it and a drag moving it, or resizing it from near its right or
+      // bottom edge. Off, a press hides at once, as it always has.
+      var shaping = false, press = null, EDGE = 10;
+      // What the hand sets while it drags, put back as the page had it once
+      // the site's stylesheet holds the change.
+      var HELD = ['translate', 'width', 'height', 'max-width', 'min-width', 'max-height', 'min-height', 'flex', 'box-sizing'];
 
       \(sheets)
       \(marks)
@@ -523,9 +604,77 @@ enum Veiling {
         try { return document.querySelectorAll(kind).length; } catch (e) { return 0; }
       }
 
+      function own(el) {
+        return HELD.map(function (k) { return [k, el.style.getPropertyValue(k), el.style.getPropertyPriority(k)]; });
+      }
+
+      function putBack(p) {
+        p.own.forEach(function (o) {
+          if (o[1]) p.el.style.setProperty(o[0], o[1], o[2]); else p.el.style.removeProperty(o[0]);
+        });
+      }
+
+      function edgeOf(el, x, y) {
+        var r = el.getBoundingClientRect();
+        var right = x <= r.right && x >= r.right - EDGE && y >= r.top && y <= r.bottom;
+        var bottom = y <= r.bottom && y >= r.bottom - EDGE && x >= r.left && x <= r.right;
+        return right && bottom ? 'both' : right ? 'width' : bottom ? 'height' : null;
+      }
+
+      function cursorFor(edge) {
+        return edge === 'both' ? 'nwse-resize' : edge === 'width' ? 'ew-resize'
+             : edge === 'height' ? 'ns-resize' : 'crosshair';
+      }
+
+      // Where the site's stylesheet has moved it already, so a second drag
+      // goes on from there.
+      function shift(el) {
+        var t = getComputedStyle(el).translate;
+        if (!t || t === 'none') return { dx: 0, dy: 0 };
+        var p = t.split(/\\s+/);
+        return { dx: parseFloat(p[0]) || 0, dy: parseFloat(p[1] || '0') || 0 };
+      }
+
+      function drag(e) {
+        var dx = e.clientX - press.x, dy = e.clientY - press.y;
+        // A hand never holds quite still: a few pixels is still a click.
+        if (!press.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+        press.moved = true;
+        var el = press.el, st = el.style;
+        if (press.mode === 'move') {
+          press.dx = press.base.dx + dx;
+          press.dy = press.base.dy + dy;
+          st.setProperty('translate', press.dx + 'px ' + press.dy + 'px', 'important');
+        } else {
+          st.setProperty('box-sizing', 'border-box', 'important');
+          if (press.mode !== 'height') {
+            press.width = Math.max(20, press.rect.width + dx);
+            st.setProperty('width', press.width + 'px', 'important');
+            st.setProperty('max-width', 'none', 'important');
+            st.setProperty('min-width', '0', 'important');
+            st.setProperty('flex', 'none', 'important');
+          }
+          if (press.mode !== 'width') {
+            press.height = Math.max(20, press.rect.height + dy);
+            st.setProperty('height', press.height + 'px', 'important');
+            st.setProperty('max-height', 'none', 'important');
+            st.setProperty('min-height', '0', 'important');
+          }
+        }
+        place(el);
+      }
+
       function onMove(e) {
         if (!live) return;
+        if (press) { e.preventDefault(); return drag(e); }
         all = e.altKey;
+        // On the outlined thing's right or bottom edge: it stays outlined,
+        // with the cursor that says it can be pulled.
+        if (shaping && target) {
+          var edge = edgeOf(target, e.clientX, e.clientY);
+          document.documentElement.style.cursor = cursorFor(edge);
+          if (edge) return place(target);
+        }
         var el = document.elementFromPoint(e.clientX, e.clientY);
         if (!el || el === frame || el === document.documentElement || el === document.body) return;
         // Still over the same thing: a wider choice made with ↑ stays,
@@ -583,8 +732,44 @@ enum Veiling {
         // very first element under it, or a trackpad tap.
         var el = target || document.elementFromPoint(e.clientX, e.clientY);
         if (!el || el === frame || el === document.documentElement || el === document.body) return;
+        if (shaping && !e.altKey) {
+          press = { el: el, x: e.clientX, y: e.clientY, mode: edgeOf(el, e.clientX, e.clientY) || 'move',
+                    rect: el.getBoundingClientRect(), base: shift(el), moved: false, own: own(el) };
+          return;
+        }
+        take(el, e.altKey);
+      }
+
+      // The button up after a press held for moving: a drag is kept as a
+      // move or a resize, a press that never moved hides, as a click.
+      function onUp(e) {
+        swallow(e);
+        if (!live || !press) return;
+        var p = press, el = p.el;
+        press = null;
+        if (!p.moved) return take(el, false);
+        var sel = selectorFor(el);
+        if (!sel) {
+          putBack(p);
+          place(el);
+          window.webkit.messageHandlers.officeVeil.postMessage({ trouble: 'it has no name of its own on this page' });
+          return;
+        }
+        var made = p.mode === 'move' ? { dx: Math.round(p.dx), dy: Math.round(p.dy) } : {};
+        if (p.width !== undefined) made.width = Math.round(p.width);
+        if (p.height !== undefined) made.height = Math.round(p.height);
+        window.webkit.messageHandlers.officeVeil.postMessage({
+          selector: sel.s, print: sel.p || '', family: sel.f || '',
+          label: name(el), note: shape(el), shape: made
+        });
+        // The site's stylesheet holds it from here; the hand's own styles
+        // go once that has come, and the page's own inline ones come back.
+        setTimeout(function () { putBack(p); place(el); }, 700);
+      }
+
+      function take(el, every) {
         try {
-          if (e.altKey) {
+          if (every) {
             // Every one like it, now and on later visits, new ones too: a
             // pattern, not one thing, so it is worn as it is, unchecked.
             var n = alike(el);
@@ -620,11 +805,15 @@ enum Veiling {
 
       var presses = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click',
                      'dblclick', 'contextmenu', 'touchstart'];
+      function handler(kind) { return kind === 'pointerdown' ? onPress : kind === 'pointerup' ? onUp : swallow; }
 
       function off() {
         if (!live) return;
         live = false;
         all = false;
+        // Let go mid-drag: the page as it was.
+        if (press && press.moved) putBack(press);
+        press = null;
         target = null;
         under = null;
         trail = [];
@@ -636,15 +825,16 @@ enum Veiling {
         document.removeEventListener('keyup', onKey, true);
         window.removeEventListener('pagehide', off);
         presses.forEach(function (kind) {
-          document.removeEventListener(kind, kind === 'pointerdown' ? onPress : swallow, true);
+          document.removeEventListener(kind, handler(kind), true);
         });
         window.webkit.messageHandlers.officeVeil.postMessage({ off: true });
       }
 
       window.__officeVeil = {
-        on: function () {
+        on: function (shapes) {
           if (live) return;
           live = true;
+          shaping = !!shapes;
           chrome();
           document.documentElement.style.cursor = 'crosshair';
           document.addEventListener('mousemove', onMove, true);
@@ -656,7 +846,7 @@ enum Veiling {
           // Search no longer pointing at anything.
           window.addEventListener('pagehide', off);
           presses.forEach(function (kind) {
-            document.addEventListener(kind, kind === 'pointerdown' ? onPress : swallow, true);
+            document.addEventListener(kind, handler(kind), true);
           });
         },
         off: off,
