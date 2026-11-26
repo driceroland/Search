@@ -4339,6 +4339,52 @@ final class Bench {
                         }])
             }
 
+        case "meetpip":
+            // Google Meet's own little window (MeetPiP.swift), in a test run
+            // only, where it is made but never shown. "state": the windows
+            // open and which tabs gave mediaSession Chrome's handler. "eval"
+            // (js, n): in the Nth window's page. "tap" (selector, n): a real
+            // click there. "close" (n): its close button, as a hand's.
+            guard Store.testing else { answer(["error": "meetpip only works on a --test run"]); return }
+            let windows = MeetPiPWindow.all
+            let n = request["n"] as? Int ?? 0
+            switch request["action"] as? String ?? "state" {
+            case "eval":
+                guard windows.indices.contains(n), let js = request["js"] as? String else { answer(["error": "no window \(n)"]); return }
+                windows[n].web.evaluateJavaScript(js) { value, error in
+                    MainActor.assumeIsolated {
+                        if let error { answer(["error": error.localizedDescription]); return }
+                        answer(["value": Bench.plain(value)])
+                    }
+                }
+            case "tap":
+                guard windows.indices.contains(n), let selector = request["selector"] as? String else { answer(["error": "no window \(n)"]); return }
+                let view = windows[n].web
+                view.evaluateJavaScript(Bench.locate(selector)) { value, error in
+                    MainActor.assumeIsolated {
+                        guard let point = value as? [Double], point.count == 2, view.window != nil else {
+                            answer(["error": error?.localizedDescription ?? "nothing matches \(selector)"]); return
+                        }
+                        PageHands.click(view, at: point)
+                        answer(["ok": true])
+                    }
+                }
+            case "close":
+                guard windows.indices.contains(n) else { answer(["error": "no window \(n)"]); return }
+                windows[n].panel.performClose(nil)
+                answer(["open": MeetPiPWindow.all.count])
+            case "shot":
+                // A PNG of the Nth window's page, drawn off screen as `shot`
+                // draws a tab's: the panel stays where it is, never shown.
+                guard windows.indices.contains(n) else { answer(["error": "no window \(n)"]); return }
+                let path = (request["path"] as? String) ?? NSTemporaryDirectory() + "search-bench-meetpip-\(n).png"
+                shoot(windows[n].web, to: URL(fileURLWithPath: path), width: request["width"] as? Double, answer)
+            default:
+                answer(["on": MeetPiP.on, "windows": windows.map(\.state),
+                        "armed": (browser.tabs + browser.parkedTabs).filter(\.meetPiPArmed).map(\.id.uuidString),
+                        "visibleOnScreen": windows.contains { $0.panel.isVisible }])
+            }
+
         case "float":
             // The floating window's gestures, handed to it as a trackpad, a
             // wheel or a click would, on screens made up far off the real

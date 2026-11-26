@@ -825,6 +825,14 @@ final class Preferences: ObservableObject {
             VideoKeys.on = videoKeys
         }
     }
+    /// Google Meet's own little window, as Chrome shows it, when you go to
+    /// another tab during a call (see MeetPiP.swift). On unless turned off.
+    @Published var meetPiP: Bool {
+        didSet {
+            store.set(meetPiP, forKey: "meet.pip")
+            MeetPiP.on = meetPiP
+        }
+    }
     /// A mouse wheel's notches glide instead of jumping (see WheelGlide.swift).
     /// On unless turned off.
     @Published var wheelGlides: Bool {
@@ -1643,6 +1651,9 @@ final class Preferences: ObservableObject {
         let videoKeys = store.object(forKey: "video.keys") as? Bool ?? true
         self.videoKeys = videoKeys
         VideoKeys.on = videoKeys
+        let meetPiP = store.object(forKey: "meet.pip") as? Bool ?? true
+        self.meetPiP = meetPiP
+        MeetPiP.on = meetPiP
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         let glides = store.object(forKey: "wheel.smooth") as? Bool ?? true
         wheelGlides = glides
