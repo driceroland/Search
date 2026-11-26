@@ -457,17 +457,22 @@ struct SideBar: View {
     /// hairline; as cards, in the gap before the page.
     private var edge: some View {
         EdgeGrip(lit: onEdge || grabbed != nil)
-            .offset(x: onFrame ? 0 : onRight ? -4 : 4)
-            .frame(width: 9)
+            // The pill where it was with the old 9 wide edge.
+            .offset(x: onFrame ? (onRight ? -1.5 : 1.5) : (onRight ? 2.5 : -2.5))
+            // 12 wide: as cards, over the whole gap before the page and 4
+            // into the column; edge to edge, 4 into the column and the rest
+            // over the page's own edge. 9 wide, it was easy to miss.
+            .frame(width: 12)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
-            .onHover { over in
-                onEdge = over
-                if over { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
+            .resizeEdge { over in onEdge = over }
+            .offset(x: onFrame ? 0 : onRight ? -Metrics.cardGap : Metrics.cardGap)
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
+                        // Held, the page under the pointer never takes the
+                        // cursor back.
+                        NSCursor.resizeLeftRight.set()
                         // Taken from the strip, as if a little short of the
                         // line: a short pull brings the titles back, where
                         // the strip's own width would need a long one.

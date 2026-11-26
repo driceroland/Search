@@ -926,17 +926,20 @@ struct ContentView: View {
     /// A column being dragged wider or narrower is followed as it goes.
     private func make(room new: CGSize, after old: CGSize) {
         let now = roomed
-        // The column's edge held: the page slides with it rather than being
-        // laid out again at every width it goes through. Wider, it runs on
-        // past the window's far edge; narrower, it is resized only every 40
-        // points, each time with that much to spare. Let go, it is resized
-        // once, to its room (below).
+        // The column's edge held: the page is laid out once, as wide as the
+        // narrowest column would leave it, and from then on only slides
+        // with the edge. Its far side always reaches past the card's, which
+        // cuts it, so no strip of nothing opens there and nothing is laid
+        // out again while the edge moves: resized every 40 points, the far
+        // side jumped each time as the page caught up a frame late. Let go,
+        // it is resized once, to its room (below).
         if edges.side != nil, new.height == now.height, new.width > Metrics.cardGap {
             roomTicket += 1
-            guard new.width < now.width else { return }
+            let least = Metrics.sideMin
+            guard now.width > least else { return }
             var still = Transaction()
             still.disablesAnimations = true
-            withTransaction(still) { room = CGSize(width: max(Metrics.sideMin, new.width - 40), height: new.height) }
+            withTransaction(still) { room = CGSize(width: least, height: new.height) }
             return
         }
         // The card's far gap coming back as the column does (see
