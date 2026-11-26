@@ -685,9 +685,14 @@ final class PageFind {
     // cleared and added to. A highlight repaints the ranges it gains or
     // loses, whereas one set into or deleted from `CSS.highlights` could
     // stay on screen, or stay off it, until something else was drawn.
+    const findRules = "::highlight(search-find-match) { background-color: #ffff00; color: #000; }"
+        + "::highlight(search-find-current) { background-color: #ff9632; color: #000; }";
+    const quietSelection = "::selection { background-color: transparent; color: #000; }";
+
     function unpaint() {
         for (const highlights of state.painted) {
             try { highlights.all.clear(); highlights.current.clear(); } catch (_) {}
+            try { highlights.sheet.replaceSync(findRules); } catch (_) {}
         }
         state.painted = [];
     }
@@ -697,10 +702,7 @@ final class PageFind {
         let highlights = state.highlights.get(win);
         if (!highlights) {
             const sheet = new win.CSSStyleSheet();
-            sheet.replaceSync(
-                "::highlight(search-find-match) { background-color: #ffff00; color: #000; }"
-                + "::highlight(search-find-current) { background-color: #ff9632; color: #000; }"
-            );
+            sheet.replaceSync(findRules);
             const current = new win.Highlight();
             current.priority = 1;
             highlights = { sheet, all: new win.Highlight(), current };
@@ -746,6 +748,9 @@ final class PageFind {
         const current = state.matches[state.index];
         if (current?.kind === "range") {
             try { painted.get(current.win)?.current.add(current.range); } catch (_) {}
+            for (const highlights of state.painted) {
+                try { highlights.sheet.replaceSync(findRules + quietSelection); } catch (_) {}
+            }
         }
     }
 
