@@ -40,7 +40,8 @@ final class FullScreenTitleTests: XCTestCase {
             (CGWindowListCopyWindowInfo([.optionAll], 0) as? [[String: Any]])?
                 .first { ($0[kCGWindowNumber as String] as? Int) == window.windowNumber }?[kCGWindowName as String] as? String
         }
-        let deadline = Date().addingTimeInterval(3)
+        // Waited for, not timed: 3 s ran out in a loaded full run.
+        let deadline = Date().addingTimeInterval(15)
         while listed() != "Big Buck Bunny - YouTube", Date() < deadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         }
