@@ -164,6 +164,9 @@ struct SideBar: View {
     }
     /// The foot's height in a row: its doors and the margin beneath.
     private static let footBox: CGFloat = 26 + 10
+    /// The air above the foot the space's name shows in, after a switch
+    /// (SpaceDot): the pill, and the shadow around it.
+    private static let nameRoom: CGFloat = 44
     /// How far the strip's edge is pulled before the titles come back.
     static let stripPull: CGFloat = 24
 
@@ -345,7 +348,9 @@ struct SideBar: View {
                         .modifier(Rise(y: doorsFoot ? 0 : SideBar.footBox - 10))
                         .animation(SideBar.footIn, value: doorsFoot)
                         .frame(height: icons ? nil : doorsFoot ? SideBar.footBox : 0, alignment: .top)
-                        .clipped()
+                        // Room above for the space's name, which shows over
+                        // the rows for a moment after a switch (SpaceDot).
+                        .clipShape(FootClip(headroom: doorsFoot ? SideBar.nameRoom : 0))
                         .transaction(value: doorsFoot) { $0.animation = nil }
                         .allowsHitTesting(doorsFoot)
                         .accessibilityHidden(!doorsFoot)
@@ -2957,6 +2962,17 @@ private struct EndInset: ViewModifier, Animatable {
     var bottom: CGFloat
     var animatableData: CGFloat { get { bottom } set { bottom = newValue } }
     func body(content: Content) -> some View { content.padding(.bottom, bottom) }
+}
+
+/// The foot's clip, with the air above it where the space's name shows for
+/// a moment after a switch. Cut to its own height alone, the foot took the
+/// name's capsule away and left the shadow it cast behind, lying flat
+/// across the doors (SpaceDot).
+private struct FootClip: Shape {
+    var headroom: CGFloat
+    func path(in rect: CGRect) -> Path {
+        Path(CGRect(x: rect.minX, y: rect.minY - headroom, width: rect.width, height: rect.height + headroom))
+    }
 }
 
 /// Down by y, drawn again on every frame of a change to it.
