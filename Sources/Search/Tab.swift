@@ -703,6 +703,8 @@ final class Tab: ObservableObject, Identifiable {
 
     /// What the page hands back when you point at something and click it.
     var onPick: ((Tab, Veil) -> Void)?
+    /// What the page hands back when you drag it instead: moved or resized.
+    var onShape: ((Tab, Veil) -> Void)?
     /// The page has a sign-in on it; the page has just sent one.
     var onSignIn: ((Tab) -> Void)?
     /// The caret has entered or left one of the sign-in boxes; where the box
@@ -1429,7 +1431,11 @@ final class Tab: ObservableObject, Identifiable {
             """, arguments: ["selector": selector]) { shows in then(shows as? Bool ?? false) }
     }
 
-    func startPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on()") }
+    /// `shaping`: a drag moves or resizes what is outlined, a click still
+    /// hides it (Settings › Browsing › Pages).
+    func startPicking(shaping: Bool = false) {
+        web.evaluateInSearch("window.__officeVeil && window.__officeVeil.on(\(shaping))")
+    }
     func stopPicking() { web.evaluateInSearch("window.__officeVeil && window.__officeVeil.off()") }
 
     func foundSignIn() { onSignIn?(self) }
@@ -1626,6 +1632,10 @@ final class Tab: ObservableObject, Identifiable {
 
     func picked(_ veil: Veil) {
         onPick?(self, veil)
+    }
+
+    func shaped(_ veil: Veil) {
+        onShape?(self, veil)
     }
 
     /// Show one hidden thing while the pointer rests on its row in the list.
@@ -2253,6 +2263,7 @@ final class Tab: ObservableObject, Identifiable {
         onZoom = nil
         onLink = nil
         onPick = nil
+        onShape = nil
         onPickEnd = nil
         onSignIn = nil
         onField = nil
