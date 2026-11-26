@@ -239,6 +239,13 @@ final class PACScript: @unchecked Sendable {
     private var context: JSContext?
     private var function: JSValue?
     private let source: String
+    /// How dnsResolve looks a name up; a test puts a slow one in.
+    var lookUp: @Sendable (String) -> String? = { PACScript.resolve($0) }
+    /// When the answer being worked out is due. JavaScriptCore's limit stops
+    /// the script, not a lookup it is waiting on, so dnsResolve gives up at
+    /// this time too: a name that never resolves, asked again and again,
+    /// would otherwise hold the queue as long as a loop.
+    private var deadline = DispatchTime.now()
 
     init(_ source: String) {
         self.source = source
@@ -260,6 +267,7 @@ final class PACScript: @unchecked Sendable {
     }
 
     private func run(url: String, host: String) -> String? {
+        deadline = .now() + Self.limit
         if context == nil { load() }
         guard let context, let function, !function.isUndefined else { return nil }
         context.exception = nil
@@ -287,7 +295,7 @@ final class PACScript: @unchecked Sendable {
         guard let made = JSContext() else { return }
         made.name = "PAC"
         Self.setLimit?(JSContextGetGroup(made.jsGlobalContextRef), Self.limit, nil, nil)
-        let resolve: @convention(block) (String) -> Any = { host in PACScript.resolve(host) ?? NSNull() }
+        let resolve: @convention(block) (String) -> Any = { [weak self] host in (self?.resolveInTime(host)).map { $0 as Any } ?? NSNull() }
         made.setObject(resolve, forKeyedSubscript: "dnsResolve" as NSString)
         let mine: @convention(block) () -> String = { PACScript.myAddress() }
         made.setObject(mine, forKeyedSubscript: "myIpAddress" as NSString)
@@ -300,6 +308,20 @@ final class PACScript: @unchecked Sendable {
     }
 
     /// The first IPv4 address a name has, as PAC's dnsResolve answers.
+    /// A lookup that waits no longer than the answer's deadline. One still
+    /// going then is left to finish on its own.
+    private func resolveInTime(_ host: String) -> String? {
+        let due = deadline
+        guard DispatchTime.now() < due else { return nil }
+        final class Found: @unchecked Sendable { var address: String? }
+        let found = Found(), done = DispatchSemaphore(value: 0), lookUp = lookUp
+        DispatchQueue.global().async {
+            found.address = lookUp(host)
+            done.signal()
+        }
+        return done.wait(timeout: due) == .success ? found.address : nil
+    }
+
     static func resolve(_ host: String) -> String? {
         if ExtensionProxyRules.CIDR.address(host)?.count == 4 { return host }
         var hints = addrinfo(ai_flags: 0, ai_family: AF_INET, ai_socktype: SOCK_STREAM, ai_protocol: 0,
@@ -494,10 +516,18 @@ final class ExtensionProxyRelay: @unchecked Sendable {
         let text = String(decoding: head, as: UTF8.self)
         for line in text.components(separatedBy: "\r\n") where line.lowercased().hasPrefix("proxy-authorization:") {
             let given = "Proxy-Authorization: " + line.dropFirst("proxy-authorization:".count).trimmingCharacters(in: .whitespaces)
-            if given == ProxyCredentials(username: Self.username, password: secret).header { return false }
-            if given == ProxyCredentials(username: Self.username, password: privateSecret).header { return true }
+            if Self.same(given, ProxyCredentials(username: Self.username, password: secret).header) { return false }
+            if Self.same(given, ProxyCredentials(username: Self.username, password: privateSecret).header) { return true }
         }
         return nil
+    }
+
+    /// Compared byte for byte without stopping at the first difference, so
+    /// how long a wrong guess takes says nothing about the secret.
+    static func same(_ a: String, _ b: String) -> Bool {
+        let (x, y) = (Array(a.utf8), Array(b.utf8))
+        guard x.count == y.count else { return false }
+        return zip(x, y).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
     }
 
     /// Starts listening on 127.0.0.1 and says the port once it is known.
@@ -1010,8 +1040,10 @@ enum ExtensionProxyAuth {
     }
 
     private static var ears: [ObjectIdentifier: Ear] = [:]
-    private static var pending: [String: CheckedContinuation<ProxyCredentials?, Never>] = [:]
-    private static var number = 0
+    /// Questions waiting, each with the port it was asked on: an answer is
+    /// taken only from there, so one extension can't answer, or cancel, a
+    /// question put to another. Their names are random for the same reason.
+    private static var pending: [String: (ear: ObjectIdentifier, done: CheckedContinuation<ProxyCredentials?, Never>)] = [:]
 
     /// Starts an extension's worker that isn't running, so it can be asked.
     static var wake: (String) -> Void = { _ in }
@@ -1037,7 +1069,8 @@ enum ExtensionProxyAuth {
                     if !port.isDisconnected { port.sendMessage(["listening": true], completionHandler: nil) }
                     return
                 }
-                guard let answer = message["answer"] as? String, let waiting = pending.removeValue(forKey: answer) else { return }
+                guard let answer = message["answer"] as? String, pending[answer]?.ear == key,
+                      let waiting = pending.removeValue(forKey: answer)?.done else { return }
                 if message["cancel"] as? Bool == true { waiting.resume(returning: nil); return }
                 let given = message["authCredentials"] as? [String: Any]
                 if let user = given?["username"] as? String, let password = given?["password"] as? String {
@@ -1095,8 +1128,7 @@ enum ExtensionProxyAuth {
     }
 
     private static func ask(_ ear: Ear, _ challenge: ProxyChallenge) async -> ProxyCredentials? {
-        number += 1
-        let question = "\(number)"
+        let question = UUID().uuidString
         let details: [String: Any] = [
             "requestId": question, "url": challenge.url, "method": challenge.method,
             "frameId": -1, "parentFrameId": -1, "tabId": -1, "type": "other",
@@ -1106,15 +1138,15 @@ enum ExtensionProxyAuth {
             "challenger": ["host": challenge.proxyHost, "port": Int(challenge.proxyPort)],
         ]
         return await withCheckedContinuation { done in
-            pending[question] = done
+            pending[question] = (ObjectIdentifier(ear), done)
             ear.port.sendMessage(["ask": question, "details": details]) { error in
                 guard error != nil else { return }
-                MainActor.assumeIsolated { pending.removeValue(forKey: question)?.resume(returning: nil) }
+                MainActor.assumeIsolated { pending.removeValue(forKey: question)?.done.resume(returning: nil) }
             }
             // A listener that never calls back is no answer.
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(10))
-                pending.removeValue(forKey: question)?.resume(returning: nil)
+                pending.removeValue(forKey: question)?.done.resume(returning: nil)
             }
         }
     }

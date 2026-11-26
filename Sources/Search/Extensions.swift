@@ -1806,6 +1806,9 @@ final class Extensions: NSObject, ObservableObject {
         ("readingList", "Read and change your reading list"), ("downloads.open", "Open files it downloads"),
         ("desktopCapture", "Record your screen or a window, when you choose what to share"),
         ("tabCapture", "Record a tab, when you ask it to"),
+        // Chrome counts it as reading and changing everything on every
+        // website: whatever isn't encrypted passes through its proxy.
+        ("proxy", "Send everything you browse through a proxy it chooses"),
     ]
 
     /// What an extension wants, in words.

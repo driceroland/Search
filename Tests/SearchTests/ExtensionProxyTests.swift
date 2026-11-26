@@ -428,4 +428,25 @@ final class ExtensionProxyTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), PACScript.limit + 2)
         XCTAssertEqual(script.findNow(url: "https://a/", host: "a"), "DIRECT")
     }
+
+    /// A lookup that hangs is given up on at the answer's deadline, however
+    /// often the script asks.
+    func testASlowLookupIsGivenUpOn() throws {
+        let script = PACScript("""
+            function FindProxyForURL(url, host) {
+              for (var i = 0; i < 5; i++) { if (dnsResolve("slow.example")) return "PROXY a:1"; }
+              return "DIRECT";
+            }
+            """)
+        script.lookUp = { _ in Thread.sleep(forTimeInterval: 10); return "10.0.0.1" }
+        let started = Date()
+        XCTAssertEqual(script.findNow(url: "https://a/", host: "a"), "DIRECT")
+        XCTAssertLessThan(Date().timeIntervalSince(started), PACScript.limit + 1)
+    }
+
+    func testTheSecretIsComparedWhole() {
+        XCTAssertTrue(ExtensionProxyRelay.same("abc", "abc"))
+        XCTAssertFalse(ExtensionProxyRelay.same("abc", "abd"))
+        XCTAssertFalse(ExtensionProxyRelay.same("abc", "abcd"))
+    }
 }
