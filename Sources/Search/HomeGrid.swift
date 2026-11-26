@@ -18,6 +18,9 @@ struct HomeGrid: View {
     /// drawn: the open tabs an empty side of a Split View offers go under
     /// it, where they lay over its tiles (#1381).
     static func height(_ browser: Browser) -> CGFloat {
+        // Settings › Site tiles on a new tab: the same folder, drawn as
+        // tiles with icons that can be changed there (HomeTiles.swift).
+        if browser.prefs.homeTiles { return HomeTiles.height(browser) }
         guard browser.prefs.homeGrid, browser.active?.isBlank == true, browser.typing.typed.isEmpty else { return 0 }
         let count = browser.bookmarks.homeSites.count
         guard count > 0 else { return 0 }
@@ -26,8 +29,10 @@ struct HomeGrid: View {
     }
 
     var body: some View {
-        // The switch first: off, the bookmarks aren't walked at each key.
-        if prefs.homeGrid, browser.active?.isBlank == true, typing.typed.isEmpty,
+        // The switches first: off, the bookmarks aren't walked at each key.
+        if prefs.homeTiles {
+            HomeTiles(browser: browser)
+        } else if prefs.homeGrid, browser.active?.isBlank == true, typing.typed.isEmpty,
            case let sites = browser.bookmarks.homeSites, !sites.isEmpty {
             // The field's own width and row height, hung just under it: the
             // field is centred, lifted 30, and 50 tall.

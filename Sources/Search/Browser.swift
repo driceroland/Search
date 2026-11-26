@@ -253,6 +253,12 @@ final class Browser: NSObject, ObservableObject {
     @Published var bookmarkCard: Bookmark.ID?
 
     /// The page you are on is kept, wherever it is filed.
+    /// The keys back to the address field, as a new tab gives them: from
+    /// a new tab's tiles, on Escape (HomeTiles.swift).
+    func giveFieldTheKeys() {
+        focusRequest += 1
+    }
+
     var pageKept: Bool {
         active?.address.map(bookmarks.contains) ?? false
     }

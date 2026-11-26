@@ -865,6 +865,12 @@ struct AddressField: NSViewRepresentable {
             case #selector(NSResponder.moveUp(_:)):
                 browser.walk(-1)
                 return true
+            case #selector(NSResponder.insertTab(_:)) where textView.string.isEmpty && HomeTiles.showing(browser)
+                && HomeTiles.count(browser) > 0:
+                // Tab from a new tab's empty field: to its first site tile
+                // (HomeTiles.swift), the way down to them by keys.
+                NotificationCenter.default.post(name: HomeTiles.focusFirst, object: browser)
+                return true
             case #selector(NSResponder.deleteWordBackward(_:)):
                 // ⌥⌫ over an offered ending lets go of it and takes the last
                 // word typed, as it does with no ending there. Left to the

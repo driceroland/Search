@@ -727,6 +727,7 @@ struct SettingsPanel: View {
         case "tabs.keepWindow": Switch(on: $prefs.keepWindowAfterLast)
         case "tabs.closeGoesBack": Switch(on: $prefs.closeGoesBack)
         case "home.grid": Switch(on: $prefs.homeGrid)
+        case "home.tiles": Switch(on: $prefs.homeTiles)
         case "tabs.undoReopens": Switch(on: $prefs.undoReopensTab)
         case "tabs.switcherBehindFirst": Switch(on: $prefs.switcherBehindFirst)
         case "tabs.switcherLeavesOutPins": Switch(on: $prefs.switcherLeavesOutPins)

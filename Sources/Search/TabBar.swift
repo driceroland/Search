@@ -2140,6 +2140,10 @@ struct TabMenu: View {
             browser.duplicate()
         }
         .disabled(!tab.isWeb)
+        // Settings › Site tiles on a new tab: this page as one (HomeTiles.swift).
+        if browser.offersTile(tab) {
+            Button("Add to New Tabs") { browser.addTile(from: tab) }
+        }
         // The card a click on the tab you are on shows under its address.
         Button("Site Information…") { browser.showSiteInformation(tab) }
             .disabled(!Browser.offersSiteInformation(tab))

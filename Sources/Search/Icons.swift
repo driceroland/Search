@@ -458,6 +458,26 @@ final class Favicons {
         }
     }
 
+    /// A site's favicon.ico, asked for once, for a new tab's tile added by
+    /// its address (HomeTiles.swift): nothing when an icon is known for it
+    /// already, or it was asked this session and had none. Never for a
+    /// private tab, and never because a new tab opened.
+    func fetchOnce(for url: URL) {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), cached(for: url) == nil,
+              let site = Favicons.site(url),
+              let root = URL(string: "/favicon.ico", relativeTo: url)?.absoluteURL
+        else { return }
+        load()
+        let busyKey = site + "/"
+        guard !busy.contains(busyKey), !missing.contains(busyKey) else { return }
+        busy.insert(busyKey)
+        fetchesForTiles += 1
+        Task { await download([root], site: site, page: "/", dark: Favicons.dark, shy: false) }
+    }
+
+    /// How many `fetchOnce` has started, for the bench.
+    private(set) var fetchesForTiles = 0
+
     private enum Scheme { case any, light, dark }
 
     /// What a `media` attribute says about the scheme, if anything.

@@ -488,6 +488,11 @@ final class Preferences: ObservableObject {
     @Published var homeGrid: Bool {
         didSet { store.set(homeGrid, forKey: "home.grid") }
     }
+    /// A blank tab's site tiles, with icons, editable there (HomeTiles.swift).
+    /// Off unless asked for.
+    @Published var homeTiles: Bool {
+        didSet { store.set(homeTiles, forKey: "home.tiles") }
+    }
     /// ⌘Z reopens the tab just closed, as in Safari, while closing it is
     /// still the last thing done (Browser.lastClose). On unless turned off.
     @Published var undoReopensTab: Bool {
@@ -1458,6 +1463,7 @@ final class Preferences: ObservableObject {
         undoReopensTab = store.object(forKey: "tabs.undoReopens") as? Bool ?? true
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         homeGrid = store.object(forKey: "home.grid") as? Bool ?? true
+        homeTiles = store.bool(forKey: "home.tiles")
         switcherBehindFirst = store.bool(forKey: "tabs.switcherBehindFirst")
         switcherLeavesOutPins = store.bool(forKey: "tabs.switcherLeavesOutPins")
         // On for everyone who never touched it (Drice, 25 Nov 2026).

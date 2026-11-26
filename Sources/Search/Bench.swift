@@ -570,6 +570,65 @@ final class Bench {
                         "loading": browser.tabs.filter(\.loading).count, "turns": LoadTurns.at])
             }
 
+        case "tiles":
+            // A new tab's site tiles (HomeTiles.swift), through what the
+            // tiles themselves call: list, add, edit, move, remove, open,
+            // drawn. Only on a SEARCH_PROBE run.
+            guard Store.testing else { answer(["error": "tiles only works on a --test run"]); return }
+            let marks = browser.bookmarks
+            func list() -> [[String: Any]] {
+                marks.tiles.map { ["id": $0.id.uuidString, "name": $0.title, "url": $0.url ?? "",
+                                   "shown": $0.address.map(TileAddress.shown) ?? "",
+                                   "icon": Favicons.shared.cached(for: $0.address) != nil] }
+            }
+            func tile() -> Bookmark? {
+                if let at = request["at"] as? Int, marks.tiles.indices.contains(at) { return marks.tiles[at] }
+                return (request["id"] as? String).flatMap(UUID.init).flatMap { id in marks.tiles.first { $0.id == id } }
+            }
+            var said: [String: Any] = [:]
+            switch request["action"] as? String ?? "list" {
+            case "add":
+                if let tab = find(request, in: browser), request["page"] as? Bool == true {
+                    said["problem"] = browser.addTile(from: tab).map { "\($0)" } ?? ""
+                } else {
+                    said["problem"] = browser.addTile(name: request["name"] as? String ?? "", typed: request["url"] as? String ?? "").map { "\($0)" } ?? ""
+                }
+            case "edit":
+                guard let it = tile() else { answer(["error": "no such tile"]); return }
+                said["problem"] = browser.editTile(it.id, name: request["name"] as? String ?? it.title,
+                                                   typed: request["url"] as? String ?? it.url ?? "").map { "\($0)" } ?? ""
+            case "move":
+                guard let it = tile(), let to = request["to"] as? Int else { answer(["error": "move needs a tile and to"]); return }
+                if browser.tilesEditable { marks.moveTile(it.id, to: to) } else { said["problem"] = "notEditable" }
+            case "remove":
+                guard let it = tile() else { answer(["error": "no such tile"]); return }
+                if browser.tilesEditable { marks.removeTile(it.id) } else { said["problem"] = "notEditable" }
+            case "open":
+                guard let it = tile(), let url = it.address else { answer(["error": "no such tile"]); return }
+                browser.openBookmark(url)
+            case "on", "off":
+                browser.prefs.homeTiles = request["action"] as? String == "on"
+            case "newtab":
+                browser.newTab()
+            case "private":
+                browser.newShyTab()
+            case "list", "drawn":
+                break
+            default:
+                answer(["error": "tiles: list, add, edit, move, remove, open, on, off, newtab, private"]); return
+            }
+            said["tiles"] = list()
+            said["showing"] = HomeTiles.showing(browser)
+            said["editable"] = browser.tilesEditable
+            said["count"] = HomeTiles.count(browser)
+            said["height"] = Double(HomeGrid.height(browser))
+            said["fetches"] = Favicons.shared.fetchesForTiles
+            said["offered"] = browser.active.map(browser.offersTile) ?? false
+            said["blank"] = browser.active?.isBlank ?? false
+            said["shy"] = browser.active?.shy ?? false
+            said["folder"] = marks.homeFolder?.title ?? ""
+            answer(said)
+
         case "openmark":
             // A bookmark opened as the bar opens one. Only on a SEARCH_PROBE run.
             guard Store.testing else { answer(["error": "openmark only works on a --test run"]); return }
@@ -6438,9 +6497,9 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "picturemenu", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "devtools", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "tiles", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "picturemenu", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "devtools", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
 
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "devtools", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "tiles", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "devtools", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }

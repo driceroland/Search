@@ -431,6 +431,11 @@ struct SearchApp: App {
                 Button(browser.pageKept ? "Edit Bookmark\u{2026}" : "Add This Page") { browser.bookmarkCurrent() }
                     .shortcut("bookmarks.add")
                     .disabled(!(browser.active?.isWeb ?? false))
+                if browser.prefs.homeTiles {
+                    // Settings › Site tiles on a new tab (HomeTiles.swift).
+                    Button("Add This Page to New Tabs") { browser.active.map { browser.addTile(from: $0) } }
+                        .disabled(!(browser.active.map(browser.offersTile) ?? false))
+                }
                 Button("Show Bookmarks…") { browser.bookmarking = true }
                     .shortcut("bookmarks.show")
                 Toggle("Show Bookmarks Bar", isOn: Binding(
