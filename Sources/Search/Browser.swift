@@ -5643,7 +5643,7 @@ final class Browser: NSObject, ObservableObject {
             // came from too, while that is still the tab you were on before
             // it: it was opened at the end of the row, and its neighbour
             // there is a tab you weren't reading.
-            let back = tabBefore(tab)
+            let back = tabBefore(tab, awake: true)
             let before = goingBack || prefs.closeGoesBack || tab.page != nil ? back
                 : back.flatMap { $0.id == tab.opener ? $0 : nil }
             select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
@@ -6747,8 +6747,11 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// The tab last left that is still in the row, other than `tab`.
-    func tabBefore(_ tab: Tab) -> Tab? {
-        let row = tabs.filter(standsInRow)
+    /// `awake`: never a pin put down, which closing a tab must not wake
+    /// (see leave): ⌘W on a new tab went back to the pin put down before
+    /// it, and ⌘W on that pin left a new tab again, for ever (#1656).
+    func tabBefore(_ tab: Tab, awake: Bool = false) -> Tab? {
+        let row = tabs.filter { standsInRow($0) && !(awake && $0.pin != nil && $0.asleep) }
         guard let id = tabSwitcher.lastLeft(among: Set(row.map(\.id)), other: tab.id) else { return nil }
         return row.first { $0.id == id }
     }
