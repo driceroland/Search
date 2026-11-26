@@ -468,7 +468,7 @@ final class Preferences: ObservableObject {
     }
     /// Closing the last tab that isn't a pin, with pins beside it, leaves a
     /// new tab instead of taking you to a pin (see Browser.close, #537).
-    /// Off unless asked for.
+    /// On unless turned off (Drice, 26 Nov 2026, #1577).
     @Published var newTabAfterLast: Bool {
         didSet { store.set(newTabAfterLast, forKey: "tabs.newAfterLast") }
     }
@@ -1436,7 +1436,8 @@ final class Preferences: ObservableObject {
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         showsLoadingLine = store.object(forKey: "fold.loadingLine") as? Bool ?? true
         lazyTabs = store.bool(forKey: "tabs.lazy")
-        newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
+        // On for everyone who never touched it (Drice, 26 Nov 2026, #1577).
+        newTabAfterLast = store.object(forKey: "tabs.newAfterLast") as? Bool ?? true
         keepWindowAfterLast = store.bool(forKey: "tabs.keepWindow")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
         // On for everyone who never touched it (Drice, 25 Nov 2026).
