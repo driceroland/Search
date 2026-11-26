@@ -159,10 +159,10 @@
                                        window's full screen as the chrome sees it, the window staying put),
                                        gpc on|off, clickids on|off (test run: Settings › Privacy's switches)
 
-Needs Settings › General › "Let a script drive Search" switched on in the
-running app. IDs are the first characters of a tab's id, as `tabs` prints
-them. With --test, talks to a SEARCH_PROBE run instead of the real one;
-with --world NAME, to a SEARCH_PROBE=NAME run, the world "Search (NAME)".
+Needs Settings › About › Developer › "Let a script drive Search" switched on
+in the running app. Copy the token there and set SEARCH_BENCH_TOKEN in the
+environment. IDs are the first characters of a tab's id, as `tabs` prints
+them. With --test or --world NAME, talks to a test run without a token.
 """
 
 import json
@@ -185,7 +185,7 @@ def ask(path, request):
         try:
             s.connect(path)
         except (FileNotFoundError, ConnectionRefusedError):
-            sys.exit("Search isn't listening — is it open, with Settings › General › "
+            sys.exit("Search isn't listening — is it open, with Settings › About › Developer › "
                      "“Let a script drive Search” on?")
         s.sendall((json.dumps(request) + "\n").encode())
         chunks = []
@@ -644,6 +644,9 @@ def main(argv):
     elif verb not in ("tabs", "probe", "extensions", "import-preview", "quit"):
         sys.exit(f"unknown command “{verb}” — see bench help")
 
+    token = os.environ.get("SEARCH_BENCH_TOKEN") if world is None else None
+    if token:
+        request["token"] = token
     answer = ask(os.path.join(folder(world), "bench.sock"), request)
     # A test run that let a window onto a screen has failed, whatever it was doing.
     if answer.get("onScreen"):

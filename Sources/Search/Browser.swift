@@ -1703,16 +1703,29 @@ final class Browser: NSObject, ObservableObject {
                 self.announce("The keychain refused it")
                 return
             }
-            let board = NSPasteboard.general
-            board.prepareForNewContents(with: .currentHostOnly)
-            board.setString(password, forType: .string)
-            board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
-            board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-            let copied = board.changeCount
-            DispatchQueue.main.asyncAfter(deadline: .now() + 90) {
-                if board.changeCount == copied { board.clearContents() }
-            }
+            copySecret(password)
             announce("Password copied")
+        }
+    }
+
+    func copyBenchToken() {
+        guard let token = Bench.shared.token else {
+            announce("The bench isn't listening")
+            return
+        }
+        copySecret(token)
+        announce("Bench token copied")
+    }
+
+    private func copySecret(_ secret: String) {
+        let board = NSPasteboard.general
+        board.prepareForNewContents(with: .currentHostOnly)
+        board.setString(secret, forType: .string)
+        board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+        let copied = board.changeCount
+        DispatchQueue.main.asyncAfter(deadline: .now() + 90) {
+            if board.changeCount == copied { board.clearContents() }
         }
     }
 
@@ -3622,8 +3635,13 @@ final class Browser: NSObject, ObservableObject {
             .dropFirst()
             .sink { [weak self] on in
                 guard let self else { return }
-                if on { Bench.shared.start(for: self) } else { Bench.shared.stop() }
-                announce(on ? "Scripts can drive Search — see ./bench" : "The bench is closed")
+                if on {
+                    Bench.shared.start(for: self)
+                    announce(Bench.shared.running ? "Scripts can drive Search — see ./bench" : "The bench couldn't open")
+                } else {
+                    Bench.shared.stop()
+                    announce("The bench is closed")
+                }
             }
             .store(in: &bag)
 

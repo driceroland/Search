@@ -107,9 +107,11 @@ A build you make yourself won't be notarized or carry Office Commun's Developer 
 
 ### Testing it without closing it
 
-Turn on **Settings › General › Let a script drive Search** and the running app listens on a Unix socket in its own folder (readable by your user only). `./bench` at the root of the repository speaks it:
+Turn on **Settings › About › Developer › Let a script drive Search** and click **Copy Token**. Paste the token when the shell's `read` waits for input, then press Return. A fresh token is needed after restarting Search or turning the bench off and on. Test runs (`./bench --test` or `./bench --world NAME`) use their own sockets and need no token.
 
 ```
+read -rs SEARCH_BENCH_TOKEN
+export SEARCH_BENCH_TOKEN
 ./bench open https://example.com     # a tab of its own, at the end of your row, marked with a flask
 ./bench wait 2e7e7e89                 # until it has loaded
 ./bench text 2e7e7e89                 # the page's text
