@@ -5120,6 +5120,11 @@ final class Browser: NSObject, ObservableObject {
         if #available(macOS 15.4, *), let page = Extensions.shared.newTabPage {
             let tab = open(page, foreground: true)
             summoning = false
+            // The keys go to the address field, empty, over the extension's
+            // page, as Chrome and Safari give a new tab's to theirs (#1627).
+            typed = ""
+            editing = true
+            focusRequest += 1
             rememberSession()
             Extensions.shared.offerNewTabPage(into: tab)
             return
@@ -5185,6 +5190,8 @@ final class Browser: NSObject, ObservableObject {
             var placed = row
             placed.insert(tab, at: endOfGroup(id, in: row))
             tabs = placed
+            // The field over the extension's page takes the keys (#1627).
+            editing = true
         } else {
             tab = Tab(configuration: Web.configuration(space: spaceID))
             prepare(tab)

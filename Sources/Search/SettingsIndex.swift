@@ -481,8 +481,12 @@ enum SettingsIndex {
               keys: ["pageZoom"], words: ["zoom", "size", "scale"]),
         .init(id: "pages.capture", group: "pages", icon: "camera.viewfinder",
               title: "Capture pages", detail: "Capture… in the View menu copies an area, an element or the whole page",
-              more: "Drag across an area, click an element, or choose Whole Page; Esc cancels. The picture is copied and saved as a PNG in your downloads folder, and goes nowhere else.",
+              more: "Drag across an area, click an element, or choose Whole Page; Esc cancels. The picture is copied and saved as a PNG in your downloads folder (unless Copy captures only is on), and goes nowhere else.",
               keys: ["pages.capture"], words: ["screenshot", "capture", "snapshot", "picture", "png", "arc"]),
+        .init(id: "pages.capture.copyOnly", group: "pages", icon: "doc.on.clipboard",
+              title: "Copy captures only", detail: "The picture goes on the clipboard, with no PNG saved in your downloads folder",
+              keys: ["pages.capture.copyOnly"], words: ["screenshot", "capture", "clipboard", "copy", "png", "downloads", "save"],
+              parent: "pages.capture"),
         .init(id: "sites.styles", group: "pages", icon: "paintbrush",
               title: "Your own style for a site", detail: "Edit Site Style… in the View menu puts CSS of yours on the site you're on",
               more: "Applied as you type, to every page of that site, as Arc's Boosts. CSS only: Search never runs script you write in a page. Off, every style is kept but none is worn.",
@@ -875,6 +879,7 @@ enum SettingsIndex {
         case "mail.default": return prefs.webmail != .none
         case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
         case "launcher.key": return prefs.launcher
+        case "pages.capture.copyOnly": return prefs.capturesPages
         case "icloud.erase": return ICloudSync.shared.on
         default: return true
         }

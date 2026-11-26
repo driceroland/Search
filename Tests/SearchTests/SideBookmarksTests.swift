@@ -63,5 +63,6 @@ final class SideBookmarksTests: XCTestCase {
         XCTAssertEqual(SideBookmarks.height(1, row: 28), 28 + 13)
         XCTAssertEqual(SideBookmarks.height(4, row: 28), 4 * 28 + 3 * 2 + 13)
         XCTAssertEqual(SideBookmarks.height(2, row: Metrics.iconTile), 2 * 32 + 2 + 13)
+        XCTAssertEqual(SideBookmarks.height(2, row: 28, lined: false), 2 * 28 + 2, "with the keep line straight after, no line of its own (idea 1255)")
     }
 }
