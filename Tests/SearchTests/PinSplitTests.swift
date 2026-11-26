@@ -99,6 +99,22 @@ final class PinSplitTests: XCTestCase {
         XCTAssertEqual(browser.tabs.count, before, "no tab added or lost")
     }
 
+    func testPuttingAwayTheOtherPaneOfAnActivePinnedSplitLeavesIt() {
+        let browser = makeBrowser()
+        let tabs = made
+        browser.pair(tabs[1], with: tabs[0], onLeft: false)
+        browser.pin(tabs[0])
+        browser.select(tabs[2])
+        browser.select(tabs[1])
+        XCTAssertEqual(browser.activeID, tabs[1].id)
+
+        browser.closeTab(tabs[0])
+
+        XCTAssertEqual(browser.activeID, tabs[2].id)
+        XCTAssertTrue(tabs[0].asleep && tabs[1].asleep)
+        XCTAssertNotNil(browser.pinnedPair(of: tabs[0]))
+    }
+
     func testAPinnedPairStaysRowsMovesWholeAndComesOutWhole() {
         let browser = makeBrowser()
         let tabs = made
