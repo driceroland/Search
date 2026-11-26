@@ -123,11 +123,13 @@ def case_pins_private_off(t):
     st = pick(p, a)
     t.ok("pin and a tab: pair on offer", st["pickedPair"] == [p, a], st["pickedPair"])
     st = sv.sp("pairPicked", id=a)
-    t.ok("pin and a tab: the pin stays out of the pair", not any(p in x for x in pairs(st)), pairs(st))
-    copy = [x["id"] for x in st["tabs"] if x["url"].endswith("/p") and x["id"] != p]
-    t.ok("pin and a tab: its page goes in on the left, beside a", copy and pairs(st) == [[copy[0], a]], (pairs(st), copy))
+    # The pin's own page goes in, as it is, and the pin keeps a fresh tab
+    # at its page (#1573).
+    fresh = [x for x in st["pins"] if next(y["url"] for y in st["tabs"] if y["id"] == x).endswith("/p")]
+    t.ok("pin and a tab: the pin stays out of the pair", len(fresh) == 1 and p not in st["pins"] and not any(fresh[0] in x for x in pairs(st)), (st["pins"], pairs(st)))
+    t.ok("pin and a tab: its own page goes in on the left, beside a", pairs(st) == [[p, a]], pairs(st))
     o = sv.order(st)
-    t.ok("pin and a tab: the pair is where a was", copy and o.index(copy[0]) + 1 == o.index(a) and o.index(b) == o.index(a) + 1, o)
+    t.ok("pin and a tab: the pair is where a was", o.index(p) + 1 == o.index(a) and o.index(b) == o.index(a) + 1, o)
     t.ok("pin and a tab: a has the keys, the selection cleared", st["activeID"] == a and st["selected"] == [], (st["activeID"], st["selected"]))
 
     # A private tab and an ordinary one never share a pair.
