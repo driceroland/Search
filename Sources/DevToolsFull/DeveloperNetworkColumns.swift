@@ -93,7 +93,7 @@ struct DeveloperNetworkHeaderColumnsSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 360)
+        .frame(idealWidth: 360, maxWidth: 360)
     }
 
     private func add() {

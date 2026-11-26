@@ -332,7 +332,7 @@ struct DeveloperThrottlingProfileForm: View {
             }
         }
         .padding(20)
-        .frame(width: 340)
+        .frame(idealWidth: 340, maxWidth: 340)
     }
 }
 

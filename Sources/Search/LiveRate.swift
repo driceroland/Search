@@ -17,7 +17,8 @@ import Foundation
 // afterwards is played at 1.0001 — a tenth of a millisecond a second, nothing
 // anyone can see or hear — and the page still reads back the 1 it asked for.
 // A speed picked from a menu (1.25, 1.5, 2) never starts it, and a page that
-// never nudges is never touched. Measured on a hidden probe with X's pattern:
+// never nudges is never touched, except on YouTube, where any speed starts it
+// (its hold for 2x lets go straight to 1). Measured on a hidden probe with X's pattern:
 // eleven pauses in 26 seconds before, one after — the first nudge.
 
 enum LiveRate {
@@ -30,6 +31,8 @@ enum LiveRate {
       if (!plain || !plain.get || !plain.set) return;
       // Off 1 by this much at most: a player catching up, not a choice.
       var nudge = 0.1, beside = 1.0001;
+      // YouTube's hold for 2x drops straight back to 1 on release: any speed starts it there.
+      var anySpeed = typeof location !== 'undefined' && /(^|[.])youtube(-nocookie)?[.]com$/.test(location.hostname);
       var nudged = new WeakSet(), asked = new WeakMap();
       var smooth = {
         get playbackRate() {
@@ -43,7 +46,7 @@ enum LiveRate {
           var played = rate === 1 && nudged.has(this) ? beside : rate;
           // Refused (not a number, out of range): thrown, and nothing kept.
           plain.set.call(this, played);
-          if (rate !== 1 && Math.abs(rate - 1) <= nudge) nudged.add(this);
+          if (rate !== 1 && (anySpeed || Math.abs(rate - 1) <= nudge)) nudged.add(this);
           if (played !== rate) asked.set(this, { asked: rate, played: played });
           else asked.delete(this);
         }

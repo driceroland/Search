@@ -457,17 +457,22 @@ struct SideBar: View {
     /// hairline; as cards, in the gap before the page.
     private var edge: some View {
         EdgeGrip(lit: onEdge || grabbed != nil)
-            .offset(x: onFrame ? 0 : onRight ? -4 : 4)
-            .frame(width: 9)
+            // The pill where it was with the old 9 wide edge.
+            .offset(x: onFrame ? (onRight ? -1.5 : 1.5) : (onRight ? 2.5 : -2.5))
+            // 12 wide: as cards, over the whole gap before the page and 4
+            // into the column; edge to edge, 4 into the column and the rest
+            // over the page's own edge. 9 wide, it was easy to miss.
+            .frame(width: 12)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
-            .onHover { over in
-                onEdge = over
-                if over { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
+            .resizeEdge { over in onEdge = over }
+            .offset(x: onFrame ? 0 : onRight ? -Metrics.cardGap : Metrics.cardGap)
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
+                        // Held, the page under the pointer never takes the
+                        // cursor back.
+                        NSCursor.resizeLeftRight.set()
                         // Taken from the strip, as if a little short of the
                         // line: a short pull brings the titles back, where
                         // the strip's own width would need a long one.
@@ -628,7 +633,7 @@ struct SideBar: View {
                     // every space, so it stays put while the rows under it
                     // scroll, and while a swipe brings another space in.
                     if showsMarks {
-                        SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons)
+                        SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons, lined: marksLined)
                     }
                     // A row too long for the window scrolls between the pins
                     // and the foot, rather than running under the lights at one
@@ -808,8 +813,8 @@ struct SideBar: View {
         let pinLines = folders.isEmpty ? listed.map { PinRowLine.pin($0, depth: 0) }
             : Browser.pinRowLines(listed, folders: folders, showing: row.active)
         let (groups, rest) = row.drawn(groupsOn: prefs.usesTabGroups, splitView: prefs.splitView)
-        let (lines, tints) = previewLines(row, pins: pinLines, groups: groups, rest: rest,
-                                         keeps: showsLine(kept: pins.count + listed.count + groups.count, listed: listed.count, loose: rest.filter { !$0.isBlank }.count))
+        let keeps = showsLine(kept: pins.count + listed.count + groups.count, listed: listed.count, loose: rest.filter { !$0.isBlank }.count)
+        let (lines, tints) = previewLines(row, pins: pinLines, groups: groups, rest: rest, keeps: keeps)
         let cells = pinCells(pins.count)
         return VStack(alignment: .leading, spacing: 0) {
             if !pins.isEmpty {
@@ -824,7 +829,8 @@ struct SideBar: View {
                 .padding(.bottom, 10)
             }
             if showsMarks {
-                SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons)
+                SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons,
+                              lined: !keeps || !pinLines.isEmpty || !groups.isEmpty)
                     .allowsHitTesting(false)
             }
             // Scrolled as the column will be once the space lands, its tab
@@ -981,7 +987,16 @@ struct SideBar: View {
     /// The bookmarks bar in the column (SideBookmarks), when it is there.
     private var showsMarks: Bool { prefs.sideBookmarks && !browser.bookmarks.isEmpty }
     private var marksHeight: CGFloat {
-        showsMarks ? SideBookmarks.height(browser.bookmarks.roots.count, row: rowHeight) : 0
+        showsMarks ? SideBookmarks.height(browser.bookmarks.roots.count, row: rowHeight, lined: marksLined) : 0
+    }
+    /// The bookmarks' line under them, unless the keep line comes straight
+    /// after: no pinned row, folder or group between (idea 1255). The one
+    /// left is the keep line, which has Clear.
+    private var marksLined: Bool {
+        let between = (prefs.showsPinRows && (!browser.listedPins.isEmpty || browser.showsPinFolderRows))
+            || (prefs.usesTabGroups && !browser.tabGroups.isEmpty)
+        return between || !showsLine(kept: keptCount, listed: browser.listedPins.count,
+                                     loose: looseTabs.filter { !$0.isBlank }.count)
     }
 
     /// The pinned rows, the loose tabs and the row that makes another, added
