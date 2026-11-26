@@ -809,6 +809,7 @@ struct SettingsPanel: View {
         case "pages.120": Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
         case "pages.capture": Switch(on: $prefs.capturesPages)
         case "pages.capture.copyOnly": Switch(on: $prefs.copiesCapturesOnly)
+        case "hiding.shapes": Switch(on: $prefs.hidingShapes)
         case "sites.styles": SiteStylesControl(prefs: prefs)
         case "autocorrect": Switch(on: $prefs.autocorrect)
         case "inlinePredictions": Switch(on: $prefs.inlinePredictions)
