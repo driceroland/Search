@@ -150,14 +150,33 @@ def main():
              bool(again) and bool(new) and any(s["tabs"] == [a, again[0], new[0]] for s in st["splits"]), st["splits"])
         t.ok("from a pair: the pages are made even",
              any(len(s["tabs"]) == 3 and all(abs(x - 1 / 3) < 0.01 for x in s["sizes"]) for s in st["splits"]), st["splits"])
-        # From a pin: the pin keeps its place, its page goes into the pair.
-        p = sv.page("pinned"); sv.cmd({"do": "pin", "id": p}); sv.sp("select", id=p); time.sleep(0.4)
-        menu(p, ("Open Link in Split View", "frompin")); time.sleep(0.8)
-        st = sv.sp("state")
-        frompin = [x["id"] for x in st["tabs"] if x["url"].endswith("/frompin")]
-        pair = next((s for s in st["splits"] if frompin and frompin[0] in s["tabs"]), None)
-        t.ok("from a pin: the link in a pair, beside a page that isn't the pin",
-             pair is not None and p not in pair["tabs"], st["splits"])
+        # From a pin (#1573): its page goes into the pair as it is, nothing
+        # loaded again, and the pin keeps its place with a fresh tab asleep
+        # at the page it was pinned at. Once at its own page, once after it
+        # wandered from it.
+        p = sv.page("pinned"); q = sv.page("home")
+        sv.cmd({"do": "pin", "id": p}); sv.cmd({"do": "pin", "id": q})
+        sv.cmd({"do": "go", "id": q, "url": f"{sv.BASE}/wandered"}); time.sleep(0.7)
+        for pin, at, home, link in [(p, "pinned", "pinned", "frompin"), (q, "wandered", "home", "fromwandered")]:
+            sv.sp("select", id=pin); time.sleep(0.4)
+            before = sv.sp("state")
+            place = before["pins"].index(pin)
+            web = next(x["web"] for x in before["tabs"] if x["id"] == pin)
+            sv.ev(pin, "window.__kept = 'still here'; true")
+            menu(pin, ("Open Link in Split View", link)); time.sleep(0.8)
+            st = sv.sp("state")
+            new = [x["id"] for x in st["tabs"] if x["url"].endswith("/" + link)]
+            rows = {x["id"]: x for x in st["tabs"]}
+            t.ok(f"from a pin at {at}: its own page in the pair, the link on its right",
+                 bool(new) and any(s["tabs"] == [pin, new[0]] for s in st["splits"]), st["splits"])
+            t.ok(f"from a pin at {at}: the page was not loaded again",
+                 bool(web) and rows[pin]["web"] == web and sv.ev(pin, "window.__kept") == "still here"
+                 and rows[pin]["url"].endswith("/" + at), rows[pin])
+            fresh = st["pins"][place] if len(st["pins"]) == len(before["pins"]) else None
+            t.ok(f"from a pin at {at}: the pin is still there, in its place, asleep at its own page",
+                 fresh is not None and fresh != pin and pin not in st["pins"] and rows[fresh]["url"].endswith("/" + home)
+                 and rows[fresh]["asleep"] and not any(fresh in s["tabs"] for s in st["splits"]),
+                 (before["pins"], st["pins"], fresh and rows.get(fresh)))
         # Sites as they are.
         site(t, "Wikipedia", "https://en.wikipedia.org/wiki/WebKit", '#mw-content-text p a[href^="/wiki/"], #mw-content-text p a[href^="https://en.wikipedia.org/wiki/"]')
         # A card's channel name: its picture keeps the right button for
@@ -168,6 +187,36 @@ def main():
         r = menu(b, ("Open Link in Split View", "nowhere"))
         t.ok("Split View off: no Open Link in Split View",
              not any(u.endswith("/nowhere") for u in r["urls"]), r["urls"])
+    finally:
+        sv.finish()
+    try:
+        # From a pin in a folder of pinned rows (#1573): the pin stays in its
+        # folder, in its place, and pins.json says the same.
+        sv.setup(splitView=True, sidebar=True); sv.launch()
+        rows = [sv.page(name) for name in ("first", "second", "third")]
+        sv.cmd({"do": "pinfolder", "action": "on"})
+        for row in rows: sv.cmd({"do": "pinfolder", "action": "pin", "id": row})
+        sv.cmd({"do": "pinfolder", "action": "new", "name": "Work", "id": rows[0]})
+        for row, anchor in [(rows[1], rows[0]), (rows[2], rows[1])]:
+            sv.cmd({"do": "pinfolder", "action": "move", "id": row, "folder": "Work", "anchor": anchor, "after": True})
+        sv.sp("save"); time.sleep(0.3)
+        before = sv.cmd({"do": "pinfolder"})
+        middle = rows[1]
+        sv.sp("select", id=middle); time.sleep(0.4)
+        sv.ev(middle, "window.__kept = 'still here'; true")
+        menu(middle, ("Open Link in Split View", "fromfolder")); time.sleep(0.8)
+        st = sv.sp("state")
+        new = [x["id"] for x in st["tabs"] if x["url"].endswith("/fromfolder")]
+        t.ok("from a pin in a folder: its own page in the pair, as it was",
+             bool(new) and any(s["tabs"] == [middle, new[0]] for s in st["splits"])
+             and sv.ev(middle, "window.__kept") == "still here", st["splits"])
+        sv.sp("save"); time.sleep(0.3)
+        after = sv.cmd({"do": "pinfolder"})
+        shape = lambda state: [r[1:] for r in state["order"]]
+        t.ok("from a pin in a folder: every row in its folder, in its place",
+             shape(after) == shape(before) == [["first", "Work"], ["second", "Work"], ["third", "Work"]]
+             and after["order"][1][0] != middle, (before["order"], after["order"]))
+        t.ok("from a pin in a folder: pins.json unchanged", after["saved"] == before["saved"], (before["saved"], after["saved"]))
     finally:
         t.done(); sv.finish()
     sys.exit(1 if t.failed else 0)

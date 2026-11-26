@@ -2357,41 +2357,9 @@ final class Browser: NSObject, ObservableObject {
         let wandered = tab.home != nil && tab.address != nil && !Browser.samePage(tab.home!, tab.address)
 
         if wandered, let home {
-            objectWillChange.send()
-            let letter = tab.pin
-            let pinID = tab.pinID
-            let listed = tab.listed
-            let everywhere = tab.everywhere
             let wasActive = activeID == tab.id
-            guard let pinIndex = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-
-            // A fresh tab for the pin, at its pinned address.
-            let newPin = Tab(configuration: Web.configuration(space: spaceID))
-            prepare(newPin)
-            newPin.pin = letter
-            newPin.home = home
-            newPin.pinID = pinID
-            newPin.listed = listed
-            newPin.everywhere = everywhere
-            newPin.pinFolder = tab.pinFolder
-            newPin.name = tab.name
-            newPin.pinTitle = tab.pinTitle
+            guard let newPin = handOverPin(tab, home: home) else { return }
             newPin.go(to: home)
-
-            // The wandered page becomes a loose tab.
-            tab.pin = nil
-            tab.listed = false
-            tab.pinFolder = nil
-            tab.home = nil
-            tab.pinID = nil
-            tab.everywhere = false
-            tab.name = nil
-            tab.pinTitle = nil
-
-            tabs.remove(at: pinIndex)
-            tabs.insert(newPin, at: pinIndex)
-            let unpinnedSlot = min(pinnedCount, tabs.count)
-            tabs.insert(tab, at: unpinnedSlot)
 
             if wasActive {
                 leaving()
@@ -2404,6 +2372,45 @@ final class Browser: NSObject, ObservableObject {
         } else if let url = home {
             open(url, foreground: false, from: tab)
         }
+    }
+
+    /// A fresh tab for the pin, in its place, with everything that makes it
+    /// that pin (its id, letter, home, folder, name and every-space mark),
+    /// and `tab` let go of as a loose tab at `slot` — the first after the
+    /// pins unless given — still holding its page, which nothing loads
+    /// again. ⌘-click on a pin that has wandered, and a pin's page going
+    /// into Split View (see splittable). The fresh tab goes nowhere yet:
+    /// the caller sends it home or lets it sleep there.
+    private func handOverPin(_ tab: Tab, home: URL, at slot: Int? = nil) -> Tab? {
+        guard tab.pin != nil, let pinIndex = tabs.firstIndex(where: { $0.id == tab.id }) else { return nil }
+        objectWillChange.send()
+        if editingPin == tab.id { editingPin = nil }
+        let newPin = Tab(configuration: Web.configuration(space: spaceID))
+        prepare(newPin)
+        newPin.pin = tab.pin
+        newPin.home = home
+        newPin.pinID = tab.pinID
+        newPin.listed = tab.listed
+        newPin.everywhere = tab.everywhere
+        newPin.pinFolder = tab.pinFolder
+        newPin.name = tab.name
+        newPin.pinTitle = tab.pinTitle
+
+        tab.pin = nil
+        tab.listed = false
+        tab.pinFolder = nil
+        tab.home = nil
+        tab.pinID = nil
+        tab.everywhere = false
+        tab.name = nil
+        tab.pinTitle = nil
+
+        var row = tabs
+        row[pinIndex] = newPin
+        let loose = slot ?? row.filter { $0.pin != nil }.count
+        row.insert(tab, at: min(loose, row.count))
+        tabs = row
+        return newPin
     }
 
     /// Pin menu › Replace Pinned Page with Current URL: where the pin has
@@ -4567,16 +4574,22 @@ final class Browser: NSObject, ObservableObject {
 
     /// Zen's rule for pins: a pin never goes into a pair — it keeps its
     /// place among the pins, in every window (Pins.swift) — but its page
-    /// does, as a new tab beside the other page. Anything else is itself.
+    /// does, as a tab of its own beside the other page. Anything else is
+    /// itself. The page that goes is the one the pin had, as it is: a copy
+    /// loaded from its address lost what was typed into it, how far it
+    /// was scrolled and whatever a web app keeps only in the page (#1573).
+    /// The pin gets a fresh tab, asleep at the page it was pinned at, as
+    /// ⌘-click on a pin that has wandered gives it one (handOverPin); a
+    /// pin of a pinned split keeps its place in that split with it.
     /// `bothPins`: the pair is of two pins, which stay pins as one pinned
     /// split (see pair).
     private func splittable(_ tab: Tab, bothPins: Bool = false) -> Tab {
-        guard !bothPins, tab.pin != nil, let url = tab.address ?? tab.home else { return tab }
-        let copy = Tab(configuration: Web.configuration(space: spaceID))
-        prepare(copy)
-        tabs.insert(copy, at: tabs.count)
-        copy.go(to: url)
-        return copy
+        guard !bothPins, tab.pin != nil, let home = tab.home ?? tab.address,
+              let fresh = handOverPin(tab, home: home, at: tabs.count) else { return tab }
+        fresh.restore(url: home, title: fresh.pinTitle ?? (Browser.samePage(home, tab.address) ? tab.title : ""),
+                      name: fresh.name)
+        replaceSplitMember(tab.id, with: fresh.id)
+        return tab
     }
 
     /// `dragged` beside `target`, on its left or right. With `target`
@@ -4589,7 +4602,8 @@ final class Browser: NSObject, ObservableObject {
         if floating == dragged.id || floating == target.id { land() }
         // Two unshared pins paired together stay pins, as one pinned split
         // (always rows, since a square has room for one page). A pin paired
-        // with anything else is copied into the pair as a tab of its own.
+        // with anything else sends its page into the pair as a tab of its
+        // own, and starts again at home (see splittable).
         let bothPins = dragged.pin != nil && target.pin != nil
             && !dragged.everywhere && !target.everywhere
         let dragged = splittable(dragged, bothPins: bothPins)
@@ -4867,7 +4881,7 @@ final class Browser: NSObject, ObservableObject {
             pair(right, with: left, onLeft: false, joining: false)
         }
         // The third and fourth after them, in the column's order, each
-        // beside the last page of the split (a pin as its page's copy).
+        // beside the last page of the split (a pin as its page, let go of).
         for tab in picked.dropFirst(2) {
             guard let made = split(for: right) ?? split(for: left),
                   let last = tabs.first(where: { $0.id == made.right }) else { break }
