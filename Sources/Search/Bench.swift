@@ -6584,6 +6584,31 @@ final class Bench {
             else { answer(["error": "split sizes needs split UUID and sizes"]); return }
             browser.setSplitSizes(id, sizes)
             reply()
+        case "moveIn":
+            // A page's capsule › Move Left (by -1) or Move Right (by 1).
+            guard let page = tab(), let step = request["by"] as? Int else { answer(["error": "split moveIn needs id and by"]); return }
+            browser.moveInSplit(page, by: step)
+            reply()
+        case "hover":
+            // The pointer come to rest over the middle of this page, as the
+            // stage hears it move there; with no id, gone from the pages.
+            // Handed to the stage itself: a hidden window passes no moves on.
+            func stage(in view: NSView) -> PaneStage? {
+                if let stage = view as? PaneStage { return stage }
+                for sub in view.subviews { if let found = stage(in: sub) { return found } }
+                return nil
+            }
+            guard let window = browser.window, let root = window.contentView?.superview, let found = stage(in: root) else {
+                answer(["error": "no split stage in this window"]); return
+            }
+            let page = tab()
+            let point = page?.built.map { web in web.convert(NSPoint(x: web.bounds.midX, y: web.bounds.midY), to: nil) } ?? .zero
+            guard let event = NSEvent.mouseEvent(
+                with: .mouseMoved, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+            ) else { answer(["error": "split hover made no event"]); return }
+            if page == nil { found.mouseExited(with: event) } else { found.mouseMoved(with: event) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { reply() }
         case "swap": browser.swapSplit(); reply()
         case "even": browser.evenSplit(); reply()
         case "closeBoth": browser.closeSplit(); reply()

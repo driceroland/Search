@@ -4892,6 +4892,26 @@ final class Browser: NSObject, ObservableObject {
         rememberSession()
     }
 
+    /// A page one place left or right in its split, its share going with
+    /// it (SplitControls.swift). Of a pair, the same as Swap Pages; of three
+    /// or four, only it and its neighbour change places. The column follows,
+    /// as it does a swap.
+    func moveInSplit(_ tab: Tab, by step: Int) {
+        guard let index = splits.firstIndex(where: { $0.contains(tab.id) }) else { return }
+        var pair = splits[index]
+        guard let at = pair.tabs.firstIndex(of: tab.id), pair.tabs.indices.contains(at + step) else { return }
+        let members = pair.tabs.compactMap { id in tabs.first { $0.id == id } }
+        guard members.count == pair.tabs.count, let start = tabs.firstIndex(where: { pair.contains($0.id) }) else { return }
+        pair.tabs.swapAt(at, at + step)
+        if pair.sizes.indices.contains(at), pair.sizes.indices.contains(at + step) { pair.sizes.swapAt(at, at + step) }
+        splits[index] = pair
+        let moved = pair.tabs.compactMap { id in members.first { $0.id == id } }
+        var row = tabs.filter { !pair.contains($0.id) }
+        row.insert(contentsOf: moved, at: min(start, row.count))
+        tabs = row
+        rememberSession()
+    }
+
     /// The divider's menu › Even Out, or a double-click on it.
     func evenSplit() {
         guard let pair = activeSplit else { return }
