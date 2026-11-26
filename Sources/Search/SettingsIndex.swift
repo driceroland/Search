@@ -317,7 +317,7 @@ enum SettingsIndex {
               parent: "bookmarks.bar"),
         .init(id: "bookmarks.newTabOnly", group: "tablook", icon: "plus.square",
               title: "Show the bookmarks bar only on new tabs", detail: "Hidden while a page is open, as Chrome and Edge can",
-              more: "The bar comes back as soon as the tab on screen is a new one.",
+              more: "The bar comes back as soon as the tab on screen is a new one, also with the column folded away.",
               keys: ["bookmarks.newTabOnly"], words: ["favorites bar", "bookmarks toolbar", "new tab", "only", "hide", "chrome", "edge"],
               parent: "bookmarks.bar"),
         .init(id: "motion.light", group: "motion", icon: "leaf",
