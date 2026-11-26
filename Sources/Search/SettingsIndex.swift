@@ -864,7 +864,8 @@ enum SettingsIndex {
     /// section hides it otherwise; the find field shows it dimmed.
     @MainActor static func applies(_ item: SettingsItem, _ prefs: Preferences) -> Bool {
         switch item.id {
-        case "pages.dusk": return prefs.look != .light
+        // Shown while on whatever the look, so it can always be turned off.
+        case "pages.dusk": return prefs.look != .light || prefs.darkensPages
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
