@@ -3014,6 +3014,34 @@ final class PageView: WKWebView {
         return took
     }
 
+    override func resignFirstResponder() -> Bool {
+        // The page keeps its selection when the keys go elsewhere in the
+        // window, as a page in a window that isn't in front keeps it in
+        // Safari (idea 1176). WebKit's default clears it, and when the keys
+        // come back it puts the caret at the very start of the box being
+        // written in: a Google Doc beside another page jumped up, or to its
+        // top, when clicked again after copying from the other one, and a
+        // caret left for the address field came back at the start. WebKit
+        // forgets the setting on a new page, so it is said each time.
+        if let keep = Self.keepSelection, let page = Self.pageRef(of: self) { keep(page, true) }
+        return super.resignFirstResponder()
+    }
+
+    private typealias PageRef = @convention(c) (AnyObject, Selector) -> UnsafeRawPointer?
+
+    /// WKPageSetMaintainsInactiveSelection, WebKit's C call for it; nil if
+    /// it's gone, and pages clear their selection as before.
+    private static let keepSelection: (@convention(c) (UnsafeRawPointer, Bool) -> Void)? = {
+        let webkit = dlopen("/System/Library/Frameworks/WebKit.framework/WebKit", RTLD_NOW)
+        return dlsym(webkit, "WKPageSetMaintainsInactiveSelection").map { unsafeBitCast($0, to: (@convention(c) (UnsafeRawPointer, Bool) -> Void).self) }
+    }()
+
+    private static func pageRef(of web: WKWebView) -> UnsafeRawPointer? {
+        let selector = NSSelectorFromString("_pageRefForTransitionToWKWebView")
+        guard web.responds(to: selector), let method = class_getMethodImplementation(type(of: web), selector) else { return nil }
+        return unsafeBitCast(method, to: PageRef.self)(web, selector)
+    }
+
     /// The keys handed to a page as a click on it would leave them: the
     /// bench's `key`, in a probe that has no mouse.
     static var handedAsClick = false
