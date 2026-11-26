@@ -403,6 +403,10 @@ final class Browser: NSObject, ObservableObject {
     /// ⌘S on its way to folding the column: the page already has the room,
     /// the column has not moved yet (see Browser.toggleFold).
     @Published var foldingAway = false
+    /// ⌘S folding the column away on glass: the column keeps the glass it
+    /// sat on until it has gone (see Browser.columnGlass, idea 1317).
+    @Published var leavingOnGlass = false
+    var leaveTicket = 0
     /// ⌘S taking the column to icons only or back (Preferences.shrinks):
     /// its width glides, and the other spaces' rows kept out of sight for a
     /// swipe (SideBar.others) are left out meanwhile (idea 927).

@@ -400,12 +400,16 @@ struct SideBar: View {
         .background {
             ZStack {
                 // On glass the window's ground shows through (Glass.swift).
-                if !browser.glassUnder { onFrame ? Palette.frame : Palette.ground }
+                if browser.columnGlass {
+                    GlassGround(prefs: prefs, look: browser.wash, frosted: true)
+                } else if browser.columnGround {
+                    onFrame ? Palette.frame : Palette.ground
+                }
                 if landing { greys.hover }
                 // The space's colour, if it has one: over the ground, so the
                 // column stays opaque and folded out over the page it brings
                 // the same wash along. On glass the glass wears it.
-                if !browser.glassUnder { SpaceWash(look: browser.wash) }
+                if browser.columnGround { SpaceWash(look: browser.wash) }
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
