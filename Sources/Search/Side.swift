@@ -2270,6 +2270,12 @@ private struct PinSquare: View, Equatable {
             }
         }
         .animation(Motion.quick, value: peek?.id)
+        // Its page plays sound, or was muted: the icons-only tile's speaker,
+        // in the same corner, a press muting it (idea 1328).
+        .overlay(alignment: .bottomTrailing) {
+            if CornerSpeaker.shows(for: tab), !lettering { CornerSpeaker(tab: tab) }
+        }
+        .animation(Motion.quick, value: CornerSpeaker.shows(for: tab))
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
         .modifier(TabPress(enabled: !lettering && !pickedAmongOthers, active: live, selected: $selectedOnPress, again: { opened in
             // A double-click: home, from this square or another (PinDouble).
