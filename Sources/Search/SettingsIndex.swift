@@ -320,6 +320,13 @@ enum SettingsIndex {
               more: "The bar comes back as soon as the tab on screen is a new one.",
               keys: ["bookmarks.newTabOnly"], words: ["favorites bar", "bookmarks toolbar", "new tab", "only", "hide", "chrome", "edge"],
               parent: "bookmarks.bar"),
+        .init(id: "panel.bar", group: "tablook", icon: "sidebar.right",
+              title: "Panel bar", detail: "Bookmarks, downloads, history and websites at the window's right edge, as in Vivaldi",
+              more: "Each button opens the side panel on it, and closes it again. While it is on, ⌘Y and ⇧⌘J open History and Downloads there, and History › History Page… opens the full page. View › Side Panel hides the bar and shows it again; give its items keys in Shortcuts.",
+              keys: ["panel.bar"], words: ["side panel", "vivaldi", "web panel", "sidebar", "bookmarks", "downloads", "history", "right"]),
+        .init(id: "panel.restores", group: "tablook", icon: "arrow.uturn.backward",
+              title: "Hide the panel bar again", detail: "Opened by a panel's key while hidden, it goes again with that panel",
+              keys: ["panel.restores"], words: ["side panel", "vivaldi", "hide", "restore"], parent: "panel.bar"),
         .init(id: "motion.light", group: "motion", icon: "leaf",
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
@@ -861,6 +868,8 @@ enum SettingsIndex {
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
+        case "panel.bar": return !(prefs.sidebar && prefs.sidePosition == .right)
+        case "panel.restores": return prefs.panelBar
         case "bookmarks.iconsOnly", "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
@@ -900,6 +909,8 @@ enum SettingsIndex {
         case "links.peek.stays": return "Only when links or pins open peeks"
         case "launcher.key": return "Only with the address field from any app on"
         case "bookmarks.side": return "Only with the bookmarks bar shown and the tabs down a side"
+        case "panel.bar": return "Not with the tabs down the right side"
+        case "panel.restores": return "Only with the panel bar on"
         default: return "Only with the tabs down a side"
         }
     }

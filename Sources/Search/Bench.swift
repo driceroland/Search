@@ -6102,6 +6102,8 @@ final class Bench {
                                                        "developerExtras": web.flatMap { $0.configuration.preferences.value(forKey: "developerExtrasEnabled") as? Bool } ?? false]
                 .merging(SidePanelPages.shared.siteReport(in: browser)) { a, _ in a }
             case .downloads: content = ["kind": "downloads"]
+            case .bookmarks: content = ["kind": "bookmarks"]
+            case .history: content = ["kind": "history"]
             case nil: break
             }
             // Where the panel's page and every page sit in the window, from
@@ -6126,6 +6128,11 @@ final class Bench {
             state["cards"] = browser.asCards
             state["windowWidth"] = Int((browser.window ?? Links.window)?.frame.width ?? 0)
             state["tabs"] = browser.tabs.count
+            // The panel bar (PanelBar.swift): its switch, put away or not,
+            // out only for the panel open, and the History page up.
+            state["bar"] = ["on": browser.prefs.panelBar, "hidden": browser.prefs.panelBarHidden,
+                            "borrowed": browser.prefs.panelBarBorrowed, "restores": browser.prefs.panelBarRestores,
+                            "historyPage": browser.recalling]
             switch request["action"] as? String ?? "state" {
             case "eval":
                 guard Store.testing else { answer(["error": "sidepanel eval only works on a --test run"]); return }
@@ -6159,6 +6166,18 @@ final class Bench {
                 guard Store.testing else { answer(["error": "sidepanel crash only works on a --test run"]); return }
                 SidePanelPages.shared.siteCrashed(in: browser)
                 answer(SidePanelPages.shared.siteReport(in: browser))
+            case "command":
+                // A menu command by its id, as its key or menu item runs it
+                // (Shortcuts.swift); "bar" and "restores" move the panel
+                // bar's switches first. Test runs only.
+                guard Store.testing else { answer(["error": "sidepanel command only works on a --test run"]); return }
+                if let on = request["bar"] as? Bool { browser.prefs.panelBar = on }
+                if let on = request["restores"] as? Bool { browser.prefs.panelBarRestores = on }
+                if let id = request["id"] as? String {
+                    guard let command = Command.named(id) else { answer(["error": "no command \(id)"]); return }
+                    command.run(browser)
+                }
+                answer(["shown": browser.sidePanelShown])
             case "totab":
                 guard Store.testing else { answer(["error": "sidepanel totab only works on a --test run"]); return }
                 browser.sitePanelToTab()

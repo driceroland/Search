@@ -304,6 +304,35 @@ final class Preferences: ObservableObject {
     @Published var showsPlayer: Bool {
         didSet { store.set(showsPlayer, forKey: "sidebar.player") }
     }
+    /// The panel bar down the window's far edge (PanelBar.swift): Bookmarks,
+    /// Downloads, History and the site panel, as Vivaldi has it. Off unless
+    /// turned on; off, ⌘Y and ⇧⌘J open History and Downloads as they always
+    /// did.
+    @Published var panelBar: Bool {
+        didSet {
+            store.set(panelBar, forKey: "panel.bar")
+            // Turned on or off, it starts out: never on and put away.
+            if panelBarHidden { panelBarHidden = false }
+            panelBarBorrowed = false
+        }
+    }
+    /// The bar put away with View › Side Panel › Hide Panel Bar, the switch
+    /// still on. Kept, as the column folded away is.
+    @Published var panelBarHidden: Bool {
+        didSet { store.set(panelBarHidden, forKey: "panel.hidden") }
+    }
+    /// A panel's key brought a hidden bar out with its panel: closing that
+    /// panel puts the bar away again. On unless turned off.
+    @Published var panelBarRestores: Bool {
+        didSet { store.set(panelBarRestores, forKey: "panel.restores") }
+    }
+    /// The bar is out only for the panel now open (panelBarRestores).
+    var panelBarBorrowed = false
+    /// The switch on where the bar has its place: the column on the left or
+    /// the tabs across the top. With the column on the right the side panel
+    /// opens on the left, away from the bar's edge, and the switch does
+    /// nothing until the column moves back.
+    var panelBarOn: Bool { panelBar && !(sidebar && sidePosition == .right) }
     /// One tab's line in the column, and the size its title is set in.
     var sideRow: CGFloat { iconColumn ? Metrics.iconTile : roomyTabs ? 36 : 28 }
     var sideTitle: CGFloat { roomyTabs ? 14 : 12.5 }
@@ -1377,6 +1406,9 @@ final class Preferences: ObservableObject {
         narrowed = store.bool(forKey: "sidebar.narrowed")
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         showsPlayer = store.object(forKey: "sidebar.player") as? Bool ?? true
+        panelBar = store.bool(forKey: "panel.bar")
+        panelBarHidden = store.bool(forKey: "panel.hidden")
+        panelBarRestores = store.object(forKey: "panel.restores") as? Bool ?? true
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
@@ -1714,6 +1746,7 @@ final class Preferences: ObservableObject {
         take(\.foldsToIcons, store.bool(forKey: "sidebar.foldIcons"))
         take(\.narrowsToIcons, store.bool(forKey: "sidebar.narrowIcons"))
         take(\.narrowed, store.bool(forKey: "sidebar.narrowed"))
+        take(\.panelBar, store.bool(forKey: "panel.bar"))
         take(\.sideWidth, "sidebar.width", (store.object(forKey: "sidebar.width") as? Double).map { CGFloat($0) }
             .flatMap { (Metrics.sideMin...Metrics.sideMax).contains($0) ? $0 : nil }, or: Metrics.side)
         take(\.sidePanelWidth, "sidepanel.width", (store.object(forKey: "sidepanel.width") as? Double).map { CGFloat($0) }

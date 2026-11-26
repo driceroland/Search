@@ -248,6 +248,10 @@ struct Command: Identifiable {
         Command("view.reader", "Reading Mode", .view, KeyCombo("r", shift: true)) { $0.toggleReader() },
         Command("view.float", "Float Video", .view, KeyCombo("p", shift: true)) { $0.toggleFloat() },
         Command("view.sitePanel", "Show Side Panel", .view, nil) { $0.toggleSitePanel() },
+        // The panel bar's (PanelBar.swift), only while it is on: no key
+        // until you give one.
+        Command("view.panelBar", "Show Panel Bar", .view, nil) { $0.togglePanelBar() },
+        Command("view.bookmarksPanel", "Bookmarks in Side Panel", .view, nil) { $0.togglePanel(.bookmarks) },
         Command("view.dusk", "Darken This Site", .view, KeyCombo("d", shift: true)) { $0.toggleDusk() },
         Command("view.duskPause", "Pause Darkening", .view, KeyCombo("d", shift: true, option: true)) { $0.pauseDusk() },
         Command("view.summarize", "Summarize Page", .view, nil) { $0.summarizePage() },
@@ -338,8 +342,8 @@ struct Command: Identifiable {
             withAnimation(Motion.glide) { browser.prefs.bookmarksBar.toggle() }
         },
 
-        Command("history.show", "Show History…", .history, KeyCombo("y")) { $0.recalling = true },
-        Command("history.downloads", "Downloads…", .history, KeyCombo("j", shift: true)) { $0.showDownloads() },
+        Command("history.show", "Show History…", .history, KeyCombo("y")) { $0.showHistory() },
+        Command("history.downloads", "Downloads…", .history, KeyCombo("j", shift: true)) { $0.showDownloadsFromKey() },
         Command("history.archive", "Archived Tabs…", .history, nil) { $0.archiving = true },
         Command("history.clearData", "Clear Browsing Data…", .history, KeyCombo("delete", shift: true)) { $0.clearBrowsingData() },
         Command("history.clear", "Clear History", .history, nil) { $0.clearHistory() },

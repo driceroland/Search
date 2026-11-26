@@ -688,6 +688,8 @@ struct SettingsPanel: View {
                 get: { prefs.bookmarksInSidebar },
                 set: { on in withAnimation(Motion.glide) { prefs.bookmarksInSidebar = on } }
             ))
+        case "panel.bar": Switch(on: $prefs.panelBar)
+        case "panel.restores": Switch(on: $prefs.panelBarRestores)
         case "motion.light": Switch(on: $prefs.lightMotion)
         case "motion.instant": Switch(on: $prefs.instantMotion)
         case "note.split": Always()

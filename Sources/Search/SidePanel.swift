@@ -34,6 +34,9 @@ enum SidePanelContent: Equatable {
     /// Downloads, for whoever chose it in Settings › Downloads › Open
     /// Downloads: the same list as its tab, beside every page.
     case downloads
+    /// The panel bar's own (PanelBar.swift): bookmarks and history.
+    case bookmarks
+    case history
 }
 
 /// The sites offered in View › Side Panel, as they are typed: a short list,
@@ -136,6 +139,7 @@ extension Browser {
     /// and closing whatever is there.
     func toggleSitePanel() {
         guard prefs.sitesInPanel else { return }
+        if prefs.panelBar, !isPopup { return toggleBarSite() }
         if sidePanelShown { return closeSidePanel() }
         let last = URL(string: prefs.panelSite).flatMap { PanelSites.allowed($0) ? $0 : nil }
         showSiteInPanel(last ?? PanelSites.offered[0].url)
@@ -187,12 +191,14 @@ extension Browser {
         sidePanel = .site(url: url, space: spaceID)
     }
 
-    /// Closed: an extension's page is let go, as Chrome does.
+    /// Closed: an extension's page is let go, as Chrome does. A panel bar
+    /// that came out only for this panel goes back with it (PanelBar.swift).
     func closeSidePanel() {
         if case .page(_, _, let tab?) = sidePanel { SidePanelPages.shared.unbind(tab, in: self) }
         SidePanelPages.shared.drop(in: self)
         sidePanelShown = false
         sidePanel = nil
+        barPanelClosed()
     }
 
     /// Another tab in front: a panel opened for the tab just left goes
@@ -786,6 +792,10 @@ struct SidePanelView: View {
             DownloadsPanel(browser: browser, loot: browser.loot, compact: true,
                            close: { browser.closeSidePanel() })
                 .environment(\.asTab, true)
+        case .bookmarks:
+            BookmarksSide(browser: browser)
+        case .history:
+            HistorySide(browser: browser)
         case nil:
             Color.clear
         }

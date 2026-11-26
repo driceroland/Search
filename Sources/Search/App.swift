@@ -223,6 +223,14 @@ struct SearchApp: App {
                 // (Settings › General).
                 if browser.prefs.sitesInPanel {
                     Menu("Side Panel") {
+                        // The panel bar's, once it is on (PanelBar.swift).
+                        if browser.prefs.panelBarOn {
+                            Button(browser.prefs.panelBarHidden ? "Show Panel Bar" : "Hide Panel Bar") { browser.togglePanelBar() }
+                                .shortcut("view.panelBar")
+                            Button("Bookmarks") { browser.togglePanel(.bookmarks) }
+                                .shortcut("view.bookmarksPanel")
+                            Divider()
+                        }
                         Button(browser.sidePanelShown ? "Close Side Panel" : "Show Side Panel") { browser.toggleSitePanel() }
                             .shortcut("view.sitePanel")
                         Divider()
@@ -484,9 +492,15 @@ struct SearchApp: App {
                     }
                 }
                 Divider()
-                Button("Show History…") { browser.recalling = true }
+                // With the panel bar on, History and Downloads open in its
+                // panel (PanelBar.swift), and the History page is an item
+                // of its own.
+                Button("Show History…") { browser.showHistory() }
                     .shortcut("history.show")
-                Button("Downloads…") { browser.showDownloads() }
+                if browser.prefs.panelBarOn {
+                    Button("History Page…") { browser.recalling = true }
+                }
+                Button("Downloads…") { browser.showDownloadsFromKey() }
                     .shortcut("history.downloads")
                 // Only while tabs close by themselves (Closing.swift).
                 if browser.prefs.tabLife != .never {
@@ -686,7 +700,7 @@ struct ContentView: View {
                     }
                 }
                 .padding(.leading, sideOnRight ? laidFar + panelRoom : 0)
-                .padding(.trailing, sideOnRight ? 0 : laidFar + panelRoom)
+                .padding(.trailing, sideOnRight ? 0 : laidFar + panelRoom + barRoom)
                 .padding(.bottom, laidFar)
                 .padding(.leading, sideOnRight ? 0 : roomed.width)
                 .padding(.trailing, sideOnRight ? roomed.width : 0)
@@ -705,6 +719,13 @@ struct ContentView: View {
             // An extension's side panel, on the side away from the column
             // (see SidePanel.swift); two pages in Split View share what's left.
             if panelRoom > 0 { sidePanel }
+
+            // The panel bar down the far edge (PanelBar.swift).
+            if barRoom > 0 {
+                PanelBar(browser: browser, prefs: browser.prefs, onFrame: cards)
+                    .padding(.top, chrome.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            }
 
             // The column of tabs is Fold's, in its place beside the page or
             // folded away (see Fold.swift).
@@ -848,7 +869,7 @@ struct ContentView: View {
     /// Where the card lies in the window, animated with the column: what
     /// the column and the strip take, and the gaps beyond.
     private var cardInsets: EdgeInsets {
-        let far = farGap + panelRoom
+        let far = farGap + panelRoom + barRoom
         return EdgeInsets(top: chrome.height, leading: sideOnRight ? far : chrome.width,
                           bottom: farGap, trailing: sideOnRight ? chrome.width : far)
     }
@@ -880,7 +901,7 @@ struct ContentView: View {
     private var panelWidth: CGFloat {
         let asked = edges.panel ?? browser.prefs.sidePanelWidth
         guard across > 0 else { return asked }
-        let left = across - chrome.width - farGap * 2 - 320
+        let left = across - chrome.width - farGap * 2 - 320 - barRoom
         return max(240, min(asked, left))
     }
 
@@ -891,6 +912,13 @@ struct ContentView: View {
         panelUp ? panelWidth + (panelCard ? Metrics.cardGap : 1) : 0
     }
 
+    /// The panel bar's width at the window's far edge: on and not put away
+    /// (Preferences.panelBarOn), and no page filling the screen.
+    private var barRoom: CGFloat {
+        let prefs = browser.prefs
+        return prefs.panelBarOn && !prefs.panelBarHidden && fullscreenTab == nil ? PanelBar.width : 0
+    }
+
     /// The side panel as a card: as the page is.
     private var panelCard: Bool { cards && !edgeToEdge }
 
@@ -899,7 +927,7 @@ struct ContentView: View {
                         card: panelCard, width: panelWidth, onDrag: { [edges] in edges.panel = $0 })
             .padding(.top, chrome.height)
             .padding(.bottom, farGap)
-            .padding(sideOnRight ? .leading : .trailing, farGap)
+            .padding(sideOnRight ? .leading : .trailing, farGap + barRoom)
             .frame(maxWidth: .infinity, maxHeight: .infinity,
                    alignment: sideOnRight ? .topLeading : .topTrailing)
             .transition(.opacity)
@@ -2198,10 +2226,12 @@ struct ContentView: View {
             browser.newShyTab()
         // Shown, or brought forward if open: never a second one, and never
         // closed by the key that opened it — ⌘W does that, as for any tab.
+        // With the panel bar on, its History and Downloads, which the same
+        // key closes again (PanelBar.swift).
         case "y" where !shifted:
-            browser.recalling = true
+            browser.showHistory()
         case "j" where shifted:
-            browser.showDownloads()
+            browser.showDownloadsFromKey()
         case "v" where shifted && flags.contains(.option):
             // ⌥⇧⌘V, Paste and Match Style as in Safari: never Paste and Go.
             Browser.pasteMatchingStyle()
