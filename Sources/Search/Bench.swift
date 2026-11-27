@@ -954,12 +954,13 @@ final class Bench {
                 case "still": tab.still()
                 case "play": tab.playAgain()
                 case "away": tab.handPause()
-                case "go": browser.select(tab)
+                case "go": browser.goToPlayer(tab)
                 default: answer(["error": "act is still, play, away or go"]); return
                 }
             }
             let tab = browser.player
-            answer(["tab": tab.map { Bench.short($0) } ?? "", "stilled": tab?.stilled ?? false,
+            answer(["tab": tab.map { Bench.short($0) } ?? "", "tabs": browser.players.map { Bench.short($0) },
+                    "stilled": tab?.stilled ?? false,
                     "noisy": tab?.noisy ?? false, "sounding": browser.sounding.count])
 
         case "eval":
@@ -1177,7 +1178,7 @@ final class Bench {
                 ? AnyView(AboutView(whatsNew: {}))
                 : request["notes"] as? Bool == true
                 ? AnyView(ReleaseNotesPanel {}.padding(40).background(Palette.ground))
-                : AnyView(WhatsNewCard(release: release, prefs: browser.prefs, close: {}, notes: {}).padding(40).background(Palette.ground))
+                : AnyView(WhatsNewCard(release: release, close: {}, settings: {}).padding(40).background(Palette.ground))
             let host = NSHostingView(rootView: root)
             host.frame = NSRect(origin: .zero, size: host.fittingSize)
             let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -2355,6 +2356,19 @@ final class Bench {
                 answer(["peek": browser.peekTab?.address?.absoluteString ?? "", "peeking": browser.peeking,
                         "covered": web.covered,
                         "ungated": web.trackingAreas.filter { $0.owner !== web && !($0.owner is PointerGate) }.count])
+            }
+
+        case "edgeask":
+            // What the hidden column's edge asks the page under a point of
+            // the window (from its top-left) before it comes (EdgeAsk, idea
+            // 1308): true, the page has something to press there.
+            guard Store.testing else { answer(["error": "edgeask only works on a --test run"]); return }
+            guard let window = browser.window, let x = request["x"] as? Double, let y = request["y"] as? Double
+            else { answer(["error": "edgeask needs an x and a y"]); return }
+            let point = NSPoint(x: x, y: Double(window.frame.height) - y)
+            EdgeAsk.ask(window, at: point)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                answer(["pages": EdgeAsk.pageHas(window, at: point).map { $0 as Any } ?? NSNull()])
             }
 
         case "loadingline":

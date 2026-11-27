@@ -20,6 +20,8 @@ struct SettingsPanel: View {
     /// for it, as only the tab on screen is drawn and going to another tab
     /// took the panel, and the words, away (#1655).
     var tabID: UUID? = nil
+    /// What's New's release, for pictures; otherwise the last update's.
+    var news: WhatsNew.Release? = nil
     @Environment(\.asTab) private var asTab
 
     @ObservedObject private var updater = Updater.shared
@@ -45,9 +47,17 @@ struct SettingsPanel: View {
     @State private var lit: String?
     /// What Set Up Like Arc changed, for Undo.
     @ObservedObject private var likeArc = LikeArc.shared
+    /// What's New's dot, until it's opened once after an update.
+    @State private var newsDot = WhatsNew.unopened()
+    /// What's New › Worth a look, read once as the section opens: a row
+    /// switched on there stays rather than vanishing under the hand.
+    @State private var worth: [String]?
 
     enum Page: String, CaseIterable, Identifiable {
         case general, appearance, themes, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
+        /// What the last update added or changed (WhatsNew.swift), at the
+        /// top of the rail. Last here so the find field's order holds.
+        case whatsNew
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -63,6 +73,7 @@ struct SettingsPanel: View {
             case .extensions: return "Extensions"
             case .keyboard: return "Keyboard & Mouse"
             case .about: return "About"
+            case .whatsNew: return "What's New"
             }
         }
         var icon: String {
@@ -79,6 +90,7 @@ struct SettingsPanel: View {
             case .extensions: return "puzzlepiece.extension"
             case .keyboard: return "keyboard"
             case .about: return "info.circle"
+            case .whatsNew: return "sparkle"
             }
         }
         /// A section by its name in an address or in the settings file,
@@ -88,12 +100,13 @@ struct SettingsPanel: View {
             switch name.lowercased() {
             case "downloads": return .general
             case "shortcuts", "mouse": return .keyboard
+            case "whatsnew", "new": return .whatsNew
             default: return Page(rawValue: name.lowercased())
             }
         }
         /// The rail's three blocks: the browser, your data and tools, About.
         static var blocks: [[Page]] {
-            [[.general, .appearance, .themes, .tabs, .browsing, .spaces],
+            [[.whatsNew, .general, .appearance, .themes, .tabs, .browsing, .spaces],
              [.passwords, .privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .keyboard],
              [.about]]
         }
@@ -125,6 +138,19 @@ struct SettingsPanel: View {
         .onChange(of: query) { _, words in
             if let tabID { browser.settingsQueries[tabID] = words.isEmpty ? nil : words }
         }
+        .onAppear { if page == .whatsNew { sawNews() } }
+        .onChange(of: page) { _, page in if page == .whatsNew { sawNews() } }
+    }
+
+    private func sawNews() {
+        if worth == nil {
+            let ids = WhatsNew.worthALook(prefs)
+            worth = ids
+            WhatsNew.sawWorth(ids)
+        }
+        guard newsDot else { return }
+        WhatsNew.opened()
+        newsDot = false
     }
 
     /// In a tab of its own (see InternalPages.swift): the sections down the
@@ -192,7 +218,8 @@ struct SettingsPanel: View {
                 }
                 ForEach(block) { item in
                     PageRow(page: item, on: !searching && page == item,
-                            count: searching ? counts[item] ?? 0 : nil, chosen: chosen) {
+                            count: searching ? counts[item] ?? 0 : nil, chosen: chosen,
+                            dot: item == .whatsNew && newsDot) {
                         query = ""
                         page = item
                     }
@@ -216,35 +243,69 @@ struct SettingsPanel: View {
 
     /// Find a setting: the wash, the glass, ⌘F beside it until something
     /// is typed. Escape empties it, and then lets go.
+    ///
+    /// What is typed is the field's own, so a key redraws the field alone;
+    /// the results follow once the keys pause (`settle`), or at once when
+    /// it is emptied. Every key redrew the whole of Settings, up to every
+    /// row with its control, and the field lagged (idea 1333).
     private struct FindField: View {
         @Binding var text: String
         var focus: FocusState<Bool>.Binding
+        @State private var typed = ""
+        @State private var pending: Task<Void, Never>?
+
+        /// How long the keys pause before the results follow them.
+        static let settle: Duration = .milliseconds(120)
 
         var body: some View {
+            field
+                .onAppear { typed = text }
+                // Gone before the keys paused (another tab gone to): what
+                // was typed is still what Settings keeps (#1655).
+                .onDisappear { if typed != text { pending?.cancel(); text = typed } }
+                // Emptied or filled from outside (a section picked, a kept query).
+                .onChange(of: text) { _, words in
+                    guard words != typed else { return }
+                    pending?.cancel()
+                    typed = words
+                }
+                .onChange(of: typed) { _, words in
+                    pending?.cancel()
+                    guard words != text else { return }
+                    if words.trimmingCharacters(in: .whitespaces).isEmpty { text = words; return }
+                    pending = Task { @MainActor in
+                        try? await Task.sleep(for: Self.settle)
+                        guard !Task.isCancelled else { return }
+                        text = words
+                    }
+                }
+        }
+
+        private var field: some View {
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.muted)
                 ZStack(alignment: .leading) {
-                    if text.isEmpty {
+                    if typed.isEmpty {
                         Text("Find a setting").foregroundStyle(Palette.muted.opacity(0.8))
                     }
-                    TextField("", text: $text)
+                    TextField("", text: $typed)
                         .textFieldStyle(.plain)
                         .foregroundStyle(Palette.ink)
                         .focused(focus)
                         // Escape empties it; empty, it lets go of the keys,
                         // for Tab and the arrows to move around Settings.
-                        .onExitCommand { if text.isEmpty { focus.wrappedValue = false } else { text = "" } }
+                        .onExitCommand { if typed.isEmpty { focus.wrappedValue = false } else { typed = "" } }
                         .accessibilityLabel("Find a setting")
                 }
                 .font(.system(size: 12.5))
-                if text.isEmpty {
+                if typed.isEmpty {
                     Text("⌘F")
                         .font(.system(size: 10.5, design: .rounded))
                         .foregroundStyle(Palette.muted.opacity(0.8))
                 } else {
-                    Button { text = "" } label: {
+                    Button { typed = "" } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(Palette.faint)
@@ -265,6 +326,8 @@ struct SettingsPanel: View {
         /// While searching: how many rows of this section match.
         let count: Int?
         let chosen: Namespace.ID
+        /// What's New, until it's opened once after an update.
+        var dot = false
         let act: () -> Void
         @State private var hovering = false
 
@@ -277,6 +340,10 @@ struct SettingsPanel: View {
                     Text(page.title)
                         .font(.system(size: 13, weight: on ? .medium : .regular))
                     Spacer(minLength: 0)
+                    if dot, count == nil {
+                        Circle().fill(Palette.ink).frame(width: 6, height: 6)
+                            .accessibilityLabel("New")
+                    }
                     if let count, count > 0 {
                         Text("\(count)")
                             .font(.system(size: 10.5, weight: .medium).monospacedDigit())
@@ -377,8 +444,65 @@ struct SettingsPanel: View {
             ExtensionsPage(browser: browser)
         case .ai:
             if AI.shipped { AISettings(browser: browser, prefs: prefs) }
+        case .whatsNew:
+            whatsNew
         default:
             groups(of: page)
+        }
+    }
+
+    /// What's New: the last update in a sentence, then the settings it
+    /// added or changed, each its live row, and its notable changes with
+    /// nothing to set. Every version's notes are a button away.
+    @ViewBuilder
+    private var whatsNew: some View {
+        if let release = news ?? WhatsNew.latest {
+            let items = WhatsNew.items(release)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Search \(release.version)")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                Text((release.changes == nil ? "" : WhatsNew.summary(release) + ". ")
+                     + "Everything is already set as it should be: try what you like, at your own pace.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.leading, 2)
+            if !items.isEmpty {
+                GroupBlock(title: "New and changed settings", icon: "slider.horizontal.3") {
+                    Card { rows(items, searched: true) }
+                }
+            }
+            if !release.lines.isEmpty {
+                GroupBlock(title: "Also new", icon: "sparkle") {
+                    Card {
+                        ForEach(Array(release.lines.enumerated()), id: \.offset) { index, line in
+                            if index > 0 { Rule() }
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text("•").foregroundStyle(Palette.faint)
+                                Text(line)
+                                    .foregroundStyle(Palette.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
+                            }
+                            .font(.system(size: 12.5))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                        }
+                    }
+                }
+            }
+            let worthRows = (worth ?? []).compactMap(SettingsIndex.item)
+            if !worthRows.isEmpty {
+                GroupBlock(title: "Worth a look", icon: "hand.thumbsup") {
+                    Card { rows(worthRows, searched: true) }
+                }
+            }
+            HStack {
+                Spacer()
+                Pill("Every version's notes…") { browser.show(InternalPage(.notes)) }
+            }
         }
     }
 
@@ -494,8 +618,18 @@ struct SettingsPanel: View {
             return mailHandler.map { "Email links from other apps go to \($0) now" } ?? item.detail
         case "downloads.folder":
             return prefs.downloads.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
-        case "sync": return icloud.on ? "Off while Sync with iCloud is on" : sync.on ? sync.summary : item.detail
-        case "icloud": return icloud.summary(folderSyncOn: sync.on, otherwise: item.detail)
+        case "sync": return icloud.on && !sync.on ? "Off while Sync with iCloud is on" : sync.on ? sync.summary : item.detail
+        case "icloud":
+            // Which profile goes up, with more than one (idea 1330): only
+            // Personal's tabs, pins and bookmarks reach the iPhone.
+            let summary = icloud.summary(folderSyncOn: sync.on, otherwise: item.detail)
+            let front = Browsers.front.flatMap { $0.isPopup ? nil : $0 }
+            let line = icloud.on && icloud.available
+                ? ICloudSync.profileLine(several: Profiles.shared.several,
+                                         name: Profiles.shared.profile(Profile.personalID).name,
+                                         elsewhere: front.map { $0.profileID != Profile.personalID } ?? false)
+                : nil
+            return line.map { summary + "\n" + $0 } ?? summary
         case "search.engine": return searchDetail
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail

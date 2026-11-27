@@ -32,6 +32,72 @@ import WebKit
 //
 // One timer a tab, started when its sound stops and gone once it has run, the
 // sound starts again, or the page goes (see Tab.heard).
+//
+// Search in front keeps them (idea 1350). Ten seconds after a YouTube pause,
+// the Play key opened Music while Search was the app being used. So while
+// Search is the active app, the tab paused last keeps the media keys for as
+// long as it likes: its timer runs out and nothing is muted. The moment
+// Search goes to the background, it hands them back as before (at once, its
+// ten seconds being up), and so does a tab paused before another one was.
+// The rule lives in Keeper, apart from the tabs, for the unit tests.
+
+/// What hands the media keys back: a tab.
+@MainActor
+protocol HandsKeysBack: AnyObject {
+    func handBack()
+}
+
+/// Which quiet tab keeps the media keys while Search is in front: the one
+/// paused last, once its ten seconds are up, until Search goes to the
+/// background or another tab is paused.
+@MainActor
+final class MediaKeysKeeper {
+    static let shared = MediaKeysKeeper()
+
+    /// Whether Search is the active app.
+    var active: () -> Bool = { NSApp?.isActive ?? false }
+    /// The tab paused last.
+    private weak var last: HandsKeysBack?
+    /// Its ten seconds ran out with Search in front: it kept the keys.
+    private(set) var keeping = false
+    private var leaving: NSObjectProtocol?
+
+    init(watching: Bool = true) {
+        guard watching else { return }
+        leaving = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification,
+                                                         object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.left()?.handBack() }
+        }
+    }
+
+    /// A tab's sound stopped. The tab that kept the keys before, if
+    /// another, is handed back to give them up now.
+    func paused(_ tab: HandsKeysBack) -> HandsKeysBack? {
+        let before = keeping && last !== tab ? last : nil
+        last = tab
+        keeping = false
+        return before
+    }
+
+    /// A tab's sound started again: whatever it kept, it plays now.
+    func played(_ tab: HandsKeysBack) {
+        if last === tab { keeping = false }
+    }
+
+    /// A tab's ten seconds ran out: true to hand the keys back now, false
+    /// when it is the one paused last and Search is in front.
+    func handsBack(_ tab: HandsKeysBack) -> Bool {
+        guard last === tab, active() else { return true }
+        keeping = true
+        return false
+    }
+
+    /// Search went to the background: the tab that kept the keys, if any.
+    func left() -> HandsKeysBack? {
+        defer { keeping = false }
+        return keeping ? last : nil
+    }
+}
 
 final class MediaKeys: NSObject, WKScriptMessageHandler {
     static let name = "officeMedia"

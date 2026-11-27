@@ -186,6 +186,38 @@ final class DownloadLifecycleTests: XCTestCase {
         XCTAssertTrue(fixture.cookies("/retry.bin").allSatisfy { $0?.contains("download-session=fixture-cookie") == true })
     }
 
+    /// Downloads refused by macOS (Don't Allow at its Downloads prompt):
+    /// Search's own check passes, WebKit fails with "Cannot create file" at
+    /// zero KB (idea 1324). The first one asks where, once; the folder picked
+    /// becomes the downloads folder; the next one goes there without asking.
+    func testARefusedDownloadsFolderAsksOnceAndKeepsThePick() async throws {
+        let refused = downloadFolder!
+        let picked = refused.appendingPathComponent("picked", isDirectory: true)
+        try FileManager.default.createDirectory(at: picked, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: refused.path)
+        Browser.checksFolderForTest = { _ in true }
+        var asked = 0
+        Browser.picksForTest = { name in asked += 1; return picked.appendingPathComponent(name) }
+        defer {
+            Browser.checksFolderForTest = nil; Browser.picksForTest = nil
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: refused.path)
+        }
+
+        let tab = try await openFixturePage()
+        let entry = try await startDownload("/range.bin", in: tab)
+        let alongside = try await startDownload("/range.bin", in: tab)
+        try await waitUntil { browser.loot.kept.filter { $0.path.hasPrefix(picked.path) }.count == 2 }
+        XCTAssertEqual(asked, 1, "two refused at once: one question")
+        XCTAssertEqual(browser.prefs.downloads.standardizedFileURL, picked.standardizedFileURL)
+        XCTAssertFalse(browser.fetches.entries.contains { $0.id == entry.id || $0.id == alongside.id })
+
+        let next = try await startDownload("/range.bin", in: tab)
+        try await waitUntil { browser.loot.kept.count == 3 }
+        XCTAssertEqual(asked, 1, "the folder picked is kept: not asked again")
+        XCTAssertFalse(browser.fetches.entries.contains { $0.id == next.id })
+        XCTAssertTrue(browser.loot.kept.allSatisfy { $0.path.hasPrefix(picked.path) })
+    }
+
     func testDeletedSpaceTakesItsRunningDownloadWithIt() async throws {
         let tab = try await openFixturePage()
         let entry = try await startDownload("/cancel.bin", in: tab)

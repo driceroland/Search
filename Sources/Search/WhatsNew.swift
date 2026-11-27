@@ -2,21 +2,22 @@ import SwiftUI
 
 // What's new, once, after an update.
 //
-// New features start off, so someone who never opens Settings never meets
-// them (a reply on X). The first time a newer version opens, a small card
-// shows its new switches, each with a line of what it does and the switch
-// itself, and — so nothing gets lost — the switches from earlier versions
-// that are still off. Nothing else: few words (Drice). Closed, it
-// doesn't come back for that version. Not after a fresh install: the welcome
-// is for that. Every version's notes are in Settings › About › What's New…
+// The first time a newer version opens, a small calm card says how many
+// new features and changes and how many fixes it brought, with one button
+// to Settings › What's New and a Close (27 Nov 2026: a list of switches
+// to decide on was stressful, a reply on X). Every new setting keeps its
+// default, so nobody has to decide anything. Closed, it doesn't come back
+// for that version. Not after a fresh install: the welcome is for that.
+// Every version's notes are in Settings › About › What's New…
 //
-// A release edits `toggles` (its new switches, marked with its version),
-// `releases` (that it has a card) and `notes` (what it brought).
+// Settings › What's New, at the top of its sections, lists the settings
+// the last update added or changed, each its live row, and a short line
+// for each notable change with no setting; a dot on it until it's opened.
 //
-// A few switches lead: first on every card, above that version's own, for
-// as long as they are off. Sync with iCloud and Handoff do, since 22 Nov
-// 2026: on for a new install (SyncDefault.swift), offered here to everyone
-// who had Search before and never turned them on.
+// A release edits `releases` (its counts from CHANGELOG, its SettingsIndex
+// ids and lines; WhatsNewTests checks them) and `notes` (what it brought).
+// `toggles` is the older record of every switch that came off by default,
+// version by version; the card no longer shows it.
 
 enum WhatsNew {
     /// A switch the card offers: the same setting as in Settings.
@@ -32,11 +33,23 @@ enum WhatsNew {
         var shown: @MainActor (Preferences) -> Bool = { _ in true }
         /// First on every card while it is off, whatever its version.
         var lead = false
+        /// Its row in Settings (SettingsIndex), for What's New's Worth a look.
+        var settingsID: String? = nil
     }
 
     /// A version that has a card.
     struct Release {
         let version: String
+        /// Its CHANGELOG section's lines under Added and Changed, and under
+        /// Fixed: the card's one sentence (WhatsNewTests holds them to the
+        /// CHANGELOG). Nil until the version has its section.
+        var changes: Int? = nil
+        var fixes: Int? = nil
+        /// Settings › What's New: the SettingsIndex rows it added or
+        /// changed, each drawn as its live row, in this order.
+        var settings: [String] = []
+        /// And a short line for each notable change with no setting.
+        var lines: [String] = []
     }
 
     /// Every switch worth meeting, the leading ones first, then oldest
@@ -53,13 +66,31 @@ enum WhatsNew {
                since: "1.0.16", get: { _ in ICloudSync.shared.on },
                set: { _, on in on ? ICloudSync.shared.turnOnOrWait() : ICloudSync.shared.turnOff() },
                // Never beside the folder sync: the two would undo each other.
-               shown: { _ in ICloudSync.shared.on || !Sync.shared.on }, lead: true),
+               shown: { _ in ICloudSync.shared.on || !Sync.shared.on }, lead: true, settingsID: "icloud"),
         Toggle(title: "Handoff to your iPhone", detail: "The page in front comes up in your iPhone's and iPad's app switcher.",
-               since: "1.0.16", get: { $0.handoff }, set: { $0.handoff = $1 }, lead: true),
+               since: "1.0.16", get: { $0.handoff }, set: { $0.handoff = $1 }, lead: true, settingsID: "handoff"),
     ] + (AI.shipped ? [
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Site tiles on a new tab", detail: "Small chips of your sites under the address field; add, edit and move them right there.",
+               since: "1.0.22", get: { $0.homeTiles }, set: { $0.homeTiles = $1 }),
+
+        Toggle(title: "Screenshots in Downloads", detail: "A screenshot you take shows at the top of the Downloads list, ready to drag onto a page.",
+               since: "1.0.22", get: { $0.screenshotsInDownloads }, set: { $0.screenshotsInDownloads = $1 }),
+
+        Toggle(title: "Copy captures only", detail: "Capture… puts the picture on the clipboard and saves no PNG in your downloads folder.",
+               since: "1.0.22", get: { $0.copiesCapturesOnly }, set: { $0.copiesCapturesOnly = $1 }),
+
+        Toggle(title: "Move and resize with Hide Elements", detail: "Drag what is outlined to move it, or its right or bottom edge to resize it, kept for the site.",
+               since: "1.0.22", get: { $0.hidingShapes }, set: { $0.hidingShapes = $1 }),
+
+        Toggle(title: "Controls over a page in Split View", detail: "A small capsule on the page under the pointer: move it left or right, take it out, or close it.",
+               since: "1.0.22", get: { $0.splitControls }, set: { $0.splitControls = $1 }),
+
+        Toggle(title: "Animate downloads", detail: "A new download glides into the downloads button, and a check shows once it's in.",
+               since: "1.0.22", get: { $0.animatesDownloads }, set: { $0.animatesDownloads = $1 }),
+
         Toggle(title: "Double click to rename", detail: "Click on the tab you're on to rename it, as Rename in its menu does, instead of editing its address.",
                since: "1.0.22", get: { $0.tabClickRenames }, set: { $0.tabClickRenames = $1 },
                shown: { !$0.iconColumn }),
@@ -103,7 +134,8 @@ enum WhatsNew {
         Toggle(title: "Touch ID before filling a password", detail: "Touch ID, or your Mac's password, before a saved password goes into a page.",
                since: "1.0.19", get: { $0.asksBeforeFilling }, set: { $0.asksBeforeFilling = $1 }),
         Toggle(title: "Icons only on the bookmarks bar", detail: "Each bookmark its site's icon, its name on hover. Folders keep their names.",
-               since: "1.0.19", get: { $0.bookmarksIconsOnly }, set: { $0.bookmarksIconsOnly = $1 }),
+               since: "1.0.19", get: { $0.bookmarksIconsOnly }, set: { $0.bookmarksIconsOnly = $1 },
+               shown: { $0.bookmarksBar }),
 
         Toggle(title: "Sidebar button", detail: "Beside the window's buttons, it hides the sidebar as ⌘S does.",
                since: "1.0.18", get: { $0.foldButton }, set: { $0.foldButton = $1 }),
@@ -175,7 +207,7 @@ enum WhatsNew {
                since: "1.0.6", get: { $0.pinsKeepSite }, set: { $0.pinsKeepSite = $1 }),
         Toggle(title: "Darken light pages", detail: "While Search is dark, pages with no dark look of their own are darkened.",
                since: "1.0.6", get: { $0.darkensPages }, set: { $0.darkensPages = $1 }),
-        Toggle(title: "Roomier tabs", detail: "Taller rows and larger titles in the sidebar.",
+        Toggle(title: "Roomier tabs", detail: "Taller rows, larger titles and bigger pinned squares in the sidebar.",
                since: "1.0.6", get: { $0.roomyTabs }, set: { $0.roomyTabs = $1 }),
         Toggle(title: "New tab in a floating field", detail: "⌘T raises the address field over the page you are on, as in Arc.",
                since: "1.0.6", get: { $0.floatingNewTab }, set: { $0.floatingNewTab = $1 }),
@@ -214,7 +246,23 @@ enum WhatsNew {
                since: "1.0.3", get: { $0.autoScroll }, set: { $0.autoScroll = $1 }),
     ]
 
+    /// Newest first. A release fills in its counts, settings and lines.
     static let releases: [Release] = [
+        Release(version: "1.0.23",
+                settings: ["sidebar.roomy"],
+                lines: []),
+        Release(version: "1.0.22", changes: 26, fixes: 63,
+                settings: ["meet.pip", "home.tiles", "pins.preview", "glyph", "downloads.screenshots",
+                           "pages.capture.copyOnly", "hiding.shapes", "split.controls", "motion.downloads",
+                           "tabs.clickRenames", "developer.local", "profiles"],
+                lines: [
+                    "Bring Things Over brings Dia's, Ardia's and Yab's spaces, with their pins and folders.",
+                    "File › Export Spaces… saves every space to a file.",
+                    "Right-click an address field for Paste and Go.",
+                    "A speaker on a pinned square whose page plays sound; a click mutes it.",
+                    "Hide Elements: hold ⌥ to hide every element like the one you point at.",
+                    "Hundreds of tabs stay light, and Search rests in about 42 MB.",
+                ]),
         Release(version: "1.0.21"),
         Release(version: "1.0.20"),
         Release(version: "1.0.19"),
@@ -247,6 +295,63 @@ enum WhatsNew {
     /// This version's card, when it has one.
     static var current: Release? { releases.first { $0.version == Updater.version } }
 
+    /// What Settings › What's New shows: this version's release, or the
+    /// newest one before it (a build between releases).
+    static var latest: Release? { latest(for: Updater.version) }
+
+    static func latest(for version: String) -> Release? {
+        releases.first { !older(version, than: $0.version) } ?? releases.first
+    }
+
+    /// The card's one sentence: "26 new features and changes, 63 fixes in
+    /// 1.0.22", or plainer while the counts aren't in.
+    static func summary(_ release: Release) -> String {
+        let parts = [release.changes.map { "\($0) new \($0 == 1 ? "feature or change" : "features and changes")" },
+                     release.fixes.map { "\($0) \($0 == 1 ? "fix" : "fixes")" }].compactMap { $0 }
+        guard !parts.isEmpty else { return "What's new in \(release.version)" }
+        return parts.joined(separator: ", ") + " in \(release.version)"
+    }
+
+    /// The rows Settings › What's New lists for a release: its ids, in its
+    /// order, that SettingsIndex still has.
+    static func items(_ release: Release) -> [SettingsItem] {
+        release.settings.compactMap { id in SettingsIndex.items.first { $0.id == id } }
+    }
+
+    /// Settings › What's New › Worth a look: the leading switches (Sync with
+    /// iCloud, Handoff), on for a new install, as their usual rows for whoever
+    /// had Search before and has them off, until they have been seen there
+    /// once. No card asks any more (27 Nov 2026).
+    static let worthSeenKey = "whatsnew.worth.seen"
+
+    @MainActor static func worthALook(_ prefs: Preferences, _ store: UserDefaults = Store.settings) -> [String] {
+        let seen = Set(store.stringArray(forKey: worthSeenKey) ?? [])
+        return toggles
+            .filter { $0.lead && !$0.get(prefs) && $0.shown(prefs) }
+            .compactMap(\.settingsID)
+            .filter { !seen.contains($0) && SettingsIndex.item($0) != nil }
+    }
+
+    /// Shown once: not offered again, whatever they are left at.
+    static func sawWorth(_ ids: [String], _ store: UserDefaults = Store.settings) {
+        guard !ids.isEmpty else { return }
+        let seen = store.stringArray(forKey: worthSeenKey) ?? []
+        store.set(seen + ids.filter { !seen.contains($0) }, forKey: worthSeenKey)
+    }
+
+    /// Settings › What's New wears a dot until it's opened once after an
+    /// update: set as the card comes (due), never on a fresh install.
+    static let dotKey = "whatsnew.dot"
+
+    static func unopened(_ store: UserDefaults = Store.settings) -> Bool {
+        guard let latest, let dot = store.string(forKey: dotKey) else { return false }
+        return dot == latest.version
+    }
+
+    static func opened(_ store: UserDefaults = Store.settings) {
+        store.removeObject(forKey: dotKey)
+    }
+
     /// Version strings in order: 1.0.10 after 1.0.9.
     static func older(_ one: String, than other: String) -> Bool {
         let a = one.split(separator: ".").compactMap { Int($0) }
@@ -272,6 +377,7 @@ enum WhatsNew {
         }
         guard store.string(forKey: seenKey) != current.version else { return false }
         store.set(current.version, forKey: seenKey)
+        store.set(current.version, forKey: dotKey)
         return true
     }
 
@@ -298,6 +404,40 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.22", date: "27 November 2026",
+            headline: "Light with hundreds of tabs, and light at rest.",
+            new: [
+                "Google Meet's own mini window comes along when you leave a call's tab, as in Chrome, with your camera, microphone and background blur still working. On; Settings › Videos turns it off.",
+                "Bring Things Over brings Dia's, Ardia's and Yab's spaces, with their pins, folders and profiles.",
+                "Site chips under a new tab's address field, to add, edit and move right there, in Settings › Tabs.",
+                "Previews of pinned tabs on hover, and a speaker on a pinned square whose page plays sound.",
+                "Screenshots in Downloads, captures copied only, moving and resizing with Hide Elements, controls over a page in Split View, animated downloads and a click to rename the tab you're on, each off until you turn it on.",
+                "Developer Mode for local sites, Hide Elements taking every element like the one you point at, File › Export Spaces… and Paste and Go.",
+            ],
+            better: [
+                "400 tabs stay light and fast: closing a tab, opening one, picking a pin and switching spaces take a fraction of the time, and the column scrolls without a stall.",
+                "At rest Search runs as one process in about 42 MB, where 1.0.21 took 66 MB in 3, and many tabs take less memory.",
+                "Tabs and pins show the site's icon by default instead of a letter.",
+                "Tabs you aren't looking at load a few at a time, so reloading many no longer stalls the window.",
+                "Following a link or sending a form costs the window less with many tabs.",
+                "Sync with iCloud always says why it isn't syncing.",
+            ],
+            fixed: [
+                "Darken pages turning pages near black with their borders gone; pages are darkened in their own colours again.",
+                "A site that couldn't be found for a moment, as the Wi-Fi changes or a VPN comes up: it is tried again and loads by itself.",
+                "ClickUp Brain not starting, and pages reloading in a loop with the Fabric clipper.",
+                "A Downloads folder macOS keeps Search out of failing every download; Search now asks where to save, once.",
+                "A click on the tab you're on closing it with Icons only.",
+                "OneDrive's and SharePoint's Open in desktop app not opening Word or Excel.",
+                "A page handed off from your iPhone closing the window's tabs.",
+                "A full-screen video missing from Discord's, Zoom's and Meet's screen-share pickers.",
+                "Sign in with Apple closing its own tab on sites that come back by redirects.",
+                "The hidden sidebar coming out halfway through a drag along the left edge.",
+                "What's playing showing only the newest of several tabs playing out of sight.",
+                "Deleting a profile whose spaces were never opened crashing Search.",
+            ]
+        ),
         Notes(
             version: "1.0.21", date: "25 November 2026",
             headline: "Your fixes, from NordPass to YouTube's sign-in.",
@@ -868,13 +1008,16 @@ enum WhatsNew {
     ]
 }
 
-/// The card: what's new in this version, its switches right there, and
-/// the earlier ones still off.
+/// The card after an update: one calm sentence, how many new things and
+/// fixes, and a way to Settings › What's New to look at them at leisure.
+/// Nothing to decide here (Drice, 27 Nov 2026, after a reply on X that the
+/// list of switches was stressful): every new setting keeps its default.
+/// The small email field stays, for whoever hasn't left an email yet.
 struct WhatsNewCard: View {
     let release: WhatsNew.Release
-    @ObservedObject var prefs: Preferences
     let close: () -> Void
-    let notes: () -> Void
+    /// Settings › What's New.
+    let settings: () -> Void
     /// A link from the card (the privacy page), opened in a tab.
     var open: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// For pictures: the email block's state, and whether it is offered
@@ -883,78 +1026,39 @@ struct WhatsNewCard: View {
     var optInEmail = ""
     var optInForced: Bool? = nil
 
-    /// The leading and earlier switches, read once as the card opens
-    /// (WhatsNew.rows): one turned on here stays in the list rather than
-    /// vanishing under the hand. The version's own are read as they stand.
-    @State private var listed: (leading: [WhatsNew.Toggle], own: [WhatsNew.Toggle], earlier: [WhatsNew.Toggle])?
-    /// Sync with iCloud's switch is its own, not a preference's.
-    @ObservedObject private var icloud = ICloudSync.shared
     /// The email block (OptIn.swift), read once as the card opens: offered
     /// until an email has been given, and kept after one is, for its thanks.
     @State private var offering: Bool?
     @ObservedObject private var reach = OptIn.Reach.shared
 
-    /// Pinned under the list, outside its scroll, so it is always in sight;
-    /// left off while the Mac is offline, where a press could only fail.
+    /// Left off while the Mac is offline, where a press could only fail.
     private var showsOptIn: Bool { (optInForced ?? offering ?? OptIn.offered()) && (optInForced != nil || reach.online) }
 
     var body: some View {
-        Plate("New in Search \(release.version)", width: 460, close: close) {
+        Plate("New in Search \(release.version)", width: 420, close: close) {
             VStack(alignment: .leading, spacing: 14) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        rows((listed?.leading ?? []) + WhatsNew.rows(for: release, prefs: prefs).own)
-                        if let earlier = listed?.earlier, !earlier.isEmpty {
-                            Caption("From earlier versions, in case you missed them")
-                                .padding(.top, 6)
-                            rows(earlier)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(WhatsNew.summary(release) + ".")
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(Palette.ink)
+                    Text("Nothing to decide: everything is set as it should be. Look around in Settings whenever you like.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxHeight: showsOptIn ? 360 : 470)
-                .fixedSize(horizontal: false, vertical: true)
                 if showsOptIn {
                     OptInBlock(source: .whatsNew, open: open, start: optInStart, startEmail: optInEmail)
                 }
             }
         } foot: {
-            HStack {
-                Button(action: notes) {
-                    Text("Everything that's new…")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
-                }
-                .buttonStyle(.plain)
+            HStack(spacing: 8) {
                 Spacer()
+                Pill("See What's New in Settings", action: settings)
                 Pill("Close", filled: true, action: close)
             }
         }
         .onAppear {
             if offering == nil { offering = OptIn.offered() }
-            if listed == nil { listed = WhatsNew.rows(for: release, prefs: prefs) }
-        }
-    }
-
-    private func rows(_ toggles: [WhatsNew.Toggle]) -> some View {
-        Card {
-            ForEach(Array(toggles.enumerated()), id: \.offset) { index, toggle in
-                if index > 0 { Rule() }
-                HStack(alignment: .center, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(toggle.title)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Palette.ink)
-                        Text(toggle.detail)
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 8)
-                    Switch(on: Binding(get: { toggle.get(prefs) }, set: { toggle.set(prefs, $0) }))
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-            }
         }
     }
 }
