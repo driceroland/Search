@@ -2249,6 +2249,12 @@ struct ContentView: View {
             browser.recalling = true
         case "j" where shifted:
             browser.showDownloads()
+        case "v" where !shifted:
+            // Edit's Paste asks AppKit for an action target. The event's
+            // window already knows which field editor has the keyboard.
+            guard let editor = event.window?.firstResponder as? NSTextView,
+                  editor.isFieldEditor, editor.isEditable else { return false }
+            return editor.tryToPerform(#selector(NSText.paste(_:)), with: nil)
         case "v" where shifted && flags.contains(.option):
             // ⌥⇧⌘V, Paste and Match Style as in Safari: never Paste and Go.
             Browser.pasteMatchingStyle()
