@@ -91,7 +91,10 @@ struct SideBar: View {
     private var width: CGFloat { live ?? prefs.columnWidth }
     private static let gap: CGFloat = 2
     private static let groupInset: CGFloat = 4
-    private static let square: CGFloat = 34
+    /// A pinned square at its tallest: the classic 34, or, with Roomier
+    /// tabs, as much taller as the rows are (36 for 28), so its icon grows
+    /// with it (PinSquare draws everything off its shorter edge).
+    static func square(roomy: Bool) -> CGFloat { roomy ? 44 : 34 }
     private static let pinGap: CGFloat = 4
 
     private var onRight: Bool { prefs.sidePosition == .right }
@@ -1139,12 +1142,13 @@ struct SideBar: View {
     private func pinCells(_ count: Int) -> [CGRect] {
         let room = width - 20
         let gap = SideBar.pinGap
-        let fits = Int((room + gap) / (SideBar.square + gap))
+        let square = SideBar.square(roomy: prefs.roomyTabs)
+        let fits = Int((room + gap) / (square + gap))
         let rows = SideBar.pinRows(count, most: min(4, max(1, fits)))
         // A row of fewer than three keeps three places.
         let slots = rows.map { rows.count == 1 ? max($0, min(3, fits)) : $0 }
         let widths = slots.map { max(20, (room - CGFloat($0 - 1) * gap) / CGFloat($0)) }
-        let height = min(SideBar.square, widths.min() ?? SideBar.square)
+        let height = min(square, widths.min() ?? square)
         var cells: [CGRect] = []
         for (row, n) in rows.enumerated() {
             for col in 0..<n {

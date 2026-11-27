@@ -19,6 +19,10 @@ in [ROADMAP.md](ROADMAP.md).
 - Typing in Settings' Find a setting no longer lags: each key redrew the whole of Settings, up to every row and its control (a lone letter listed 175 of them), and worked out every row's words again. The field now answers each key on its own, the results follow when the keys pause for a moment (at once when emptied), a single letter finds the rows with a word starting with it, and each key's search over the whole index is down from ~4 ms to well under one. `swift test --filter SettingsFindTimingTests` (reported by email, idea 1333)
 - With the sidebar hidden, buttons a page has along its left edge work again: Airtable's collapsed sidebar, a few points in, never lit up under the pointer, and resting on its button brought the sidebar out over it, which then took the click. Where the page has something to press there (a button, a link, a field, text), the edge band is the page's, hover and all, and the sidebar comes from the window's very edge; over plain page the wider band still brings it. `swift test --filter FoldDwellTests`, `python3 Tests/edge_band_press.py` (reported on X, idea 1308)
 
+### Changed
+
+- Roomier tabs (Settings › Appearance › Tabs) makes the pinned squares in the column bigger too, with their icons, as much taller as the rows are (44 points for 34). (idea 1383)
+
 ### Held back
 
 Not in this version, kept on main for a later one:

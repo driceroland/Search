@@ -255,7 +255,7 @@ enum SettingsIndex {
               more: "It bends the tabs it passes over. Pinned tabs and split pages keep their grey. Under Reduce Motion it goes straight to the tab you pick.",
               keys: ["tabs.liquid"], words: ["liquid glass", "liquid", "glass", "active tab", "selected tab", "animation", "wobble"]),
         .init(id: "sidebar.roomy", group: "tablook", icon: "textformat.size.larger",
-              title: "Roomier tabs", detail: "Taller rows and larger titles in the column",
+              title: "Roomier tabs", detail: "Taller rows, larger titles and bigger pinned squares in the column",
               keys: ["sidebar.roomy"], words: ["bigger", "larger", "text size", "accessibility"], parent: "tabs.layout"),
         .init(id: "sidebar.doorsUp", group: "tablook", icon: "rectangle.topthird.inset.filled",
               title: "Buttons at the top", detail: "Bookmarks, extensions and downloads beside back, forward and reload, when they fit",
