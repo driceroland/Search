@@ -49,16 +49,19 @@ final class StageFullScreenTests: XCTestCase {
         return (stage, window)
     }
 
-    /// What is put off until the layout is over.
-    private func turn() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    /// What is put off until the layout is over (DispatchQueue.main.async).
+    /// Awaited, not a run loop turned by hand: the test's body runs as a
+    /// block on the main queue, and the blocks it waits for queue behind it
+    /// however long the run loop is turned (see WakeLatencyTests.spin).
+    private func turn() async {
+        try? await Task.sleep(for: .milliseconds(20))
     }
 
     /// The tab left for another while its video stays full screen, then
     /// chosen again in this window: the other tab's page goes, the column
     /// comes back, full screen is asked to end, and the page returns at the
     /// stage's size with the keys when WebKit lets it go.
-    func testATabFullScreenElsewhereChosenAgainComesHome() {
+    func testATabFullScreenElsewhereChosenAgainComesHome() async {
         let (stage, host) = stage()
         defer { host.close() }
         let other = page()
@@ -73,7 +76,7 @@ final class StageFullScreenTests: XCTestCase {
 
         stage.show(video)
         XCTAssertNil(other.superview, "the last tab's page stayed on the stage")
-        turn()
+        await turn()
         XCTAssertEqual(chromeBack, 1)
         XCTAssertEqual(ended, 1)
         XCTAssertTrue(video.superview === elsewhere, "taken from WebKit before it let go")
@@ -91,7 +94,7 @@ final class StageFullScreenTests: XCTestCase {
 
     /// Full screen that doesn't end: the column is back all the same, so
     /// the window is never left without a way out.
-    func testAFullScreenThatDoesNotEndStillGivesTheColumnBack() {
+    func testAFullScreenThatDoesNotEndStillGivesTheColumnBack() async {
         let (stage, host) = stage()
         defer { host.close() }
         let elsewhere = NSView()
@@ -100,14 +103,14 @@ final class StageFullScreenTests: XCTestCase {
         video.lent = .inFullscreen
 
         stage.show(video)
-        turn()
+        await turn()
         XCTAssertEqual(chromeBack, 1)
         XCTAssertTrue(video.superview === elsewhere)
     }
 
     /// Landing on the tab from the video's own Space, by a link it opened or
     /// a popup closing itself: the video goes on, and comes home when left.
-    func testChosenFromTheVideosOwnSpaceTheVideoGoesOn() {
+    func testChosenFromTheVideosOwnSpaceTheVideoGoesOn() async {
         let (stage, host) = stage()
         defer { host.close() }
         host.key = false
@@ -117,7 +120,7 @@ final class StageFullScreenTests: XCTestCase {
         video.lent = .inFullscreen
 
         stage.show(video)
-        turn()
+        await turn()
         XCTAssertEqual(ended, 0)
         XCTAssertEqual(chromeBack, 1)
 
@@ -129,7 +132,7 @@ final class StageFullScreenTests: XCTestCase {
 
     /// Chosen while still on its way in: asked again once it is there, when
     /// the page has a full-screen element to leave.
-    func testChosenOnItsWayInIsAskedAgainOnceThere() {
+    func testChosenOnItsWayInIsAskedAgainOnceThere() async {
         let (stage, host) = stage()
         defer { host.close() }
         let elsewhere = NSView()
@@ -138,10 +141,10 @@ final class StageFullScreenTests: XCTestCase {
         video.lent = .enteringFullscreen
 
         stage.show(video)
-        turn()
+        await turn()
         XCTAssertEqual(ended, 1)
         video.lent = .inFullscreen
-        turn()
+        await turn()
         XCTAssertEqual(ended, 2)
         XCTAssertEqual(chromeBack, 2)
     }
@@ -149,7 +152,7 @@ final class StageFullScreenTests: XCTestCase {
     /// The ordinary full screen: a placeholder is on the stage, and only the
     /// page's own way out ends it, even when the stage is told to show it
     /// again.
-    func testAPageWithItsPlaceholderHereIsLeftFullScreen() {
+    func testAPageWithItsPlaceholderHereIsLeftFullScreen() async {
         let (stage, host) = stage()
         defer { host.close() }
         let elsewhere = NSView()
@@ -162,7 +165,7 @@ final class StageFullScreenTests: XCTestCase {
         stage.show(video)
         stage.frame.size.width = 900
         stage.layoutSubtreeIfNeeded()
-        turn()
+        await turn()
         XCTAssertEqual(ended, 0)
         XCTAssertEqual(chromeBack, 0)
         XCTAssertTrue(placeholder.superview === stage)
@@ -228,7 +231,7 @@ final class StageFullScreenTests: XCTestCase {
     /// chosen again in this window: not its placeholder alone, white where
     /// the video was (idea 936), but full screen asked to end, the column
     /// back, and the page home at the stage's size with the keys.
-    func testAVideoStillFullScreenChosenAgainComesHome() {
+    func testAVideoStillFullScreenChosenAgainComesHome() async {
         let (stage, host) = stage()
         defer { host.close() }
         let (video, placeholder, _) = fullScreen(on: stage)
@@ -237,7 +240,7 @@ final class StageFullScreenTests: XCTestCase {
         stage.layoutSubtreeIfNeeded()
 
         stage.show(video)
-        turn()
+        await turn()
         XCTAssertEqual(ended, 1, "full screen was never asked to end")
         XCTAssertEqual(chromeBack, 1)
         XCTAssertNil(other.superview, "the last tab's page stayed on the stage")
@@ -251,16 +254,16 @@ final class StageFullScreenTests: XCTestCase {
     }
 
     /// The same with Settings › Keep the window in use during full screen.
-    func testAVideoStillFullScreenChosenAgainComesHomeKeepingTheWindow() {
+    func testAVideoStillFullScreenChosenAgainComesHomeKeepingTheWindow() async {
         let was = Shared.prefs.keepsWindow
         Shared.prefs.keepsWindow = true
         defer { Shared.prefs.keepsWindow = was }
-        testAVideoStillFullScreenChosenAgainComesHome()
+        await testAVideoStillFullScreenChosenAgainComesHome()
     }
 
     /// Chosen again from the video's own Space, by a link it opened: the
     /// video goes on, and comes home to its placeholder when it ends.
-    func testAVideoLeftAndChosenFromItsOwnSpaceGoesOn() {
+    func testAVideoLeftAndChosenFromItsOwnSpaceGoesOn() async {
         let (stage, host) = stage()
         defer { host.close() }
         let (video, placeholder, _) = fullScreen(on: stage)
@@ -268,7 +271,7 @@ final class StageFullScreenTests: XCTestCase {
         stage.layoutSubtreeIfNeeded()
         host.key = false
         stage.show(video)
-        turn()
+        await turn()
         XCTAssertEqual(ended, 0)
         comeOut(video, placeholder: placeholder)
         XCTAssertTrue(video.superview === stage)
@@ -276,7 +279,7 @@ final class StageFullScreenTests: XCTestCase {
     }
 
     /// On its way in, still on the stage: nothing is stranded yet.
-    func testAPageStillOnTheStageIsLeftAlone() {
+    func testAPageStillOnTheStageIsLeftAlone() async {
         let (stage, host) = stage()
         defer { host.close() }
         let video = page()
@@ -284,7 +287,7 @@ final class StageFullScreenTests: XCTestCase {
         video.lent = .enteringFullscreen
 
         stage.show(video)
-        turn()
+        await turn()
         XCTAssertEqual(ended, 0)
         XCTAssertEqual(chromeBack, 0)
         XCTAssertTrue(video.superview === stage)
