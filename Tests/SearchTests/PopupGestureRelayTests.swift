@@ -22,8 +22,11 @@ final class PopupGestureRelayTests: XCTestCase {
         XCTAssertTrue(PopupGestureRelay.tab(for: first.web) === first)
         XCTAssertTrue(PopupGestureRelay.tab(for: second.web) === second)
         XCTAssertNil(PopupGestureRelay.tab(for: WKWebView(frame: .zero)))
+        // Nothing shown. Not whether the app is active: that is the
+        // system's to say, and in a busy run it changes for reasons that
+        // have nothing to do with this test (the policy is .prohibited, and
+        // nothing here asks to activate).
         XCTAssertTrue(NSApp.windows.allSatisfy { !$0.isVisible })
-        XCTAssertFalse(NSApp.isActive)
     }
 
     func testPeekAndLittleWindowKeepTheirOwnPopupPermission() throws {

@@ -42,8 +42,11 @@ final class HomeGridTests: XCTestCase {
         defer { (prefs.homeTheme, prefs.homeThemeImage) = was }
         prefs.homeTheme = .off
         XCTAssertFalse(HomeBackground.behind(prefs))
-        prefs.homeTheme = .mountainLake
+        prefs.homeTheme = .gradient
         XCTAssertTrue(HomeBackground.behind(prefs))
+        // A wall, taken out on 27 Nov 2026, is no theme.
+        prefs.homeTheme = .mountainLake
+        XCTAssertFalse(HomeBackground.behind(prefs))
         prefs.homeTheme = .custom
         prefs.homeThemeImage = "/nowhere/\(UUID().uuidString).png"
         XCTAssertFalse(HomeBackground.behind(prefs))

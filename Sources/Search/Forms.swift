@@ -626,8 +626,21 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         return null;
       }
       var codeWords = /otp([^a-z]|$)|(^|[^a-z])[th]?otp(code|pin|token|input|field|value)|(^|[^a-z])otc([^a-z]|$)|one[\\s_\\-]?time|(^|[^a-z0-9])[2tm]fa|two[\\s_\\-]?(factor|step)|2[\\s_\\-]?step|second[\\s_\\-]?factor|passcode|authenticator|usage unique|verif[a-z]*[\\s_\\-]?code|security[\\s_\\-]?code|auth[a-z]*[\\s_\\-]?code|login[\\s_\\-]?code|code[\\s_\\-]+(de[\\s_\\-]+|d.)?(v[e\\u00e9]rif|valid|s[e\\u00e9]curit|authentif|authentic|confirm)/;
-      var plainCode = /code([^a-z]|$)|c[o\\u00f3]digo/;
-      var otherCode = /promo|coupon|voucher|discount|gift|cadeau|r[e\\u00e9]duc|postal|post[\\s_\\-]?code|area[\\s_\\-]?code|dial[\\s_\\-]?code|country|referr|parrain|invit|affili|sponsor|captcha|barcode|backup|recovery|secours|r[e\\u00e9]cup|card|carte|siret|siren|product|produit|source|embed|snippet|license|licence|activation|serial|(^|[^a-z])(zip|pays|qr|vat|tva|tax|sku|iban|cvv|cvc|csc)/;
+      // The same, in the other languages of Europe a sign-in asks in (idea
+      // 1346: a Catalan university's SSO says "Introdueixi codi de
+      // verificacio", accented): a code to check, confirm or sign in with,
+      // and a code for one use.
+      var codeWordsAbroad = [
+        /(code|codi|codice|c[o\\u00f3]digo|(^|[^a-z])cod|(^|[^a-z])kod|koodi)[\\s_\\-]*(de[\\s_\\-]+|di[\\s_\\-]+|do[\\s_\\-]+|da[\\s_\\-]+|d.)?(v[e\\u00e9]rifi|verifica|valida|confirma|seguretat|seguridad|seguran|sicurezza|autentica|acc[e\\u00e9]s|accesso|weryfik|jednoraz|bezpiecz|un[\\s_\\-]+(solo|sol|s\\u00f3l)|uso[\\s_\\-]+([\\u00fau]nico)|monouso)/,
+        /(best\\u00e4tigungs|verifizierungs|sicherheits|einmal|anmelde|pr\\u00fcf)[\\s_\\-]?(code|kennwort|passwort)/,
+        /(verificatie|bevestigings|beveiligings|eenmalige|inlog)[\\s_\\-]?code/,
+        /(verifierings|verifikations|eng\\u00e5ngs|s\\u00e4kerhets|bekr\\u00e6ftelses|bekreftelses|engangs|sikkerheds|verifiserings|sikkerhets)[\\s_\\-]?(kod|kode)([^a-z]|$)/,
+        /(vahvistus|varmennus|turva|kertak\\u00e4ytt\\u00f6)[\\s_\\-]?koodi/,
+        /ov\\u011b\\u0159ovac\\u00ed[\\s_\\-]+k\\u00f3d|do\\u011frulama[\\s_\\-]+kodu|(^|[^a-z])cod[\\s_\\-]+(de[\\s_\\-]+)?verificare/
+      ];
+      function saysCodeAbroad(said) { return codeWordsAbroad.some(function (re) { return re.test(said); }); }
+      var plainCode = /code([^a-z]|$)|c[o\\u00f3]digo|codi([^a-z]|$)|codice|(^|[^a-z])kod([^a-z]|$)|koodi/;
+      var otherCode = /promo|coupon|voucher|discount|gift|cadeau|r[e\\u00e9]duc|gutschein|rabatt|descuento|descompte|cup[o\\u00f3]n|regal|sconto|buono|desconto|(^|[^a-z])vale([^a-z]|$)|korting|tarjeta|targeta|cart[a\\u00e3]o|kreditkart|postleitzahl|postal|post[\\s_\\-]?code|area[\\s_\\-]?code|dial[\\s_\\-]?code|country|referr|parrain|invit|affili|sponsor|captcha|barcode|backup|recovery|secours|r[e\\u00e9]cup|card|carte|siret|siren|product|produit|source|embed|snippet|license|licence|activation|serial|(^|[^a-z])(zip|pays|qr|vat|tva|tax|sku|iban|cvv|cvc|csc)/;
       function digitsOnly(el) {
         var kind = (el.type || 'text').toLowerCase(), mode = (el.getAttribute('inputmode') || '').toLowerCase();
         return kind === 'tel' || kind === 'number' || mode === 'numeric' || mode === 'decimal'
@@ -644,14 +657,33 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         // Not what a form's address asks: that is often a long random token.
         if (otherForm.test(about(scope).split('?')[0]) || otherPage.test(location.pathname.toLowerCase())) return false;
         if (el.closest && el.closest('[role="search"], form[role="search"]')) return false;
-        if (codeWords.test(said)) return true;
-        if (!plainCode.test(said)) return false;
+        // What is written before a box with no label of its own counts too:
+        // a line over a bare box (idea 1346).
+        var above = caption(el);
+        if (above && otherCode.test(above)) return false;
+        if (codeWords.test(said) || saysCodeAbroad(said) || codeWords.test(above) || saysCodeAbroad(above)) return true;
+        if (!plainCode.test(said) && !plainCode.test(above)) return bareCode(el, said, scope);
         // Only "code": the one thing its form asks for, and for digits or a sign-in.
         var all = scope.querySelectorAll('input');
         for (var i = 0; i < all.length; i++) {
           if (all[i] !== el && texty(all[i]) && !aside(all[i])) return false;
         }
         return digitsOnly(el) || looksLikeSignIn(el, scope);
+      }
+      // A box that says nothing of itself, alone in a sign-in's form, for a
+      // few digits: the step after the password of an SSO that labels it
+      // only in a line of its own, or not at all. A guess, so it gets this
+      // host's codes alone.
+      function bareCode(el, said, scope) {
+        if (claimsName(el) || /[a-z]{3}/.test(said.replace(/(^|\\s)(input|field|text|value|valor|valeur|wert|v\\d+|\\d+)(?=\\s|$)/g, ' '))) return false;
+        var mode = (el.getAttribute('inputmode') || '').toLowerCase(), kind = (el.type || 'text').toLowerCase();
+        var digits = mode === 'numeric' || kind === 'tel' || kind === 'number' || /\\\\d|0-9/.test(el.getAttribute('pattern') || '');
+        if (!digits || !(el.maxLength >= 4 && el.maxLength <= 8)) return false;
+        var all = scope.querySelectorAll('input');
+        for (var i = 0; i < all.length; i++) {
+          if (all[i] !== el && texty(all[i]) && !aside(all[i])) return false;
+        }
+        return looksLikeSignIn(el, scope);
       }
       // The box a code was last offered under: a click on the list can take
       // the caret out of it.

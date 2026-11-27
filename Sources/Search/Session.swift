@@ -41,8 +41,12 @@ enum Session {
         /// (Browser.openInLittleWindow). Closing that window takes out this
         /// entry and no other: two tabs can have the same address.
         var lifted: UUID? = nil
+        /// A pin never looked at: `touched` is only when its tab was made, no
+        /// look for a folded folder's peek to go by (see FolderPeek). Nil,
+        /// and so not written, for every other tab and in older sessions.
+        var unseen: Bool? = nil
 
-        enum CodingKeys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, twinID, lifted }
+        enum CodingKeys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, twinID, lifted, unseen }
     }
 
     struct Shape: Codable {
@@ -148,7 +152,7 @@ enum Session {
 // key it isn't asked for. In extensions, so the memberwise initialisers stay.
 
 extension Session.Entry {
-    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, twinID, lifted }
+    private enum Keys: String, CodingKey { case url, title, pin, name, home, groupID, pinID, touched, letGo, listed, muted, twinID, lifted, unseen }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -165,6 +169,7 @@ extension Session.Entry {
         muted = (try? c.decodeIfPresent(Bool.self, forKey: .muted)) ?? false
         twinID = try? c.decodeIfPresent(UUID.self, forKey: .twinID)
         lifted = try? c.decodeIfPresent(UUID.self, forKey: .lifted)
+        unseen = try? c.decodeIfPresent(Bool.self, forKey: .unseen)
     }
 }
 

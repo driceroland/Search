@@ -1,5 +1,7 @@
 import Foundation
 import XCTest
+import AppKit
+import CloudKit
 @testable import Search
 
 /// Sync with iCloud (ICloudSync.swift), against SYNC.md in Search-iOS: the
@@ -53,7 +55,8 @@ final class ICloudSyncTests: XCTestCase {
         }
         func send() async throws { check("send"); sends += 1 }
         func eraseZone() async throws { check("eraseZone"); erased = true }
-        func account() async -> ICloudSync.Account { check("account"); return state }
+        var accountAsks = 0
+        func account() async -> ICloudSync.Account { check("account"); accountAsks += 1; return state }
         func close() {}
     }
 
@@ -607,6 +610,26 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertEqual(engine.saved, [])
     }
 
+    /// Idea 1306: every Personal space writes its own pins record, the
+    /// first space deleted (#1326) or never there (an import's spaces) too,
+    /// and a later change to one space's pins goes up on the next publish.
+    func testEverySpaceWritesItsPinsEvenWithoutTheFirstSpace() async {
+        let mac = FakeMac(), engine = FakeEngine()
+        let home = Space(id: UUID(), name: "Zen home", colour: 1), work = Space(id: UUID(), name: "Work", colour: 2)
+        mac.spaceList = [home, work]
+        mac.pinList = [home.id: [pin("m", "https://mail.example/")], work.id: [pin("g", "https://git.example/")]]
+        let sync = await joined(mac, engine)
+        XCTAssertTrue(engine.saved.contains("pins.\(home.id.uuidString)"))
+        XCTAssertTrue(engine.saved.contains("pins.\(work.id.uuidString)"))
+        XCTAssertFalse(engine.saved.contains("pins.\(first.uuidString)"), "no record for a space this Mac doesn't have")
+        let sent = try? JSONDecoder().decode([PinDef].self, from: sync.outgoing("pins.\(home.id.uuidString)")?.data ?? Data())
+        XCTAssertEqual(sent?.map(\.letter), ["m"])
+        engine.saved = []
+        mac.pinList[work.id]?.append(pin("d", "https://docs.example/"))
+        sync.publish()
+        XCTAssertEqual(engine.saved, ["pins.\(work.id.uuidString)"])
+    }
+
     func testAnotherMacDeletingASpaceDeletesItHereButNeverTheFirst() async {
         let mac = FakeMac(), engine = FakeEngine()
         let work = Space(id: UUID(), name: "Work", colour: 1)
@@ -1100,5 +1123,117 @@ final class ICloudSyncTests: XCTestCase {
         defaults.removeObject(forKey: Sync.deviceMacKey)
         XCTAssertEqual(Sync.device(in: defaults, mac: "mac-c"), copied, "an id from before the fingerprint stays")
         XCTAssertEqual(defaults.string(forKey: Sync.deviceMacKey), "mac-c")
+    }
+
+    // MARK: - every account answer says why (idea 1330)
+
+    func testCloudKitStatusesMapToTheirAccount() {
+        XCTAssertEqual(ICloudSync.account(.available, signedInToICloud: true), .signedIn)
+        XCTAssertEqual(ICloudSync.account(.noAccount, signedInToICloud: false), .signedOut)
+        XCTAssertEqual(ICloudSync.account(.noAccount, signedInToICloud: true), .offForSearch)
+        XCTAssertEqual(ICloudSync.account(.restricted, signedInToICloud: false), .restricted)
+        XCTAssertEqual(ICloudSync.account(.temporarilyUnavailable, signedInToICloud: false), .needsAttention)
+        XCTAssertEqual(ICloudSync.account(.couldNotDetermine, signedInToICloud: false), .unreachable)
+        XCTAssertEqual(ICloudSync.account(nil, signedInToICloud: false), .unreachable, "asking failed")
+    }
+
+    func testEveryAccountAnswerSaysWhyUnderTheSwitch() async {
+        let expected: [(ICloudSync.Account, String)] = [
+            (.signedOut, "Sign in to iCloud in System Settings"),
+            (.offForSearch, "Turn on iCloud for Search in System Settings › Apple Account › iCloud"),
+            (.restricted, "iCloud is restricted on this Mac"),
+            (.needsAttention, "Your Apple Account needs attention in System Settings"),
+            (.unreachable, "Couldn't reach iCloud. Trying again."),
+        ]
+        for (state, line) in expected {
+            let engine = FakeEngine()
+            engine.state = state
+            let sync = make(FakeMac(), engine)
+            sync.retryScale = 1000 // no second try during this test
+            sync.turnOn()
+            await sync.join()
+            await until { sync.account == state }
+            XCTAssertFalse(sync.joined, "\(state)")
+            XCTAssertEqual(engine.fetches, 0, "\(state): nothing fetched or written before signing in")
+            XCTAssertEqual(sync.problem, line, "\(state)")
+            XCTAssertEqual(sync.summary(folderSyncOn: false, otherwise: "off"), line, "\(state)")
+            sync.turnOff()
+        }
+    }
+
+    func testCouldNotReachTriesAgainGentlyThenJoins() async {
+        let engine = FakeEngine()
+        engine.state = .unreachable
+        let sync = make(FakeMac(), engine)
+        sync.retryScale = 0.001 // 30 ms, 60 ms, 120 ms…
+        sync.turnOn()
+        await until { sync.retries >= 1 }
+        XCTAssertEqual(sync.problem, "Couldn't reach iCloud. Trying again.")
+        await until { sync.retries >= 3 }
+        XCTAssertEqual(sync.retryDelay, 120, "each wait longer than the last")
+        XCTAssertEqual(ICloudSync.backoff(0), 30)
+        XCTAssertEqual(ICloudSync.backoff(20), 900, "never more than 15 minutes")
+        // Never a tight loop: one ask per wait.
+        XCTAssertLessThanOrEqual(engine.accountAsks, sync.retries + 1)
+        XCTAssertEqual(engine.fetches, 0)
+
+        engine.state = .signedIn
+        await until { sync.joined }
+        XCTAssertTrue(sync.joined, "reached on a later try")
+        XCTAssertNil(sync.problem)
+        XCTAssertEqual(sync.retries, 0)
+        XCTAssertNil(sync.retryDelay)
+        let asks = engine.accountAsks
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(engine.accountAsks, asks, "no more tries once joined")
+        sync.turnOff()
+    }
+
+    func testAccountChangedAndComingBackToTheFrontJoin() async {
+        let engine = FakeEngine()
+        engine.state = .offForSearch
+        let sync = make(FakeMac(), engine)
+        sync.turnOn()
+        await until { sync.account == .offForSearch }
+        XCTAssertFalse(sync.joined)
+
+        // iCloud turned on for Search in System Settings.
+        engine.state = .signedIn
+        NotificationCenter.default.post(name: .CKAccountChanged, object: nil)
+        await until { sync.joined }
+        XCTAssertTrue(sync.joined, "joined on CKAccountChanged")
+        XCTAssertNil(sync.problem)
+        sync.turnOff()
+
+        // The Apple Account needed attention, sorted out while away.
+        let other = FakeEngine()
+        other.state = .needsAttention
+        let again = make(FakeMac(), other)
+        again.turnOn()
+        await until { again.account == .needsAttention }
+        XCTAssertEqual(again.problem, "Your Apple Account needs attention in System Settings")
+        other.state = .signedIn
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        await until { again.joined }
+        XCTAssertTrue(again.joined, "joined when the app came back to the front")
+        again.turnOff()
+    }
+
+    func testBothSyncsOnSaysWhyICloudIsNotRunning() {
+        defaults.set(true, forKey: ICloudSync.onKey)
+        let sync = make(FakeMac(), FakeEngine())
+        // `start` refuses while the folder sync is on: no engine.
+        XCTAssertTrue(sync.on)
+        XCTAssertNil(sync.engine)
+        XCTAssertEqual(sync.summary(folderSyncOn: true, otherwise: "off"),
+                       "Not syncing while Sync Macs through a folder is on. Turn that off")
+        XCTAssertEqual(sync.summary(folderSyncOn: false, otherwise: "off"), "Checking iCloud…")
+    }
+
+    func testTheRowSaysWhichProfileSyncs() {
+        XCTAssertNil(ICloudSync.profileLine(several: false, name: "Personal", elsewhere: false), "one profile: nothing about profiles")
+        XCTAssertEqual(ICloudSync.profileLine(several: true, name: "Personal", elsewhere: false), "Syncs the Personal profile")
+        XCTAssertEqual(ICloudSync.profileLine(several: true, name: "Me", elsewhere: true),
+                       "Syncs the Me profile · Switch to Me to sync")
     }
 }

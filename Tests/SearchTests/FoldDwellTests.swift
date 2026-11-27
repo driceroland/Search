@@ -44,4 +44,22 @@ final class FoldDwellTests: XCTestCase {
         XCTAssertTrue(Fold.edgeBrings(pressed: 2))
         XCTAssertTrue(Fold.edgeBrings(pressed: 4))
     }
+
+    /// Airtable's collapsed sidebar has its button 6–12 points in, inside
+    /// the hidden column's 28-point band: resting there brought the column
+    /// out over it and the click went to the column (idea 1308). Off the
+    /// very edge, over something of the page's, only the edge itself does.
+    func testTheBandIsThePagesWhereItHasSomethingToPress() {
+        XCTAssertEqual(Fold.trueEdge, 4)
+        XCTAssertLessThan(Fold.trueEdge, Fold.hiddenEdge)
+        // The very edge always.
+        XCTAssertEqual(Fold.edgeComes(distance: 0, pageHas: true), true)
+        XCTAssertEqual(Fold.edgeComes(distance: 3.9, pageHas: nil), true)
+        // Off it: over a button, never; over plain page, yes; not yet
+        // answered, wait.
+        XCTAssertEqual(Fold.edgeComes(distance: 8, pageHas: true), false)
+        XCTAssertEqual(Fold.edgeComes(distance: 8, pageHas: false), true)
+        XCTAssertNil(Fold.edgeComes(distance: 8, pageHas: nil))
+        XCTAssertEqual(Fold.edgeComes(distance: 27, pageHas: false), true)
+    }
 }

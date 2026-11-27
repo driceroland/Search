@@ -881,10 +881,13 @@ struct AddressField: NSViewRepresentable {
                 // (HomeTiles.swift), the way down to them by keys.
                 NotificationCenter.default.post(name: HomeTiles.focusFirst, object: browser)
                 return true
-            case #selector(NSResponder.deleteWordBackward(_:)):
-                // ⌥⌫ over an offered ending lets go of it and takes the last
-                // word typed, as it does with no ending there. Left to the
-                // text view it would only take the selected ending.
+            case #selector(NSResponder.deleteWordBackward(_:)),
+                 #selector(NSResponder.deleteToBeginningOfLine(_:)):
+                // ⌥⌫ or ⌘⌫ over an offered ending lets go of it and takes the
+                // last word typed, or the line, as it does with no ending there.
+                // Left to the text view they only took the selected ending,
+                // which the field then offered again: ⌘⌫ did nothing until a
+                // letter was taken with ⌫ (idea 1334).
                 deleting = true
                 let selected = textView.selectedRange()
                 guard browser.ending != nil, selected.length > 0,
@@ -892,7 +895,11 @@ struct AddressField: NSViewRepresentable {
                 else { return false }
                 textView.delete(nil)
                 deleting = true
-                textView.deleteWordBackward(nil)
+                if command == #selector(NSResponder.deleteWordBackward(_:)) {
+                    textView.deleteWordBackward(nil)
+                } else {
+                    textView.deleteToBeginningOfLine(nil)
+                }
                 return true
             case #selector(NSResponder.deleteBackward(_:)) where textView.string.isEmpty && browser.siteChip != nil:
                 // ⌫ on an empty field takes the site out of it.

@@ -77,6 +77,29 @@ try:
     pf(action="delete", name="Docs")
     st = pf(action="state")
     t.ok("delete Docs: b goes up into Work", ["b", "Work"] in (st.get("saved") or []), st.get("saved"))
+    # Peek into folded folders (#1585): off unless turned on; on, the folded
+    # folder's own pages, the one looked at last first. Times set by `age`,
+    # not by waiting; a hidden probe shows no list, so it is opened here as
+    # its row's click does.
+    pf(action="fold", name="Work")
+    st = pf(action="peek", name="Work")
+    t.ok("peek: off unless turned on", st.get("peekOn") is False and st.get("peek") == [] and st.get("refusal") == "off", st)
+    ids = {o[1]: o[0] for o in st.get("order") or []}
+    sv.sp("age", id=ids["a"], seconds=600); sv.sp("age", id=ids["b"], seconds=60)
+    st = pf(action="peek", name="Work", setting=True)
+    t.ok("peek: Work's pages, b looked at last first", st.get("peek") == [ids["b"], ids["a"]], (st.get("peek"), ids))
+    t.ok("peek: not c, at the top", ids["c"] not in (st.get("peek") or []), st.get("peek"))
+    t.ok("peek: no list while the window isn't in front (hidden probe)", st.get("refusal") == "window not in front", st.get("refusal"))
+    st = pf(action="peek", name="Work", open=1)
+    folded = {f["name"]: f["collapsed"] for f in st.get("folders") or []}
+    t.ok("peek: a click on a opens it", st.get("front") == ids["a"], st.get("front"))
+    t.ok("peek: …and Work stays folded, a drawn under it", folded.get("Work") is True
+         and any(x[0] == "pin" and x[2] == "a" for x in st.get("lines") or []), (folded, st.get("lines")))
+    st = pf(action="peek", name="Work")
+    t.ok("peek: the page on screen first now", st.get("peek") == [ids["a"], ids["b"]], st.get("peek"))
+    pf(action="open", name="Work")
+    st = pf(action="peek", name="Work")
+    t.ok("peek: nothing for an open folder", st.get("peek") == [] and st.get("refusal") == "not a folded folder", st.get("peek"))
     pf(action="off")
     st = pf(action="state")
     t.ok("off: the setting is off (the column draws flat rows)", st.get("setting") is False, st.get("setting"))

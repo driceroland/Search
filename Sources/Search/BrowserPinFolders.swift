@@ -57,6 +57,22 @@ extension Browser {
             }
     }
 
+    /// A folded folder's pages as its peek lists them (PinTree.peek), none
+    /// while Settings › Spaces & Pins › Peek into folded folders is off. A
+    /// page on screen is being looked at now, as the session counts it.
+    func folderPeek(_ id: UUID) -> [Tab] {
+        guard prefs.pinFolderPeek, showsPinFolderRows else { return [] }
+        let rows = listedPins.filter { !$0.everywhere }
+        let byID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let visible = visibleTabIDs
+        let now = Date()
+        let pins = rows.map { tab -> (id: UUID, folder: UUID?, looked: Date?) in
+            let looked: Date? = visible.contains(tab.id) ? now : (tab.looked ? tab.touched : nil)
+            return (tab.id, tab.pinFolder, looked)
+        }
+        return PinTree.peek(id, pins: pins, folders: pinFolders).compactMap { byID[$0] }
+    }
+
     /// A row's pins with the rows in the order their folders draw them:
     /// the squares as they are, the rows every space shows first (see
     /// keepBlocks), then this space's own in folder order, then the rest.

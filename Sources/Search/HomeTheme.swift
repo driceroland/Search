@@ -2,6 +2,12 @@ import SwiftUI
 import AppKit
 
 /// A painted background behind the blank tab. Off unless asked for.
+///
+/// The ten wall paintings and the stickers were taken out on 27 Nov 2026
+/// (Settings cut in half, Drice's call): Off, Solid colour, Gradient and
+/// Image are left. Their names are still known, so a line one of them left
+/// in the settings, or brought by sync from an older build, reads as Off
+/// (see stored) and is left as it is.
 enum HomeTheme: String, CaseIterable, Identifiable {
     case off
     case openRoad, desertHighway, coastalCliffs, mountainLake, riceTerraces
@@ -12,13 +18,11 @@ enum HomeTheme: String, CaseIterable, Identifiable {
 
     /// The groups the Themes page offers, each with its own presets.
     enum Family: String, CaseIterable, Identifiable {
-        case off, wall, stickers, solid, gradient, image
+        case off, solid, gradient, image
         var id: String { rawValue }
         var title: String {
             switch self {
             case .off: return "Off"
-            case .wall: return "Wall painting"
-            case .stickers: return "Stickers"
             case .solid: return "Solid colour"
             case .gradient: return "Gradient"
             case .image: return "Image"
@@ -28,8 +32,6 @@ enum HomeTheme: String, CaseIterable, Identifiable {
         var first: HomeTheme {
             switch self {
             case .off: return .off
-            case .wall: return .openRoad
-            case .stickers: return .stickers
             case .solid: return .solid
             case .gradient: return .gradient
             case .image: return .custom
@@ -41,8 +43,7 @@ enum HomeTheme: String, CaseIterable, Identifiable {
         switch self {
         case .off: return .off
         case .openRoad, .desertHighway, .coastalCliffs, .mountainLake, .riceTerraces,
-             .northernLights, .saturnRise, .moonscape, .cityAtNight, .monsoonForest: return .wall
-        case .stickers: return .stickers
+             .northernLights, .saturnRise, .moonscape, .cityAtNight, .monsoonForest, .stickers: return .off
         case .solid: return .solid
         case .gradient: return .gradient
         case .custom: return .image
@@ -69,13 +70,13 @@ enum HomeTheme: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The ten wall paintings (the first family).
-    static let walls: [HomeTheme] = [.openRoad, .desertHighway, .coastalCliffs, .mountainLake, .riceTerraces,
-                                     .northernLights, .saturnRise, .moonscape, .cityAtNight, .monsoonForest]
+    /// Whether it is one of the families taken out: a wall or the stickers.
+    var retired: Bool { self != .off && family == .off }
 
-    /// Reads a stored name.
+    /// Reads a stored name. A wall or the stickers, taken out, is Off.
     static func stored(_ name: String) -> HomeTheme? {
-        return HomeTheme(rawValue: name)
+        guard let theme = HomeTheme(rawValue: name) else { return nil }
+        return theme.retired ? .off : theme
     }
 
     /// Where a chosen image is kept: a copy, so moving or deleting the
@@ -297,6 +298,7 @@ struct HomeBackground: View {
     /// Whether a theme lies behind a blank tab: a chosen picture that can't
     /// be read shows as Off.
     @MainActor static func behind(_ prefs: Preferences) -> Bool {
+        guard !prefs.homeTheme.retired else { return false }
         switch prefs.homeTheme {
         case .off: return false
         case .custom: return load(prefs.homeThemeImage) != nil
@@ -309,27 +311,12 @@ struct HomeBackground: View {
     var image: String?
     /// A thumbnail is drawn at exactly its size.
     var thumbnail = false
-    /// A different wall or pack each day; decided here, when the tab is drawn.
-    var shuffle = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.displayScale) private var scale
 
-    /// Today's wall: the chosen one, or with Shuffle the family's pick for
-    /// this date (the day number steps through the family, so no two days
-    /// in a row are the same). A date check, not a timer.
-    private var today: (theme: HomeTheme, tuning: HomeTuning) {
-        guard shuffle, !thumbnail, theme == .stickers || theme.family == .wall else { return (theme, tuning) }
-        let day = Calendar.current.ordinality(of: .day, in: .era, for: Date()) ?? 0
-        if theme == .stickers {
-            var t = tuning
-            t.pack = StickerPack.allCases[day % StickerPack.allCases.count]
-            return (theme, t)
-        }
-        return (HomeTheme.walls[day % HomeTheme.walls.count], tuning)
-    }
-
     var body: some View {
-        let theme = today.theme
+        // A wall or the stickers, taken out, draws nothing (Off).
+        let theme = self.theme.retired ? .off : self.theme
         return GeometryReader { box in
             ZStack {
                 Palette.ground
@@ -366,7 +353,7 @@ struct HomeBackground: View {
     /// A preview shows the theme whole and at full strength, so the families
     /// can be told apart; Intensity is for the real background.
     private var shown: HomeTuning {
-        var t = today.tuning
+        var t = tuning
         if thumbnail { t.intensity = 1 }
         return t
     }
@@ -430,8 +417,6 @@ struct HomeBackground: View {
         let whole = CGRect(origin: .zero, size: size)
         let pen = Pen(dark: dark)
         switch theme {
-        case .stickers:
-            HomeStickers.paint(context, size: size, t: t, dark: dark)
         case .solid:
             context.fill(Path(whole), with: .color(pen(channels(t.solid))))
         case .gradient:
@@ -443,10 +428,8 @@ struct HomeBackground: View {
                 Gradient(colors: [pen(channels(t.gradientA)), pen(channels(t.gradientB))]),
                 startPoint: CGPoint(x: mid.x - d.x * half, y: mid.y - d.y * half),
                 endPoint: CGPoint(x: mid.x + d.x * half, y: mid.y + d.y * half)))
-        case .off, .custom:
-            break
         default:
-            HomeWalls.paint(theme, context, size: size, dark: dark)
+            break
         }
         // Intensity: the theme blended toward the plain ground.
         if t.intensity < 0.999 {

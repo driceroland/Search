@@ -1050,6 +1050,12 @@ private struct TabPill: View, Equatable {
                 .padding(.horizontal, 7)
                 .padding(.vertical, 6)
                 .frame(width: span)
+                // Its page plays sound, or was muted: the icons-only tile's
+                // speaker, in the same corner, a press muting it (idea 1328).
+                .overlay(alignment: .bottomTrailing) {
+                    if CornerSpeaker.shows(for: tab), !lettering { CornerSpeaker(tab: tab) }
+                }
+                .animation(Motion.quick, value: CornerSpeaker.shows(for: tab))
             } else {
                 loose
             }
