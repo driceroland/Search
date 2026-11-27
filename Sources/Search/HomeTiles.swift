@@ -260,11 +260,17 @@ extension Browser {
 // MARK: - drawn
 
 struct HomeTiles: View {
-    /// Two rows of six.
+    /// Two short lines of chips at most, usually.
     static let most = 12
-    static let tileWidth: CGFloat = 76
-    static let tileHeight: CGFloat = 72
-    static let gap: CGFloat = 8
+    /// A chip: a small icon and the site's name, in a quiet capsule.
+    static let chipHeight: CGFloat = 28
+    static let gap: CGFloat = 6
+    static let padding: CGFloat = 10
+    static let iconSize: CGFloat = 14
+    static let iconGap: CGFloat = 6
+    /// A name longer than this ends in an ellipsis.
+    static let labelWidth: CGFloat = 140
+    static let fontSize: CGFloat = 12
 
     /// Asked through the field: Tab from an empty field on a new tab goes
     /// to the first tile (Omnibox).
@@ -303,9 +309,43 @@ struct HomeTiles: View {
         self.editorForTest = editorForTest
     }
 
-    /// How many to a row in `width`: six in the field's width, three at least.
-    static func columns(_ width: CGFloat) -> Int {
-        min(6, max(3, Int((width + gap) / (tileWidth + gap))))
+    /// What a tile reads as: its name, or its site when it has none.
+    static func label(_ tile: Bookmark) -> String {
+        tile.unnamed ? tile.address.map(TileAddress.shown) ?? "" : tile.title
+    }
+
+    /// A chip's width, as the row lays it out: the name measured in the
+    /// chip's type and cut at `labelWidth`. The + chip for nil.
+    @MainActor static func chipWidth(_ label: String?) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: fontSize)
+        guard let label else {
+            let add = ("Add" as NSString).size(withAttributes: [.font: font]).width
+            return ceil(padding * 2 + 10 + 4 + add)
+        }
+        return ceil(padding * 2 + iconSize + iconGap + labelFit(label))
+    }
+
+    /// The name's own width in the chip's type, `labelWidth` at most.
+    @MainActor static func labelFit(_ label: String) -> CGFloat {
+        let text = (label as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize)]).width
+        return min(ceil(text) + 1, labelWidth)
+    }
+
+    /// How many lines chips of `widths` take in `width`, each line filled
+    /// before the next, as ChipFlow lays them.
+    static func lines(_ widths: [CGFloat], in width: CGFloat) -> Int {
+        guard !widths.isEmpty else { return 0 }
+        var lines = 1, used: CGFloat = 0
+        for chip in widths {
+            let need = used == 0 ? chip : used + gap + chip
+            if need > width, used > 0 {
+                lines += 1
+                used = chip
+            } else {
+                used = need
+            }
+        }
+        return lines
     }
 
     /// Whether a new tab shows them now.
@@ -321,13 +361,18 @@ struct HomeTiles: View {
         return tiles + (browser.tilesEditable && tiles < most ? 1 : 0)
     }
 
+    /// The chips' widths in order, the + last when it's drawn.
+    @MainActor static func widths(_ browser: Browser) -> [CGFloat] {
+        let tiles = browser.bookmarks.tiles
+        let add = browser.tilesEditable && tiles.count < most
+        return tiles.map { chipWidth(label($0)) } + (add ? [chipWidth(nil)] : [])
+    }
+
     /// How tall they stand in `width`, nought when not drawn.
     @MainActor static func height(_ browser: Browser, width: CGFloat = Metrics.fieldWidth) -> CGFloat {
-        guard showing(browser) else { return 0 }
-        let count = count(browser)
-        guard count > 0 else { return 0 }
-        let rows = CGFloat((count + columns(width) - 1) / columns(width))
-        return rows * tileHeight + (rows - 1) * gap
+        guard showing(browser), count(browser) > 0 else { return 0 }
+        let lines = CGFloat(lines(widths(browser), in: width))
+        return lines * chipHeight + (lines - 1) * gap
     }
 
     var body: some View {
@@ -335,11 +380,13 @@ struct HomeTiles: View {
             GeometryReader { page in
                 let width = min(Metrics.fieldWidth, max(0, page.size.width - 28))
                 let top = page.size.height / 2 - 30 + 25 + 14
-                // Rows that don't fit under the field aren't drawn: a short
-                // window keeps what fits, rather than tiles under its edge.
+                // Lines that don't fit under the field are cut off: a short
+                // window keeps what fits, rather than chips under its edge.
                 let room = max(0, page.size.height - top - 16)
-                content(width: width, room: room)
+                content(width: width)
                     .frame(width: width)
+                    .frame(maxHeight: room, alignment: .top)
+                    .clipped()
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .padding(.top, top)
             }
@@ -352,7 +399,7 @@ struct HomeTiles: View {
     }
 
     @ViewBuilder
-    private func content(width: CGFloat, room: CGFloat) -> some View {
+    private func content(width: CGFloat) -> some View {
         if let editing, browser.tilesEditable {
             editor(editing)
                 .frame(width: min(380, width))
@@ -360,22 +407,13 @@ struct HomeTiles: View {
         } else {
             let editable = browser.tilesEditable
             let tiles = shownTiles
-            let all: [Bookmark?] = tiles.map { Optional($0) } + (editable && tiles.count < HomeTiles.most ? [nil] : [])
-            // Fewer than a row: as many columns as tiles, so they sit centred
-            // under the field.
-            let columns = min(HomeTiles.columns(width), max(1, all.count))
-            let rows = max(0, Int((room + HomeTiles.gap) / (HomeTiles.tileHeight + HomeTiles.gap)))
-            let fits = rows * columns
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(HomeTiles.tileWidth), spacing: HomeTiles.gap), count: columns),
-                      spacing: HomeTiles.gap) {
-                ForEach(Array(all.prefix(fits).enumerated()), id: \.element?.id) { at, tile in
-                    if let tile {
-                        tileView(tile, at: at, of: tiles.count, columns: columns, editable: editable)
-                    } else {
-                        addTile
-                    }
+            ChipFlow(gap: HomeTiles.gap) {
+                ForEach(Array(tiles.enumerated()), id: \.element.id) { at, tile in
+                    chip(tile, at: at, editable: editable)
                 }
+                if editable, tiles.count < HomeTiles.most { addChip }
             }
+            .frame(maxWidth: .infinity)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Sites")
         }
@@ -390,58 +428,56 @@ struct HomeTiles: View {
         return held.count == tiles.count ? held : tiles
     }
 
-    // MARK: a tile
+    // MARK: a chip
 
-    private func tileView(_ tile: Bookmark, at index: Int, of count: Int, columns: Int, editable: Bool) -> some View {
+    private func chip(_ tile: Bookmark, at index: Int, editable: Bool) -> some View {
         let url = tile.address
-        let label = tile.unnamed ? url.map(TileAddress.shown) ?? "" : tile.title
+        let label = HomeTiles.label(tile)
         let site = url.map(TileAddress.shown) ?? ""
         let focused = focus == .tile(tile.id)
         let lit = hovered == tile.id || focused
-        return VStack(spacing: 6) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(lit ? Palette.wash : Palette.ink.opacity(0.035))
+        return HStack(spacing: HomeTiles.iconGap) {
+            Group {
                 if let icon = Favicons.shared.cached(for: url) {
-                    Mark(icon: icon, letter: "", size: 22)
+                    Mark(icon: icon, letter: "", size: HomeTiles.iconSize)
                 } else {
-                    // The site's letter on the tile's own square, not a
-                    // second square inside it.
                     Text(verbatim: HomeTiles.letter(label))
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(lit ? Palette.ink : Palette.muted)
-                }
-            }
-            .frame(width: 44, height: 44)
-            .overlay(alignment: .topTrailing) {
-                if editable, hovered == tile.id, dragged == nil {
-                    Button { begin(.tile(tile.id)) } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(Palette.muted)
-                            .frame(width: 18, height: 18)
-                            .background(Circle().fill(Palette.ground))
-                            .overlay(Circle().strokeBorder(Palette.hairline))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Edit")
-                    .offset(x: 7, y: -7)
-                    .accessibilityHidden(true)
+                        .frame(width: HomeTiles.iconSize, height: HomeTiles.iconSize)
+                        .background(RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(Palette.ink.opacity(0.05)))
                 }
             }
             Text(verbatim: label)
-                .font(.system(size: 11))
-                .foregroundStyle(lit ? Palette.ink : Palette.muted)
+                .font(.system(size: HomeTiles.fontSize))
+                .foregroundStyle(lit ? Palette.ink : Palette.ink.opacity(0.78))
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(maxWidth: HomeTiles.tileWidth - 4)
+                .frame(width: HomeTiles.labelFit(label), alignment: .leading)
         }
-        .frame(width: HomeTiles.tileWidth, height: HomeTiles.tileHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(focused ? Palette.faint : .clear, lineWidth: 1)
-        )
-        .contentShape(Rectangle())
+        .padding(.horizontal, HomeTiles.padding)
+        .frame(height: HomeTiles.chipHeight)
+        // Focused by keys, as hovered: the fill a shade deeper.
+        .background(Capsule(style: .continuous).fill(lit ? Palette.ink.opacity(0.07) : Palette.ink.opacity(0.035)))
+        .background(WallBacking(shape: Capsule(style: .continuous)))
+        .overlay(alignment: .topTrailing) {
+            // Hovered, a small × to take it off; right-click for the rest.
+            if editable, hovered == tile.id, dragged == nil {
+                Button { remove(tile.id) } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 15, height: 15)
+                        .background(Circle().fill(Palette.ground))
+                        .overlay(Circle().strokeBorder(Palette.hairline))
+                }
+                .buttonStyle(.plain)
+                .help("Remove")
+                .offset(x: 4, y: -5)
+                .accessibilityHidden(true)
+            }
+        }
+        .contentShape(Capsule())
         .opacity(dragged == tile.id ? 0.4 : 1)
         .help(site)
         .onHover { inside in
@@ -457,7 +493,7 @@ struct HomeTiles: View {
         .focusable()
         .focusEffectDisabled()
         .focused($focus, equals: .tile(tile.id))
-        .onKeyPress(phases: .down) { press in key(press, tile: tile, at: index, of: count, columns: columns, editable: editable) }
+        .onKeyPress(phases: .down) { press in key(press, tile: tile, at: index, editable: editable) }
         .contextMenu {
             Button("Open in New Tab") { if let url { browser.open(url, foreground: true, from: browser.active) } }
             if editable {
@@ -480,16 +516,14 @@ struct HomeTiles: View {
                               remove: { remove(tile.id) }))
     }
 
-    /// The keys on a tile: Return or Space opens it (⌘ behind), the arrows
-    /// go from tile to tile, ⌘ with an arrow moves it, ⌫ removes it, ⌥Return
-    /// edits it, Escape goes back to the field.
-    private func key(_ press: KeyPress, tile: Bookmark, at index: Int, of count: Int, columns: Int, editable: Bool) -> KeyPress.Result {
+    /// The keys on a chip: Return or Space opens it (⌘ behind), the arrows
+    /// go from chip to chip, ⌘ with an arrow moves it, ⌫ removes it,
+    /// ⌥Return edits it, Escape goes back to the field.
+    private func key(_ press: KeyPress, tile: Bookmark, at index: Int, editable: Bool) -> KeyPress.Result {
         let command = press.modifiers.contains(.command)
         let step: Int? = switch press.key {
-        case .leftArrow: -1
-        case .rightArrow: 1
-        case .upArrow: -columns
-        case .downArrow: columns
+        case .leftArrow, .upArrow: -1
+        case .rightArrow, .downArrow: 1
         default: nil
         }
         if let step {
@@ -528,29 +562,23 @@ struct HomeTiles: View {
         }
     }
 
-    private var addTile: some View {
+    private var addChip: some View {
         let focused = focus == .add
         let lit = addHovered || focused
-        return VStack(spacing: 6) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Palette.hairline, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(lit ? Palette.wash : .clear))
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(lit ? Palette.ink : Palette.muted)
-            }
-            .frame(width: 44, height: 44)
+        return HStack(spacing: 4) {
+            Image(systemName: "plus")
+                .font(.system(size: 10, weight: .medium))
+                .frame(width: 10)
             Text("Add")
-                .font(.system(size: 11))
-                .foregroundStyle(lit ? Palette.ink : Palette.muted)
+                .font(.system(size: HomeTiles.fontSize))
         }
-        .frame(width: HomeTiles.tileWidth, height: HomeTiles.tileHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(focused ? Palette.faint : .clear, lineWidth: 1)
-        )
-        .contentShape(Rectangle())
+        .foregroundStyle(lit ? Palette.ink : Palette.muted)
+        .padding(.horizontal, HomeTiles.padding)
+        .frame(height: HomeTiles.chipHeight)
+        // Fainter than a site's chip until hovered or focused.
+        .background(Capsule(style: .continuous).fill(lit ? Palette.ink.opacity(0.07) : Palette.ink.opacity(0.02)))
+        .background(WallBacking(shape: Capsule(style: .continuous)))
+        .contentShape(Capsule())
         .onHover { addHovered = $0 }
         .onTapGesture { begin(.new) }
         .focusable()
@@ -559,7 +587,7 @@ struct HomeTiles: View {
         .onKeyPress(phases: .down) { press in
             switch press.key {
             case .return, .space: begin(.new); return .handled
-            case .leftArrow:
+            case .leftArrow, .upArrow:
                 if let last = shownTiles.last { focus = .tile(last.id) }
                 return .handled
             case .escape:
@@ -697,6 +725,63 @@ struct HomeTiles: View {
         guard browser.tilesEditable else { return }
         browser.bookmarks.moveTile(id, to: place)
         DispatchQueue.main.async { focus = .tile(id) }
+    }
+}
+
+/// Chips side by side, each line centred, wrapping to the next when the
+/// line is full: the same rule as HomeTiles.lines.
+struct ChipFlow: Layout {
+    var gap: CGFloat
+
+    private func rows(_ sizes: [CGSize], width: CGFloat) -> [[Int]] {
+        var rows: [[Int]] = [], row: [Int] = [], used: CGFloat = 0
+        for (i, size) in sizes.enumerated() {
+            let need = row.isEmpty ? size.width : used + gap + size.width
+            if need > width, !row.isEmpty {
+                rows.append(row)
+                row = [i]
+                used = size.width
+            } else {
+                row.append(i)
+                used = need
+            }
+        }
+        if !row.isEmpty { rows.append(row) }
+        return rows
+    }
+
+    private func lineWidth(_ line: [Int], _ sizes: [CGSize]) -> CGFloat {
+        var sum: CGFloat = 0
+        for i in line { sum += sizes[i].width }
+        return sum + gap * CGFloat(max(0, line.count - 1))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let width = proposal.width ?? .infinity
+        let lines = rows(sizes, width: width)
+        var height: CGFloat = 0, widest: CGFloat = 0
+        for line in lines {
+            height += line.map { sizes[$0].height }.max() ?? 0
+            widest = max(widest, lineWidth(line, sizes))
+        }
+        height += gap * CGFloat(max(0, lines.count - 1))
+        return CGSize(width: proposal.width ?? widest, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        var y = bounds.minY
+        for line in rows(sizes, width: bounds.width) {
+            let lineWidth = lineWidth(line, sizes)
+            let lineHeight = line.map { sizes[$0].height }.max() ?? 0
+            var x = bounds.minX + (bounds.width - lineWidth) / 2
+            for i in line {
+                subviews[i].place(at: CGPoint(x: x, y: y + (lineHeight - sizes[i].height) / 2), proposal: ProposedViewSize(sizes[i]))
+                x += sizes[i].width + gap
+            }
+            y += lineHeight + gap
+        }
     }
 }
 

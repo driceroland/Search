@@ -562,7 +562,7 @@ enum Reader {
     static var look: Look {
         get {
             // On unless turned off (Drice, 25 Nov 2026), as Preferences reads it.
-            guard Store.settings.object(forKey: "reader.follows") as? Bool ?? true else { return .light }
+            guard Retired.on("reader.follows") else { return .light }
             return Store.settings.string(forKey: "reader.look").flatMap(Look.init) ?? .system
         }
         set { Store.settings.set(newValue.rawValue, forKey: "reader.look") }

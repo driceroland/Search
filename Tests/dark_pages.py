@@ -31,12 +31,25 @@ PAGES = {
     "/dark": "<style>body{background:#fff;color:#222}"
              "@media (prefers-color-scheme: dark){body{background:#111;color:#eee}}</style>"
              "<h2>A site with a dark look of its own</h2>",
+    # A light site with sheets of its own and a light frame from another
+    # site in it, as Google's sign-in prompt is on most sites.
+    "/styled": "<link rel=stylesheet href=/site.css><h2>Styled</h2><p class=card>A card, <a href=#>a link</a>.</p>"
+               "<input id=q placeholder=Search><iframe id=f src=FRAME style='width:300px;height:120px;border:0'></iframe>",
 }
+CSS = (".card{background:#f4f4f4;color:#333;border:1px solid #ddd;padding:8px}"
+       "body{background:#fff;color:#222;font:15px -apple-system} a{color:#06c} input{background:#fff;color:#111;border:1px solid #ccc}"
+       + "".join(f".c{i}{{color:#{i:03x};background:#f{i % 10}f}}" for i in range(200)))
 
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
-        body = f"<!doctype html><title>{self.path.strip('/')}</title>{PAGES.get(self.path, '')}".encode()
+        if self.path == "/site.css":
+            body = CSS.encode()
+            self.send_response(200); self.send_header("Content-Type", "text/css")
+            self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            return
+        page = PAGES.get(self.path, "").replace("FRAME", f"http://127.0.0.1:{self.server.server_port}/light")
+        body = f"<!doctype html><title>{self.path.strip('/')}</title>{page}".encode()
         self.send_response(200); self.send_header("Content-Type", "text/html")
         self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
@@ -94,6 +107,25 @@ try:
     t.ok("…seen to be dark, from outside it", seen(dark) == "dark", seen(dark))
     t.ok("…with no script, observer or sheet of ours in it", state(dark) is None, state(dark))
     shot(light, "light-darkened"); shot(dark, "dark-left-alone")
+
+    # The colours never take their own sheets for the page's: WebKit lists
+    # adopted sheets in styleSheets too, and every twin was twinned again,
+    # longer each time, until the page was over budget and left to the
+    # filter (the X report, 26 Nov: pages near black, borders gone).
+    styled = open_(f"http://localhost:{srv.server_port}/styled")
+    time.sleep(3)
+    before = (state(styled) or {}).get("colours") or {}
+    sv.cmd({"do": "eval", "id": styled, "js": "document.body.insertAdjacentHTML('beforeend', '<style>.late{color:#444}</style>')"})
+    time.sleep(2.5)
+    after = (state(styled) or {}).get("colours") or {}
+    t.ok("a styled light page is darkened in its own colours", (state(styled) or {}).get("mode") == "colours", state(styled))
+    t.ok("…its twins aren't twinned again: one more sheet, one more twin", after.get("sheets") == before.get("sheets", -1) + 1, (before, after))
+    t.ok("…and they don't grow while the page sits there", not after.get("over") and 0 < after.get("made", 0) - before.get("made", 0) < 2000, (before, after))
+    look = sv.cmd({"do": "eval", "id": styled, "js": "JSON.stringify([getComputedStyle(document.querySelector('.card')).color, getComputedStyle(document.querySelector('.card')).backgroundColor, getComputedStyle(document.getElementById('f')).colorScheme, getComputedStyle(document.documentElement).colorScheme])"}).get("value")
+    t.ok("…a light frame in it keeps its scheme, so it gets no opaque white canvas", '"normal"' in (look or ""), look)
+    hit = sv.cmd({"do": "eval", "id": styled, "js": "(function(){var q=document.getElementById('q').getBoundingClientRect(); return document.elementFromPoint(q.left+5,q.top+5).id})()"}).get("value")
+    t.ok("…and its field is still the one a click reaches", hit == "q", hit)
+    shot(styled, "styled-darkened")
 
     sv.cmd({"do": "select", "id": light}); time.sleep(0.4)
     press("shift")

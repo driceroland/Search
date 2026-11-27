@@ -74,6 +74,11 @@ final class FetchEntry: ObservableObject, Identifiable {
     var destination: URL?
     /// The name asked for, before " 2" and so on: a retry is numbered afresh.
     var retryName: String
+    /// Going to the downloads folder of its own accord, not to one you
+    /// picked: a refusal there is the folder's, and is asked about once.
+    var inDefaultFolder = false
+    /// Already asked about once after the folder refused it (idea 1324).
+    var askedAfterRefusal = false
     var download: WKDownload?
     @Published var pendingStop: StopAction?
     var operationID = UUID()
@@ -257,6 +262,29 @@ final class FetchEntry: ObservableObject, Identifiable {
         guard error.domain == NSURLErrorDomain else { return false }
         return [NSURLErrorCannotCreateFile, NSURLErrorCannotOpenFile, NSURLErrorCannotWriteToFile,
                 NSURLErrorCannotMoveFile, NSURLErrorCannotRemoveFile].contains(error.code)
+    }
+
+    /// The folder said no: WebKit's "Cannot create file" (the Networking
+    /// process writes the file, and macOS's Files and Folders privacy can
+    /// keep it out of Downloads even when Search itself may write there),
+    /// or a permission error from the file system, as itself or beneath.
+    nonisolated static func refusedByFolder(_ error: Error) -> Bool {
+        var error: NSError? = error as NSError
+        while let found = error {
+            switch found.domain {
+            case NSURLErrorDomain where [NSURLErrorCannotCreateFile, NSURLErrorCannotOpenFile,
+                                         NSURLErrorNoPermissionsToReadFile].contains(found.code):
+                return true
+            case NSCocoaErrorDomain where [NSFileWriteNoPermissionError, NSFileNoSuchFileError,
+                                           NSFileWriteVolumeReadOnlyError, NSFileWriteUnknownError].contains(found.code):
+                return true
+            case NSPOSIXErrorDomain where [Int(EPERM), Int(EACCES), Int(EROFS)].contains(found.code):
+                return true
+            default:
+                error = found.userInfo[NSUnderlyingErrorKey] as? NSError
+            }
+        }
+        return false
     }
 
     private static func reason(for error: Error) -> String {

@@ -133,6 +133,10 @@ struct ExtensionsPage: View {
                             Line(item.name, "In \(item.app)") {
                                 if extensions.installed.contains(where: { $0.id == item.id }) {
                                     Text("Added").font(.system(size: 12)).foregroundStyle(Palette.muted)
+                                } else if let twin = SafariApps.twin(of: item.name, id: item.id, among: extensions.installed) {
+                                    // The same extension, added another way: adding it again ran it twice.
+                                    Text(twin.fromStore ? "Added from the Chrome Web Store" : "Added already")
+                                        .font(.system(size: 12)).foregroundStyle(Palette.muted)
                                 } else {
                                     Pill("Add") { SafariApps.add(item, to: extensions) }
                                 }

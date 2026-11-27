@@ -298,12 +298,18 @@ struct BookmarkActions: View {
 /// › Show the bookmarks bar in the sidebar), in every space, before the pinned rows:
 /// a row for each bookmark and folder on the bar, and a line under them.
 /// A bookmark opens as it does from the bar; a folder opens as the bar's
-/// menu. With icons only, each is a tile, its name the tooltip.
+/// menu. With the column icons only, each is a tile, its name the
+/// tooltip. With the bar's own Show Icons Only, the bookmarks between two
+/// folders are tiles side by side, as many as fit across, and the folders
+/// keep their rows and names, as on the bar.
 struct SideBookmarks: View {
     let browser: Browser
     @ObservedObject var prefs: Preferences
     let bookmarks: Bookmarks
     var compact = false
+    /// The width the column has for it, inside its margins: how many tiles
+    /// go across with icons only.
+    var room: CGFloat = 0
     /// Whether it draws its line under it: not with the column's keep line
     /// (KeepLine) straight after, nothing between them, where the two read
     /// as one line drawn twice (idea 1255).
@@ -319,11 +325,51 @@ struct SideBookmarks: View {
         count == 0 ? 0 : CGFloat(count) * row + CGFloat(count - 1) * gap + (lined ? line : 0)
     }
 
+    /// What it draws, line by line, each a row's height: a row for each
+    /// bookmark and folder; with icons only (`tiles`), the bookmarks between
+    /// two folders share lines of square tiles, `row` wide, as many as fit
+    /// in `room`, in the bar's order. A line of tiles holds no folder.
+    static func lines(_ roots: [Bookmark], tiles: Bool, room: CGFloat, row: CGFloat) -> [[Bookmark]] {
+        guard tiles else { return roots.map { [$0] } }
+        let across = max(1, Int((room + gap) / (row + gap)))
+        var lines: [[Bookmark]] = []
+        var run: [Bookmark] = []
+        for node in roots {
+            if node.isFolder {
+                if !run.isEmpty { lines.append(run); run = [] }
+                lines.append([node])
+            } else {
+                run.append(node)
+                if run.count == across { lines.append(run); run = [] }
+            }
+        }
+        if !run.isEmpty { lines.append(run) }
+        return lines
+    }
+
+    /// Show Icons Only, in the column: not with the column icons only,
+    /// where every bookmark is a tile already.
+    static func tiles(_ prefs: Preferences, compact: Bool) -> Bool {
+        prefs.bookmarksIconsOnly && !compact
+    }
+
     var body: some View {
+        let tiles = SideBookmarks.tiles(prefs, compact: compact)
+        let lines = SideBookmarks.lines(bookmarks.roots, tiles: tiles, room: room, row: prefs.sideRow)
         VStack(spacing: 0) {
             VStack(alignment: compact ? .center : .leading, spacing: SideBookmarks.gap) {
-                ForEach(bookmarks.roots) { node in
-                    Row(browser: browser, prefs: prefs, bookmarks: bookmarks, node: node, compact: compact)
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    if tiles, let first = line.first, !first.isFolder {
+                        HStack(spacing: SideBookmarks.gap) {
+                            ForEach(line) { node in
+                                Row(browser: browser, prefs: prefs, bookmarks: bookmarks, node: node, compact: false, tile: true)
+                            }
+                        }
+                    } else {
+                        ForEach(line) { node in
+                            Row(browser: browser, prefs: prefs, bookmarks: bookmarks, node: node, compact: compact)
+                        }
+                    }
                 }
             }
             if lined {
@@ -345,6 +391,9 @@ struct SideBookmarks: View {
         let bookmarks: Bookmarks
         let node: Bookmark
         let compact: Bool
+        /// One of a line of tiles (Show Icons Only): its icon alone, its
+        /// name on hover.
+        var tile = false
         @State private var hovering = false
 
         private var url: URL? { node.url.flatMap(URL.init(string:)) }
@@ -354,6 +403,8 @@ struct SideBookmarks: View {
             Group {
                 if compact {
                     mark.frame(width: Metrics.iconTile, height: Metrics.iconTile)
+                } else if tile {
+                    mark.frame(width: prefs.sideRow, height: prefs.sideRow)
                 } else {
                     HStack(spacing: 8) {
                         mark.frame(width: 15)
@@ -394,7 +445,7 @@ struct SideBookmarks: View {
             }
             .onHover { hovering = $0 }
             .contextMenu { BookmarkActions(browser: browser, bookmarks: bookmarks, node: node) }
-            .help(compact ? title : (node.url ?? node.title))
+            .help(compact ? title : tile ? BookmarksBar.Item.tip(node, iconsOnly: true) : (node.url ?? node.title))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(title)
             .accessibilityAddTraits(node.isFolder ? .isButton : .isLink)
@@ -407,8 +458,9 @@ struct SideBookmarks: View {
                     .font(.system(size: compact ? 12 : 11))
                     .foregroundStyle(Palette.muted)
             } else {
-                // Letters or icons, as the tabs show them.
-                Mark(icon: prefs.glyph == .icons ? Favicons.shared.cached(for: node.address) : nil,
+                // Letters or icons, as the tabs show them; a tile its icon,
+                // as on the bar.
+                Mark(icon: tile || prefs.glyph == .icons ? Favicons.shared.cached(for: node.address) : nil,
                      letter: String((node.host ?? "•").prefix(1)).uppercased(), size: compact ? 16 : 15)
             }
         }

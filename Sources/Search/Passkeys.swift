@@ -69,6 +69,12 @@ final class Passkeys: NSObject {
         }
     }
 
+    /// The same question, put from Settings › Passwords › Passkeys. The
+    /// field never puts it (see wait), so without this a Mac that has never
+    /// been asked offers no passkeys under any field until some site's own
+    /// passkey button happens to be pressed.
+    static func ask(_ then: @escaping () -> Void) { ensure(then) }
+
     // MARK: - a ceremony
 
     /// How many a page has asked for, and the last as it was checked — for

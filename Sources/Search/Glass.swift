@@ -34,6 +34,32 @@ extension Browser {
     /// whenever it shows, sliding out or back in included.
     var glassUnder: Bool { glassy && !folded }
 
+    /// The column on its way off the glass with ⌘S, over the page that
+    /// already has its room, sliding or fading: it brings the glass along,
+    /// a pane of its own. Left to the window's, it had none while the page
+    /// waited to be drawn, and the page, white, showed through it; folded,
+    /// mid-slide, it took the opaque ground of a column out over the page,
+    /// and snapped from glass to a flat colour (idea 1317). Frosted either
+    /// way: Liquid Glass of its own would bend the page under it.
+    var columnGlass: Bool { glassy && leavingOnGlass }
+
+    /// Whether the column lays its own opaque ground and wash.
+    var columnGround: Bool { !glassUnder && !columnGlass }
+
+    /// The column wearing the glass while it leaves, or back to what it
+    /// wears at rest: at once, or `after` the slide.
+    func leaveOnGlass(_ on: Bool, after delay: TimeInterval = 0) {
+        leaveTicket += 1
+        let ticket = leaveTicket
+        let set = { [weak self] in
+            guard let self, ticket == self.leaveTicket, self.leavingOnGlass != on else { return }
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { self.leavingOnGlass = on }
+        }
+        if delay <= 0 { set() } else { DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { set() } } }
+    }
+
     /// The window under the views: clear for glass, otherwise the colour of
     /// the ground, so a resize or a slide never shows another colour at the
     /// edge for a frame.
@@ -55,6 +81,8 @@ extension Browser {
 struct GlassGround: View {
     @ObservedObject var prefs: Preferences
     let look: SpaceLook?
+    /// The Mac's frosted blur whatever the style (see Browser.columnGlass).
+    var frosted = false
     @Environment(\.washStrength) private var strength
     @Environment(\.washRoom) private var room
     @Environment(\.colorScheme) private var scheme
@@ -83,7 +111,7 @@ struct GlassGround: View {
     }
 
     @ViewBuilder private var material: some View {
-        if prefs.glassStyle == .liquid, #available(macOS 26, *) {
+        if !frosted, prefs.glassStyle == .liquid, #available(macOS 26, *) {
             LiquidGlass()
         } else {
             BehindWindow()

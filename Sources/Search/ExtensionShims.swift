@@ -650,7 +650,8 @@ enum ExtensionShims {
       // Taken now, not looked up at each use: a sandbox that later locks
       // the globals away (MetaMask's LavaMoat) would break the shim's own
       // code that needs them — every fetch of a Request, every import.
-      const { URL, FileReader, Response, Blob, File, DOMException, HTMLImageElement, HTMLAnchorElement, Element } = root;
+      const { URL, FileReader, Response, Blob, File, DOMException, HTMLImageElement, HTMLAnchorElement, Element,
+              HTMLIFrameElement, ReadableStream, atob, btoa, CryptoKey, WeakRef } = root;
       const chrome = root.chrome || root.browser;
       // A page's own world, where an extension's MAIN-world script runs with
       // this before it, has no extension APIs. Nothing to mend there, and
@@ -742,7 +743,13 @@ enum ExtensionShims {
         // came again — Cosmos's button, and the one on its images, did
         // nothing. WebKit's `browser` already is what the polyfill makes.
         const ownBrowser = key === "browser" && typeof ServiceWorkerGlobalScope !== "undefined" && root instanceof ServiceWorkerGlobalScope;
-        try { Object.defineProperty(root, key, { configurable: key === "browser", enumerable: d.enumerable, get: () => value, set: (v) => { if (!ownBrowser && carries(v)) value = v; } }); } catch (e) {}
+        // The worker's goes on the global's prototype: LavaMoat takes only
+        // own globals, so MetaMask's worker heard nothing once it started.
+        const holder = ownBrowser ? Object.getPrototypeOf(root) : root;
+        try {
+          Object.defineProperty(holder, key, { configurable: key === "browser", enumerable: d.enumerable, get: () => value, set: (v) => { if (!ownBrowser && carries(v)) value = v; } });
+          if (holder !== root) delete root[key];
+        } catch (e) {}
       }
       // On a web page this is a content script: only Chrome's behaviour is
       // mended there, no API that Chrome doesn't give content scripts either.
@@ -1248,9 +1255,9 @@ enum ExtensionShims {
           while (todo.length && n++ < 20000) {
             const v = todo.pop();
             if (!v || typeof v !== "object" || seen.has(v)) continue;
-            if (v instanceof root.CryptoKey) return true;
+            if (v instanceof CryptoKey) return true;
             seen.add(v);
-            if (ArrayBuffer.isView(v) || v instanceof ArrayBuffer || (root.Blob && v instanceof root.Blob)) continue;
+            if (ArrayBuffer.isView(v) || v instanceof ArrayBuffer || (Blob && v instanceof Blob)) continue;
             if (v instanceof Map) { for (const [k, x] of v) todo.push(k, x); continue; }
             if (v instanceof Set) { for (const x of v) todo.push(x); continue; }
             for (const k of Object.keys(v)) todo.push(v[k]);
@@ -1628,7 +1635,11 @@ enum ExtensionShims {
           if (proto) {
             Object.defineProperty(proto, "userAgent", { get: () => chromeUA, configurable: true });
             Object.defineProperty(proto, "appVersion", { get: () => chromeUA.replace(/^Mozilla\//, ""), configurable: true });
-            Object.defineProperty(proto, "vendor", { get: () => "Google Inc.", configurable: true });
+            // A page's only: Chrome's worker has no navigator.vendor (the
+            // spec gives it to windows alone), and a worker that sets its
+            // own found ours read-only. ClickUp's, a module and so strict,
+            // threw on `navigator.vendor = …` and never started (idea 1348).
+            if (!worker) Object.defineProperty(proto, "vendor", { get: () => "Google Inc.", configurable: true });
             if (!("userAgentData" in navigator)) {
               const major = "__SEARCH_CHROME__".split(".")[0];
               const brands = [{ brand: "Chromium", version: major }, { brand: "Google Chrome", version: major }, { brand: "Not.A/Brand", version: "99" }];

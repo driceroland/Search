@@ -49,6 +49,21 @@ final class PopupGestureTests: XCTestCase {
         XCTAssertFalse(permission.takeHandOff(origin: frame, now: 25.5))
     }
 
+    /// Idea 1315: OneDrive's own Open in app, a click on the page itself,
+    /// has Word's frame of another site hand the link over; once. A click
+    /// in one frame still lets no other frame do it.
+    func testHandOffFromAFrameAfterAClickOnThePageOnce() {
+        var permission = PopupGesture()
+        let page = "https://onedrive.live.com:443", frame = "https://word.cloud.microsoft:443"
+        permission.record(origin: page, kind: "input", mainFrame: true, now: 10)
+        XCTAssertTrue(permission.takeHandOff(origin: frame, now: 11))
+        XCTAssertFalse(permission.takeHandOff(origin: frame, now: 11.1))
+        permission.record(origin: page, kind: "input", mainFrame: true, now: 20)
+        XCTAssertFalse(permission.takeHandOff(origin: frame, now: 25.5))
+        permission.record(origin: frame, kind: "input", now: 30)
+        XCTAssertFalse(permission.takeHandOff(origin: "https://ads.example:443", now: 30.5))
+    }
+
     func testAsyncRequestCanOpenOnceWithinActivationWindow() {
         var permission = PopupGesture()
         XCTAssertFalse(permission.take(origin: "https://example.com:443", now: 10))
