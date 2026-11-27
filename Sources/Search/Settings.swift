@@ -37,9 +37,11 @@ struct SettingsPanel: View {
     /// A site shortcut being written, kept out of Preferences until it's saved.
     @State private var draft: Keyword?
     @State private var page: Page = Page.named(Store.settings.string(forKey: "settings.page") ?? "") ?? .general
-    /// The chosen section's white, slid from one to the next as the tab
-    /// column slides its live tab's (Side.swift).
-    @Namespace private var chosen
+    /// The chosen section's white: one, slid from row to row as the tab
+    /// column slides its live tab's (Side.swift), and never taken away. Made
+    /// again under the row picked (matchedGeometryEffect), it was there at
+    /// once while the last one slid down to meet it, and two showed.
+    @State private var whiteAt: Page?
     /// What is typed in Find a setting.
     @State private var query = ""
     @FocusState private var finding: Bool
@@ -219,29 +221,55 @@ struct SettingsPanel: View {
                         .padding(.horizontal, 10).padding(.vertical, 7)
                 }
                 ForEach(block) { item in
-                    PageRow(page: item, on: !searching && page == item,
-                            count: searching ? counts[item] ?? 0 : nil, chosen: chosen,
+                    PageRow(page: item, on: !searching && (whiteAt ?? page) == item,
+                            under: !searching && (whiteAt ?? page) == item,
+                            count: searching ? counts[item] ?? 0 : nil,
                             dot: item == .whatsNew && newsDot) {
                         query = ""
                         page = item
                     }
+                    .anchorPreference(key: RowSpots.self, value: .bounds) { [item: $0] }
                 }
             }
             Spacer(minLength: 0)
         }
-        .animation(slide, value: page)
+        .backgroundPreferenceValue(RowSpots.self) { spots in
+            GeometryReader { geo in
+                if let spot = spots[whiteAt ?? page] {
+                    let frame = geo[spot]
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Palette.ground)
+                        .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
+                        .frame(width: frame.width, height: frame.height)
+                        .offset(x: frame.minX, y: frame.minY)
+                        // Searching, the counts say where to look: no white.
+                        .opacity(searching ? 0 : 1)
+                        .animation(Motion.quick, value: searching)
+                }
+            }
+        }
+        .onAppear { whiteAt = page }
+        // The white sets off, and on the same glide the words it leaves
+        // dim as the ones it goes to light.
+        .onChange(of: page) { _, page in withAnimation(slide) { whiteAt = page } }
         .padding(8)
         .frame(width: SettingsPanel.rail, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Palette.wash.opacity(0.45), in: Rectangle())
     }
 
-    /// The white's move: the tab column's glide, a touch longer and with a
-    /// little give at the end, so the eye follows it down the rail. None
-    /// with Reduce Motion, and a plain ease in Low Power Mode, as glide.
-    private var slide: Animation? {
-        Motion.reduced ? nil : Motion.light ? .easeOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.72)
+    /// Where each section's row is, for the white to go to.
+    private struct RowSpots: PreferenceKey {
+        static let defaultValue: [Page: Anchor<CGRect>] = [:]
+        static func reduce(value: inout [Page: Anchor<CGRect>], nextValue: () -> [Page: Anchor<CGRect>]) {
+            value.merge(nextValue()) { $1 }
+        }
     }
+
+    /// The white's move: the tab column's own glide (Motion.glide), so
+    /// the two read as one kind of thing. None with Reduce Motion, and a
+    /// plain ease in Low Power Mode.
+    private var slide: Animation? { Motion.glide }
 
     /// Find a setting: the wash, the glass, ⌘F beside it until something
     /// is typed. Escape empties it, and then lets go.
@@ -325,9 +353,11 @@ struct SettingsPanel: View {
     private struct PageRow: View {
         let page: Page
         let on: Bool
+        /// Where the white is, or is going: no grey of the pointer's there,
+        /// drawn over it as it comes.
+        let under: Bool
         /// While searching: how many rows of this section match.
         let count: Int?
-        let chosen: Namespace.ID
         /// What's New, until it's opened once after an update.
         var dot = false
         let act: () -> Void
@@ -360,12 +390,8 @@ struct SettingsPanel: View {
                 .padding(.horizontal, 10)
                 .frame(height: 30)
                 .background {
-                    if on {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Palette.ground)
-                            .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
-                            .matchedGeometryEffect(id: "chosen", in: chosen)
-                    } else if hovering {
+                    // The white is the rail's, laid under the rows (pages).
+                    if hovering && !on && !under {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(Palette.hover)
                     }
