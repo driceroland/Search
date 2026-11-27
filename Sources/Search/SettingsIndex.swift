@@ -610,6 +610,12 @@ enum SettingsIndex {
         .init(id: "pins.clicks", group: "pins", icon: "pin",
               title: "Clicks on pins", detail: "⌘-click opens a tab, and links from a pin open beside it",
               kind: .wide, advanced: true),
+        .init(id: "pins.folderPeek", group: "pins", icon: "folder.badge.questionmark",
+              title: "Peek into folded folders", detail: "Rest the pointer on a folded folder for a list of its pages",
+              more: "After half a second, a small list beside the column shows the pages in the folder itself, not in the folders inside it, the one opened last at the top and any not opened yet after them, in the folder's order. A click opens one and the folder stays folded. Live folders are left out.",
+              keys: ["pins.folderPeek"],
+              words: ["arc", "folder", "folded", "collapsed", "peek", "preview", "hover", "list", "pinned folder", "recent"],
+              parent: "pins.list", advanced: true),
         .init(id: "pins.commandNewTab", group: "pins", icon: "command",
               title: "⌘-click on a pin opens a new tab",
               detail: "Opens a tab at the pin's site, or moves a wandered page to loose tabs",
@@ -955,6 +961,7 @@ enum SettingsIndex {
         // With spaces on they are in the space's Colour…, beside its colour.
         case "window.glass.clear", "window.glass.grain": return prefs.glass && !prefs.usesSpaces
         case "pins.folders": return prefs.sidebar && prefs.listsPins
+        case "pins.folderPeek": return prefs.sidebar && prefs.listsPins && prefs.pinFolders
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
         // Icons only: on the bar above the page or in the column alike.
@@ -1000,6 +1007,7 @@ enum SettingsIndex {
         case "links.peek.stays": return "Only when links or pins open peeks"
         case "launcher.key": return "Only with the address field from any app on"
         case "bookmarks.side": return "Only with the bookmarks bar shown and the tabs down a side"
+        case "pins.folderPeek": return "Only with Pinned rows on"
         default: return "Only with the tabs down a side"
         }
     }

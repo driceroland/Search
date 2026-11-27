@@ -1214,6 +1214,11 @@ final class Preferences: ObservableObject {
     @Published var pinFolders: Bool {
         didSet { store.set(pinFolders, forKey: "pins.folders") }
     }
+    /// A folded pin folder's own pages in a small list beside it, when the
+    /// pointer rests on its heading (FolderPeek.swift). Off unless turned on.
+    @Published var pinFolderPeek: Bool {
+        didSet { store.set(pinFolderPeek, forKey: "pins.folderPeek") }
+    }
     /// A pin goes back to the page it was pinned at when it is closed with
     /// ⌘W and when Search opens again, as Arc's pins do, rather than keeping
     /// wherever it was taken since. The other half of "Pins keep their
@@ -1570,6 +1575,7 @@ final class Preferences: ObservableObject {
         listsPins = store.bool(forKey: "pins.list")
         // Always on, with no switch since 27 Nov 2026 (see Retired).
         pinFolders = Retired.on("pins.folders", store)
+        pinFolderPeek = store.bool(forKey: "pins.folderPeek")
         pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
         pinLinksOpenTabs = store.bool(forKey: "pins.linksNewTab")
         // "Pins keep their site": always on, with no switch since 27 Nov
