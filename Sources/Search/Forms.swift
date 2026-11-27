@@ -647,6 +647,15 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
           || /\\\\d|0-9/.test(el.getAttribute('pattern') || '') || (el.maxLength >= 4 && el.maxLength <= 10);
       }
       function saysCode(el) { return tokens(el).indexOf('one-time-code') >= 0; }
+      // Sure enough for the site's other hosts' codes: the box says it takes
+      // one, or its words do on a page that is plainly a sign-in's (an SSO
+      // on adas.example.edu, the code kept for example.edu: idea 1346).
+      function sureCode(el) {
+        if (saysCode(el)) return true;
+        var said = words(el), above = caption(el);
+        if (!(codeWords.test(said) || saysCodeAbroad(said) || codeWords.test(above) || saysCodeAbroad(above))) return false;
+        return looksLikeSignIn(el, el.form || (el.closest && el.closest('form')) || document);
+      }
       function codeBox(el) {
         if (!texty(el) || forPasskeys(el)) return false;
         if (saysCode(el) || cells(el)) return true;
@@ -1204,7 +1213,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
         if (scrolled !== true || judged.el !== el) {
           var seen = judge(el);
           var coded = !seen && codeBox(el);
-          judged = { el: el, verdict: seen, code: coded, sure: coded && saysCode(el),
+          judged = { el: el, verdict: seen, code: coded, sure: coded && sureCode(el),
                      contact: !seen && !coded && window.__officeContacts === true ? contactBox(el) : null };
           if (coded) codeAt = el;
         }

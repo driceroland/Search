@@ -87,7 +87,7 @@ final class FormFieldCorpusTests: XCTestCase {
         XCTAssertEqual(code?["code"] as? Bool, true)
         XCTAssertEqual(code?["passwords"] as? Bool, false, "no account goes in it")
         XCTAssertNotNil(code?["rect"] as? [String: Any])
-        XCTAssertEqual(code?["wide"] as? Bool, false, "a guess: this host's codes alone")
+        XCTAssertEqual(code?["wide"] as? Bool, true, "\"One-time code\" on an SSO's page: the site's other hosts' codes too")
         let sure = try await said("code-github")
         XCTAssertEqual(sure?["code"] as? Bool, true)
         XCTAssertEqual(sure?["wide"] as? Bool, true, "it says so: the site's other hosts' codes too")
@@ -97,10 +97,16 @@ final class FormFieldCorpusTests: XCTestCase {
         let signIn = try await said("urssaf-login")
         XCTAssertEqual(signIn?["code"] as? Bool, false)
         XCTAssertEqual(signIn?["passwords"] as? Bool, true)
-        // Idea 1346: recognised from its Catalan label, still a guess.
+        // Idea 1346: recognised from its Catalan label on an SSO's page: the
+        // site's other hosts' codes too (adas.udg.edu's box, udg.edu's code).
         let catalan = try await said("code-catalan-sso")
         XCTAssertEqual(catalan?["code"] as? Bool, true)
-        XCTAssertEqual(catalan?["wide"] as? Bool, false, "words alone: this host's codes")
+        XCTAssertEqual(catalan?["wide"] as? Bool, true, "its words, on a sign-in's page")
+        let bare = try await said("code-bare-numeric-sso")
+        XCTAssertEqual(bare?["code"] as? Bool, true)
+        XCTAssertEqual(bare?["wide"] as? Bool, false, "a bare box stays a guess")
+        let french = try await said("code-french")
+        XCTAssertEqual(french?["wide"] as? Bool, false, "words on a page that isn't a sign-in's: a guess")
         let promo = try await said("notcode-promo")
         XCTAssertEqual(promo?["code"] as? Bool, false)
         XCTAssertTrue(promo?["rect"] is NSNull, "nothing hangs from it")
