@@ -123,12 +123,23 @@ final class ImportSidebarsTests: XCTestCase {
     }
 
     func testDiasSidebarDecryptsAndReadsWithItsSpacesFavouritesPinsAndFolders() throws {
+        try checkDia(wal: false)
+    }
+
+    /// Dia's own database is in WAL mode: its copy, opened read-only with no
+    /// log beside it, read nothing until it was marked a whole database (#1715).
+    func testDiasSidebarInWALModeReads() throws {
+        try checkDia(wal: true)
+    }
+
+    private func checkDia(wal: Bool) throws {
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("search-dia-test-\(UUID().uuidString)").resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: scratch) }
         let scratchRoot = scratch.resolvingSymlinksInPath()
         let plainFile = scratchRoot.appendingPathComponent("plain.db")
-        try Self.makeDiaDatabase(at: plainFile)
+        try Self.makeDiaDatabase(at: plainFile, wal: wal)
+        if wal { XCTAssertEqual(try Data(contentsOf: plainFile)[18], 2, "the fixture is in WAL mode, as Dia's is") }
         let key = DiaTabs.key(root: Chromium.stretchedKey("search-test-secret"), profile: "Default")
         let encrypted = scratchRoot.appendingPathComponent("tabs.db")
         try Self.encrypt(Data(contentsOf: plainFile), key: key).write(to: encrypted)
@@ -154,14 +165,14 @@ final class ImportSidebarsTests: XCTestCase {
 
     /// A Dia-shaped sidebar database, 80 bytes kept at the end of each page
     /// as SQLCipher keeps them.
-    static func makeDiaDatabase(at file: URL) throws {
+    static func makeDiaDatabase(at file: URL, wal: Bool = false) throws {
         var db: OpaquePointer?
         guard sqlite3_open(file.path, &db) == SQLITE_OK else { throw CocoaError(.fileWriteUnknown) }
         defer { sqlite3_close(db) }
         var reserve: Int32 = 80
         _ = sqlite3_file_control(db, "main", SQLITE_FCNTL_RESERVE_BYTES, &reserve)
         let sql = """
-        PRAGMA page_size = 4096;
+        PRAGMA page_size = 4096;\(wal ? "\nPRAGMA journal_mode = WAL;" : "")
         CREATE TABLE spaces (id TEXT PRIMARY KEY, title TEXT, creation_date TEXT, theme TEXT);
         CREATE TABLE nodes (id INTEGER PRIMARY KEY, kind TEXT, entity_id TEXT, parent_id INTEGER, "order" INTEGER, deleted_at TEXT, space_id TEXT);
         CREATE TABLE tab_groups (id TEXT PRIMARY KEY, title TEXT);

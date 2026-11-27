@@ -54,6 +54,53 @@ final class SplitZonesTests: XCTestCase {
         XCTAssertNil(TabDrag.shared.over)
     }
 
+    func testAThirdInTheSplitShows() async throws {
+        // A third of the way across: a quarter of the page's width split it
+        // before, so the split showed only nearer the edge (idea 1392).
+        let (browser, t, window) = try await setUp()
+        try await carry(t[2], to: 0.33, in: window, browser: browser)
+        try await Task.sleep(for: .milliseconds(200))
+        try await update(t[2], at: 0.33, in: window, browser: browser)
+        XCTAssertEqual(TabDrag.shared.preview?.side, .left, "the left half split, shown")
+        let finished = TabDrag.shared.finish(browser: browser, tab: t[2])
+        guard case .stage(let page, let onLeft) = finished.drop else { return XCTFail("splits where shown: \(finished.drop)") }
+        XCTAssertEqual(page.id, t[0].id)
+        XCTAssertTrue(onLeft)
+    }
+
+    /// The zones themselves, as drawn and as read (idea 1392): two fifths of
+    /// the page either side, no narrower than `band` and never past half,
+    /// the middle fifth splitting nothing, and the side shown kept `slack`
+    /// further.
+    func testZoneGeometry() {
+        XCTAssertEqual(TabDrag.band(for: 1000), 400)
+        XCTAssertEqual(TabDrag.band(for: 600), 240)
+        XCTAssertEqual(TabDrag.band(for: 250), 120, "no narrower than the least band")
+        XCTAssertEqual(TabDrag.band(for: 200), 100, "never more than half")
+        XCTAssertGreaterThanOrEqual(TabDrag.band(for: 1400), 1400 / 3, "at least the outer third")
+        // A page from 200 to 1200.
+        func side(_ x: CGFloat, shown: TabDrag.Side? = nil) -> TabDrag.Side? { TabDrag.side(at: x, from: 200, to: 1200, shown: shown) }
+        XCTAssertEqual(side(200), .left)
+        XCTAssertEqual(side(533), .left, "a third in")
+        XCTAssertEqual(side(600), .left, "two fifths in")
+        XCTAssertNil(side(601))
+        XCTAssertNil(side(700), "the middle")
+        XCTAssertNil(side(799))
+        XCTAssertEqual(side(800), .right)
+        XCTAssertEqual(side(867), .right, "a third in from the right")
+        XCTAssertEqual(side(1200), .right)
+        XCTAssertNil(side(150), "off the page")
+        XCTAssertNil(side(1250), "off the page")
+        // Shown, a side holds on a little past its band before it lets go.
+        XCTAssertEqual(side(615, shown: .left), .left)
+        XCTAssertNil(side(621, shown: .left))
+        XCTAssertEqual(side(785, shown: .right), .right)
+        XCTAssertNil(side(785, shown: .left))
+        // A page too narrow for a middle: every point a side.
+        XCTAssertEqual(TabDrag.side(at: 99, from: 0, to: 200), .left)
+        XCTAssertEqual(TabDrag.side(at: 101, from: 0, to: 200), .right)
+    }
+
     func testOffThePageNoZones() async throws {
         let (browser, t, window) = try await setUp()
         try await carry(t[2], to: 0.5, in: window, browser: browser)

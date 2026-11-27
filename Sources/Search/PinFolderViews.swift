@@ -21,6 +21,7 @@ struct PinFolderHeading: View {
 
     @State private var draft = ""
     @State private var hovering = false
+    @State private var spot = FolderPeek.Spot()
     @FocusState private var focused: Bool
 
     /// Set in by each level, as a group's tabs are under its name.
@@ -45,7 +46,14 @@ struct PinFolderHeading: View {
             .fill(target ? greys.wash : (hovering ? greys.hover : (compact ? greys.tile : .clear))))
         .contentShape(RoundedRectangle(cornerRadius: compact ? 6 : 9, style: .continuous))
         .onTapGesture { if interactive && !editing { browser.togglePinFolder(folder.id) } }
-        .onHover { hovering = interactive && $0 }
+        .onHover { on in
+            hovering = interactive && on
+            // A look inside, folded, when it is asked for (FolderPeek.swift).
+            if measured { FolderPeek.hover(on, folder: folder.id, view: spot.view, in: browser) }
+        }
+        // Only while it can open: off, the heading is what it always was.
+        .background { if measured { FolderPeek.Holder(spot: spot) } }
+        .onDisappear { if measured { FolderPeek.gone(folder.id, from: browser) } }
         .contextMenu { if interactive { menu } }
         .accessibilityLabel(folder.name)
         .accessibilityHint(folder.collapsed ? "Folded folder" : "Folder")
@@ -62,7 +70,8 @@ struct PinFolderHeading: View {
         .foregroundStyle(titleColour(hovering: hovering))
         .frame(maxWidth: .infinity)
         .frame(height: GroupHeading.compactHeight)
-        .help(folder.collapsed ? "\(folder.name) — folded" : (tip.isEmpty ? folder.name : "\(folder.name) — \(tip)"))
+        // The peek says its name, and more.
+        .help(peeks ? "" : folder.collapsed ? "\(folder.name) — folded" : (tip.isEmpty ? folder.name : "\(folder.name) — \(tip)"))
         .popover(isPresented: Binding(get: { editing }, set: { if !$0 { browser.editingPinFolder = nil } }),
                  hangingFrom: browser.prefs.sidePosition == .right ? .leading : .trailing) {
             field
@@ -116,6 +125,13 @@ struct PinFolderHeading: View {
             }
         }
     }
+
+    /// Peek into folded folders on, for a heading that is pressed: where it
+    /// is, for its list (FolderPeek.swift).
+    private var measured: Bool { interactive && prefs.pinFolderPeek }
+
+    /// Its list can open, folded with pages of its own: the list names it.
+    private var peeks: Bool { measured && !browser.folderPeek(folder.id).isEmpty }
 
     /// A live folder's mark is the feed's, open or folded alike.
     private var glyph: String {
