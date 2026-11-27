@@ -245,6 +245,7 @@ final class SettingsIndexTests: XCTestCase {
         XCTAssertTrue(SettingsIndex.find("liquid glass").contains { $0.id == "tabs.liquid" })
         XCTAssertTrue(SettingsIndex.find("double click rename").contains { $0.id == "tabs.clickRenames" })
         XCTAssertTrue(SettingsIndex.find("backspace").contains { $0.id == "keys.backspaceBack" })
+        XCTAssertTrue(SettingsIndex.find("smooth scrolling").contains { $0.id == "wheel.smooth" && $0.advanced && $0.within == "mouse.habits" })
         XCTAssertTrue(SettingsIndex.find("site tiles").contains { $0.id == "home.tiles" })
         XCTAssertTrue(SettingsIndex.find("advanced").isEmpty == false)
         XCTAssertTrue(SettingsIndex.find("").isEmpty)

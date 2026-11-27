@@ -15,11 +15,13 @@ final class DefaultsOnTests: XCTestCase {
     }
 
     static let keys = ["privacy.httpsFirst", "tabs.undoReopens", "video.keys", "tabs.popupWindows", "tabs.frontBeside",
-                       "tabs.swipeBackCloses", "wheel.smooth", "reader.follows", "pages.capture", "sites.styles",
+                       "tabs.swipeBackCloses", "reader.follows", "pages.capture", "sites.styles",
                        "home.grid", Motion.lightKey, "float.minimize", "pins.folders", "commandbar",
                        "sidebar.player", "tabs.pinCounts", "tabs.newAfterLast"]
     /// Still off unless turned on.
-    static let offKeys = ["search.suggest", "pages.bounce", "passwords.fill.prove", "tabs.lazy", "links.little.tabs"]
+    /// "wheel.smooth" was on from 25 Nov 2026 until 27 Nov: off again, it
+    /// cost about four times the CPU per notch.
+    static let offKeys = ["search.suggest", "pages.bounce", "passwords.fill.prove", "tabs.lazy", "links.little.tabs", "wheel.smooth"]
 
     private func read(_ prefs: Preferences) -> [String: Bool] {
         ["privacy.httpsFirst": prefs.triesHTTPSFirst && HTTPSFirst.on,
@@ -28,7 +30,6 @@ final class DefaultsOnTests: XCTestCase {
          "tabs.popupWindows": prefs.popupWindows,
          "tabs.frontBeside": prefs.frontLinksBeside,
          "tabs.swipeBackCloses": prefs.swipeBackCloses,
-         "wheel.smooth": prefs.wheelGlides && WheelGlide.on,
          "reader.follows": prefs.readerFollowsLook,
          "pages.capture": prefs.capturesPages,
          "sites.styles": prefs.sitesStyles && SiteStyles.shared.on,
@@ -63,6 +64,8 @@ final class DefaultsOnTests: XCTestCase {
         XCTAssertFalse(fresh.asksBeforeFilling)
         XCTAssertFalse(fresh.lazyTabs)
         XCTAssertFalse(fresh.linksFindTabs)
+        XCTAssertFalse(fresh.wheelGlides || WheelGlide.on, "smooth wheel off unless turned on")
+        XCTAssertNil(store.object(forKey: "wheel.smooth"), "nothing written for the default")
         // Read where they are used, outside Preferences, the same way.
         Motion.testLowPower = true
         XCTAssertTrue(Motion.savingPower, "Save power in Low Power Mode, on")
@@ -77,6 +80,11 @@ final class DefaultsOnTests: XCTestCase {
         XCTAssertEqual(read(off), Dictionary(uniqueKeysWithValues: Self.keys.map { ($0, false) }))
         XCTAssertFalse(Motion.savingPower, "turned off, it stays off")
         XCTAssertEqual(Reader.look, .light, "turned off, the article is light")
+
+        // Turned on by hand (while it was on for everyone, or since): it stays on.
+        store.set(true, forKey: "wheel.smooth")
+        let chosen = Preferences()
+        XCTAssertTrue(chosen.wheelGlides && WheelGlide.on, "smooth wheel turned on stays on")
     }
 
     /// Settings cut in half (27 Nov 2026): the switches it took out are

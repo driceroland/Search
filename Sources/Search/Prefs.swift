@@ -856,7 +856,7 @@ final class Preferences: ObservableObject {
         }
     }
     /// A mouse wheel's notches glide instead of jumping (see WheelGlide.swift).
-    /// On unless turned off.
+    /// Off unless turned on.
     @Published var wheelGlides: Bool {
         didSet {
             store.set(wheelGlides, forKey: "wheel.smooth")
@@ -1671,8 +1671,11 @@ final class Preferences: ObservableObject {
         let meetPiP = Retired.on("meet.pip", store)
         self.meetPiP = meetPiP
         MeetPiP.on = meetPiP
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        let glides = store.object(forKey: "wheel.smooth") as? Bool ?? true
+        // Off unless turned on (27 Nov 2026, for 1.0.23): on for everyone
+        // from 25 Nov, but each notch cost about four times the CPU and a
+        // dozen GPU frames, and Safari doesn't smooth the wheel either. A
+        // line saying on, written by someone who turned it on, stands.
+        let glides = store.object(forKey: "wheel.smooth") as? Bool ?? false
         wheelGlides = glides
         WheelGlide.on = glides
         let bouncing = Retired.off("pages.bounce", store)
