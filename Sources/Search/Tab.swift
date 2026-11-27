@@ -1410,6 +1410,8 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
         if let dusk = Dusk.shared.script(for: Dusk.host(of: url ?? pageAddress)) {
             add(dusk, .atDocumentStart, mainFrameOnly: false, in: Web.world)
         }
+        // A picture opened on its own sits on grey, not white (ImageBackdrop.swift).
+        add(ImageBackdrop.script, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         // YouTube's ads, while Shield is on for the site this tab is on
         // (see YouTubeAds.swift). Every frame; each script does nothing in a
         // frame that isn't YouTube's.
