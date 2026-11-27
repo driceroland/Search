@@ -1,6 +1,7 @@
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class PasskeyPageOriginTests: XCTestCase {
     private func page(_ text: String) -> URL? { URL(string: text) }
 

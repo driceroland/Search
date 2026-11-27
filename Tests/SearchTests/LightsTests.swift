@@ -11,6 +11,7 @@ import XCTest
 /// its pass, still inside it; should that call ever move out of the pass,
 /// the move here no longer lands inside one and the test proves nothing,
 /// which the check on `inPass` catches.
+@available(macOS 14, *)
 @MainActor
 final class LightsTests: XCTestCase {
     override class func setUp() {

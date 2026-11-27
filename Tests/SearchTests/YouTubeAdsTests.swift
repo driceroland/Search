@@ -6,6 +6,7 @@ import XCTest
 /// YouTubeAds' page script run in JavaScriptCore over a stand-in window (a
 /// location, a Response with json()), its rules matched and compiled. No
 /// page, no network, nothing started.
+@available(macOS 14, *)
 @MainActor
 final class YouTubeAdsTests: XCTestCase {
     override class func setUp() {

@@ -4,6 +4,7 @@ import XCTest
 
 /// A folder's extension keeps only the links that lead inside it.
 @available(macOS 15.4, *)
+@available(macOS 14, *)
 final class ExtensionFolderLinkTests: XCTestCase {
     func testLinksLeadingOutOrNowhereAreTakenOut() throws {
         let files = FileManager.default

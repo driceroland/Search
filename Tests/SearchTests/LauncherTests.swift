@@ -3,6 +3,7 @@ import Carbon.HIToolbox
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 @MainActor
 final class LauncherTests: XCTestCase {
     private static let keys = ["launcher.on", "launcher.key"]

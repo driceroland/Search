@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 // Spaces, paged through: in the column, two fingers sideways go from one to
 // the next, the rows following them, as in Arc; in the bar across the top,
@@ -367,7 +368,7 @@ final class SpaceSwipe {
     /// snaps back without moving (Motion.settle).
     private func carry(_ browser: Browser, to offset: CGFloat, then arrived: @escaping () -> Void) {
         guard !Motion.reduced else { return arrived() }
-        withAnimation(.easeOut(duration: 0.22), completionCriteria: .removed) {
+        withAnimationCompat(.easeOut(duration: 0.22), duration: 0.22) {
             browser.spaceSwipe = offset
         } completion: {
             arrived()
@@ -701,9 +702,12 @@ struct NewSpaceCard: View {
                     pick(size: 13, box: CGSize(width: 28, height: 26))
                     field
                         .frame(width: 170)
-                    Segmented(options: [(true, "Signed in"), (false, "Signed out")], selection: $shared)
-                        .fixedSize()
-                        .help(saying)
+                    // Signed out needs a store of its own: macOS 14.
+                    if WKWebsiteDataStore.separateStoresSupported {
+                        Segmented(options: [(true, "Signed in"), (false, "Signed out")], selection: $shared)
+                            .fixedSize()
+                            .help(saying)
+                    }
                     Pill("Cancel") { cancel() }
                     Pill("Create", filled: true) { create() }
                 }
@@ -723,6 +727,7 @@ struct NewSpaceCard: View {
                     field
                     // Most people want Google and the rest to know them here too;
                     // some want a clean slate.
+                    if WKWebsiteDataStore.separateStoresSupported {
                     VStack(spacing: 6) {
                         Segmented(options: [(true, "Signed in"), (false, "Signed out")], selection: $shared, wide: true)
                         Text(saying)
@@ -730,6 +735,7 @@ struct NewSpaceCard: View {
                             .foregroundStyle(Palette.muted)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
                     }
                     HStack(spacing: 8) {
                         Pill("Cancel") { cancel() }

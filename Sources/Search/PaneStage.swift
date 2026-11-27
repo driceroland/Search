@@ -181,7 +181,7 @@ final class PaneStage: NSView {
         let view = ApplePairingCard(browser: pairing.browser, apple: pairing.browser.applePasswords, pairing: pairing.pairing)
         if pairingCard == nil {
             let host = PairingHost(rootView: FromTopLeft(content: view))
-            host.sizingOptions = []
+            if #available(macOS 13, *) { host.sizingOptions = [] }
             pairingCard = host
             addSubview(host, positioned: .above, relativeTo: nil)
         }
@@ -205,7 +205,7 @@ final class PaneStage: NSView {
         var view = AccountList(browser: accounts.browser, asked: accounts.asked)
         if accountList == nil {
             let host = AccountHost(rootView: FromTopLeft(content: view))
-            host.sizingOptions = []
+            if #available(macOS 13, *) { host.sizingOptions = [] }
             accountList = host
             addSubview(host, positioned: .above, relativeTo: nil)
         }
@@ -1212,7 +1212,7 @@ struct FromTopLeft<Content: View>: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .coordinateSpace(.named(Self.space))
+            .coordinateSpace(name: Self.space)
     }
 }
 
@@ -1296,7 +1296,7 @@ private struct AccountsOver: NSViewRepresentable {
 
     func makeNSView(context: Context) -> AccountHost {
         let host = AccountHost(rootView: FromTopLeft(content: AccountList(browser: browser, asked: asked)))
-        host.sizingOptions = []
+        if #available(macOS 13, *) { host.sizingOptions = [] }
         return host
     }
 
@@ -1319,7 +1319,7 @@ private struct PairingOver: NSViewRepresentable {
 
     func makeNSView(context: Context) -> PairingHost {
         let host = PairingHost(rootView: FromTopLeft(content: card))
-        host.sizingOptions = []
+        if #available(macOS 13, *) { host.sizingOptions = [] }
         return host
     }
 

@@ -3,6 +3,7 @@ import XCTest
 
 /// A pinned square carried across the grid (Side.swift): the cell it lands
 /// in and how far it sits from it, on rows of different lengths.
+@available(macOS 14, *)
 final class PinCarriedTests: XCTestCase {
     // Three squares on the first row, two wider ones on the second.
     private let cells = [

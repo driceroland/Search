@@ -34,9 +34,9 @@ struct InternalPage: Equatable {
     /// search://settings, search://settings/privacy, search://import/Arc.
     init?(url: URL) {
         guard url.scheme?.lowercased() == InternalPage.scheme,
-              let host = url.host()?.lowercased(), let kind = Kind(rawValue: host)
+              let host = url.hostCompat()?.lowercased(), let kind = Kind(rawValue: host)
         else { return nil }
-        let rest = url.path(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let rest = url.pathCompat(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.init(kind, rest)
     }
 
@@ -129,7 +129,7 @@ struct InternalPageView: View {
             // In English, as the words are: symbols the Mac draws per
             // language (textformat.size) came out as 大小 for someone whose
             // Mac is in Chinese (#1049). The region stays theirs.
-            .environment(\.locale, Locale(languageCode: .english, languageRegion: Locale.current.region))
+            .environment(\.locale, Locale(identifier: Locale.current.regionCode.map { "en_\($0)" } ?? "en"))
             // Its own state for each kind: History's search box doesn't
             // follow you into Downloads.
             .id(page.kind)

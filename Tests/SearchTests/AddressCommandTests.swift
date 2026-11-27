@@ -2,6 +2,7 @@ import AppKit
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class FuzzyTests: XCTestCase {
     private func nearly(_ typed: String, _ text: String) -> Bool {
         Fuzzy.nearly(Array(typed.utf8), in: text.lowercased())
@@ -30,6 +31,7 @@ final class FuzzyTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 @MainActor
 final class AddressCommandTests: XCTestCase {
     override class func setUp() {

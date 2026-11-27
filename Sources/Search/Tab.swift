@@ -121,7 +121,7 @@ enum Web {
         config.allowsAirPlayForMediaPlayback = true
         // Off by default on macOS, which is why a full-screen button on a video
         // did nothing at all: the page asks, and WebKit refuses without a word.
-        config.preferences.isElementFullscreenEnabled = true
+        if #available(macOS 12.3, *) { config.preferences.isElementFullscreenEnabled = true }
         // WebKit's synchronous popup check rejects async POST sign-ins.
         // The UI delegate instead consumes a recent trusted interaction
         // recorded in Search's isolated world (see PopupGesture.swift).
@@ -134,7 +134,7 @@ enum Web {
             ClickIDs.apply(to: config.preferences, shy: shy)
         }
         HTTPSFirst.apply(to: config)
-        if Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
+        if #available(macOS 14, *), Store.testing, !Store.measuring { config.preferences.inactiveSchedulingPolicy = .none }
         inspector(config.preferences)
         backspaceStays(config.preferences)
         NativePiP.allow(config.preferences)
@@ -254,7 +254,7 @@ enum Autoplay {
                       made: WKAudiovisualMediaTypes) {
         let waits = Store.settings.bool(forKey: Preferences.waitsKey)
         let policy: Int
-        if !waits, !shy, let host = url.host(), allowed(host) {
+        if !waits, !shy, let host = url.hostCompat(), allowed(host) {
             policy = 1
         } else if waits, !made.contains(.video) {
             policy = 3
@@ -589,7 +589,7 @@ final class Tab: ObservableObject, Identifiable {
             let name = address.lastPathComponent.trimmingCharacters(in: CharacterSet(charactersIn: "/."))
             return name.first.map { String($0).uppercased() } ?? "•"
         }
-        let host = address?.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+        let host = address?.hostCompat()?.replacingOccurrences(of: "www.", with: "") ?? ""
         return host.first.map { String($0).uppercased() } ?? "•"
     }
 
@@ -643,7 +643,7 @@ final class Tab: ObservableObject, Identifiable {
     /// 125% once should be the last time you think about it. A site at the
     /// size every site starts at keeps nothing, and follows that size.
     func rememberZoom() {
-        guard let host = address?.host(), !shy else { return }
+        guard let host = address?.hostCompat(), !shy else { return }
         if abs(zoom - Tab.defaultZoom) < 0.01 {
             Store.settings.removeObject(forKey: "zoom." + host)
         } else {
@@ -652,7 +652,7 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     func applyRememberedZoom() {
-        guard let host = address?.host() else { return }
+        guard let host = address?.hostCompat() else { return }
         let kept = (Store.settings.object(forKey: "zoom." + host) as? Double).map { CGFloat($0) }
             ?? Tab.defaultZoom
         guard abs(kept - web.pageZoom) > 0.004 else { return }
@@ -817,7 +817,7 @@ final class Tab: ObservableObject, Identifiable {
 
     var awakeHost: String? {
         guard let address, ["http", "https"].contains(address.scheme?.lowercased()) else { return nil }
-        return address.host()?.lowercased()
+        return address.hostCompat()?.lowercased()
     }
 
     /// A tab that keeps nothing: its own cookies, no history, no place in the
@@ -1034,7 +1034,7 @@ final class Tab: ObservableObject, Identifiable {
         if let name, !name.isEmpty { return name }
         if let page { return page.title }
         if atPinnedPage, let pinTitle, !pinTitle.isEmpty { return pinTitle }
-        if popup, let host = address?.host(), !host.isEmpty {
+        if popup, let host = address?.hostCompat(), !host.isEmpty {
             return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         }
         if !title.isEmpty { return title }
@@ -1160,12 +1160,12 @@ final class Tab: ObservableObject, Identifiable {
         if muted { Muter.set(true, on: web) }
         arm(hiding: veils)
 
-        watch = [
+        watch = [NSKeyValueObservation?]([
             web.observe(\.title, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated {
                     self?.title = self?.built?.title ?? ""
                     // Its full-screen window keeps its name (FullScreenTitle.swift).
-                    if let page = self?.built, page.fullscreenState == .inFullscreen { FullScreenTitle.follow(page) }
+                    if let page = self?.built, page.fullscreenPhase == .inFullscreen { FullScreenTitle.follow(page) }
                 }
             },
             web.observe(\.url, options: [.new]) { [weak self] _, _ in
@@ -1193,11 +1193,11 @@ final class Tab: ObservableObject, Identifiable {
                     // is another project, with another icon. Another path on
                     // the same host may be another app, with one of its own.
                     let moved = Favicons.site(fresh) != self.address.flatMap(Favicons.site)
-                        || fresh.path() != self.address?.path()
+                        || fresh.pathCompat() != self.address?.pathCompat()
                     self.address = fresh
                     // Within the same origin — history.pushState, a fragment —
                     // the page on screen is the one at the new address.
-                    if let now = self.committed, now.scheme == fresh.scheme, now.host() == fresh.host(), now.port == fresh.port {
+                    if let now = self.committed, now.scheme == fresh.scheme, now.hostCompat() == fresh.hostCompat(), now.port == fresh.port {
                         self.committed = fresh
                     }
                     if moved { self.adoptIcon() }
@@ -1223,9 +1223,9 @@ final class Tab: ObservableObject, Identifiable {
             // is laid out once, at the size it had, where WebKit's animation
             // lands it. The page's own fullscreenchange (Forms.swift) comes
             // after each and changes nothing.
-            web.observe(\.fullscreenState, options: [.new]) { [weak self] _, _ in
+            web.observeFullscreen { [weak self] _ in
                 MainActor.assumeIsolated {
-                    guard let self, let state = self.built?.fullscreenState else { return }
+                    guard let self, let state = self.built?.fullscreenPhase else { return }
                     let on = state == .enteringFullscreen || state == .inFullscreen
                     if self.immersed != on { self.immersed = on }
                     // WebKit's full-screen window named, for screen-share pickers.
@@ -1234,7 +1234,7 @@ final class Tab: ObservableObject, Identifiable {
                     if state == .notInFullscreen { self.built?.superview?.needsLayout = true }
                 }
             },
-        ]
+        ]).compactMap { $0 }
 
         relay.tab = self
         veils_.tab = self
@@ -1500,7 +1500,7 @@ final class Tab: ObservableObject, Identifiable {
 
     func gaveName(_ user: String) {
         guard !user.isEmpty, user.count <= 256,
-              let host = pageAddress?.host()?.lowercased()
+              let host = pageAddress?.hostCompat()?.lowercased()
         else { return }
         named = (Vault.registrable(host), user, Date())
     }
@@ -1508,7 +1508,7 @@ final class Tab: ObservableObject, Identifiable {
     /// The name sent on the step before, if it was this site's and recent.
     func givenName() -> String? {
         guard let named, Date().timeIntervalSince(named.at) < 300,
-              let host = pageAddress?.host()?.lowercased(),
+              let host = pageAddress?.hostCompat()?.lowercased(),
               Vault.registrable(host) == named.site
         else { return nil }
         return named.user
@@ -1524,7 +1524,7 @@ final class Tab: ObservableObject, Identifiable {
         // The host now, while the page is still the sign-in page: a moment
         // later it may be somewhere else entirely, and that is not where
         // the password belongs.
-        guard let host = pageAddress?.host()?.lowercased() else { return }
+        guard let host = pageAddress?.hostCompat()?.lowercased() else { return }
         let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         // A password page with no name on it: the name is the one the step
         // before was sent with.
@@ -1645,7 +1645,7 @@ final class Tab: ObservableObject, Identifiable {
     /// A page's origin as the page itself gives it (location.origin):
     /// scheme and host, and the port only when it isn't the scheme's own.
     nonisolated static func origin(of url: URL?) -> String? {
-        guard let url, let scheme = url.scheme?.lowercased(), let host = url.host(percentEncoded: true)?.lowercased(),
+        guard let url, let scheme = url.scheme?.lowercased(), let host = url.hostCompat(percentEncoded: true)?.lowercased(),
               !host.isEmpty
         else { return nil }
         let bracketed = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host

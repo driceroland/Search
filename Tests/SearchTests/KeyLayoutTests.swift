@@ -5,6 +5,7 @@ import XCTest
 
 /// Shortcuts read through each layout's own keys (#1077), from the layouts
 /// installed with macOS: looked up by id, never switched on.
+@available(macOS 14, *)
 final class KeyLayoutTests: XCTestCase {
     private func layout(_ id: String, file: StaticString = #filePath, line: UInt = #line) throws -> KeyLayout.Layout {
         let filter = [kTISPropertyInputSourceID as String: id] as CFDictionary

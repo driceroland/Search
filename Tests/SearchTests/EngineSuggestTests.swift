@@ -4,6 +4,7 @@ import XCTest
 @testable import Search
 
 /// Settings › General › Suggestions from your search engine (idea 347).
+@available(macOS 14, *)
 @MainActor
 final class EngineSuggestTests: XCTestCase {
     /// Shaped like a GitHub token, made up, and put together here so no

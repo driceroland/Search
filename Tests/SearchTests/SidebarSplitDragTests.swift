@@ -9,6 +9,7 @@ import XCTest
 /// back once the hand is over the page, and the split is shown and made
 /// with it. Hosted as PairSeparateTests does, far off every screen, the
 /// column beside a stand-in for the page that carries the stage's marker.
+@available(macOS 14, *)
 @MainActor
 final class SidebarSplitDragTests: XCTestCase {
     private var browsers: [Browser] = []
@@ -207,6 +208,7 @@ final class SidebarSplitDragTests: XCTestCase {
 /// The column, and beside it a stand-in for the page: the stage's marker for
 /// the tab on screen, which is what a carried tab asks about (see
 /// SplitStage's PaneLayers), with its title so a picture says which it is.
+@available(macOS 14, *)
 private struct ColumnAndPage: View {
     @ObservedObject var browser: Browser
     let side: CGFloat

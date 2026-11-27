@@ -248,7 +248,7 @@ enum Zen {
         let initial = (tab["_zenPinnedInitialState"] as? [String: Any])?["entry"] as? [String: Any]
         guard let url = Arc.page(initial?["url"] as? String) ?? Arc.page(current?["url"] as? String) else { return nil }
         let title = Arc.named(tab["zenStaticLabel"] as? String) ?? Arc.named(initial?["title"] as? String)
-            ?? Arc.named(current?["title"] as? String) ?? url.host() ?? url.absoluteString
+            ?? Arc.named(current?["title"] as? String) ?? url.hostCompat() ?? url.absoluteString
         return .init(title: title, url: url)
     }
 
@@ -390,7 +390,7 @@ enum Zen {
         var essentials: [ArcSidebar.Item] = []
         for pin in pins where (pin["is_group"] as? Int ?? 0) == 0 {
             guard let url = Arc.page(pin["url"] as? String) else { continue }
-            let item = ArcSidebar.Item(title: Arc.named(pin["title"] as? String) ?? url.host() ?? url.absoluteString, url: url)
+            let item = ArcSidebar.Item(title: Arc.named(pin["title"] as? String) ?? url.hostCompat() ?? url.absoluteString, url: url)
             if (pin["is_essential"] as? Int ?? 0) != 0 {
                 if !essentials.contains(where: { $0.url == url }) && tree.count < 5000 {
                     essentials.append(item)

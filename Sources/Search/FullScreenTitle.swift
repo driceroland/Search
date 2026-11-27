@@ -13,7 +13,7 @@ enum FullScreenTitle {
     /// `page`'s full-screen window named after the page, once WebKit has it
     /// there. A browser's own window is never renamed.
     static func follow(_ page: WKWebView) {
-        guard page.fullscreenState == .inFullscreen, let window = page.window,
+        guard page.fullscreenPhase == .inFullscreen, let window = page.window,
               !Browsers.all.contains(where: { $0.window === window }) else { return }
         name(window, title: page.title, url: page.url)
     }

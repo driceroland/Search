@@ -199,7 +199,7 @@ struct StylePanel: View {
                 TextEditor(text: $text)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Palette.ink)
-                    .scrollContentBackground(.hidden)
+                    .scrollContentBackgroundHidden()
                     .autocorrectionDisabled()
                     .focused($typing)
                     .padding(8)
@@ -220,7 +220,7 @@ struct StylePanel: View {
             text = SiteStyles.shared.written(on: host)
             typing = true
         }
-        .onChange(of: text) { _, now in
+        .onChangeCompat(of: text) { _, now in
             // A moment after the last key, so a half-typed rule isn't sent
             // to every open page of the site on each letter.
             pending?.cancel()

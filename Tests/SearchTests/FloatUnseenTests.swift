@@ -9,6 +9,7 @@ import XCTest
 /// and WebKit plays it again once it can be seen there. One paused by hand
 /// stays put. One never heard doesn't float on its own at all (Isolate.real,
 /// idea 923; Tests/float_preview.py).
+@available(macOS 14, *)
 @MainActor
 final class FloatUnseenTests: XCTestCase {
     override class func setUp() {

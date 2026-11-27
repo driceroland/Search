@@ -4,6 +4,7 @@ import XCTest
 
 /// Search's own controls count as using the site, for tracking prevention
 /// (Store.interacted): what WebKit itself reads back says so.
+@available(macOS 14, *)
 @MainActor
 final class SiteInteractionTests: XCTestCase {
     private typealias Answer = @convention(c) (Bool, UnsafeMutableRawPointer?) -> Void

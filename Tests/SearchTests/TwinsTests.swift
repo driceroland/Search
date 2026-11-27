@@ -6,6 +6,7 @@ import XCTest
 /// a row read from its file, the session file with and without twin ids,
 /// and two windows of one profile following each other. Nothing is loaded:
 /// every tab is made asleep at its page.
+@available(macOS 14, *)
 @MainActor
 final class TwinsTests: XCTestCase {
     override class func setUp() {

@@ -2,6 +2,7 @@ import WebKit
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 @MainActor
 final class PageDraftTests: XCTestCase {
     override class func setUp() {

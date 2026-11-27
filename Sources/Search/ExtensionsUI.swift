@@ -142,7 +142,7 @@ struct ExtensionsPage: View {
                 }
             }
             .onAppear { if on { look() } }
-            .onChange(of: on) { _, now in
+            .onChangeCompat(of: on) { _, now in
                 Store.settings.set(now, forKey: SafariApps.key)
                 if now { look() } else { found = [] }
             }
@@ -490,7 +490,7 @@ struct StoreOffer: View {
 
     static func isStorePage(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil else { return false }
-        let host = url.host()?.lowercased() ?? ""
+        let host = url.hostCompat()?.lowercased() ?? ""
         return host == "chromewebstore.google.com"
             || (host == "chrome.google.com" && url.path.hasPrefix("/webstore"))
     }

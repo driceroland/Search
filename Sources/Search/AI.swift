@@ -62,7 +62,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
         }
     }
 
-    var host: String { self == .thisMac ? "this Mac" : base.host() ?? "" }
+    var host: String { self == .thisMac ? "this Mac" : base.hostCompat() ?? "" }
 
     /// A test run's stand-in for every provider: a server on this Mac that
     /// answers the way they do (bench ai-mock). Never outside a test run,

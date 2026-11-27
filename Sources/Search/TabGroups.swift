@@ -220,7 +220,7 @@ struct GroupHeading: View {
         .modifier(GroupHeadingShared(browser: browser, group: group, dragSpace: dragSpace, dropping: $dropping,
                                      horizontal: horizontal))
         .onHover { hovering = $0 }
-        .onChange(of: editing) { _, now in
+        .onChangeCompat(of: editing) { _, now in
             if now {
                 draft = group.name
                 DispatchQueue.main.async { focused = true }
@@ -343,7 +343,7 @@ struct GroupBand: View {
     }
 
     var body: some View {
-        let shape = UnevenRoundedRectangle(topLeadingRadius: first ? Self.radius : 0,
+        let shape = UnevenRect(topLeadingRadius: first ? Self.radius : 0,
                                            bottomLeadingRadius: first ? Self.radius : 0,
                                            bottomTrailingRadius: last ? Self.radius : 0,
                                            topTrailingRadius: last ? Self.radius : 0,
@@ -353,11 +353,11 @@ struct GroupBand: View {
                 .frame(height: Self.height)
                 // Inside the padding the piece itself, reaching over the
                 // gap; outside it, what it is drawn behind.
-                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("strip")) }) { rect in
+                .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .named("strip")) }) { rect in
                     TabBar.drawnBands[piece, default: .init(group: group.id)].band = rect
                 }
                 .padding(.trailing, last ? 0 : -Metrics.tabGap)
-                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("strip")) }) { rect in
+                .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .named("strip")) }) { rect in
                     TabBar.drawnBands[piece, default: .init(group: group.id)].item = rect
                 }
                 .allowsHitTesting(false)

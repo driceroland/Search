@@ -5,6 +5,7 @@ import XCTest
 
 /// Settings › Appearance › Reduce animations (Motion.instant): off unless
 /// turned on, kept, and with it on nothing in Search's interface moves.
+@available(macOS 14, *)
 @MainActor
 final class ReduceAnimationsTests: XCTestCase {
     private var saved: Any?

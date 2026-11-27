@@ -117,7 +117,7 @@ struct IconTile: View {
 
     /// How long the pointer stays on the tab you're on before its cross
     /// shows: a pass over the column, or a click for the address, is quicker.
-    static let crossDwell: Duration = .milliseconds(500)
+    static let crossDwell: TimeInterval = 0.5
     /// The cross, in the tile's terms: a small disc on its top-leading
     /// corner, a little past it, as the speaker sits on the bottom-trailing
     /// one. It takes presses there only — never the middle, where a click
@@ -191,7 +191,7 @@ struct IconTile: View {
         .onHover { over in hovering = over }
         .task(id: closable && (hovering || overCross)) {
             guard closable && (hovering || overCross) else { dwelled = false; return }
-            try? await Task.sleep(for: Self.crossDwell)
+            try? await Task.sleep(seconds: Self.crossDwell)
             if !Task.isCancelled { dwelled = true }
         }
         .onAppear {
@@ -206,7 +206,7 @@ struct IconTile: View {
         }
         // Another space's tab come into this tile (Browser.rowKey): the
         // tile is the same, where it is too, and now stands for that tab.
-        .onChange(of: tab.id) { was, now in
+        .onChangeCompat(of: tab.id) { was, now in
             guard interactive else { return }
             let frame = IconTiles.frame(of: me)
             Bench.rowDisappeared(was)
@@ -215,10 +215,10 @@ struct IconTile: View {
             IconTiles.appeared(now, tile: me)
             if let frame { IconTiles.seen(now, tile: me, frame: frame, tip: tip) }
         }
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
+        .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
             if interactive { IconTiles.seen(tab.id, tile: me, frame: frame, tip: tip) }
         }
-        .onChange(of: tip) { _, tip in
+        .onChangeCompat(of: tip) { _, tip in
             if interactive, let frame = IconTiles.frame(of: me) { IconTiles.seen(tab.id, tile: me, frame: frame, tip: tip) }
         }
         .contextMenu { if interactive { TabMenu(browser: browser, tab: tab, close: close) } }
@@ -336,7 +336,7 @@ struct IconPair: View {
             if interactive && Store.testing, let first, let last, IconTiles.pairs[first] == last { IconTiles.pairs[first] = nil }
         }
         // Another space's pair come into this place (Browser.rowKey).
-        .onChange(of: [first, last]) { was, now in
+        .onChangeCompat(of: [first, last]) { was, now in
             guard interactive && Store.testing else { return }
             if let a = was[0], let b = was[1], IconTiles.pairs[a] == b { IconTiles.pairs[a] = nil }
             if let a = now[0], let b = now[1] { IconTiles.pairs[a] = b }

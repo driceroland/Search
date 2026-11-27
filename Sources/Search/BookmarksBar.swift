@@ -33,7 +33,7 @@ extension Browser {
 
 struct BookmarksBar: View {
     @ObservedObject var browser: Browser
-    let bookmarks: Bookmarks
+    @ObservedObject var bookmarks: Bookmarks
     /// On the window's ground, above the page's card, with the tabs down the
     /// side: the ground's colour and no line of its own, the card's edge
     /// being the line (see CardEdge).
@@ -96,7 +96,7 @@ struct BookmarksBar: View {
                         }
                     }
                     .contextMenu { BookmarkActions(browser: browser, bookmarks: bookmarks, node: node) }
-                    .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) {
+                    .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .global) }) {
                         widths[node.id] = $0.width
                         Bench.barLaid(node.id, $0)
                     }
@@ -115,7 +115,7 @@ struct BookmarksBar: View {
                     .padding(.trailing, BookmarksBar.air - 4)
             }
         }
-        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { room = $0 }
+        .onGeometryChangeCompat(for: CGFloat.self, of: { $0.size.width }) { room = $0 }
         .frame(height: BookmarksBar.height)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
@@ -229,7 +229,7 @@ struct BookmarksBar: View {
 /// page and in the column alike (SideBookmarks).
 struct BookmarkActions: View {
     let browser: Browser
-    let bookmarks: Bookmarks
+    @ObservedObject var bookmarks: Bookmarks
     let node: Bookmark
 
     var body: some View {
@@ -302,7 +302,7 @@ struct BookmarkActions: View {
 struct SideBookmarks: View {
     let browser: Browser
     @ObservedObject var prefs: Preferences
-    let bookmarks: Bookmarks
+    @ObservedObject var bookmarks: Bookmarks
     var compact = false
     /// Whether it draws its line under it: not with the column's keep line
     /// (KeepLine) straight after, nothing between them, where the two read
@@ -342,7 +342,7 @@ struct SideBookmarks: View {
         @Environment(\.greys) private var greys
         let browser: Browser
         @ObservedObject var prefs: Preferences
-        let bookmarks: Bookmarks
+        @ObservedObject var bookmarks: Bookmarks
         let node: Bookmark
         let compact: Bool
         @State private var hovering = false

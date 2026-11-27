@@ -382,7 +382,7 @@ enum Vault {
         // domain somebody else owns — com.vendor.app, .shopping… — and would
         // be offered to them.
         guard let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-              let host = url.host()?.lowercased()
+              let host = url.hostCompat()?.lowercased()
         else { return "" }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }

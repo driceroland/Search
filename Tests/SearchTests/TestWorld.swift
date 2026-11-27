@@ -20,6 +20,7 @@ import NoWindows
 ///
 /// Every test class that needs the world calls `TestWorld.enter()` in its
 /// class setUp, in place of setting SEARCH_PROBE itself.
+@available(macOS 14, *)
 enum TestWorld {
     /// Where the run's home is: Store.folder is under it. In /tmp rather
     /// than the per-user temporary folder, whose long path would put the

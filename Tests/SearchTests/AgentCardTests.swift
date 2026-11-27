@@ -8,6 +8,7 @@ import XCTest
 /// narrowest column, the two cards stacked, and no Stop on the tab's row.
 /// Drawn in borderless windows far off every screen, never activated.
 /// SEARCH_RENDER_DIR, when set, keeps every picture there as a PNG.
+@available(macOS 14, *)
 @MainActor
 final class AgentCardTests: XCTestCase {
     private var browsers: [Browser] = []

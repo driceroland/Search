@@ -4,6 +4,7 @@ import XCTest
 /// Settings › Appearance › Darken pages that stay light: hidden while Search
 /// is set to Light, unless it is on, so whoever turned it on can always find
 /// it to turn it off. On the model only.
+@available(macOS 14, *)
 @MainActor
 final class DuskSwitchTests: XCTestCase {
     override class func setUp() {

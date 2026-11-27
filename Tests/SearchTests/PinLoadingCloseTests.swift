@@ -8,6 +8,7 @@ import XCTest
 /// its row's spinner went on for good, since the view's own "done" went
 /// unheard once it was torn down. A local address that takes the request
 /// and never answers keeps the page loading. Nothing is shown.
+@available(macOS 14, *)
 @MainActor
 final class PinLoadingCloseTests: XCTestCase {
     private var listener: NWListener?

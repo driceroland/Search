@@ -4,6 +4,7 @@ import XCTest
 
 /// Profiles in one window (OneWindow.swift): what windows.json keeps of a
 /// merged window, and the switch in Settings.
+@available(macOS 14, *)
 @MainActor
 final class OneWindowTests: XCTestCase {
     override class func setUp() {

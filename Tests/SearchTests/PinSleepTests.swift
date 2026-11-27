@@ -6,6 +6,7 @@ import XCTest
 /// Pins in a space you aren't in sleep after the usual wait, except a pin
 /// whose site may send notifications; pins in the space on screen stay
 /// awake as before (#569). In a test world of its own, nothing shown.
+@available(macOS 14, *)
 @MainActor
 final class PinSleepTests: XCTestCase {
     private var browser: Browser!

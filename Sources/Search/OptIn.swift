@@ -270,7 +270,7 @@ struct OptInForm: View {
             }
         }
         .animation(Motion.settle, value: phase)
-        .onChange(of: email) { _, now in
+        .onChangeCompat(of: email) { _, now in
             if now.trimmingCharacters(in: .whitespacesAndNewlines) != suggestedFor {
                 suggestion = nil
                 suggestedFor = nil

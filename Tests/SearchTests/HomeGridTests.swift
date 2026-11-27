@@ -5,6 +5,7 @@ import XCTest
 
 /// The bookmark folder called Home fills a blank tab's grid: its sites by
 /// their saved titles, sixteen at most, and nothing without the folder.
+@available(macOS 14, *)
 @MainActor
 final class HomeGridTests: XCTestCase {
     override class func setUp() {

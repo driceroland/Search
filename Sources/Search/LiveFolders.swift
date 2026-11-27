@@ -138,8 +138,8 @@ enum Feed {
 
         func said(_ url: URL) -> String {
             switch self {
-            case .network: "\(url.host() ?? url.absoluteString) couldn’t be reached."
-            case .tooBig: "What \(url.host() ?? url.absoluteString) sent is too large to be a feed."
+            case .network: "\(url.hostCompat() ?? url.absoluteString) couldn’t be reached."
+            case .tooBig: "What \(url.hostCompat() ?? url.absoluteString) sent is too large to be a feed."
             case .notAFeed: "There’s no RSS or Atom feed at \(url.absoluteString), nor one that page points to."
             }
         }
@@ -153,7 +153,7 @@ enum Feed {
         guard !text.isEmpty, !text.contains(" ") else { return nil }
         let full = text.contains("://") ? text : "https://" + text
         guard let url = URL(string: full), let scheme = url.scheme?.lowercased(),
-              scheme == "https" || scheme == "http", url.host()?.isEmpty == false else { return nil }
+              scheme == "https" || scheme == "http", url.hostCompat()?.isEmpty == false else { return nil }
         return url
     }
 
@@ -231,7 +231,7 @@ enum Feed {
         var seen = Set<URL>()
         let items = reader.items.filter { seen.insert($0.link).inserted }.prefix(LiveFolders.most)
         let title = clean(reader.title ?? "", html: false)
-        return Read(title: title.isEmpty ? (url.host() ?? "Live Folder") : title, feed: url, items: Array(items))
+        return Read(title: title.isEmpty ? (url.hostCompat() ?? "Live Folder") : title, feed: url, items: Array(items))
     }
 
     /// A page's own feed: the first `<link rel="alternate">` of an RSS or
@@ -239,9 +239,9 @@ enum Feed {
     static func discover(_ data: Data, page: URL) -> URL? {
         guard let html = String(data: data.prefix(maxBytes), encoding: .utf8)
                 ?? String(data: data.prefix(maxBytes), encoding: .isoLatin1) else { return nil }
-        let tags = html.matches(of: #/<link\b[^>]*>/#.ignoresCase())
+        let tags = Pattern.matches(#"<link\b[^>]*>"#, in: html, ignoringCase: true)
         for tag in tags {
-            let attributes = Self.attributes(String(tag.output))
+            let attributes = Self.attributes(tag[0] ?? "")
             let rel = (attributes["rel"] ?? "").lowercased().split(separator: " ")
             let type = (attributes["type"] ?? "").lowercased()
             guard rel.contains("alternate"), type == "application/rss+xml" || type == "application/atom+xml",
@@ -257,9 +257,9 @@ enum Feed {
     /// A tag's attributes, names lowercased, quoted either way or not.
     private static func attributes(_ tag: String) -> [String: String] {
         var out: [String: String] = [:]
-        for match in tag.matches(of: #/([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/#) {
-            let value = match.output.2 ?? match.output.3 ?? match.output.4 ?? ""
-            out[String(match.output.1).lowercased()] = String(value)
+        for match in Pattern.matches(#"([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))"#, in: tag) {
+            let value = match[2] ?? match[3] ?? match[4] ?? ""
+            out[(match[1] ?? "").lowercased()] = value
         }
         return out
     }
@@ -268,7 +268,7 @@ enum Feed {
     /// feed escaped twice read, and the spaces made one.
     static func clean(_ text: String, html: Bool) -> String {
         var text = text
-        if html { text = text.replacing(#/<[^>]*>/#, with: "") }
+        if html { text = Pattern.replacing("<[^>]*>", in: text) { _ in "" } }
         text = decode(text)
         return text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
@@ -279,14 +279,14 @@ enum Feed {
         let named = ["amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'", "nbsp": " ",
                      "#39": "'", "hellip": "…", "mdash": "—", "ndash": "–", "rsquo": "’", "lsquo": "‘",
                      "rdquo": "”", "ldquo": "“"]
-        return text.replacing(#/&(#[xX][0-9A-Fa-f]{1,6}|#[0-9]{1,7}|[A-Za-z]{2,8});/#) { match in
-            let name = String(match.output.1)
+        return Pattern.replacing("&(#[xX][0-9A-Fa-f]{1,6}|#[0-9]{1,7}|[A-Za-z]{2,8});", in: text) { match in
+            let name = match[1] ?? ""
             if let known = named[name] ?? named[name.lowercased()] { return known }
             let number: UInt32?
             if name.hasPrefix("#x") || name.hasPrefix("#X") { number = UInt32(name.dropFirst(2), radix: 16) }
             else if name.hasPrefix("#") { number = UInt32(name.dropFirst()) }
             else { number = nil }
-            return number.flatMap(Unicode.Scalar.init).map { String(Character($0)) } ?? String(match.output.0)
+            return number.flatMap(Unicode.Scalar.init).map { String(Character($0)) } ?? (match[0] ?? "")
         }
     }
 }
@@ -382,7 +382,7 @@ private final class FeedReader: NSObject, XMLParserDelegate {
         else { return }
         var said = Feed.clean(postTitle ?? "", html: postHTML)
         // No title: where it goes, as a bookmark with none reads.
-        if said.isEmpty { said = (link.host() ?? "") + (link.path() == "/" ? "" : link.path()) }
+        if said.isEmpty { said = (link.hostCompat() ?? "") + (link.pathCompat() == "/" ? "" : link.pathCompat()) }
         items.append(FeedItem(id: UUID(), title: String(said.prefix(300)), link: link))
         // Enough, with room for repeats: the rest of a long feed goes unread.
         if items.count >= LiveFolders.most * 2 { parser.abortParsing() }

@@ -67,7 +67,7 @@ enum TileAddress {
     static func check(_ url: URL) -> Result<URL, Problem> {
         guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return .failure(.scheme) }
         guard url.user == nil, url.password == nil else { return .failure(.credentials) }
-        guard let host = url.host(percentEncoded: false), !host.isEmpty else { return .failure(.notAddress) }
+        guard let host = url.hostCompat(percentEncoded: false), !host.isEmpty else { return .failure(.notAddress) }
         guard url.absoluteString.utf8.count <= most else { return .failure(.tooLong) }
         return .success(url)
     }
@@ -97,7 +97,7 @@ enum TileAddress {
     /// can't pass for another site (Hosts.display), its punycode otherwise,
     /// as the tab's address at rest says it.
     static func shown(_ url: URL) -> String {
-        guard let host = url.host(percentEncoded: false), !host.isEmpty else { return "" }
+        guard let host = url.hostCompat(percentEncoded: false), !host.isEmpty else { return "" }
         let ascii = Hosts.ascii(host)
         let bare = ascii.hasPrefix("www.") && ascii.split(separator: ".").count > 2 ? String(ascii.dropFirst(4)) : ascii
         let standard = url.scheme?.lowercased() == "https" ? 443 : 80
@@ -348,6 +348,25 @@ struct HomeTiles: View {
         return lines
     }
 
+    /// The chips of `widths` line by line in `width`, as ChipFlow lays them
+    /// (for macOS 12, which has no Layout).
+    static func rows(_ widths: [CGFloat], in width: CGFloat) -> [[Int]] {
+        var rows: [[Int]] = [], row: [Int] = [], used: CGFloat = 0
+        for (i, chip) in widths.enumerated() {
+            let need = row.isEmpty ? chip : used + gap + chip
+            if need > width, !row.isEmpty {
+                rows.append(row)
+                row = [i]
+                used = chip
+            } else {
+                row.append(i)
+                used = need
+            }
+        }
+        if !row.isEmpty { rows.append(row) }
+        return rows
+    }
+
     /// Whether a new tab shows them now.
     @MainActor static func showing(_ browser: Browser) -> Bool {
         browser.prefs.homeTiles && browser.active?.isBlank == true && browser.typing.typed.isEmpty
@@ -407,11 +426,29 @@ struct HomeTiles: View {
         } else {
             let editable = browser.tilesEditable
             let tiles = shownTiles
-            ChipFlow(gap: HomeTiles.gap) {
-                ForEach(Array(tiles.enumerated()), id: \.element.id) { at, tile in
-                    chip(tile, at: at, editable: editable)
+            Group {
+                if #available(macOS 13, *) {
+                    ChipFlow(gap: HomeTiles.gap) {
+                        ForEach(Array(tiles.enumerated()), id: \.element.id) { at, tile in
+                            chip(tile, at: at, editable: editable)
+                        }
+                        if editable, tiles.count < HomeTiles.most { addChip }
+                    }
+                } else {
+                    // macOS 12, without a Layout: the same lines ChipFlow
+                    // makes, each a centred row.
+                    let add = editable && tiles.count < HomeTiles.most
+                    let widths = tiles.map { HomeTiles.chipWidth(HomeTiles.label($0)) } + (add ? [HomeTiles.chipWidth(nil)] : [])
+                    VStack(spacing: HomeTiles.gap) {
+                        ForEach(Array(HomeTiles.rows(widths, in: width).enumerated()), id: \.offset) { _, line in
+                            HStack(spacing: HomeTiles.gap) {
+                                ForEach(line, id: \.self) { at in
+                                    if at < tiles.count { chip(tiles[at], at: at, editable: editable) } else { addChip }
+                                }
+                            }
+                        }
+                    }
                 }
-                if editable, tiles.count < HomeTiles.most { addChip }
             }
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .contain)
@@ -491,9 +528,9 @@ struct HomeTiles: View {
         }
         .onTapGesture { open(tile) }
         .focusable()
-        .focusEffectDisabled()
+        .focusEffectDisabledCompat()
         .focused($focus, equals: .tile(tile.id))
-        .onKeyPress(phases: .down) { press in key(press, tile: tile, at: index, editable: editable) }
+        .onKeyDownCompat { press in key(press, tile: tile, at: index, editable: editable) }
         .contextMenu {
             Button("Open in New Tab") { if let url { browser.open(url, foreground: true, from: browser.active) } }
             if editable {
@@ -519,7 +556,7 @@ struct HomeTiles: View {
     /// The keys on a chip: Return or Space opens it (⌘ behind), the arrows
     /// go from chip to chip, ⌘ with an arrow moves it, ⌫ removes it,
     /// ⌥Return edits it, Escape goes back to the field.
-    private func key(_ press: KeyPress, tile: Bookmark, at index: Int, editable: Bool) -> KeyPress.Result {
+    private func key(_ press: KeyPressCompat, tile: Bookmark, at index: Int, editable: Bool) -> KeyPressCompat.Result {
         let command = press.modifiers.contains(.command)
         let step: Int? = switch press.key {
         case .leftArrow, .upArrow: -1
@@ -582,9 +619,9 @@ struct HomeTiles: View {
         .onHover { addHovered = $0 }
         .onTapGesture { begin(.new) }
         .focusable()
-        .focusEffectDisabled()
+        .focusEffectDisabledCompat()
         .focused($focus, equals: .add)
-        .onKeyPress(phases: .down) { press in
+        .onKeyDownCompat { press in
             switch press.key {
             case .return, .space: begin(.new); return .handled
             case .leftArrow, .upArrow:
@@ -730,6 +767,7 @@ struct HomeTiles: View {
 
 /// Chips side by side, each line centred, wrapping to the next when the
 /// line is full: the same rule as HomeTiles.lines.
+@available(macOS 13, *)
 struct ChipFlow: Layout {
     var gap: CGFloat
 

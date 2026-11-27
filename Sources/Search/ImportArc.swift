@@ -129,7 +129,7 @@ enum Arc {
                 if let tab = data["tab"] as? [String: Any] {
                     guard let url = page(tab["savedURL"] as? String) else { return nil }
                     total += 1
-                    let title = named(item["title"] as? String) ?? named(tab["savedTitle"] as? String) ?? url.host() ?? url.absoluteString
+                    let title = named(item["title"] as? String) ?? named(tab["savedTitle"] as? String) ?? url.hostCompat() ?? url.absoluteString
                     return .item(.init(title: title, url: url))
                 }
                 if data["list"] != nil {

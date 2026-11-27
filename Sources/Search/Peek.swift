@@ -56,7 +56,7 @@ extension Browser {
     /// A modified click on a link, from a tab in the row.
     func peek(_ url: URL, from tab: Tab) {
         if peekTab != nil { closePeek() }
-        if tab.pin != nil, let host = url.host()?.lowercased() { tab.peeked = (Vault.registrable(host), Date()) }
+        if tab.pin != nil, let host = url.hostCompat()?.lowercased() { tab.peeked = (Vault.registrable(host), Date()) }
         // On the window's space, as the other new tabs are, so a peek has the
         // same sign-ins as the tab it came from rather than the front
         // window's; a private tab's peek is private, with a store of its own.
@@ -79,8 +79,8 @@ extension Browser {
     /// stays in the pin.
     func peeksFromPin(_ url: URL, in tab: Tab, on page: URL?) -> Bool {
         guard prefs.pinsPeek, tab.pin != nil, !peekInFront, Browser.peekable(url),
-              let there = url.host()?.lowercased(),
-              let here = page?.host()?.lowercased()
+              let there = url.hostCompat()?.lowercased(),
+              let here = page?.hostCompat()?.lowercased()
         else { return false }
         return there != here && Vault.registrable(there) != Vault.registrable(here)
     }
@@ -91,7 +91,7 @@ extension Browser {
     /// #fragment, and not a sign-in, which a site expects in the tab it
     /// started from (its own /login, accounts.google.com from Gmail).
     static func leavesPin(_ url: URL, from page: URL?) -> Bool {
-        guard peekable(url), let host = url.host()?.lowercased() else { return false }
+        guard peekable(url), let host = url.hostCompat()?.lowercased() else { return false }
         if let page, var here = URLComponents(url: page, resolvingAgainstBaseURL: false),
            var there = URLComponents(url: url, resolvingAgainstBaseURL: false) {
             here.fragment = nil
@@ -111,7 +111,7 @@ extension Browser {
     /// What a pin may open in a peek: a web page, never about:blank, data:,
     /// blob: or anything else a page can name, which take the tab path.
     static func peekable(_ url: URL) -> Bool {
-        ["http", "https"].contains(url.scheme?.lowercased() ?? "") && url.host() != nil
+        ["http", "https"].contains(url.scheme?.lowercased() ?? "") && url.hostCompat() != nil
     }
 
     /// A new window a pin's page asked for on a click, in the peek: built on
@@ -124,7 +124,7 @@ extension Browser {
         prepare(page)
         page.opener = tab.id
         page.setAddressOptimistically(url)
-        if let host = url.host()?.lowercased() { tab.peeked = (Vault.registrable(host), Date()) }
+        if let host = url.hostCompat()?.lowercased() { tab.peeked = (Vault.registrable(host), Date()) }
         if #available(macOS 15.4, *) { Extensions.shared.openedAside(page) }
         withAnimation(Motion.settle) {
             peekTab = page
@@ -139,7 +139,7 @@ extension Browser {
     func followsPeek(_ url: URL, in tab: Tab) -> Bool {
         guard prefs.pinsPeek, tab.pin != nil, let peeked = tab.peeked,
               Date().timeIntervalSince(peeked.at) < 3,
-              let host = url.host()?.lowercased()
+              let host = url.hostCompat()?.lowercased()
         else { return false }
         return Vault.registrable(host) == peeked.site
     }
@@ -365,7 +365,7 @@ struct PeekSkeleton: View {
         }
         .allowsHitTesting(false)
         .task {
-            try? await Task.sleep(for: .milliseconds(150))
+            try? await Task.sleep(milliseconds: 150)
             withAnimation(Motion.timed(.easeOut(duration: 0.2))) { shown = true }
         }
     }

@@ -5,6 +5,7 @@ import XCTest
 /// ⌘K pressed again with ⌘ still down walks the switcher's list; pressed
 /// afresh it puts the switcher away. Raised from the menu with the mouse, ⌘
 /// was never down, so the next ⌘K is a fresh press.
+@available(macOS 14, *)
 @MainActor
 final class SummonHeldTests: XCTestCase {
     override class func setUp() {

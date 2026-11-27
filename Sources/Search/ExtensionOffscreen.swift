@@ -165,7 +165,7 @@ final class ExtensionOffscreen: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         try await withCheckedThrowingContinuation { continuation in
             loading = continuation
             deadline = Task { [weak self] in
-                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                do { try await Task.sleep(seconds: 30) } catch { return }
                 self?.close(error: ExtensionShims.Unsupported(what: "The offscreen document did not finish loading."))
             }
             web.load(URLRequest(url: url))

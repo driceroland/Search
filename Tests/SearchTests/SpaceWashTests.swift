@@ -4,6 +4,7 @@ import XCTest
 
 /// A space's colour washes the chrome behind the tabs; a space without one
 /// leaves it exactly as it was.
+@available(macOS 14, *)
 @MainActor
 final class SpaceWashTests: XCTestCase {
     override class func setUp() {

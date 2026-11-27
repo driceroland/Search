@@ -97,7 +97,8 @@ final class Profiles: ObservableObject {
             return shared
         }
         if let made = stores[id] { return made }
-        let made = WKWebsiteDataStore(forIdentifier: id)
+        // macOS 12 and 13 keep only the one store: every profile signs in there.
+        guard let made = WKWebsiteDataStore.identifiedCompat(id) else { return store(Profile.personalID) }
         if Store.keepsSignIns { Store.followSignIns(made) } else { Store.followCookies(made) }
         BrowserProxy.shared.attach(made)
         stores[id] = made
@@ -322,8 +323,11 @@ enum ProfileMenu {
                 if profile.id != browser.profileID { Browsers.open(profile: profile.id) }
             })
         }
-        items.append(.separator())
-        items.append(item("New Profile…") { askNew() })
+        // A profile's own sign-ins need macOS 14 (separateStoresSupported).
+        if WKWebsiteDataStore.separateStoresSupported {
+            items.append(.separator())
+            items.append(item("New Profile…") { askNew() })
+        }
         return items
     }
 
@@ -336,6 +340,14 @@ enum ProfileMenu {
 
     /// Its name, then a window of its own.
     static func askNew() {
+        // A profile's own sign-ins need a store of its own: macOS 14.
+        guard WKWebsiteDataStore.separateStoresSupported else {
+            let alert = NSAlert()
+            alert.messageText = "Profiles need macOS 14 or later"
+            alert.informativeText = "Each profile keeps its own sign-ins, which this version of macOS can't do. Spaces still work."
+            alert.runModal()
+            return
+        }
         Ask.name("New Profile", detail: OneWindow.on
                     ? "A separate set of spaces with its own sign-ins, history and bookmarks."
                     : "A separate set of spaces with its own sign-ins, history and bookmarks, in a window of its own.",
@@ -403,7 +415,13 @@ struct ProfilesSettings: View {
     var body: some View {
         Card {
             Line("Profiles", "Separate sets of spaces, each with its own sign-ins, history and bookmarks, in windows of their own. Extensions, passwords and settings are shared.") {
-                Pill("New Profile…") { ProfileMenu.askNew() }
+                if WKWebsiteDataStore.separateStoresSupported {
+                    Pill("New Profile…") { ProfileMenu.askNew() }
+                } else {
+                    Text("Needs macOS 14")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                }
             }
             ProfileList(browser: browser)
         }

@@ -8,6 +8,7 @@ import XCTest
 /// takes that half out. Hosted as SidebarPressTests does, far off every
 /// screen. The clicks go through NSApp, as a hand's do, so the ⌥ they carry
 /// is the one the tab reads (TabClick.flags); the keyboard's is never held.
+@available(macOS 14, *)
 @MainActor
 final class OptionClickTests: XCTestCase {
     private var browsers: [Browser] = []

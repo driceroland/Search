@@ -5,6 +5,7 @@ import XCTest
 
 /// A tab whose page is let go of stops saying it plays sound: the speaker
 /// went with the view, and a tab still "playing sound" never sleeps.
+@available(macOS 14, *)
 @MainActor
 final class NoisyRehomeTests: XCTestCase {
     override class func setUp() {

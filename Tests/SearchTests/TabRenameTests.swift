@@ -6,6 +6,7 @@ import XCTest
 /// Rename types over the title where the tab has one drawn, and asks in a
 /// sheet where it hasn't: a pinned square, the column of icons (#1354).
 /// There, the field never came and the edit stayed open, unseen.
+@available(macOS 14, *)
 @MainActor
 final class TabRenameTests: XCTestCase {
     override class func setUp() {

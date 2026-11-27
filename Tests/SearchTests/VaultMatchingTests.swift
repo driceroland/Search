@@ -3,6 +3,7 @@ import XCTest
 
 /// Unlike VaultAndUpdaterTests, this one does touch the keychain, under the
 /// label a test run keeps for itself, and forgets what it saved.
+@available(macOS 14, *)
 final class VaultMatchingTests: XCTestCase {
     func testTheHostsOwnAccountsComeBeforeTheSites() throws {
         let own = "admin.vault-test.example", qa = "admin-qa.vault-test.example", other = "accounts.vault-test.example"

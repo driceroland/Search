@@ -110,7 +110,7 @@ final class FetchEntry: ObservableObject, Identifiable {
         if stalled { stalled = false }
         let wait = stallAfter
         stallWatch = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(wait))
+            try? await Task.sleep(seconds: wait)
             guard !Task.isCancelled, let self, self.state == .downloading else { return }
             self.stalled = true
         }
@@ -806,19 +806,19 @@ struct FetchDoor: View {
             })
             // Every window's button pulses as a download begins, as before;
             // the window a flight is coming to waits for it to land.
-            .onChange(of: fetches.started) { _, _ in
+            .onChangeCompat(of: fetches.started) { _, _ in
                 if live, browser.flight == nil { browser.doorBeat += 1 }
             }
-            .onChange(of: fetches.done) { _, done in
+            .onChangeCompat(of: fetches.done) { _, done in
                 checkGone = false
                 guard done, wantsCheck else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + DownloadFlight.check) {
                     withAnimation(.easeOut(duration: DownloadFlight.checkFade)) { checkGone = true }
                 }
             }
-            .onChange(of: browser.downloadsHanging) { _, on in float(on) }
+            .onChangeCompat(of: browser.downloadsHanging) { _, on in float(on) }
             // The doors moving while the list hangs: it follows them.
-            .onChange(of: live) { _, live in
+            .onChangeCompat(of: live) { _, live in
                 float(browser.downloadsHanging)
                 if live { browser.doorSpot.view = spot.view }
             }

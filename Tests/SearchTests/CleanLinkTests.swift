@@ -4,6 +4,7 @@ import XCTest
 
 /// Copy Clean Link's rules on made-up addresses, and the bytes it copies,
 /// on a pasteboard of its own rather than the Mac's clipboard (#594).
+@available(macOS 14, *)
 final class CleanLinkTests: XCTestCase {
     private func clean(_ text: String) -> String { CleanLink.clean(URL(string: text)!).absoluteString }
 

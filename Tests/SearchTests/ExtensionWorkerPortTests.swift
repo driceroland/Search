@@ -4,6 +4,7 @@ import XCTest
 @testable import Search
 
 @available(macOS 15.4, *)
+@available(macOS 14, *)
 final class ExtensionWorkerPortTests: XCTestCase {
     func testRealShimEntryCoversContentScriptsAndExtensionPages() throws {
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()

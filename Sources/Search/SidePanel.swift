@@ -120,7 +120,7 @@ extension Browser {
     @discardableResult
     func showSiteInPanel(_ url: URL) -> Bool {
         guard prefs.sitesInPanel, PanelSites.allowed(url), !isPopup else { return false }
-        if sidePanelShown, case .site = sidePanel, SidePanelPages.shared.siteArrived(in: self)?.host() == url.host() {
+        if sidePanelShown, case .site = sidePanel, SidePanelPages.shared.siteArrived(in: self)?.hostCompat() == url.hostCompat() {
             closeSidePanel()
             return true
         }
@@ -503,7 +503,7 @@ private final class SitePanelDelegate: NSObject, ObservableObject, WKNavigationD
     }
 
     static func sameSite(_ a: URL, _ b: URL) -> Bool {
-        a.scheme?.lowercased() == b.scheme?.lowercased() && a.host()?.lowercased() == b.host()?.lowercased() && a.port == b.port
+        a.scheme?.lowercased() == b.scheme?.lowercased() && a.hostCompat()?.lowercased() == b.hostCompat()?.lowercased() && a.port == b.port
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
@@ -814,7 +814,7 @@ private struct SiteLine: View {
             }
         }
         nonisolated static func name(_ url: URL?) -> String {
-            guard let url, let host = url.host() else { return "" }
+            guard let url, let host = url.hostCompat() else { return "" }
             return Address.withoutWWW(host) + (url.scheme?.lowercased() == "http" ? " (not secure)" : "")
         }
     }

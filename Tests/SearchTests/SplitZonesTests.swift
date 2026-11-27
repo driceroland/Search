@@ -8,6 +8,7 @@ import XCTest
 /// (`over`), and the stage draws that page's two edge bands. Over the middle
 /// nothing splits, and nothing used to say where would. The hand is told to
 /// TabDrag as the drag gesture would tell it, through `testPointer`.
+@available(macOS 14, *)
 @MainActor
 final class SplitZonesTests: XCTestCase {
     private var browsers: [Browser] = []
@@ -125,6 +126,7 @@ final class SplitZonesTests: XCTestCase {
 
 /// 200 points of nothing, then a stand-in for the page on screen carrying
 /// the stage's marker, as SplitStage's PaneLayers does.
+@available(macOS 14, *)
 private struct ZonesPage: View {
     @ObservedObject var browser: Browser
 

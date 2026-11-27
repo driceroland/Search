@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Search runs on macOS 12 Monterey and macOS 13 Ventura, not only macOS 14 and later. Where macOS 14 has something the older ones don't, the older ones do the nearest thing or leave the feature out: Profiles and signed-out spaces, the proxy, and the developer tools packages still need macOS 14 and aren't offered before it. The app starts with a WindowGroup on macOS 12, where SwiftUI's single Window scene isn't there. `Sources/Search/Compat.swift`. The developer tools packages are built for macOS 14 on their own (`SEARCH_DEVTOOLS=1`, build.sh).
+
 ### Fixed
 
 - A Chrome theme from the Chrome Web Store is no longer installed only to change nothing: Search says themes aren't supported and where its own colours are (a space's menu › Colour…, Settings › Themes). What's New no longer offers Icons only on the bookmarks bar while the bookmarks are in the sidebar, where it doesn't apply. (idea 1326)

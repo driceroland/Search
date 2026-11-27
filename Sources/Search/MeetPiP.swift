@@ -42,7 +42,7 @@ enum MeetPiP {
     static let testHostKey = "meetPiP.testHost"
 
     @MainActor static func applies(_ url: URL?) -> Bool {
-        guard on, let url, let host = url.host()?.lowercased() else { return false }
+        guard on, let url, let host = url.hostCompat()?.lowercased() else { return false }
         if url.scheme == "https", hosts.contains(host) { return true }
         return Store.testing && host == Store.settings.string(forKey: testHostKey)
     }
@@ -261,7 +261,7 @@ enum MeetPiP {
         let size = NSSize(width: features.width?.doubleValue ?? asked.width,
                           height: features.height?.doubleValue ?? asked.height)
         let window = MeetPiPWindow(opener: opener, browser: browser, configuration: configuration,
-                                   size: size, host: webView.url?.host() ?? "", auto: auto)
+                                   size: size, host: webView.url?.hostCompat() ?? "", auto: auto)
         return window.web
     }
 

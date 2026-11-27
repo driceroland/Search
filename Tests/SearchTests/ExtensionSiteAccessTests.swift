@@ -5,6 +5,7 @@ import XCTest
 
 /// Settings › Extensions › Runs on (#698): what is kept, how a host and its
 /// subdomains are matched, and what WebKit then injects where.
+@available(macOS 14, *)
 final class SiteAccessStorageTests: XCTestCase {
     private func defaults() -> UserDefaults {
         let name = "site-access-\(UUID())"
@@ -111,6 +112,7 @@ final class SiteAccessStorageTests: XCTestCase {
 
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionSiteAccessTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()
@@ -311,6 +313,7 @@ final class ExtensionSiteAccessTests: XCTestCase {
 /// for every website, where they run once more.
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionRerunTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

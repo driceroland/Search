@@ -5,6 +5,7 @@ import XCTest
 /// off unless asked for, only with the bar shown and the tabs down a side,
 /// and the height the column adds up for it before it is drawn. On the
 /// model only.
+@available(macOS 14, *)
 @MainActor
 final class SideBookmarksTests: XCTestCase {
     override class func setUp() {

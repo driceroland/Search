@@ -218,7 +218,7 @@ private struct HistoryList: View {
                 HStack(spacing: 8) {
                     icon(stop.url)
                         .frame(width: 14, height: 14)
-                    Text(stop.title.isEmpty ? (stop.url.host() ?? stop.url.absoluteString) : stop.title)
+                    Text(stop.title.isEmpty ? (stop.url.hostCompat() ?? stop.url.absoluteString) : stop.title)
                         .font(.system(size: 12.5))
                         .foregroundStyle(index == pull.picked ? Palette.ink : Palette.ink.opacity(0.75))
                         .lineLimit(1)
@@ -485,11 +485,11 @@ final class StageView: NSView {
             dock.removeFromSuperview()
         }
         let chosen = page !== wanted
-        if chosen, let leaving = wanted as? WKWebView, leaving.fullscreenState != .notInFullscreen,
+        if chosen, let leaving = wanted as? WKWebView, leaving.fullscreenPhase != .notInFullscreen,
            subviews.contains(where: Self.isPlaceholder) {
             leftFullScreen = leaving
         }
-        if leftFullScreen?.fullscreenState == .notInFullscreen { leftFullScreen = nil }
+        if leftFullScreen?.fullscreenPhase == .notInFullscreen { leftFullScreen = nil }
         wanted = page
         if chosen { bringHome() }
         settle()
@@ -499,7 +499,7 @@ final class StageView: NSView {
     /// another tab was shown here in the meantime: its placeholder, kept
     /// under that tab, is all there is of it here. Or none is left at all.
     private var stranded: WKWebView? {
-        guard let web = wanted as? WKWebView, web.fullscreenState != .notInFullscreen,
+        guard let web = wanted as? WKWebView, web.fullscreenPhase != .notInFullscreen,
               web.superview !== self else { return nil }
         guard web === leftFullScreen || !subviews.contains(where: Self.isPlaceholder) else { return nil }
         return web
@@ -514,10 +514,10 @@ final class StageView: NSView {
     private func bringHome() {
         homecoming = nil
         guard let web = stranded else { return }
-        homecoming = web.observe(\.fullscreenState, options: [.new]) { [weak self] web, _ in
+        homecoming = web.observeFullscreen { [weak self] web in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                switch web.fullscreenState {
+                switch web.fullscreenPhase {
                 case .notInFullscreen:
                     self.homecoming = nil
                     if self.leftFullScreen === web { self.leftFullScreen = nil }
@@ -559,7 +559,7 @@ final class StageView: NSView {
         // placeholder's frame: kept at this stage's size, the chrome having
         // come back before that (see Tab.immersed), the page comes home at
         // its own size and is laid out once.
-        if let web = wanted as? WKWebView, web.fullscreenState != .notInFullscreen {
+        if let web = wanted as? WKWebView, web.fullscreenPhase != .notInFullscreen {
             for view in subviews where view !== web && Self.isPlaceholder(view) && view.frame != bounds {
                 view.frame = bounds
             }
@@ -592,7 +592,7 @@ final class StageView: NSView {
             // Once home it is put away as any tab behind is (see the
             // fullscreenState watch in Tab.build).
             if Self.isPlaceholder(view) { continue }
-            if let page = view as? WKWebView, page.fullscreenState != .notInFullscreen { continue }
+            if let page = view as? WKWebView, page.fullscreenPhase != .notInFullscreen { continue }
             // Unseen, and still drawn: WebKit asks whether its view is in a
             // window and not hidden, not whether anything shows of it.
             if view === parting {

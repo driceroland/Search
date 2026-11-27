@@ -4,6 +4,7 @@ import XCTest
 /// What the browser keeps for extensions that listen for tab groups or for
 /// idleness (ExtensionWatch.swift): nothing at all while none does, and one
 /// word on a port, not a reading for each, when something changes.
+@available(macOS 14, *)
 @MainActor
 final class ExtensionWatchTests: XCTestCase {
     /// A context to speak to, and what it was told.

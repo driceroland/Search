@@ -6,6 +6,7 @@ import XCTest
 /// A window opened over a page gives the page the keys. Left with the
 /// window, the Mac's keyboard navigation hands them to the first button
 /// that takes them: Reload, with a focus ring round it.
+@available(macOS 14, *)
 @MainActor
 final class LaunchFocusTests: XCTestCase {
     override class func setUp() {

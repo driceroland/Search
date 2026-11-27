@@ -6,6 +6,7 @@ import XCTest
 /// into (#1374). The click marks the field as the line's (inlineEdit), and
 /// nothing put that mark away: the next ⌘T came up in the line instead of
 /// floating, and with Always show the address bar turned off, nowhere.
+@available(macOS 14, *)
 @MainActor
 final class AddressLineLaunchTests: XCTestCase {
     override class func setUp() {

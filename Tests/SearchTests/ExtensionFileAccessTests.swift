@@ -7,6 +7,7 @@ import XCTest
 /// as in Chrome with "Allow access to file URLs" left off.
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionFileAccessTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

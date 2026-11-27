@@ -6,6 +6,7 @@ import XCTest
 /// window's one flag, so both hung a popover, and the hidden one closing let
 /// go of the flag and shut the list just opened. Each copy now has its own
 /// open state: only the copy in sight shows, opens or closes the list.
+@available(macOS 14, *)
 final class PuzzleListTests: XCTestCase {
     private final class Window {}
     private let window = Window()

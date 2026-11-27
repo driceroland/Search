@@ -43,7 +43,7 @@ struct AccountList: View {
             let place = Self.place(spot: spot, height: space.size.height)
             card(room: place.room)
                 // Measured inside the offset, so where it is drawn, not laid out.
-                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(FromTopLeft<AccountList>.space)) }) { onFrame?($0) }
+                .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .named(FromTopLeft<AccountList>.space)) }) { onFrame?($0) }
                 // Above the box: its foot 6 points over the box's top.
                 .frame(height: place.up ? max(0, spot.minY - 6) : nil, alignment: .bottom)
                 // Just under the box (or over it), left edges lined up. The
@@ -53,17 +53,18 @@ struct AccountList: View {
     }
 
     private func card(room: CGFloat) -> some View {
-        Capped(room: room) {
+        CappedCompat(room: room) {
         VStack(alignment: .leading, spacing: 0) {
             // As tall as the rows when they fit; otherwise they scroll under
             // a footer that stays.
             ScrollViewReader { scroller in
-                ViewThatFits(in: .vertical) {
+                FitsCompat(in: .vertical) {
                     rows(marked: false)
                     ScrollView(.vertical) { rows(marked: true) }
-                        .scrollIndicators(.automatic)
+                } older: {
+                    ScrollView(.vertical) { rows(marked: true) }
                 }
-                .onChange(of: asked.lit) { _, lit in
+                .onChangeCompat(of: asked.lit) { _, lit in
                     guard let lit else { return }
                     scroller.scrollTo(lit)
                 }
@@ -174,6 +175,22 @@ struct AccountList: View {
     /// then is: a short list keeps its own height, a long one stops at
     /// `room` (where its rows scroll). `.frame(maxHeight:)` would make the
     /// short one `room` tall too.
+    /// Capped where there is a Layout (macOS 13); a frame no taller than
+    /// `room` on macOS 12.
+    private struct CappedCompat<Content: View>: View {
+        let room: CGFloat
+        @ViewBuilder let content: Content
+
+        var body: some View {
+            if #available(macOS 13, *) {
+                Capped(room: room) { content }
+            } else {
+                content.frame(maxHeight: room)
+            }
+        }
+    }
+
+    @available(macOS 13, *)
     private struct Capped: Layout {
         let room: CGFloat
 

@@ -5,6 +5,7 @@ import XCTest
 /// ⌥⌘N splits the page on screen, and on a pair puts it apart: the key that
 /// made the split takes it away, as ⌘T, ⌘L and ⌘K each put away what they
 /// raised (#912). On a pair it used to go to the right-hand page.
+@available(macOS 14, *)
 @MainActor
 final class SplitKeyTests: XCTestCase {
     override class func setUp() {

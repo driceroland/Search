@@ -7,6 +7,7 @@ import XCTest
 /// choice going where it says — the button closing what it opened, ⇧⌘J
 /// only ever showing — and the floating card kept off the button. On the
 /// model only: no window is ever shown.
+@available(macOS 14, *)
 @MainActor
 final class DownloadsOpeningTests: XCTestCase {
     override class func setUp() {

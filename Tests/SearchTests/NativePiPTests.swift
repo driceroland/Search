@@ -4,6 +4,7 @@ import XCTest
 /// Settings › General › The floating video: Search's window unless picture
 /// in picture is chosen, and the choice kept (idea 376). Entering picture
 /// in picture puts a system window on screen, so that part is by eye.
+@available(macOS 14, *)
 @MainActor
 final class NativePiPTests: XCTestCase {
     override class func setUp() {

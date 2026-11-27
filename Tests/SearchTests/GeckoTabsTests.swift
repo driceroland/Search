@@ -5,6 +5,7 @@ import XCTest
 /// A Firefox's or Zen's open tabs and tab groups, read from session stores
 /// written here by hand (see ImportGeckoTabs.swift). Only synthetic files in
 /// a scratch folder: no real browser's profile is read.
+@available(macOS 14, *)
 final class GeckoTabsTests: XCTestCase {
     private var scratch: URL!
 

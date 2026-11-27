@@ -3,6 +3,7 @@ import WebKit
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 @MainActor
 final class ScreenPermissionTests: XCTestCase {
     override class func setUp() {
@@ -543,6 +544,7 @@ final class ScreenPermissionTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 @MainActor
 private final class FrameReceiver: NSObject, WKScriptMessageHandler {
     var frame: WKFrameInfo?

@@ -2,6 +2,7 @@ import XCTest
 import WebKit
 @testable import Search
 
+@available(macOS 14, *)
 final class CaptureChoicesTests: XCTestCase {
     func testChoicesForIndividualAndCombinedRequestsStaySeparate() throws {
         let name = "CaptureChoicesTests.\(UUID().uuidString)"

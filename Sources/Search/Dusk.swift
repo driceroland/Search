@@ -64,7 +64,7 @@ final class Dusk: ObservableObject {
     /// The same host the hidden elements are kept by: no www.
     static func host(of url: URL?) -> String? {
         guard let url, ["http", "https"].contains(url.scheme?.lowercased()),
-              let host = url.host()?.lowercased(), !host.isEmpty else { return nil }
+              let host = url.hostCompat()?.lowercased(), !host.isEmpty else { return nil }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 

@@ -3,6 +3,7 @@ import WebKit
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 @MainActor
 final class KeepAwakeTests: XCTestCase {
     private var browser: Browser!

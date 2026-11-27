@@ -8,6 +8,7 @@ import XCTest
 /// "permissions.removeWebsites" for that (#675).
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class AllURLsRemovalTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

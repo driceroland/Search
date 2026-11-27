@@ -8,6 +8,7 @@ import XCTest
 
 private typealias BrowserTab = Search.Tab
 
+@available(macOS 14, *)
 @MainActor
 final class DownloadLifecycleTests: XCTestCase {
     private var browser: Browser!

@@ -426,7 +426,7 @@ struct AppleLogin: Identifiable, Equatable, Hashable {
     /// A site as the helper names it, by its host when it is an address.
     private static func site(_ text: String) -> String {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.contains("://"), let host = URL(string: text)?.host(), !host.isEmpty { return host }
+        if text.contains("://"), let host = URL(string: text)?.hostCompat(), !host.isEmpty { return host }
         return text
     }
 }

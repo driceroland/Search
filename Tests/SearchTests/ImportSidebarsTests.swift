@@ -7,6 +7,7 @@ import CommonCrypto
 /// Ardia's, Yab's and Dia's spaces, pins and folders, read from files made
 /// here in each browser's shape (see ImportSidebars.swift). Only synthetic
 /// files: no real browser's data, no keychain.
+@available(macOS 14, *)
 final class ImportSidebarsTests: XCTestCase {
     private func url(_ text: String) -> URL { URL(string: text)! }
 

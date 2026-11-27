@@ -92,7 +92,7 @@ enum Address {
     /// there and shows nothing at all, where Chrome opens this Mac, so it is
     /// opened as localhost, the same server.
     static func reachable(_ url: URL) -> URL? {
-        guard url.host() == "0.0.0.0", ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+        guard url.hostCompat() == "0.0.0.0", ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
               var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { return nil }
         parts.host = "localhost"
@@ -131,7 +131,7 @@ enum Address {
         guard let scheme = page.scheme, full.lowercased().hasPrefix(scheme.lowercased() + "://") else { return full }
         let short = String(full.dropFirst(scheme.count + 3))
         var candidates = [short]
-        if page.path() == "/", page.query() == nil, page.fragment() == nil, short.hasSuffix("/") {
+        if page.pathCompat() == "/", page.queryCompat() == nil, page.fragmentCompat() == nil, short.hasSuffix("/") {
             candidates.insert(String(short.dropLast()), at: 0)
         }
         for candidate in candidates {
@@ -149,9 +149,9 @@ enum Address {
     /// What the tab says before the page has told us its title: the address,
     /// with the parts nobody reads taken off.
     static func pretty(_ url: URL) -> String {
-        guard let host = url.host() else { return url.absoluteString }
+        guard let host = url.hostCompat() else { return url.absoluteString }
         let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-        let path = url.path()
+        let path = url.pathCompat()
         return path.isEmpty || path == "/" ? bare : bare + path
     }
 }

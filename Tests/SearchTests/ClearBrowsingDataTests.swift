@@ -7,6 +7,7 @@ import XCTest
 /// that live inside History (#749).
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ClearBrowsingDataTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

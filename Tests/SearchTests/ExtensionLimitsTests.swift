@@ -6,6 +6,7 @@ import XCTest
 /// WebAssembly in a Manifest V3 extension's pages on macOS 15 (#1383).
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionLimitsTests: XCTestCase {
     private let bitwarden: [String: Any] = [
         "manifest_version": 3, "name": "Bitwarden",

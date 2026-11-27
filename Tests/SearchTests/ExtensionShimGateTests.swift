@@ -5,6 +5,7 @@ import XCTest
 /// their own permission in Chrome, everything else is named by its first part.
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionShimGateTests: XCTestCase {
     func testFamilies() {
         XCTAssertEqual(ExtensionShims.family(of: "system.cpu.getInfo"), "system.cpu")

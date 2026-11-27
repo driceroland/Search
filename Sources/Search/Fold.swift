@@ -309,7 +309,7 @@ extension Browser {
     /// be used beside the video.
     func fillsHere(_ tab: Tab) -> Bool {
         guard tab.immersed else { return false }
-        guard prefs.keepsWindow, let window, tab.built?.fullscreenState == .inFullscreen else { return true }
+        guard prefs.keepsWindow, let window, tab.built?.fullscreenPhase == .inFullscreen else { return true }
         return !window.isOnActiveSpace
     }
 
@@ -559,7 +559,7 @@ struct Fold: View {
         // Slid with the column, they are placed frame by frame there
         // (LightsRide): placed here as well, they stood at the slide's end
         // for its first frame.
-        .onChange(of: lightsOff) { _, _ in if !ridesLights { hideLights() } }
+        .onChangeCompat(of: lightsOff) { _, _ in if !ridesLights { hideLights() } }
         // Into full screen, the buttons are given back to macOS; out of it,
         // they go the way the fold says again.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { note in
@@ -568,19 +568,19 @@ struct Fold: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
             if (note.object as? NSWindow) === browser.window { hideLights() }
         }
-        .onChange(of: folding) { _, _ in
+        .onChangeCompat(of: folding) { _, _ in
             resetPending()
             watch()
         }
         // Back to the strip and then to the column again: the column comes
         // back as it rests — whole, not folded from a time nobody remembers,
         // unless Settings says it rests folded.
-        .onChange(of: prefs.sidebar) { _, _ in
+        .onChangeCompat(of: prefs.sidebar) { _, _ in
             resetPending()
             browser.folded = prefs.sidebar && prefs.sideHides
             browser.peeking = false
         }
-        .onChange(of: prefs.sidePosition) { _, _ in
+        .onChangeCompat(of: prefs.sidePosition) { _, _ in
             resetPending()
             browser.peeking = false
             // This window's own bar: every window hears the change, and each
@@ -592,10 +592,10 @@ struct Fold: View {
                 Fold.reset(bar, hidden: lightsOff && !window.styleMask.contains(.fullScreen))
             }
         }
-        .onChange(of: prefs.columnWidth) { _, _ in
+        .onChangeCompat(of: prefs.columnWidth) { _, _ in
             if browser.folded { hideLights() }
         }
-        .onChange(of: prefs.sideHides) { _, hides in
+        .onChangeCompat(of: prefs.sideHides) { _, hides in
             resetPending()
             guard prefs.sidebar else { return }
             browser.peeking = false
@@ -603,11 +603,11 @@ struct Fold: View {
         }
         // The address typed into a row is done with, and the pointer went
         // elsewhere while it was: the column goes the way it would have.
-        .onChange(of: browser.editingTab) { _, editing in
+        .onChangeCompat(of: browser.editingTab) { _, editing in
             if editing == nil, !inside, browser.peeking { peek(false) }
         }
         // The bookmarks list closed with the pointer elsewhere: the same.
-        .onChange(of: browser.bookmarksOpen) { _, open in
+        .onChangeCompat(of: browser.bookmarksOpen) { _, open in
             if !open, !inside, browser.peeking { peek(false) }
         }
     }

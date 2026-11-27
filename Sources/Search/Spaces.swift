@@ -224,7 +224,8 @@ enum Spaces {
     @MainActor static func store(for id: UUID) -> WKWebsiteDataStore {
         guard ownsStore(id) else { return Profiles.store(profile(of: id)) }
         if let made = stores[id] { return made }
-        let made = WKWebsiteDataStore(forIdentifier: id)
+        // macOS 12 and 13 keep only the one store: its profile's is the space's.
+        guard let made = WKWebsiteDataStore.identifiedCompat(id) else { return Profiles.store(profile(of: id)) }
         if Store.keepsSignIns { Store.followSignIns(made) } else { Store.followCookies(made) }
         BrowserProxy.shared.attach(made)
         stores[id] = made
@@ -345,6 +346,8 @@ enum Spaces {
 
     /// Every store of a deleted space that is still there, tried again.
     @MainActor static func sweep() {
+        // Stores of their own are macOS 14's: an older Mac made none.
+        guard #available(macOS 14, *) else { return }
         for text in Store.settings.stringArray(forKey: "spaces.erasing") ?? [] {
             guard let id = UUID(uuidString: text) else { continue }
             Task { @MainActor in
@@ -936,7 +939,7 @@ struct SpaceDot: View {
         .onHover { hovering = $0 }
         .animation(Motion.quick, value: space.look)
         .help("\(browser.space.name) — \(KeyCombo.spacesOnCommand ? "⌘1–⌘9" : "⌃1–⌃9"), or two fingers \(browser.prefs.sidebar ? "sideways" : "up or down") over the tabs, to switch")
-        .onChange(of: key) { _, now in
+        .onChangeCompat(of: key) { _, now in
             let symbol = symbol
             DispatchQueue.main.async {
                 // With Reduce Motion on, the new icon is simply there.
@@ -945,7 +948,7 @@ struct SpaceDot: View {
         }
         // Not where another profile's window brought you: that is a change
         // of profile, which the badge beside it shows (idea 1114).
-        .onChange(of: browser.spaceID) { _, now in if names, !browser.arrivedQuietly(at: now) { name() } }
+        .onChangeCompat(of: browser.spaceID) { _, now in if names, !browser.arrivedQuietly(at: now) { name() } }
         // The name, beside the icon that stands for it, the moment you get
         // there — right of it in the bar, over the first tabs (below, the
         // page would cover it), above it at the column's foot — and
@@ -1012,8 +1015,7 @@ struct SpaceButtons: View {
 
     var body: some View {
         if SpaceButtons.count(browser.prefs, browser.spaces) > 0 {
-            let layout = vertical ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
-            layout {
+            StackCompat(vertical: vertical, spacing: 2) {
                 ForEach(Array(browser.spaces.enumerated()), id: \.element.id) { index, space in
                     SpaceButton(browser: browser, space: space, index: index, current: space.id == (browser.spaceHeading ?? browser.spaceID),
                                 squeezes: squeezes)
@@ -1116,7 +1118,7 @@ enum SpaceMenu {
             : [(nil, browser.spaces)]
         var index = 0
         for list in lists where !list.spaces.isEmpty {
-            if let name = list.name { menu.addItem(.sectionHeader(title: name)) }
+            if let name = list.name { menu.addItem(.sectionHeaderCompat(title: name)) }
             for space in list.spaces {
                 let entry = item(space.name, key: index < 9 ? "\(index + 1)" : "", checked: space.id == browser.spaceID) {
                     browser.goToSpace(space.id)

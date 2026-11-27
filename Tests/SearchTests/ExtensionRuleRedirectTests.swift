@@ -3,6 +3,7 @@ import XCTest
 
 /// A declarativeNetRequest redirect to an extension's own page (Norma's
 /// block page): the target WebKit hands over, and who may go there.
+@available(macOS 14, *)
 final class ExtensionRuleRedirectTests: XCTestCase {
     private let base = "chrome-extension://offmcbeojiklcpoccgcjapoofafkhjje"
     private let manifest: [String: Any] = [
@@ -92,6 +93,7 @@ final class ExtensionRuleRedirectTests: XCTestCase {
 /// Request rules WebKit would carry out beyond the sites they name
 /// (ExtensionShims.misreadByWebKit, #709).
 @available(macOS 15.4, *)
+@available(macOS 14, *)
 final class ExtensionMisreadRulesTests: XCTestCase {
     private func rule(_ type: String, _ condition: [String: Any]) -> [String: Any] {
         ["id": 1, "action": ["type": type], "condition": condition]

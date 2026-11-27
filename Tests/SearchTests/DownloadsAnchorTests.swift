@@ -8,6 +8,7 @@ import XCTest
 /// up in the lights' row and hides whichever it isn't using; both buttons
 /// heard the list being asked for, and the hidden one at the top won, so the
 /// card hung from the column's top instead of its foot (#1350).
+@available(macOS 14, *)
 @MainActor
 final class DownloadsAnchorTests: XCTestCase {
     private var window: NSWindow?

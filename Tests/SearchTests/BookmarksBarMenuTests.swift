@@ -4,6 +4,7 @@ import XCTest
 
 /// What the bookmarks bar's right-click menu does, without the menu: a
 /// real one is an NSMenu that a hidden run can't open (#439).
+@available(macOS 14, *)
 @MainActor
 final class BookmarksBarMenuTests: XCTestCase {
     override class func setUp() {

@@ -4,6 +4,7 @@ import XCTest
 /// The iPhone beta's quieter places (IPhoneAsk.swift): when they offer it,
 /// that one "Not now" or one address from anywhere ends it, and that each
 /// place's press says where it was made. No window, no network.
+@available(macOS 14, *)
 @MainActor
 final class IPhoneAskTests: XCTestCase {
     private var store: UserDefaults!

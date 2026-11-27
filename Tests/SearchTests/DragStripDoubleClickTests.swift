@@ -12,6 +12,7 @@ import XCTest
 /// AppKit's `NSThemeFrame` title bar double-click recognizer fires inside the
 /// top 32 pt `titlebarRect` unless `DragStrip.Strip` claims the double-click
 /// with its own `NSClickGestureRecognizer`.
+@available(macOS 14, *)
 @MainActor
 final class DragStripDoubleClickTests: XCTestCase {
     private var windows: [TrackingWindow] = []

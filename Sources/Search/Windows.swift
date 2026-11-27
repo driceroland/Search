@@ -276,11 +276,11 @@ enum Browsers {
         let host: NSView
         if popup {
             let view = NSHostingView(rootView: PopupWindowView(browser: browser).frame(minWidth: 200, minHeight: 150))
-            view.sizingOptions = [.minSize]
+            if #available(macOS 13, *) { view.sizingOptions = [.minSize] }
             host = view
         } else {
             let view = NSHostingView(rootView: ContentView(browser: browser).frame(minWidth: 640, minHeight: 420))
-            view.sizingOptions = [.minSize]
+            if #available(macOS 13, *) { view.sizingOptions = [.minSize] }
             host = view
         }
         // A new window from one in full screen: in full screen of its own,

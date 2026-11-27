@@ -168,7 +168,7 @@ enum AIPage {
         for line in lines(pageText) {
             for phone in matches(phoneExpression, in: line) { pagePhones.insert(phone.filter(\.isNumber)) }
         }
-        if let host = read.url?.host()?.lowercased() { pageHosts.insert(host.hasPrefix("www.") ? String(host.dropFirst(4)) : host) }
+        if let host = read.url?.hostCompat()?.lowercased() { pageHosts.insert(host.hasPrefix("www.") ? String(host.dropFirst(4)) : host) }
 
         var found: [String] = []
         func note(_ item: String) { if !found.contains(item) { found.append(item) } }

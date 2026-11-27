@@ -3,6 +3,7 @@ import XCTest
 
 /// Translate Page's sentence marks and language checks (Translate.swift):
 /// pure functions, no page and no translator.
+@available(macOS 14, *)
 final class TranslateTests: XCTestCase {
     func testJoinedMarksEachPartButTheFirst() {
         XCTAssertEqual(PageTranslator.joined(["Visit", "the museum", "today."], gaps: [false, true, true]),
@@ -60,6 +61,7 @@ final class TranslateTests: XCTestCase {
 }
 
 /// A translation run against a real page, with the stand-in translator.
+@available(macOS 14, *)
 @MainActor
 final class TranslateRunTests: XCTestCase {
     override class func setUp() {

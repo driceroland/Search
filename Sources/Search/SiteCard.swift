@@ -68,15 +68,15 @@ enum SiteCardPanel {
         @State private var frame = CGRect.zero
         func body(content: Content) -> some View {
             content
-                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { now in
+                .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .global) }) { now in
                     frame = now
                     if on { squares[id] = (now, me) }
                 }
-                .onChange(of: on) { _, on in
+                .onChangeCompat(of: on) { _, on in
                     if on { squares[id] = (frame, me) } else if squares[id]?.owner == me { squares[id] = nil }
                 }
                 // Another tab come into this square (Browser.rowKey).
-                .onChange(of: id) { was, now in
+                .onChangeCompat(of: id) { was, now in
                     if on, let seen = squares[was], seen.owner == me {
                         squares[was] = nil
                         squares[now] = seen
@@ -388,7 +388,7 @@ struct SiteCard: View {
     /// The host as a person says it, without the www. A page with no host —
     /// a file, about:blank — is named by what it is.
     static func site(_ url: URL) -> String {
-        if let host = url.host(), !host.isEmpty {
+        if let host = url.hostCompat(), !host.isEmpty {
             return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         }
         if url.isFileURL { return "File" }
@@ -428,7 +428,7 @@ struct SiteCard: View {
                             Toggle("Keep This Site Awake", isOn: Binding(get: { browser.keepsAwake(tab) }, set: { browser.keepAwake($0, for: tab) }))
                         }
                         .focusable()
-                        .onKeyPress(.space) { browser.keepAwake(!browser.keepsAwake(tab), for: tab); return .handled }
+                        .onKeyPressCompat(.space) { browser.keepAwake(!browser.keepsAwake(tab), for: tab); return .handled }
                 }
                 .padding(.leading, MenuMetrics.text)
                 .padding(.trailing, MenuMetrics.trailing)
@@ -439,7 +439,7 @@ struct SiteCard: View {
     }
 
     @ViewBuilder private var permissions: some View {
-        if let url = tab.pageAddress, let scheme = url.scheme, let host = url.host() {
+        if let url = tab.pageAddress, let scheme = url.scheme, let host = url.hostCompat() {
             let origin = Browser.origin(scheme, host, url.port ?? 0)
             VStack(alignment: .leading, spacing: 0) {
                 Header(title: origin)
@@ -491,7 +491,7 @@ struct SiteCard: View {
     @ViewBuilder private var grounded: some View {
         if !tab.shy, browser.prefs.floatsOnLeave || browser.prefs.floatsAway,
            let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased()),
-           Players.knows(url) || tab.playingVideo || tab.noisy, let host = url.host() {
+           Players.knows(url) || tab.playingVideo || tab.noisy, let host = url.hostCompat() {
             Ground(host: host)
         }
     }
@@ -529,7 +529,7 @@ struct SiteCard: View {
     @ViewBuilder private var sound: some View {
         if !tab.shy, !Store.settings.bool(forKey: Preferences.waitsKey),
            let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased()),
-           let host = url.host() {
+           let host = url.hostCompat() {
             Sound(host: host)
         }
     }
@@ -593,7 +593,7 @@ struct SiteCard: View {
             .padding(.leading, MenuMetrics.text)
             .padding(.trailing, MenuMetrics.trailing)
             .frame(height: MenuMetrics.row)
-            .onChange(of: on) { _, value in Autoplay.set(value, for: host) }
+            .onChangeCompat(of: on) { _, value in Autoplay.set(value, for: host) }
         }
     }
 
@@ -622,7 +622,7 @@ struct SiteCard: View {
             .padding(.trailing, MenuMetrics.trailing)
             .frame(height: MenuMetrics.row)
             .help("Turn off here if the site breaks; the page reloads")
-            .onChange(of: on) { _, value in
+            .onChangeCompat(of: on) { _, value in
                 Shield.shared.pause(host, !value)
                 reload()
             }
@@ -652,7 +652,7 @@ struct SiteCard: View {
             .padding(.leading, MenuMetrics.text)
             .padding(.trailing, MenuMetrics.trailing)
             .frame(height: MenuMetrics.row)
-            .onChange(of: on) { _, value in Grounded.set(value, for: host) }
+            .onChangeCompat(of: on) { _, value in Grounded.set(value, for: host) }
         }
     }
 

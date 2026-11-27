@@ -5,6 +5,7 @@ import XCTest
 
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionSiteGrantTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

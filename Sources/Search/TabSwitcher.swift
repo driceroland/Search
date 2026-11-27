@@ -449,8 +449,8 @@ struct TabSwitcherOverlay: View {
                     .onPreferenceChange(CardFrames.self) { frames in
                         MainActor.assumeIsolated { switcher.cardFrames = frames }
                     }
-                    .onContinuousHover(coordinateSpace: .global) { phase in
-                        if case .active(let point) = phase { switcher.hover(at: point) }
+                    .onPointerMoveCompat(in: .global) { point in
+                        if let point { switcher.hover(at: point) }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

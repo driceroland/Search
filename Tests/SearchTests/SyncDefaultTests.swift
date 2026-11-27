@@ -5,6 +5,7 @@ import XCTest
 /// one from before (SyncDefault.swift), and nothing started before the
 /// welcome is left. Each case in a settings suite of its own, removed
 /// afterwards; CloudKit never runs (ICloudSyncTests' stand-ins).
+@available(macOS 14, *)
 @MainActor
 final class SyncDefaultTests: XCTestCase {
     override class func setUp() {

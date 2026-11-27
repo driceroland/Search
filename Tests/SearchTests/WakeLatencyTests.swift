@@ -9,6 +9,7 @@ import XCTest
 /// not on the next tick of a timer, and the picture of the old page comes off
 /// once the new one has drawn, not half a second after it arrived. Nothing
 /// is shown: the window is far off every screen.
+@available(macOS 14, *)
 @MainActor
 final class WakeLatencyTests: XCTestCase {
     override class func setUp() {
@@ -139,6 +140,7 @@ final class WakeLatencyTests: XCTestCase {
 /// A loopback origin that can stop partway through a page: it sends what it
 /// has and holds the connection open, as a site still sending does. Asked for
 /// the page's nth time, `reply` says what it is and whether it stalls.
+@available(macOS 14, *)
 private final class SlowServer: @unchecked Sendable {
     struct Reply {
         var body: String

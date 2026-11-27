@@ -4,6 +4,7 @@ import Foundation
 /// A loopback-only HTTP origin serving a fixed table of pages, for tests that
 /// need a page and its neighbours on a real http address. Anything not in
 /// the table is a 404 page, as a real site's would be.
+@available(macOS 14, *)
 final class LocalPageServer {
     struct Page {
         var status = "200 OK"

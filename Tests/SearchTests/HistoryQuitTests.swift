@@ -5,6 +5,7 @@ import XCTest
 /// History saves 1.5 s after a visit, so a burst of browsing is one write.
 /// Quitting inside that pause used to lose the visit: nothing ran the write
 /// still waiting.
+@available(macOS 14, *)
 @MainActor
 final class HistoryQuitTests: XCTestCase {
     override class func setUp() {

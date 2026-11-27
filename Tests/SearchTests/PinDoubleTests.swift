@@ -4,6 +4,7 @@ import XCTest
 /// A double-click on a pin's square (idea 1216), decided at its second
 /// press: the first press makes a pin you weren't on the one on screen,
 /// and the square is drawn anew, so a tap counting to two never saw two.
+@available(macOS 14, *)
 final class PinDoubleTests: XCTestCase {
     func testFromAnotherSquareAWanderedPinGoesHome() {
         XCTAssertTrue(PinDouble.goesHome(clicks: 2, live: true, opened: true, wandered: true))

@@ -5,6 +5,7 @@ import XCTest
 /// What an extension's own script refused by a page's policy may be
 /// (ExtensionPageScript): which path, for which page, and what runs.
 @available(macOS 15.4, *)
+@available(macOS 14, *)
 final class ExtensionPageScriptTests: XCTestCase {
     private let page = URL(string: "https://www.youtube.com/watch?v=1")!
     private let manifest: [String: Any] = [

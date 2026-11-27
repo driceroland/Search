@@ -6,6 +6,7 @@ import SQLite3
 /// Orion's bookmarks and history, read from files written here in the shape
 /// Orion keeps them (see ImportWebKit.swift), in the test world's own Import
 /// folder: never a real browser's.
+@available(macOS 14, *)
 final class WebKitImportTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

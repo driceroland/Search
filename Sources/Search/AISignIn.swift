@@ -62,16 +62,16 @@ enum AISignIn {
     /// flow's. The tab is closed once the key is kept.
     static func intercept(_ url: URL, mainFrame: Bool, in tab: Tab?, browser: Browser) -> Bool {
         guard AI.shipped || Store.testing,
-              url.scheme?.lowercased() == "https", url.host()?.lowercased() == callback.host(),
+              url.scheme?.lowercased() == "https", url.hostCompat()?.lowercased() == callback.hostCompat(),
               url.path == callback.path, mainFrame,
               let flow, let tab, tab.id == flow.tab
         else { return false }
         self.flow = nil
         let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "code" }?.value ?? ""
         // Sent here by openrouter.ai, and not by a page the tab wandered to.
-        let from = (tab.built?.url ?? tab.pageAddress)?.host()?.lowercased()
+        let from = (tab.built?.url ?? tab.pageAddress)?.hostCompat()?.lowercased()
         guard Date().timeIntervalSince(flow.started) < 600 else { return finish(false, "The sign-in took too long — try again.", tab, browser) }
-        guard from == site.host()?.lowercased(), !code.isEmpty, code.count < 1024 else {
+        guard from == site.hostCompat()?.lowercased(), !code.isEmpty, code.count < 1024 else {
             return finish(false, "The sign-in didn't come back from OpenRouter.", tab, browser)
         }
         Task { @MainActor in

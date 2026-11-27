@@ -4,6 +4,7 @@ import XCTest
 /// windows.json while the app is still launching: the windows open written,
 /// then last time's not yet brought back, each window once (see
 /// Browsers.carried).
+@available(macOS 14, *)
 @MainActor
 final class WindowCarryTests: XCTestCase {
     private func window(_ frame: String) -> WindowRecord {

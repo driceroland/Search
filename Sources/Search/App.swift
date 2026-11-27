@@ -1,58 +1,42 @@
 import SwiftUI
 import AppKit
+import WebKit
 import Combine
 
 // A window, a row of titles, and a field. Typing an address gets you a page;
 // there is nothing else to learn and nothing else to press.
 
+/// Starts the app: SwiftUI's single `Window` scene where there is one
+/// (macOS 13 and later), a `WindowGroup` on macOS 12. The two are the same
+/// app with the same menus (SearchMenus); only the scene differs.
 @main
-struct SearchApp: App {
+enum SearchMain {
+    static func main() {
+        if #available(macOS 13, *) {
+            SearchApp.main()
+        } else {
+            SearchApp12.main()
+        }
+    }
+}
+
+@available(macOS 13, *)
+struct SearchApp: App, SearchMenus {
     /// The window in front's browser, for the menus (see Windows.swift).
-    @StateObject private var front = Front.shared
+    @StateObject var front = Front.shared
     /// Your own keys (Settings › Shortcuts): the menus are drawn again when
     /// one changes, and show it.
-    @ObservedObject private var shortcuts = ShortcutStore.shared
+    @ObservedObject var shortcuts = ShortcutStore.shared
     /// Only for the File menu's Profile list, once there is a second one.
-    @ObservedObject private var profiles = Profiles.shared
+    @ObservedObject var profiles = Profiles.shared
     /// Only for History's tabs on your other devices (Sync with iCloud).
-    @ObservedObject private var icloud = ICloudSync.shared
+    @ObservedObject var icloud = ICloudSync.shared
     /// Only for Help › Search for iPhone…, for now (IPhoneAsk.swift).
-    @ObservedObject private var iphoneAsk = IPhoneAskWatch.shared
+    @ObservedObject var iphoneAsk = IPhoneAskWatch.shared
     /// Links from other apps, and the Dock icon.
     @NSApplicationDelegateAdaptor(Links.self) private var links
 
-    /// What the menus act on: the window in front's browser.
-    private var browser: Browser { front.browser ?? SceneSlot.shared.browser }
-
-    /// A page open on another device, as History's menu lists it.
-    @ViewBuilder
-    private func elsewhere(_ page: DeviceTabs.Page) -> some View {
-        if let url = URL(string: page.url) {
-            Button {
-                browser.open(url, foreground: true)
-            } label: {
-                MenuLine(title: page.title.isEmpty ? Address.withoutWWW(page.url) : page.title, url: url)
-            }
-        }
-    }
-
-    init() {
-        // AppKit's guess at password fields (#1458): every time a native
-        // field takes the keyboard (the address field, ⌘L, ⌘T…), it walks
-        // the window's key views back from it, and through SwiftUI that is
-        // a walk over every view in the window — the column with all its
-        // tabs and folders. On a full window it held the main thread at
-        // 100% for tens of seconds. Search fills its own passwords in
-        // pages; its own fields aren't sign-in forms. Registered, so kept
-        // in memory only: a `defaults write` still wins.
-        UserDefaults.standard.register(defaults: ["NSAutoFillHeuristicsEnabled": false])
-        // Settings › General › Start with a fresh window: the files are cut
-        // down before any window reads its row from them.
-        if Store.settings.bool(forKey: Preferences.freshKey) {
-            Session.startFresh(spaces: Spaces.read().map(\.id))
-            Browsers.startFresh()
-        }
-    }
+    init() { SearchMain.launching() }
 
     var body: some Scene {
         let _ = Bench.count("app")
@@ -80,458 +64,545 @@ struct SearchApp: App {
         // them all itself (application(_:continue:), (_:open:), the URL
         // Apple Event). `python3 Tests/handoff_scene.py`
         .handlesExternalEvents(matching: [])
-        .commands {
-            CommandGroup(replacing: .newItem) {
-                // Another window, with tabs of its own (see Windows.swift).
-                Button("New Window") { Browsers.newWindow() }
-                    .shortcut("file.newWindow")
-                // The profiles, once there is more than one (see Profiles.swift):
-                // each one's window, brought forward or opened.
-                if profiles.several {
-                    Menu("Profile") {
-                        ForEach(profiles.list) { profile in
-                            Button(profile.id == browser.profileID ? "\(profile.name) ✓" : profile.name) {
-                                Browsers.open(profile: profile.id)
-                            }
+        .commands { menus }
+    }
+}
+
+/// macOS 12: the same window and menus, as a WindowGroup. `Window` and
+/// `defaultSize` are macOS 13; the size it opens at the first time is the
+/// frame's ideal one instead.
+struct SearchApp12: App, SearchMenus {
+    /// The window in front's browser, for the menus (see Windows.swift).
+    @StateObject var front = Front.shared
+    /// Your own keys (Settings › Shortcuts): the menus are drawn again when
+    /// one changes, and show it.
+    @ObservedObject var shortcuts = ShortcutStore.shared
+    /// Only for the File menu's Profile list, once there is a second one.
+    @ObservedObject var profiles = Profiles.shared
+    /// Only for History's tabs on your other devices (Sync with iCloud).
+    @ObservedObject var icloud = ICloudSync.shared
+    /// Only for Help › Search for iPhone…, for now (IPhoneAsk.swift).
+    @ObservedObject var iphoneAsk = IPhoneAskWatch.shared
+    /// Links from other apps, and the Dock icon.
+    @NSApplicationDelegateAdaptor(Links.self) private var links
+
+    init() { SearchMain.launching() }
+
+    var body: some Scene {
+        let _ = Bench.count("app")
+        WindowGroup("Search", id: Browsers.sceneID) {
+            SceneRoot(slot: SceneSlot.shared)
+                .frame(minWidth: 640, idealWidth: 1180, minHeight: 420, idealHeight: 780)
+        }
+        .windowStyle(.hiddenTitleBar)
+        // As SearchApp: Links takes every event from outside itself.
+        .handlesExternalEvents(matching: [])
+        .commands { menus }
+    }
+}
+
+extension SearchMain {
+    /// What either app does before its first window.
+    static func launching() {
+        // AppKit's guess at password fields (#1458): every time a native
+        // field takes the keyboard (the address field, ⌘L, ⌘T…), it walks
+        // the window's key views back from it, and through SwiftUI that is
+        // a walk over every view in the window — the column with all its
+        // tabs and folders. On a full window it held the main thread at
+        // 100% for tens of seconds. Search fills its own passwords in
+        // pages; its own fields aren't sign-in forms. Registered, so kept
+        // in memory only: a `defaults write` still wins.
+        UserDefaults.standard.register(defaults: ["NSAutoFillHeuristicsEnabled": false])
+        // Settings › General › Start with a fresh window: the files are cut
+        // down before any window reads its row from them.
+        if Store.settings.bool(forKey: Preferences.freshKey) {
+            Session.startFresh(spaces: Spaces.read().map(\.id))
+            Browsers.startFresh()
+        }
+    }
+}
+
+/// The menu bar, the same whichever scene the app has.
+@MainActor
+protocol SearchMenus {
+    var front: Front { get }
+    var shortcuts: ShortcutStore { get }
+    var profiles: Profiles { get }
+    var icloud: ICloudSync { get }
+    var iphoneAsk: IPhoneAskWatch { get }
+}
+
+extension SearchMenus {
+
+    /// What the menus act on: the window in front's browser.
+    var browser: Browser { front.browser ?? SceneSlot.shared.browser }
+
+    /// A page open on another device, as History's menu lists it.
+    @ViewBuilder
+    func elsewhere(_ page: DeviceTabs.Page) -> some View {
+        if let url = URL(string: page.url) {
+            Button {
+                browser.open(url, foreground: true)
+            } label: {
+                MenuLine(title: page.title.isEmpty ? Address.withoutWWW(page.url) : page.title, url: url)
+            }
+        }
+    }
+
+    @CommandsBuilder
+    var menus: some Commands {
+        CommandGroup(replacing: .newItem) {
+            // Another window, with tabs of its own (see Windows.swift).
+            Button("New Window") { Browsers.newWindow() }
+                .shortcut("file.newWindow")
+            // The profiles, once there is more than one (see Profiles.swift):
+            // each one's window, brought forward or opened.
+            if profiles.several {
+                Menu("Profile") {
+                    ForEach(profiles.list) { profile in
+                        Button(profile.id == browser.profileID ? "\(profile.name) ✓" : profile.name) {
+                            Browsers.open(profile: profile.id)
                         }
-                        Divider()
+                    }
+                    Divider()
+                    if WKWebsiteDataStore.separateStoresSupported {
                         Button("New Profile…") { ProfileMenu.askNew() }
                     }
                 }
-                Button("New Tab") { browser.launch() }
-                    .shortcut("file.newTab")
-                Button("New Private Tab") { browser.newShyTab() }
-                    .shortcut("file.newPrivateTab")
-                Button(browser.reopenTitle) { browser.reopen() }
-                    .shortcut("file.reopen")
-                    .disabled(browser.ghosts.isEmpty && Browsers.lastClosedAt == nil)
-                Divider()
-                Button("Open Address…") { browser.edit() }
-                    .shortcut("file.openAddress")
-                // A page, PDF or picture on this Mac, as Safari's File ›
-                // Open File… (idea 755).
-                Button("Open File…") { browser.openFile() }
-                    .shortcut("file.openFile")
-                Divider()
-                // Another browser's bookmarks, history, passwords and the
-                // rest, as Safari's File › Import From: the one sheet every
-                // other way in opens too.
-                Button("Bring Things Over…") { browser.bringingIn = "" }
-                    .shortcut("file.import")
-                // Every space, its pins and its tabs, to a file any browser
-                // imports, or Search's own (SpacesExport.swift).
-                Button("Export Spaces…") { browser.exportSpaces() }
-                    .shortcut("file.exportSpaces")
-                Divider()
-                Button("Close Tab") { browser.closeFront() }
-                    .shortcut("file.closeTab")
-                Button("Close Window") { browser.closeWindow() }
-                    .shortcut("file.closeWindow")
-                // A coding agent connected (AgentControl): Stop, one click away.
-                StopAgentMenuItem()
             }
-            CommandGroup(replacing: .printItem) {
-                Button("Share…") { browser.share() }
-                    .shortcut("file.share")
-                    .disabled(!(browser.active?.isWeb ?? false))
-                Button("Save Page As…") { browser.savePage() }
-                    .shortcut("file.savePage")
-                    .disabled(!(browser.active?.isWeb ?? false))
-                Button("Export as PDF…") { browser.exportPDF() }
-                    .shortcut("file.exportPDF")
-                    .disabled(!(browser.active?.isWeb ?? false))
-                Button("Print…") { browser.printPage() }
-                    .shortcut("file.print")
-                    .disabled(!(browser.active?.isWeb ?? false))
-            }
-            CommandGroup(after: .pasteboard) {
-                // As Safari's: what ⇧⌘V already does while you type, said
-                // in the menu (idea 814).
-                Button("Paste and Match Style") { Browser.pasteMatchingStyle() }
-                    .shortcut("edit.pasteMatchStyle")
-                Button("Copy Clean Link") { browser.copyCleanLink() }
-                    .shortcut("edit.copyCleanLink")
-                    .disabled(browser.active?.isBlank ?? true)
+            Button("New Tab") { browser.launch() }
+                .shortcut("file.newTab")
+            Button("New Private Tab") { browser.newShyTab() }
+                .shortcut("file.newPrivateTab")
+            Button(browser.reopenTitle) { browser.reopen() }
+                .shortcut("file.reopen")
+                .disabled(browser.ghosts.isEmpty && Browsers.lastClosedAt == nil)
+            Divider()
+            Button("Open Address…") { browser.edit() }
+                .shortcut("file.openAddress")
+            // A page, PDF or picture on this Mac, as Safari's File ›
+            // Open File… (idea 755).
+            Button("Open File…") { browser.openFile() }
+                .shortcut("file.openFile")
+            Divider()
+            // Another browser's bookmarks, history, passwords and the
+            // rest, as Safari's File › Import From: the one sheet every
+            // other way in opens too.
+            Button("Bring Things Over…") { browser.bringingIn = "" }
+                .shortcut("file.import")
+            // Every space, its pins and its tabs, to a file any browser
+            // imports, or Search's own (SpacesExport.swift).
+            Button("Export Spaces…") { browser.exportSpaces() }
+                .shortcut("file.exportSpaces")
+            Divider()
+            Button("Close Tab") { browser.closeFront() }
+                .shortcut("file.closeTab")
+            Button("Close Window") { browser.closeWindow() }
+                .shortcut("file.closeWindow")
+            // A coding agent connected (AgentControl): Stop, one click away.
+            StopAgentMenuItem()
+        }
+        CommandGroup(replacing: .printItem) {
+            Button("Share…") { browser.share() }
+                .shortcut("file.share")
+                .disabled(!(browser.active?.isWeb ?? false))
+            Button("Save Page As…") { browser.savePage() }
+                .shortcut("file.savePage")
+                .disabled(!(browser.active?.isWeb ?? false))
+            Button("Export as PDF…") { browser.exportPDF() }
+                .shortcut("file.exportPDF")
+                .disabled(!(browser.active?.isWeb ?? false))
+            Button("Print…") { browser.printPage() }
+                .shortcut("file.print")
+                .disabled(!(browser.active?.isWeb ?? false))
+        }
+        CommandGroup(after: .pasteboard) {
+            // As Safari's: what ⇧⌘V already does while you type, said
+            // in the menu (idea 814).
+            Button("Paste and Match Style") { Browser.pasteMatchingStyle() }
+                .shortcut("edit.pasteMatchStyle")
+            Button("Copy Clean Link") { browser.copyCleanLink() }
+                .shortcut("edit.copyCleanLink")
+                .disabled(browser.active?.isBlank ?? true)
+            Divider()
+            Button("Find on Page…") { browser.openFind() }
+                .shortcut("edit.find")
+                // On the Settings tab, ⌘F finds a setting.
+                .disabled(!(browser.active?.isWeb ?? false) && browser.active?.page?.kind != .settings)
+            Button("Find Next") { browser.look(forward: true) }
+                .shortcut("edit.findNext")
+                .disabled(!browser.finding)
+            Button("Find Previous") { browser.look(forward: false) }
+                .shortcut("edit.findPrevious")
+                .disabled(!browser.finding)
+            Divider()
+            // As in Safari: each follows the Mac until switched here
+            // (see Substitutions.swift).
+            Menu("Substitutions") {
+                Button("Show Substitutions") { Substitution.showPanel() }
                 Divider()
-                Button("Find on Page…") { browser.openFind() }
-                    .shortcut("edit.find")
-                    // On the Settings tab, ⌘F finds a setting.
-                    .disabled(!(browser.active?.isWeb ?? false) && browser.active?.page?.kind != .settings)
-                Button("Find Next") { browser.look(forward: true) }
-                    .shortcut("edit.findNext")
-                    .disabled(!browser.finding)
-                Button("Find Previous") { browser.look(forward: false) }
-                    .shortcut("edit.findPrevious")
-                    .disabled(!browser.finding)
-                Divider()
-                // As in Safari: each follows the Mac until switched here
-                // (see Substitutions.swift).
-                Menu("Substitutions") {
-                    Button("Show Substitutions") { Substitution.showPanel() }
-                    Divider()
-                    ForEach(Substitution.allCases, id: \.self) { kind in
-                        Toggle(kind.title, isOn: Binding(
-                            get: { browser.substitutes(kind) },
-                            set: { _ in browser.toggleSubstitution(kind) }
-                        ))
-                    }
-                }
-                // Moved here from Settings, as Safari has it: every page,
-                // open or to come (Preferences.switchWebKit).
-                Menu("Spelling and Grammar") {
-                    Toggle("Correct Spelling Automatically", isOn: Binding(
-                        get: { browser.prefs.autocorrect },
-                        set: { browser.prefs.autocorrect = $0 }
-                    ))
-                    // Off unless switched on here, whatever the Mac says.
-                    Toggle("Show Inline Predictions", isOn: Binding(
-                        get: { browser.prefs.inlinePredictions },
-                        set: { browser.prefs.inlinePredictions = $0 }
+                ForEach(Substitution.allCases, id: \.self) { kind in
+                    Toggle(kind.title, isOn: Binding(
+                        get: { browser.substitutes(kind) },
+                        set: { _ in browser.toggleSubstitution(kind) }
                     ))
                 }
             }
-            CommandGroup(replacing: .toolbar) {
-                Toggle("Show Tabs in Sidebar", isOn: Binding(
-                    get: { browser.prefs.sidebar },
-                    set: { _ in browser.toggleSidebar() }
+            // Moved here from Settings, as Safari has it: every page,
+            // open or to come (Preferences.switchWebKit).
+            Menu("Spelling and Grammar") {
+                Toggle("Correct Spelling Automatically", isOn: Binding(
+                    get: { browser.prefs.autocorrect },
+                    set: { browser.prefs.autocorrect = $0 }
                 ))
-                .shortcut("view.sidebar")
-                // Folded away, not moved (see Fold.swift) — the column, or the
-                // strip across the top.
-                Button(browser.prefs.shrinks && !browser.folded
-                       ? (browser.prefs.sideIcons ? "Show Sidebar Titles" : "Show Sidebar as Icons Only")
-                       : browser.prefs.sidebar
-                       ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
-                       : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
-                    .shortcut("view.fold")
-                Picker("Tabs Wear", selection: Binding(
-                    get: { browser.prefs.glyph },
-                    set: { browser.prefs.glyph = $0 }
-                )) {
-                    ForEach(Glyph.allCases) { glyph in
-                        Text(glyph.title).tag(glyph)
-                    }
-                }
-                // Every group of the space on screen, folded or opened at once.
-                Button("Fold All Groups") { browser.foldAllGroups(true) }
-                    .shortcut("view.foldGroups")
-                    .disabled(!browser.canFoldAllGroups)
-                Button("Unfold All Groups") { browser.foldAllGroups(false) }
-                    .shortcut("view.unfoldGroups")
-                    .disabled(!browser.canUnfoldAllGroups)
-                Divider()
-                Button("Reload Page") { browser.reload() }
-                    .shortcut("view.reload")
-                Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
-                    .shortcut("view.reloadOrigin")
-                Button("Reading Mode") { browser.toggleReader() }
-                    .shortcut("view.reader")
-                Button("Float Video") { browser.toggleFloat() }
-                    .shortcut("view.float")
-                // Websites in the side panel, only once they are on
-                // (Settings › General).
-                if browser.prefs.sitesInPanel {
-                    Menu("Side Panel") {
-                        Button(browser.sidePanelShown ? "Close Side Panel" : "Show Side Panel") { browser.toggleSitePanel() }
-                            .shortcut("view.sitePanel")
-                        Divider()
-                        ForEach(PanelSites.offered, id: \.name) { site in
-                            Button(site.name) { browser.showSiteInPanel(site.url) }
-                        }
-                        Divider()
-                        Button("This Page") { if let tab = browser.active { browser.openInSidePanel(tab) } }
-                            .disabled(!(browser.active?.isWeb ?? false) || (browser.active?.shy ?? true))
-                    }
-                }
-                // Dark pages, only once they are on (Settings › Appearance).
-                if browser.prefs.darkensPages {
-                    Divider()
-                    Toggle("Darken This Site", isOn: Binding(
-                        get: { browser.active?.dusked ?? false },
-                        set: { _ in browser.toggleDusk() }
-                    ))
-                    .shortcut("view.dusk")
-                    .disabled(!browser.canDusk)
-                    Toggle("Pause Darkening", isOn: Binding(
-                        get: { Dusk.shared.paused },
-                        set: { _ in browser.pauseDusk() }
-                    ))
-                    .shortcut("view.duskPause")
-                }
-                // The AI add-on's, only once it is on (Settings › AI).
-                if browser.prefs.ai {
-                    Divider()
-                    Button("Summarize Page") { browser.summarizePage() }
-                        .shortcut("view.summarize")
-                        .disabled(!(browser.active?.isWeb ?? false))
-                    Button("Ask About This Page…") { browser.askAboutPage() }
-                        .shortcut("view.ask")
-                        .disabled(!(browser.active?.isWeb ?? false))
-                }
-                Divider()
-                // Only once it is on (Settings › Browsing › Pages).
-                if browser.prefs.capturesPages {
-                    Button("Capture…") { browser.toggleSnap() }
-                        .shortcut("view.capture")
-                        .disabled(!(browser.active?.isWeb ?? false))
-                }
-                Button("Hide Elements…") { browser.toggleHiding() }
-                    .shortcut("view.hide")
-                Button("Hidden on This Site…") { browser.reviewing.toggle() }
-                    .shortcut("view.hidden")
-                // Only once it is on (Settings › Browsing › Pages).
-                if browser.prefs.sitesStyles {
-                    Button("Edit Site Style…") { browser.editSiteStyle() }
-                        .shortcut("view.style")
-                        .disabled(!(browser.active?.isWeb ?? false) || browser.active?.shy == true)
-                }
-                Divider()
-                Button("Zoom In") { browser.zoom(by: 1.1) }
-                    .shortcut("view.zoomIn")
-                Button("Zoom Out") { browser.zoom(by: 1 / 1.1) }
-                    .shortcut("view.zoomOut")
-                Button(browser.prefs.actualSizeTitle) { browser.resetZoom() }
-                    .shortcut("view.actualSize")
-                Divider()
-                // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
-                // A developer tools package that inspects, when it is the one
-                // View › Developer uses, takes these three keys; Web
-                // Inspector stays here without them (DevToolsPackages.swift).
-                let taken = DevToolsPackages.shared.takenKeys
-                Button("Web Inspector") { browser.toggleWebInspector() }
-                    .shortcut(taken["devtools"] == nil ? "view.inspector" : nil)
-                Button("JavaScript Console") { browser.showWebConsole() }
-                    .shortcut(taken["console"] == nil ? "view.console" : nil)
-                Button("Inspect Element") { browser.inspectWebElement() }
-                    .shortcut(taken["pick"] == nil ? "view.inspect" : nil)
-                Button("Developer Mode") { browser.toggleDeveloperMode() }
-                    .shortcut("view.developerMode")
-                    .disabled(DevMode.host(of: browser.active?.pageAddress) == nil)
-                // Only with a developer tools package installed (Settings ›
-                // About › Developer, see DevToolsPackages.swift).
-                if let package = DevToolsPackages.shared.primary, DevToolsPackages.shared.usable(package.offer.id) {
-                    Menu("Developer") {
-                        ForEach(package.offer.menu, id: \.self) { item in
-                            Button(item.title) { DevToolsPackages.shared.open(item.id, in: browser) }
-                                .shortcut(taken[item.id])
-                        }
-                    }
-                    .disabled(!(browser.active?.isWeb ?? false) || browser.active?.page != nil)
-                }
-                // The system's own item, which replacing the toolbar group
-                // above took with it: ⌃⌘F did nothing (#1176). The key is
-                // the Mac's, never offered in Settings › Shortcuts.
-                Divider()
-                Button(browser.fullScreen ? "Exit Full Screen" : "Enter Full Screen") {
-                    (NSApp.keyWindow ?? browser.window)?.toggleFullScreen(nil)
-                }
-                .keyboardShortcut("f", modifiers: [.control, .command])
+                // Off unless switched on here, whatever the Mac says.
+                Toggle("Show Inline Predictions", isOn: Binding(
+                    get: { browser.prefs.inlinePredictions },
+                    set: { browser.prefs.inlinePredictions = $0 }
+                ))
             }
-            CommandMenu("Tabs") {
-                Button("Back") { browser.back() }
-                    .shortcut("tabs.back")
-                    .disabled(browser.active?.canGoBack != true)
-                Button("Forward") { browser.forward() }
-                    .shortcut("tabs.forward")
-                    .disabled(browser.active?.canGoForward != true)
-                Divider()
-                Button("Next Tab") { browser.step(1) }
-                    .shortcut("tabs.next")
-                Button("Previous Tab") { browser.step(-1) }
-                    .shortcut("tabs.previous")
-                Button("Search Tabs…") { browser.summon() }
-                    .shortcut("tabs.search")
-                Divider()
-                if browser.prefs.splitView {
-                    // The same key puts a pair apart: on a pair, the item
-                    // says so, and the one below it without a key goes.
-                    Button(browser.activeSplit == nil || browser.pickedSplit != nil ? "Split Current Page" : "Separate Split Tabs") {
-                        browser.splitKey()
-                    }
-                        .shortcut("tabs.split")
-                        .disabled(browser.active == nil || browser.active?.bench == true)
-                    // On a split with room: one more page, empty, beside
-                    // the one with the keys (up to four).
-                    if browser.activeSplit != nil {
-                        Button("Add Page to Split View") { browser.addPaneToSplit() }
-                            .disabled(!browser.canAddPane)
-                    }
-                    Button("Focus Left Page") { browser.focusPane(onLeft: true) }
-                        .shortcut("tabs.focusLeftPane")
-                        .disabled(browser.activeSplit == nil)
-                    Button("Focus Right Page") { browser.focusPane(onLeft: false) }
-                        .shortcut("tabs.focusRightPane")
-                        .disabled(browser.activeSplit == nil)
-                    Button("Swap Pages") { browser.swapSplit() }
-                        .shortcut("tabs.swapSplit")
-                        .disabled(browser.activeSplit == nil)
-                    if browser.activeSplit == nil || browser.pickedSplit != nil {
-                        Button("Separate Split Tabs") {
-                            if let tab = browser.active { browser.detachSplit(tab) }
-                        }
-                        .shortcut("tabs.separateSplit")
-                        .disabled(browser.activeSplit == nil)
-                    }
-                    Button((browser.activeSplit?.tabs.count ?? 2) > 2 ? "Close All Pages" : "Close Both Pages") { browser.closeSplit() }
-                        .disabled(browser.activeSplit == nil)
-                    Divider()
+        }
+        CommandGroup(replacing: .toolbar) {
+            Toggle("Show Tabs in Sidebar", isOn: Binding(
+                get: { browser.prefs.sidebar },
+                set: { _ in browser.toggleSidebar() }
+            ))
+            .shortcut("view.sidebar")
+            // Folded away, not moved (see Fold.swift) — the column, or the
+            // strip across the top.
+            Button(browser.prefs.shrinks && !browser.folded
+                   ? (browser.prefs.sideIcons ? "Show Sidebar Titles" : "Show Sidebar as Icons Only")
+                   : browser.prefs.sidebar
+                   ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
+                   : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
+                .shortcut("view.fold")
+            Picker("Tabs Wear", selection: Binding(
+                get: { browser.prefs.glyph },
+                set: { browser.prefs.glyph = $0 }
+            )) {
+                ForEach(Glyph.allCases) { glyph in
+                    Text(glyph.title).tag(glyph)
                 }
-                if let tab = browser.active {
-                    let rows = browser.prefs.showsPinRows
-                    if tab.pin == nil {
-                        Button("Pin Tab") { browser.pin(tab) }
-                            .shortcut("tabs.pin")
+            }
+            // Every group of the space on screen, folded or opened at once.
+            Button("Fold All Groups") { browser.foldAllGroups(true) }
+                .shortcut("view.foldGroups")
+                .disabled(!browser.canFoldAllGroups)
+            Button("Unfold All Groups") { browser.foldAllGroups(false) }
+                .shortcut("view.unfoldGroups")
+                .disabled(!browser.canUnfoldAllGroups)
+            Divider()
+            Button("Reload Page") { browser.reload() }
+                .shortcut("view.reload")
+            Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
+                .shortcut("view.reloadOrigin")
+            Button("Reading Mode") { browser.toggleReader() }
+                .shortcut("view.reader")
+            Button("Float Video") { browser.toggleFloat() }
+                .shortcut("view.float")
+            // Websites in the side panel, only once they are on
+            // (Settings › General).
+            if browser.prefs.sitesInPanel {
+                Menu("Side Panel") {
+                    Button(browser.sidePanelShown ? "Close Side Panel" : "Show Side Panel") { browser.toggleSitePanel() }
+                        .shortcut("view.sitePanel")
+                    Divider()
+                    ForEach(PanelSites.offered, id: \.name) { site in
+                        Button(site.name) { browser.showSiteInPanel(site.url) }
+                    }
+                    Divider()
+                    Button("This Page") { if let tab = browser.active { browser.openInSidePanel(tab) } }
+                        .disabled(!(browser.active?.isWeb ?? false) || (browser.active?.shy ?? true))
+                }
+            }
+            // Dark pages, only once they are on (Settings › Appearance).
+            if browser.prefs.darkensPages {
+                Divider()
+                Toggle("Darken This Site", isOn: Binding(
+                    get: { browser.active?.dusked ?? false },
+                    set: { _ in browser.toggleDusk() }
+                ))
+                .shortcut("view.dusk")
+                .disabled(!browser.canDusk)
+                Toggle("Pause Darkening", isOn: Binding(
+                    get: { Dusk.shared.paused },
+                    set: { _ in browser.pauseDusk() }
+                ))
+                .shortcut("view.duskPause")
+            }
+            // The AI add-on's, only once it is on (Settings › AI).
+            if browser.prefs.ai {
+                Divider()
+                Button("Summarize Page") { browser.summarizePage() }
+                    .shortcut("view.summarize")
+                    .disabled(!(browser.active?.isWeb ?? false))
+                Button("Ask About This Page…") { browser.askAboutPage() }
+                    .shortcut("view.ask")
+                    .disabled(!(browser.active?.isWeb ?? false))
+            }
+            Divider()
+            // Only once it is on (Settings › Browsing › Pages).
+            if browser.prefs.capturesPages {
+                Button("Capture…") { browser.toggleSnap() }
+                    .shortcut("view.capture")
+                    .disabled(!(browser.active?.isWeb ?? false))
+            }
+            Button("Hide Elements…") { browser.toggleHiding() }
+                .shortcut("view.hide")
+            Button("Hidden on This Site…") { browser.reviewing.toggle() }
+                .shortcut("view.hidden")
+            // Only once it is on (Settings › Browsing › Pages).
+            if browser.prefs.sitesStyles {
+                Button("Edit Site Style…") { browser.editSiteStyle() }
+                    .shortcut("view.style")
+                    .disabled(!(browser.active?.isWeb ?? false) || browser.active?.shy == true)
+            }
+            Divider()
+            Button("Zoom In") { browser.zoom(by: 1.1) }
+                .shortcut("view.zoomIn")
+            Button("Zoom Out") { browser.zoom(by: 1 / 1.1) }
+                .shortcut("view.zoomOut")
+            Button(browser.prefs.actualSizeTitle) { browser.resetZoom() }
+                .shortcut("view.actualSize")
+            Divider()
+            // The Web Inspector, on the keys Chrome and Arc use (see Inspector.swift).
+            // A developer tools package that inspects, when it is the one
+            // View › Developer uses, takes these three keys; Web
+            // Inspector stays here without them (DevToolsPackages.swift).
+            let taken = DevToolsPackages.shared.takenKeys
+            Button("Web Inspector") { browser.toggleWebInspector() }
+                .shortcut(taken["devtools"] == nil ? "view.inspector" : nil)
+            Button("JavaScript Console") { browser.showWebConsole() }
+                .shortcut(taken["console"] == nil ? "view.console" : nil)
+            Button("Inspect Element") { browser.inspectWebElement() }
+                .shortcut(taken["pick"] == nil ? "view.inspect" : nil)
+            Button("Developer Mode") { browser.toggleDeveloperMode() }
+                .shortcut("view.developerMode")
+                .disabled(DevMode.host(of: browser.active?.pageAddress) == nil)
+            // Only with a developer tools package installed (Settings ›
+            // About › Developer, see DevToolsPackages.swift).
+            if let package = DevToolsPackages.shared.primary, DevToolsPackages.shared.usable(package.offer.id) {
+                Menu("Developer") {
+                    ForEach(package.offer.menu, id: \.self) { item in
+                        Button(item.title) { DevToolsPackages.shared.open(item.id, in: browser) }
+                            .shortcut(taken[item.id])
+                    }
+                }
+                .disabled(!(browser.active?.isWeb ?? false) || browser.active?.page != nil)
+            }
+            // The system's own item, which replacing the toolbar group
+            // above took with it: ⌃⌘F did nothing (#1176). The key is
+            // the Mac's, never offered in Settings › Shortcuts.
+            Divider()
+            Button(browser.fullScreen ? "Exit Full Screen" : "Enter Full Screen") {
+                (NSApp.keyWindow ?? browser.window)?.toggleFullScreen(nil)
+            }
+            .keyboardShortcut("f", modifiers: [.control, .command])
+        }
+        CommandMenu("Tabs") {
+            Button("Back") { browser.back() }
+                .shortcut("tabs.back")
+                .disabled(browser.active?.canGoBack != true)
+            Button("Forward") { browser.forward() }
+                .shortcut("tabs.forward")
+                .disabled(browser.active?.canGoForward != true)
+            Divider()
+            Button("Next Tab") { browser.step(1) }
+                .shortcut("tabs.next")
+            Button("Previous Tab") { browser.step(-1) }
+                .shortcut("tabs.previous")
+            Button("Search Tabs…") { browser.summon() }
+                .shortcut("tabs.search")
+            Divider()
+            if browser.prefs.splitView {
+                // The same key puts a pair apart: on a pair, the item
+                // says so, and the one below it without a key goes.
+                Button(browser.activeSplit == nil || browser.pickedSplit != nil ? "Split Current Page" : "Separate Split Tabs") {
+                    browser.splitKey()
+                }
+                    .shortcut("tabs.split")
+                    .disabled(browser.active == nil || browser.active?.bench == true)
+                // On a split with room: one more page, empty, beside
+                // the one with the keys (up to four).
+                if browser.activeSplit != nil {
+                    Button("Add Page to Split View") { browser.addPaneToSplit() }
+                        .disabled(!browser.canAddPane)
+                }
+                Button("Focus Left Page") { browser.focusPane(onLeft: true) }
+                    .shortcut("tabs.focusLeftPane")
+                    .disabled(browser.activeSplit == nil)
+                Button("Focus Right Page") { browser.focusPane(onLeft: false) }
+                    .shortcut("tabs.focusRightPane")
+                    .disabled(browser.activeSplit == nil)
+                Button("Swap Pages") { browser.swapSplit() }
+                    .shortcut("tabs.swapSplit")
+                    .disabled(browser.activeSplit == nil)
+                if browser.activeSplit == nil || browser.pickedSplit != nil {
+                    Button("Separate Split Tabs") {
+                        if let tab = browser.active { browser.detachSplit(tab) }
+                    }
+                    .shortcut("tabs.separateSplit")
+                    .disabled(browser.activeSplit == nil)
+                }
+                Button((browser.activeSplit?.tabs.count ?? 2) > 2 ? "Close All Pages" : "Close Both Pages") { browser.closeSplit() }
+                    .disabled(browser.activeSplit == nil)
+                Divider()
+            }
+            if let tab = browser.active {
+                let rows = browser.prefs.showsPinRows
+                if tab.pin == nil {
+                    Button("Pin Tab") { browser.pin(tab) }
+                        .shortcut("tabs.pin")
+                        .disabled(!tab.isWeb || tab.shy)
+                    if rows {
+                        Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
+                            .shortcut("tabs.pinRow")
                             .disabled(!tab.isWeb || tab.shy)
-                        if rows {
-                            Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
-                                .shortcut("tabs.pinRow")
-                                .disabled(!tab.isWeb || tab.shy)
-                        }
-                    } else {
-                        if rows {
-                            Button(tab.listed ? "Show Pin as Square" : "Show Pin as Row") { browser.setListed(tab, !tab.listed) }
-                        }
-                        if !(rows && tab.listed) {
-                            Button("Change Letter") { browser.editLetter(tab) }
-                        }
-                        Button("Unpin Tab") { browser.unpin(tab) }
-                            .shortcut(rows && tab.listed ? "tabs.pinRow" : "tabs.pin")
+                    }
+                } else {
+                    if rows {
+                        Button(tab.listed ? "Show Pin as Square" : "Show Pin as Row") { browser.setListed(tab, !tab.listed) }
+                    }
+                    if !(rows && tab.listed) {
+                        Button("Change Letter") { browser.editLetter(tab) }
+                    }
+                    Button("Unpin Tab") { browser.unpin(tab) }
+                        .shortcut(rows && tab.listed ? "tabs.pinRow" : "tabs.pin")
+                }
+            }
+            Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
+                .shortcut("tabs.rename")
+                .disabled(browser.active == nil)
+            Button("Duplicate Tab") { browser.duplicate() }
+                .shortcut("tabs.duplicate")
+                .disabled(!(browser.active?.isWeb ?? false))
+            // Only with small windows turned on in Settings › General:
+            // someone who never asked for them never sees them.
+            if browser.prefs.littleLinks {
+                Button("Open in Small Window") {
+                    if let tab = browser.active { browser.openInLittleWindow(tab) }
+                }
+                    .disabled(!(browser.active.map(browser.liftable) ?? false))
+            }
+            Button("Copy Address") { browser.copyAddress() }
+                .shortcut("tabs.copyAddress")
+                .disabled(!(browser.active?.isWeb ?? false))
+            Button("Copy as Markdown Link") { browser.copyMarkdownLink() }
+                .shortcut("tabs.copyMarkdown")
+                .disabled(!(browser.active?.isWeb ?? false))
+            Button("Paste and Go") { browser.pasteAndGo() }
+                .shortcut("tabs.pasteAndGo")
+            Divider()
+            Button("Close Other Tabs") { if let tab = browser.active { browser.closeOthers(but: tab) } }
+                .shortcut("tabs.closeOthers")
+                .disabled(browser.tabs.count < 2)
+            Button("Stop Sound in Tab") { browser.pauseMedia() }
+                .shortcut("tabs.mute")
+        }
+        CommandMenu("Bookmarks") {
+            Button(browser.pageKept ? "Edit Bookmark\u{2026}" : "Add This Page") { browser.bookmarkCurrent() }
+                .shortcut("bookmarks.add")
+                .disabled(!(browser.active?.isWeb ?? false))
+            if browser.prefs.homeTiles {
+                // Settings › Site tiles on a new tab (HomeTiles.swift).
+                Button("Add This Page to New Tabs") { browser.active.map { browser.addTile(from: $0) } }
+                    .disabled(!(browser.active.map(browser.offersTile) ?? false))
+            }
+            Button("Show Bookmarks…") { browser.bookmarking = true }
+                .shortcut("bookmarks.show")
+            Toggle("Show Bookmarks Bar", isOn: Binding(
+                get: { browser.prefs.bookmarksBar },
+                set: { on in withAnimation(Motion.glide) { browser.prefs.bookmarksBar = on } }
+            ))
+            .shortcut("bookmarks.bar")
+            // The bookmarks themselves follow, put in by AppKit (see
+            // BookmarkMenu in Bookmarks.swift).
+        }
+        CommandMenu("History") {
+            Section("Recently Visited") {
+                ForEach(browser.recentlyVisited) { trace in
+                    Button {
+                        browser.open(trace.url, foreground: true)
+                    } label: {
+                        MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
                     }
                 }
-                Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
-                    .shortcut("tabs.rename")
-                    .disabled(browser.active == nil)
-                Button("Duplicate Tab") { browser.duplicate() }
-                    .shortcut("tabs.duplicate")
-                    .disabled(!(browser.active?.isWeb ?? false))
-                // Only with small windows turned on in Settings › General:
-                // someone who never asked for them never sees them.
-                if browser.prefs.littleLinks {
-                    Button("Open in Small Window") {
-                        if let tab = browser.active { browser.openInLittleWindow(tab) }
-                    }
-                        .disabled(!(browser.active.map(browser.liftable) ?? false))
-                }
-                Button("Copy Address") { browser.copyAddress() }
-                    .shortcut("tabs.copyAddress")
-                    .disabled(!(browser.active?.isWeb ?? false))
-                Button("Copy as Markdown Link") { browser.copyMarkdownLink() }
-                    .shortcut("tabs.copyMarkdown")
-                    .disabled(!(browser.active?.isWeb ?? false))
-                Button("Paste and Go") { browser.pasteAndGo() }
-                    .shortcut("tabs.pasteAndGo")
-                Divider()
-                Button("Close Other Tabs") { if let tab = browser.active { browser.closeOthers(but: tab) } }
-                    .shortcut("tabs.closeOthers")
-                    .disabled(browser.tabs.count < 2)
-                Button("Stop Sound in Tab") { browser.pauseMedia() }
-                    .shortcut("tabs.mute")
             }
-            CommandMenu("Bookmarks") {
-                Button(browser.pageKept ? "Edit Bookmark\u{2026}" : "Add This Page") { browser.bookmarkCurrent() }
-                    .shortcut("bookmarks.add")
-                    .disabled(!(browser.active?.isWeb ?? false))
-                if browser.prefs.homeTiles {
-                    // Settings › Site tiles on a new tab (HomeTiles.swift).
-                    Button("Add This Page to New Tabs") { browser.active.map { browser.addTile(from: $0) } }
-                        .disabled(!(browser.active.map(browser.offersTile) ?? false))
-                }
-                Button("Show Bookmarks…") { browser.bookmarking = true }
-                    .shortcut("bookmarks.show")
-                Toggle("Show Bookmarks Bar", isOn: Binding(
-                    get: { browser.prefs.bookmarksBar },
-                    set: { on in withAnimation(Motion.glide) { browser.prefs.bookmarksBar = on } }
-                ))
-                .shortcut("bookmarks.bar")
-                // The bookmarks themselves follow, put in by AppKit (see
-                // BookmarkMenu in Bookmarks.swift).
-            }
-            CommandMenu("History") {
-                Section("Recently Visited") {
-                    ForEach(browser.recentlyVisited) { trace in
+            if !browser.ghosts.isEmpty {
+                Section("Recently Closed") {
+                    ForEach(browser.recentlyClosed.prefix(10)) { ghost in
                         Button {
-                            browser.open(trace.url, foreground: true)
+                            browser.reopen(ghost)
                         } label: {
-                            MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
+                            MenuLine(title: browser.closedTitle(for: ghost), url: ghost.url)
                         }
                     }
                 }
-                if !browser.ghosts.isEmpty {
-                    Section("Recently Closed") {
-                        ForEach(browser.recentlyClosed.prefix(10)) { ghost in
-                            Button {
-                                browser.reopen(ghost)
-                            } label: {
-                                MenuLine(title: browser.closedTitle(for: ghost), url: ghost.url)
-                            }
-                        }
-                    }
-                }
-                // As Safari's iCloud Tabs: what is open on your iPhone and
-                // other Macs, a menu each, opened here only when picked.
-                if icloud.on, !icloud.devices.isEmpty {
-                    Section("Tabs on Your Other Devices") {
-                        ForEach(icloud.devices, id: \.id) { device in
-                            // Its tab groups first, a menu each, as they
-                            // are on that device (idea 1093), then the rest.
-                            Menu(ICloudSync.title(device.tabs)) {
-                                ForEach(Array(device.tabs.sections.enumerated()), id: \.offset) { _, section in
-                                    if let group = section.group {
-                                        Menu(group.name.isEmpty ? "Group" : group.name) {
-                                            ForEach(section.pages, id: \.self) { page in elsewhere(page) }
-                                            if browser.prefs.usesTabGroups {
-                                                Divider()
-                                                Button("Open All in Tab Group") {
-                                                    let urls = section.pages.compactMap { URL(string: $0.url) }
-                                                    if let id = browser.openInTabGroup(urls, named: group.name), let colour = group.colour {
-                                                        browser.setTabGroupColour(id, to: colour)
-                                                    }
+            }
+            // As Safari's iCloud Tabs: what is open on your iPhone and
+            // other Macs, a menu each, opened here only when picked.
+            if icloud.on, !icloud.devices.isEmpty {
+                Section("Tabs on Your Other Devices") {
+                    ForEach(icloud.devices, id: \.id) { device in
+                        // Its tab groups first, a menu each, as they
+                        // are on that device (idea 1093), then the rest.
+                        Menu(ICloudSync.title(device.tabs)) {
+                            ForEach(Array(device.tabs.sections.enumerated()), id: \.offset) { _, section in
+                                if let group = section.group {
+                                    Menu(group.name.isEmpty ? "Group" : group.name) {
+                                        ForEach(section.pages, id: \.self) { page in elsewhere(page) }
+                                        if browser.prefs.usesTabGroups {
+                                            Divider()
+                                            Button("Open All in Tab Group") {
+                                                let urls = section.pages.compactMap { URL(string: $0.url) }
+                                                if let id = browser.openInTabGroup(urls, named: group.name), let colour = group.colour {
+                                                    browser.setTabGroupColour(id, to: colour)
                                                 }
                                             }
                                         }
-                                    } else {
-                                        ForEach(section.pages, id: \.self) { page in elsewhere(page) }
                                     }
+                                } else {
+                                    ForEach(section.pages, id: \.self) { page in elsewhere(page) }
                                 }
                             }
                         }
                     }
                 }
-                Divider()
-                Button("Show History…") { browser.recalling = true }
-                    .shortcut("history.show")
-                Button("Downloads…") { browser.showDownloads() }
-                    .shortcut("history.downloads")
-                // Only while tabs close by themselves (Closing.swift).
-                if browser.prefs.tabLife != .never {
-                    Button("Archived Tabs…") { browser.archiving = true }
-                        .shortcut("history.archive")
-                }
-                Divider()
-                Button("Clear Browsing Data…") { browser.clearBrowsingData() }
-                    .shortcut("history.clearData")
-                Button("Clear History") { browser.clearHistory() }
-                    .shortcut("history.clear")
             }
-            // Search › About Search, our own window with a What's New button
-            // (About.swift); then Check for Updates…, as in any Mac app, and
-            // What's New…, this version's card again (idea 968).
-            CommandGroup(replacing: .appInfo) {
-                Button("About Search") { AboutWindow.show() }
-                UpdateMenuItem()
-                Button("What's New…") { WhatsNew.showAgain(in: browser) }
-                    .disabled(WhatsNew.current == nil)
+            Divider()
+            Button("Show History…") { browser.recalling = true }
+                .shortcut("history.show")
+            Button("Downloads…") { browser.showDownloads() }
+                .shortcut("history.downloads")
+            // Only while tabs close by themselves (Closing.swift).
+            if browser.prefs.tabLife != .never {
+                Button("Archived Tabs…") { browser.archiving = true }
+                    .shortcut("history.archive")
             }
-            CommandGroup(after: .appSettings) {
-                Button("Settings…") { browser.tuning = true }
-                    .shortcut("app.settings")
-                Button("Welcome…") { browser.welcoming = true }
-                    .shortcut("app.welcome")
-                Button("Passwords…") { browser.managing = true }
-                    .shortcut("app.passwords")
-            }
-            QuitAndHelp(iphoneAsk: iphoneAsk.open)
+            Divider()
+            Button("Clear Browsing Data…") { browser.clearBrowsingData() }
+                .shortcut("history.clearData")
+            Button("Clear History") { browser.clearHistory() }
+                .shortcut("history.clear")
         }
+        // Search › About Search, our own window with a What's New button
+        // (About.swift); then Check for Updates…, as in any Mac app, and
+        // What's New…, this version's card again (idea 968).
+        CommandGroup(replacing: .appInfo) {
+            Button("About Search") { AboutWindow.show() }
+            UpdateMenuItem()
+            Button("What's New…") { WhatsNew.showAgain(in: browser) }
+                .disabled(WhatsNew.current == nil)
+        }
+        CommandGroup(after: .appSettings) {
+            Button("Settings…") { browser.tuning = true }
+                .shortcut("app.settings")
+            Button("Welcome…") { browser.welcoming = true }
+                .shortcut("app.welcome")
+            Button("Passwords…") { browser.managing = true }
+                .shortcut("app.passwords")
+        }
+        QuitAndHelp(iphoneAsk: iphoneAsk.open)
     }
 }
 
@@ -747,17 +818,17 @@ struct ContentView: View {
         .ignoresSafeArea()
         .background { fullscreenWatch }
         .background { GeometryReader { geo in Color.clear.onAppear { across = geo.size.width; tall = geo.size.height }
-            .onChange(of: geo.size.width) { _, width in across = width }
-            .onChange(of: geo.size.height) { _, height in tall = height } } }
+            .onChangeCompat(of: geo.size.width) { _, width in across = width }
+            .onChangeCompat(of: geo.size.height) { _, height in tall = height } } }
         .animation(Motion.glide, value: browser.prefs.sidebar)
         .animation(Motion.glide, value: browser.prefs.sidePosition)
         .onAppear {
             if room == nil { room = chrome }
             if farRoom == nil { farRoom = farGap }
         }
-        .onChange(of: chrome) { old, new in make(room: new, after: old) }
+        .onChangeCompat(of: chrome) { old, new in make(room: new, after: old) }
         // The column's edge let go where it was: the page its room at last.
-        .onChange(of: edges.side == nil) { _, free in
+        .onChangeCompat(of: edges.side == nil) { _, free in
             guard free, roomed != chrome else { return }
             roomTicket += 1
             var still = Transaction()
@@ -770,7 +841,7 @@ struct ContentView: View {
         // ⌘S folding the column: the page its room now, the column still
         // out over it, its far side past the window's edge; called off, the
         // column's room back. Never slid: what moves is the column, after.
-        .onChange(of: browser.foldingAway) { _, away in
+        .onChangeCompat(of: browser.foldingAway) { _, away in
             roomTicket += 1
             var still = Transaction()
             still.disablesAnimations = true
@@ -1151,7 +1222,7 @@ struct ContentView: View {
             }
         }
         // With no tab in front, nothing stays offered from the last one.
-        .onChange(of: browser.activeID) { _, id in
+        .onChangeCompat(of: browser.activeID) { _, id in
             if id == nil, let window { Handoff.offer(nil, in: window) }
         }
     }
@@ -1222,27 +1293,27 @@ struct ContentView: View {
             .padding(.top, browser.revealInset)
             .ignoresSafeArea()
             .background(windowSetup)
-            .onChange(of: browser.prefs.sidebar) { _, _ in
+            .onChangeCompat(of: browser.prefs.sidebar) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
-            .onChange(of: browser.asCards) { _, _ in
+            .onChangeCompat(of: browser.asCards) { _, _ in
                 // The ground the page's card sits on, or the page's own.
                 browser.paintGround(window)
             }
-            .onChange(of: browser.glassy) { _, _ in browser.paintGround(window) }
+            .onChangeCompat(of: browser.glassy) { _, _ in browser.paintGround(window) }
             // The lights sit on the strip's middle, which moves with its height.
-            .onChange(of: browser.prefs.compactStrip) { _, _ in
+            .onChangeCompat(of: browser.prefs.compactStrip) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
-            .onChange(of: browser.prefs.sidePosition) { _, _ in
+            .onChangeCompat(of: browser.prefs.sidePosition) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
-            .onChange(of: browser.prefs.columnWidth) { _, _ in
+            .onChangeCompat(of: browser.prefs.columnWidth) { _, _ in
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
             // On the right, the lights sit in the column's corner, which
             // moves with its edge.
-            .onChange(of: edges.side) { _, _ in
+            .onChangeCompat(of: edges.side) { _, _ in
                 guard sideOnRight else { return }
                 DispatchQueue.main.async { Lights.refresh(window); measureLights() }
             }
@@ -1291,14 +1362,14 @@ struct ContentView: View {
                 resting?.isHidden = true
                 browser.appBack()
             }
-            .onChange(of: browser.fieldShowing) { _, showing in
+            .onChangeCompat(of: browser.fieldShowing) { _, showing in
                 if showing {
                     DispatchQueue.main.async { browser.askFocus() }
                 } else {
                     handBack()
                 }
             }
-            .onChange(of: browser.activeID) { _, _ in handBack() }
+            .onChangeCompat(of: browser.activeID) { _, _ in handBack() }
             .animation(Motion.settle, value: browser.welcoming)
             .animation(Motion.settle, value: browser.newsShowing)
             .animation(Motion.settle, value: browser.iphoneAsking)
@@ -1755,7 +1826,7 @@ struct ContentView: View {
     /// said it is going (Tab.immersed, which is how the bench fakes it).
     private static func pageFillingScreen(_ event: NSEvent) -> PageView? {
         guard let page = event.window?.firstResponder as? PageView else { return nil }
-        let fills = page.fullscreenState != .notInFullscreen
+        let fills = page.fullscreenPhase != .notInFullscreen
             || Browsers.all.contains { $0.tabs.contains { $0.immersed && $0.built === page } }
         return fills ? page : nil
     }

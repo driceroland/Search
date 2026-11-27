@@ -2,6 +2,7 @@ import CoreServices
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class MarkDownloadedTests: XCTestCase {
     func testASavedFileIsMarkedAsDownloaded() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("mark-downloaded-\(UUID().uuidString)")

@@ -146,7 +146,7 @@ enum HTTPSFirst {
     }
 
     static func local(_ url: URL) -> Bool {
-        guard let host = url.host()?.lowercased() else { return true }
+        guard let host = url.hostCompat()?.lowercased() else { return true }
         if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".test") || host.hasSuffix(".local") {
             return true
         }

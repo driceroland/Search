@@ -5,6 +5,7 @@ import XCTest
 /// Pin Tab and Pin Tab as Row on keys of your own: each pins the tab on
 /// screen, and on a pinned tab unpins it. With the rows off, the row's
 /// pins a square.
+@available(macOS 14, *)
 @MainActor
 final class PinKeyTests: XCTestCase {
     override class func setUp() {

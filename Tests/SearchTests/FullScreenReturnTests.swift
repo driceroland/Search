@@ -6,6 +6,7 @@ import XCTest
 /// window brought back is WebKit's full-screen window the app was left from,
 /// not the browser's window with WebKit's placeholder in it. No window here
 /// is ever ordered in: one that says it is on screen stands in.
+@available(macOS 14, *)
 @MainActor
 final class FullScreenReturnTests: XCTestCase {
     override class func setUp() {

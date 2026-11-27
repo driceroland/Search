@@ -5,6 +5,7 @@ import XCTest
 
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionScriptingTests: XCTestCase {
     func testForwardedFunctionKeepsArgumentsAndResult() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("script-ext-\(UUID().uuidString)")

@@ -5,6 +5,7 @@ import XCTest
 
 /// Which tab is on screen after the one on screen closes, with and without
 /// Settings › Tabs › Closing a tab goes back to the one before.
+@available(macOS 14, *)
 @MainActor
 final class TabCloseTests: XCTestCase {
     private var browser: Browser!

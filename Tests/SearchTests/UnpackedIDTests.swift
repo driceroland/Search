@@ -4,6 +4,7 @@ import XCTest
 /// The id an extension loaded from a folder gets (Crx.unpackedID): the one
 /// Chrome gives it from the folder's path, which is what native messaging
 /// hosts list. Never from the manifest's "key".
+@available(macOS 14, *)
 final class UnpackedIDTests: XCTestCase {
     private var root: URL!
 

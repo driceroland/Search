@@ -4,6 +4,7 @@ import XCTest
 /// Settings' rows (SettingsIndex): merged controls write the keys the two
 /// switches did, new defaults reach only keys never touched, and an
 /// explicit off on a switch that left Settings stays off.
+@available(macOS 14, *)
 @MainActor
 final class SettingsIndexTests: XCTestCase {
     override class func setUp() {

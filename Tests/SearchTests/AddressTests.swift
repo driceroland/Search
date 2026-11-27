@@ -4,6 +4,7 @@ import Foundation
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class AddressTests: XCTestCase {
     func testExistingPathsKeepTheirLiteralNames() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -75,6 +76,7 @@ final class AddressTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 @MainActor
 final class FileDestinationTests: XCTestCase {
     override class func setUp() {

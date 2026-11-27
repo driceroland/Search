@@ -5,6 +5,7 @@ import XCTest
 /// Capture…'s arithmetic (Snap.swift): what the page chose, in its CSS
 /// pixels, as the rectangle WebKit is asked to draw, with no page or
 /// screen; and the copy, on a pasteboard of its own rather than the Mac's.
+@available(macOS 14, *)
 final class SnapGeometryTests: XCTestCase {
     private let page = CGSize(width: 1200, height: 5000)
 
@@ -160,6 +161,7 @@ final class SnapGeometryTests: XCTestCase {
 
 /// Copy captures only (idea 1250): off unless asked for, so a capture is
 /// still copied and saved; on, it is only copied and no file is named.
+@available(macOS 14, *)
 @MainActor
 final class SnapCopyOnlyTests: XCTestCase {
     override class func setUp() {

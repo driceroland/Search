@@ -3,6 +3,7 @@
 // SecretSession of Apple's own iCloud Passwords extension for Chrome, run
 // locally; the server side by an independent BigInt simulation (node). Both
 // agreed on every value before they were written here.
+@available(macOS 14, *)
 enum ApplePasswordsVectors {
     static let json = #"""
 {

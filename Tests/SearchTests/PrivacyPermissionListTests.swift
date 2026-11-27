@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class PrivacyPermissionListTests: XCTestCase {
     func testListAndResetKeepOriginAndPermissionBoundaries() throws {
         let suite = "PrivacyPermissionListTests.\(UUID())"

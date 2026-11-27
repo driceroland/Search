@@ -126,9 +126,9 @@ struct HistoryPanel: View {
             hunting = true
             refresh()
         }
-        .onChange(of: browser.recallHunt) { _, _ in refresh() }
+        .onChangeCompat(of: browser.recallHunt) { _, _ in refresh() }
         // Another space may keep a history of its own (Spaces.history).
-        .onChange(of: browser.spaceID) { _, _ in refresh() }
+        .onChangeCompat(of: browser.spaceID) { _, _ in refresh() }
     }
 
     /// Three separate things, worded so nobody has to guess which one signs
@@ -213,7 +213,7 @@ struct HistoryPanel: View {
         func path(in rect: CGRect) -> Path {
             let radius: CGFloat = 11 - inset
             let top = first ? radius : 0, bottom = last ? radius : 0
-            return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom, bottomTrailingRadius: bottom, topTrailingRadius: top, style: .continuous)
+            return UnevenRect(topLeadingRadius: top, bottomLeadingRadius: bottom, bottomTrailingRadius: bottom, topTrailingRadius: top, style: .continuous)
                 .path(in: rect.insetBy(dx: inset, dy: inset))
         }
 
@@ -417,8 +417,8 @@ struct DownloadsPanel: View {
                         let frame = list.frame(in: .named(Self.space))
                         Color.clear
                             .onAppear { end = frame.maxY; start = frame.minY }
-                            .onChange(of: frame.maxY) { _, new in end = new }
-                            .onChange(of: frame.minY) { _, new in start = new }
+                            .onChangeCompat(of: frame.maxY) { _, new in end = new }
+                            .onChangeCompat(of: frame.minY) { _, new in start = new }
                     })
             }
             .coordinateSpace(name: Self.space)
@@ -427,7 +427,7 @@ struct DownloadsPanel: View {
             .background(GeometryReader { view in
                 Color.clear
                     .onAppear { height = view.size.height }
-                    .onChange(of: view.size.height) { _, new in height = new }
+                    .onChangeCompat(of: view.size.height) { _, new in height = new }
             })
             .mask {
                 VStack(spacing: 0) {
@@ -513,10 +513,12 @@ struct DownloadsPanel: View {
                         }
                         // A row with three buttons has little room left: say
                         // less rather than cut the amount out of the middle.
-                        ViewThatFits(in: .horizontal) {
+                        FitsCompat(in: .horizontal) {
                             status("\(stateLabel) · \(bytes)")
                             status("\(stateLabel) · \(received)")
                             status(stateLabel)
+                        } older: {
+                            status("\(stateLabel) · \(bytes)")
                         }
                     }
                     if case .failed = entry.state {

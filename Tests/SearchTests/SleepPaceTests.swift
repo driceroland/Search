@@ -2,6 +2,7 @@ import XCTest
 @testable import Search
 
 /// What each choice in Settings › Tabs › How soon tabs sleep waits for.
+@available(macOS 14, *)
 final class SleepPaceTests: XCTestCase {
     func testSoonerWaitsLess() {
         let paces: [SleepPace] = [.later, .normal, .sooner]

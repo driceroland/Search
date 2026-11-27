@@ -67,7 +67,7 @@ struct UpdateNoticeRow: View {
             HStack(spacing: 8) {
                 // The icon goes first in a narrow column, as on the agent's
                 // card: the words are what must be read whole.
-                ViewThatFits(in: .horizontal) {
+                FitsCompat(in: .horizontal) {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.down.circle")
                             .font(.system(size: 12))
@@ -77,6 +77,8 @@ struct UpdateNoticeRow: View {
                     title(shown.kind)
                     // Narrowest of all: the button says the rest.
                     title("Update")
+                } older: {
+                    title(shown.kind)
                 }
                 Spacer(minLength: 0)
                 if hovering {

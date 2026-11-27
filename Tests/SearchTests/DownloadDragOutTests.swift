@@ -10,6 +10,7 @@ import XCTest
 /// The drag itself (SwiftUI's) can't be made without a pointer, so the page
 /// is handed the same pasteboard the row's NSURL writes, through WebKit's
 /// own dragging-destination calls. No window is ever shown.
+@available(macOS 14, *)
 @MainActor
 final class DownloadDragOutTests: XCTestCase {
     private var folder: URL!

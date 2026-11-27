@@ -6,6 +6,7 @@ import XCTest
 /// each write only their own file agree, item by item, whatever order they
 /// run in — edits on both, deletions, clocks that disagree, a Mac joining
 /// late, files that are damaged or belong to another profile.
+@available(macOS 14, *)
 @MainActor
 final class SyncTests: XCTestCase {
     override class func setUp() {

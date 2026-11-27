@@ -7,6 +7,7 @@ import XCTest
 /// never order one out while it is still in full screen. Played here with
 /// stand-in windows whose full screen turns at once, as macOS's would
 /// after its animation; nothing reaches the screen.
+@available(macOS 14, *)
 @MainActor
 final class OneWindowFullScreenTests: XCTestCase {
     /// A window whose full screen is a flag, told about as macOS tells.

@@ -31,7 +31,7 @@ struct ApplePasswordsCard: View {
                 }
             }
         }
-        .onChange(of: apple.state) { _, state in
+        .onChangeCompat(of: apple.state) { _, state in
             code = ""
             if state == .code { typing = true }
         }
@@ -62,7 +62,7 @@ struct ApplePasswordsCard: View {
                         .padding(.vertical, 5)
                         .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                         .focused($typing)
-                        .onChange(of: code) { _, typed in
+                        .onChangeCompat(of: code) { _, typed in
                             let digits = String(typed.filter(\.isNumber).prefix(6))
                             if digits != typed { code = digits }
                             // Six digits are the whole code: sent without OK.
@@ -131,7 +131,7 @@ struct ApplePairingCard: View {
                         .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                         .focused($typing)
                         .disabled(apple.state == .checking)
-                        .onChange(of: code) { _, typed in
+                        .onChangeCompat(of: code) { _, typed in
                             let digits = String(typed.filter(\.isNumber).prefix(6))
                             if digits != typed { code = digits }
                             if digits.count == 6 { send() }
@@ -156,7 +156,7 @@ struct ApplePairingCard: View {
         .offset(x: pairing.spot.minX, y: pairing.spot.maxY + 6)
         .onExitCommand { browser.endApplePairing(paired: false) }
         .onAppear { if apple.state == .code { typing = true } }
-        .onChange(of: apple.state) { _, state in
+        .onChangeCompat(of: apple.state) { _, state in
             code = ""
             if state == .code { typing = true }
         }

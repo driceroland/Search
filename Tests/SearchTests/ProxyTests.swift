@@ -12,6 +12,7 @@ import XCTest
 /// password gone when the proxy is turned off. That local addresses stay
 /// direct is not here: the excluded domains never read back, so it is proven
 /// against a running proxy instead (Tests/proxy_live.py).
+@available(macOS 14, *)
 @MainActor
 final class ProxyTests: XCTestCase {
     override func setUp() {

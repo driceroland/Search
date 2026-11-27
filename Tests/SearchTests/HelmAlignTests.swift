@@ -7,6 +7,7 @@ import XCTest
 /// drawn offscreen, never in a window: their symbols sit on the line through
 /// the centres of the window's three buttons, and with nowhere to go they are
 /// dimmed but still plain to see.
+@available(macOS 14, *)
 @MainActor
 final class HelmAlignTests: XCTestCase {
     override class func setUp() { TestWorld.enter(); super.setUp() }

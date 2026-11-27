@@ -155,7 +155,7 @@ final class ExtensionCapture: NSObject, WKScriptMessageHandlerWithReply, Observa
         let origin = message.frameInfo.securityOrigin
         guard message.frameInfo.isMainFrame, let web = message.webView, Browser.extensionScheme(origin.protocol),
               let url = web.url, url.scheme?.lowercased() == origin.protocol.lowercased(),
-              url.host()?.lowercased() == origin.host.lowercased(),
+              url.hostCompat()?.lowercased() == origin.host.lowercased(),
               let context = Extensions.shared.contexts.values.first(where: { $0.uniqueIdentifier.lowercased() == origin.host.lowercased() }),
               web.configuration.websiteDataStore.isPersistent
         else { return nil }
@@ -266,7 +266,7 @@ final class ExtensionCapture: NSObject, WKScriptMessageHandlerWithReply, Observa
         for _ in 0..<20 {
             if web.window?.isVisible == true,
                (try? await web.evaluateJavaScript("document.visibilityState")) as? String == "visible" { return }
-            try? await Task.sleep(for: .milliseconds(100))
+            try? await Task.sleep(milliseconds: 100)
         }
     }
 
@@ -289,7 +289,7 @@ final class ExtensionCapture: NSObject, WKScriptMessageHandlerWithReply, Observa
         for _ in 0..<20 {
             if web.window?.isVisible == true, web.window?.occlusionState.contains(.visible) == true,
                (try? await web.evaluateJavaScript("document.visibilityState")) as? String == "visible" { return }
-            try? await Task.sleep(for: .milliseconds(100))
+            try? await Task.sleep(milliseconds: 100)
         }
     }
 
@@ -305,7 +305,7 @@ final class ExtensionCapture: NSObject, WKScriptMessageHandlerWithReply, Observa
         var capturing = false
         init(_ web: WKWebView, _ id: String?) { self.web = web; self.extensionID = id }
 
-        var id: String { extensionID ?? "site:" + (web?.url?.host() ?? "") }
+        var id: String { extensionID ?? "site:" + (web?.url?.hostCompat() ?? "") }
 
         /// What counts: everything an extension captures; for a site, only
         /// its screen — its camera and microphone have their own marks.

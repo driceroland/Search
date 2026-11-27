@@ -84,7 +84,7 @@ enum Crx {
     /// the store itself, over https, with nothing before its host.
     static func storeID(of url: URL) -> String? {
         guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil else { return nil }
-        let host = url.host()?.lowercased() ?? ""
+        let host = url.hostCompat()?.lowercased() ?? ""
         let expression: NSRegularExpression
         switch host {
         case "chromewebstore.google.com": expression = storeDetailExpression

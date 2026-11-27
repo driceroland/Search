@@ -6,6 +6,7 @@ import XCTest
 /// by default, offered once per site where Search keeps nothing, never again
 /// after two unanswered or one ✕, never where it must not be. Apple's helper
 /// is never run: the pairing it starts is a stand-in's.
+@available(macOS 14, *)
 @MainActor
 final class ApplePasswordsOfferTests: XCTestCase {
     override class func setUp() {

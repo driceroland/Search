@@ -5,6 +5,7 @@ import XCTest
 /// and layout of the tabs, the sidebar and the window, read the way launch
 /// reads them; a protection written from outside waits for the next launch,
 /// a line this build can't read is left alone, and a line taken out stays out.
+@available(macOS 14, *)
 @MainActor
 final class FollowFileTests: XCTestCase {
     override class func setUp() {

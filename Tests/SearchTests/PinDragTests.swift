@@ -7,6 +7,7 @@ import XCTest
 /// the column's own gestures: the column is hosted in a borderless window
 /// far off every screen (as SidebarPressTests does), never activated, and
 /// the mouse events go to that window alone.
+@available(macOS 14, *)
 @MainActor
 final class PinDragTests: XCTestCase {
     private var browsers: [Browser] = []

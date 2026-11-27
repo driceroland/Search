@@ -4,6 +4,7 @@ import Darwin
 import AppKit
 @testable import Search
 
+@available(macOS 14, *)
 final class ImportFileTests: XCTestCase {
     override class func setUp() {
         super.setUp()
@@ -503,12 +504,14 @@ final class ImportFileTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 private func makeTemporaryDirectory() throws -> URL {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("search-import-test-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory
 }
 
+@available(macOS 14, *)
 @MainActor
 private func makeImportTestBrowser() -> Browser {
     _ = NSApplication.shared
@@ -516,6 +519,7 @@ private func makeImportTestBrowser() -> Browser {
     return Browser(record: WindowRecord())
 }
 
+@available(macOS 14, *)
 private func makeChromiumSource(name: String) throws -> (Chromium.Source, URL) {
     let folder = "SearchTests/\(UUID().uuidString)"
     let root = Chromium.base.appendingPathComponent(folder, isDirectory: true)
@@ -523,16 +527,19 @@ private func makeChromiumSource(name: String) throws -> (Chromium.Source, URL) {
     return (Chromium.Source(name: name, folder: folder, service: "Test Safe Storage", account: "Test", app: "Test.app"), root)
 }
 
+@available(macOS 14, *)
 private func makeProfile(_ name: String, under root: URL) throws -> URL {
     let profile = root.appendingPathComponent(name, isDirectory: true)
     try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
     return profile
 }
 
+@available(macOS 14, *)
 private func chromiumURL(_ title: String, _ url: String) -> [String: Any] {
     ["type": "url", "name": title, "url": url]
 }
 
+@available(macOS 14, *)
 private func writeChromiumBookmarks(_ entries: [[String: Any]], to profile: URL) throws {
     let bar: [String: Any] = ["children": entries]
     let other: [String: Any] = ["children": [] as [[String: Any]]]
@@ -542,6 +549,7 @@ private func writeChromiumBookmarks(_ entries: [[String: Any]], to profile: URL)
     try data.write(to: profile.appendingPathComponent("Bookmarks"), options: .atomic)
 }
 
+@available(macOS 14, *)
 private func makeArcSidebarFixture(workName: String, personalName: String) throws -> Data {
     func tab(_ id: String, _ title: String, _ url: String) -> [String: Any] {
         ["id": id, "title": title, "data": ["tab": ["savedURL": url, "savedTitle": title]]]
@@ -573,11 +581,13 @@ private func makeArcSidebarFixture(workName: String, personalName: String) throw
     return try JSONSerialization.data(withJSONObject: ["sidebar": ["containers": [main]]])
 }
 
+@available(macOS 14, *)
 private func writeBookmark(_ title: String, url: String, to file: URL) throws {
     let html = #"<DL><DT><A HREF="\#(url)">\#(title)</A></DL>"#
     try html.write(to: file, atomically: true, encoding: .utf8)
 }
 
+@available(macOS 14, *)
 private func runDitto(arguments: [String]) throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
@@ -589,6 +599,7 @@ private func runDitto(arguments: [String]) throws {
     XCTAssertEqual(process.terminationStatus, 0)
 }
 
+@available(macOS 14, *)
 private func officeImportFolders() -> Set<String> {
     let items = (try? FileManager.default.contentsOfDirectory(at: FileManager.default.temporaryDirectory, includingPropertiesForKeys: nil)) ?? []
     return Set(items.filter { $0.lastPathComponent.hasPrefix("office-import-") }.map(\.lastPathComponent))

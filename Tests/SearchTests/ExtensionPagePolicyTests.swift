@@ -6,6 +6,7 @@ import XCTest
 /// held to Chrome's minimum. What its pages then run is
 /// Tests/extension_page_policy.py.
 @available(macOS 15.4, *)
+@available(macOS 14, *)
 final class ExtensionPagePolicyTests: XCTestCase {
     private let minimum = ExtensionShims.minimumPagesPolicy
 

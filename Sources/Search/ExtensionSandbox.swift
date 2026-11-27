@@ -98,9 +98,9 @@ final class ExtensionSandbox: NSObject, WKURLSchemeHandler {
     /// known, so a website one of its pages frames can load the package's
     /// files from here (not read them: no CORS); never another extension's.
     func serve(_ url: URL, for document: URL?) -> (HTTPURLResponse, Data)? {
-        guard url.scheme == Self.scheme, url.host() == id,
-              let document, document.scheme == Extensions.scheme, document.host() == id,
-              let file = ExtensionShims.inside(url.path(percentEncoded: false), of: folder),
+        guard url.scheme == Self.scheme, url.hostCompat() == id,
+              let document, document.scheme == Extensions.scheme, document.hostCompat() == id,
+              let file = ExtensionShims.inside(url.pathCompat(percentEncoded: false), of: folder),
               var body = try? Data(contentsOf: file)
         else { return nil }
         let script = ["js", "mjs"].contains(file.pathExtension.lowercased())

@@ -3,6 +3,7 @@ import CryptoKit
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 @MainActor
 final class FaviconMemoryTests: XCTestCase {
     override class func setUp() {

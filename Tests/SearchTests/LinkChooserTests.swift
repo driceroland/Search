@@ -4,6 +4,7 @@ import XCTest
 /// The model of the panel that asks which space a link opens in
 /// (LinkChooser.swift): its rows and their numbers, what it remembers, and
 /// the links that wait for it.
+@available(macOS 14, *)
 @MainActor
 final class LinkChooserTests: XCTestCase {
     override class func setUp() {

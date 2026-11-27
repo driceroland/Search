@@ -4,6 +4,7 @@ import XCTest
 
 /// A pin's ⌘ number pressed again on that pin goes back to the tab before
 /// it, with the switch on; with it off, nothing moves (idea 216).
+@available(macOS 14, *)
 @MainActor
 final class PinNumberBackTests: XCTestCase {
     override class func setUp() {

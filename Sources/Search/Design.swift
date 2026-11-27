@@ -614,7 +614,7 @@ private struct PopoverGround: ViewModifier {
         if #available(macOS 26, *) {
             content.background(Palette.ground)
         } else {
-            content.presentationBackground(Palette.ground)
+            content.presentationBackgroundCompat(Palette.ground)
         }
     }
 }

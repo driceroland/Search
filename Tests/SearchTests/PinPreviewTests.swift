@@ -3,6 +3,7 @@ import XCTest
 
 /// A pin's glance (PinPreview.swift): the unread count a mailbox's title
 /// says, the card refused where it has no business, and on by default.
+@available(macOS 14, *)
 @MainActor
 final class PinPreviewTests: XCTestCase {
     override class func setUp() {

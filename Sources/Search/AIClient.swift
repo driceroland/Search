@@ -68,7 +68,7 @@ final class AIClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     /// Where a provider's requests may go: its own host, over https, or
     /// this Mac over plain http for the apps that run on it.
     static func allowed(_ url: URL, for provider: AIProvider) -> Bool {
-        guard let scheme = url.scheme?.lowercased(), let host = url.host()?.lowercased(),
+        guard let scheme = url.scheme?.lowercased(), let host = url.hostCompat()?.lowercased(),
               url.user == nil, url.password == nil
         else { return false }
         let loopback = host == "127.0.0.1" || host == "::1" || host == "localhost"

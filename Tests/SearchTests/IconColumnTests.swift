@@ -6,6 +6,7 @@ import XCTest
 /// The column as icons only (idea 413), with its own gestures: hosted in a
 /// borderless window far off every screen (as PinDragTests does), never
 /// activated, the mouse events sent to that window alone.
+@available(macOS 14, *)
 @MainActor
 final class IconColumnTests: XCTestCase {
     private var browsers: [Browser] = []

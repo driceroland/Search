@@ -3,6 +3,7 @@ import XCTest
 
 /// The Mac's screenshots in Downloads (Screenshots.swift): which files count,
 /// where the Mac saves them, and only new ones listed.
+@available(macOS 14, *)
 @MainActor
 final class ScreenshotsTests: XCTestCase {
     override class func setUp() {

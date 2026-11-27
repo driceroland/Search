@@ -4,6 +4,7 @@ import XCTest
 /// No window of the unit tests is ever on the person's screen
 /// (Tests/NoWindows): ordered in, it is visible to AppKit, with its own frame,
 /// but fully transparent — whatever alpha the code sets.
+@available(macOS 14, *)
 @MainActor
 final class NoWindowsTests: XCTestCase {
     override class func setUp() {

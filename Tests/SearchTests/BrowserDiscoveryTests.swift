@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class BrowserDiscoveryTests: XCTestCase {
     func testExtensionOnlyProfileIsDiscoverable() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("search-import-\(UUID().uuidString)")

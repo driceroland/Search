@@ -47,7 +47,7 @@ enum DNSRetryPolicy {
     /// site that is down.
     static func mayRetry(_ url: URL, method: String?, form: Bool, guessed: Bool, known: Bool) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
-        guard let host = url.host()?.lowercased(),
+        guard let host = url.hostCompat()?.lowercased(),
               host.split(separator: ".", omittingEmptySubsequences: false).filter({ !$0.isEmpty }).count >= 2
         else { return false }
         let method = (method ?? "GET").uppercased()
@@ -91,7 +91,7 @@ final class DNSRetry {
     /// anywhere but the page being tried ends the tries.
     func going(to url: URL, method: String?, form: Bool) {
         asked = (url, method, form)
-        if let guessed, guessed.host()?.lowercased() != url.host()?.lowercased() { self.guessed = nil }
+        if let guessed, guessed.hostCompat()?.lowercased() != url.hostCompat()?.lowercased() { self.guessed = nil }
         if let tried = self.url, !Self.same(tried, url) { stop() }
     }
 
@@ -107,9 +107,9 @@ final class DNSRetry {
             self.url = url
             done = 0
             let ask = asked.flatMap { Self.same($0.url, url) ? $0 : nil }
-            let guess = guessed.map { $0.host()?.lowercased() == url.host()?.lowercased() } ?? false
+            let guess = guessed.map { $0.hostCompat()?.lowercased() == url.hostCompat()?.lowercased() } ?? false
             eligible = DNSRetryPolicy.mayRetry(url, method: ask?.method, form: ask?.form ?? false,
-                                               guessed: guess, known: guess ? known(url.host()?.lowercased() ?? "") : true)
+                                               guessed: guess, known: guess ? known(url.hostCompat()?.lowercased() ?? "") : true)
         }
         cancelTimer()
         nextWait = eligible ? DNSRetryPolicy.delay(after: done) : nil
@@ -227,7 +227,7 @@ final class DNSRetry {
 
     /// Whether a load of `url` should fail as if its lookup had (test runs).
     static func failsForTest(_ url: URL) -> Bool {
-        guard Store.testing, let host = url.host()?.lowercased(), let left = testFailures[host], left > 0 else { return false }
+        guard Store.testing, let host = url.hostCompat()?.lowercased(), let left = testFailures[host], left > 0 else { return false }
         testFailures[host] = left - 1
         return true
     }

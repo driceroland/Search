@@ -173,7 +173,7 @@ struct TabBar: View {
                                     .frame(height: TabBar.band)
                                     // What the run's tabs really take, against
                                     // what they were worked out to (see measures).
-                                    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { laid in
+                                    .onGeometryChangeCompat(for: CGFloat.self, of: { $0.size.width }) { laid in
                                         let missed = max(0, (laid - content(in: geo.size.width, each: each)).rounded(.up))
                                         if missed != unaccounted { unaccounted = missed }
                                         TabBar.laidOut = laid
@@ -181,14 +181,14 @@ struct TabBar: View {
                                     .environment(\.rowCarrying, carrying)
                                     .onPreferenceChange(GroupDropFrames.self) { groupFrames = $0 }
                                 }
-                                .scrollDisabled(!row.overflowing)
+                                .scrollDisabledCompat(!row.overflowing)
                                 // The run ends where its tabs do, so a tab
                                 // carried past either end was cut off there.
                                 // Not when it fills the row: its neighbours
                                 // would show over the lights and the doors.
-                                .scrollClipDisabled(carrying && !row.overflowing)
+                                .scrollClipDisabledCompat(carrying && !row.overflowing)
                                 .frame(width: row.run)
-                                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { TabBar.runShown = $0 }
+                                .onGeometryChangeCompat(for: CGFloat.self, of: { $0.size.width }) { TabBar.runShown = $0 }
                                 // Only as tall as the tabs: a scroll view is
                                 // AppKit's, over the strip that moves the
                                 // window, and as tall as the bar it took every
@@ -201,11 +201,11 @@ struct TabBar: View {
                                     revealedSpace = browser.spaceID
                                     reveal(reader, in: geo.size.width)
                                 }
-                                .onChange(of: row.overflowing) { _, _ in reveal(reader, in: geo.size.width) }
-                                .onChange(of: row.overflowing, initial: true) { _, now in TabBar.scrolls = now }
+                                .onChangeCompat(of: row.overflowing) { _, _ in reveal(reader, in: geo.size.width) }
+                                .onChangeCompat(of: row.overflowing, initial: true) { _, now in TabBar.scrolls = now }
                                 // Another space's run comes in on its tab,
                                 // not gliding there from where the last was.
-                                .onChange(of: browser.activeID) { _, _ in
+                                .onChangeCompat(of: browser.activeID) { _, _ in
                                     let arrived = revealedSpace != browser.spaceID
                                     revealedSpace = browser.spaceID
                                     reveal(reader, in: geo.size.width, gliding: !arrived)
@@ -291,7 +291,7 @@ struct TabBar: View {
                         GeometryReader { box in
                             Color.clear
                                 .onAppear { doors = box.size.width }
-                                .onChange(of: box.size.width) { _, width in doors = width }
+                                .onChangeCompat(of: box.size.width) { _, width in doors = width }
                         }
                     }
                 }
@@ -334,7 +334,7 @@ struct TabBar: View {
             }
         }
         // Another space's run comes in at once, not tab by tab (see SideBar).
-        .transaction(value: browser.spaceID) {
+        .unanimated(when: browser.spaceID) {
             $0.animation = nil
             $0.disablesAnimations = true
         }
@@ -755,7 +755,7 @@ private struct RecordsItem: ViewModifier {
 
     func body(content: Content) -> some View {
         if records {
-            content.onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("strip")) }) { rect in
+            content.onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .named("strip")) }) { rect in
                 TabBar.drawnItems[id] = rect
             }
         } else {
@@ -813,8 +813,7 @@ struct Helm: View {
     }
 
     static func stack<Content: View>(_ vertical: Bool, @ViewBuilder _ content: () -> Content) -> some View {
-        let layout = vertical ? AnyLayout(VStackLayout(spacing: 4)) : AnyLayout(HStackLayout(spacing: 4))
-        return layout { content() }
+        StackCompat(vertical: vertical, spacing: 4, content)
     }
 
     private struct Wheel: View {
@@ -880,7 +879,7 @@ enum Rewind {
         let menu = NSMenu()
         menu.autoenablesItems = false
         for page in pages {
-            let title = page.title.flatMap { $0.isEmpty ? nil : $0 } ?? page.url.host() ?? page.url.absoluteString
+            let title = page.title.flatMap { $0.isEmpty ? nil : $0 } ?? page.url.hostCompat() ?? page.url.absoluteString
             let item = Pick(title: title) { [weak tab] in tab?.go(to: page) }
             item.toolTip = page.url.absoluteString
             if let image = Favicons.shared.cached(for: page.url, shy: tab.shy)?.copy() as? NSImage {
@@ -1099,7 +1098,7 @@ private struct TabPill: View, Equatable {
         .animation(Motion.glide, value: editing)
         .animation(Motion.glide, value: tab.pin)
         .animation(Motion.quick, value: dim)
-        .onChange(of: refusals) { _, _ in
+        .onChangeCompat(of: refusals) { _, _ in
             guard editing else { return }
             shake = 0
             withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
@@ -1468,8 +1467,8 @@ struct Carried: ViewModifier {
                         }
                     }
             )
-            .onChange(of: carrying) { _, now in if !now { callOff() } }
-            .onChange(of: held) { _, now in
+            .onChangeCompat(of: carrying) { _, now in if !now { callOff() } }
+            .onChangeCompat(of: held) { _, now in
                 holding?(now)
                 if !now { lifted = false }
             }
@@ -1514,7 +1513,7 @@ struct Carried: ViewModifier {
             // Always attached and asked only while held. A reader added under
             // the hand at pick-up changed the view and called the drag off
             // (RowCarryTests' pair carry failed 8 of 8, 2026-11-07).
-            .onGeometryChange(for: CGFloat?.self, of: { [held, vertical, space] proxy in
+            .onGeometryChangeCompat(for: CGFloat?.self, of: { [held, vertical, space] proxy in
                 guard held else { return nil }
                 let frame = proxy.frame(in: .named(space))
                 return vertical ? frame.minY : frame.minX
@@ -1525,15 +1524,16 @@ struct Carried: ViewModifier {
             // place has given it is where the place is drawn this frame, not
             // where the spring will end. Taken from the end, the tab fell a
             // place behind the hand at every tab it passed and drifted back.
-            .visualEffect { [held, origin, travel, shift, vertical, space] content, proxy in
+            // (macOS 12 and 13: the place's end, `shift`, as when not held.)
+            .drawnOffsetCompat(in: space, fallback: CGSize(width: vertical ? 0 : shift, height: vertical ? shift : 0)) {
+                [held, origin, travel, shift, vertical] frame in
                 var moved = shift
                 if held, let origin {
-                    let frame = proxy.frame(in: .named(space))
                     moved = origin + travel - (vertical ? frame.minY : frame.minX)
                 }
-                return content.offset(x: vertical ? 0 : moved, y: vertical ? moved : 0)
+                return CGSize(width: vertical ? 0 : moved, height: vertical ? moved : 0)
             }
-            .onGeometryChange(for: CGRect?.self, of: { [keeps = loose != nil, space] proxy in
+            .onGeometryChangeCompat(for: CGRect?.self, of: { [keeps = loose != nil, space] proxy in
                 keeps ? proxy.frame(in: .named(space)) : nil
             }) { rect in
                 if let loose, let tab, let rect { loose.rects[tab.id] = rect }

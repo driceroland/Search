@@ -3,6 +3,7 @@ import XCTest
 
 /// A page whose process keeps dying is made again twice a minute at most,
 /// then left to say so: the rule tabs and the side panel share.
+@available(macOS 14, *)
 final class CrashCountTests: XCTestCase {
     func testTwoReloadsAMinuteThenGivesUp() {
         var count = CrashCount()

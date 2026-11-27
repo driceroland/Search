@@ -11,6 +11,7 @@ import XCTest
 /// wallpaper or window behind matched it and they were gone, while the
 /// titles beside them still read. On the plain ground nothing changes.
 /// Rendered offscreen in an NSHostingView that is never put in a window.
+@available(macOS 14, *)
 @MainActor
 final class RestingInkTests: XCTestCase {
     override class func setUp() {

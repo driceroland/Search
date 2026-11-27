@@ -268,9 +268,7 @@ enum HomeRender {
             HomeBackground.paint(theme, tuning, in: &context, size: size, dark: dark, ground: ground)
         }
         .frame(width: size.width, height: size.height)
-        let renderer = ImageRenderer(content: canvas)
-        renderer.scale = scale
-        guard let cg = renderer.cgImage else { return nil }
+        guard let cg = renderImageCompat(canvas, scale: scale) else { return nil }
         // A full-window image is tens of megabytes at Retina scale, so only a
         // handful are kept: the current one and the few a resize or a look
         // change steps through. Older sizes and themes go first.

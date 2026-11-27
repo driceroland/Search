@@ -5,6 +5,7 @@ import XCTest
 
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class TabCaptureTests: XCTestCase {
     private var browser: Browser!
     private var windows: [NSWindow] = []
@@ -185,6 +186,7 @@ final class TabCaptureTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 @MainActor
 private final class CapturePermission: NSObject, WKUIDelegate {
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,

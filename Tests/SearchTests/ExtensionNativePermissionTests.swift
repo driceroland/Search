@@ -10,6 +10,7 @@ import XCTest
 /// the manifest says who asked for it.
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionNativePermissionTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

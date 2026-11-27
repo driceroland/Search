@@ -4,6 +4,7 @@ import XCTest
 /// A download saved over a file that is there, after the save panel's
 /// Replace: WebKit refuses to write over a file, so it failed at once and a
 /// retry made "Photo 1 2.jpg" beside the old one (#1598).
+@available(macOS 14, *)
 final class DownloadReplaceTests: XCTestCase {
     private var root: URL!
 

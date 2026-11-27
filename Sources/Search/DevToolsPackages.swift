@@ -31,6 +31,16 @@ import WebKit
 // A debug build's tests can stand in a local feed and an ad-hoc signed
 // package (`testing`); a release build never can.
 
+extension DevToolsPackages {
+    /// The packages are built for macOS 14 and later (build.sh
+    /// DEVTOOLS_MINIMUM); Search itself runs on 12. On an older Mac none is
+    /// offered and none is loaded, even one copied in from a newer Mac.
+    nonisolated static var supported: Bool {
+        if #available(macOS 14, *) { return true }
+        return false
+    }
+}
+
 struct DevToolsOffer: Equatable, Identifiable {
     struct Item: Equatable, Hashable {
         let id: String
@@ -293,7 +303,7 @@ final class DevToolsPackages: ObservableObject {
     /// in Settings saying why) if they fail.
     func plugin(_ id: String) -> SearchDevToolsPlugin? {
         if let made = loaded[id] { return made }
-        guard let kept = installed[id] else { return nil }
+        guard Self.supported, let kept = installed[id] else { return nil }
         do {
             try Self.verify(kept.bundle, offer: kept.offer, release: !Self.testing)
             guard let bundle = Bundle(url: kept.bundle), bundle.load(),

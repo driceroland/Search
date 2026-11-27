@@ -7,6 +7,7 @@ import WebKit
 /// (idea 1284): after 1, 3 and 8 seconds while its tab is in sight, never
 /// for a form or a POST, never for an address that was only a guess at
 /// what was typed, and no more once you go elsewhere.
+@available(macOS 14, *)
 @MainActor
 final class DNSRetryTests: XCTestCase {
     override class func setUp() {

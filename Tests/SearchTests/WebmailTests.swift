@@ -3,6 +3,7 @@ import XCTest
 
 /// mailto: links read as RFC 6068 has them, and the webmail compose pages
 /// made from them (Webmail.swift).
+@available(macOS 14, *)
 final class WebmailTests: XCTestCase {
     private func draft(_ text: String) -> MailDraft { MailDraft(string: text)! }
     private func query(_ url: URL?) -> [String: String] {

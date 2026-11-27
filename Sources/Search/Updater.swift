@@ -361,7 +361,9 @@ final class Updater: ObservableObject {
         // DevToolsPackages): the list in Settings follows it.
         // https on the feed's host, as the update's own links; plain http
         // only for a test run handed SEARCH_FEED, as the feed itself.
-        let offers = DevToolsPackages.offers(from: json["devtools"]) { link($0) }
+        // The packages need macOS 14 (build.sh DEVTOOLS_MINIMUM): an older Mac
+        // is offered none, and Settings lists none.
+        let offers = DevToolsPackages.supported ? DevToolsPackages.offers(from: json["devtools"]) { link($0) } : []
         await MainActor.run { DevToolsPackages.shared.offered = offers }
         return release
     }

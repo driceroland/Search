@@ -5,6 +5,7 @@ import XCTest
 /// File › Export Spaces…: the bookmarks page any browser imports, and
 /// Search's own spaces file read back into the shape every spaces import
 /// takes (see SpacesExport.swift). Made-up spaces only.
+@available(macOS 14, *)
 final class SpacesExportTests: XCTestCase {
     private func sample() -> SpacesExport.Bundle {
         var work = SpacesExport.Space(name: "Work & <Play>", colour: 1, icon: "briefcase")

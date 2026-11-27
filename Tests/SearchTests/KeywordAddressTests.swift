@@ -2,6 +2,7 @@ import XCTest
 @testable import Search
 
 /// A site shortcut's address typed without https:// is taken as https (#1654).
+@available(macOS 14, *)
 final class KeywordAddressTests: XCTestCase {
     func testAnAddressWithoutItsSchemeIsTakenAsHTTPS() {
         let typed = "www.youtube.com/results?search_query=%s"

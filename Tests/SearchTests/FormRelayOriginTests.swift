@@ -4,6 +4,7 @@ import XCTest
 
 /// Which frames the password filling hears from (FormRelay): only a frame
 /// of the page's own scheme, host and port.
+@available(macOS 14, *)
 final class FormRelayOriginTests: XCTestCase {
     private func same(_ scheme: String, _ host: String, _ port: Int, _ page: String) -> Bool {
         FormRelay.sameOrigin(scheme: scheme, host: host, port: port, as: URL(string: page))

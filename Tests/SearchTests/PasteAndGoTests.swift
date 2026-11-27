@@ -3,6 +3,7 @@ import SwiftUI
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 @MainActor
 final class PasteAndGoTests: XCTestCase {
     override class func setUp() {

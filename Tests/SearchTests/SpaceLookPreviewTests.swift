@@ -8,6 +8,7 @@ import XCTest
 /// column turned out, in dark mode above all. For every colour and
 /// strength, in light and dark, the preview's ground is the column's.
 /// Rendered offscreen in an NSHostingView that is never put in a window.
+@available(macOS 14, *)
 @MainActor
 final class SpaceLookPreviewTests: XCTestCase {
     override class func setUp() {

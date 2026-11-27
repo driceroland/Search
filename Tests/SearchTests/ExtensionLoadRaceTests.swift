@@ -6,6 +6,7 @@ import XCTest
 
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionLoadRaceTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

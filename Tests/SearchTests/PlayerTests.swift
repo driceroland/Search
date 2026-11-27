@@ -5,6 +5,7 @@ import XCTest
 
 /// Which tab the player at the foot of the sidebar is for (Player.swift),
 /// from the tabs' own sound and pause, without a page playing anything.
+@available(macOS 14, *)
 @MainActor
 final class PlayerTests: XCTestCase {
     private var browser: Browser!

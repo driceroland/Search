@@ -35,7 +35,7 @@ enum BlockedPopups {
     /// nothing (about:blank, written into by its opener) or a way in.
     static func openable(_ url: URL?) -> URL? {
         guard let url, let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
-              let host = url.host(), !host.isEmpty else { return nil }
+              let host = url.hostCompat(), !host.isEmpty else { return nil }
         return url
     }
 
@@ -43,7 +43,7 @@ enum BlockedPopups {
     /// (hark.com for app.hark.com), for web pages only.
     static func site(of url: URL?) -> String? {
         guard let url else { return nil }
-        return site(scheme: url.scheme ?? "", host: url.host() ?? "")
+        return site(scheme: url.scheme ?? "", host: url.hostCompat() ?? "")
     }
 
     static func site(scheme: String, host: String) -> String? {
@@ -74,8 +74,8 @@ enum BlockedPopups {
     /// The address as the menu shows it: the host without www, then the
     /// path (the line cuts its middle when it's long).
     static func label(_ url: URL) -> String {
-        var rest = url.path()
-        if let query = url.query(), !query.isEmpty { rest += "?" + query }
+        var rest = url.pathCompat()
+        if let query = url.queryCompat(), !query.isEmpty { rest += "?" + query }
         if rest == "/" { rest = "" }
         return String((SiteCard.site(url) + rest).prefix(300))
     }
@@ -144,7 +144,7 @@ struct PopupSign: View {
                 Image(systemName: "rectangle.on.rectangle.slash")
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(hovering || showing || shown ? Palette.ink : colour.opacity(0.75))
-                    .symbolEffect(.bounce, value: tab.blockedPopups.last?.id)
+                    .bounceCompat(value: tab.blockedPopups.last?.id)
                     .frame(width: 17, height: 15)
                     .background(Palette.ink.opacity(hovering || showing || shown ? 0.07 : 0),
                                 in: RoundedRectangle(cornerRadius: 4, style: .continuous))

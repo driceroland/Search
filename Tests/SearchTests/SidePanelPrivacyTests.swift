@@ -7,6 +7,7 @@ import XCTest
 /// extension has been let into private tabs. On the model only: no window is
 /// ever shown, and no extension is loaded, so the panel here belongs to one
 /// that is gone, which is held back for the same reason as one shut out.
+@available(macOS 14, *)
 @MainActor
 final class SidePanelPrivacyTests: XCTestCase {
     override class func setUp() {

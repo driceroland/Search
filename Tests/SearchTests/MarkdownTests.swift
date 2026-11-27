@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class MarkdownTests: XCTestCase {
     private let base = URL(string: "https://docs.example.test/guide/start.md")
 

@@ -100,8 +100,8 @@ struct AddressLine: View {
                         .offset(y: height + 4)
                 }
             }
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
-            .onChange(of: browser.editingInline, initial: true) { _, on in watch(on) }
+            .onGeometryChangeCompat(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+            .onChangeCompat(of: browser.editingInline, initial: true) { _, on in watch(on) }
             .onDisappear { watch(false) }
         }
 

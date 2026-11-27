@@ -5,6 +5,7 @@ import XCTest
 /// belongs to, how an export is read, and that an unsigned feed is refused.
 /// Nothing here touches the keychain: every CSV row below is one that is
 /// skipped, so nothing is ever saved.
+@available(macOS 14, *)
 final class VaultAndUpdaterTests: XCTestCase {
     func testHostIsTheSiteWithoutWWW() {
         XCTAssertEqual(Vault.host(of: "https://www.example.com/login?next=/"), "example.com")

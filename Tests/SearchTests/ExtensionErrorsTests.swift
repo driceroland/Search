@@ -6,6 +6,7 @@ import XCTest
 /// Search reads them without Swift's Error bridging, which crashed 1.0.7 on
 /// macOS 15 when 1Password's button recorded an error on its context.
 @available(macOS 15.4, *)
+@available(macOS 14, *)
 final class ExtensionErrorsTests: XCTestCase {
     private var root: URL!
 

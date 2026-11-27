@@ -7,6 +7,7 @@ import SQLite3
 /// tabs, read from files written here by hand in each shape Zen and Firefox
 /// have kept them (see ImportZen.swift). Only synthetic files in a scratch
 /// folder: no real browser's profile is read.
+@available(macOS 14, *)
 final class ZenImportTests: XCTestCase {
     private var scratch: URL!
 

@@ -5,6 +5,7 @@ import XCTest
 /// typos give the address they were meant to be, real addresses give
 /// nothing, and the line never stops a second press. The same cases as the
 /// site's scripts/email-typo.test.mjs.
+@available(macOS 14, *)
 final class EmailTypoTests: XCTestCase {
     func testTyposGiveTheAddressTheyWereMeantToBe() {
         let typos = [

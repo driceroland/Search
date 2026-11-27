@@ -3,6 +3,7 @@ import Foundation
 
 /// A loopback-only HTTP origin for WebKit download tests. It supports byte
 /// ranges and can deliberately truncate one response to exercise retry paths.
+@available(macOS 14, *)
 final class LocalDownloadServer {
     private struct Request {
         let path: String

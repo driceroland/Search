@@ -210,7 +210,7 @@ extension Browser {
     /// Notifications.swift): answered yes, with notifications on in Settings.
     func mayNotify(_ tab: Tab) -> Bool {
         guard prefs.siteNotifications, !tab.shy, let url = tab.address,
-              let scheme = url.scheme, let host = url.host(), !host.isEmpty else { return false }
+              let scheme = url.scheme, let host = url.hostCompat(), !host.isEmpty else { return false }
         let site = Browser.origin(scheme, host, url.port ?? 0)
         return Store.settings.object(forKey: SiteNotifications.key(site)) as? Bool == true
     }

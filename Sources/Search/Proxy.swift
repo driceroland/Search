@@ -71,6 +71,7 @@ struct ProxySettingsValue: Codable, Equatable {
 
     /// Nil when nothing should be proxied, which is also what a half-filled
     /// setting gives: a proxy is either whole and used, or absent.
+    @available(macOS 14, *)
     func configuration(password: String) -> ProxyConfiguration? {
         guard mode != .system, validation == nil,
               let host = bare, let number = UInt16(port), let port = NWEndpoint.Port(rawValue: number)
@@ -156,13 +157,16 @@ enum ProxySecret {
 /// hopping: the value is small, copied under a lock, and changes only when
 /// Settings saves.
 enum ProxyNetwork {
-    nonisolated(unsafe) private static var current: ProxyConfiguration?
+    /// A ProxyConfiguration (macOS 14), kept as Any so the type can stand
+    /// in a Search that also runs on 12, where there is never one.
+    nonisolated(unsafe) private static var current: Any?
     private static let lock = NSLock()
 
+    @available(macOS 14, *)
     static var configuration: ProxyConfiguration? {
         lock.lock()
         defer { lock.unlock() }
-        return current
+        return current as? ProxyConfiguration
     }
 
     /// Bumped whenever what a session would be made with changes. Sessions
@@ -172,6 +176,7 @@ enum ProxyNetwork {
     /// have been handed back.
     nonisolated(unsafe) private static var generation = 0
 
+    @available(macOS 14, *)
     fileprivate static func keep(_ proxy: ProxyConfiguration?) {
         lock.lock()
         current = proxy
@@ -205,7 +210,10 @@ enum ProxyNetwork {
     /// Stamped on a configuration before its session is made. WebKit's own
     /// requests go through the stores instead (see BrowserProxy.attach).
     static func stamp(_ configuration: URLSessionConfiguration) {
-        configuration.proxyConfigurations = [Self.configuration].compactMap { $0 }
+        // A proxy is macOS 14's (Settings › Privacy shows none before).
+        if #available(macOS 14, *) {
+            configuration.proxyConfigurations = [Self.configuration].compactMap { $0 }
+        }
         let stand = Self.testProtocols
         if !stand.isEmpty {
             configuration.protocolClasses = stand + (configuration.protocolClasses ?? [])
@@ -280,7 +288,7 @@ final class BrowserProxy: ObservableObject {
         self.value = value
         // The keychain is asked only for a proxy that names a user.
         self.password = password ?? (value.mode != .system && !value.username.isEmpty ? ProxySecret.read() : "")
-        ProxyNetwork.keep(value.configuration(password: self.password))
+        if #available(macOS 14, *) { ProxyNetwork.keep(value.configuration(password: self.password)) }
     }
 
     /// Called where a store is made, not where one is read: `Store.websites`
@@ -294,6 +302,7 @@ final class BrowserProxy: ObservableObject {
     func attach(_ store: WKWebsiteDataStore) {
         guard !stores.contains(store) else { return }
         stores.add(store)
+        guard #available(macOS 14, *) else { return }
         let configurations = [value.configuration(password: password)].compactMap { $0 }
         guard !configurations.isEmpty || !store.proxyConfigurations.isEmpty else { return }
         store.proxyConfigurations = configurations
@@ -310,6 +319,7 @@ final class BrowserProxy: ObservableObject {
         defaults.set(try JSONEncoder().encode(proposed), forKey: Self.key)
         self.password = secret
         value = proposed
+        guard #available(macOS 14, *) else { return }
         let proxy = proposed.configuration(password: secret)
         ProxyNetwork.keep(proxy)
         let configurations = [proxy].compactMap { $0 }
@@ -380,7 +390,7 @@ struct ProxySettings: View {
             }
         }
         .textFieldStyle(.roundedBorder)
-        .onChange(of: proxy.value) { _, saved in
+        .onChangeCompat(of: proxy.value) { _, saved in
             draft = saved
             password = proxy.savedPassword
         }

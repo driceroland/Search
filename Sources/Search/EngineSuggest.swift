@@ -8,7 +8,7 @@ import Foundation
 /// whatever the switch says.
 enum EngineSuggest {
     /// How long typing has to pause before a question goes out.
-    static let pause: Duration = .milliseconds(120)
+    static let pause: TimeInterval = 0.12
     /// An answer later than this is no use to someone typing.
     static let patience: TimeInterval = 0.8
     /// At most this many rows from the engine.
@@ -58,7 +58,7 @@ enum EngineSuggest {
         guard let template, let url = Engine.url(for: words, template: template),
               let scheme = url.scheme?.lowercased()
         else { return nil }
-        let loopback = ["127.0.0.1", "localhost"].contains(url.host() ?? "")
+        let loopback = ["127.0.0.1", "localhost"].contains(url.hostCompat() ?? "")
         if scheme == "https" { return url }
         if test != nil, scheme == "http", loopback { return url }
         // customEndpoint has already said this one may be asked.
@@ -201,7 +201,7 @@ final class EngineSuggester {
         let mine = round
         task = Task { [weak self] in
             defer { if let self, self.round == mine { self.task = nil } }
-            do { try await Task.sleep(for: EngineSuggest.pause) } catch { return }
+            do { try await Task.sleep(seconds: EngineSuggest.pause) } catch { return }
             self?.asked += 1
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: EngineSuggest.patience)
             request.httpShouldHandleCookies = false

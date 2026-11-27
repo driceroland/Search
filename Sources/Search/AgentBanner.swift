@@ -119,11 +119,13 @@ private struct AgentStatusFace: View {
         HStack(spacing: 8) {
             // The icon goes first when the column is too narrow for both:
             // the name is what must be read whole.
-            ViewThatFits(in: .horizontal) {
+            FitsCompat(in: .horizontal) {
                 HStack(spacing: 8) {
                     mark.font(.system(size: 12))
                     words
                 }
+                words
+            } older: {
                 words
             }
             Spacer(minLength: 0)

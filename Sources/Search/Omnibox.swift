@@ -172,12 +172,12 @@ struct Omnibox: View {
                 shake = 0
                 refused = false
             }
-            .onChange(of: browser.refusals) { _, _ in
+            .onChangeCompat(of: browser.refusals) { _, _ in
                 shake = 0
                 refused = true
                 withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
             }
-            .onChange(of: browser.typed) { _, _ in
+            .onChangeCompat(of: browser.typed) { _, _ in
                 withAnimation(Motion.quick) { refused = false }
             }
     }
@@ -318,7 +318,7 @@ struct Omnibox: View {
         /// The site's first letter, as History's lines wear it: an open
         /// tab's row leads with its title, so the address is asked instead.
         private var letter: String {
-            let host = offer.url.host().map(Address.withoutWWW) ?? ""
+            let host = offer.url.hostCompat().map(Address.withoutWWW) ?? ""
             return host.first.map { String($0).uppercased() } ?? "•"
         }
     }

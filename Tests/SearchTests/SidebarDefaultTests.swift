@@ -3,6 +3,7 @@ import XCTest
 
 /// Tabs down the side for a new Search, and no move for anybody already
 /// using one (SidebarDefault in Prefs.swift).
+@available(macOS 14, *)
 final class SidebarDefaultTests: XCTestCase {
     private var suite = ""
     private var store: UserDefaults!

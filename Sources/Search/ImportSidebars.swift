@@ -224,7 +224,7 @@ enum Ardia {
     /// A pinned tab at the page it was pinned with, else the one it shows.
     private static func item(_ tab: [String: Any]) -> ArcSidebar.Item? {
         guard let url = [tab["pinnedUrl"], tab["url"]].lazy.compactMap({ Arc.page($0 as? String) }).first else { return nil }
-        let title = Arc.named(tab["customTitle"] as? String) ?? Arc.named(tab["title"] as? String) ?? url.host() ?? url.absoluteString
+        let title = Arc.named(tab["customTitle"] as? String) ?? Arc.named(tab["title"] as? String) ?? url.hostCompat() ?? url.absoluteString
         return ArcSidebar.Item(title: title, url: url)
     }
 }
@@ -329,7 +329,7 @@ enum Yab {
         guard let url = home ?? Arc.page(entry["url"] as? String) else { return nil }
         let title = Arc.named(entry["name"] as? String)
             ?? Arc.named((home != nil ? entry["homeTitle"] : entry["title"]) as? String)
-            ?? Arc.named(entry["title"] as? String) ?? url.host() ?? url.absoluteString
+            ?? Arc.named(entry["title"] as? String) ?? url.hostCompat() ?? url.absoluteString
         return ArcSidebar.Item(title: title, url: url)
     }
 
@@ -531,7 +531,7 @@ enum DiaTabs {
             case "content_pane":
                 guard let pane = panes[id], let url = Arc.page(pane["url"] as? String) else { return [] }
                 total += 1
-                let title = Arc.named(pane["custom"] as? String) ?? Arc.named(pane["title"] as? String) ?? url.host() ?? url.absoluteString
+                let title = Arc.named(pane["custom"] as? String) ?? Arc.named(pane["title"] as? String) ?? url.hostCompat() ?? url.absoluteString
                 return [.item(.init(title: title, url: url))]
             case "group":
                 let inside = kids(node).flatMap { tree($0, depth: depth + 1) }

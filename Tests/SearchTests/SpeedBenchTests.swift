@@ -8,6 +8,7 @@ import XCTest
 /// Runs only when SPEED_OUT names a file, and writes what it measured there
 /// as JSON, so the same file can be run against two builds and compared.
 /// Hosted as RowCarryTests does, in a borderless window far off every screen.
+@available(macOS 14, *)
 @MainActor
 final class SpeedBenchTests: XCTestCase {
     private var browsers: [Browser] = []

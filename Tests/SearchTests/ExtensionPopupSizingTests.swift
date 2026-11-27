@@ -5,6 +5,7 @@ import XCTest
 
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionPopupSizingTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()
@@ -157,6 +158,7 @@ final class ExtensionPopupSizingTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 @MainActor
 private enum ScrollerStyleOverride {
     private final class Forced: NSObject {

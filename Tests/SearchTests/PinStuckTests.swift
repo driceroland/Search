@@ -8,6 +8,7 @@ import XCTest
 /// hand (its page starting to load as the press selects it, its icon
 /// arriving); the carry has to end then too (CarryGuard). Windows far off
 /// every screen, never activated, as PinDragTests.
+@available(macOS 14, *)
 @MainActor
 final class PinStuckTests: XCTestCase {
     private var browsers: [Browser] = []

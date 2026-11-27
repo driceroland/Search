@@ -3,6 +3,7 @@ import XCTest
 
 /// Who may have the pointer (PointerLock, #1305). The whole path, a click
 /// in a page asking and Escape letting go, is Tests/pointer_lock.py.
+@available(macOS 14, *)
 final class PointerLockTests: XCTestCase {
     func testOnlyTheFrontTabRightAfterInputAndNeverAnAgent() {
         XCTAssertNil(PointerLock.refusal(agent: false, front: true, input: true))

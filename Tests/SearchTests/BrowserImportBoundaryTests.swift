@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class BrowserImportBoundaryTests: XCTestCase {
     func testProfilesAndFilesCannotFollowLinksOutsideRoot() throws {
         let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

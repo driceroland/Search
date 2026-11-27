@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 /// Everything there is to set. Sections down the left, under a field that
 /// finds any setting by its words (⌘F); one section at a time on the right,
@@ -114,7 +115,7 @@ struct SettingsPanel: View {
         Group {
             if asTab { tabbed } else { card }
         }
-        .onChange(of: browser.settingsFind) { _, _ in finding = true }
+        .onChangeCompat(of: browser.settingsFind) { _, _ in finding = true }
         // Find a setting takes the keys as Settings opens, as System
         // Settings' search does: type a setting's name at once (#1611).
         // A turn later, once the tab has taken the window's keys.
@@ -122,7 +123,7 @@ struct SettingsPanel: View {
             if let found { query = found } else if let tabID, let kept = browser.settingsQueries[tabID] { query = kept }
             DispatchQueue.main.async { finding = true }
         }
-        .onChange(of: query) { _, words in
+        .onChangeCompat(of: query) { _, words in
             if let tabID { browser.settingsQueries[tabID] = words.isEmpty ? nil : words }
         }
     }
@@ -140,8 +141,8 @@ struct SettingsPanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { follow(asked) }
-        .onChange(of: asked) { _, asked in follow(asked) }
-        .onChange(of: page) { _, page in
+        .onChangeCompat(of: asked) { _, asked in follow(asked) }
+        .onChangeCompat(of: page) { _, page in
             Store.settings.set(page.rawValue, forKey: "settings.page")
             browser.settingsMoved(to: page)
         }
@@ -166,7 +167,7 @@ struct SettingsPanel: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: .black.opacity(0.16), radius: 34, y: 12)
-        .onChange(of: page) { _, page in Store.settings.set(page.rawValue, forKey: "settings.page") }
+        .onChangeCompat(of: page) { _, page in Store.settings.set(page.rawValue, forKey: "settings.page") }
     }
 
     // MARK: - the rail
@@ -370,8 +371,11 @@ struct SettingsPanel: View {
             }
         case .privacy:
             groups(of: page)
-            GroupBlock(title: "Proxy", icon: "network") {
-                ProxySettings()
+            // A proxy for pages is WebKit's on macOS 14 and later.
+            if #available(macOS 14, *) {
+                GroupBlock(title: "Proxy", icon: "network") {
+                    ProxySettings()
+                }
             }
         case .extensions:
             ExtensionsPage(browser: browser)
@@ -855,7 +859,8 @@ struct SettingsPanel: View {
                 .opacity(arcHere ? 1 : 0.4)
         case "spaces": Switch(on: $prefs.usesSpaces)
         case "spaces.commandNumbers": Switch(on: $prefs.spacesOnCommand)
-        case "profiles": Pill("New Profile…") { ProfileMenu.askNew() }
+        case "profiles":
+            if WKWebsiteDataStore.separateStoresSupported { Pill("New Profile…") { ProfileMenu.askNew() } }
         case "profiles.oneWindow": Switch(on: $prefs.profilesInOneWindow)
         case "spaces.links": Switch(on: $prefs.sendsLinksToSpaces)
         case "spaces.buttons": Switch(on: $prefs.spaceButtons)

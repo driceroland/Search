@@ -6,6 +6,7 @@ import XCTest
 /// A new tab's site tiles (HomeTiles.swift): what may be a tile's address,
 /// how its name is kept, how they're kept in the Home folder, moved and
 /// capped, and what a private tab may do with them.
+@available(macOS 14, *)
 @MainActor
 final class HomeTilesTests: XCTestCase {
     override class func setUp() {
@@ -365,6 +366,7 @@ final class HomeTilesTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 private extension Result {
     var failure: Failure? {
         if case let .failure(f) = self { return f }

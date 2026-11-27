@@ -3,6 +3,7 @@ import XCTest
 
 /// Which frames of an extension's panel get Claude's own fallback
 /// (PanelFrameFallback, idea 686): claude.ai's /cic pages and nothing else.
+@available(macOS 14, *)
 final class PanelFrameFallbackTests: XCTestCase {
     private func script(_ text: String) -> String? {
         PanelFrameFallback.script(for: URL(string: text), hosts: PanelFrameFallback.claudeHosts)

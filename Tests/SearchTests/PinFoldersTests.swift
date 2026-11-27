@@ -4,6 +4,7 @@ import XCTest
 /// Folders among the pinned rows (PinFolders.swift): the files staying
 /// readable both ways, what is drawn, what may go where, and Arc's nested
 /// folders coming in nested. In memory only.
+@available(macOS 14, *)
 final class PinFoldersTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

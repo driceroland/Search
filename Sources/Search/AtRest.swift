@@ -51,7 +51,7 @@ struct AtRest: Equatable {
 
     @MainActor private static func isNewTabPage(_ url: URL) -> Bool {
         guard #available(macOS 15.4, *), let page = Extensions.shared.newTabPage else { return false }
-        return url.scheme == page.scheme && url.host() == page.host() && url.path == page.path
+        return url.scheme == page.scheme && url.hostCompat() == page.hostCompat() && url.path == page.path
     }
 
     /// All of it as one line, as read aloud and as the bench reports it.
@@ -85,7 +85,7 @@ struct AtRest: Equatable {
         let scheme = url.scheme?.lowercased() ?? ""
         switch scheme {
         case "http", "https":
-            guard let raw = url.host(percentEncoded: false), !raw.isEmpty else { return nil }
+            guard let raw = url.hostCompat(percentEncoded: false), !raw.isEmpty else { return nil }
             let ascii = Hosts.ascii(raw)
             let ip = Hosts.isAddress(ascii)
             let bare = !ip && ascii.hasPrefix("www.") && ascii.split(separator: ".").count > 2 ? String(ascii.dropFirst(4)) : ascii

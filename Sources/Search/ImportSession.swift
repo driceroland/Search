@@ -252,7 +252,7 @@ enum SessionImport {
     static func titled(_ title: String, for url: URL?) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return String(trimmed.prefix(300)) }
-        return url?.host() ?? url?.absoluteString ?? "Untitled"
+        return url?.hostCompat() ?? url?.absoluteString ?? "Untitled"
     }
 
     /// Bytes a frame at a time, little-endian; a read past the end is nil,

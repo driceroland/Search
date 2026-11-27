@@ -5,6 +5,7 @@ import XCTest
 /// "Continue Anyway" on a site with a bad certificate trusts that
 /// certificate, for this launch, not the site: a different bad certificate
 /// on the same name asks again (#1377).
+@available(macOS 14, *)
 @MainActor
 final class CertificateExceptionTests: XCTestCase {
     // Two self-signed certificates for the same name, bad.test.

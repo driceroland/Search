@@ -8,6 +8,7 @@ import XCTest
 /// in Tests/FieldFixtures: Forms.script's judge, run in Search's own world as
 /// a tab runs it, on each fixture at the address it was taken from. No
 /// keychain, no window.
+@available(macOS 14, *)
 @MainActor
 final class FormFieldCorpusTests: XCTestCase {
     private static let fixtures = URL(fileURLWithPath: #filePath)

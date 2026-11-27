@@ -6,6 +6,7 @@ import XCTest
 /// A tab on screen whose page process keeps dying. It used to be loaded
 /// again every time, for ever — the page "refreshing itself" until Search
 /// was quit. Now: twice, then it says so, and Try again brings it back.
+@available(macOS 14, *)
 @MainActor
 final class CrashLoopTests: XCTestCase {
     override class func setUp() {

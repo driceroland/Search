@@ -56,13 +56,13 @@ enum SiteSearch {
 
     /// Wikipedia in the Mac's first language.
     private static var language: String {
-        let code = Locale.preferredLanguages.first.map { Locale(identifier: $0).language.languageCode?.identifier ?? "en" } ?? "en"
+        let code = Locale.preferredLanguages.first.map { Locale(identifier: $0).languageCode ?? "en" } ?? "en"
         return code.allSatisfy(\.isLetter) && code.count <= 3 ? code : "en"
     }
 
     /// Amazon's own shop for the Mac's region.
     private static var amazon: String {
-        switch Locale.current.region?.identifier {
+        switch Locale.current.regionCode {
         case "FR": "amazon.fr"
         case "DE", "AT": "amazon.de"
         case "GB", "IE": "amazon.co.uk"
@@ -312,7 +312,7 @@ enum SiteSearch {
     private static func siteHost(_ address: String) -> String? {
         guard let url = URL(string: address.replacingOccurrences(of: "%s", with: "x")),
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              let host = url.host()?.lowercased(), !host.isEmpty else { return nil }
+              let host = url.hostCompat()?.lowercased(), !host.isEmpty else { return nil }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 

@@ -2,6 +2,7 @@ import AppKit
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class PopoverSideTests: XCTestCase {
     private let clear = PopoverSide.clearance
     private let screen = NSRect(x: 0, y: 0, width: 2560, height: 1400)

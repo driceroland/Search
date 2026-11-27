@@ -2762,7 +2762,7 @@ final class Bench {
                     Bench.bodies["bookmarkRow"] = 0
                     let start = CACurrentMediaTime()
                     let held = NSHostingController(rootView: BookmarksDropdown(browser: browser, bookmarks: browser.bookmarks))
-                    held.sizingOptions = [.preferredContentSize]
+                    if #available(macOS 13, *) { held.sizingOptions = [.preferredContentSize] }
                     _ = held.view
                     held.view.layoutSubtreeIfNeeded()
                     held.view.frame.size = held.preferredContentSize
@@ -3625,7 +3625,7 @@ final class Bench {
                 tab.setAlwaysTranslates(code, action == "always")
                 answer(state())
             default:
-                let target = (request["lang"] as? String).map(Locale.Language.init(identifier:)) ?? PageTranslator.preferredTarget
+                let target = (request["lang"] as? String).map(TranslateLanguage.init(identifier:)) ?? PageTranslator.preferredTarget
                 if PageTranslator.start(tab, to: target, done: { report in
                     var reply = state()
                     reply["report"] = report
@@ -3651,7 +3651,7 @@ final class Bench {
             switch request["action"] as? String {
             case "mock":
                 guard let url = (request["url"] as? String).flatMap(URL.init(string:)),
-                      ["127.0.0.1", "localhost", "::1"].contains(url.host() ?? "")
+                      ["127.0.0.1", "localhost", "::1"].contains(url.hostCompat() ?? "")
                 else { answer(["error": "ai mock needs an address on this Mac"]); return }
                 AIProvider.mock = url
                 answer(["mock": url.absoluteString])
@@ -3738,9 +3738,8 @@ final class Bench {
                 guard let path = request["path"] as? String else { answer(["error": "ai picture PATH"]); return }
                 var made: [String] = []
                 func draw<V: View>(_ view: V, _ file: String) {
-                    let renderer = ImageRenderer(content: view.padding(20).background(Palette.wash))
-                    renderer.scale = 2
-                    guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                    guard let cg = renderImageCompat(view.padding(20).background(Palette.wash), scale: 2),
+                          let tiff = NSImage(cgImage: cg, size: .zero).tiffRepresentation,
                           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return }
                     let url = URL(fileURLWithPath: path).appendingPathComponent(file)
                     if (try? png.write(to: url)) != nil { made.append(url.path) }
@@ -4534,7 +4533,7 @@ final class Bench {
                 // player's, and drawn as if seen, so its video plays on.
                 Float.benchAway = NSPoint(x: -20000, y: -20000)
                 if let tab = browser.active {
-                    if let host = tab.address?.host() { Players.benchHosts.insert(host) }
+                    if let host = tab.address?.hostCompat() { Players.benchHosts.insert(host) }
                     let occlusion = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
                     if tab.web.responds(to: occlusion) {
                         typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
@@ -4955,7 +4954,7 @@ final class Bench {
             let via = request["via"] as? String ?? "key"
             let other = browser.tabs.first { $0.id != tab.id && !$0.isBlank && !$0.asleep }
             if via == "switch", out, other == nil { answer(["error": "film float via switch needs another tab"]); return }
-            if via != "key", let host = tab.address?.host() { Players.benchHosts.insert(host) }
+            if via != "key", let host = tab.address?.hostCompat() { Players.benchHosts.insert(host) }
             func stages(in view: NSView) -> [StageView] {
                 (view as? StageView).map { [$0] } ?? view.subviews.flatMap(stages)
             }
@@ -5616,8 +5615,8 @@ final class Bench {
                 "failures": LittleWindow.all.map { $0.tab.failure ?? "" },
                 // Private tabs left out of a real run's, as in `tabs`.
                 "tabs": browser.tabs.filter { Store.testing || !$0.shy }
-                    .map { ($0.pin != nil ? "PIN " : "") + ($0.address?.host() ?? "blank") },
-                "active": browser.active.flatMap { Store.testing || !$0.shy ? $0.address?.host() : nil } ?? "",
+                    .map { ($0.pin != nil ? "PIN " : "") + ($0.address?.hostCompat() ?? "blank") },
+                "active": browser.active.flatMap { Store.testing || !$0.shy ? $0.address?.hostCompat() : nil } ?? "",
             ])
 
         case "launcher":
@@ -6227,7 +6226,8 @@ final class Bench {
                         Task { @MainActor in
                             var left: [String: [String]] = [:]
                             for id in erasing where ids.contains(id) {
-                                let records = await WKWebsiteDataStore(forIdentifier: id)
+                                guard let store = WKWebsiteDataStore.identifiedCompat(id) else { continue }
+                                let records = await store
                                     .dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
                                 left[id.uuidString] = records.map { "\($0.displayName): \($0.dataTypes.sorted().joined(separator: ","))" }
                             }

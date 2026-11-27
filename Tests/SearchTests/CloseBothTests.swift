@@ -5,6 +5,7 @@ import XCTest
 /// Close Both Pages is remembered as one, as Close Tabs Below is: one ⇧⌘T
 /// brings both pages back as the pair they were. Closed one by one, ⇧⌘T
 /// brought back one page alone, and a second the other, apart.
+@available(macOS 14, *)
 @MainActor
 final class CloseBothTests: XCTestCase {
     override class func setUp() {

@@ -8,6 +8,7 @@ import XCTest
 /// only then does letting go take the other half out. Hosted as
 /// PinDragTests does, in a borderless window far off every screen; the hand
 /// is told to TabDrag through `testPointer`, since the mouse is elsewhere.
+@available(macOS 14, *)
 @MainActor
 final class PairSeparateTests: XCTestCase {
     private var browsers: [Browser] = []

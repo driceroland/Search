@@ -5,6 +5,7 @@ import XCTest
 /// The tabs Search closed by itself (Archive.swift): newest first, a month
 /// and five hundred at most, each profile's apart, and still there after
 /// a relaunch.
+@available(macOS 14, *)
 @MainActor
 final class ArchiveTests: XCTestCase {
     override class func setUp() {

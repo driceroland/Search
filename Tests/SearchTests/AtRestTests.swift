@@ -4,6 +4,7 @@ import XCTest
 
 /// The address at rest on the tab you're on (AtRest.swift): the site it
 /// names, and how a look-alike name is shown.
+@available(macOS 14, *)
 final class AtRestTests: XCTestCase {
     private func rest(_ address: String) -> AtRest? {
         AtRest.make(URL(string: address)!)

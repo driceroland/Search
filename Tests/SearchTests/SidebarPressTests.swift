@@ -3,6 +3,7 @@ import SwiftUI
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 @MainActor
 final class SidebarPressTests: XCTestCase {
     private var browsers: [Browser] = []
@@ -422,6 +423,7 @@ final class SidebarPressTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 private struct ControlsFixture: View {
     let select: () -> Void
     let mute: () -> Void

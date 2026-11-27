@@ -3,6 +3,7 @@ import XCTest
 @testable import Search
 
 @available(macOS 15.4, *)
+@available(macOS 14, *)
 final class ExtensionWorkerLinkTests: XCTestCase {
     private var root: URL!
 

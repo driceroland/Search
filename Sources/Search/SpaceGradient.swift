@@ -871,7 +871,7 @@ enum SpaceLookPopover {
         let space = browser.space
         let before = (colour: space.colour, gradient: space.gradient, strength: space.strength)
         let host = NSHostingController(rootView: SpaceLookPicker(browser: browser, id: space.id))
-        host.sizingOptions = .preferredContentSize
+        if #available(macOS 13, *) { host.sizingOptions = .preferredContentSize }
         let popover = NSPopover()
         popover.contentViewController = host
         popover.behavior = .transient

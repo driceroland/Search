@@ -7,6 +7,7 @@ import XCTest
 /// over a native port, and from no timer: nothing listening, nothing open and
 /// nothing scheduled, and not a call asking after groups or idleness.
 @available(macOS 15.4, *)
+@available(macOS 14, *)
 final class ExtensionWatchShimTests: XCTestCase {
     /// The whole shim, as a page of the extension runs it, with a browser
     /// that answers the group calls from `groupList` and records every

@@ -5,6 +5,7 @@ import XCTest
 /// Settings › Browsing › Return takes the top suggestion (#1556): the place on
 /// top of the address field's list is picked as you type, so Return goes to
 /// it instead of searching for the words. Off, as it ships, Return searches.
+@available(macOS 14, *)
 @MainActor
 final class ReturnTakesTopTests: XCTestCase {
     override class func setUp() {

@@ -258,9 +258,9 @@ final class History: ObservableObject {
         }
         let address = Address.editable(shownURL)
         let searchable = stripped(address)
-        let host = (shownURL.host()?.lowercased() ?? "")
+        let host = (shownURL.hostCompat()?.lowercased() ?? "")
         let bareHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-        let path = shownURL.path()
+        let path = shownURL.pathCompat()
         return PageText(
             address: address,
             searchable: searchable,
@@ -819,8 +819,8 @@ final class History: ObservableObject {
         // Visits per front door, by host without www, from the deeper pages.
         var doors: [String: [String: Int]] = [:]
         for visit in visits.values {
-            guard let url = URL(string: visit.url), let host = url.host()?.lowercased(),
-                  !(url.path().isEmpty || url.path() == "/"),
+            guard let url = URL(string: visit.url), let host = url.hostCompat()?.lowercased(),
+                  !(url.pathCompat().isEmpty || url.pathCompat() == "/"),
                   let home = homepage(of: url)
             else { continue }
             let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
@@ -829,9 +829,9 @@ final class History: ObservableObject {
         for (key, credit) in visits {
             guard credit.title.isEmpty,
                   let url = URL(string: credit.url),
-                  url.scheme == "https", url.port == nil, url.query() == nil,
-                  url.path().isEmpty || url.path() == "/",
-                  let host = url.host()?.lowercased(), !host.hasPrefix("www."),
+                  url.scheme == "https", url.port == nil, url.queryCompat() == nil,
+                  url.pathCompat().isEmpty || url.pathCompat() == "/",
+                  let host = url.hostCompat()?.lowercased(), !host.hasPrefix("www."),
                   let used = doors[host], used[key] == nil,
                   let door = used.max(by: { $0.value == $1.value ? $0.key > $1.key : $0.value < $1.value })?.key,
                   let doorURL = URL(string: door)

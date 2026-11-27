@@ -129,7 +129,7 @@ enum PinPreview {
 
         let card = PinPreviewCard(tab: tab, unread: glance(tab), picture: picture)
         let host = NSHostingView(rootView: card)
-        host.sizingOptions = [.intrinsicContentSize]
+        if #available(macOS 13, *) { host.sizingOptions = [.intrinsicContentSize] }
         let size = host.fittingSize
         let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
@@ -192,7 +192,7 @@ enum PinPreview {
     /// What the pin's page says is waiting, awake: asleep, the title it last
     /// had may be long out of date (as Tab.unread).
     static func glance(_ tab: Tab) -> String? {
-        tab.asleep ? nil : Glance.unread(title: tab.title, host: tab.pageAddress?.host())
+        tab.asleep ? nil : Glance.unread(title: tab.title, host: tab.pageAddress?.hostCompat())
     }
 }
 

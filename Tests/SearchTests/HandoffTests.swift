@@ -8,6 +8,7 @@ private typealias BrowserTab = Search.Tab
 
 /// Handoff (Handoff.swift): the page on screen is offered from its window,
 /// and a private tab's never is.
+@available(macOS 14, *)
 @MainActor
 final class HandoffTests: XCTestCase {
     private var browser: Browser!

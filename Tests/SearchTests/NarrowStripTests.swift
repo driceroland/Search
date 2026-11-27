@@ -5,6 +5,7 @@ import XCTest
 /// on, the column is never drawn under the line with titles, and pulled
 /// under it is the strip of icons until it is pulled back out. On the
 /// model only.
+@available(macOS 14, *)
 @MainActor
 final class NarrowStripTests: XCTestCase {
     override class func setUp() {

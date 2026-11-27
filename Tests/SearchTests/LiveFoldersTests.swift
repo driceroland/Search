@@ -4,6 +4,7 @@ import XCTest
 /// Live folders (LiveFolders.swift): RSS and Atom read, a page's feed found,
 /// the folder kept in pin-folders.json and readable by what came before,
 /// and nothing carried into one. Feeds are strings here; no network.
+@available(macOS 14, *)
 final class LiveFoldersTests: XCTestCase {
     private let base = URL(string: "https://blog.example/feeds/main.xml")!
 

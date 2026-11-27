@@ -51,7 +51,7 @@ enum DownloadsFloat {
         // The window's frame is moved by place() alone, once, animated:
         // the hosting view must not also resize it to the card's ideal size
         // as the list changes, which made the two fight.
-        host.sizingOptions = []
+        if #available(macOS 13, *) { host.sizingOptions = [] }
         panel.hidesOnDeactivate = true
         panel.appearance = window.appearance
         self.panel = panel

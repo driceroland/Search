@@ -1006,9 +1006,9 @@ enum Players {
     static var benchHosts: Set<String> = []
 
     static func knows(_ url: URL?) -> Bool {
-        guard let url, let host = url.host()?.lowercased() else { return false }
+        guard let url, let host = url.hostCompat()?.lowercased() else { return false }
         if benchHosts.contains(host) { return true }
-        let path = url.path().lowercased()
+        let path = url.pathCompat().lowercased()
         return known.contains { entry in
             guard host == entry.host || host.hasSuffix("." + entry.host) else { return false }
             guard let needle = entry.path else { return true }

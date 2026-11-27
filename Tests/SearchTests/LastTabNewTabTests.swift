@@ -6,6 +6,7 @@ import XCTest
 /// leaves a new tab rather than taking you into a pin, as it comes, with
 /// nothing set (Settings › Tabs › Leave a new tab when the last tab closes,
 /// on since 26 Nov 2026). Turned off, a pin is picked, as before.
+@available(macOS 14, *)
 @MainActor
 final class LastTabNewTabTests: XCTestCase {
     override class func setUp() {

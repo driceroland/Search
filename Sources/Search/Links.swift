@@ -71,7 +71,7 @@ final class Links: NSObject, NSApplicationDelegate {
                 // doesn't keep Search from quitting.
                 let until = Date().addingTimeInterval(5)
                 while Browser.hasActiveFileImports, Date() < until {
-                    try? await Task.sleep(for: .milliseconds(50))
+                    try? await Task.sleep(milliseconds: 50)
                 }
                 self.terminationPending = false
                 sender.terminate(nil)
@@ -410,7 +410,7 @@ final class Links: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        NSApp.activate()
+        NSApp.activateCompat()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             guard !NSApp.isActive else { return }
             NSApp.activate(ignoringOtherApps: true)

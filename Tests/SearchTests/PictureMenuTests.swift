@@ -6,6 +6,7 @@ import XCTest
 /// says whether the picture is also a link, and a link's items are never
 /// given up for the picture menu. Menus here are only described, never
 /// shown: WebKit's items as identifiers, as WebKit hands them over.
+@available(macOS 14, *)
 @MainActor
 final class PictureMenuTests: XCTestCase {
     private let picture = URL(string: "https://example.com/p.png")!

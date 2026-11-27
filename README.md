@@ -4,7 +4,7 @@ A small, fast, quiet web browser for the Mac, by [Office Commun](https://officec
 
 ![Search, with its tabs down the left and a page taking the rest of the window](.github/screenshot.png)
 
-**[Download for macOS →](https://searchbrowser.app)** · macOS 14 or later · free · about 14 MB
+**[Download for macOS →](https://searchbrowser.app)** · macOS 12 or later · free · about 14 MB
 
 Or with [Homebrew](https://brew.sh): `brew install --cask driceroland/tap/search`
 
@@ -34,6 +34,21 @@ It was built by a design studio that spends its whole day in a browser and was t
 - **Bookmarks, history, downloads** — each a panel, each searchable, each one keystroke away.
 - **Chrome extensions, without Chrome.** Paste a Chrome Web Store link in Settings › Extensions, or open the extension's page in Search and press Add. It runs on WebKit's own extension engine — the one Safari uses — and where Chrome has APIs WebKit doesn't (bookmarks, history, downloads, side panel, offscreen documents, fonts, notifications, speech, OAuth sign-in), Search fills them in itself. They live behind the puzzle button; pin the ones you use often. Building your own? Load its folder as an unpacked extension and press Reload after each change, as in Chrome's developer mode. macOS 15.4 or later.
 - **Updates itself, quietly.** Once a day it checks for a newer build, downloads it, verifies it is signed by Office Commun, and swaps it in for the next launch. Nothing restarts on its own.
+
+## On macOS 12 and 13
+
+Search runs on macOS 12 Monterey and later. A few things need a newer macOS, and are simply not offered on an older one:
+
+| | Needs |
+|---|---|
+| Profiles, and a space signed out of the others (each needs a cookie jar of its own) | macOS 14 |
+| Settings › Privacy › Proxy | macOS 14 |
+| Developer tools packages | macOS 14 |
+| Keyboard moves among the sites on a new tab; the pointer's hover in the tab switcher | macOS 14 / 13 |
+| Translate Page | macOS 15 |
+| Chrome extensions | macOS 15.4 |
+
+Everything else (tabs, pins, spaces, Split View, the ad blocker, reading mode, passwords, themes, Sync with iCloud) works the same. `Sources/Search/Compat.swift` holds what stands in for the newer APIs.
 
 ## What it doesn't do
 
@@ -87,7 +102,7 @@ So anyone can read exactly what a browser handling their passwords and history i
 
 ### Building it
 
-- macOS 14 or later, Xcode 16 / Swift 6 toolchain
+- To build: a Mac with Xcode 16 / Swift 6 toolchain (the app it makes runs on macOS 12 or later)
 - `swift build` — runs the app straight from the SwiftPM binary
 - `./build.sh` — assembles a real, double-clickable `Search.app` in `build/`, ad-hoc signed so it runs on your own Mac. `SEARCH_DEV=1 ./build.sh` makes it a dev build, on a yellow icon and named for its branch (`Search-split-view` from `claude/split-view-4a6927`), so it's never mistaken for an installed Search or for another worktree's build; `SEARCH_FEATURE=name` picks the name. It shares the installed app's settings and its bundle id, so while both run, a link from another app may land in either
 

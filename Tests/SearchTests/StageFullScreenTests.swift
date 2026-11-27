@@ -5,6 +5,7 @@ import XCTest
 
 /// A page WebKit's full-screen window has, without going full screen: that
 /// takes a Space of its own on the display, which a test must not do.
+@available(macOS 14, *)
 private final class LentPage: WKWebView {
     var lent: WKWebView.FullscreenState = .notInFullscreen {
         willSet { willChangeValue(forKey: "fullscreenState") }
@@ -14,14 +15,17 @@ private final class LentPage: WKWebView {
 }
 
 /// Found by its name, as WebKit's own is (see StageView.isPlaceholder).
+@available(macOS 14, *)
 private final class FakeFullScreenPlaceholderView: NSView {}
 
 /// In front or not, without taking the keys from whatever is really in front.
+@available(macOS 14, *)
 private final class TestWindow: NSWindow {
     var key = true
     override var isKeyWindow: Bool { key }
 }
 
+@available(macOS 14, *)
 @MainActor
 final class StageFullScreenTests: XCTestCase {
     private var ended = 0

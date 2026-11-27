@@ -5,6 +5,7 @@ import XCTest
 /// Idea 1326: a Chrome theme from the Web Store installed and changed
 /// nothing. It is now refused before anything is asked, saying where
 /// Search's own colours are.
+@available(macOS 14, *)
 final class ChromeThemeTests: XCTestCase {
     func testAThemeIsToldApartFromAnExtension() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("chrome-theme-\(UUID().uuidString)")

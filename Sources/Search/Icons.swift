@@ -140,7 +140,7 @@ final class Favicons {
     /// it names one — localhost:3000 and localhost:4321 are two projects,
     /// not one (#413). The port a scheme has anyway doesn't count.
     nonisolated static func site(_ url: URL) -> String? {
-        guard let host = url.host()?.lowercased(), !host.isEmpty else { return nil }
+        guard let host = url.hostCompat()?.lowercased(), !host.isEmpty else { return nil }
         let scheme = url.scheme?.lowercased()
         guard let port = url.port, !(scheme == "http" && port == 80), !(scheme == "https" && port == 443) else { return host }
         return "\(host):\(port)"
@@ -151,7 +151,7 @@ final class Favicons {
     /// query can carry a token, a reset link or a search, which the index
     /// is no place for.
     nonisolated static func page(_ url: URL) -> String {
-        let path = url.path(percentEncoded: true)
+        let path = url.pathCompat(percentEncoded: true)
         return path.isEmpty ? "/" : path
     }
 
@@ -279,7 +279,7 @@ final class Favicons {
         guard #available(macOS 15.4, *),
               let scheme = url.scheme?.lowercased(),
               [Extensions.scheme, Extensions.formerScheme].contains(scheme),
-              let id = url.host()?.lowercased(),
+              let id = url.hostCompat()?.lowercased(),
               let package = Extensions.shared.contexts[id]?.webExtension
         else { return nil }
         // Per version: an update can bring a new icon.
@@ -563,7 +563,7 @@ final class Favicons {
         // alone for a while rather than asked by every page of the site.
         if !unanswered.isEmpty {
             if again {
-                try? await Task.sleep(for: .seconds(3))
+                try? await Task.sleep(seconds: 3)
                 await download(candidates, site: site, page: page, dark: dark, shy: shy, again: false)
             } else {
                 for candidate in unanswered { unreachable[candidate] = Date() + Favicons.backoff }
@@ -719,7 +719,7 @@ final class Favicons {
         }
         var list = Array(scored.sorted { $0.1 > $1.1 }.map(\.0).prefix(Favicons.tried))
         // The same site's root, its port included.
-        if page.host() != nil, let root = URL(string: "/favicon.ico", relativeTo: page)?.absoluteURL {
+        if page.hostCompat() != nil, let root = URL(string: "/favicon.ico", relativeTo: page)?.absoluteURL {
             list.append(root)
         }
         // The same address twice is a wasted request.

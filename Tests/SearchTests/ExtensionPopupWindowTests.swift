@@ -7,6 +7,7 @@ import XCTest
 /// model only: no window is ever made here.
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionPopupWindowTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

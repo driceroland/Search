@@ -6,6 +6,7 @@ import XCTest
 
 /// Reader.twin and Reader.show run in a real web view against pages on a
 /// local http address: where a twin is found, and where it isn't.
+@available(macOS 14, *)
 @MainActor
 final class ReaderTwinTests: XCTestCase {
     private var server: LocalPageServer!

@@ -5,6 +5,7 @@ import XCTest
 
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionUpdateTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()
@@ -134,6 +135,7 @@ final class ExtensionUpdateTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 private final class UpdateResponse {
     private let lock = NSLock()
     private var requests: [URLProtocol] = []
@@ -161,6 +163,7 @@ private final class UpdateResponse {
     }
 }
 
+@available(macOS 14, *)
 private final class UpdateProtocol: URLProtocol {
     static var response: UpdateResponse?
     override class func canInit(with request: URLRequest) -> Bool {

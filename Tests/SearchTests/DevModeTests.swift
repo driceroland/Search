@@ -4,6 +4,7 @@ import XCTest
 /// Developer Mode site by site (DevMode.swift): on by itself for a site on
 /// this Mac only, a choice by hand kept per site and dropped once it says
 /// what the site would do by itself, private tabs keeping nothing.
+@available(macOS 14, *)
 @MainActor
 final class DevModeTests: XCTestCase {
     override class func setUp() {

@@ -168,7 +168,7 @@ final class Passkeys: NSObject {
 
     /// "scheme://host[:port]" for an address, as `perform` writes the origin.
     private static func origin(of url: URL?) -> String? {
-        guard let url, let scheme = url.scheme?.lowercased(), let host = url.host()?.lowercased() else { return nil }
+        guard let url, let scheme = url.scheme?.lowercased(), let host = url.hostCompat()?.lowercased() else { return nil }
         return "\(scheme)://\(host.contains(":") ? "[\(host)]" : host)" + (url.port.map { ":\($0)" } ?? "")
     }
 
@@ -287,7 +287,7 @@ final class Passkeys: NSObject {
         // for Sign in with Apple), and it was refused here, so the page
         // said the browser needed updating (#679).
         let page = caller.page
-        let pageHost = page?.host()?.lowercased()
+        let pageHost = page?.hostCompat()?.lowercased()
         let suffix = Passkeys.publicSuffix.map { test in { (name: String) in test(name as CFString) } }
         let sameSite = pageHost.map { Registrable.sameSite($0, host, isSuffix: suffix) } ?? false
         guard caller.mainFrame || (sameSite && page?.scheme?.lowercased() == scheme) else {
@@ -649,7 +649,7 @@ final class Passkeys: NSObject {
     /// Whether an origin is the page's own: the same scheme, host and port,
     /// a port left out being the scheme's own (an origin's 0, a URL's nil).
     nonisolated static func isPage(scheme: String, host: String, port: Int, of page: URL?) -> Bool {
-        guard let page, let pageScheme = page.scheme?.lowercased(), let pageHost = page.host()?.lowercased() else { return false }
+        guard let page, let pageScheme = page.scheme?.lowercased(), let pageHost = page.hostCompat()?.lowercased() else { return false }
         let bare = { (name: String) in name.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]")) }
         let standard = pageScheme == "https" ? 443 : pageScheme == "http" ? 80 : 0
         return pageScheme == scheme.lowercased() && bare(pageHost) == bare(host)

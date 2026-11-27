@@ -96,7 +96,7 @@ struct SiteAccess: Equatable {
     /// The site a page's address names, for "this site": web pages only.
     static func site(of url: URL?) -> String? {
         guard let url, let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) else { return nil }
-        return url.host()?.lowercased()
+        return url.hostCompat()?.lowercased()
     }
 
     func adding(_ host: String) -> SiteAccess {

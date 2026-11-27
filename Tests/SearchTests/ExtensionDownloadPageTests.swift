@@ -6,6 +6,7 @@ import XCTest
 /// An extension's downloads.download never goes through a private tab.
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionDownloadPageTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

@@ -2,6 +2,7 @@ import XCTest
 @testable import Search
 
 /// Spaces brought over from Arc keep their icon (#832).
+@available(macOS 14, *)
 final class ArcIconTests: XCTestCase {
     func testArcsOwnIcons() {
         XCTAssertEqual(Arc.symbol(emoji: nil, arcIcon: "bulb", name: "Work"), "lightbulb")

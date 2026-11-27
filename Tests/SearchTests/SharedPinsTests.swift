@@ -3,6 +3,7 @@ import XCTest
 
 /// Pins every space shows (Pins.shared): moving a pin in and out of them,
 /// a row's order, and pins.json with and without them. In memory only.
+@available(macOS 14, *)
 final class SharedPinsTests: XCTestCase {
     override class func setUp() {
         TestWorld.enter()

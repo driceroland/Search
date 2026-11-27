@@ -299,7 +299,7 @@ enum SpacesExport {
 
     private static func item(_ title: String, _ url: String) -> ArcSidebar.Item? {
         guard let page = Arc.page(url) else { return nil }
-        return ArcSidebar.Item(title: Arc.named(title) ?? page.host() ?? url, url: page)
+        return ArcSidebar.Item(title: Arc.named(title) ?? page.hostCompat() ?? url, url: page)
     }
 
     /// The size no spaces file comes near.

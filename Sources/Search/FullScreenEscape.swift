@@ -147,7 +147,7 @@ final class FullScreenEscape {
         }
         Self.log.notice("Escape at \(now, privacy: .public), \(waiting ? "the second" : "a first", privacy: .public) press: wait until \(self.deadline, privacy: .public), same window \(self.window === window, privacy: .public), same page \(self.page === page, privacy: .public)")
         // On its way out already: there is nothing left to guard.
-        if page.fullscreenState == .exitingFullscreen {
+        if page.fullscreenPhase == .exitingFullscreen {
             disarm()
             heldKept = false
             return true
@@ -277,10 +277,10 @@ final class FullScreenEscape {
     }
 
     private func watch(_ page: PageView) {
-        leaving = page.observe(\.fullscreenState, options: [.new]) { [weak self] page, _ in
+        leaving = page.observeFullscreen { [weak self] page in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                switch page.fullscreenState {
+                switch page.fullscreenPhase {
                 case .exitingFullscreen, .notInFullscreen:
                     self.disarm()
                 case .inFullscreen:

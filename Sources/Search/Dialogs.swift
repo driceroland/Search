@@ -290,7 +290,7 @@ extension Browser {
         // A picture, a script, a font from a site with a bad certificate is
         // simply not loaded. Only the page you asked for is worth a question.
         guard let tab = tab(for: webView),
-              (tab.address?.host() ?? tab.pending?.host())?.lowercased() == host
+              (tab.address?.hostCompat() ?? tab.pending?.hostCompat())?.lowercased() == host
         else {
             completionHandler(.performDefaultHandling, nil)
             return
@@ -400,7 +400,7 @@ extension Browser {
         if let asking = certificateTab(for: webView) { dropCertificateAsks(for: asking.id) }
         guard let tab = tab(for: webView) else { return }
         dropQuestions(for: tab.id)
-        let host = tab.address?.host() ?? ""
+        let host = tab.address?.hostCompat() ?? ""
         // An extension's page shares its process with the extension's
         // worker: its ports to apps on the Mac went with it.
         if #available(macOS 15.4, *), tab.address?.scheme == "chrome-extension", !host.isEmpty {

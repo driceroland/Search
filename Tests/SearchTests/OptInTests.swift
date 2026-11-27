@@ -5,6 +5,7 @@ import XCTest
 /// field, and that a press sends the email, the source and the build, and
 /// nothing else. No window, no network: a settings suite of its own, and
 /// requests answered by a stand-in for the site.
+@available(macOS 14, *)
 @MainActor
 final class OptInTests: XCTestCase {
     private var store: UserDefaults!
@@ -169,6 +170,7 @@ final class OptInTests: XCTestCase {
 
 /// The site, as far as these tests go: it notes what came and answers with
 /// the status it is given.
+@available(macOS 14, *)
 private final class Site: URLProtocol {
     struct Seen { let url: String; let body: [String: Any]; let headers: [String: String] }
     nonisolated(unsafe) static var status = 200

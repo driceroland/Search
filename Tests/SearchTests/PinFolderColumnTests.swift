@@ -7,6 +7,7 @@ import XCTest
 /// folded, deleted, the row's order kept as drawn, and the column drawn off
 /// screen reading the same lines back. The column is hosted in a window
 /// that is never ordered in, as the bench's `column` draws it.
+@available(macOS 14, *)
 @MainActor
 final class PinFolderColumnTests: XCTestCase {
     private var browsers: [Browser] = []

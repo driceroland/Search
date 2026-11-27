@@ -3,6 +3,7 @@ import XCTest
 @testable import Search
 
 @available(macOS 15.4, *)
+@available(macOS 14, *)
 final class ExtensionPortTests: XCTestCase {
     func testContentMessagesStayPlainAndOwnPageMessagesStayNumbered() throws {
         let script = ExtensionShims.script

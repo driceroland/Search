@@ -7,6 +7,7 @@ import XCTest
 /// Tests/extension_sandbox_pages.py.
 @available(macOS 15.4, *)
 @MainActor
+@available(macOS 14, *)
 final class ExtensionSandboxTests: XCTestCase {
     private var root: URL!
     private var sandbox: ExtensionSandbox!

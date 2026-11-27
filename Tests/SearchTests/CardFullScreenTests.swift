@@ -4,6 +4,7 @@ import XCTest
 
 /// Keep the card in full screen (#1152): off, the page goes edge to edge
 /// when the window fills the screen (#607); on, it stays a card there too.
+@available(macOS 14, *)
 @MainActor
 final class CardFullScreenTests: XCTestCase {
     override class func setUp() {

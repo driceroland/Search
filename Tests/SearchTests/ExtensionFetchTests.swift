@@ -5,6 +5,7 @@ import XCTest
 /// Which of a store's cookies an extension's credentialed fetch carries
 /// (ExtensionFetch.sends), and what of a response it keeps.
 @available(macOS 15.4, *)
+@available(macOS 14, *)
 final class ExtensionFetchTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 

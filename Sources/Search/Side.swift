@@ -345,14 +345,14 @@ struct SideBar: View {
                         .animation(SideBar.footIn, value: doorsFoot)
                         .frame(height: icons ? nil : doorsFoot ? SideBar.footBox : 0, alignment: .top)
                         .clipped()
-                        .transaction(value: doorsFoot) { $0.animation = nil }
+                        .unanimated(when: doorsFoot) { $0.animation = nil }
                         .allowsHitTesting(doorsFoot)
                         .accessibilityHidden(!doorsFoot)
                 }
             }
         }
-        .onChange(of: width) { _, _ in settleDoors() }
-        .onChange(of: live == nil) { _, _ in settleDoors() }
+        .onChangeCompat(of: width) { _, _ in settleDoors() }
+        .onChangeCompat(of: live == nil) { _, _ in settleDoors() }
         // Bench "edgetime": the edge held at a width, or let go (nil).
         .onReceive(NotificationCenter.default.publisher(for: Bench.edgeHeld)) { note in
             guard Store.testing else { return }
@@ -360,7 +360,7 @@ struct SideBar: View {
             grabbed = live == nil ? nil : grabbed ?? prefs.columnWidth
             onDrag(live)
         }
-        .onChange(of: doorsUp) { was, _ in
+        .onChangeCompat(of: doorsUp) { was, _ in
             // Where they were drawn, kept from here on: left to doorsUp,
             // they were already at the other end by the time settleDoors
             // looked, and went there without moving.
@@ -369,7 +369,7 @@ struct SideBar: View {
             }
             settleDoors()
         }
-        .onChange(of: icons) { _, _ in
+        .onChangeCompat(of: icons) { _, _ in
             // Into icons only or out of it, the doors are simply where they go.
             drawnUp = nil
         }
@@ -378,7 +378,7 @@ struct SideBar: View {
         .frame(maxHeight: .infinity)
         // ⌘S to icons only while the edge is held takes the edge away, and
         // its gesture ends without onEnded: let go of the held width too.
-        .onChange(of: icons) { _, now in
+        .onChangeCompat(of: icons) { _, now in
             // Narrowed to the strip by the edge itself: still held.
             guard now, live != nil, !strip else { return }
             live = nil
@@ -433,7 +433,7 @@ struct SideBar: View {
         // Browser.rowKey) takes it at once, rather than fading its title
         // over and gliding the ground of the tab in front across from the
         // row that had it.
-        .transaction(value: browser.spaceID) {
+        .unanimated(when: browser.spaceID) {
             $0.animation = nil
             $0.disablesAnimations = true
         }
@@ -655,7 +655,7 @@ struct SideBar: View {
                     let needed = rowsHeight
                     Group {
                         if fits {
-                            rows.onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                            rows.onGeometryChangeCompat(for: CGFloat.self) { $0.size.height } action: {
                                 room.drawn = $0
                                 refit()
                             }
@@ -665,14 +665,14 @@ struct SideBar: View {
                                 // and distraction-free, matching other vertical-tab browsers.
                                 // The wheel and the trackpad still scroll smoothly.
                                 ScrollView(.vertical, showsIndicators: false) {
-                                    rows.onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                                    rows.onGeometryChangeCompat(for: CGFloat.self) { $0.size.height } action: {
                                         room.drawn = $0
                                         refit()
                                         settleArrival(proxy)
                                     }
                                     // How far it is scrolled, for its rows
                                     // in the map to be drawn the same (mapPage).
-                                    .onGeometryChange(for: CGFloat.self) { -$0.frame(in: .named("scroll")).minY } action: {
+                                    .onGeometryChangeCompat(for: CGFloat.self) { -$0.frame(in: .named("scroll")).minY } action: {
                                         browser.columnScrolled = (browser.spaceID, $0)
                                     }
                                 }
@@ -681,12 +681,12 @@ struct SideBar: View {
                                 // space came in (its pins, the foot, a row
                                 // grown): its tab in front kept in the middle,
                                 // not left under the foot.
-                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
+                                .onGeometryChangeCompat(for: CGFloat.self) { $0.size.height } action: { _ in
                                     settleArrival(proxy)
                                 }
                                 // The tab you go to is the tab you see — ⌘1–⌘9,
                                 // ⇧⌘], a link opening beside the one on screen.
-                                .onChange(of: browser.activeID) { _, id in
+                                .onChangeCompat(of: browser.activeID) { _, id in
                                     // Another space's row is in this same scroll,
                                     // which was still where the last space was
                                     // left: it came in there and then glided down
@@ -763,11 +763,11 @@ struct SideBar: View {
                     // The live tab as a pane of Liquid Glass, held to the
                     // room (LiquidTab.swift). Nothing unless it is on.
                     .liveLens(browser, motion: lens)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    .onGeometryChangeCompat(for: CGFloat.self) { $0.size.height } action: {
                         room.height = $0
                         refit()
                     }
-                    .onChange(of: needed, initial: true) { _, needed in
+                    .onChangeCompat(of: needed, initial: true) { _, needed in
                         room.needed = needed
                         refit()
                     }
@@ -823,10 +823,11 @@ struct SideBar: View {
         return VStack(alignment: .leading, spacing: 0) {
             if !pins.isEmpty {
                 VStack(spacing: 0) {
-                    PinGrid(cells: cells) {
+                    PinGridCompat(cells: cells) {
                         ForEach(Array(pins.enumerated()), id: \.element.id) { index, tab in
                             PinSquare(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
                                       pill: pill, width: cells[index].width, height: cells[index].height)
+                                .pinCellCompat(cells[index])
                         }
                     }
                 }
@@ -1165,7 +1166,7 @@ struct SideBar: View {
         // has just been moved to a new cell would otherwise report the drag
         // from where it now is, the target would jump back, and the square
         // would shuttle between two cells for as long as the finger stayed.
-        return VStack(spacing: 0) { PinGrid(cells: placed) {
+        return VStack(spacing: 0) { PinGridCompat(cells: placed) {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
                 PinSquare(
                     browser: browser,
@@ -1182,13 +1183,15 @@ struct SideBar: View {
                 .modifier(PinCarried(index: index, cells: cells,
                                      cross: { cross(tab, $0, from: .pins) },
                                      land: { land(tab, $0) }) { browser.move(tab, to: $0) })
+                .pinCellCompat(cells[index])
             }
             if let ghost, let tab = crossingTab {
                 PinGhost(tab: tab, width: all[ghost].width, height: all[ghost].height)
+                    .pinCellCompat(all[ghost])
             }
         } }
         .coordinateSpace(name: "pins")
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.grid = $0 }
+        .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.grid = $0 }
     }
 
     // MARK: - the rows
@@ -1235,7 +1238,7 @@ struct SideBar: View {
                                 PinFolderMark().offset(y: (moveMark.after ? 1 : -1) * (SideBar.gap / 2 + 1))
                             }
                         }
-                        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
+                        .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
                             pinLineFrames.rects[folder.id] = $0
                             if Store.testing { SideBar.drawnPinFrames[folder.id] = $0 }
                         }
@@ -1248,7 +1251,7 @@ struct SideBar: View {
                 case .item(let item, _, let depth):
                     // A live folder's post: opened, never carried.
                     FeedItemRow(browser: browser, prefs: prefs, item: item, depth: depth, compact: icons)
-                        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
+                        .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
                             pinLineFrames.rects[item.id] = $0
                         }
                 case .pin(let tab, let depth):
@@ -1266,7 +1269,7 @@ struct SideBar: View {
                             PinFolderMark().offset(y: (moveMark.after ? 1 : -1) * (SideBar.gap / 2 + 1))
                         }
                     }
-                    .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
+                    .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .named("listed")) }) { [pinLineFrames] in
                         pinLineFrames.rects[tab.id] = $0
                         if Store.testing { SideBar.drawnPinFrames[tab.id] = $0 }
                     }
@@ -1280,8 +1283,8 @@ struct SideBar: View {
             }
         }
         .coordinateSpace(name: "listed")
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.listed = $0 }
-        .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { if Store.testing { SideBar.drawnPinTop = $0 } }
+        .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.listed = $0 }
+        .onGeometryChangeCompat(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { if Store.testing { SideBar.drawnPinTop = $0 } }
         .padding(.bottom, lines.isEmpty ? 0 : SideBar.gap)
     }
 
@@ -1387,7 +1390,7 @@ struct SideBar: View {
             }
         }
         .coordinateSpace(name: "listed")
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.listed = $0 }
+        .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.listed = $0 }
         .padding(.bottom, pins.isEmpty && ghost == nil ? 0 : SideBar.gap)
     }
 
@@ -1532,7 +1535,7 @@ struct SideBar: View {
             }
         }
         .coordinateSpace(name: "rows")
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.rows = $0 }
+        .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .named("column")) }) { [frames] in frames.rows = $0 }
     }
 
     /// The groups and loose rows of the plan that are drawn, with the
@@ -1586,7 +1589,7 @@ struct SideBar: View {
             }
             // How far down the run the scroll is: the band of it drawn, told
             // only as it moves a step on (windowStep).
-            .onGeometryChange(for: CGFloat.self, of: { -$0.frame(in: .named("scroll")).minY }) { [room, space] top in
+            .onGeometryChangeCompat(for: CGFloat.self, of: { -$0.frame(in: .named("scroll")).minY }) { [room, space] top in
                 let now = Int((top / SideBar.windowStep(SideBar.windowRoom(room.height))).rounded(.down))
                 if band?.space != space || band?.at != now { band = (space, now) }
             }
@@ -2079,6 +2082,7 @@ private struct SideFoot: View {
 /// can't take them along: folded with ⌘S and brought back, the squares stood
 /// in place while the column came in beneath them. A dozen squares need no
 /// laziness.
+@available(macOS 13, *)
 private struct PinGrid: Layout {
     /// Each square's place, worked out by the column (see pinCells).
     let cells: [CGRect]
@@ -2094,6 +2098,35 @@ private struct PinGrid: Layout {
                 at: CGPoint(x: bounds.minX + cell.minX, y: bounds.minY + cell.minY),
                 proposal: ProposedViewSize(width: cell.width, height: cell.height)
             )
+        }
+    }
+}
+
+/// PinGrid where there is a Layout (macOS 13); on macOS 12 the squares in a
+/// ZStack, each put in its cell by pinCellCompat.
+private struct PinGridCompat<Content: View>: View {
+    let cells: [CGRect]
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        if #available(macOS 13, *) {
+            PinGrid(cells: cells) { content }
+        } else {
+            ZStack(alignment: .topLeading) { content }
+                .frame(width: cells.map(\.maxX).max() ?? 0, height: cells.map(\.maxY).max() ?? 0, alignment: .topLeading)
+        }
+    }
+}
+
+private extension View {
+    /// A square's place in PinGridCompat's ZStack on macOS 12; PinGrid
+    /// places it itself on 13 and later.
+    @ViewBuilder
+    func pinCellCompat(_ cell: CGRect) -> some View {
+        if #available(macOS 13, *) {
+            self
+        } else {
+            alignmentGuide(.leading) { _ in -cell.minX }.alignmentGuide(.top) { _ in -cell.minY }
         }
     }
 }
@@ -2567,7 +2600,7 @@ private struct SideRow: View, Equatable {
         .onAppear { if interactive { Bench.rowAppeared(tab.id, hover: hover) } }
         .onDisappear { if interactive { Bench.rowDisappeared(tab.id) } }
         // Another space's tab come into this row (Browser.rowKey).
-        .onChange(of: tab.id) { was, now in
+        .onChangeCompat(of: tab.id) { was, now in
             guard interactive else { return }
             Bench.rowDisappeared(was)
             Bench.rowAppeared(now, hover: hover)
@@ -2581,7 +2614,7 @@ private struct SideRow: View, Equatable {
         .animation(nil, value: hovering)
         .animation(Motion.glide, value: editing)
         .animation(Motion.quick, value: dim)
-        .onChange(of: refusals) { _, _ in
+        .onChangeCompat(of: refusals) { _, _ in
             guard editing else { return }
             shake = 0
             withAnimation(.easeOut(duration: 0.5)) { shake = 1 }
@@ -2606,7 +2639,7 @@ private struct SideRow: View, Equatable {
                 // (`columnscroll`'s "live"): the rows are lazy. Test runs only.
                 if Store.testing && interactive {
                     Color.clear
-                        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { SideBar.liveRows[tab.id] = $0 }
+                        .onGeometryChangeCompat(for: CGRect.self, of: { $0.frame(in: .global) }) { SideBar.liveRows[tab.id] = $0 }
                         .onDisappear { SideBar.liveRows[tab.id] = nil }
                 }
             }
@@ -2864,11 +2897,14 @@ struct PinCarried: ViewModifier {
         content
             // Read where the square is drawn this frame, partway through the
             // spring to its new cell, and only for the square in hand.
-            .visualEffect { [held, travel, from, cells] content, proxy in
-                guard held else { return content.offset(.zero) }
-                let frame = proxy.frame(in: .named("pins"))
-                return content.offset(PinCarried.offset(travel: travel, from: from, cells: cells,
-                                                        now: CGPoint(x: frame.midX, y: frame.midY)))
+            // (macOS 12 and 13: from the cell it is springing to.)
+            .drawnOffsetCompat(in: "pins", fallback: held && cells.indices.contains(index)
+                ? PinCarried.offset(travel: travel, from: from, cells: cells,
+                                    now: CGPoint(x: cells[index].midX, y: cells[index].midY))
+                : .zero) { [held, travel, from, cells] frame in
+                guard held else { return .zero }
+                return PinCarried.offset(travel: travel, from: from, cells: cells,
+                                         now: CGPoint(x: frame.midX, y: frame.midY))
             }
             // Under the hand exactly, as a row is (see Carried).
             .transaction { if held { $0.animation = nil } }
@@ -2902,7 +2938,7 @@ struct PinCarried: ViewModifier {
                         }
                     }
             )
-            .onChange(of: carrying) { _, now in if !now { callOff() } }
+            .onChangeCompat(of: carrying) { _, now in if !now { callOff() } }
     }
 
     /// Called off rather than let go: it stays in the cell it was last

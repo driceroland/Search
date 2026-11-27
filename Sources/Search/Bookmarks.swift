@@ -32,7 +32,7 @@ struct Bookmark: Codable, Identifiable, Hashable {
     }
 
     var host: String? {
-        url.flatMap { URL(string: $0)?.host()?.lowercased() }
+        url.flatMap { URL(string: $0)?.hostCompat()?.lowercased() }
     }
 
     var address: URL? {
@@ -48,11 +48,13 @@ struct Bookmark: Codable, Identifiable, Hashable {
     }
 }
 
-/// Observable: only what reads the list hears it change, the Bookmarks
-/// menu's first item included (Tests/bookmark_menu_title.py), not every row.
-@MainActor @Observable
-final class Bookmarks {
-    private(set) var roots: [Bookmark] = [] {
+/// An ObservableObject (`@Observable` is macOS 14): a view that shows the
+/// list holds it as an @ObservedObject, and the browser passes its changes
+/// on (Browser.bookmarksHeard) for the views that read it through the
+/// browser. The Bookmarks menu is AppKit's (Tests/bookmark_menu_title.py).
+@MainActor
+final class Bookmarks: ObservableObject {
+    @Published private(set) var roots: [Bookmark] = [] {
         didSet {
             revision &+= 1
             kept = preparedKept ?? Set(Bookmarks.urls(roots).map(\.absoluteString))
@@ -61,8 +63,8 @@ final class Bookmarks {
         }
     }
     // Kept for the list's own work, read by no view.
-    @ObservationIgnored private var revision = 0
-    @ObservationIgnored private var preparedKept: Set<String>?
+    private var revision = 0
+    private var preparedKept: Set<String>?
 
     /// Every address kept, for `contains` — asked on every redraw of the
     /// button, which fills in on a page that is kept.
@@ -146,7 +148,7 @@ final class Bookmarks {
     /// and kept: the field asks on every key, and walking a tree of a few
     /// thousand imported bookmarks to lowercase each again was work thrown
     /// away each time.
-    @ObservationIgnored private var sites: [Site]?
+    private var sites: [Site]?
 
     /// The sites for what is typed in the address field, the best `limit`
     /// first: every word, in any order, in the name or the address, allowing
@@ -753,7 +755,7 @@ final class Bookmarks {
 /// for a right-click too. Used both in the small dropdown off the button and
 /// in the full manager — the interaction is the same size either way.
 struct BookmarkOutline: View {
-    let bookmarks: Bookmarks
+    @ObservedObject var bookmarks: Bookmarks
     /// The folders open, kept by whoever shows the outline, so the manager
     /// can open the way down to one it was asked to show.
     @Binding var expanded: Set<Bookmark.ID>
@@ -991,7 +993,7 @@ struct BookmarkOutline: View {
 
         func body(content: Content) -> some View {
             content
-                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height = max($0, 1) }
+                .onGeometryChangeCompat(for: CGFloat.self, of: { $0.size.height }) { height = max($0, 1) }
                 .onDrop(of: [.text], delegate: Spot(landing: self))
         }
 
@@ -1159,7 +1161,7 @@ struct BookmarkDoor: View {
     /// kept, so the button fills and empties with either.
     private struct Kept: View {
         let browser: Browser
-        let bookmarks: Bookmarks
+        @ObservedObject var bookmarks: Bookmarks
         @ObservedObject var tab: Tab
 
         var body: some View {
@@ -1173,7 +1175,7 @@ struct BookmarkDoor: View {
 /// is made, so Done, Return, Escape and a click elsewhere all only close it.
 struct BookmarkCard: View {
     @ObservedObject var browser: Browser
-    let bookmarks: Bookmarks
+    @ObservedObject var bookmarks: Bookmarks
     let id: Bookmark.ID
 
     @State private var title = ""
@@ -1197,7 +1199,7 @@ struct BookmarkCard: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .background(Palette.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .onChange(of: title) { _, typed in rename(typed) }
+                        .onChangeCompat(of: title) { _, typed in rename(typed) }
                 }
                 line("Folder") { folder }
             }
@@ -1261,7 +1263,7 @@ struct BookmarkCard: View {
             .background(Palette.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .contentShape(Rectangle())
         }
-        .menuStyle(.button)
+        .buttonMenuStyleCompat()
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
     }
@@ -1299,7 +1301,7 @@ struct BookmarkCard: View {
 /// The button's dropdown: the tree, and the two things that aren't in it.
 struct BookmarksDropdown: View {
     @ObservedObject var browser: Browser
-    let bookmarks: Bookmarks
+    @ObservedObject var bookmarks: Bookmarks
 
     @State private var expanded: Set<Bookmark.ID>
 
@@ -1421,7 +1423,7 @@ struct BookmarksDropdown: View {
 /// The full list, for putting it in order, finding one, or bringing more in.
 struct BookmarksPanel: View {
     @ObservedObject var browser: Browser
-    let bookmarks: Bookmarks
+    @ObservedObject var bookmarks: Bookmarks
 
     @State private var expanded: Set<Bookmark.ID> = []
     @State private var query = ""
@@ -1459,7 +1461,7 @@ struct BookmarksPanel: View {
                         // may be below what shows. This list is only made
                         // as the search is cleared for it, with the row to
                         // show already set, so it is read as it appears too.
-                        .onChange(of: shown, initial: true) { _, id in
+                        .onChangeCompat(of: shown, initial: true) { _, id in
                             guard let id else { return }
                             DispatchQueue.main.async {
                                 withAnimation(Motion.settle) { scroller.scrollTo(id, anchor: .center) }

@@ -67,7 +67,7 @@ final class TabLift {
             collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle, .transient]
             let host = NSHostingView(rootView: Lifted(model: model).padding(Panel.margin)
                 .frame(width: Panel.size.width, height: Panel.size.height, alignment: .topLeading))
-            host.sizingOptions = []
+            if #available(macOS 13, *) { host.sizingOptions = [] }
             contentView = host
         }
 

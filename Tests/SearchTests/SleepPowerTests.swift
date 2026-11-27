@@ -3,6 +3,7 @@ import XCTest
 
 /// How long a tab waits to sleep with Settings › General › Save power in Low
 /// Power Mode on, off, and overridden by the bench.
+@available(macOS 14, *)
 @MainActor
 final class SleepPowerTests: XCTestCase {
     override class func setUp() {

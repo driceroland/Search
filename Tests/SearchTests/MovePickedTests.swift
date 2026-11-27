@@ -8,6 +8,7 @@ import XCTest
 /// order the column has them, and one undo puts them all back. Pin folders
 /// go the same way through Browser.movePins, checked in a hidden probe by
 /// Tests/move_picked.py, where the pins have their files.
+@available(macOS 14, *)
 @MainActor
 final class MovePickedTests: XCTestCase {
     private var browsers: [Browser] = []

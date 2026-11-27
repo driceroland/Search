@@ -6,6 +6,7 @@ import XCTest
 /// Which tab a page's notification names and a click on it brings forward
 /// (#776). Only the choice: what shows a tab and brings the app forward is never
 /// run here, no window is made, and no page is loaded.
+@available(macOS 14, *)
 @MainActor
 final class NotificationTabTests: XCTestCase {
     private let site = "https://chat.example"

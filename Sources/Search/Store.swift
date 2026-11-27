@@ -54,7 +54,7 @@ enum Store {
     /// then as safe as wiping its folder.
     static var websites: WKWebsiteDataStore {
         guard testing, !ownContainer else { return .default() }
-        return WKWebsiteDataStore(forIdentifier: probeStore(1))
+        return WKWebsiteDataStore.identifiedCompat(probeStore(1)) ?? .default()
     }
 
     /// Settings › Privacy › Prevent cross-site tracking, turned off. WebKit's
@@ -102,7 +102,7 @@ enum Store {
 
     @MainActor static func interacted(with url: URL, in store: WKWebsiteDataStore, done: @escaping () -> Void = {}) {
         let log = NSSelectorFromString("_logUserInteraction:completionHandler:")
-        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host() != nil,
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.hostCompat() != nil,
               store.responds(to: log) else { return done() }
         typealias Log = @convention(c) (AnyObject, Selector, NSURL, @escaping @convention(block) () -> Void) -> Void
         unsafeBitCast(store.method(for: log), to: Log.self)(store, log, url as NSURL, done)

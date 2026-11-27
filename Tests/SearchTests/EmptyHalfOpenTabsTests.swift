@@ -6,6 +6,7 @@ import XCTest
 /// six goes once typing starts, and the field offered only places, so a tab
 /// past those six could only be loaded again as a new copy. The open tabs
 /// that answer come first, as in ⌘K, and taking one brings it into the pair.
+@available(macOS 14, *)
 @MainActor
 final class EmptyHalfOpenTabsTests: XCTestCase {
     override class func setUp() {

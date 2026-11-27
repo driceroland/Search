@@ -7,6 +7,7 @@ import XCTest
 /// where an agent may go, what a page's secret fields give back, and the
 /// socket's permissions. Pages are laid out in the bench's room, off every
 /// screen; nothing is shown.
+@available(macOS 14, *)
 @MainActor
 final class AgentControlTests: XCTestCase {
     override class func setUp() {

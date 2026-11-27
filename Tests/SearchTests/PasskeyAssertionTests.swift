@@ -2,6 +2,7 @@ import AuthenticationServices
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 @MainActor
 final class PasskeyAssertionTests: XCTestCase {
     func testSecurityKeyCanOmitUserHandle() throws {
@@ -33,6 +34,7 @@ final class PasskeyAssertionTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 @objc(SearchTestPasskeyAssertion)
 private final class Assertion: NSObject, ASAuthorizationPublicKeyCredentialAssertion {
     var credentialID = Data([1])

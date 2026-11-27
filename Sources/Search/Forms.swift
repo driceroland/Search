@@ -81,7 +81,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
                 // state has said it already. A "going" still on its way when
                 // WebKit started to give the page back is stale.
                 let on = body["on"] as? Bool ?? false
-                if on, tab?.built?.fullscreenState == .exitingFullscreen { break }
+                if on, tab?.built?.fullscreenPhase == .exitingFullscreen { break }
                 if tab?.immersed != on { tab?.immersed = on }
             default:
                 break
@@ -96,7 +96,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
     }
 
     nonisolated static func sameOrigin(scheme: String, host: String, port: Int, as page: URL?) -> Bool {
-        guard let page, let pageScheme = page.scheme?.lowercased(), let pageHost = page.host()?.lowercased(),
+        guard let page, let pageScheme = page.scheme?.lowercased(), let pageHost = page.hostCompat()?.lowercased(),
               !pageHost.isEmpty
         else { return false }
         let scheme = scheme.lowercased()
@@ -1229,7 +1229,7 @@ final class FormRelay: NSObject, WKScriptMessageHandler {
       window.addEventListener('resize', moved);
 
       // A page's full screen, in and out. WebKit's own state says it first
-      // (Tab.immersed follows web.fullscreenState): in once WebKit has the
+      // (Tab.immersed follows web.fullscreenPhase): in once WebKit has the
       // page in its window, back as it starts to give it back. This comes
       // after each and is only a fallback. It used to be said early, on the
       // request itself, which laid the page out at the whole window's size

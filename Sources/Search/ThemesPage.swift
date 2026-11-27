@@ -110,7 +110,7 @@ struct ThemesPage: View {
         .background(GeometryReader { box in
             Color.clear
                 .onAppear { width = box.size.width }
-                .onChange(of: box.size.width) { _, now in width = now }
+                .onChangeCompat(of: box.size.width) { _, now in width = now }
         })
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))

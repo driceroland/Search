@@ -7,6 +7,7 @@ import XCTest
 /// code signature of the program that started the client, never the name it
 /// gives; checked again on every connection; kept only where Search alone
 /// can write.
+@available(macOS 14, *)
 @MainActor
 final class AgentTrustTests: XCTestCase {
     override class func setUp() {

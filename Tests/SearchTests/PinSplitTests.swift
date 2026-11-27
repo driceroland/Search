@@ -5,6 +5,7 @@ import XCTest
 /// A split pinned as a split: Pin on one page pins every page, kept
 /// together in pins.json and in the row, put down whole by ⌘W, and let go
 /// of by Unpin.
+@available(macOS 14, *)
 @MainActor
 final class PinSplitTests: XCTestCase {
     private var browsers: [Browser] = []

@@ -250,7 +250,7 @@ final class Extensions: NSObject, ObservableObject {
                 for (n, item) in enabled.enumerated() {
                     await load(item)
                     if n < enabled.count - 1, contexts[item.id]?.webExtension.hasBackgroundContent == true {
-                        try? await Task.sleep(for: .milliseconds(400))
+                        try? await Task.sleep(milliseconds: 400)
                     }
                 }
                 markStarted()
@@ -1198,7 +1198,7 @@ final class Extensions: NSObject, ObservableObject {
         // Loaded in WebKit's first five seconds, a new extension would be
         // told the browser started, and never that it was installed.
         let early = 5.5 - Date().timeIntervalSince(controllerMade)
-        if early > 0 { try? await Task.sleep(for: .seconds(early)) }
+        if early > 0 { try? await Task.sleep(seconds: early) }
         guard installed.contains(where: { $0.id == id }) else { return }
         installing.insert(id)
         if await load(item) {
@@ -1785,7 +1785,7 @@ final class Extensions: NSObject, ObservableObject {
         guard let url, let scheme = url.scheme?.lowercased(),
               [Extensions.scheme, Extensions.formerScheme, "webkit-extension"].contains(scheme)
         else { return false }
-        return url.host()?.lowercased() != context.uniqueIdentifier.lowercased()
+        return url.hostCompat()?.lowercased() != context.uniqueIdentifier.lowercased()
     }
 
     /// Chrome's own APIs, which Search answers itself, and what each lets an
@@ -1988,7 +1988,7 @@ final class Extensions: NSObject, ObservableObject {
                 ? event.window?.firstResponder as? NSView
                 : event.window?.contentView?.superview?.hitTest(event.locationInWindow)
             while let found = view, !(found is WKWebView) { view = found.superview }
-            if let url = (view as? WKWebView)?.url, url.scheme?.lowercased() == Extensions.scheme, let id = url.host() {
+            if let url = (view as? WKWebView)?.url, url.scheme?.lowercased() == Extensions.scheme, let id = url.hostCompat() {
                 Extensions.touched[id] = Date()
             }
             return event
@@ -2168,7 +2168,7 @@ extension Extensions: WKWebExtensionControllerDelegate {
             for url in configuration.tabURLs {
                 let scheme = url.scheme?.lowercased() ?? ""
                 let own = [Extensions.scheme, Extensions.formerScheme].contains(scheme)
-                    && url.host()?.lowercased() == extensionContext.uniqueIdentifier.lowercased()
+                    && url.hostCompat()?.lowercased() == extensionContext.uniqueIdentifier.lowercased()
                 guard scheme == "https" || scheme == "http" || own || url.absoluteString == "about:blank" else {
                     throw NSError(domain: "Search", code: 3, userInfo: [NSLocalizedDescriptionKey: "A popup window shows a website or the extension's own page."])
                 }
@@ -2249,7 +2249,7 @@ extension Extensions: WKWebExtensionControllerDelegate {
         // never asks there: the extension has the sites its manifest named,
         // the page it was clicked on (activeTab), and the ones it asked for
         // through permissions.request. So neither does Search.
-        asked.append("(refused) \(extensionContext.webExtension.displayName ?? "?") → \(Set(urls.compactMap { $0.host() }).sorted().joined(separator: ", "))")
+        asked.append("(refused) \(extensionContext.webExtension.displayName ?? "?") → \(Set(urls.compactMap { $0.hostCompat() }).sorted().joined(separator: ", "))")
         return ([], nil)
     }
 
@@ -2308,7 +2308,7 @@ extension Extensions: WKWebExtensionControllerDelegate {
             // times in a second, so it can't swamp the browser.
             let key = id + "→" + host, now = Date()
             failures[key] = (failures[key] ?? []).filter { now.timeIntervalSince($0) < 1 } + [now]
-            if (failures[key]?.count ?? 0) > 12 { try? await Task.sleep(for: .seconds(1)) }
+            if (failures[key]?.count ?? 0) > 12 { try? await Task.sleep(seconds: 1) }
             throw error
         }
     }

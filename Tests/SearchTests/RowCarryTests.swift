@@ -6,6 +6,7 @@ import XCTest
 /// A tab carried down the column past a pair, which stands two lines tall:
 /// the row stays under the hand and passes the pair at its middle. Hosted
 /// as PinDragTests does, in a borderless window far off every screen.
+@available(macOS 14, *)
 @MainActor
 final class RowCarryTests: XCTestCase {
     private var browsers: [Browser] = []

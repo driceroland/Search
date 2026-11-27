@@ -8,6 +8,7 @@ import XCTest
 /// has that name (what Discord, Zoom and Meet read, kCGWindowName). Real full
 /// screen can't be entered in a test run; a window never ordered in stands in
 /// for WebKit's own.
+@available(macOS 14, *)
 @MainActor
 final class FullScreenTitleTests: XCTestCase {
     override class func setUp() {

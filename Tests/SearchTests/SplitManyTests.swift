@@ -6,6 +6,7 @@ import XCTest
 /// to four, a page added beside another joins its split, a page closed
 /// leaves the rest, one left alone is a tab again, and a file written with
 /// two still reads as it always did.
+@available(macOS 14, *)
 @MainActor
 final class SplitManyTests: XCTestCase {
     override class func setUp() {

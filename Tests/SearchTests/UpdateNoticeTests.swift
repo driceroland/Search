@@ -8,6 +8,7 @@ import XCTest
 /// Drawn in borderless windows far off every screen, never activated; what
 /// is compared is the picture itself, against the same view with no update.
 /// SEARCH_RENDER_DIR, when set, keeps every picture there as a PNG.
+@available(macOS 14, *)
 @MainActor
 final class UpdateNoticeTests: XCTestCase {
     private var browsers: [Browser] = []

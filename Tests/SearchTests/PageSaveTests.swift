@@ -5,6 +5,7 @@ import XCTest
 
 /// File › Save Page As…: one web archive of the tab it was asked for, that
 /// opens again.
+@available(macOS 14, *)
 @MainActor
 final class PageSaveTests: XCTestCase {
     override class func setUp() {

@@ -6,15 +6,19 @@ struct CaptureQuestion: View {
     let ask: Browser.CaptureAsk
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
+        FitsCompat(in: .horizontal) {
             HStack(spacing: 12) { question; actions }.fixedSize()
             VStack(alignment: .leading, spacing: 12) {
                 question
-                ViewThatFits(in: .horizontal) {
+                FitsCompat(in: .horizontal) {
                     actions.fixedSize()
+                    VStack(alignment: .leading, spacing: 10) { buttons }
+                } older: {
                     VStack(alignment: .leading, spacing: 10) { buttons }
                 }
             }
+        } older: {
+            VStack(alignment: .leading, spacing: 12) { question; VStack(alignment: .leading, spacing: 10) { buttons } }
         }
         .font(.system(size: 12))
         .buttonStyle(.plain)
@@ -129,15 +133,19 @@ struct PasswordOffer: View {
     let offer: Browser.Offer
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
+        FitsCompat(in: .horizontal) {
             HStack(spacing: 12) { question; actions }.fixedSize()
             VStack(alignment: .leading, spacing: 12) {
                 question
-                ViewThatFits(in: .horizontal) {
+                FitsCompat(in: .horizontal) {
                     actions.fixedSize()
+                    VStack(alignment: .leading, spacing: 10) { buttons }
+                } older: {
                     VStack(alignment: .leading, spacing: 10) { buttons }
                 }
             }
+        } older: {
+            VStack(alignment: .leading, spacing: 12) { question; VStack(alignment: .leading, spacing: 10) { buttons } }
         }
         .font(.system(size: 12))
         .buttonStyle(.plain)

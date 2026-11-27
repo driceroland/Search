@@ -5,6 +5,7 @@ import XCTest
 /// A pinned tab going between an extension's page and a website is swapped
 /// for a new tab (Browser.replace): it has to stay the same pin, at the same
 /// home, in the same spaces. In a test world of its own, nothing shown.
+@available(macOS 14, *)
 @MainActor
 final class PinCrossTests: XCTestCase {
     private var browser: Browser!

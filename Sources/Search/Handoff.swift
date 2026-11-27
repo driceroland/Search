@@ -27,9 +27,9 @@ struct Handoff: View {
         Color.clear
             .frame(width: 0, height: 0)
             .onAppear(perform: apply)
-            .onChange(of: tab.committed) { _, _ in apply() }
-            .onChange(of: tab.title) { _, _ in apply() }
-            .onChange(of: prefs.handoff) { _, _ in apply() }
+            .onChangeCompat(of: tab.committed) { _, _ in apply() }
+            .onChangeCompat(of: tab.title) { _, _ in apply() }
+            .onChangeCompat(of: prefs.handoff) { _, _ in apply() }
     }
 
     private func apply() {

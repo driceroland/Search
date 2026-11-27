@@ -7,6 +7,7 @@ import XCTest
 /// The guess (Reader.script) on pages laid out as newsrooms lay theirs out:
 /// what of an article's head, pictures and frames comes into the reading
 /// page, and what doesn't (#564, #565).
+@available(macOS 14, *)
 @MainActor
 final class ReaderGuessTests: XCTestCase {
     private var server: LocalPageServer!

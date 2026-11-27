@@ -97,12 +97,12 @@ enum ExtensionShims {
         guard !policy.contains(",") else { return false }
         let scripts: Set = ["script-src", "script-src-elem", "script-src-attr", "worker-src", "object-src"]
         let allowed: Set = ["'self'", "'wasm-unsafe-eval'", "'none'", "'inline-speculation-rules'"]
-        let local = #/https?://(localhost|127\.0\.0\.1)(:(\d+|\*))?/?/#
+        let local = #"https?://(localhost|127\.0\.0\.1)(:(\d+|\*))?/?"#
         let directives = policy.split(separator: ";").map { $0.split(whereSeparator: \.isWhitespace).map { $0.lowercased() } }
         guard directives.contains(where: { $0.first == "script-src" }) else { return false }
         return directives.allSatisfy { words in
             guard let name = words.first, scripts.contains(name) else { return true }
-            return words.dropFirst().allSatisfy { allowed.contains($0) || $0.wholeMatch(of: local) != nil }
+            return words.dropFirst().allSatisfy { allowed.contains($0) || Pattern.wholeMatch(local, $0) }
         }
     }
 
@@ -6491,7 +6491,7 @@ enum ExtensionShims {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 8) { finish(Unsupported(what: "no answer from WebKit")) }
                 }
                 guard error != nil else { return nil }
-                if attempt < 2 { try? await Task.sleep(for: .milliseconds(400)) }
+                if attempt < 2 { try? await Task.sleep(milliseconds: 400) }
             }
             owner.revive(id, because: "its worker wouldn't start")
             return nil
@@ -6701,7 +6701,7 @@ enum ExtensionShims {
                 // Another extension's page stays blank, as WebKit keeps it
                 // (see the refusal in Extensions.load); its own are its own.
                 if let url = tab.address, let scheme = url.scheme?.lowercased(),
-                   [Extensions.scheme, Extensions.formerScheme].contains(scheme), url.host() != id {
+                   [Extensions.scheme, Extensions.formerScheme].contains(scheme), url.hostCompat() != id {
                     return ["url": "", "title": ""]
                 }
                 var described: [String: Any] = ["url": tab.address?.absoluteString ?? "", "title": tab.title]
@@ -6812,7 +6812,7 @@ enum ExtensionShims {
         case "topSites.get":
             var visits: [String: (url: URL, title: String, count: Int)] = [:]
             for trace in browser.history.everything() {
-                guard let host = trace.url.host() else { continue }
+                guard let host = trace.url.hostCompat() else { continue }
                 visits[host, default: (trace.url, trace.title, 0)].count += 1
             }
             return visits.values.sorted { $0.count > $1.count }.prefix(10).map {
@@ -7070,7 +7070,7 @@ enum ExtensionShims {
     /// chrome.browsingData, from what WebKit and Search keep.
     private static func clear(_ what: [String: Bool], options: [String: Any], browser: Browser) async throws {
         let since = Date(timeIntervalSince1970: (options["since"] as? Double ?? 0) / 1000)
-        let origins = (options["origins"] as? [String])?.compactMap { URL(string: $0)?.host() }
+        let origins = (options["origins"] as? [String])?.compactMap { URL(string: $0)?.hostCompat() }
         var types = Set<String>()
         let map: [String: [String]] = [
             "cache": [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, WKWebsiteDataTypeFetchCache],
@@ -7325,7 +7325,7 @@ enum ExtensionAuth {
         /// The extension's own redirect address, and nobody else's.
         private func answer(_ url: URL?) -> Bool {
             guard let url, url.scheme?.lowercased() == "https",
-                  url.host()?.lowercased() == extensionID + ".chromiumapp.org" else { return false }
+                  url.hostCompat()?.lowercased() == extensionID + ".chromiumapp.org" else { return false }
             end(.success(url))
             return true
         }
@@ -7334,7 +7334,7 @@ enum ExtensionAuth {
         /// one's over http — never loads: what it carries (a code, a token)
         /// would go out over the network instead of to nobody.
         private static func chromiumapp(_ url: URL?) -> Bool {
-            guard let host = url?.host()?.lowercased() else { return false }
+            guard let host = url?.hostCompat()?.lowercased() else { return false }
             let bare = host.hasSuffix(".") ? String(host.dropLast()) : host
             return bare == "chromiumapp.org" || bare.hasSuffix(".chromiumapp.org")
         }
@@ -7483,7 +7483,7 @@ enum ExtensionAuth {
     /// tab the flow was started in may finish it, or a window that tab's
     /// page opened, since some providers finish the sign-in in a popup.
     static func intercept(_ url: URL, browser: Browser, from webView: WKWebView) -> Bool {
-        guard url.scheme?.lowercased() == "https", let host = url.host()?.lowercased(), host.hasSuffix(".chromiumapp.org") else { return false }
+        guard url.scheme?.lowercased() == "https", let host = url.hostCompat()?.lowercased(), host.hasSuffix(".chromiumapp.org") else { return false }
         let id = String(host.dropLast(".chromiumapp.org".count))
         guard let entry = waiting[id], let from = browser.tab(for: webView),
               from.id == entry.tab || from.opener == entry.tab
@@ -7512,7 +7512,7 @@ enum ExtensionAuth {
     /// call, as for any address: tabs or host access, as in Chrome. Left
     /// open, the tab says what Chrome's would.
     static func handOver(_ url: URL, mainFrame: Bool, browser: Browser, from webView: WKWebView) -> Bool {
-        guard mainFrame, url.scheme?.lowercased() == "https", let host = url.host()?.lowercased(),
+        guard mainFrame, url.scheme?.lowercased() == "https", let host = url.hostCompat()?.lowercased(),
               host.hasSuffix(".chromiumapp.org") else { return false }
         let id = String(host.dropLast(".chromiumapp.org".count))
         guard #available(macOS 15.4, *), let context = Extensions.shared.contexts[id],
@@ -7521,7 +7521,7 @@ enum ExtensionAuth {
         else { return false }
         tab.hold(url)
         Task { @MainActor [weak tab] in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(seconds: 4)
             guard let tab, tab.held == url else { return }
             tab.failure = DNSRetryPolicy.gaveUp
         }

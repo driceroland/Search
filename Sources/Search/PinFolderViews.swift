@@ -103,7 +103,7 @@ struct PinFolderHeading: View {
         .frame(height: Self.height(prefs, compact: false))
         .frame(maxWidth: .infinity, alignment: .leading)
         .help(tip)
-        .onChange(of: editing) { _, now in
+        .onChangeCompat(of: editing) { _, now in
             if now {
                 draft = folder.name
                 DispatchQueue.main.async { focused = true }
@@ -134,7 +134,7 @@ struct PinFolderHeading: View {
     private var tip: String {
         guard let feed = folder.feed else { return "" }
         if LiveFolders.failed.contains(folder.id) { return "Couldn’t refresh" }
-        return feed.host() ?? feed.absoluteString
+        return feed.hostCompat() ?? feed.absoluteString
     }
 
     private var field: some View {

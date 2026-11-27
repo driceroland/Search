@@ -160,7 +160,7 @@ private struct PaneLayers: View {
     /// else on screen says so.
     @ViewBuilder
     private var whose: some View {
-        if paired, !focused, hovered || browser.folded, let host = tab.address?.host(), !tab.isBlank {
+        if paired, !focused, hovered || browser.folded, let host = tab.address?.hostCompat(), !tab.isBlank {
             Text(host.hasPrefix("www.") ? String(host.dropFirst(4)) : host)
                 .font(.system(size: 11.5))
                 .foregroundStyle(Palette.muted)
@@ -206,7 +206,7 @@ private struct PaneLayers: View {
         }
         // Gone to another page: what the last one asked goes unanswered no
         // longer.
-        .onChange(of: tab.committed) { _, _ in browser.dropQuestions(for: tab.id) }
+        .onChangeCompat(of: tab.committed) { _, _ in browser.dropQuestions(for: tab.id) }
         .animation(Motion.quick, value: browser.paneQuestions.map(\.id))
         .overlay {
             // Over the page the link is on, focused or not.

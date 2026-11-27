@@ -3,6 +3,7 @@ import XCTest
 import WebKit
 @testable import Search
 
+@available(macOS 14, *)
 @MainActor
 final class WebsitePopupTests: XCTestCase {
     override class func setUp() {
@@ -95,6 +96,7 @@ final class WebsitePopupTests: XCTestCase {
 /// Until the page has asked, for as long as a page can take to come up:
 /// two seconds was enough on its own, and not at the end of a full run,
 /// with a few hundred pages' processes started before this one.
+@available(macOS 14, *)
 @MainActor
 private func waitForQuestion(_ popup: Browser) async throws {
     let deadline = Date().addingTimeInterval(15)
@@ -103,6 +105,7 @@ private func waitForQuestion(_ popup: Browser) async throws {
     }
 }
 
+@available(macOS 14, *)
 @MainActor
 private final class CaptureRelay: NSObject, WKScriptMessageHandler {
     weak var browser: Browser?

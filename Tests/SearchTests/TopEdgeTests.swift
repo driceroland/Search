@@ -6,6 +6,7 @@ import XCTest
 /// The top of the window: what the menu bar's reveal in full screen pushes
 /// the bars down by (idea 926), and the band along the top of a page leaving
 /// what the page has to press there to the page (idea 928).
+@available(macOS 14, *)
 @MainActor
 final class TopEdgeTests: XCTestCase {
     override class func setUp() {

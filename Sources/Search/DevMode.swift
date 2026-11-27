@@ -49,7 +49,7 @@ final class DevMode: ObservableObject {
     /// The host as kept: lowercased, without IPv6's brackets.
     static func host(of url: URL?) -> String? {
         guard let url, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              var host = url.host(percentEncoded: false)?.lowercased(), !host.isEmpty
+              var host = url.hostCompat(percentEncoded: false)?.lowercased(), !host.isEmpty
         else { return nil }
         if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
         return host

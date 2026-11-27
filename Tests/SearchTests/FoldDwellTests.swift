@@ -6,6 +6,7 @@ import XCTest
 /// edge where a column hidden for good waits 0.05 s, and was felt as slow
 /// (idea 1253). Both wait the same now; the strip's edge, which is also the
 /// way to the menu bar, starts its wait again while the pointer still rises.
+@available(macOS 14, *)
 final class FoldDwellTests: XCTestCase {
     func testOnlyTheColumnInFrontTrustsThePointersPosition() {
         XCTAssertTrue(Fold.frontColumn(sidebar: true, key: true, main: false))

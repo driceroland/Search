@@ -11,6 +11,7 @@ import XCTest
 /// a borderless window far off every screen. Icons only goes through the
 /// same rows and the same drop (SideBar.groupRows), and is not carried by
 /// hand here.
+@available(macOS 14, *)
 @MainActor
 final class TabGroupDragOutTests: XCTestCase {
     private var browsers: [Browser] = []

@@ -1,6 +1,7 @@
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class DownloadFoldersTests: XCTestCase {
     func testFolders() {
         XCTAssertEqual(Browser.downloadFolders("a.jpg"), [])

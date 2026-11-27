@@ -2,6 +2,7 @@ import JavaScriptCore
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class PopupGestureTests: XCTestCase {
     func testLongLivedMenuPreservesFrameAndOneWindowLimit() {
         var permission = PopupGesture()

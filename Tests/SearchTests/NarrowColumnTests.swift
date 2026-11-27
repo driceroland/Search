@@ -9,6 +9,7 @@ import XCTest
 /// first door of the lights' row stays clear of the zoom button. Drawn in
 /// a borderless window far off every screen, never activated; what is
 /// measured is the picture itself.
+@available(macOS 14, *)
 @MainActor
 final class NarrowColumnTests: XCTestCase {
     private var browsers: [Browser] = []

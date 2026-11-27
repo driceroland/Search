@@ -599,7 +599,7 @@ final class ApplePasswords: ObservableObject {
     /// tab, an https page, a host to ask about.
     nonisolated static func offers(on url: URL?, privateTab: Bool) -> String? {
         guard !privateTab, let url, url.scheme?.lowercased() == "https",
-              let host = url.host()?.lowercased(), !host.isEmpty
+              let host = url.hostCompat()?.lowercased(), !host.isEmpty
         else { return nil }
         return host
     }

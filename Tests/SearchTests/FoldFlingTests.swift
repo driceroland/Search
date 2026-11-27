@@ -8,6 +8,7 @@ import XCTest
 /// the edge nor in the band just past it (idea 1144). The crossing itself
 /// counts now, and only a crossing through the column's side, between the
 /// window's top and bottom.
+@available(macOS 14, *)
 final class FoldFlingTests: XCTestCase {
     private let size = CGSize(width: 1200, height: 800)
 

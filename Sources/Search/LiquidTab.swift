@@ -112,7 +112,7 @@ private struct LiveLens: View {
                     .position(x: motion.frame.midX, y: motion.frame.midY)
                     .opacity(motion.frame == .zero ? 0 : (over ? motion.moving : 1))
                     .onAppear { if !over { motion.aim(aim.rect, tab: aim.tab, space: aim.space) } }
-                    .onChange(of: aim) { _, now in if !over { motion.aim(now.rect, tab: now.tab, space: now.space) } }
+                    .onChangeCompat(of: aim) { _, now in if !over { motion.aim(now.rect, tab: now.tab, space: now.space) } }
             }
         }
         .clipped()

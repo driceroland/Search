@@ -5,6 +5,7 @@ import XCTest
 /// The file has always kept 2,000 places; memory kept every one of the
 /// session, with its text and its prefix weights, and the address field
 /// scanned all of it on every key.
+@available(macOS 14, *)
 @MainActor
 final class HistoryCapTests: XCTestCase {
     override class func setUp() {

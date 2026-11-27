@@ -4,6 +4,7 @@ import XCTest
 
 /// Fade scroll bars when scrolling stops: on, AppKit — and through it WebKit —
 /// is told Search prefers overlay scroll bars; off, the Mac's own answer.
+@available(macOS 14, *)
 @MainActor
 final class ScrollbarsTests: XCTestCase {
     func testOverlayOnlyWhileOn() {

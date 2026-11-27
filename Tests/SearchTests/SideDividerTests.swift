@@ -9,6 +9,7 @@ import XCTest
 /// whatever is shown. The column is drawn into a bitmap from an
 /// NSHostingView that is never put in a window, and its thin full-width
 /// lines counted. SEARCH_DIVIDER_PNG=<folder> keeps the pictures.
+@available(macOS 14, *)
 @MainActor
 final class SideDividerTests: XCTestCase {
     private var browsers: [Browser] = []

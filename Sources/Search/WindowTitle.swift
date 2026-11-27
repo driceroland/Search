@@ -22,8 +22,8 @@ struct WindowTitle: View {
         Color.clear
             .frame(width: 0, height: 0)
             .onAppear(perform: apply)
-            .onChange(of: tab.title) { _, _ in apply() }
-            .onChange(of: tab.name) { _, _ in apply() }
+            .onChangeCompat(of: tab.title) { _, _ in apply() }
+            .onChangeCompat(of: tab.name) { _, _ in apply() }
     }
 
     private func apply() {

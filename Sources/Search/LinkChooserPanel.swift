@@ -349,8 +349,8 @@ private struct LinkChooserView: View {
                     }
                 }
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .onChange(of: chooser.marked, initial: true) { _, marked in
+            .scrollBouncesOnlyWhenNeeded()
+            .onChangeCompat(of: chooser.marked, initial: true) { _, marked in
                 if chooser.rows.indices.contains(marked) { scroller.scrollTo(chooser.rows[marked].space) }
             }
         }

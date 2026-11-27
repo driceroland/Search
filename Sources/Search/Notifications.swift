@@ -159,7 +159,7 @@ final class SiteNotifications: NSObject {
         content.categoryIdentifier = "site"
         content.sound = .default
         content.userInfo = info
-        if let host = url?.host(), let icon = Favicons.shared.cached(for: url),
+        if let host = url?.hostCompat(), let icon = Favicons.shared.cached(for: url),
            let file = SiteNotifications.iconFile(icon, host: host),
            let attachment = try? UNNotificationAttachment(identifier: "icon", url: file) {
             content.attachments = [attachment]
@@ -215,7 +215,7 @@ final class SiteNotifications: NSObject {
         guard let (browser, tab) = SiteNotifications.tabToBringForward(info, from: store, among: Browsers.all) else { return }
         browser.select(tab)
         Browsers.show(browser)
-        NSApp.activate()
+        NSApp.activateCompat()
     }
 
     /// The tab showing the site to bring to the front: the one that sent the
@@ -228,7 +228,7 @@ final class SiteNotifications: NSObject {
         let sender = (info[senderKey] as? String).flatMap(UUID.init(uuidString:))
         let found = browsers.filter { !$0.isPopup }.flatMap { browser in
             browser.tabs.filter { tab in
-                guard !tab.shy, tab.store.isPersistent, let url = tab.address, let scheme = url.scheme, let host = url.host() else { return false }
+                guard !tab.shy, tab.store.isPersistent, let url = tab.address, let scheme = url.scheme, let host = url.hostCompat() else { return false }
                 return Browser.origin(scheme, host, url.port ?? 0) == origin
             }.map { (browser, $0) }
         }
@@ -414,7 +414,7 @@ enum PageNotifications {
 
     private static func origin(of note: Ref, _ c: WebKitC) -> String {
         guard let origin = c.origin(note), let url = URL(string: c.text(c.originString(origin))),
-              let scheme = url.scheme, let host = url.host() else { return "" }
+              let scheme = url.scheme, let host = url.hostCompat() else { return "" }
         return Browser.origin(scheme, host, url.port ?? 0)
     }
 

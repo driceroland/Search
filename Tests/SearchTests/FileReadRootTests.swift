@@ -5,6 +5,7 @@ import XCTest
 /// How far up a page opened from disk may read (#1342): two folders, never
 /// the home folder or a folder directly in it, however the path is spelled.
 /// A folder of the temporary directory stands in for the home folder.
+@available(macOS 14, *)
 final class FileReadRootTests: XCTestCase {
     private var home: URL!
 

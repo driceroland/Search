@@ -7,6 +7,7 @@ import XCTest
 /// and the client's whole flow against made-up helpers — one in memory, one
 /// a real process over a pipe. Apple's own helper is never run, no real code,
 /// password or account is used, and nothing is written to a keychain.
+@available(macOS 14, *)
 @MainActor
 final class ApplePasswordsTests: XCTestCase {
     private struct Vectors: Decodable {
@@ -711,6 +712,7 @@ final class ApplePasswordsTests: XCTestCase {
 /// The code asked for where it is needed (Drice, 24 Oct): nothing runs the
 /// helper until you choose Connect, and the code goes into a card under the
 /// sign-in box instead of Settings, which goes once paired.
+@available(macOS 14, *)
 @MainActor
 final class ApplePairingTests: XCTestCase {
     override class func setUp() {
@@ -909,6 +911,7 @@ final class ApplePairingTests: XCTestCase {
 }
 
 /// S = (A·vᵘ)ᵇ.
+@available(macOS 14, *)
 private final class FakeHelper: AppleLink {
     var onMessage: (([String: Any]) -> Void)?
     var onEnd: (() -> Void)?
@@ -1044,6 +1047,7 @@ private final class FakeHelper: AppleLink {
 /// and node's own crypto. It pairs with the code 314159, speaks Chrome's
 /// framing on stdin and stdout, and answers in hex or base64 as
 /// APW_FAKE_BASE64 says.
+@available(macOS 14, *)
 private enum NodeHelper {
     static let source = #"""
     const crypto = require("node:crypto");

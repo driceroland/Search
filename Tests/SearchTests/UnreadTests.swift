@@ -4,6 +4,7 @@ import XCTest
 /// The count a pin's badge shows, read off the front of its page's title
 /// (UnreadBadge.swift): only a bracketed number at the very front, so a year
 /// further along, or a word in brackets, is never taken for one.
+@available(macOS 14, *)
 final class UnreadTests: XCTestCase {
     func testCountsAtTheFront() {
         XCTAssertEqual(Unread.count(in: "(3) WhatsApp"), "3")

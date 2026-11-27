@@ -4,6 +4,7 @@ import WebKit
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 @MainActor
 final class ShortcutTests: XCTestCase {
     override class func setUp() {
@@ -335,6 +336,7 @@ final class ShortcutTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 private final class LinkAction: WKNavigationAction {
     private let url: URL
     private let flags: NSEvent.ModifierFlags

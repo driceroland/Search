@@ -6,6 +6,7 @@ import XCTest
 /// from lists that never had one, mixed in OKLab, held to the wash's
 /// lightness so the chrome stays as legible as with a colour, and synced
 /// as an item a Search from before gradients carries along untouched.
+@available(macOS 14, *)
 @MainActor
 final class SpaceGradientTests: XCTestCase {
     override class func setUp() {

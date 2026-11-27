@@ -84,7 +84,7 @@ enum BookmarksFile {
                     bar = attribute(toolbarExpression, in: attributes)?.lowercased() == "true"
                 } else if let href = attribute(hrefExpression, in: attributes), let url = URL(string: href),
                           url.scheme == "http" || url.scheme == "https" {
-                    append(.site(title.isEmpty ? (url.host() ?? href) : title, url))
+                    append(.site(title.isEmpty ? (url.hostCompat() ?? href) : title, url))
                 }
             } else if ns.substring(with: match.range(at: 4)).isEmpty {
                 // <DL>: the list of the folder just named — or, the first

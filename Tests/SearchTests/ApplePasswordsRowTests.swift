@@ -4,6 +4,7 @@ import XCTest
 
 /// Idea 781: on a Mac whose helper macOS stops as it starts, Connect… pressed
 /// again and again must leave the Settings row as it is.
+@available(macOS 14, *)
 @MainActor
 final class ApplePasswordsRowTests: XCTestCase {
     private func titles(of apple: ApplePasswords) -> (AnyCancellable, () -> [String]) {
@@ -76,6 +77,7 @@ final class ApplePasswordsRowTests: XCTestCase {
 
 /// A helper macOS stops the instant it starts (a launch constraint): the
 /// first message still goes into the pipe, then its output closes.
+@available(macOS 14, *)
 @MainActor
 private final class KilledHelper: AppleLink {
     var onMessage: (([String: Any]) -> Void)?
@@ -86,6 +88,7 @@ private final class KilledHelper: AppleLink {
 }
 
 /// A helper that runs but never answers.
+@available(macOS 14, *)
 @MainActor
 private final class SlowHelper: AppleLink {
     var onMessage: (([String: Any]) -> Void)?

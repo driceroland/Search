@@ -104,10 +104,12 @@ struct ImportPanel: View {
         Plate("Bring things over", width: 580, close: { browser.bringingIn = nil }) {
             // As tall as it needs to be, and scrolling past what the window
             // can hold: many browsers, or a small window.
-            ViewThatFits(in: .vertical) {
+            FitsCompat(in: .vertical) {
                 content
                 ScrollView { content }
-                    .scrollBounceBehavior(.basedOnSize)
+                    .scrollBouncesOnlyWhenNeeded()
+            } older: {
+                ScrollView { content }
             }
         } foot: {
             VStack(alignment: .leading, spacing: 10) {
@@ -171,13 +173,13 @@ struct ImportPanel: View {
             }
             look()
         }
-        .onChange(of: previews) { _, _ in
+        .onChangeCompat(of: previews) { _, _ in
             guard forExtensions, let pick, fresh(pick).isEmpty,
                   let other = sources.first(where: { !fresh($0).isEmpty }) else { return }
             self.pick = other
         }
         // Asked for again at another browser while still open.
-        .onChange(of: browser.bringingIn) { _, name in
+        .onChangeCompat(of: browser.bringingIn) { _, name in
             guard !bringing, let found = sources.first(where: { $0.name == name }) else { return }
             pick = found
             brought = nil

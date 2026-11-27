@@ -333,7 +333,7 @@ struct AssistantPanel: View {
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
                 }
-                .onChange(of: assistant.turns.last?.answer) { _, _ in
+                .onChangeCompat(of: assistant.turns.last?.answer) { _, _ in
                     if let last = assistant.turns.last { scroller.scrollTo(last.id, anchor: .bottom) }
                 }
             }
@@ -444,7 +444,7 @@ struct AISettings: View {
                         if provider == .thisMac { onThisMac } else if provider.isLocal { localModel(provider) } else { key(provider); Rule(); cloudModel(provider) }
                     }
                 }
-                .onChange(of: prefs.aiProvider) { _, _ in
+                .onChangeCompat(of: prefs.aiProvider) { _, _ in
                     // A key typed for one provider is never saved for another.
                     pasted = ""
                     refresh()

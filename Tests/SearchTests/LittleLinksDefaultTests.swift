@@ -4,6 +4,7 @@ import XCTest
 /// Small windows for links are on for a new install and stay off for one
 /// from before (Preferences.settleLittleLinks), each in a settings suite of
 /// its own, removed afterwards.
+@available(macOS 14, *)
 final class LittleLinksDefaultTests: XCTestCase {
     private var suite = ""
     private var store: UserDefaults!

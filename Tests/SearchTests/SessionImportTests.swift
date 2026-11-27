@@ -8,6 +8,7 @@ import AppKit
 /// writes them, so a wrong offset fails here rather than in someone's
 /// browser. Only synthetic files: no real browser's session is read here.
 /// First written by @timwuhaotian (#841).
+@available(macOS 14, *)
 final class SessionImportTests: XCTestCase {
     // MARK: - writing the vectors
 
@@ -440,6 +441,7 @@ final class SessionImportTests: XCTestCase {
 }
 
 /// A small seeded generator, so the noise test reads the same bytes each run.
+@available(macOS 14, *)
 private struct SplitMix {
     var state: UInt64
     init(seed: UInt64) { state = seed }

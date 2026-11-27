@@ -26,7 +26,7 @@ struct Archived: Codable, Identifiable, Equatable {
     let closed: Date
 
     var label: String { title.isEmpty ? Address.withoutWWW(Address.editable(url)) : title }
-    var site: String { Address.withoutWWW(url.host() ?? Address.editable(url)) }
+    var site: String { Address.withoutWWW(url.hostCompat() ?? Address.editable(url)) }
 }
 
 @MainActor

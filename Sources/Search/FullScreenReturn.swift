@@ -73,7 +73,7 @@ enum FullScreenReturn {
         Browsers.all.contains { browser in
             window !== browser.window && browser.tabs.contains { tab in
                 guard let page = tab.built else { return false }
-                return page.window === window && page.fullscreenState == .inFullscreen
+                return page.window === window && page.fullscreenPhase == .inFullscreen
             }
         }
     }

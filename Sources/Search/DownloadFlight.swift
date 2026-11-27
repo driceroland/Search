@@ -178,16 +178,16 @@ struct DownloadFlightLayer: View {
         .allowsHitTesting(false)
         // The file in: the edge tab shows its check, then goes out the way
         // it came. A failure, or the column back out, takes it at once.
-        .onChange(of: fetches.done) { _, done in
+        .onChangeCompat(of: fetches.done) { _, done in
             guard done, browser.downloadsEdge else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + DownloadFlight.check) {
                 withAnimation(.timingCurve(0.4, 0, 1, 1, duration: 0.26)) { browser.downloadsEdge = false }
             }
         }
-        .onChange(of: fetches.showing) { _, showing in
+        .onChangeCompat(of: fetches.showing) { _, showing in
             if !showing, browser.downloadsEdge { browser.downloadsEdge = false }
         }
-        .onChange(of: browser.folded) { _, folded in
+        .onChangeCompat(of: browser.folded) { _, folded in
             if !folded, browser.downloadsEdge { browser.downloadsEdge = false }
         }
     }

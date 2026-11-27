@@ -6,6 +6,7 @@ import XCTest
 /// Many accounts for one site (#1215): the list under a sign-in box is no
 /// taller than the room under the box, or goes above it when there is more
 /// room there, and scrolls. Drawn off screen, in no window.
+@available(macOS 14, *)
 @MainActor
 final class AccountListRoomTests: XCTestCase {
     override class func setUp() {

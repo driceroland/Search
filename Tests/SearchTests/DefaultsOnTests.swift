@@ -5,6 +5,7 @@ import XCTest
 /// The switches on for everyone who never touched them (Drice, 25 Nov 2026):
 /// on with no line in the settings, off with a line saying off, and the
 /// reads outside Preferences agreeing.
+@available(macOS 14, *)
 @MainActor
 final class DefaultsOnTests: XCTestCase {
     override class func setUp() {

@@ -10,6 +10,7 @@ import XCTest
 /// the column away again, the page's edge splits as before. Hosted as
 /// SidebarSplitDragTests is, far off every screen, with the real Fold over
 /// a stand-in for the page that carries the stage's marker.
+@available(macOS 14, *)
 @MainActor
 final class FoldedColumnDragTests: XCTestCase {
     private var browsers: [Browser] = []
@@ -143,6 +144,7 @@ final class FoldedColumnDragTests: XCTestCase {
 
 /// The page the whole window wide, as with the column folded away, with the
 /// stage's marker for the tab on screen, and the real Fold over it.
+@available(macOS 14, *)
 private struct PageUnderFold: View {
     @ObservedObject var browser: Browser
 

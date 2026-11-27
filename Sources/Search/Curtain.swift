@@ -96,7 +96,7 @@ final class Curtain: ObservableObject {
     init() { load() }
 
     func host(of url: URL?) -> String? {
-        guard let host = url?.host()?.lowercased() else { return nil }
+        guard let host = url?.hostCompat()?.lowercased() else { return nil }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 

@@ -6,6 +6,7 @@ import XCTest
 /// with it, a choice already made is left alone, and Undo puts every key
 /// back, whichever of its three places (Settings, the welcome, after Arc's
 /// spaces came) it was pressed in.
+@available(macOS 14, *)
 @MainActor
 final class LikeArcTests: XCTestCase {
     override class func setUp() {

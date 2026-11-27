@@ -558,7 +558,7 @@ enum Chromium {
                     guard manifest["theme"] == nil else { return nil }
                     // From another store, Edge's say: not the Chrome Web Store's to give.
                     if let update = manifest["update_url"] as? String {
-                        let host = URL(string: update)?.host()?.lowercased() ?? ""
+                        let host = URL(string: update)?.hostCompat()?.lowercased() ?? ""
                         guard host == "google.com" || host.hasSuffix(".google.com") else { return nil }
                     }
                     return id

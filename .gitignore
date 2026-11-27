@@ -13,3 +13,4 @@ __pycache__/
 *.provisionprofile
 *.p12
 *.mobileprovision
+.build-devtools/

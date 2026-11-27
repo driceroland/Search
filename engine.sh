@@ -38,7 +38,7 @@ if [ -n "$(git -C "$SRC" status --porcelain)" ]; then
 fi
 
 COMMON=(
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DBUILD_SHARED_LIBS=OFF
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 -DBUILD_SHARED_LIBS=OFF
   -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DGGML_CCACHE=OFF -DGGML_CPU_KLEIDIAI=OFF
   -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_LLGUIDANCE=OFF -DLLAMA_BUILD_MTMD=OFF
   -DLLAMA_BUILD_APP=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF
@@ -68,7 +68,7 @@ build() {
          "$dir/vendor/hash/libvendor-hash.a")
 
   local exe="$OUT/search-ai-engine-$arch"
-  clang++ -std=c++17 -O2 -arch "$arch" -mmacosx-version-min=14.0 \
+  clang++ -std=c++17 -O2 -arch "$arch" -mmacosx-version-min=12.0 \
     -I"$SRC/include" -I"$SRC/ggml/include" -I"$SRC/vendor" \
     Engine/search-ai-engine.cpp -o "$exe" -Wl,-dead_strip \
     -Wl,-sectcreate,__TEXT,__info_plist,Engine/Info.plist \

@@ -241,6 +241,7 @@ final class Browser: NSObject, ObservableObject {
 
     /// This window's profile's (see Profiles.swift).
     let bookmarks: Bookmarks
+    private var bookmarksHeard: AnyCancellable?
     /// The full list, for taking things out, in a tab.
     var bookmarking: Bool {
         get { pageTab(.bookmarks) != nil }
@@ -2167,7 +2168,7 @@ final class Browser: NSObject, ObservableObject {
         for tab in tabs where !tab.shy {
             guard let web = tab.built, web.configuration.websiteDataStore.isPersistent,
                   visited.insert(ObjectIdentifier(web)).inserted,
-                  let url = web.url, let scheme = url.scheme, let host = url.host(),
+                  let url = web.url, let scheme = url.scheme, let host = url.hostCompat(),
                   Browser.origin(scheme, host, url.port ?? 0) == origin else { continue }
             if kind == .camera || kind == .cameraAndMicrophone {
                 web.setCameraCaptureState(.none) {}
@@ -3203,6 +3204,9 @@ final class Browser: NSObject, ObservableObject {
             : { let home = Profiles.shared.profile(profile).home
                 return loaded.contains { $0.id == home } ? home : loaded.first?.id ?? home }()
         super.init()
+        // The list is an ObservableObject (Bookmarks): what reads it through
+        // the browser hears it change with the browser.
+        bookmarksHeard = bookmarks.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         let first = !Browser.booted
         Browser.booted = true
         // The session files of a profile are its oldest window's: the first
@@ -4096,7 +4100,7 @@ final class Browser: NSObject, ObservableObject {
             // Arc's own on one site are two favourites, and stay two.
             for favourite in favourites where !had.contains(where: { Browser.samePin($0, favourite.url) })
                 && !defs.contains(where: { $0.home == favourite.url.absoluteString }) {
-                let host = favourite.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+                let host = favourite.url.hostCompat()?.replacingOccurrences(of: "www.", with: "") ?? ""
                 defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
                                    home: favourite.url.absoluteString, title: favourite.title, name: nil, titled: true))
                 pins += 1
@@ -4119,7 +4123,7 @@ final class Browser: NSObject, ObservableObject {
                 ?? (prefs.listsPins ? pinned.filter { $0.folder == nil }.map { ($0.item, nil) } : [])
             for page in rows where !had.contains(where: { Browser.samePin($0, page.item.url) })
                 && !defs.contains(where: { $0.home == page.item.url.absoluteString }) {
-                let host = page.item.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+                let host = page.item.url.hostCompat()?.replacingOccurrences(of: "www.", with: "") ?? ""
                 defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
                                    home: page.item.url.absoluteString, title: page.item.title,
                                    name: nil, listed: true, folder: page.folder, titled: true))
@@ -4162,7 +4166,7 @@ final class Browser: NSObject, ObservableObject {
             let had = shared
             for item in sidebar.everySpace where !had.contains(where: { Browser.samePin($0, item.url) })
                 && !shared.contains(where: { $0.home == item.url.absoluteString }) {
-                let host = item.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+                let host = item.url.hostCompat()?.replacingOccurrences(of: "www.", with: "") ?? ""
                 shared.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
                                      home: item.url.absoluteString, title: item.title, name: nil, titled: true))
                 pins += 1
@@ -4202,7 +4206,7 @@ final class Browser: NSObject, ObservableObject {
         let had = defs
         for page in all where page.pinned && !had.contains(where: { Browser.samePin($0, page.url) })
             && !defs.contains(where: { $0.home == page.url.absoluteString }) {
-            let host = page.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+            let host = page.url.hostCompat()?.replacingOccurrences(of: "www.", with: "") ?? ""
             defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
                                home: page.url.absoluteString, title: page.title, name: nil, titled: true))
             brought.append(page.url)
@@ -4309,14 +4313,14 @@ final class Browser: NSObject, ObservableObject {
     }
 
     private static func site(of url: URL) -> String? {
-        guard let host = url.host()?.lowercased(), !host.isEmpty else { return nil }
+        guard let host = url.hostCompat()?.lowercased(), !host.isEmpty else { return nil }
         let name = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         return url.port.map { "\(name):\($0)" } ?? name
     }
 
     /// The path, ending in a slash, so that /me is never taken for the start of /media.
     private static func folder(of url: URL) -> String {
-        let path = url.path().lowercased()
+        let path = url.pathCompat().lowercased()
         return path.hasSuffix("/") ? path : path + "/"
     }
 
@@ -7274,7 +7278,7 @@ final class Browser: NSObject, ObservableObject {
         panel.allowedContentTypes = [type]
         panel.canCreateDirectories = true
         let title = tab.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let stem = (title.isEmpty ? tab.pageAddress?.host() ?? "Page" : title)
+        let stem = (title.isEmpty ? tab.pageAddress?.hostCompat() ?? "Page" : title)
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         panel.nameFieldStringValue = stem.lowercased().hasSuffix(".\(ending)") ? stem : stem + ".\(ending)"
@@ -7657,12 +7661,12 @@ final class Browser: NSObject, ObservableObject {
     /// The video playing in `tab` into picture in picture (NativePiP).
     /// `toggle`: ⇧⌘P, which also brings one back.
     private func picture(_ tab: Tab?, quietly: Bool, toggle: Bool = false, otherwise: Tab? = nil, spaceRequest: UUID? = nil) {
-        guard let tab, !tab.isBlank, !tab.asleep, tab.web.fullscreenState == .notInFullscreen else {
+        guard let tab, !tab.isBlank, !tab.asleep, tab.web.fullscreenPhase == .notInFullscreen else {
             if let otherwise { picture(otherwise, quietly: quietly, toggle: toggle, spaceRequest: spaceRequest) }
             else if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             return
         }
-        if quietly, tab.pageAddress?.host().map(Grounded.holds) == true {
+        if quietly, tab.pageAddress?.hostCompat().map(Grounded.holds) == true {
             if let otherwise { picture(otherwise, quietly: quietly, toggle: toggle, spaceRequest: spaceRequest) }
             else if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             return
@@ -7743,7 +7747,7 @@ final class Browser: NSObject, ObservableObject {
         // Its page is lent to WebKit's full-screen window, and moving it out
         // into the floating one left that window up, empty and black, to
         // come back to.
-        guard tab.web.fullscreenState == .notInFullscreen else {
+        guard tab.web.fullscreenPhase == .notInFullscreen else {
             if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             return
         }
@@ -7756,7 +7760,7 @@ final class Browser: NSObject, ObservableObject {
         // And only with a video playing there, as the page says (see
         // MediaKeys.watch): leaving a paused one on YouTube took a picture
         // of the page and a look through it, 20 to 30 ms, for nothing.
-        if quietly, tab.pageAddress?.host().map(Grounded.holds) == true
+        if quietly, tab.pageAddress?.hostCompat().map(Grounded.holds) == true
             || !(tab.playingVideo || tab.noisy) {
             if let otherwise { lift(otherwise, quietly: quietly, spaceRequest: spaceRequest) }
             else if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
@@ -9264,7 +9268,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
     private func handOff(_ url: URL, scheme: String, action: WKNavigationAction, from webView: WKWebView) {
         let clicked = action.navigationType == .linkActivated
         let source: WKFrameInfo? = action.sourceFrame
-        let top = webView.url?.host()?.lowercased() ?? ""
+        let top = webView.url?.hostCompat()?.lowercased() ?? ""
         let asker = source?.securityOrigin.host.lowercased() ?? ""
         let ownSite = source?.isMainFrame == true
             || (!top.isEmpty && !asker.isEmpty && Vault.registrable(asker) == Vault.registrable(top))
@@ -9295,7 +9299,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
                 ask(from: webView, show: {
                     let alert = NSAlert()
                     alert.messageText = "Write an email in \u{201C}\(name)\u{201D}?"
-                    alert.informativeText = "\(webView.url?.host() ?? "This page") wants to start an email."
+                    alert.informativeText = "\(webView.url?.hostCompat() ?? "This page") wants to start an email."
                     alert.addButton(withTitle: "Write")
                     alert.addButton(withTitle: "Cancel")
                     Dialogs.show(alert, over: webView) { [weak self, weak source] answer in
@@ -9326,7 +9330,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         ask(from: webView, show: {
             let alert = NSAlert()
             alert.messageText = "Open \u{201C}\(name)\u{201D}?"
-            alert.informativeText = "\(webView.url?.host() ?? "This page") wants to open \(name)."
+            alert.informativeText = "\(webView.url?.hostCompat() ?? "This page") wants to open \(name)."
             alert.addButton(withTitle: "Open")
             alert.addButton(withTitle: "Cancel")
             Dialogs.show(alert, over: webView) { answer in
@@ -9859,7 +9863,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             host = Browser.extensionName(asker.host)
             site = "\(asker.protocol.lowercased())://\(asker.host.lowercased())"
         } else {
-            host = origin.host.isEmpty ? (tab(for: webView)?.address?.host() ?? "This page") : origin.host
+            host = origin.host.isEmpty ? (tab(for: webView)?.address?.hostCompat() ?? "This page") : origin.host
             site = origin.host.isEmpty ? host : "\(origin.protocol)://\(origin.host)" + (origin.port == 0 ? "" : ":\(origin.port)")
         }
         let key = "\(site)|\(type.rawValue)"
@@ -9960,7 +9964,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         displayTab = tab
         decideDisplay = decisionHandler
         let asker = frame.securityOrigin
-        let host = origin.host.isEmpty ? (tab.address?.host() ?? "This page") : origin.host
+        let host = origin.host.isEmpty ? (tab.address?.hostCompat() ?? "This page") : origin.host
         let named = Browser.extensionScheme(asker.protocol) ? Browser.extensionName(asker.host) : host
         // Recheck ownership when a background tab's question is shown.
         displayHeld = ask(from: webView, show: { [weak self, weak webView] in
@@ -10014,7 +10018,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         let site = Browser.origin(origin.protocol, origin.host, origin.port)
         let asker = frame.securityOrigin
         guard let tab = tab(for: webView), tab.id == activeID, !origin.host.isEmpty,
-              let page = webView.url, let scheme = page.scheme, let host = page.host(),
+              let page = webView.url, let scheme = page.scheme, let host = page.hostCompat(),
               site == Browser.origin(scheme, host, page.port ?? 0),
               Browser.origin(asker.protocol, asker.host, asker.port) == site
         else { return give(.deny) }
@@ -10042,7 +10046,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         let site = Browser.origin(origin.protocol, origin.host, origin.port)
         guard prefs.siteNotifications, let tab = tab(for: webView), !tab.shy, webView.configuration.websiteDataStore.isPersistent,
               !origin.host.isEmpty,
-              let page = webView.url, let scheme = page.scheme, let host = page.host(),
+              let page = webView.url, let scheme = page.scheme, let host = page.hostCompat(),
               Browser.origin(scheme, host, page.port ?? 0) == site
         else { return decisionHandler(false) }
         if let remembered = SiteNotifications.choices[site] { return decisionHandler(remembered) }
@@ -10090,7 +10094,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
                   // Still the site that asked: a question held for a tab
                   // behind is asked when you go to it, and the tab may have
                   // gone elsewhere meanwhile.
-                  let host = webView.url?.host()?.lowercased(),
+                  let host = webView.url?.hostCompat()?.lowercased(),
                   host == current.lowercased() || host.hasSuffix("." + current.lowercased())
             else { return completionHandler(false) }
             decide = { completionHandler($0 == .grant) }
@@ -10295,7 +10299,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // finish it next time: otherwise only the site it went to was ever
         // in History, and "tw" never became twitter.com again.
         if let typed, Date().timeIntervalSince(typed.at) < 30,
-           History.stripped(typed.url.host() ?? "") != History.stripped(url.host() ?? "") {
+           History.stripped(typed.url.hostCompat() ?? "") != History.stripped(url.hostCompat() ?? "") {
             history(of: tab).record(typed.url, title: tab.title)
         }
         // A site's home page that says where its search is (OpenSearch):
@@ -10612,7 +10616,7 @@ extension Browser: WKDownloadDelegate {
     }
 
     private func saved(_ file: URL, from source: URL?, keepsAddress: Bool = true) {
-        loot.add(Keep(name: file.lastPathComponent, from: source?.host() ?? "", path: file.path, date: Date(),
+        loot.add(Keep(name: file.lastPathComponent, from: source?.hostCompat() ?? "", path: file.path, date: Date(),
                       address: keepsAddress ? Keep.address(of: source) : nil))
         announce("Saved \(file.lastPathComponent)", file: file)
     }
@@ -10760,7 +10764,7 @@ final class PrintSheet: NSObject {
 
     private static func site(of tab: Tab) -> String? {
         guard let page = tab.committed else { return nil }
-        return "\(page.scheme ?? "")://\(page.host() ?? ""):\(page.port.map(String.init) ?? "")"
+        return "\(page.scheme ?? "")://\(page.hostCompat() ?? ""):\(page.port.map(String.init) ?? "")"
     }
 
     /// Whether this tab's site may bring the sheet up again.

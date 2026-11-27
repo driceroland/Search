@@ -5,6 +5,7 @@ import XCTest
 /// spaces, its pins every space shows, its history — and what an older
 /// Search finds there. WebKit stores are left to Tests/profiles.py, which
 /// runs a hidden probe: made here they would land in xctest's own container.
+@available(macOS 14, *)
 @MainActor
 final class ProfilesTests: XCTestCase {
     override class func setUp() {

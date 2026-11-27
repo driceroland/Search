@@ -53,9 +53,10 @@ struct AtRestLine: View {
                     .lineLimit(1)
                     .truncationMode(.head)
             }
+            // Text's own fontWeight (macOS 10.15), before the View modifiers.
             Text(rest.name)
-                .foregroundStyle(ink)
                 .fontWeight(rest.kind == .file || rest.kind == .other ? .regular : .medium)
+                .foregroundStyle(ink)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .modifier(RecordsTitle(key: record.map { "\($0.uuidString.prefix(8).lowercased())/rest" },
@@ -129,7 +130,7 @@ struct RecordsTitle: ViewModifier {
 
     func body(content: Content) -> some View {
         if records, let key {
-            content.onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width in
+            content.onGeometryChangeCompat(for: CGFloat.self, of: { $0.size.width }) { width in
                 var drawn = title
                 drawn.width = width
                 TabBar.drawnTitles[key] = drawn

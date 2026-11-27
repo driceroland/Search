@@ -4,6 +4,7 @@ import XCTest
 
 /// ⇧⌘B (Add This Page) files a new bookmark in the folder picked last on
 /// its card, per profile, instead of the top level every time.
+@available(macOS 14, *)
 @MainActor
 final class BookmarkFolderMemoryTests: XCTestCase {
     override class func setUp() {

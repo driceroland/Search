@@ -8,6 +8,7 @@ import XCTest
 /// and takes the folded column's opaque ground only once it has gone: it
 /// snapped to a flat colour mid-slide, and the white page showed through it
 /// while the page was waited for.
+@available(macOS 14, *)
 @MainActor
 final class FoldGlassTests: XCTestCase {
     private var browser: Browser?

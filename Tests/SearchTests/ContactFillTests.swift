@@ -9,6 +9,7 @@ import XCTest
 /// and as what, what a pick puts where, and the rows a card makes.
 /// Forms.script in Search's own world, as a tab runs it; no window, no
 /// network, and a made-up card, never the Mac's own.
+@available(macOS 14, *)
 @MainActor
 final class ContactFillTests: XCTestCase {
     private var holding: [NSObject] = []

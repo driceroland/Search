@@ -1,6 +1,7 @@
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 final class DownloadFlightTests: XCTestCase {
     private let click = CGPoint(x: 600, y: 300)
     /// The downloads button at the column's foot.

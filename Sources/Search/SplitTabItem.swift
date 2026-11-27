@@ -276,16 +276,16 @@ private struct SplitTabHalf: View {
 
     /// The grey's shape: round, but square on the side it shares with the
     /// other half while that one is lit too.
-    private var shape: UnevenRoundedRectangle {
+    private var shape: UnevenRect {
         let round: CGFloat = 9
         // Square where it meets a lit neighbour; round at the ends and
         // beside one that isn't.
         let before: CGFloat = !first && joinedBefore ? 0 : round
         let after: CGFloat = !last && joinedAfter ? 0 : round
-        let radii: RectangleCornerRadii = stacked
+        let radii: CornerRadii = stacked
             ? .init(topLeading: before, bottomLeading: after, bottomTrailing: after, topTrailing: before)
             : .init(topLeading: before, bottomLeading: before, bottomTrailing: after, topTrailing: after)
-        return UnevenRoundedRectangle(cornerRadii: radii, style: .continuous)
+        return UnevenRect(cornerRadii: radii, style: .continuous)
     }
 
     @ViewBuilder

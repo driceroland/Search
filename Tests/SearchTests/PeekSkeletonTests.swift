@@ -3,6 +3,7 @@ import SwiftUI
 import XCTest
 @testable import Search
 
+@available(macOS 14, *)
 @MainActor
 final class PeekSkeletonTests: XCTestCase {
     private final class Host: NSHostingView<PeekSkeleton> {

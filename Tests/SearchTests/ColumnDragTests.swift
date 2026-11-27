@@ -8,6 +8,7 @@ import XCTest
 /// follows the pointer, and the setting is written once, when it is let go.
 /// Written on every step, each one was a write to the settings and a change
 /// heard by every window and everything in it.
+@available(macOS 14, *)
 @MainActor
 final class ColumnDragTests: XCTestCase {
     private var browsers: [Browser] = []

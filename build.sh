@@ -97,7 +97,10 @@ VERSION="$(tr -d '[:space:]' < VERSION)"
 BUILD="$(date +%Y%m%d%H%M)"
 # The oldest macOS this runs on — in the plist, and in the appcast so an
 # older Mac is not handed a build it can't open.
-MINIMUM="14.0"
+MINIMUM="12.0"
+# The developer tools packages still need macOS 14 (Package.swift only has
+# them with SEARCH_DEVTOOLS=1). The app does not offer them on an older Mac.
+DEVTOOLS_MINIMUM="14.0"
 
 # -Osize for a release: 14% less binary (5.39 → 4.65 MB) at the same speed —
 # launch 337 against 338 ms, a scroll frame 0.26 against 0.25 ms, a key typed
@@ -123,8 +126,10 @@ build_devtools() {
   PVERSION="$(plutil -extract version raw -o - "$META")"
   API="$(plutil -extract api raw -o - "$META")"
   IDENT="com.officecommun.search.devtools.$ID"
-  swift build "${SWIFTFLAGS[@]}" --product "$PRODUCT"
-  LIB="$(swift build "${SWIFTFLAGS[@]}" --show-bin-path)/lib$PRODUCT.dylib"
+  # Their own build folder: with SEARCH_DEVTOOLS=1 the package is a
+  # different one (macOS 14, the packages in it), never mixed with the app's.
+  SEARCH_DEVTOOLS=1 swift build "${SWIFTFLAGS[@]}" --build-path .build-devtools --product "$PRODUCT"
+  LIB="$(SEARCH_DEVTOOLS=1 swift build "${SWIFTFLAGS[@]}" --build-path .build-devtools --show-bin-path)/lib$PRODUCT.dylib"
   [ "$(lipo -archs "$LIB")" = "$ARCH" ] || { echo "$LIB is not a $ARCH library" >&2; exit 1; }
   DEST="$OUT/devtools"
   BUNDLE="$DEST/$PRODUCT.bundle"
@@ -147,7 +152,7 @@ build_devtools() {
   <key>CFBundlePackageType</key><string>BNDL</string>
   <key>CFBundleShortVersionString</key><string>$(plutil -extract display raw -o - "$META")</string>
   <key>CFBundleVersion</key><string>$PVERSION</string>
-  <key>LSMinimumSystemVersion</key><string>$MINIMUM</string>
+  <key>LSMinimumSystemVersion</key><string>$DEVTOOLS_MINIMUM</string>
   <key>NSPrincipalClass</key><string>$(plutil -extract principal raw -o - "$META" 2>/dev/null || echo SearchDevToolsLite)</string>
   <key>SearchDevToolsAPI</key><integer>$API</integer>
 </dict>
@@ -176,6 +181,8 @@ PLIST
   cp "$META" "$DEST/$PRODUCT.entry.json"
   plutil -remove principal "$DEST/$PRODUCT.entry.json" 2>/dev/null || true
   plutil -insert file -string "$(basename "$ZIP")" "$DEST/$PRODUCT.entry.json"
+  plutil -insert minimumSystemVersion -string "$DEVTOOLS_MINIMUM" "$DEST/$PRODUCT.entry.json" 2>/dev/null \
+    || plutil -replace minimumSystemVersion -string "$DEVTOOLS_MINIMUM" "$DEST/$PRODUCT.entry.json"
   plutil -insert sha256 -string "$(shasum -a 256 "$ZIP" | cut -d' ' -f1)" "$DEST/$PRODUCT.entry.json"
   plutil -insert size -integer "$(stat -f%z "$ZIP")" "$DEST/$PRODUCT.entry.json"
   plutil -insert binary -string "$(shasum -a 256 "$BUNDLE/Contents/MacOS/$PRODUCT" | cut -d' ' -f1)" "$DEST/$PRODUCT.entry.json"

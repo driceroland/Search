@@ -7,6 +7,7 @@ import XCTest
 /// goes up. CloudKit itself never runs here: the engine is a stand-in that
 /// keeps what would be sent and hands over what iCloud "has", and this Mac
 /// is a stand-in too.
+@available(macOS 14, *)
 @MainActor
 final class ICloudSyncTests: XCTestCase {
     override class func setUp() {
