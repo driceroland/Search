@@ -415,6 +415,13 @@ enum DiaTabs {
         // 80 bytes reserved, the payload fractions 64, 32, 32.
         guard out.count >= 100, out[16] == 0x10, out[17] == 0, out[20] == UInt8(reserve),
               out[21] == 64, out[22] == 32, out[23] == 32 else { return nil }
+        // Dia keeps its database in WAL mode (bytes 18 and 19 are 2), and
+        // the copy, its log merged in above, is opened read-only with no log
+        // or shared memory beside it: SQLite then refuses every query
+        // ("unable to open database file") and Dia's spaces seemed to need
+        // the key again (#1715). The copy is a whole database: say so.
+        out[18] = 1
+        out[19] = 1
         return out
     }
 
