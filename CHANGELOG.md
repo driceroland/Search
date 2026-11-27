@@ -146,6 +146,10 @@ Not in this version, kept on main for a later one:
 - Find a setting takes the keys as Settings opens, as System Settings' search does, so a setting's name can be typed at once, where it waited for ⌘F. Escape empties it, and empty, lets go, for Tab and the arrows to move around Settings as before. (#1611, idea 1218) Thanks [@jolly-0806](https://github.com/jolly-0806) ([#1618](https://github.com/driceroland/Search/pull/1618))
 - With Show the bookmarks bar only on new tabs and the tabs down a side, a new tab keeps the bar above it when the column is folded away (⌘S) or hidden until the pointer reaches the edge, where it went with the tabs and left the bookmarks out of reach; opening a page takes it away as before, and the bar leaves room for the hidden column's edge. `python3 Tests/bookmarks_bar_new_tab.py` ([#1625](https://github.com/driceroland/Search/issues/1625)) Thanks [@kudala-bharani](https://github.com/kudala-bharani) ([#1626](https://github.com/driceroland/Search/pull/1626))
 
+### Fixed
+
+- Paste with ⌘V works in Settings' text fields again: the Edit menu's Paste found nothing to send the paste to there and stayed dimmed, so ⌘V did nothing. It now goes to the field you're typing in; ⇧⌘V and ⌥⇧⌘V are as before. `swift test --filter ShortcutTests`
+
 ## 1.0.21 — 25 November 2026
 
 ### Added
