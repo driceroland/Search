@@ -91,7 +91,10 @@ struct SideBar: View {
     private var width: CGFloat { live ?? prefs.columnWidth }
     private static let gap: CGFloat = 2
     private static let groupInset: CGFloat = 4
-    private static let square: CGFloat = 34
+    /// A pinned square at its tallest: the classic 34, or, with Roomier
+    /// tabs, as much taller as the rows are (36 for 28), so its icon grows
+    /// with it (PinSquare draws everything off its shorter edge).
+    static func square(roomy: Bool) -> CGFloat { roomy ? 44 : 34 }
     private static let pinGap: CGFloat = 4
 
     private var onRight: Bool { prefs.sidePosition == .right }
@@ -1144,12 +1147,13 @@ struct SideBar: View {
     private func pinCells(_ count: Int) -> [CGRect] {
         let room = width - 20
         let gap = SideBar.pinGap
-        let fits = Int((room + gap) / (SideBar.square + gap))
+        let square = SideBar.square(roomy: prefs.roomyTabs)
+        let fits = Int((room + gap) / (square + gap))
         let rows = SideBar.pinRows(count, most: min(4, max(1, fits)))
         // A row of fewer than three keeps three places.
         let slots = rows.map { rows.count == 1 ? max($0, min(3, fits)) : $0 }
         let widths = slots.map { max(20, (room - CGFloat($0 - 1) * gap) / CGFloat($0)) }
-        let height = min(SideBar.square, widths.min() ?? SideBar.square)
+        let height = min(square, widths.min() ?? square)
         var cells: [CGRect] = []
         for (row, n) in rows.enumerated() {
             for col in 0..<n {
@@ -2417,10 +2421,12 @@ private struct SideRow: View, Equatable {
     private var closable: Bool { tab.pin == nil || !tab.asleep }
     /// A grouped tab holding no page — put away with its minus (Browser.putAway),
     /// put to sleep, or not opened since launch: the row stays, dimmed as a
-    /// pin put down is, so the minus is seen to have done something.
+    /// pin put down is, so the minus is seen to have done something. Lit
+    /// under the pointer as any other sleeping row, and as its pill across
+    /// the top is (TabPill.dim, idea 950).
     /// Read from the tab here, not when the column made the row: the column
     /// isn't drawn again when one of its tabs lets its page go.
-    private var putAway: Bool { grouped && tab.asleep && !live }
+    private var putAway: Bool { grouped && tab.asleep && !live && !hovering }
     /// Any other tab asleep, with Settings › Tabs › Dim sleeping tabs on:
     /// faded until the pointer is on it.
     private var dim: Bool { prefs.dimsSleepingTabs && tab.asleep && !live && !hovering && !putAway }
@@ -2469,7 +2475,7 @@ private struct SideRow: View, Equatable {
                     // The page is translated (Translate.swift).
                     TranslateSign(tab: tab, colour: colour)
                     TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
-                                size: prefs.sideTitle, colour: colour, roomy: true, dim: dim)
+                                size: prefs.sideTitle, colour: ink, roomy: true, dim: putAway || dim)
                 }
             }
             // Pushed to the leading edge by its frame, not a Spacer: the
@@ -2637,13 +2643,15 @@ private struct SideRow: View, Equatable {
         }
     }
 
-    private var colour: Color {
-        if live || prefs.highContrastText {
-            return putAway ? Palette.ink.opacity(0.45) : Palette.ink
-        }
-        let colour = hovering ? Palette.ink.opacity(0.7) : greys.muted
-        return putAway ? colour.opacity(0.45) : colour
+    /// The row's ink, before a put-away row's dim. The title takes that dim
+    /// as a fade of its own (TitleAtRest.dim), as a sleeping title does,
+    /// since the ink changes at once under the pointer.
+    private var ink: Color {
+        if live || prefs.highContrastText { return Palette.ink }
+        return hovering ? Palette.ink.opacity(0.7) : greys.muted
     }
+
+    private var colour: Color { putAway ? ink.opacity(0.45) : ink }
 }
 
 /// A row that is an action rather than a page. Quiet until the pointer is on it.
