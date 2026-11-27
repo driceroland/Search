@@ -855,7 +855,9 @@ final class Preferences: ObservableObject {
         }
     }
     /// Pages draw at 120 frames a second on a screen that can (see FrameRate.swift).
-    /// On power unless chosen otherwise.
+    /// Never unless chosen otherwise, as in Safari. (On power was the default
+    /// from 24 Oct 2026; busy pages such as YouTube's home stuttered on it,
+    /// #1205, #1685.)
     @Published var fastPages: FastPages {
         didSet {
             store.set(fastPages.rawValue, forKey: "pages.120.mode")
@@ -1661,11 +1663,12 @@ final class Preferences: ObservableObject {
         bounces = bouncing
         Swipe.bounces = bouncing
         // "pages.120" was a switch before it was three choices: on is now
-        // always, an explicit off never. Never touched: On power (24 Oct
-        // 2026), which changes nothing on battery.
+        // always, an explicit off never. Never touched: Never. It was On
+        // power from 24 Oct 2026, but that turns off WebKit's near-60 hold
+        // and busy pages stuttered (#1205, #1685); a choice made stands.
         let fast = store.string(forKey: "pages.120.mode").flatMap(FastPages.init)
             ?? (store.object(forKey: "pages.120") as? Bool).map { $0 ? FastPages.always : .never }
-            ?? .onPower
+            ?? .never
         fastPages = fast
         FrameRate.mode = fast
         // On for everyone who never touched it (Drice, 25 Nov 2026).
