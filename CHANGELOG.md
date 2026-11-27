@@ -23,6 +23,11 @@ in [ROADMAP.md](ROADMAP.md).
 
 - Roomier tabs (Settings › Appearance › Tabs) makes the pinned squares in the column bigger too, with their icons, as much taller as the rows are (44 points for 34). (idea 1383)
 
+### Changed
+
+- Roomier tabs (Settings › Appearance › Tabs) makes the pinned squares in the column bigger too, with their icons, as much taller as the rows are (44 points for 34). (idea 1383)
+- Settings says where Always show the address bar puts the address: at the top of the sidebar, or before the tabs across the top. Find a setting finds it as "url bar", "url field" or "address field". (idea 1382)
+
 ### Held back
 
 Not in this version, kept on main for a later one:
