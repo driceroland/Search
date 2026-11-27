@@ -98,8 +98,32 @@ QUIET_MS = 45000
 FAVICONS = False
 
 
+# A page to write in, as Grammarly checks: a long text with mistakes in a
+# focused text area, its last sentence rewritten every few seconds (the
+# text stays the same length: a page whose text grows grows by itself).
+WRITE = """<!doctype html><title>write</title>
+<textarea id=t style="width:90%;height:60vh" spellcheck=true>{text}</textarea>
+<div contenteditable=true id=c style="border:1px solid #888;min-height:200px">{text}</div>
+<script>
+const t = document.getElementById('t'), c = document.getElementById('c');
+t.focus(); let i = 0; const base = t.value;
+setInterval(() => {{ i++; t.value = base + ' their is ' + i + ' mistake here';
+  if (i % 3 === 0) {{ c.focus(); if (c.lastChild && c.childNodes.length > 1) c.lastChild.remove(); c.append(' an other sentense ' + i); t.focus(); }} }}, 3000);
+</script>"""
+TEXT = ("Me and him goes to the store yesterday, and we buyed alot of things wich we dont need. "
+        "Their are many reasons why this happen, but irregardless of them, it's effect on us were large. ") * 30
+
+
 class Pages(sv.H):
     def do_GET(self):
+        if self.path.startswith("/write"):
+            body = WRITE.format(text=TEXT).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith("/quiet"):
             n = "".join(c for c in self.path.split("?")[0] if c.isdigit()) or "0"
             body = QUIET.format(n=n, every=QUIET_MS).encode()
@@ -217,6 +241,7 @@ def main():
     ap.add_argument("--mallocstack", action="store_true")
     ap.add_argument("--world", default="mem-soak")
     ap.add_argument("--host", choices=sorted(HOSTS), help="a stand-in for Bitwarden's desktop app's native host")
+    ap.add_argument("--url", action="append", default=[], help="another page to keep open (\"write\": a local page to write in)")
     ap.add_argument("--favicons", action="store_true", help="the busy pages also redraw their favicon every 2 s")
     ap.add_argument("--quiet", type=float, help="quiet pages instead: a title change every QUIET seconds")
     ap.add_argument("--app", help="another build (a copy kept for before/after)")
@@ -254,6 +279,8 @@ def main():
                 print(json.dumps(sv.cmd({"do": "extensions"})), file=sys.stderr)
         for n in range(a.tabs):
             sv.cmd({"do": "open", "url": f"{sv.BASE}/{'quiet' if a.quiet else 'churn'}{n}"})
+        for url in a.url:
+            sv.cmd({"do": "open", "url": f"{sv.BASE}/write" if url == "write" else url})
         if a.sites:
             for url in ("https://accounts.google.com/", "https://www.messenger.com/", "https://github.com/login"):
                 sv.cmd({"do": "open", "url": url})
