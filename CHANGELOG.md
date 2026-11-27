@@ -13,6 +13,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- Closing a tab while its video is full screen no longer leaves its picture behind every new tab until Search is quit.
 - A Chrome theme from the Chrome Web Store is no longer installed only to change nothing: Search says themes aren't supported and where its own colours are (a space's menu › Colour…, Settings › Themes). What's New no longer offers Icons only on the bookmarks bar while the bookmarks are in the sidebar, where it doesn't apply. (idea 1326)
 - On a new tab with a picture behind it (Settings › Themes), the sites under the address field (the Home folder's grid, and the site chips) have a backing of their own, so their names read on any picture: on a light one with the Mac in dark mode they were all but gone. (idea 881)
 - On a glass window (Settings › Appearance › Window › Glass), hiding the column with ⌘S no longer flashes the page white through it and then snaps it to a flat, opaque colour halfway: the column keeps its glass and the space's colour until it has gone, sliding, fading, or in one step under Reduce animations. (idea 1317)

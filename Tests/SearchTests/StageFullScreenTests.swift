@@ -26,6 +26,8 @@ private final class TestWindow: NSWindow {
 final class StageFullScreenTests: XCTestCase {
     private var ended = 0
     private var chromeBack = 0
+    /// The pages of this test's tabs, as Browsers.all's are to the app.
+    private var tabs: [LentPage] = []
 
     override class func setUp() {
         TestWorld.enter()
@@ -33,7 +35,14 @@ final class StageFullScreenTests: XCTestCase {
     }
 
     private func page() -> LentPage {
-        LentPage(frame: .zero, configuration: WKWebViewConfiguration())
+        let page = LentPage(frame: .zero, configuration: WKWebViewConfiguration())
+        tabs.append(page)
+        return page
+    }
+
+    /// A tab closed: its page is no tab's any more.
+    private func close(_ page: LentPage) {
+        tabs.removeAll { $0 === page }
     }
 
     private func stage() -> (StageView, TestWindow) {
@@ -41,6 +50,9 @@ final class StageFullScreenTests: XCTestCase {
         let stage = StageView(frame: CGRect(x: 0, y: 0, width: 1000, height: 500))
         stage.endFullScreen = { [weak self] _ in self?.ended += 1 }
         stage.chromeBack = { [weak self] _ in self?.chromeBack += 1 }
+        stage.anyPageAway = { [weak self] in
+            self?.tabs.contains { $0.fullscreenState != .notInFullscreen } ?? false
+        }
         let window = TestWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 1000, height: 500),
                                 styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -288,5 +300,79 @@ final class StageFullScreenTests: XCTestCase {
         XCTAssertEqual(ended, 0)
         XCTAssertEqual(chromeBack, 0)
         XCTAssertTrue(video.superview === stage)
+    }
+
+    /// The tab whose video is full screen closed from the tab bar while
+    /// another is shown: its placeholder stood for nothing any more, and
+    /// stayed under every blank tab until Search was quit.
+    func testAVideosPlaceholderGoesWithItsTab() {
+        let (stage, host) = stage()
+        defer { host.close() }
+        let (video, placeholder, _) = fullScreen(on: stage)
+        stage.show(page())
+        stage.layoutSubtreeIfNeeded()
+        XCTAssertTrue(placeholder.superview === stage)
+
+        // Torn down as Tab.tearDown does, WebKit never finishing its way out.
+        close(video)
+        video.removeFromSuperview()
+        stage.show(nil)
+        stage.layoutSubtreeIfNeeded()
+        XCTAssertNil(placeholder.superview, "a closed tab's placeholder stayed under the blank tab")
+        XCTAssertTrue(stage.subviews.isEmpty)
+    }
+
+    /// Home behind another tab, under its placeholder, before WebKit has
+    /// painted it and taken the placeholder away: the page stays in the
+    /// window, unseen and out of reach, until then, and then goes.
+    func testAVideoHomeBehindAnotherTabWaitsForWebKit() {
+        let (stage, host) = stage()
+        defer { host.close() }
+        let (video, placeholder, _) = fullScreen(on: stage)
+        let other = page()
+        stage.show(other)
+        stage.layoutSubtreeIfNeeded()
+
+        video.lent = .exitingFullscreen
+        video.removeFromSuperview()
+        video.frame = placeholder.frame
+        stage.addSubview(video, positioned: .below, relativeTo: placeholder)
+        video.lent = .notInFullscreen
+        // As the tab's own watch does, home from full screen (Tab.build).
+        stage.needsLayout = true
+        stage.layoutSubtreeIfNeeded()
+        XCTAssertTrue(video.superview === stage, "taken out of the window before it could paint")
+        XCTAssertEqual(video.alphaValue, 0, "seen over the tab in front")
+        XCTAssertTrue(placeholder.superview === stage)
+        XCTAssertFalse(stage.hitTest(NSPoint(x: 10, y: 10)).map { $0 === video || $0.isDescendant(of: video) } ?? false)
+
+        placeholder.removeFromSuperview()
+        turn()
+        stage.layoutSubtreeIfNeeded()
+        XCTAssertNil(video.superview, "kept after WebKit was done with it")
+        XCTAssertTrue(other.superview === stage)
+    }
+
+    /// WebKit never done with it: page and placeholder go all the same.
+    func testAVideoHomeThatWebKitNeverFinishesGoesAfterAMoment() {
+        let (stage, host) = stage()
+        defer { host.close() }
+        let (video, placeholder, _) = fullScreen(on: stage)
+        stage.show(page())
+        stage.layoutSubtreeIfNeeded()
+
+        video.lent = .exitingFullscreen
+        video.removeFromSuperview()
+        stage.addSubview(video, positioned: .below, relativeTo: placeholder)
+        video.lent = .notInFullscreen
+        // As the tab's own watch does, home from full screen (Tab.build).
+        stage.needsLayout = true
+        stage.layoutSubtreeIfNeeded()
+        XCTAssertTrue(video.superview === stage)
+
+        RunLoop.main.run(until: Date().addingTimeInterval(2.2))
+        stage.layoutSubtreeIfNeeded()
+        XCTAssertNil(video.superview)
+        XCTAssertNil(placeholder.superview, "left under the tab in front for good")
     }
 }
