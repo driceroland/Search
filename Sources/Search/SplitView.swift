@@ -9,6 +9,9 @@ struct SplitStage: View {
     @ObservedObject var browser: Browser
     /// Each page's corners, as a card (see CardEdge).
     var corner: CGFloat = 0
+    /// Their top two square, under the rows above the page inside the card
+    /// (Toolbar).
+    var squareTop = false
     /// The page lent to WebKit's full screen window, as the window has it:
     /// told with the rest of the chrome, in the same pass (see
     /// ContentView.immersing), never on the stage's own.
@@ -54,6 +57,7 @@ struct SplitStage: View {
             accounts: browser.suggesting.map { (browser, $0) },
             pairing: browser.applePairing.map { (browser, $0) },
             corner: corner,
+            squareTop: squareTop,
             immersed: immersed
         )
         .overlay(alignment: .topLeading) {
@@ -61,7 +65,7 @@ struct SplitStage: View {
                 ForEach(shown) { tab in
                     if let frame = frames[tab.id] {
                         PaneLayers(browser: browser, tab: tab, paired: shown.count > 1, width: frame.width,
-                                   hovered: hovered == tab.id, corner: corner)
+                                   hovered: hovered == tab.id, corner: corner, squareTop: squareTop)
                             .frame(width: frame.width, height: frame.height)
                             .offset(x: frame.minX, y: frame.minY)
                     }
@@ -171,6 +175,7 @@ private struct PaneLayers: View {
     var hovered = false
     /// The page's corners, for Search's own pages drawn here (see InternalPages.swift).
     var corner: CGFloat = 0
+    var squareTop = false
 
     private var focused: Bool { browser.activeID == tab.id }
 
@@ -199,7 +204,7 @@ private struct PaneLayers: View {
             // The page's own layers — its cover, the floating video's line,
             // its trouble, the history disc — without the page, which is
             // the stage's.
-            Page(tab: tab, holdsPage: false, corner: corner, browser: browser)
+            Page(tab: tab, holdsPage: false, corner: corner, squareTop: squareTop, browser: browser)
 
             if focused {
                 if tab.isBlank { HomeGrid(browser: browser) }
