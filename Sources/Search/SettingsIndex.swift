@@ -228,8 +228,8 @@ enum SettingsIndex {
               keys: ["tabs.compact"], words: ["compact", "slim", "thin", "height", "padding", "tab bar", "toolbar"],
               parent: "tabs.layout"),
         .init(id: "address.shown", group: "window", icon: "link",
-              title: "Always show the address bar", detail: "The page's full address, to type in",
-              keys: ["address.shown"], words: ["address bar", "url", "location", "url bar", "omnibox", "full address"]),
+              title: "Always show the address bar", detail: "The page's full address, to type in, at the top of the sidebar or before the tabs",
+              keys: ["address.shown"], words: ["address bar", "url", "location", "url bar", "omnibox", "full address", "url field", "address field", "sidebar"]),
         .init(id: "address.width", group: "window", icon: "arrow.left.and.right",
               title: "Address width", detail: "Before the tabs across the top",
               keys: ["address.width"], words: ["address bar", "url", "width", "wide"], parent: "address.shown"),
@@ -255,7 +255,7 @@ enum SettingsIndex {
               more: "It bends the tabs it passes over. Pinned tabs and split pages keep their grey. Under Reduce Motion it goes straight to the tab you pick.",
               keys: ["tabs.liquid"], words: ["liquid glass", "liquid", "glass", "active tab", "selected tab", "animation", "wobble"]),
         .init(id: "sidebar.roomy", group: "tablook", icon: "textformat.size.larger",
-              title: "Roomier tabs", detail: "Taller rows and larger titles in the column",
+              title: "Roomier tabs", detail: "Taller rows, larger titles and bigger pinned squares in the column",
               keys: ["sidebar.roomy"], words: ["bigger", "larger", "text size", "accessibility"], parent: "tabs.layout"),
         .init(id: "sidebar.doorsUp", group: "tablook", icon: "rectangle.topthird.inset.filled",
               title: "Buttons at the top", detail: "Bookmarks, extensions and downloads beside back, forward and reload, when they fit",
@@ -308,7 +308,7 @@ enum SettingsIndex {
               parent: "bookmarks.bar"),
         .init(id: "bookmarks.iconsOnly", group: "tablook", icon: "square.grid.2x2",
               title: "Show icons only on the bookmarks bar", detail: "Each bookmark as its site's icon, its name on hover",
-              more: "Folders keep their names. A bookmark you renamed to nothing already shows its icon alone.",
+              more: "Folders keep their names. With the bookmarks in the sidebar, they sit side by side there as tiles. A bookmark you renamed to nothing already shows its icon alone.",
               keys: ["bookmarks.iconsOnly"], words: ["favorites bar", "bookmarks toolbar", "favicons", "compact", "icon only", "names", "titles"],
               parent: "bookmarks.bar"),
         .init(id: "bookmarks.newTabOnly", group: "tablook", icon: "plus.square",
@@ -843,22 +843,53 @@ enum SettingsIndex {
     // MARK: - finding
 
     /// The rows whose words match what was typed, in the order of the
-    /// sections. Every word typed has to be found somewhere in the row.
+    /// sections. Every word typed has to be found somewhere in the row; a
+    /// single letter, at the start of one of its words (a lone "d" was in
+    /// 175 of the rows, every one of them drawn at the first key).
     static func find(_ typed: String) -> [SettingsItem] {
         let words = typed.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return [] }
-        let order = SettingsPanel.Page.allCases
-        return items
-            .filter { item in
-                let group = SettingsIndex.group(item.group)
-                let hay = ([item.title, item.detail, item.more ?? "", group?.title ?? "", item.page.title]
-                    + item.words + item.keys).joined(separator: " ").lowercased()
-                return words.allSatisfy { hay.contains($0) }
+        let bytes = words.map { Array($0.utf8) }
+        return sought
+            .filter { row in
+                zip(words, bytes).allSatisfy { word, bytes in
+                    word.count == 1 ? row.starts.contains(word.first!) : Self.holds(row.hay, bytes)
+                }
             }
-            .sorted { (order.firstIndex(of: $0.page) ?? 0, groupOrder($0.group)) < (order.firstIndex(of: $1.page) ?? 0, groupOrder($1.group)) }
+            .map(\.item)
     }
 
-    private static func groupOrder(_ id: String) -> Int { groups.firstIndex { $0.id == id } ?? 0 }
+    /// Whether the row's words hold the typed ones, byte for byte: both are
+    /// lowercased the same way, and String's own search, Unicode-aware,
+    /// cost a millisecond a key over the index.
+    private static func holds(_ hay: [UInt8], _ word: [UInt8]) -> Bool {
+        hay.withUnsafeBytes { hay in
+            word.withUnsafeBytes { word in
+                memmem(hay.baseAddress, hay.count, word.baseAddress, word.count) != nil
+            }
+        }
+    }
+
+    /// Each row's words, lowercased, and the letters its words start with,
+    /// worked out once and in the order of the sections, rather than again
+    /// for every row at every key typed (idea 1333).
+    private static let sought: [(item: SettingsItem, hay: [UInt8], starts: Set<Character>)] = {
+        let order = SettingsPanel.Page.allCases
+        let groupIndex = Dictionary(groups.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let pageOf = Dictionary(groups.map { ($0.id, $0.page) }, uniquingKeysWith: { first, _ in first })
+        return items
+            .map { item -> (item: SettingsItem, hay: String, starts: Set<Character>, rank: (Int, Int)) in
+                let page = pageOf[item.group] ?? .general
+                let hay = ([item.title, item.detail, item.more ?? "", group(item.group)?.title ?? "", page.title]
+                    + item.words + item.keys).joined(separator: " ").lowercased()
+                let starts = Set(hay.split { !$0.isLetter && !$0.isNumber }.compactMap(\.first))
+                return (item, hay, starts, (order.firstIndex(of: page) ?? 0, groupIndex[item.group] ?? 0))
+            }
+            // Stable: rows of one group keep the order they are written in.
+            .enumerated()
+            .sorted { ($0.element.rank.0, $0.element.rank.1, $0.offset) < ($1.element.rank.0, $1.element.rank.1, $1.offset) }
+            .map { ($0.element.item, Array($0.element.hay.utf8), $0.element.starts) }
+    }()
 
     /// Whether a dependent row means anything as things are set now. Its
     /// section hides it otherwise; the find field shows it dimmed.
@@ -882,7 +913,9 @@ enum SettingsIndex {
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
-        case "bookmarks.iconsOnly", "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
+        // Icons only: on the bar above the page or in the column alike.
+        case "bookmarks.iconsOnly": return prefs.bookmarksBar
+        case "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several

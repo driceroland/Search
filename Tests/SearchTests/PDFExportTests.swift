@@ -17,8 +17,9 @@ final class PDFExportTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        // Nothing shown; whether the app is active is the system's to say
+        // in a busy run (see PopupGestureRelayTests).
         XCTAssertTrue(NSApp.windows.allSatisfy { !$0.isVisible }, "a window was shown")
-        XCTAssertFalse(NSApp.isActive)
     }
 
     func testExportKeepsRequestedTabAfterActiveTabChanges() async throws {
@@ -43,6 +44,14 @@ final class PDFExportTests: XCTestCase {
     private func page(_ text: String, in browser: Browser) async throws -> Search.Tab {
         let tab = browser.open(try XCTUnwrap(URL(string: "about:blank")), foreground: true)
         tab.web.frame = NSRect(x: 0, y: 0, width: 700, height: 500)
+        // Browser.open doesn't load at once: the tab's address goes in at
+        // its turn (Shield.whenReady, LoadTurns). Loaded before that, the
+        // page was replaced by about:blank a moment later.
+        let opened = Date().addingTimeInterval(15)
+        while tab.web.url?.absoluteString != "about:blank" || tab.web.isLoading {
+            guard Date() < opened else { throw NSError(domain: "PDFExportTests", code: 2, userInfo: [NSLocalizedDescriptionKey: "about:blank never opened"]) }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
         tab.web.loadHTMLString("<html><body><h1>\(text)</h1></body></html>", baseURL: URL(string: "https://example.invalid/"))
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {

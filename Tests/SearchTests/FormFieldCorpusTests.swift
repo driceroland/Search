@@ -59,7 +59,11 @@ final class FormFieldCorpusTests: XCTestCase {
         let files = Set(all.map(\.file))
         for needed in ["code-keycloak", "code-github", "code-google", "code-microsoft", "code-aws", "code-cells",
                        "code-french", "code-plain-signin", "notcode-promo", "notcode-postal", "notcode-recovery",
-                       "notcode-card", "notcode-dial", "notcode-product", "notcode-footprint", "notcode-passkey-row"] {
+                       "notcode-card", "notcode-dial", "notcode-product", "notcode-footprint", "notcode-passkey-row",
+                       // Idea 1346: a Catalan SSO's code box, other languages, a bare box after a password.
+                       "code-catalan-sso", "code-catalan-caption", "code-spanish", "code-german", "code-italian",
+                       "code-portuguese", "code-dutch", "code-bare-numeric-sso", "notcode-catalan-postal",
+                       "notcode-gutschein", "notcode-spanish-promo", "notcode-bare-numeric"] {
             XCTAssertTrue(files.contains(needed), "\(needed).html is in the corpus")
         }
         for fixture in all where fixture.file.hasPrefix("code-") { XCTAssertTrue(fixture.code, fixture.file) }
@@ -93,6 +97,10 @@ final class FormFieldCorpusTests: XCTestCase {
         let signIn = try await said("urssaf-login")
         XCTAssertEqual(signIn?["code"] as? Bool, false)
         XCTAssertEqual(signIn?["passwords"] as? Bool, true)
+        // Idea 1346: recognised from its Catalan label, still a guess.
+        let catalan = try await said("code-catalan-sso")
+        XCTAssertEqual(catalan?["code"] as? Bool, true)
+        XCTAssertEqual(catalan?["wide"] as? Bool, false, "words alone: this host's codes")
         let promo = try await said("notcode-promo")
         XCTAssertEqual(promo?["code"] as? Bool, false)
         XCTAssertTrue(promo?["rect"] is NSNull, "nothing hangs from it")

@@ -91,7 +91,10 @@ struct SideBar: View {
     private var width: CGFloat { live ?? prefs.columnWidth }
     private static let gap: CGFloat = 2
     private static let groupInset: CGFloat = 4
-    private static let square: CGFloat = 34
+    /// A pinned square at its tallest: the classic 34, or, with Roomier
+    /// tabs, as much taller as the rows are (36 for 28), so its icon grows
+    /// with it (PinSquare draws everything off its shorter edge).
+    static func square(roomy: Bool) -> CGFloat { roomy ? 44 : 34 }
     private static let pinGap: CGFloat = 4
 
     private var onRight: Bool { prefs.sidePosition == .right }
@@ -304,7 +307,7 @@ struct SideBar: View {
             .animation(doorsFoot ? SideBar.footIn : SideBar.doorsOut) {
                 $0.modifier(EndInset(bottom: footHeight))
             }
-            .padding(.bottom, (browser.player == nil ? 0 : rowHeight + SideBar.playerGap)
+            .padding(.bottom, CGFloat(browser.players.count) * (rowHeight + SideBar.playerGap)
                      + (agentHere && !icons ? agentCard + SideBar.playerGap : 0)
                      + (updateHere ? rowHeight + SideBar.playerGap : 0))
 
@@ -318,7 +321,8 @@ struct SideBar: View {
                         .padding(.bottom, SideBar.playerGap)
                         .transition(.opacity)
                 }
-                if let tab = browser.player {
+                // One row for each tab playing out of sight, the newest on top.
+                ForEach(browser.players, id: \.id) { tab in
                     PlayerRow(browser: browser, prefs: prefs, tab: tab)
                         .padding(.horizontal, 10)
                         .padding(.bottom, SideBar.playerGap)
@@ -400,12 +404,16 @@ struct SideBar: View {
         .background {
             ZStack {
                 // On glass the window's ground shows through (Glass.swift).
-                if !browser.glassUnder { onFrame ? Palette.frame : Palette.ground }
+                if browser.columnGlass {
+                    GlassGround(prefs: prefs, look: browser.wash, frosted: true)
+                } else if browser.columnGround {
+                    onFrame ? Palette.frame : Palette.ground
+                }
                 if landing { greys.hover }
                 // The space's colour, if it has one: over the ground, so the
                 // column stays opaque and folded out over the page it brings
                 // the same wash along. On glass the glass wears it.
-                if !browser.glassUnder { SpaceWash(look: browser.wash) }
+                if browser.columnGround { SpaceWash(look: browser.wash) }
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
@@ -434,7 +442,7 @@ struct SideBar: View {
             $0.disablesAnimations = true
         }
         .animation(Motion.quick, value: landing)
-        .animation(Motion.quick, value: browser.player?.id)
+        .animation(Motion.quick, value: browser.players.map(\.id))
         .animation(Motion.glide, value: browser.activeID)
         .animation(Motion.glide, value: browser.editingTab)
         .animation(Motion.settle, value: browser.tabs.map(\.id))
@@ -633,7 +641,8 @@ struct SideBar: View {
                     // every space, so it stays put while the rows under it
                     // scroll, and while a swipe brings another space in.
                     if showsMarks {
-                        SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons, lined: marksLined)
+                        SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons, room: width - 20,
+                                      lined: marksLined)
                     }
                     // A row too long for the window scrolls between the pins
                     // and the foot, rather than running under the lights at one
@@ -829,7 +838,7 @@ struct SideBar: View {
                 .padding(.bottom, 10)
             }
             if showsMarks {
-                SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons,
+                SideBookmarks(browser: browser, prefs: prefs, bookmarks: browser.bookmarks, compact: icons, room: width - 20,
                               lined: !keeps || !pinLines.isEmpty || !groups.isEmpty)
                     .allowsHitTesting(false)
             }
@@ -987,7 +996,10 @@ struct SideBar: View {
     /// The bookmarks bar in the column (SideBookmarks), when it is there.
     private var showsMarks: Bool { prefs.sideBookmarks && !browser.bookmarks.isEmpty }
     private var marksHeight: CGFloat {
-        showsMarks ? SideBookmarks.height(browser.bookmarks.roots.count, row: rowHeight, lined: marksLined) : 0
+        guard showsMarks else { return 0 }
+        let lines = SideBookmarks.lines(browser.bookmarks.roots, tiles: SideBookmarks.tiles(prefs, compact: icons),
+                                        room: width - 20, row: rowHeight)
+        return SideBookmarks.height(lines.count, row: rowHeight, lined: marksLined)
     }
     /// The bookmarks' line under them, unless the keep line comes straight
     /// after: no pinned row, folder or group between (idea 1255). The one
@@ -1130,12 +1142,13 @@ struct SideBar: View {
     private func pinCells(_ count: Int) -> [CGRect] {
         let room = width - 20
         let gap = SideBar.pinGap
-        let fits = Int((room + gap) / (SideBar.square + gap))
+        let square = SideBar.square(roomy: prefs.roomyTabs)
+        let fits = Int((room + gap) / (square + gap))
         let rows = SideBar.pinRows(count, most: min(4, max(1, fits)))
         // A row of fewer than three keeps three places.
         let slots = rows.map { rows.count == 1 ? max($0, min(3, fits)) : $0 }
         let widths = slots.map { max(20, (room - CGFloat($0 - 1) * gap) / CGFloat($0)) }
-        let height = min(SideBar.square, widths.min() ?? SideBar.square)
+        let height = min(square, widths.min() ?? square)
         var cells: [CGRect] = []
         for (row, n) in rows.enumerated() {
             for col in 0..<n {
@@ -2266,6 +2279,12 @@ private struct PinSquare: View, Equatable {
             }
         }
         .animation(Motion.quick, value: peek?.id)
+        // Its page plays sound, or was muted: the icons-only tile's speaker,
+        // in the same corner, a press muting it (idea 1328).
+        .overlay(alignment: .bottomTrailing) {
+            if CornerSpeaker.shows(for: tab), !lettering { CornerSpeaker(tab: tab) }
+        }
+        .animation(Motion.quick, value: CornerSpeaker.shows(for: tab))
         .contentShape(RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous))
         .modifier(TabPress(enabled: !lettering && !pickedAmongOthers, active: live, selected: $selectedOnPress, again: { opened in
             // A double-click: home, from this square or another (PinDouble).
@@ -2397,10 +2416,12 @@ private struct SideRow: View, Equatable {
     private var closable: Bool { tab.pin == nil || !tab.asleep }
     /// A grouped tab holding no page — put away with its minus (Browser.putAway),
     /// put to sleep, or not opened since launch: the row stays, dimmed as a
-    /// pin put down is, so the minus is seen to have done something.
+    /// pin put down is, so the minus is seen to have done something. Lit
+    /// under the pointer as any other sleeping row, and as its pill across
+    /// the top is (TabPill.dim, idea 950).
     /// Read from the tab here, not when the column made the row: the column
     /// isn't drawn again when one of its tabs lets its page go.
-    private var putAway: Bool { grouped && tab.asleep && !live }
+    private var putAway: Bool { grouped && tab.asleep && !live && !hovering }
     /// Any other tab asleep, with Settings › Tabs › Dim sleeping tabs on:
     /// faded until the pointer is on it.
     private var dim: Bool { prefs.dimsSleepingTabs && tab.asleep && !live && !hovering && !putAway }
@@ -2449,7 +2470,7 @@ private struct SideRow: View, Equatable {
                     // The page is translated (Translate.swift).
                     TranslateSign(tab: tab, colour: colour)
                     TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
-                                size: prefs.sideTitle, colour: colour, roomy: true, dim: dim)
+                                size: prefs.sideTitle, colour: ink, roomy: true, dim: putAway || dim)
                 }
             }
             // Pushed to the leading edge by its frame, not a Spacer: the
@@ -2617,13 +2638,15 @@ private struct SideRow: View, Equatable {
         }
     }
 
-    private var colour: Color {
-        if live || prefs.highContrastText {
-            return putAway ? Palette.ink.opacity(0.45) : Palette.ink
-        }
-        let colour = hovering ? Palette.ink.opacity(0.7) : greys.muted
-        return putAway ? colour.opacity(0.45) : colour
+    /// The row's ink, before a put-away row's dim. The title takes that dim
+    /// as a fade of its own (TitleAtRest.dim), as a sleeping title does,
+    /// since the ink changes at once under the pointer.
+    private var ink: Color {
+        if live || prefs.highContrastText { return Palette.ink }
+        return hovering ? Palette.ink.opacity(0.7) : greys.muted
     }
+
+    private var colour: Color { putAway ? ink.opacity(0.45) : ink }
 }
 
 /// A row that is an action rather than a page. Quiet until the pointer is on it.

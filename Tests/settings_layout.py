@@ -100,7 +100,7 @@ def case_defaults(t):
     sv.setup(); sv.launch()
     v = settings()["values"]
     t.ok("pins keep their site, untouched", v["pins.keep"] is True and v["pins.home"] and v["pins.peek"], v)
-    t.ok("120 Hz on power, untouched", v["pages.120"] == "onPower", v["pages.120"])
+    t.ok("120 Hz never (60 Hz, as Safari), untouched", v["pages.120"] == "never", v["pages.120"])
     t.ok("hold a swipe on, untouched", v["swipe.history"] is True)
     t.ok("address on the tab on, untouched", v["tabs.address"] is True)
     t.ok("links shown and flicks on, as before", v["links.show"] is True and v["float.flicks"] is True)

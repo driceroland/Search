@@ -448,13 +448,7 @@ struct SearchApp: App {
             }
             CommandMenu("History") {
                 Section("Recently Visited") {
-                    ForEach(browser.recentlyVisited) { trace in
-                        Button {
-                            browser.open(trace.url, foreground: true)
-                        } label: {
-                            MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
-                        }
-                    }
+                    RecentlyVisited(browser: browser, menu: browser.recentMenu)
                 }
                 if !browser.ghosts.isEmpty {
                     Section("Recently Closed") {
@@ -1080,9 +1074,9 @@ struct ContentView: View {
         // version's notes are a tab.
         if browser.newsShowing, let release = WhatsNew.current {
             sheet {
-                WhatsNewCard(release: release, prefs: browser.prefs, close: { browser.newsShowing = false }, notes: {
+                WhatsNewCard(release: release, close: { browser.newsShowing = false }, settings: {
                     browser.newsShowing = false
-                    browser.show(InternalPage(.notes))
+                    browser.show(InternalPage(.settings, SettingsPanel.Page.whatsNew.rawValue))
                 }, open: { url in
                     browser.newsShowing = false
                     _ = browser.open(url, foreground: true)
@@ -2485,3 +2479,23 @@ private struct Focus: ViewModifier {
         content.blur(radius: blur).scaleEffect(scale).opacity(opacity)
     }
 }
+
+/// The History menu's last few places, drawn again when they change
+/// (Browser.recentMenu) and not with every change to the window.
+private struct RecentlyVisited: View {
+    let browser: Browser
+    @ObservedObject var menu: RecentMenu
+
+    var body: some View {
+        ForEach(browser.recentlyVisited) { trace in
+            Button {
+                browser.open(trace.url, foreground: true)
+            } label: {
+                MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
+            }
+        }
+    }
+}
+
+/// See Browser.recentMenu.
+final class RecentMenu: ObservableObject {}
