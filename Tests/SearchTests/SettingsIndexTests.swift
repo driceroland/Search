@@ -32,6 +32,24 @@ final class SettingsIndexTests: XCTestCase {
         }
     }
 
+    /// Plain words on the rows (idea 1411): the jargon is out of the titles and
+    /// details, and the old words still find the rows.
+    func testPlainWordsAndTheOldOnesStillFind() {
+        let jargon = ["socket", "CSS", "keychain", "cross-site", "Global Privacy Control", "http://", "Liquid Glass that"]
+        for item in SettingsIndex.items {
+            for word in jargon {
+                XCTAssertFalse((item.title + " " + item.detail).localizedCaseInsensitiveContains(word), "\(item.id): \(word)")
+            }
+        }
+        for (words, id) in [("cross-site", "sites.keep"), ("itp", "sites.keep"), ("gclid", "privacy.clickIDs"),
+                            ("global privacy control", "privacy.gpc"), ("socket", "bench"), ("css", "sites.styles"),
+                            ("keychain", "passwords.open"), ("https", "privacy.httpsFirst")] {
+            // A row for a feature this Mac's WebKit lacks isn't listed at all.
+            guard SettingsIndex.item(id) != nil else { continue }
+            XCTAssertTrue(SettingsIndex.find(words).contains { $0.id == id }, words)
+        }
+    }
+
     func testOldSectionNames() {
         XCTAssertEqual(SettingsPanel.Page.named("shortcuts"), .keyboard)
         XCTAssertEqual(SettingsPanel.Page.named("downloads"), .general)
