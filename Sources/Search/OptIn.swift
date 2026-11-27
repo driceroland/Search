@@ -135,17 +135,20 @@ enum OptIn {
 
     /// No cookies, no cache, no credentials kept: nothing of the request
     /// stays on disk.
-    static let session: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.httpCookieStorage = nil
-        config.httpShouldSetCookies = false
-        config.urlCache = nil
-        config.urlCredentialStorage = nil
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 20
-        config.waitsForConnectivity = false
-        return URLSession(configuration: config)
-    }()
+    static var session: URLSession {
+        ProxyNetwork.kept("opt-in") {
+            let config = URLSessionConfiguration.ephemeral
+            config.httpCookieStorage = nil
+            config.httpShouldSetCookies = false
+            config.urlCache = nil
+            config.urlCredentialStorage = nil
+            config.timeoutIntervalForRequest = 15
+            config.timeoutIntervalForResource = 20
+            config.waitsForConnectivity = false
+            ProxyNetwork.stamp(config)
+            return URLSession(configuration: config)
+        }
+    }
 
     enum Failure: Error, Equatable {
         case notAnEmail

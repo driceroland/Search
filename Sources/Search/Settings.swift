@@ -442,6 +442,9 @@ struct SettingsPanel: View {
             GroupBlock(title: "Proxy", icon: "network") {
                 ProxySettings()
             }
+            GroupBlock(title: "DNS", icon: "network") {
+                DNSSettings()
+            }
         case .extensions:
             ExtensionsPage(browser: browser)
         case .ai:
@@ -2079,5 +2082,64 @@ private struct RememberedAgents: View {
         let format = RelativeDateTimeFormatter()
         format.unitsStyle = .full
         return Date().timeIntervalSince(date) < 60 ? "just now" : format.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+private struct DNSSettings: View {
+    @ObservedObject private var proxy = BrowserProxy.shared
+    @State private var draft = BrowserProxy.shared.dns
+    @State private var message: String?
+
+    private var note: String {
+        let precedence = proxy.value.mode == .system
+            ? "Turning on a proxy above disables this setting."
+            : "Your proxy is on, so this DNS setting is inactive."
+        return """
+            Search sends DNS lookups to the chosen provider over HTTPS. WebRTC and other UDP traffic bypass the DNS proxy, and sites use HTTP/2 instead of HTTP/3 where available. A Mac-wide encrypted DNS profile takes precedence. \(precedence)
+            """
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Line("DNS provider", "Choose how Search looks up site addresses.") {
+                Picker("DNS provider", selection: $draft.provider) {
+                    ForEach(DNSSettingsValue.Provider.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 180)
+            }
+            if draft.provider == .custom {
+                Rule()
+                TextField(
+                    "DNS URL",
+                    text: $draft.customURL,
+                    prompt: Text(verbatim: "Address, such as https://dns.example.com/dns-query")
+                )
+            }
+            small(note)
+            if let validation = draft.validation { small(validation) }
+            HStack(spacing: 10) {
+                Pill("Apply", filled: true) {
+                    do {
+                        try proxy.saveDNS(draft)
+                        message = proxy.value.mode != .system ? "Saved for when your proxy is off." : "DNS setting applied. Reload a page to use it."
+                    } catch {
+                        message = error.localizedDescription
+                    }
+                }
+                .disabled(draft.validation != nil)
+                if let message { small(message) }
+            }
+        }
+        .textFieldStyle(.roundedBorder)
+        .onChange(of: proxy.dns) { _, saved in draft = saved }
+    }
+
+    private func small(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .foregroundStyle(Palette.muted)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }

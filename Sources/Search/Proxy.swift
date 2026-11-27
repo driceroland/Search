@@ -257,7 +257,10 @@ final class BrowserProxy: ObservableObject {
     static let shared = BrowserProxy()
 
     @Published private(set) var value: ProxySettingsValue
+    @Published private(set) var dns: DNSSettingsValue
     private var password: String
+    private var resolver: ResolverProxy?
+    private(set) var effectiveConfiguration: ProxyConfiguration?
     private let defaults: UserDefaults
     private let keep: (String) throws -> Void
     private let forget: () -> Void
@@ -267,6 +270,7 @@ final class BrowserProxy: ObservableObject {
     /// its own, since a private tab's is left out of it on purpose.
     private let stores = NSHashTable<WKWebsiteDataStore>.weakObjects()
     private static let key = "network.proxy"
+    private static let dnsKey = "network.dns"
 
     init(defaults: UserDefaults = Store.settings,
          password: String? = nil,
@@ -277,10 +281,17 @@ final class BrowserProxy: ObservableObject {
         self.forget = forget
         let value = defaults.data(forKey: Self.key)
             .flatMap { try? JSONDecoder().decode(ProxySettingsValue.self, from: $0) } ?? .init()
+        let dns = defaults.data(forKey: Self.dnsKey)
+            .flatMap { try? JSONDecoder().decode(DNSSettingsValue.self, from: $0) } ?? .init()
         self.value = value
+        self.dns = dns
         // The keychain is asked only for a proxy that names a user.
         self.password = password ?? (value.mode != .system && !value.username.isEmpty ? ProxySecret.read() : "")
-        ProxyNetwork.keep(value.configuration(password: self.password))
+        do {
+            apply(try route(for: value, password: self.password, dns: dns))
+        } catch {
+            apply((ResolverProxy.configuration(port: .any), nil))
+        }
     }
 
     /// Called where a store is made, not where one is read: `Store.websites`
@@ -294,7 +305,7 @@ final class BrowserProxy: ObservableObject {
     func attach(_ store: WKWebsiteDataStore) {
         guard !stores.contains(store) else { return }
         stores.add(store)
-        let configurations = [value.configuration(password: password)].compactMap { $0 }
+        let configurations = [effectiveConfiguration].compactMap { $0 }
         guard !configurations.isEmpty || !store.proxyConfigurations.isEmpty else { return }
         store.proxyConfigurations = configurations
     }
@@ -304,16 +315,46 @@ final class BrowserProxy: ObservableObject {
             throw NSError(domain: "SearchProxy", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
         }
         let secret = proposed.mode == .system || proposed.username.isEmpty ? "" : password
+        let route = try route(for: proposed, password: secret, dns: dns)
+        let encoded = try JSONEncoder().encode(proposed)
         // The secret first: a keychain that refuses leaves the proxy as it
         // was rather than running with a password it cannot keep.
         if proposed.mode == .system { forget() } else { try keep(secret) }
-        defaults.set(try JSONEncoder().encode(proposed), forKey: Self.key)
+        defaults.set(encoded, forKey: Self.key)
         self.password = secret
+        apply(route)
         value = proposed
-        let proxy = proposed.configuration(password: secret)
-        ProxyNetwork.keep(proxy)
-        let configurations = [proxy].compactMap { $0 }
-        for store in stores.allObjects { store.proxyConfigurations = configurations }
+    }
+
+    func saveDNS(_ proposed: DNSSettingsValue) throws {
+        if let message = proposed.validation {
+            throw NSError(domain: "SearchDNS", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+        }
+        let route = try route(for: value, password: password, dns: proposed)
+        defaults.set(try JSONEncoder().encode(proposed), forKey: Self.dnsKey)
+        apply(route)
+        dns = proposed
+    }
+
+    private typealias Route = (configuration: ProxyConfiguration?, resolver: ResolverProxy?)
+
+    private func route(for proxy: ProxySettingsValue, password: String, dns: DNSSettingsValue) throws -> Route {
+        if proxy.mode != .system { return (proxy.configuration(password: password), nil) }
+        guard dns.provider != .system else { return (nil, nil) }
+        let existing = dns == self.dns ? resolver : nil
+        let active = try existing ?? ResolverProxy(settings: dns)
+        return (active.configuration, active)
+    }
+
+    private func apply(_ route: Route) {
+        let hadConfiguration = effectiveConfiguration != nil
+        effectiveConfiguration = route.configuration
+        ProxyNetwork.keep(route.configuration)
+        if hadConfiguration || route.configuration != nil {
+            let configurations = [route.configuration].compactMap { $0 }
+            for store in stores.allObjects { store.proxyConfigurations = configurations }
+        }
+        resolver = route.resolver
     }
 
     var savedPassword: String { password }
