@@ -98,6 +98,35 @@ final class HostPipeTests: XCTestCase {
         }
     }
 
+    /// Holds a pipe whose onMessage holds it back, as a native port's
+    /// handlers and its host's pipe hold each other (ExtensionNative.connect).
+    private final class Holder {
+        var pipe: HostPipe?
+    }
+
+    // Idea 1252: a host that ends lets go of what its handlers held, so a
+    // connection whose two ends hold each other doesn't outlive it. Bitwarden
+    // starts its desktop app's host every ten seconds; every one stayed in
+    // memory with its pipes open.
+    func testEndedHostLetsGoOfWhatItsHandlersHeld() throws {
+        let (script, pidFile) = try host("pass")
+        weak var gone: Holder?
+        weak var gonePipe: HostPipe?
+        let exits = Counter()
+        try autoreleasepool {
+            let holder = Holder()
+            let pipe = pipe(script, exits: exits)
+            pipe.onMessage = { _ in _ = holder }
+            holder.pipe = pipe
+            gone = holder
+            gonePipe = pipe
+            try pipe.start()
+        }
+        XCTAssertTrue(settle { exits.count == 1 })
+        XCTAssertTrue(settle { self.pid(pidFile) != nil && !self.alive(pidFile) })
+        XCTAssertTrue(settle { gone == nil && gonePipe == nil }, "the pipe and what its handler held are still alive")
+    }
+
     // (a)
     func testLargeReplyThenImmediateExitIsDeliveredInFull() async throws {
         let (script, pidFile) = try host("""

@@ -142,14 +142,27 @@ enum ExtensionNative {
                 port.sendMessage(message, completionHandler: nil)
             }
         }
+        var beating: Timer?
         pipe.onExit = {
-            DispatchQueue.main.async { if !port.isDisconnected { port.disconnect() } }
+            DispatchQueue.main.async {
+                if !port.isDisconnected { port.disconnect() }
+                // The port's handlers hold the port and the pipe, and the
+                // pipe's hold the port: kept, every host ever started stayed
+                // in memory with its pipes open. Bitwarden asks for its
+                // desktop app's host every ten seconds while it isn't
+                // connected; with the app installed and closed, each host
+                // leaves at once: about 360 an hour, each with its process
+                // record and two open files (idea 1252).
+                port.messageHandler = nil
+                port.disconnectHandler = nil
+                beating?.invalidate()
+                beating = nil
+            }
         }
         // Listened to before it runs: a host may answer at once. One that
         // can't run is let go as one that has exited.
         Live.keep(pipe, for: port, of: extensionID, name: name, started: started)
         do { try pipe.start() } catch { pipe.stop(); throw error }
-        var beating: Timer?
         port.messageHandler = { message, _ in
             guard let message else { return }
             // A worker's shim asking whether the port has arrived (see the
@@ -410,9 +423,10 @@ final class HostPipe: @unchecked Sendable {
             handed.append((waiters.removeFirst().continuation, message))
         }
         let rest = messages.dropFirst(handed.count)
+        let deliver = onMessage
         lock.unlock()
         handed.forEach { $0.0.resume(returning: $0.1) }
-        rest.forEach { onMessage?($0) }
+        rest.forEach { deliver?($0) }
         // As in Chrome, a host claiming a message past the cap is done with;
         // what it sent before that in the same read is still heard.
         if dropped > 0 {
@@ -459,6 +473,8 @@ final class HostPipe: @unchecked Sendable {
         waiters = []
         let exit = onExit
         onExit = nil
+        // It holds the port: let go with the rest (see connect).
+        onMessage = nil
         lock.unlock()
         output.fileHandleForReading.readabilityHandler = nil
         pending.forEach { $0.continuation.resume(throwing: Self.exited) }

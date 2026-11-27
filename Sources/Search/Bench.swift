@@ -7060,6 +7060,7 @@ final class Bench {
                     "id": item.id, "name": item.name, "version": item.version, "enabled": item.enabled,
                     "loaded": context != nil, "private": context?.hasAccessToPrivateData ?? false,
                     "failure": extensions.notStarted[item.id] ?? "",
+                    "workerStarts": ExtensionWorkerRecovery.shared.starts[item.id] ?? 0,
                     "cantDo": context.flatMap { Extensions.cantDo($0.webExtension.manifest) } ?? "",
                     "base": context?.baseURL.absoluteString ?? "",
                     "errors": (context.map(Extensions.errors(of:)) ?? []).map { e in

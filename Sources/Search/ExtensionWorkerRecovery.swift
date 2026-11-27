@@ -11,6 +11,9 @@ final class ExtensionWorkerRecovery {
     private var contexts: [String: WeakContext] = [:]
     private var backgrounds: [String: Background] = [:]
     private var generations: [String: Int] = [:]
+    /// How many backgrounds each extension has had since launch: WebKit
+    /// starts an MV3 worker again after it has been idle (for the bench).
+    private(set) var starts: [String: Int] = [:]
     private struct Observation {
         var lifetime: UUID?
         let reply: (Int?) -> Void
@@ -118,6 +121,7 @@ final class ExtensionWorkerRecovery {
               backgrounds[id]?.view !== view else { return }
         let background = Background(view)
         backgrounds[id] = background
+        starts[id, default: 0] += 1
         // The worker before this one is gone, and its hosts with it.
         ExtensionNative.stopWorkerHosts(of: id)
         ExtensionWatch.workerGone(of: id)
