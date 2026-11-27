@@ -7256,6 +7256,12 @@ final class Browser: NSObject, ObservableObject {
     /// history, and no place in tomorrow's session.
     func newShyTab() {
         if websitePopup { tabDestination.newShyTab(); return }
+        // With every window closed, ⇧⌘N brings the closed window back, and a
+        // window that held nothing but an empty tab came back with it beside
+        // the private one: two tabs, the regular one first (idea 1415). Only
+        // then, and only a tab nothing was typed into.
+        let cameBack = shut && !isPopup && !tucked
+        defer { if cameBack { dropIdleBlanks(besidesPrivate: activeID) } }
         comeBackIfShut()
         // Never two empty private tabs, as ⌘T never makes two empty ones:
         // one already open is moved to the chosen position.
@@ -7280,6 +7286,18 @@ final class Browser: NSObject, ObservableObject {
         editing = false
         focusRequest += 1
         announce("A tab that keeps nothing")
+    }
+
+    /// The empty regular tabs of a window that came back for a private tab
+    /// and holds nothing else of the regular kind: a window opening on its
+    /// private tab alone, as Safari and Chrome open theirs. A pin, a page, a
+    /// grouped tab or one with words typed in it keeps them all.
+    private func dropIdleBlanks(besidesPrivate id: Tab.ID?) {
+        guard let id, tabs.contains(where: { $0.id == id && $0.shy }) else { return }
+        let regular = tabs.filter { !$0.shy && !$0.bench }
+        let idle = regular.filter { $0.pin == nil && $0.isBlank && $0.draft.isEmpty && split(for: $0) == nil && group(of: $0) == nil }
+        guard !idle.isEmpty, idle.count == regular.filter({ $0.pin == nil }).count else { return }
+        for tab in idle { close(tab) }
     }
 
     /// ⌘D. The same page, beside itself.
