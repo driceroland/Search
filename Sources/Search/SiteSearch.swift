@@ -192,6 +192,7 @@ enum SiteSearch {
     /// Where a template puts the words, to find them again in an address.
     private struct Shape {
         let host: String
+        let port: Int?
         let path: String
         /// The query item that holds them, or nil when the path ends with them.
         let item: String?
@@ -200,6 +201,7 @@ enum SiteSearch {
             guard let parts = URLComponents(string: template.replacingOccurrences(of: "%s", with: "SEARCHWORDS")),
                   let host = parts.host?.lowercased() else { return nil }
             self.host = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            self.port = Self.nonstandardPort(in: parts)
             if let item = parts.queryItems?.first(where: { $0.value == "SEARCHWORDS" }) {
                 path = parts.path
                 self.item = item.name
@@ -215,7 +217,7 @@ enum SiteSearch {
             guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
                   var host = parts.host?.lowercased() else { return nil }
             if host.hasPrefix("www.") { host = String(host.dropFirst(4)) }
-            guard host == self.host else { return nil }
+            guard host == self.host, Self.nonstandardPort(in: parts) == port else { return nil }
             if let item {
                 guard parts.path == path || parts.path == path + "/" || path == parts.path + "/" else { return nil }
                 // A form's own submit writes spaces as +.
@@ -226,6 +228,13 @@ enum SiteSearch {
             let rest = String(parts.percentEncodedPath.dropFirst(path.count))
             guard !rest.isEmpty, !rest.contains("/") else { return nil }
             return rest.removingPercentEncoding
+        }
+
+        /// An explicit default port is the same as leaving it off.
+        private static func nonstandardPort(in parts: URLComponents) -> Int? {
+            let scheme = parts.scheme?.lowercased()
+            guard let port = parts.port, !(scheme == "http" && port == 80), !(scheme == "https" && port == 443) else { return nil }
+            return port
         }
     }
 

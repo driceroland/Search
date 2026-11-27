@@ -59,8 +59,12 @@ SharedSettings{ engine: String?, custom: String?, suggest: String?, look: String
 ```
 
 - Dates are JSONEncoder's default (seconds since 2001, a number).
-- The first space is `00000000-0000-0000-0000-000000000001`; the iPhone shows
-  that space's pins unless another is chosen.
+- The first space is the first one in the `spaces` record; the iPhone shows
+  that space's pins unless another is chosen. It is often
+  `00000000-0000-0000-0000-000000000001`, but not always: since 1.0.17 any
+  space can be deleted on the Mac, the first included, and Personal's home
+  then moves to another space. The Mac writes a `pins.<space>` record for
+  every space in `spaces`, whatever its id.
 - `DeviceTabs.tabs`: ordinary web pages only, no pinned tabs (pins travel as
   pins), **never private tabs**. The Mac sends every window's tabs of every
   space as one list.
@@ -113,9 +117,9 @@ SharedSettings{ engine: String?, custom: String?, suggest: String?, look: String
   A device that sees the zone gone **turns its sync off** (and says why);
   it doesn't recreate the zone or put its data back. What's on each device
   stays.
-- **Spaces.** A space deleted on the Mac leaves `spaces`; the first space is
-  never deleted. Its `pins.<space>` record may stay in iCloud; it's ignored.
-  An iPhone showing a space that's gone falls back to the first.
+- **Spaces.** A space deleted on the Mac leaves `spaces`, the first one
+  included. Its `pins.<space>` record may stay in iCloud; it's ignored.
+  An iPhone showing a space that's gone falls back to the first in `spaces`.
 - **Mac only, not in this contract:** pins shown in every space (shared
   pins), the folder sync (mutually exclusive with this one), a space's
   downloads folder.

@@ -2039,6 +2039,14 @@ final class Browser: NSObject, ObservableObject {
         history.recent()
     }
 
+    /// Said when the History menu's last few places change. The menu alone
+    /// watches it (RecentlyVisited, in App.swift): passed on as the window's
+    /// own change, as it was, every page that finished loading drew the
+    /// whole window again, the menu bar and every row of the column with it
+    /// — on the main thread, while the new page's frames waited for it to
+    /// let them in (idea 1327, `python3 Tests/nav_click.py --tabs 150 --cost 10`).
+    let recentMenu = RecentMenu()
+
     // MARK: - the camera and the microphone
 
     /// A page asking to see or hear you, waiting for an answer. WebKit hands
@@ -3258,14 +3266,14 @@ final class Browser: NSObject, ObservableObject {
             folded = (record ?? Browsers.read().first)?.folded == true
         }
 
-        // The History menu lists the last few places, and the menu is drawn
-        // from this object's changes — so a change to those is passed on,
-        // from the history of whichever space is on screen.
+        // The History menu lists the last few places: a change to those is
+        // passed on to the menu, from the history of whichever space is on
+        // screen (see recentMenu).
         $spaceID
             .removeDuplicates()
             .map { Spaces.history(for: $0).recentChanges }
             .switchToLatest()
-            .sink { [weak self] in self?.objectWillChange.send() }
+            .sink { [weak self] in self?.recentMenu.objectWillChange.send() }
             .store(in: &bag)
 
         // A page's passkeys for under its field, arriving while the caret
@@ -4544,7 +4552,8 @@ final class Browser: NSObject, ObservableObject {
                 // Only with Same tabs in every window on: off, the file is
                 // what it always was.
                 twinID: prefs.mirrorsTabs && twinnable(tab) ? tab.twinID : nil,
-                lifted: liftedIDs.contains(tab.id) ? tab.id : nil
+                lifted: liftedIDs.contains(tab.id) ? tab.id : nil,
+                unseen: tab.pin != nil && !tab.looked && !visibleTabIDs.contains(tab.id) ? true : nil
             ))
         }
         // The tab you were on isn't kept — a private one: the one kept just
@@ -7395,7 +7404,7 @@ final class Browser: NSObject, ObservableObject {
             tab.restore(url: url, title: url == saved ? entry.title : url.host ?? "", name: entry.name,
                         state: url == saved ? entry.keepsake?.state : nil)
             // Never later than now: a clock set wrong once would keep the tab forever.
-            if let touched = entry.touched { tab.touch(at: min(touched, Date())) }
+            if let touched = entry.touched { tab.touch(at: min(touched, Date()), looked: entry.unseen != true) }
             tab.letGo = entry.letGo.map { min($0, Date()) }
             tab.muted = entry.muted
             tab.pin = entry.pin
@@ -8375,16 +8384,17 @@ final class Browser: NSObject, ObservableObject {
 
     /// What the site in the field was searched for before, newest first:
     /// read from the history once when the site goes in, not at every key.
+    /// Shortcuts on the same host can have different search templates.
     /// Never in a private tab, whose field says nothing of where you have been.
     private func searchedBefore(on site: SearchSite) -> [String] {
         guard active?.shy != true else { return [] }
-        if let pastSearches, pastSearches.site == site.id { return pastSearches.words }
+        if let pastSearches, pastSearches.template == site.template { return pastSearches.words }
         let host = site.host.split(separator: "/").first.map(String.init) ?? site.host
         let words = SiteSearch.pastSearches(on: site, in: history.everything(matching: host))
-        pastSearches = (site.id, words)
+        pastSearches = (site.template, words)
         return words
     }
-    private var pastSearches: (site: SearchSite.ID, words: [String])?
+    private var pastSearches: (template: String, words: [String])?
 
     private func askEngine() {
         guard let question = engineQuestion(for: typed) else {
@@ -8519,7 +8529,7 @@ final class Browser: NSObject, ObservableObject {
             else { return place }
             if site.template == engine, words.lowercased() == asked { return nil }
             // "naruto+vs" and "naruto%20vs" are two pages but one search.
-            guard seen.insert(site.host + " " + words.lowercased()).inserted else { return nil }
+            guard seen.insert(site.template + " " + words.lowercased()).inserted else { return nil }
             return Suggestion(key: words, title: site.name, url: place.url, kind: .searched)
         }
     }

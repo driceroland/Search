@@ -1635,7 +1635,11 @@ enum ExtensionShims {
           if (proto) {
             Object.defineProperty(proto, "userAgent", { get: () => chromeUA, configurable: true });
             Object.defineProperty(proto, "appVersion", { get: () => chromeUA.replace(/^Mozilla\//, ""), configurable: true });
-            Object.defineProperty(proto, "vendor", { get: () => "Google Inc.", configurable: true });
+            // A page's only: Chrome's worker has no navigator.vendor (the
+            // spec gives it to windows alone), and a worker that sets its
+            // own found ours read-only. ClickUp's, a module and so strict,
+            // threw on `navigator.vendor = …` and never started (idea 1348).
+            if (!worker) Object.defineProperty(proto, "vendor", { get: () => "Google Inc.", configurable: true });
             if (!("userAgentData" in navigator)) {
               const major = "__SEARCH_CHROME__".split(".")[0];
               const brands = [{ brand: "Chromium", version: major }, { brand: "Google Chrome", version: major }, { brand: "Not.A/Brand", version: "99" }];
