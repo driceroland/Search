@@ -610,6 +610,26 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertEqual(engine.saved, [])
     }
 
+    /// Idea 1306: every Personal space writes its own pins record, the
+    /// first space deleted (#1326) or never there (an import's spaces) too,
+    /// and a later change to one space's pins goes up on the next publish.
+    func testEverySpaceWritesItsPinsEvenWithoutTheFirstSpace() async {
+        let mac = FakeMac(), engine = FakeEngine()
+        let home = Space(id: UUID(), name: "Zen home", colour: 1), work = Space(id: UUID(), name: "Work", colour: 2)
+        mac.spaceList = [home, work]
+        mac.pinList = [home.id: [pin("m", "https://mail.example/")], work.id: [pin("g", "https://git.example/")]]
+        let sync = await joined(mac, engine)
+        XCTAssertTrue(engine.saved.contains("pins.\(home.id.uuidString)"))
+        XCTAssertTrue(engine.saved.contains("pins.\(work.id.uuidString)"))
+        XCTAssertFalse(engine.saved.contains("pins.\(first.uuidString)"), "no record for a space this Mac doesn't have")
+        let sent = try? JSONDecoder().decode([PinDef].self, from: sync.outgoing("pins.\(home.id.uuidString)")?.data ?? Data())
+        XCTAssertEqual(sent?.map(\.letter), ["m"])
+        engine.saved = []
+        mac.pinList[work.id]?.append(pin("d", "https://docs.example/"))
+        sync.publish()
+        XCTAssertEqual(engine.saved, ["pins.\(work.id.uuidString)"])
+    }
+
     func testAnotherMacDeletingASpaceDeletesItHereButNeverTheFirst() async {
         let mac = FakeMac(), engine = FakeEngine()
         let work = Space(id: UUID(), name: "Work", colour: 1)
