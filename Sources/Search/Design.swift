@@ -309,20 +309,39 @@ struct EdgeGrip: View {
 /// The view lets clicks through to the SwiftUI drag under it.
 struct ResizeEdgeCursor: NSViewRepresentable {
     let hover: (Bool) -> Void
+    /// Changes each time the edge is let go: a pull is a drag, and AppKit
+    /// sends no exit for a pointer that leaves while a button is down, so
+    /// the pill stayed lit after a resize until the pointer came back and
+    /// left. At each release the view asks where the pointer really is.
+    var release = 0
 
     func makeNSView(context: Context) -> EdgeCursorView {
         let view = EdgeCursorView()
         view.hover = hover
+        view.released = release
         return view
     }
 
     func updateNSView(_ view: EdgeCursorView, context: Context) {
         view.hover = hover
+        if view.released != release {
+            view.released = release
+            view.resync()
+        }
     }
 
     final class EdgeCursorView: NSView {
         var hover: ((Bool) -> Void)?
-        private var inside = false
+        var released = 0
+        private(set) var inside = false
+
+        /// Whether the pointer is on the edge, from where it really is
+        /// (`pointer`, in the window's own space, is for tests).
+        func resync(pointer: NSPoint? = nil) {
+            guard let window else { return set(false) }
+            let spot = convert(pointer ?? window.mouseLocationOutsideOfEventStream, from: nil)
+            set(bounds.contains(spot))
+        }
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -360,8 +379,8 @@ struct ResizeEdgeCursor: NSViewRepresentable {
 
 extension View {
     /// The left-right cursor over this view, and whether the pointer is on it.
-    func resizeEdge(hover: @escaping (Bool) -> Void) -> some View {
-        overlay(ResizeEdgeCursor(hover: hover))
+    func resizeEdge(release: Int = 0, hover: @escaping (Bool) -> Void) -> some View {
+        overlay(ResizeEdgeCursor(hover: hover, release: release))
     }
 }
 

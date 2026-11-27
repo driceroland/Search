@@ -46,6 +46,8 @@ struct SideBar: View {
     /// beside the column to follow (see HeldEdges).
     var onDrag: (CGFloat?) -> Void = { _ in }
     @State private var onEdge = false
+    /// Counts the times the edge was let go (see ResizeEdgeCursor.release).
+    @State private var letGo = 0
 
     /// A pin, picked up out of the grid — a separate state from the loose
     /// rows above, since the two gestures never happen at once but move on
@@ -482,7 +484,7 @@ struct SideBar: View {
             .frame(width: 12)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
-            .resizeEdge { over in onEdge = over }
+            .resizeEdge(release: letGo) { over in onEdge = over }
             .offset(x: onFrame ? 0 : onRight ? -Metrics.cardGap : Metrics.cardGap)
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
@@ -507,6 +509,7 @@ struct SideBar: View {
                         if let live { prefs.sideWidth = live }
                         live = nil
                         grabbed = nil
+                        letGo += 1
                         onDrag(nil)
                     }
             )
