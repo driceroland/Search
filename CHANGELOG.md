@@ -23,6 +23,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A peek's page is as sharp as the same page in a tab: its text was a little soft, most of all on a 1x screen, until the window next changed size. WebKit's drawing was set a fraction of a pixel off as the panel grew in, and stayed there; the panel grows in as before. `python3 Tests/peek_crisp.py`
 - ⌘T onto an extension's new tab page that puts the caret in a search box of its own as it loads (`autofocus`, or its script focusing the box) leaves the keys in that box, with no address field over the page, as before 1.0.22: the field came up over every extension's new tab page and Escape was needed to reach the page's own box. A page that focuses nothing still gets the field, and ⌘L brings it up over any of them. `python3 Tests/newtab_extension_ownbox.py` ([#1714](https://github.com/driceroland/Search/issues/1714), idea 1389)
 - Dia's spaces come over again in File › Bring Things Over: Dia keeps its sidebar in WAL mode, and the copy Search reads, its log already merged in, still said so, so SQLite read nothing and the panel asked for Dia's key again. `swift test --filter ImportSidebarsTests` (#1715)
 - With several tabs picked, Tab › Pin Tab and Pin Tab as Row, and their keys, pin all of them, as their right-click menu does: they pinned only the tab in front. `swift test --filter TabSelectionTests` (#1692, idea 1366)

@@ -1590,6 +1590,30 @@ final class Bench {
                 let r = web.convert(web.bounds, to: nil)
                 out["peekFrame"] = [Int(r.minX), Int(window.frame.height - r.maxY), Int(r.width), Int(r.height)]
             }
+            // How far WebKit's drawing in the peek's page, and in the page in
+            // front, is from the screen's pixels at its worst corner, in pixels
+            // (see PageView.setFrameSize); the view's own layer draws none of it.
+            func offGrid(_ web: WKWebView?) -> Double? {
+                guard let top = web?.layer, let window = web?.window,
+                      let root = window.contentView?.superview?.layer else { return nil }
+                let scale = window.backingScaleFactor
+                var most: CGFloat = 0
+                func walk(_ layer: CALayer, depth: Int) {
+                    let r = layer.convert(layer.bounds, to: root)
+                    for v in [r.minX, r.minY, r.maxX, r.maxY] { most = max(most, abs(v * scale - (v * scale).rounded())) }
+                    if depth < 9 { layer.sublayers?.forEach { walk($0, depth: depth + 1) } }
+                }
+                top.sublayers?.forEach { walk($0, depth: 1) }
+                return Double(most)
+            }
+            if let off = offGrid(browser.peekTab?.built) { out["peekOffGrid"] = off }
+            // And where WebKit's own drawing lies in the peek's view: its first
+            // layer's edges less the view's, in points. Nothing, filling it.
+            if let web = browser.peekTab?.built, let inner = web.layer?.sublayers?.first {
+                let f = inner.frame, b = web.bounds
+                out["peekInner"] = [f.minX - b.minX, f.minY - b.minY, f.maxX - b.maxX, f.maxY - b.maxY].map { Double($0) }
+            }
+            if let off = offGrid(browser.active?.built) { out["pageOffGrid"] = off }
             out["folded"] = browser.folded
             out["peeking"] = browser.peeking
             out["sideHides"] = browser.prefs.sideHides
