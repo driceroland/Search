@@ -111,13 +111,32 @@ final class TabDrag: ObservableObject {
     private var putAway: Tab.ID?
     private var escapeMonitor: Any?
 
-    /// Only a page's edges split it, a band of either side about a quarter
-    /// of its width, and no narrower than this: carried across the middle
-    /// of a page on its way elsewhere, a tab splits nothing.
-    static let band: CGFloat = 120
-    static let bandShare: CGFloat = 0.24
+    /// A page's sides split it, a band of either side two fifths of its
+    /// width, and no narrower than this: only a strip down the middle,
+    /// crossed on the way elsewhere, splits nothing. A quarter of the width
+    /// was too little: a split often showed only once the tab was right at
+    /// the page's edge (idea 1392).
+    nonisolated static let band: CGFloat = 120
+    nonisolated static let bandShare: CGFloat = 0.4
+
+    /// The band of either side of a page `width` wide that splits it: as
+    /// drawn (SplitDropHint) and as read (match), never more than half.
+    nonisolated static func band(for width: CGFloat) -> CGFloat {
+        min(width / 2, max(band, width * bandShare))
+    }
+
+    /// The side of a page from `minX` to `maxX` that a hand at `x` would
+    /// split, nil over the middle. The side already shown keeps `slack`
+    /// more before it lets go.
+    nonisolated static func side(at x: CGFloat, from minX: CGFloat, to maxX: CGFloat, shown: Side? = nil) -> Side? {
+        guard x >= minX, x <= maxX else { return nil }
+        let band = band(for: maxX - minX)
+        if x <= minX + band + (shown == .left ? slack : 0) { return .left }
+        if x >= maxX - band - (shown == .right ? slack : 0) { return .right }
+        return nil
+    }
     /// How far out of the band the pointer goes before a shown split lets go.
-    static let slack: CGFloat = 20
+    nonisolated static let slack: CGFloat = 20
     /// The pointer at rest in a band — moved less than this in `still` — is
     /// what shows the split. No fixed wait, and no flicker from a tab
     /// carried straight across.
@@ -414,13 +433,11 @@ final class TabDrag: ObservableObject {
             view.kind == .stage && view.tab.map { browser.canJoin(source, beside: $0) } == true
         }), let page = stage.tab {
             let frame = window.convertToScreen(stage.convert(stage.bounds, to: nil))
-            let band = max(TabDrag.band, frame.width * TabDrag.bandShare)
             // The side shown keeps a little more room before it lets go.
             let shown = preview?.targetID == page.id ? preview?.side : nil
-            let left = band + (shown == .left ? TabDrag.slack : 0)
-            let right = band + (shown == .right ? TabDrag.slack : 0)
-            if point.x <= frame.minX + left { return .stage(page, onLeft: true) }
-            if point.x >= frame.maxX - right { return .stage(page, onLeft: false) }
+            if let side = TabDrag.side(at: point.x, from: frame.minX, to: frame.maxX, shown: shown) {
+                return .stage(page, onLeft: side == .left)
+            }
         }
         guard browser.split(for: source) != nil else { return .outside }
         let pair = browser.split(for: source)
