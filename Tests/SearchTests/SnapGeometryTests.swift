@@ -189,7 +189,10 @@ final class SnapCopyOnlyTests: XCTestCase {
 
     func testTheRowSitsUnderCapturePages() throws {
         let row = try XCTUnwrap(SettingsIndex.item("pages.capture.copyOnly"))
-        XCTAssertEqual(row.parent, "pages.capture")
+        // Capture is built in since 27 Nov 2026: the row is a line of
+        // Capture and Hide Elements, under Browsing's Advanced.
+        XCTAssertEqual(row.within, "pages.extras")
+        XCTAssertTrue(row.advanced)
         XCTAssertEqual(row.group, "pages")
         XCTAssertEqual(row.keys, ["pages.capture.copyOnly"])
         let prefs = Preferences()

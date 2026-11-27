@@ -413,7 +413,7 @@ enum Motion {
     /// The switch itself: on for everyone who never touched it (Drice, 25
     /// Nov 2026), as Preferences reads it.
     private static var lightOn: Bool {
-        Store.settings.object(forKey: lightKey) as? Bool ?? true
+        Retired.on(lightKey)
     }
 
     nonisolated static let lightKey = "motion.light"

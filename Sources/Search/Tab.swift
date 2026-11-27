@@ -300,7 +300,7 @@ struct ReadingFill: View {
 }
 
 @MainActor
-final class Tab: ObservableObject, Identifiable {
+final class Tab: ObservableObject, Identifiable, HandsKeysBack {
     let id = UUID()
 
     /// The page. Built the first time anyone asks for it, not when the tab
@@ -2346,7 +2346,11 @@ final class Tab: ObservableObject, Identifiable {
         }
         quiet?.invalidate()
         quiet = nil
+        if on { MediaKeysKeeper.shared.played(self) }
         guard was, !on else { return }
+        // The tab that kept the keys while Search was in front gives them
+        // up: this one is paused last now (see MediaKeys.swift).
+        MediaKeysKeeper.shared.paused(self)?.handBack()
         quiet = Timer.scheduledTimer(withTimeInterval: MediaKeys.wait, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.hush() }
         }
@@ -2416,6 +2420,15 @@ final class Tab: ObservableObject, Identifiable {
     /// frame that played, so the Mac hands the media keys back.
     private func hush() {
         quiet = nil
+        guard !noisy, built != nil else { return }
+        // Paused last, with Search in front: it keeps the keys (idea 1350).
+        guard MediaKeysKeeper.shared.handsBack(self) else { return }
+        handBack()
+    }
+
+    /// The media keys given back now: what played here, paused, is muted
+    /// (MediaKeys.watch).
+    func handBack() {
         guard !noisy, let built else { return }
         built.evaluateJavaScript(MediaKeys.hush, in: nil, in: Web.world) { _ in }
         for frame in media.frames {

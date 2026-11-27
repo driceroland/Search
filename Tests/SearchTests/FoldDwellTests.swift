@@ -32,4 +32,34 @@ final class FoldDwellTests: XCTestCase {
         // The first sample has nothing before it.
         XCTAssertFalse(Fold.rising(from: nil, to: NSPoint(x: 400, y: 799)))
     }
+
+    /// The edge is watched on drags too: a drag in the page that reached it
+    /// (a selection, Airtable's own sidebar edge 6 points in) brought the
+    /// column out over the page mid-drag. Not with the left button held.
+    func testTheEdgeWaitsForTheButtonToBeLetGo() {
+        XCTAssertTrue(Fold.edgeBrings(pressed: 0))
+        XCTAssertFalse(Fold.edgeBrings(pressed: 1))
+        XCTAssertFalse(Fold.edgeBrings(pressed: 1 | 4))
+        // The right or middle button alone is no drag in the page.
+        XCTAssertTrue(Fold.edgeBrings(pressed: 2))
+        XCTAssertTrue(Fold.edgeBrings(pressed: 4))
+    }
+
+    /// Airtable's collapsed sidebar has its button 6–12 points in, inside
+    /// the hidden column's 28-point band: resting there brought the column
+    /// out over it and the click went to the column (idea 1308). Off the
+    /// very edge, over something of the page's, only the edge itself does.
+    func testTheBandIsThePagesWhereItHasSomethingToPress() {
+        XCTAssertEqual(Fold.trueEdge, 4)
+        XCTAssertLessThan(Fold.trueEdge, Fold.hiddenEdge)
+        // The very edge always.
+        XCTAssertEqual(Fold.edgeComes(distance: 0, pageHas: true), true)
+        XCTAssertEqual(Fold.edgeComes(distance: 3.9, pageHas: nil), true)
+        // Off it: over a button, never; over plain page, yes; not yet
+        // answered, wait.
+        XCTAssertEqual(Fold.edgeComes(distance: 8, pageHas: true), false)
+        XCTAssertEqual(Fold.edgeComes(distance: 8, pageHas: false), true)
+        XCTAssertNil(Fold.edgeComes(distance: 8, pageHas: nil))
+        XCTAssertEqual(Fold.edgeComes(distance: 27, pageHas: false), true)
+    }
 }

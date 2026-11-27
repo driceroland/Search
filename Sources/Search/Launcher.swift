@@ -695,9 +695,13 @@ private struct LauncherField: NSViewRepresentable {
             case #selector(NSResponder.cancelOperation(_:)):
                 launcher.dismiss()
                 return true
-            case #selector(NSResponder.deleteWordBackward(_:)):
-                // ⌥⌫ over an offered ending lets go of it and takes the last
-                // word typed, as in the window's field.
+            case #selector(NSResponder.deleteWordBackward(_:)),
+                 #selector(NSResponder.deleteToBeginningOfLine(_:)):
+                // ⌥⌫ or ⌘⌫ over an offered ending lets go of it and takes the
+                // last word typed, or the line, as in the window's field.
+                // Left to the text view they only took the selected ending,
+                // which the field then offered again: ⌘⌫ did nothing until a
+                // letter was taken with ⌫ (idea 1334).
                 deleting = true
                 let selected = textView.selectedRange()
                 guard launcher.ending != nil, selected.length > 0,
@@ -705,7 +709,11 @@ private struct LauncherField: NSViewRepresentable {
                 else { return false }
                 textView.delete(nil)
                 deleting = true
-                textView.deleteWordBackward(nil)
+                if command == #selector(NSResponder.deleteWordBackward(_:)) {
+                    textView.deleteWordBackward(nil)
+                } else {
+                    textView.deleteToBeginningOfLine(nil)
+                }
                 return true
             case #selector(NSResponder.deleteBackward(_:)),
                  #selector(NSResponder.deleteForward(_:)),

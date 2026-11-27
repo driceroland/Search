@@ -954,12 +954,13 @@ final class Bench {
                 case "still": tab.still()
                 case "play": tab.playAgain()
                 case "away": tab.handPause()
-                case "go": browser.select(tab)
+                case "go": browser.goToPlayer(tab)
                 default: answer(["error": "act is still, play, away or go"]); return
                 }
             }
             let tab = browser.player
-            answer(["tab": tab.map { Bench.short($0) } ?? "", "stilled": tab?.stilled ?? false,
+            answer(["tab": tab.map { Bench.short($0) } ?? "", "tabs": browser.players.map { Bench.short($0) },
+                    "stilled": tab?.stilled ?? false,
                     "noisy": tab?.noisy ?? false, "sounding": browser.sounding.count])
 
         case "eval":
@@ -1177,7 +1178,7 @@ final class Bench {
                 ? AnyView(AboutView(whatsNew: {}))
                 : request["notes"] as? Bool == true
                 ? AnyView(ReleaseNotesPanel {}.padding(40).background(Palette.ground))
-                : AnyView(WhatsNewCard(release: release, prefs: browser.prefs, close: {}, notes: {}).padding(40).background(Palette.ground))
+                : AnyView(WhatsNewCard(release: release, close: {}, settings: {}).padding(40).background(Palette.ground))
             let host = NSHostingView(rootView: root)
             host.frame = NSRect(origin: .zero, size: host.fittingSize)
             let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -2108,12 +2109,46 @@ final class Bench {
             let inWindow = browser.prefs.sidebar
                 ? NSPoint(x: min(60, browser.prefs.columnWidth / 2), y: window.frame.height / 2)
                 : NSPoint(x: window.frame.width / 2, y: window.frame.height - Metrics.strip / 2)
-            guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0),
-                  let event = NSEvent(cgEvent: cg) else { answer(["error": "no wheel event"]); return }
-            let taken = SpaceSwipe.shared.feed(event, in: window, at: inWindow)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                answer(["taken": taken, "precise": event.hasPreciseScrollingDeltas,
-                        "space": browser.space.name, "making": browser.makingSpace])
+            // COUNT notches EVERY seconds apart, as a wheel turned on sends
+            // them; with POINTS, each a step of that many points with no
+            // phase, as a wheel smoothed by its driver (Logi Options+) does.
+            let count = max(1, request["count"] as? Int ?? 1)
+            let every = request["every"] as? Double ?? 0.1
+            let points = request["points"] as? Double
+            // PEN: a tablet pen's pan instead (PenPan), the pen near the
+            // tablet for the run; INVERTED: macOS's natural scrolling on for
+            // it, as the event says (isDirectionInvertedFromDevice).
+            let pen = request["pen"] as? Bool ?? false
+            let inverted = request["inverted"] as? Bool ?? false
+            if pen { PenPan.near = true }
+            func notch() -> NSEvent? {
+                guard let points else {
+                    guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0) else { return nil }
+                    if inverted { cg.setIntegerValueField(CGEventField(rawValue: 137)!, value: 1) }
+                    return NSEvent(cgEvent: cg)
+                }
+                let x = Double(dx.signum()) * points, y = Double(dy.signum()) * points
+                guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0) else { return nil }
+                cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+                cg.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: Int64(y))
+                cg.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: Int64(x))
+                cg.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: y)
+                cg.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: x)
+                if inverted { cg.setIntegerValueField(CGEventField(rawValue: 137)!, value: 1) }
+                return NSEvent(cgEvent: cg)
+            }
+            guard let first = notch() else { answer(["error": "no wheel event"]); return }
+            var taken = 0
+            for n in 0..<count {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(n) * every) {
+                    if let event = n == 0 ? first : notch(), SpaceSwipe.shared.feed(event, in: window, at: inWindow) { taken += 1 }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(count - 1) * every + 0.8) {
+                if pen { PenPan.near = false }
+                answer(["taken": count == 1 ? (taken == 1) as Any : taken as Any, "precise": first.hasPreciseScrollingDeltas,
+                        "space": browser.space.name, "index": browser.spaces.firstIndex { $0.id == browser.spaceID } ?? -1,
+                        "making": browser.makingSpace])
             }
 
         case "spacestroke":
@@ -2355,6 +2390,19 @@ final class Bench {
                 answer(["peek": browser.peekTab?.address?.absoluteString ?? "", "peeking": browser.peeking,
                         "covered": web.covered,
                         "ungated": web.trackingAreas.filter { $0.owner !== web && !($0.owner is PointerGate) }.count])
+            }
+
+        case "edgeask":
+            // What the hidden column's edge asks the page under a point of
+            // the window (from its top-left) before it comes (EdgeAsk, idea
+            // 1308): true, the page has something to press there.
+            guard Store.testing else { answer(["error": "edgeask only works on a --test run"]); return }
+            guard let window = browser.window, let x = request["x"] as? Double, let y = request["y"] as? Double
+            else { answer(["error": "edgeask needs an x and a y"]); return }
+            let point = NSPoint(x: x, y: Double(window.frame.height) - y)
+            EdgeAsk.ask(window, at: point)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                answer(["pages": EdgeAsk.pageHas(window, at: point).map { $0 as Any } ?? NSNull()])
             }
 
         case "loadingline":

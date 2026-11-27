@@ -184,10 +184,11 @@ final class SyncDefaultTests: XCTestCase {
         await icloud.join()
         await icloud.join()
         XCTAssertFalse(icloud.joined)
-        XCTAssertNil(icloud.problem)
+        // Not an error, but a reason under the switch (idea 1330).
+        XCTAssertEqual(icloud.problem, "Sign in to iCloud in System Settings")
         XCTAssertEqual(engine.fetches, 0)
         XCTAssertTrue(engine.saved.isEmpty)
-        XCTAssertEqual(icloud.summary(folderSyncOn: false, otherwise: "off"), "Not signed in to iCloud: System Settings › Apple Account")
+        XCTAssertEqual(icloud.summary(folderSyncOn: false, otherwise: "off"), "Sign in to iCloud in System Settings")
     }
 
     // MARK: - the What's New card

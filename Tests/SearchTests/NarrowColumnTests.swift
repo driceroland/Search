@@ -55,11 +55,15 @@ final class NarrowColumnTests: XCTestCase {
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
         let previous = (prefs.sidebar, prefs.usesSpaces, prefs.spaceButtons, prefs.foldButton, prefs.sideWidth, prefs.sideHides,
-                        prefs.sidePosition)
+                        prefs.sidePosition, prefs.narrowsToIcons)
         restorePreferences = {
             (prefs.sidebar, prefs.usesSpaces, prefs.spaceButtons, prefs.foldButton, prefs.sideWidth, prefs.sideHides,
-             prefs.sidePosition) = previous
+             prefs.sidePosition, prefs.narrowsToIcons) = previous
         }
+        // Titles all the way down to the least width, as before narrowing
+        // to icons was built in (27 Nov 2026): the insets there still count
+        // for a column held under the line while the edge is dragged.
+        prefs.narrowsToIcons = false
         prefs.sidebar = true
         // On the left, where the lights are: a test before this one may have
         // left the column on the right, and its edge's line then drawn at x 0.
@@ -140,10 +144,12 @@ final class NarrowColumnTests: XCTestCase {
         activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
-        let previous = (prefs.sidebar, prefs.usesSpaces, prefs.sideWidth, prefs.sideHides, prefs.sidePosition)
+        let previous = (prefs.sidebar, prefs.usesSpaces, prefs.sideWidth, prefs.sideHides, prefs.sidePosition, prefs.narrowsToIcons)
         restorePreferences = {
-            (prefs.sidebar, prefs.usesSpaces, prefs.sideWidth, prefs.sideHides, prefs.sidePosition) = previous
+            (prefs.sidebar, prefs.usesSpaces, prefs.sideWidth, prefs.sideHides, prefs.sidePosition, prefs.narrowsToIcons) = previous
         }
+        // Titles under the line too, as before narrowing to icons was built in.
+        prefs.narrowsToIcons = false
         prefs.sidebar = true
         prefs.sidePosition = .left
         prefs.sideHides = false

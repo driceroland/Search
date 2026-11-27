@@ -12,7 +12,10 @@ import SwiftUI
 //   mute or unmute, as the row's is;
 // - recording (an extension, RecordingIndicator): a red dot in the top
 //   corner;
-// - the address the row says at rest, and private: in the tooltip.
+// - the page's host, on every tile, and private: in the tooltip;
+// - the close cross, on the tab you're on only, in its top-leading corner
+//   and only once the pointer has stayed a moment (crossDwell): passing
+//   over a 32 pt tile, or clicking it for the address, must not close it.
 // A pair (Split View) is one tile with both marks, one over the other; a
 // group is a short heading with the group's first letter, its tiles held by
 // a thin bracket.
@@ -68,10 +71,12 @@ enum IconTiles {
         pairs[id] = nil
     }
 
-    /// The tooltip: the title, then what a row would have said beside it.
+    /// The tooltip: the title, then where the page is — on every tile, as
+    /// a tile has no room to say it (X, 26 Nov) — and what a row would have
+    /// said beside it.
     static func tip(_ tab: Tab, address: AtRest?) -> String {
         var lines = [tab.label.isEmpty ? "New Tab" : tab.label]
-        if let address { lines.append(address.lead + address.name + address.tail) }
+        if let address { lines.append(address.text) }
         var marks: [String] = []
         if tab.shy { marks.append("Private") }
         if tab.recording { marks.append("Recording") }
@@ -96,27 +101,33 @@ struct IconTile: View {
     var half = false
 
     @State private var hovering = false
+    /// Over the cross itself, which reaches past the tile's corner.
+    @State private var overCross = false
+    /// The pointer has stayed long enough for the cross (crossDwell).
+    @State private var dwelled = false
     @State private var selectedOnPress = false
     @State private var pressed = false
     /// This tile, for the bench's list of them (IconTiles).
     @State private var me = UUID()
 
-    private var rest: AtRest? { live ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
-    private var tip: String { IconTiles.tip(tab, address: rest) }
-    private var speaker: Bool { !tab.loading && (tab.noisy || tab.muted) }
+    private var tip: String { IconTiles.tip(tab, address: AtRest.said(tab.restAddress, always: true)) }
+    private var speaker: Bool { CornerSpeaker.shows(for: tab) }
     private var closable: Bool { interactive && live && tab.pin == nil }
+    private var crossShows: Bool { closable && dwelled && (hovering || overCross) }
+
+    /// How long the pointer stays on the tab you're on before its cross
+    /// shows: a pass over the column, or a click for the address, is quicker.
+    static let crossDwell: Duration = .milliseconds(500)
+    /// The cross, in the tile's terms: a small disc on its top-leading
+    /// corner, a little past it, as the speaker sits on the bottom-trailing
+    /// one. It takes presses there only — never the middle, where a click
+    /// is for the tab (the field with its address, on the tab you're on).
+    static let crossFrame = CGRect(x: -3, y: -3, width: 13, height: 13)
 
     var body: some View {
         let _ = Bench.count("row")
         ZStack {
-            if closable && hovering {
-                // Put away rather than closed, in a group (Browser.closeTab).
-                Image(systemName: browser.putsAway(tab) ? "minus" : "xmark")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(Palette.muted)
-                    .frame(width: 15, height: 15)
-                    .background(Palette.ink.opacity(0.07), in: Circle())
-            } else if interactive, let number = shortcutNumbers[tab.id] {
+            if interactive, let number = shortcutNumbers[tab.id] {
                 TabShortcutNumber(number: number)
             } else if tab.loading {
                 Ring()
@@ -133,12 +144,10 @@ struct IconTile: View {
         }
         .frame(width: Metrics.iconTile, height: Metrics.iconTile)
         // Only the tab already on screen wears a cross, so picking another
-        // tile cannot close it with that same press.
-        .overlay {
-            if closable {
-                CloseClick(armed: hovering, act: close)
-                    .frame(width: 22, height: 22)
-            }
+        // tile cannot close it with that same press; and only after the
+        // dwell, in the corner, so neither can a click for its address.
+        .overlay(alignment: .topLeading) {
+            if closable { cross }
         }
         .overlay(alignment: .topTrailing) {
             if tab.recording {
@@ -180,6 +189,11 @@ struct IconTile: View {
         .modifier(OptionClick { if interactive { browser.optionClick(tab) } })
         .overlay { if interactive { MiddleClick(act: close) } }
         .onHover { over in hovering = over }
+        .task(id: closable && (hovering || overCross)) {
+            guard closable && (hovering || overCross) else { dwelled = false; return }
+            try? await Task.sleep(for: Self.crossDwell)
+            if !Task.isCancelled { dwelled = true }
+        }
         .onAppear {
             guard interactive else { return }
             Bench.rowAppeared(tab.id, hover: { hovering = $0 })
@@ -223,10 +237,26 @@ struct IconTile: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Close tab") { if interactive { close() } }
         .animation(nil, value: hovering)
+        .animation(Motion.quick, value: crossShows)
         .animation(Motion.quick, value: tab.loading)
         .animation(Motion.quick, value: speaker)
         .animation(Motion.quick, value: tab.recording)
         .transition(.scale(scale: 0.9).combined(with: .opacity))
+    }
+
+    /// Put away rather than closed, in a group (Browser.closeTab).
+    private var cross: some View {
+        Image(systemName: browser.putsAway(tab) ? "minus" : "xmark")
+            .font(.system(size: 6.5, weight: .bold))
+            .foregroundStyle(Palette.muted)
+            .frame(width: Self.crossFrame.width, height: Self.crossFrame.height)
+            .background(Palette.ground, in: Circle())
+            .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 0.5))
+            .opacity(crossShows ? 1 : 0)
+            .overlay { CloseClick(armed: crossShows, act: close) }
+            .contentShape(Circle())
+            .onHover { over in overCross = over && dwelled }
+            .offset(x: Self.crossFrame.minX, y: Self.crossFrame.minY)
     }
 
     @ViewBuilder
@@ -245,8 +275,13 @@ struct IconTile: View {
 
 /// The speaker of a tile: small, in its bottom corner, on a disc of the
 /// column's ground so it reads over any mark. A press mutes or unmutes.
-private struct CornerSpeaker: View {
+/// A pinned square wears it too, in the column and across the top (idea 1328).
+struct CornerSpeaker: View {
     @ObservedObject var tab: Tab
+
+    /// Whether a tile or a square of `tab` wears it: its page plays sound,
+    /// or was muted, and isn't on its way (the ring has the place then).
+    static func shows(for tab: Tab) -> Bool { !tab.loading && (tab.noisy || tab.muted) }
 
     var body: some View {
         Button(action: tab.toggleMute) {

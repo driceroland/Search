@@ -36,7 +36,9 @@ enum ColumnMenu {
             add("Paste and Go") { [weak browser] in browser?.open(url, foreground: true) }
         }
         menu.addItem(.separator())
-        add("Hide Sidebar") { [weak browser] in browser?.toggleFold() }
+        // As View says it: a hidden column, out over the page because the
+        // pointer brought it, is right-clicked only then, and ⌘S keeps it.
+        add(browser.foldTitle) { [weak browser] in browser?.toggleFold() }
         add("Sidebar Settings…") { [weak browser] in
             browser?.settingsPage = .tabs
             browser?.tuning = true

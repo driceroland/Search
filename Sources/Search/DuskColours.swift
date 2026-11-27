@@ -256,9 +256,14 @@ enum DuskColours {
       // reach in there either: each root gets twins of its own, beside its
       // own sheets, and our ground, marks and stillness too.
       var roots = [doc], rooted = new WeakSet();
+      // WebKit lists a root's adopted sheets in its styleSheets too (Safari
+      // 26), ours among them: they are left out of both, or every twin was
+      // twinned again on the next look, each time longer, until the page ran
+      // out of budget and every site was left to the filter.
       var sources = function (root) {
-        var list = [].slice.call(root.styleSheets);
-        root.adoptedStyleSheets.forEach(function (s) { if (!mine.has(s)) list.push(s); });
+        var list = [];
+        [].forEach.call(root.styleSheets, function (s) { if (!mine.has(s)) list.push(s); });
+        root.adoptedStyleSheets.forEach(function (s) { if (!mine.has(s) && list.indexOf(s) < 0) list.push(s); });
         return list;
       };
 
@@ -310,7 +315,10 @@ enum DuskColours {
       // they start as, which is no colour of its own.
       var htmlSides = sides.filter(function (side) { return side[0] !== 'fill' && side[0] !== 'stroke'; });
       var inherited = { color: true, fill: true, stroke: true };
-      var base = ':root { color-scheme: dark !important; }'
+      // A frame keeps the scheme it had: one whose document's scheme isn't
+      // its frame's is given an opaque canvas, and a light frame inside a
+      // page turned dark was a white box (Google's sign-in prompt).
+      var base = ':root { color-scheme: dark !important; } :where(iframe) { color-scheme: normal; }'
         + '[data-office-dusk-over] { --office-dusk-keep: 1; }'
         + 'img[data-office-dusk-icon] { filter: invert(1) hue-rotate(180deg) !important; }'
         // What paint finds, one rule a part, written once: the colour itself
