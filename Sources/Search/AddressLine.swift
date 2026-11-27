@@ -6,7 +6,9 @@ import SwiftUI
 // #1240), with the site card's button at its end. Off unless asked for:
 // Search shows the address when you go to change it, with ⌘L. On, it sits
 // at the top of the column, as tall as a tab and in line with them, or
-// before the tabs across the top, Small or Medium.
+// before the tabs across the top, Small or Medium. With the tabs down a
+// side it can go above the page instead, in a row of its own with back,
+// forward and reload before it and the extensions after (Toolbar.swift).
 //
 // A click there is ⌘L's editing, in place: the same field, the address in
 // it to type over, and the same suggestions hanging under the line rather
@@ -31,6 +33,20 @@ enum AddressWidth: String, CaseIterable, Identifiable {
         switch self {
         case .small: return 220
         case .medium: return 340
+        }
+    }
+}
+
+/// Where the address sits with the tabs down a side (Preferences.addressPlace).
+enum AddressPlace: String, CaseIterable, Identifiable {
+    case side, page
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .side: return "Sidebar"
+        case .page: return "Above the page"
         }
     }
 }

@@ -356,6 +356,15 @@ final class Preferences: ObservableObject {
     @Published var addressWidth: AddressWidth {
         didSet { store.set(addressWidth.rawValue, forKey: "address.width") }
     }
+    /// Where it is with the tabs down a side: at the top of the column, or
+    /// in a row of its own above the page, back, forward and reload before
+    /// it and the extensions after it, as in Chrome (Toolbar.swift).
+    @Published var addressPlace: AddressPlace {
+        didSet { store.set(addressPlace.rawValue, forKey: "address.place") }
+    }
+    /// The row above the page is drawn: the address in sight, put there,
+    /// with the tabs down a side. Across the top, the strip has all of it.
+    var toolbar: Bool { addressLine && sidebar && addressPlace == .page }
     /// The ground the card and the column sit on as glass: what is behind
     /// the window shows through, blurred (see Glass.swift). Off unless
     /// turned on.
@@ -454,6 +463,12 @@ final class Preferences: ObservableObject {
     @Published var hidesReload: Bool { didSet { store.set(hidesReload, forKey: "helm.reload.hidden") } }
     /// How many of back, forward and reload are shown.
     var helmDoors: Int { [hidesBack, hidesForward, hidesReload].filter { !$0 }.count }
+    /// How many of them sit in the lights' row: none once the row above
+    /// the page has them.
+    var rowHelmDoors: Int { toolbar ? 0 : helmDoors }
+    /// The puzzle at the column's foot: not hidden, and not gone up to the
+    /// row above the page with the pinned extensions.
+    var footPuzzle: Bool { !hidesExtensionsDoor && !toolbar }
     /// The buttons at the column's foot (and the strip's end), each hidden on
     /// its own: the extensions' puzzle, bookmarks and the profile (idea 426).
     /// Shown unless hidden. A pinned extension keeps its button.
@@ -1442,6 +1457,7 @@ final class Preferences: ObservableObject {
         scrollbarsFade = fades
         Scrollbars.fade = fades
         addressWidth = store.string(forKey: "address.width").flatMap(AddressWidth.init) ?? .small
+        addressPlace = store.string(forKey: "address.place").flatMap(AddressPlace.init) ?? .side
         glass = store.bool(forKey: "window.glass")
         glassGrain = (store.object(forKey: "window.glass.grain") as? Double).map { min(1, max(0, $0)) } ?? 0.2
         glassClear = (store.object(forKey: "window.glass.clear") as? Double).map { min(1, max(0, $0)) } ?? 0.5
@@ -1790,6 +1806,7 @@ final class Preferences: ObservableObject {
         take(\.addressLine, store.bool(forKey: "address.shown"))
         take(\.scrollbarsFade, store.bool(forKey: "scrollbars.fade"))
         take(\.addressWidth, "address.width", store.string(forKey: "address.width").flatMap(AddressWidth.init), or: .small)
+        take(\.addressPlace, "address.place", store.string(forKey: "address.place").flatMap(AddressPlace.init), or: .side)
         take(\.glass, store.bool(forKey: "window.glass"))
         take(\.glassGrain, "window.glass.grain", (store.object(forKey: "window.glass.grain") as? Double).map { min(1, max(0, $0)) }, or: 0.2)
         take(\.glassClear, "window.glass.clear", (store.object(forKey: "window.glass.clear") as? Double).map { min(1, max(0, $0)) }, or: 0.5)

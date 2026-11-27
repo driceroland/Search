@@ -34,10 +34,9 @@ extension Browser {
 struct BookmarksBar: View {
     @ObservedObject var browser: Browser
     let bookmarks: Bookmarks
-    /// On the window's ground, above the page's card, with the tabs down the
-    /// side: the ground's colour and no line of its own, the card's edge
-    /// being the line (see CardEdge).
-    var onFrame = false
+    /// On its own ground, on the window's beside the page's card, or inside
+    /// the card under the address (see RowGround).
+    var ground = RowGround.own
 
     static let height: CGFloat = 30
     /// The space between two on the bar, and the air at its ends.
@@ -131,17 +130,20 @@ struct BookmarksBar: View {
             }
         }
         .background {
-            ZStack {
-                // On glass the window's ground, colour and all, shows
-                // through (Glass.swift).
-                if !browser.glassy { onFrame ? Palette.frame : Palette.ground }
-                // The tabs' wash carried on under them, or the colour
-                // stopped at the bar's edge.
-                if !browser.glassy { SpaceWash(look: browser.wash) }
+            // In the card, the card's own ground.
+            if ground != .card {
+                ZStack {
+                    // On glass the window's ground, colour and all, shows
+                    // through (Glass.swift).
+                    if !browser.glassy { ground == .frame ? Palette.frame : Palette.ground }
+                    // The tabs' wash carried on under them, or the colour
+                    // stopped at the bar's edge.
+                    if !browser.glassy { SpaceWash(look: browser.wash) }
+                }
             }
         }
         .overlay(alignment: .bottom) {
-            if !onFrame { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            if ground == .own { Rectangle().fill(Palette.hairline).frame(height: 1) }
         }
     }
 
