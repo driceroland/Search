@@ -2468,7 +2468,7 @@ private struct SideRow: View, Equatable {
                     // The page is translated (Translate.swift).
                     TranslateSign(tab: tab, colour: colour)
                     TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
-                                size: prefs.sideTitle, colour: colour, roomy: true, dim: dim)
+                                size: prefs.sideTitle, colour: colour, roomy: true, dim: dim, tidy: tab.glint)
                 }
             }
             // Pushed to the leading edge by its frame, not a Spacer: the

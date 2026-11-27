@@ -1187,7 +1187,7 @@ private struct TabPill: View, Equatable {
                 // The page is translated (Translate.swift).
                 TranslateSign(tab: tab, colour: colour)
                 TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
-                            size: 12.5, colour: colour, roomy: false, dim: dim, record: tab.id)
+                            size: 12.5, colour: colour, roomy: false, dim: dim, record: tab.id, tidy: tab.glint)
             }
 
             Spacer(minLength: Metrics.tabSpring)

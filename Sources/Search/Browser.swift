@@ -2869,12 +2869,20 @@ final class Browser: NSObject, ObservableObject {
         announce("Clean link copied")
     }
 
+    static func ownTitle(of tab: Tab) -> String {
+        if let name = tab.name, !name.isEmpty { return name }
+        if tab.atPinnedPage, let pinTitle = tab.pinTitle, !pinTitle.isEmpty { return pinTitle }
+        if !tab.title.isEmpty { return tab.title }
+        if let address = tab.address { return Address.pretty(address) }
+        return "New Tab"
+    }
+
     /// For pasting into notes and messages that read Markdown: a title that
     /// links, not a bare address to explain in your own words.
     func copyMarkdownLink() {
         guard let tab = active, let url = tab.address else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(Browser.markdownLink(tab.label, url), forType: .string)
+        NSPasteboard.general.setString(Browser.markdownLink(Browser.ownTitle(of: tab), url), forType: .string)
         announce("Link copied")
     }
 
@@ -8321,9 +8329,11 @@ final class Browser: NSObject, ObservableObject {
     /// every tab there is.
     static func relevance(of tab: Tab, to words: [String], whole: String) -> Int {
         let name = tab.label.lowercased()
+        let raw = (tab.name ?? "").isEmpty ? tab.title.lowercased() : ""
+        let extra = !raw.isEmpty && raw != name ? raw : ""
         let address = tab.address.map { Address.pretty($0).lowercased() } ?? ""
-        if name.hasPrefix(whole) || address.hasPrefix(whole) { return 3 }
-        let text = name + " " + address
+        if name.hasPrefix(whole) || (!extra.isEmpty && extra.hasPrefix(whole)) || address.hasPrefix(whole) { return 3 }
+        let text = extra.isEmpty ? (name + " " + address) : (name + " " + extra + " " + address)
         let parts = text.split { !$0.isLetter && !$0.isNumber }
         if words.allSatisfy({ word in parts.contains { $0.hasPrefix(word) } }) { return 2 }
         if whole.count >= 2, words.allSatisfy({ text.contains($0) }) { return 1 }
@@ -8580,7 +8590,8 @@ final class Browser: NSObject, ObservableObject {
             .filter { tab in
                 guard !needle.isEmpty else { return true }
                 let address = tab.address.map { Address.pretty($0) } ?? ""
-                return tab.label.lowercased().contains(needle) || address.contains(needle)
+                let raw = (tab.name ?? "").isEmpty ? tab.title.lowercased() : ""
+                return tab.label.lowercased().contains(needle) || raw.contains(needle) || address.contains(needle)
             }
             .sorted { $0.touched > $1.touched }
             .prefix(needle.isEmpty ? 6 : 3)

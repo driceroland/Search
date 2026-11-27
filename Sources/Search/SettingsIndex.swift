@@ -414,6 +414,10 @@ enum SettingsIndex {
               more: "A click on the tab you're on opens its name to type over, as Rename in its right-click menu does, instead of its address. Edit its address with ⌘L.",
               keys: ["tabs.clickRenames"],
               words: ["rename", "name", "title", "double click", "click", "tab name"]),
+        .init(id: "tabs.tidy", group: "tabbar", icon: "sparkles",
+              title: "Tidy tab titles", detail: "Apple Intelligence shortens long page titles to what the page is about",
+              more: "Made on this Mac by the model built into macOS: nothing about the page leaves it. A tab you named keeps its name, and a page's own title comes back when it changes, until that one is tidied too.",
+              keys: ["tabs.tidy"], words: ["apple intelligence", "ai", "title", "short", "clean", "tidy", "arc"]),
         .init(id: "tabs.mirror", group: "tabwindows", icon: "rectangle.on.rectangle",
               title: "Same tabs in every window", detail: "Each window lists the same open tabs in a space, as it lists the same pins",
               more: "A tab opened, closed, moved, grouped or renamed in one window is so in the others. Each window shows the page on its own, so the same tab can be open in two windows at once. Private tabs stay in their window, and closing a window leaves its tabs in the others.",
@@ -834,6 +838,7 @@ enum SettingsIndex {
         case "privacy.clickIDs": return ClickIDs.possible
         case "privacy.gpc": return PrivacySignal.possible
         case "privacy.httpsFirst": return HTTPSFirst.possible
+        case "tabs.tidy": return TidyTitles.available
         default: return true
         }
     }

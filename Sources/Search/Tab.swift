@@ -372,7 +372,9 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
     /// The stylesheet a page not yet built is to be armed with.
     private var veils = ""
 
-    @Published private(set) var title = ""
+    @Published private(set) var title = "" {
+        didSet { if title != oldValue { TidyTitles.saw(self) } }
+    }
     @Published private(set) var address: URL?
     /// The address of the page that is actually on screen. `address` moves
     /// to where the tab is going as soon as a load starts, while the page
@@ -913,7 +915,27 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
     /// them starts its time from then (letGo), not from whenever it was
     /// last left.
     @Published var name: String? {
-        didSet { if name == nil, oldValue != nil { letGo = Date() } }
+        didSet {
+            guard name == nil, oldValue != nil else { return }
+            letGo = Date()
+            TidyTitles.saw(self)
+        }
+    }
+
+    struct Tidied: Equatable {
+        let of: String
+        let text: String
+        let quiet: Bool
+    }
+    @Published var tidy: Tidied?
+
+    var worn: String? {
+        guard let tidy, Shared.prefs.tidiesTitles, tidy.of == TidyTitles.plain(title) else { return nil }
+        return tidy.text
+    }
+
+    var glint: String? {
+        tidy?.quiet == true ? nil : worn
     }
 
     /// When you last looked at it. The summon lists pages by this, because
@@ -938,7 +960,9 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
     /// has a name and an address in the row, and costs nothing until you go to
     /// it — which is the difference between a browser that starts in half a
     /// second with twenty tabs and one that doesn't.
-    private(set) var pending: URL?
+    private(set) var pending: URL? {
+        didSet { if pending == nil, oldValue != nil { TidyTitles.saw(self) } }
+    }
 
     /// For a tab put to sleep for not being looked at: the page's own history
     /// — the back list, the page, where it was scrolled to — handed to the
@@ -1037,6 +1061,7 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
         if popup, let host = address?.host(), !host.isEmpty {
             return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         }
+        if let worn { return worn }
         if !title.isEmpty { return title }
         if let address { return Address.pretty(address) }
         return "New Tab"
@@ -2304,6 +2329,7 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
     /// Called when the tab is thrown away. Without it the view keeps running
     /// whatever the page left behind — timers, video, sockets.
     func close() {
+        TidyTitles.closed(self)
         onZoom = nil
         onLink = nil
         onPick = nil
