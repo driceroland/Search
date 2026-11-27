@@ -90,3 +90,24 @@ struct PinIconHome: ViewModifier {
         }
     }
 }
+
+/// A double-click on a pin's square takes a pin that wandered back to its
+/// page, as Arc's do (#141, idea 1216): from the square you are on, and from
+/// another, whose first click makes it the one on screen. On the square you
+/// are on, at home already, it changes the letter, as it always did
+/// (Browser.goHome); on another one at home, the double-click only picks it.
+enum PinDouble {
+    /// Whether the double-click goes to Browser.goHome. `opened`: its first
+    /// click made the pin the one on screen; `live`: it is now.
+    static func goesHome(clicks: Int, live: Bool, opened: Bool, wandered: Bool) -> Bool {
+        guard clicks == 2 else { return false }
+        return opened ? wandered : live
+    }
+
+    /// A pin away from the page it was pinned at, square or row.
+    @MainActor
+    static func wandered(_ tab: Tab) -> Bool {
+        guard tab.pin != nil, let home = tab.home else { return false }
+        return !Browser.samePage(home, tab.address)
+    }
+}

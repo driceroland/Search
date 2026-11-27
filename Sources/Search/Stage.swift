@@ -40,7 +40,12 @@ struct Page: View {
             // A blank tab owns no page to paint over this, and a tab that
             // gets one is no longer blank, so the wall goes with the load.
             // Split panes draw their layers through here too.
-            if tab.isBlank { BlankWall() }
+            // Cut to the card's corners itself, as Search's own pages are:
+            // the card's clip doesn't reach under the page's AppKit view.
+            if tab.isBlank {
+                BlankWall()
+                    .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            }
             // A tab put down with ⌘W has no view, and asking for one here
             // would build an empty one a frame before the stage moves on.
             //
@@ -743,16 +748,25 @@ final class CallWatch: NSObject {
 }
 
 /// What there is to say when the page never came. One line, and the only thing
-/// worth offering — another go.
+/// worth offering — another go. A second line in the message is a hint,
+/// drawn smaller under it.
 struct Trouble: View {
     let message: String
     let retry: () -> Void
 
     var body: some View {
+        let lines = message.split(separator: "\n", maxSplits: 1).map(String.init)
         VStack(spacing: 10) {
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundStyle(Palette.ink)
+            VStack(spacing: 4) {
+                Text(lines.first ?? message)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Palette.ink)
+                if lines.count > 1 {
+                    Text(lines[1])
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                }
+            }
             Button("Try again", action: retry)
                 .buttonStyle(.plain)
                 .font(.system(size: 12))

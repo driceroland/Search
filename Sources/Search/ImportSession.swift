@@ -31,6 +31,9 @@ enum SessionImport {
         var title: String
         var pinned: Bool
         var group: Token?
+        /// The space it was open in, by the other browser's own id for it:
+        /// Zen's workspace. Nil for a browser without spaces.
+        var space: String? = nil
     }
 
     struct Group: Equatable {
@@ -45,12 +48,15 @@ enum SessionImport {
         var groups: [Token: Group] = [:]
         /// How many there were before the limit, when more than it.
         var found = 0
+        /// The names of the spaces those tabs were open in, by the id a tab
+        /// carries in `space`, for finding the space here of that name.
+        var spaceNames: [String: String] = [:]
         var tabs: Int { windows.reduce(0) { $0 + $1.count } }
 
         /// No more than `limit` tabs, window by window, and only the groups
         /// those still hold.
         func capped(_ limit: Int = SessionImport.limit) -> Snapshot {
-            var out = Snapshot(found: max(found, tabs))
+            var out = Snapshot(found: max(found, tabs), spaceNames: spaceNames)
             var room = limit
             for window in windows where room > 0 {
                 let kept = Array(window.prefix(room))

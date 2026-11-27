@@ -1,6 +1,8 @@
 import AppKit
 import CloudKit
 import Combine
+import CryptoKit
+import IOKit
 
 // Sync with iCloud: the same open tabs, pins, spaces, bookmarks and a few
 // settings on this Mac, Search on the iPhone, and other Macs, through the
@@ -125,8 +127,29 @@ struct ICloudLedger: Codable, Equatable {
     /// Optional, so a ledger without it still reads, and an older build
     /// reading this one passes it over.
     var folders: Bool?
+    /// Which Mac kept this ledger: ThisMac.fingerprint, a hash, never the
+    /// hardware UUID itself, and never sent anywhere. Optional, so a ledger
+    /// from before it still reads.
+    var mac: String?
 
     var deviceKey: String { "device." + device }
+
+    /// This ledger, as `mac`'s own. One that came from another Mac
+    /// (Migration Assistant, a backup restored on a new Mac) carries that
+    /// Mac's device id, and the two would take each other's tabs for their
+    /// own and never see each other: it starts again as a new device,
+    /// joining, as turning sync on does. What is on this Mac stays; the
+    /// other Mac's record in iCloud is left alone. A ledger from before the
+    /// fingerprint is taken as this Mac's.
+    func claimed(by mac: String?) -> ICloudLedger {
+        guard let mac, self.mac != mac else { return self }
+        if self.mac == nil {
+            var mine = self
+            mine.mac = mac
+            return mine
+        }
+        return ICloudLedger(folders: true, mac: mac)
+    }
 
     /// Something here, offered: true when it differs from the last JSON
     /// written or read, and is now stamped and due to go up. Nothing before
@@ -167,7 +190,26 @@ struct ICloudLedger: Codable, Equatable {
     }
 
     /// Everything forgotten but which device this is.
-    func fresh() -> ICloudLedger { ICloudLedger(device: device, folders: true) }
+    func fresh() -> ICloudLedger { ICloudLedger(device: device, folders: true, mac: mac) }
+}
+
+/// Something that tells this Mac from one set up from it with Migration
+/// Assistant, which copies Search's files and settings: a hash of the
+/// hardware UUID, salted, cut short. Kept only beside the sync ids, on this
+/// Mac; nil where IOKit says nothing.
+enum ThisMac {
+    nonisolated static let fingerprint: String? = {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+        guard service != 0 else { return nil }
+        defer { IOObjectRelease(service) }
+        guard let uuid = IORegistryEntryCreateCFProperty(service, kIOPlatformUUIDKey as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? String, !uuid.isEmpty else { return nil }
+        return hash(uuid)
+    }()
+
+    nonisolated static func hash(_ uuid: String) -> String {
+        SHA256.hash(data: Data(("search.sync.mac:" + uuid).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 // MARK: - the rules, worked out
@@ -484,7 +526,59 @@ final class ICloudSync: ObservableObject {
     nonisolated static let offKey = "icloud.off"
 
     enum Account: Equatable {
-        case unknown, signedIn, signedOut, restricted
+        /// Not asked yet.
+        case unknown
+        case signedIn, signedOut, restricted
+        /// Signed in to iCloud, with iCloud turned off for Search.
+        case offForSearch
+        /// CKAccountStatus.temporarilyUnavailable: the Apple Account wants
+        /// something (terms, a password) before iCloud carries on.
+        case needsAttention
+        /// CKAccountStatus.couldNotDetermine, or asking failed: tried again
+        /// later (`retryLater`).
+        case unreachable
+    }
+
+    /// CloudKit's answer, as this Mac tells it. `signedInToICloud`: the
+    /// Mac has an iCloud account at all (FileManager's ubiquity token), so
+    /// "no account" for Search's container means iCloud is off for Search.
+    nonisolated static func account(_ status: CKAccountStatus?, signedInToICloud: Bool) -> Account {
+        guard let status else { return .unreachable }
+        switch status {
+        case .available: return .signedIn
+        case .noAccount: return signedInToICloud ? .offForSearch : .signedOut
+        case .restricted: return .restricted
+        case .temporarilyUnavailable: return .needsAttention
+        case .couldNotDetermine: return .unreachable
+        @unknown default: return .unreachable
+        }
+    }
+
+    /// Why it isn't syncing, under "Sync with iCloud" (idea 1330). None
+    /// while signed in, or before iCloud has been asked.
+    nonisolated static func line(_ account: Account) -> String? {
+        switch account {
+        case .signedIn, .unknown: return nil
+        case .signedOut: return "Sign in to iCloud in System Settings"
+        case .offForSearch: return "Turn on iCloud for Search in System Settings › Apple Account › iCloud"
+        case .restricted: return "iCloud is restricted on this Mac"
+        case .needsAttention: return "Your Apple Account needs attention in System Settings"
+        case .unreachable: return "Couldn't reach iCloud. Trying again."
+        }
+    }
+
+    /// The wait before the next try after iCloud couldn't be reached:
+    /// 30 s, doubling, at most 15 min.
+    nonisolated static func backoff(_ attempt: Int) -> TimeInterval {
+        min(30 * pow(2, Double(min(attempt, 10))), 900)
+    }
+
+    /// The line under the row about which profile goes to iCloud: only
+    /// with more than one profile. `elsewhere`: the window in front is
+    /// another profile's, whose tabs, pins and bookmarks don't sync.
+    nonisolated static func profileLine(several: Bool, name: String, elsewhere: Bool) -> String? {
+        guard several else { return nil }
+        return elsewhere ? "Syncs the \(name) profile · Switch to \(name) to sync" : "Syncs the \(name) profile"
     }
 
     /// Turned on in Settings.
@@ -504,19 +598,32 @@ final class ICloudSync: ObservableObject {
     private let defaults: UserDefaults
     private let file: URL?
     private let makeEngine: (ICloudSync, Data?) -> ICloudEngine
+    /// ThisMac.fingerprint, or a stand-in in the tests.
+    private let mac: String?
     private var bag: Set<AnyCancellable> = []
     private var timer: Timer?
     private var pending: DispatchWorkItem?
     private var joining = false
     private var ticks = 0
+    /// The next try after iCloud couldn't be reached, and how many came
+    /// before it; one at a time.
+    private var retry: DispatchWorkItem?
+    private(set) var retries = 0
+    /// The wait before that try, for the tests and the bench.
+    private(set) var retryDelay: TimeInterval?
+    /// Shrinks the waits in the tests.
+    var retryScale: TimeInterval = 1
 
     init(local: ICloudLocal, defaults: UserDefaults, file: URL?, available: Bool,
+         mac: String? = ThisMac.fingerprint,
          makeEngine: @escaping (ICloudSync, Data?) -> ICloudEngine) {
         self.local = local
         self.defaults = defaults
         self.file = file
         self.available = available
+        self.mac = mac
         self.makeEngine = makeEngine
+        ledger.mac = mac
         on = defaults.bool(forKey: ICloudSync.onKey)
     }
 
@@ -565,7 +672,12 @@ final class ICloudSync: ObservableObject {
     /// At launch: carries on if it was on.
     func start() {
         guard on, available, engine == nil, !Sync.shared.on else { return }
-        ledger = load() ?? ledger.fresh()
+        if let saved = load() {
+            ledger = saved.claimed(by: mac)
+            if ledger != saved { save() }
+        } else {
+            ledger = ledger.fresh()
+        }
         begin()
     }
 
@@ -575,7 +687,9 @@ final class ICloudSync: ObservableObject {
         on = true
         defaults.set(true, forKey: ICloudSync.onKey)
         defaults.removeObject(forKey: ICloudSync.offKey)
-        ledger = ledger.fresh()
+        // A new id each time: turning off took the old one's record away,
+        // and two Macs cloned before ICloudLedger.mac part this way.
+        ledger = ICloudLedger(folders: true, mac: mac)
         save()
         begin()
     }
@@ -638,7 +752,14 @@ final class ICloudSync: ObservableObject {
             NotificationCenter.default.publisher(for: name).sink(receiveValue: poke).store(in: &bag)
         }
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
-            .sink { [weak self] _ in self?.refresh() }.store(in: &bag)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                if self.account == .signedIn { self.refresh() } else { self.recheck() }
+            }.store(in: &bag)
+        // Signed in, out, or iCloud turned on for Search in System Settings.
+        NotificationCenter.default.publisher(for: .CKAccountChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.recheck() }.store(in: &bag)
         Shared.prefs.objectWillChange.sink { [weak self] in self?.schedule() }.store(in: &bag)
         // Tabs open and close without telling anyone: looked at every half
         // minute, sent only when the list differs. iCloud asked again every
@@ -654,7 +775,11 @@ final class ICloudSync: ObservableObject {
         // Otherwise the first fetch, then the merge.
         detach { sync in
             if sync.ledger.joined {
-                if let engine = sync.engine { sync.account = (try? await ICloudSync.outside { await engine.account() }) ?? .unknown }
+                guard let engine = sync.engine else { return }
+                let now = (try? await ICloudSync.outside { await engine.account() }) ?? .unreachable
+                guard sync.engine === engine else { return }
+                sync.noted(now)
+                guard now == .signedIn else { return }
                 sync.refresh()
                 sync.publish()
             } else {
@@ -671,6 +796,67 @@ final class ICloudSync: ObservableObject {
         pending = nil
         engine = nil
         joining = false
+        retry?.cancel()
+        retry = nil
+        retries = 0
+        retryDelay = nil
+    }
+
+    /// What iCloud said about the account: the line for it, and another
+    /// try later when it couldn't be reached. Never a tight loop: one try
+    /// waiting at a time, each wait longer than the last.
+    func noted(_ now: Account) {
+        account = now
+        if now == .unreachable {
+            problem = ICloudSync.line(now)
+            retryLater()
+            return
+        }
+        retry?.cancel()
+        retry = nil
+        retries = 0
+        retryDelay = nil
+        if let line = ICloudSync.line(now) {
+            problem = line
+        } else if let problem, ICloudSync.isAccountLine(problem) {
+            self.problem = nil
+        }
+    }
+
+    private static func isAccountLine(_ text: String) -> Bool {
+        [Account.signedOut, .offForSearch, .restricted, .needsAttention, .unreachable].contains { line($0) == text }
+    }
+
+    private func retryLater() {
+        guard engine != nil, retry == nil else { return }
+        let delay = ICloudSync.backoff(retries)
+        retries += 1
+        retryDelay = delay
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.retry = nil
+                self.recheck()
+            }
+        }
+        retry = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay * retryScale, execute: work)
+    }
+
+    /// iCloud asked again about the account: on CKAccountChanged, back in
+    /// front while not signed in, and after a wait when it couldn't be
+    /// reached. Joins when it can.
+    func recheck() {
+        guard let engine else { return }
+        retry?.cancel()
+        retry = nil
+        guard ledger.joined else { detach { await $0.join() }; return }
+        detach { sync in
+            let now = (try? await ICloudSync.outside { await engine.account() }) ?? .unreachable
+            guard sync.engine === engine else { return }
+            sync.noted(now)
+            if now == .signedIn { sync.refresh() }
+        }
     }
 
     private func schedule(after delay: TimeInterval = 2) {
@@ -707,11 +893,14 @@ final class ICloudSync: ObservableObject {
         guard let engine, !ledger.joined, !joining else { return }
         joining = true
         defer { joining = false }
-        account = (try? await ICloudSync.outside { await engine.account() }) ?? .unknown
-        guard account == .signedIn else {
-            problem = account == .restricted ? "iCloud is restricted on this Mac" : nil
-            return
-        }
+        retry?.cancel()
+        retry = nil
+        let now = (try? await ICloudSync.outside { await engine.account() }) ?? .unreachable
+        guard self.engine === engine else { return }
+        // Every answer but "signed in" says why under the switch, and
+        // "couldn't reach" tries again (idea 1330): never a quiet stop.
+        noted(now)
+        guard now == .signedIn else { return }
         do {
             try await ICloudSync.outside { try await engine.fetch() }
         } catch {
@@ -944,20 +1133,23 @@ final class ICloudSync: ObservableObject {
 
     /// Signed in, out, or as someone else.
     func accountChanged(_ now: Account) {
-        account = now
         switch now {
         case .signedIn:
+            noted(now)
             problem = nil
             // Arrives as a CloudKit callback: joining awaits a fetch, so
             // it starts detached (see `detach`).
             detach { await $0.join() }
-        case .signedOut, .restricted:
+        case .signedOut, .restricted, .offForSearch:
             // Another person's iCloud, or none: nothing of the last one stays.
+            noted(now)
             ledger = ledger.fresh()
             others = [:]
             save()
+        case .needsAttention, .unreachable:
+            noted(now)
         case .unknown:
-            break
+            recheck()
         }
     }
 
@@ -1007,7 +1199,9 @@ final class ICloudSync: ObservableObject {
     private func load() -> ICloudLedger? {
         guard let file, let data = try? Data(contentsOf: file),
               let saved = try? JSONDecoder().decode(ICloudLedger.self, from: data) else { return nil }
-        for (key, value) in saved.values where key.hasPrefix("device.") && key != saved.deviceKey {
+        // Copied from another Mac: its tabs are that Mac's, not this one's.
+        let own = saved.claimed(by: mac).deviceKey
+        for (key, value) in saved.values where key.hasPrefix("device.") && key != own {
             if let tabs = ICloudMerge.decode(DeviceTabs.self, value) { others[String(key.dropFirst("device.".count))] = tabs }
         }
         return saved
@@ -1050,10 +1244,13 @@ final class ICloudSync: ObservableObject {
         }
         if folderSyncOn && !on { return "Turn off Sync Macs through a folder first" }
         guard on else { return offReason ?? otherwise }
+        // Both on (from before the switches kept them apart): `start`
+        // leaves iCloud off, and says so here rather than "Checking".
+        if folderSyncOn && engine == nil { return "Not syncing while Sync Macs through a folder is on. Turn that off" }
         switch account {
-        case .signedOut: return "Not signed in to iCloud: System Settings › Apple Account"
-        case .restricted: return "iCloud is restricted on this Mac"
         case .unknown: return problem ?? "Checking iCloud…"
+        case .signedOut, .offForSearch, .restricted, .needsAttention, .unreachable:
+            return ICloudSync.line(account) ?? "Checking iCloud…"
         case .signedIn:
             if let problem { return "Signed in to iCloud · \(problem)" }
             guard let lastSynced else { return "Signed in to iCloud · syncing…" }
@@ -1209,13 +1406,11 @@ final class CloudKitEngine: ICloudEngine, CKSyncEngineDelegate, @unchecked Senda
     }
 
     func account() async -> ICloudSync.Account {
-        guard let status = try? await container.accountStatus() else { return .unknown }
-        switch status {
-        case .available: return .signedIn
-        case .noAccount: return .signedOut
-        case .restricted: return .restricted
-        default: return .unknown
-        }
+        let status = try? await container.accountStatus()
+        // An iCloud account on this Mac at all: "no account" for Search's
+        // container then means iCloud is off for Search.
+        let signedIn = status == .noAccount && FileManager.default.ubiquityIdentityToken != nil
+        return ICloudSync.account(status, signedInToICloud: signedIn)
     }
 
     func close() { owner = nil }

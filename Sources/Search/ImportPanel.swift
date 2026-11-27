@@ -191,7 +191,10 @@ struct ImportPanel: View {
     private func arcDetail(_ arc: (spaces: Int, pinned: Int), _ source: ImportSource) -> String {
         let spaces = arc.spaces == 1 ? "1 space" : "\(arc.spaces) spaces"
         let favourites = source.name == "Zen" ? "Essentials" : "favourites"
-        let head = "\(spaces), \(arc.pinned) pinned — each a space here, the \(favourites) as pins"
+        // Counted only once its key is handed over, on Bring them in.
+        let head = source.sidebarAsksKey
+            ? "Its spaces, pinned tabs and folders, read with \(source.name)'s key when you bring them in — each a space here, the \(favourites) as pins"
+            : "\(spaces), \(arc.pinned) pinned — each a space here, the \(favourites) as pins"
         if browser.prefs.listsPins && browser.prefs.pinFolders {
             return head + ", its pinned pages as rows under them, in its folders as folders of rows"
         }
@@ -221,7 +224,7 @@ struct ImportPanel: View {
             ? "The first \(session.tabs.formatted()) of \(session.found.formatted()) tabs" : count(session.tabs, "tab")
         let groups = session.groups.isEmpty ? "" : " in \(count(session.groups.count, "group"))"
         if case .mozilla(let mozilla) = source, mozilla.keepsSpaces {
-            return "\(tabs)\(groups) — asleep at the end of this space; its pinned tabs come with its spaces"
+            return "\(tabs)\(groups) — asleep, each in the space of its Zen space's name or else this one; its pinned tabs come with its spaces"
         }
         return "\(tabs)\(groups) — asleep at the end of this space, pinned tabs as pins"
     }
@@ -437,7 +440,7 @@ struct ImportPanel: View {
             parts.append(count(n, one))
         }
         if preview.session.found > 0 { parts.append(count(preview.session.found, "open tab")) }
-        if let arc = arcCounts[key(source, profile(of: source))], arc.spaces > 0 {
+        if let arc = arcCounts[key(source, profile(of: source))], arc.spaces > 0, !source.sidebarAsksKey {
             parts.append(count(arc.spaces, "space"))
         }
         if let record = ImportRecords.of(source.name) {
@@ -579,13 +582,31 @@ struct ImportPanel: View {
             Task { for id in extensions { await Extensions.shared.install(id: id) } }
             said[3] = Said(ok: true, text: extensions.count == 1 ? "1 extension to confirm" : "\(extensions.count) extensions to confirm")
         }
-        if wantsArc, arcCounts[key(source, profile)] != nil, let sidebar = source.arcSidebar(profile: profile) {
+        func land(_ sidebar: ArcSidebar) {
             let (spaces, pins, tabs) = browser.takeArc(sidebar, from: source, profile: profile)
             ImportRecords.note(source.name, spaces: spaces, pinned: pins + tabs)
             arcLanded = source.sessionRepeatsSpaces
             func count(_ n: Int, _ one: String) -> String { n == 1 ? "1 \(one)" : "\(n.formatted()) \(one)s" }
             said[4] = Said(ok: true, text: spaces + pins + tabs == 0 ? "\(source.name)'s spaces and pins were all here already"
                            : "\(count(spaces, "new space")), \(count(pins, "pin")), \(count(tabs, "pinned tab"))")
+        }
+        if wantsArc, arcCounts[key(source, profile)] != nil {
+            if source.sidebarAsksKey {
+                // Dia's spaces are behind its key: read off the main thread,
+                // where macOS asks for it (once, with the passwords).
+                group.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let sidebar = source.arcSidebar(profile: profile)
+                    DispatchQueue.main.async {
+                        if let sidebar { land(sidebar) } else {
+                            said[4] = Said(ok: false, text: "\(source.name)'s spaces couldn't be read — allow macOS to hand over its key and try again")
+                        }
+                        group.leave()
+                    }
+                }
+            } else if let sidebar = source.arcSidebar(profile: profile) {
+                land(sidebar)
+            }
         }
         // From what was read when the sheet counted, not read again here.
         if wantsTabs, bringsTabs(source), let session = preview?.session {

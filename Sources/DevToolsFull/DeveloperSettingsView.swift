@@ -180,45 +180,55 @@ struct DeveloperSettingsView: View {
     /// The chosen section's white, slid from one to the next as in the
     /// browser's Settings.
     @Namespace private var chosen
+    /// Narrower than the rail and a section side by side need: the rail's
+    /// icons alone (a panel docked down a side, idea 1257).
+    @State private var narrow = false
 
     /// The browser's Settings, in DevTools' sections: the rail on the left,
     /// the section's icon and title over its settings, and a cross to close.
     var body: some View {
         HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Settings")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.ink)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 14)
-                    .padding(.bottom, 10)
-                ForEach(DeveloperSettingsSection.allCases) { item in
-                    SettingsRailRow(icon: item.icon, title: item.rawValue, on: shell.settingsSection == item,
-                                    count: nil, chosen: chosen) { shell.settingsSection = item }
+            // Scrolls when the panel along the bottom is too short for it.
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if !narrow {
+                        Text("Settings")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Palette.ink)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 14)
+                            .padding(.bottom, 10)
+                    }
+                    ForEach(DeveloperSettingsSection.allCases) { item in
+                        SettingsRailRow(icon: item.icon, title: item.rawValue, on: shell.settingsSection == item,
+                                        count: nil, chosen: chosen, compact: narrow) { shell.settingsSection = item }
+                    }
                 }
-                Spacer(minLength: 0)
+                .animation(Motion.reduced ? nil : .spring(response: 0.45, dampingFraction: 0.72), value: shell.settingsSection)
+                .padding(8)
             }
-            .animation(Motion.reduced ? nil : .spring(response: 0.45, dampingFraction: 0.72), value: shell.settingsSection)
-            .padding(8)
-            .frame(width: 180, alignment: .leading)
+            .frame(width: narrow ? 52 : 180, alignment: .leading)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(Palette.wash.opacity(0.45), in: Rectangle())
             Rectangle().fill(Palette.hairline).frame(width: 1)
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 10) {
                     Image(systemName: shell.settingsSection.icon).font(.system(size: 15, weight: .medium))
-                    Text(shell.settingsSection.rawValue).font(.system(size: 17, weight: .semibold))
+                    Text(shell.settingsSection.rawValue).font(.system(size: 17, weight: .semibold)).lineLimit(1)
                     Spacer()
                     Door(icon: "xmark", help: "Done   esc") { dismiss() }
                 }
                 .foregroundStyle(Palette.ink)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, narrow ? 14 : 24)
                 .padding(.bottom, 18)
-                ScrollView(showsIndicators: false) {
+                // Narrow, a setting wider than the card (a picker of its
+                // own width) scrolls sideways too, rather than pushing the
+                // card past the panel's edges.
+                ScrollView(narrow ? [.vertical, .horizontal] : .vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 14) {
                         section(shell.settingsSection)
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, narrow ? 14 : 24)
                     .padding(.bottom, 24)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -235,7 +245,10 @@ struct DeveloperSettingsView: View {
         .background(Palette.ground)
         // Esc closes it, as Done did.
         .background { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).opacity(0).allowsHitTesting(false) }
-        .frame(width: 720, height: 520)
+        // Its own size with room for it, and no bigger than the room
+        // DeveloperSheetLayer gives it, which is the panel's when docked.
+        .frame(idealWidth: 720, maxWidth: 720, idealHeight: 520, maxHeight: 520)
+        .onGeometryChange(for: Bool.self) { $0.size.width < 520 } action: { narrow = $0 }
         // Drawn by the window, outside DevTools' host view: the theme comes with it.
         .developerToolsThemed()
     }

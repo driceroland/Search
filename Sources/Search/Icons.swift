@@ -458,6 +458,26 @@ final class Favicons {
         }
     }
 
+    /// A site's favicon.ico, asked for once, for a new tab's tile added by
+    /// its address (HomeTiles.swift): nothing when an icon is known for it
+    /// already, or it was asked this session and had none. Never for a
+    /// private tab, and never because a new tab opened.
+    func fetchOnce(for url: URL) {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), cached(for: url) == nil,
+              let site = Favicons.site(url),
+              let root = URL(string: "/favicon.ico", relativeTo: url)?.absoluteURL
+        else { return }
+        load()
+        let busyKey = site + "/"
+        guard !busy.contains(busyKey), !missing.contains(busyKey) else { return }
+        busy.insert(busyKey)
+        fetchesForTiles += 1
+        Task { await download([root], site: site, page: "/", dark: Favicons.dark, shy: false) }
+    }
+
+    /// How many `fetchOnce` has started, for the bench.
+    private(set) var fetchesForTiles = 0
+
     private enum Scheme { case any, light, dark }
 
     /// What a `media` attribute says about the scheme, if anything.
@@ -750,12 +770,14 @@ final class Favicons {
 /// What stands for a page when there is no room for its title: the site's
 /// icon if there is one, and a letter in a faint square until there is.
 struct Mark: View {
+    @Environment(\.greys) private var greys
     let icon: NSImage?
     let letter: String
     var size: CGFloat = 16
     var dim = false
     /// Full ink for the letter (Settings › Appearance › Tabs › High contrast
-    /// text), instead of the soft grey a resting mark usually wears.
+    /// text), instead of the soft grey a resting mark usually wears: the
+    /// ground's own, as the doors' (see Door), so it still reads on glass.
     var contrast = false
 
     var body: some View {
@@ -779,7 +801,7 @@ struct Mark: View {
             } else {
                 Text(letter)
                     .font(.system(size: size * 0.56, weight: .medium))
-                    .foregroundStyle(contrast ? Palette.ink : Palette.muted)
+                    .foregroundStyle(contrast ? Palette.ink : greys.muted)
                     .frame(width: size, height: size)
                     .background(
                         RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)

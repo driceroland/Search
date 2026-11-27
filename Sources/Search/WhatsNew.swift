@@ -41,7 +41,12 @@ enum WhatsNew {
 
     /// Every switch worth meeting, the leading ones first, then oldest
     /// last. The card shows the leading ones still off, this version's, and
-    /// the older ones still off.
+    /// the older ones still off. Only switches that are off unless turned
+    /// on: the ones on for everyone who never touched them since 25 Nov 2026
+    /// (HTTPS first, video keys, smooth wheel, the loading line, unread
+    /// counts, swipe back closes, Home tiles, site styles, commands, Capture,
+    /// pin folders) left the card then, so turning one off isn't asked about
+    /// again.
     static let toggles: [Toggle] = [
         // Leading, in this order (see the top of this file).
         Toggle(title: "Sync with iCloud", detail: "Your tabs, pins and spaces on your iPhone and your other Macs, end-to-end encrypted.",
@@ -55,6 +60,37 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Site tiles on a new tab", detail: "Small chips of your sites under the address field; add, edit and move them right there.",
+               since: "1.0.22", get: { $0.homeTiles }, set: { $0.homeTiles = $1 }),
+
+        Toggle(title: "Screenshots in Downloads", detail: "A screenshot you take shows at the top of the Downloads list, ready to drag onto a page.",
+               since: "1.0.22", get: { $0.screenshotsInDownloads }, set: { $0.screenshotsInDownloads = $1 }),
+
+        Toggle(title: "Copy captures only", detail: "Capture… puts the picture on the clipboard and saves no PNG in your downloads folder.",
+               since: "1.0.22", get: { $0.copiesCapturesOnly }, set: { $0.copiesCapturesOnly = $1 }),
+
+        Toggle(title: "Move and resize with Hide Elements", detail: "Drag what is outlined to move it, or its right or bottom edge to resize it, kept for the site.",
+               since: "1.0.22", get: { $0.hidingShapes }, set: { $0.hidingShapes = $1 }),
+
+        Toggle(title: "Controls over a page in Split View", detail: "A small capsule on the page under the pointer: move it left or right, take it out, or close it.",
+               since: "1.0.22", get: { $0.splitControls }, set: { $0.splitControls = $1 }),
+
+        Toggle(title: "Animate downloads", detail: "A new download glides into the downloads button, and a check shows once it's in.",
+               since: "1.0.22", get: { $0.animatesDownloads }, set: { $0.animatesDownloads = $1 }),
+
+        Toggle(title: "Double click to rename", detail: "Click on the tab you're on to rename it, as Rename in its menu does, instead of editing its address.",
+               since: "1.0.22", get: { $0.tabClickRenames }, set: { $0.tabClickRenames = $1 },
+               shown: { !$0.iconColumn }),
+
+        Toggle(title: "Backspace goes back", detail: "⌫ goes back a page and ⇧⌫ forward, when you aren't typing in a field.",
+               since: "1.0.21", get: { $0.backspaceGoesBack }, set: { $0.backspaceGoesBack = $1 }),
+
+        Toggle(title: "Hide the page behind the field", detail: "⌘T's and ⌘L's field over a plain ground, the page out of sight instead of dimmed.",
+               since: "1.0.21", get: { $0.fieldHidesPage }, set: { $0.fieldHidesPage = $1 }),
+
+        Toggle(title: "Return takes the top suggestion", detail: "Return goes to the place on top of the field's list as you type, as in Arc's command bar; ↑ lets go of it.",
+               since: "1.0.21", get: { $0.returnTakesTop }, set: { $0.returnTakesTop = $1 }),
+
         Toggle(title: "Links from pins open in a new tab", detail: "A link clicked in a pinned tab opens in a tab of its own, and the pin stays on its page.",
                since: "1.0.20", get: { $0.pinLinksOpenTabs }, set: { $0.pinLinksOpenTabs = $1 }),
 
@@ -63,13 +99,10 @@ enum WhatsNew {
 
         Toggle(title: "Clicking the tab you're on keeps its name", detail: "With the address bar always shown, the address is edited there or with ⌘L.",
                since: "1.0.20", get: { $0.tabClickKeepsName }, set: { $0.tabClickKeepsName = $1 },
-               shown: { $0.addressLine && !$0.iconColumn }),
+               shown: { $0.addressLine && !$0.iconColumn && !$0.tabClickRenames }),
 
         Toggle(title: "Fade scroll bars", detail: "Thin bars over the page that come up as it scrolls and fade when it stops, even with a mouse.",
                since: "1.0.20", get: { $0.scrollbarsFade }, set: { $0.scrollbarsFade = $1 }),
-
-        Toggle(title: "Space and arrow keys control videos", detail: "Space plays or pauses a clicked video, and ← → skip five seconds, as in Chrome.",
-               since: "1.0.20", get: { $0.videoKeys }, set: { $0.videoKeys = $1 }),
 
         Toggle(title: "Update ready, in the window", detail: "When a new version is waiting, \"Update ready\" and Restart at the foot of the sidebar, or a pill by the tabs. On; × hides it until the next one.",
                since: "1.0.20", get: { $0.showsUpdateReady }, set: { $0.showsUpdateReady = $1 }),
@@ -82,37 +115,26 @@ enum WhatsNew {
                since: "1.0.19", get: { $0.bookmarksInSidebar }, set: { $0.bookmarksInSidebar = $1 }),
         Toggle(title: "The field in the middle of the window", detail: "⌘T's and ⌘L's field centred on the window and higher up, as in Arc.",
                since: "1.0.19", get: { $0.fieldOnWindow }, set: { $0.fieldOnWindow = $1 }),
-        Toggle(title: "Smooth scrolling with a mouse wheel", detail: "Each notch glides, as in Chrome. A trackpad is left as it is.",
-               since: "1.0.19", get: { $0.wheelGlides }, set: { $0.wheelGlides = $1 }),
-        Toggle(title: "A loading line with the tabs hidden", detail: "A thin line along the page's top while it loads, with the tabs folded away.",
-               since: "1.0.19", get: { $0.showsLoadingLine }, set: { $0.showsLoadingLine = $1 }),
-        Toggle(title: "Click the tab you're on to edit its address", detail: "Without the site card; Site Information… stays on the right-click.",
-               since: "1.0.19", get: { $0.tabClickAddressOnly }, set: { $0.tabClickAddressOnly = $1 }),
+        Toggle(title: "Click the tab you're on to edit its address", detail: "Without the site card.",
+               since: "1.0.19", get: { $0.tabClickAddressOnly }, set: { $0.tabClickAddressOnly = $1 },
+               shown: { $0.iconColumn || !($0.tabClickRenames || $0.tabClickKeepsName && $0.addressLine) }),
         Toggle(title: "Touch ID before filling a password", detail: "Touch ID, or your Mac's password, before a saved password goes into a page.",
                since: "1.0.19", get: { $0.asksBeforeFilling }, set: { $0.asksBeforeFilling = $1 }),
         Toggle(title: "Icons only on the bookmarks bar", detail: "Each bookmark its site's icon, its name on hover. Folders keep their names.",
-               since: "1.0.19", get: { $0.bookmarksIconsOnly }, set: { $0.bookmarksIconsOnly = $1 }),
-        Toggle(title: "Unread counts on pinned tabs", detail: "WhatsApp's or Discord's count as a badge on its pin.",
-               since: "1.0.19", get: { $0.showsPinCounts }, set: { $0.showsPinCounts = $1 }),
+               since: "1.0.19", get: { $0.bookmarksIconsOnly }, set: { $0.bookmarksIconsOnly = $1 },
+               shown: { $0.bookmarksBar }),
 
         Toggle(title: "Sidebar button", detail: "Beside the window's buttons, it hides the sidebar as ⌘S does.",
                since: "1.0.18", get: { $0.foldButton }, set: { $0.foldButton = $1 }),
         Toggle(title: "Narrow to icons", detail: "Pull the sidebar narrower and it becomes a strip of site icons.",
                since: "1.0.18", get: { $0.narrowsToIcons }, set: { $0.narrowsToIcons = $1 }),
 
-        Toggle(title: "Swipe back closes a link's tab", detail: "On the page a link opened, a swipe back closes the tab and takes you to the one you were on.",
-               since: "1.0.17", get: { $0.swipeBackCloses }, set: { $0.swipeBackCloses = $1 }),
-
         Toggle(title: "⌘T finds your open tabs", detail: "As you type in ⌘T's field, a matching open tab or pin comes first.",
                since: "1.0.17", get: { $0.arcTabPopup }, set: { $0.arcTabPopup = $1 },
                shown: { $0.floatingNewTab }),
-        Toggle(title: "Home bookmarks on a new tab", detail: "The sites of your bookmark folder called Home, as tiles.",
-               since: "1.0.17", get: { $0.homeGrid }, set: { $0.homeGrid = $1 }),
         Toggle(title: "One button per space", detail: "Every space beside the bookmarks, one click away.",
                since: "1.0.17", get: { $0.spaceButtons }, set: { $0.spaceButtons = $1 },
                shown: { $0.usesSpaces }),
-        Toggle(title: "Try HTTPS first", detail: "An http:// page loads over HTTPS where the site has it.",
-               since: "1.0.17", get: { $0.triesHTTPSFirst }, set: { $0.triesHTTPSFirst = $1 }),
 
         Toggle(title: "Always show the address bar", detail: "The page's full address stays in sight, to type in.",
                since: "1.0.16", get: { $0.addressLine }, set: { $0.addressLine = $1 }),
@@ -139,21 +161,11 @@ enum WhatsNew {
         Toggle(title: "Slide the column in and out", detail: "An eased slide for ⌘S and the column that hides.",
                since: "1.0.15", get: { $0.slidesColumn }, set: { $0.slidesColumn = $1 }),
 
-        Toggle(title: "Your own style for a site", detail: "Edit Site Style… in the View menu: your CSS for the site you're on, as Arc's Boosts.",
-               since: "1.0.14", get: { $0.sitesStyles }, set: { $0.sitesStyles = $1 }),
         Toggle(title: "Keep the card in full screen", detail: "The page keeps its room and rounded corners when the window fills the screen.",
                since: "1.0.14", get: { $0.cardsInFullScreen }, set: { $0.cardsInFullScreen = $1 },
                shown: { $0.sidebar && $0.cards }),
         Toggle(title: "⌘-click on a pin opens a new tab", detail: "As in Arc, or takes a page that wandered off into the loose tabs.",
                since: "1.0.14", get: { $0.pinCommandOpensTab }, set: { $0.pinCommandOpensTab = $1 }),
-
-        Toggle(title: "Commands in the address field", detail: "Type the name of any menu command or setting, as in Arc's Command Bar.",
-               since: "1.0.13", get: { $0.commandBar }, set: { $0.commandBar = $1 }),
-        Toggle(title: "Capture", detail: "View › Capture… takes a picture of part of a page, or all of it.",
-               since: "1.0.13", get: { $0.capturesPages }, set: { $0.capturesPages = $1 }),
-        Toggle(title: "Folders in pinned rows", detail: "Pinned rows in folders that fold, as in Arc.",
-               since: "1.0.13", get: { $0.pinFolders }, set: { $0.pinFolders = $1 },
-               shown: { $0.listsPins }),
 
         Toggle(title: "Send links to a space", detail: "Links to the sites you choose open in their space, with its sign-ins, as in Arc.",
                since: "1.0.11", get: { $0.sendsLinksToSpaces }, set: { $0.sendsLinksToSpaces = $1 },
@@ -222,6 +234,8 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.22"),
+        Release(version: "1.0.21"),
         Release(version: "1.0.20"),
         Release(version: "1.0.19"),
         Release(version: "1.0.18"),
@@ -304,6 +318,76 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.22", date: "27 November 2026",
+            headline: "Light with hundreds of tabs, and light at rest.",
+            new: [
+                "Google Meet's own mini window comes along when you leave a call's tab, as in Chrome, with your camera, microphone and background blur still working. On; Settings › Videos turns it off.",
+                "Bring Things Over brings Dia's, Ardia's and Yab's spaces, with their pins, folders and profiles.",
+                "Site chips under a new tab's address field, to add, edit and move right there, in Settings › Tabs.",
+                "Previews of pinned tabs on hover, and a speaker on a pinned square whose page plays sound.",
+                "Screenshots in Downloads, captures copied only, moving and resizing with Hide Elements, controls over a page in Split View, animated downloads and a click to rename the tab you're on, each off until you turn it on.",
+                "Developer Mode for local sites, Hide Elements taking every element like the one you point at, File › Export Spaces… and Paste and Go.",
+            ],
+            better: [
+                "400 tabs stay light and fast: closing a tab, opening one, picking a pin and switching spaces take a fraction of the time, and the column scrolls without a stall.",
+                "At rest Search runs as one process in about 42 MB, where 1.0.21 took 66 MB in 3, and many tabs take less memory.",
+                "Tabs and pins show the site's icon by default instead of a letter.",
+                "Tabs you aren't looking at load a few at a time, so reloading many no longer stalls the window.",
+                "Following a link or sending a form costs the window less with many tabs.",
+                "Sync with iCloud always says why it isn't syncing.",
+            ],
+            fixed: [
+                "Darken pages turning pages near black with their borders gone; pages are darkened in their own colours again.",
+                "A site that couldn't be found for a moment, as the Wi-Fi changes or a VPN comes up: it is tried again and loads by itself.",
+                "ClickUp Brain not starting, and pages reloading in a loop with the Fabric clipper.",
+                "A Downloads folder macOS keeps Search out of failing every download; Search now asks where to save, once.",
+                "A click on the tab you're on closing it with Icons only.",
+                "OneDrive's and SharePoint's Open in desktop app not opening Word or Excel.",
+                "A page handed off from your iPhone closing the window's tabs.",
+                "A full-screen video missing from Discord's, Zoom's and Meet's screen-share pickers.",
+                "Sign in with Apple closing its own tab on sites that come back by redirects.",
+                "The hidden sidebar coming out halfway through a drag along the left edge.",
+                "What's playing showing only the newest of several tabs playing out of sight.",
+                "Deleting a profile whose spaces were never opened crashing Search.",
+            ]
+        ),
+        Notes(
+            version: "1.0.21", date: "25 November 2026",
+            headline: "Your fixes, from NordPass to YouTube's sign-in.",
+            new: [
+                "Backspace can go back a page, and ⇧⌫ forward, when you aren't typing, in Settings › Keyboard & Mouse.",
+                "The page can be hidden behind ⌘T's and ⌘L's field, over a plain ground, in Settings › Spaces & Pins.",
+                "Return can take the top suggestion as you type, as in Arc's command bar, in Settings › Browsing.",
+            ],
+            better: [
+                "Hide Elements names exactly what you picked, so on later visits it hides that one thing, not everything that looks like it, and it goes at once from every open page of the site.",
+                "A slept tab wakes where you were in a page that scrolls inside itself, as a long Google Doc does.",
+                "A column folded with ⌘S comes out when the pointer is flung past the window's side.",
+                "Zen's open tabs come into the space of their Zen space's name, and come at all when Zen keeps them only in its own file.",
+                "Darken pages keeps pictures drawn in SVG as they are, and leaves Google Docs, Sheets and Slides as they are.",
+                "Extensions that ask for chrome.identity.AccountStatus find it, as Fathom AI Note Taker does before every request.",
+                "A download with nothing coming in says Stalled, and the Downloads list keeps each row's buttons under its text and fades at its head once scrolled.",
+                "Closing tabs across the top one after another: the next tab's cross comes to where the last one was.",
+                "When Apple Passwords asks for its code again, the log says why the last pairing ended, and the log says why an extension's connection to its app on the Mac closed.",
+            ],
+            fixed: [
+                "NordPass freezing, its popup an empty dark box.",
+                "YouTube signing you out every few weeks when you mostly watch: the floating video's and the sidebar player's controls now count as using the site.",
+                "Saved passwords and passkeys not showing in a site's sized pop-up window, as Gmail's Add another account opens.",
+                "Saved passwords not offered in sign-ins that mark every box as new, as some crew portals do.",
+                "A page closing itself in a small window leaving the window open.",
+                "An extension update waiting for your OK being dropped while Search was in the background; it now shows in Settings › Extensions.",
+                "A pinned tab's Site Information… doing nothing on the pin you were on, one put down with ⌘W, pins brought back at launch, and in the column of icons.",
+                "Arc's spaces brought over staying empty until Spaces was turned off and on.",
+                "With profiles in one window, a space's name popping up on nearly every profile switch.",
+                "Two Macs set up one from the other with Migration Assistant sharing one sync id and taking each other's tabs for their own.",
+                "The floating video's return arrow bringing forward another window instead of the video's own.",
+                "With Liquid Glass, the buttons beside the tabs and a tab's letter fading into what is behind the window, and the glass not following the tab when the column scrolls.",
+                "An extension's new tab opening as an empty page instead of ⌘T's blank tab, and the home background drawn past the window's rounded corners.",
+                "LOCALHOST and other local names typed in capitals not opening over HTTP.",
+            ]
+        ),
         Notes(
             version: "1.0.20", date: "24 November 2026",
             headline: "Your fixes, from the Dock to extension popups.",

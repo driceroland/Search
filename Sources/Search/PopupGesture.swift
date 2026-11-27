@@ -9,6 +9,10 @@ struct PopupGesture {
     private var recorded = false
     private var time: TimeInterval = 0
     private var consumed = false
+    /// Whether this interaction already handed a link to another app.
+    private var handed = false
+    /// The interaction was on the page itself, not in one of its frames.
+    private var onPage = false
     private var input = false
     private var menu = false
     /// The interaction was the middle button: a window the page opens for
@@ -19,7 +23,7 @@ struct PopupGesture {
     private var serial = 0
     private var made: (serial: Int, tab: UUID)?
 
-    mutating func record(origin: String?, kind: String, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+    mutating func record(origin: String?, kind: String, mainFrame: Bool = false, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         // A press of the middle button is an input like any other; it only
         // says where the window it grants goes.
         let pressedMiddle = kind == "middle"
@@ -36,6 +40,8 @@ struct PopupGesture {
         recorded = true
         time = now
         consumed = false
+        handed = false
+        onPage = mainFrame
         input = kind != "click"
         menu = kind == "menu"
         middle = pressedMiddle
@@ -65,6 +71,22 @@ struct PopupGesture {
     /// PointerLock) but opens nothing.
     func recent(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         recorded && now >= time && now - time <= 5
+    }
+
+    /// A link for another app (ms-excel:, zoommtg:…) asked for by a frame of
+    /// another site, right after a real click or key in that very frame:
+    /// Excel and Word for the web, in their officeapps.live.com frame on a
+    /// SharePoint page, hand "Open in Desktop App" over this way, from a
+    /// script a moment after the click (idea 1215). Or right after one on
+    /// the page itself: OneDrive's own Open in app, on its page, has Word's
+    /// frame of another site hand the link over (idea 1315). Never after a
+    /// click in another of the page's frames. Once per interaction, and
+    /// apart from the one window it grants (take()).
+    mutating func takeHandOff(origin: String?, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        guard recorded, origin != nil, self.origin == origin || onPage,
+              !handed, now >= time, now - time <= 5 else { return false }
+        handed = true
+        return true
     }
 
     mutating func clear() {
@@ -98,6 +120,24 @@ struct PopupGesture {
         menu = false
         guard recorded, !consumed, now >= time else { return }
         time = now
+    }
+
+    /// Whether a main-frame navigation leaves the page's document, which
+    /// takes the interaction with it. A jump to a #fragment of the same
+    /// address stays in the document, as in Safari and Chrome: a page that
+    /// sets location.hash on a click and then opens its sign-in window had
+    /// the window refused (idea 1200, Teams' "sign in again" banner did
+    /// nothing). A reload or a POST to the same address is a new document.
+    nonisolated static func leavesDocument(to url: URL?, from current: URL?, reload: Bool, method: String?) -> Bool {
+        guard !reload, (method ?? "GET").uppercased() == "GET",
+              let url, let current, url.fragment != nil else { return true }
+        func bare(_ u: URL) -> String? {
+            var parts = URLComponents(url: u, resolvingAgainstBaseURL: false)
+            parts?.fragment = nil
+            return parts?.string
+        }
+        guard let to = bare(url), let from = bare(current) else { return true }
+        return to != from
     }
 
     static func origin(_ info: WKFrameInfo) -> String? {
@@ -166,7 +206,8 @@ final class PopupGestureRelay: NSObject, WKScriptMessageHandler {
         guard let kind = message.body as? String, ["input", "middle", "click", "menu"].contains(kind) else { return }
         MainActor.assumeIsolated {
             guard let webView = message.webView, let tab = Self.tab(for: webView) else { return }
-            tab.popupGesture.record(origin: PopupGesture.origin(message.frameInfo), kind: kind)
+            tab.popupGesture.record(origin: PopupGesture.origin(message.frameInfo), kind: kind,
+                                     mainFrame: message.frameInfo.isMainFrame)
         }
     }
 }

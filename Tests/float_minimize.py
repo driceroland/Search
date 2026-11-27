@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimize on the floating video, off until Settings asks for it.
+"""Minimize on the floating video, shown only while Settings asks for it.
 
 Build first (`./build.sh`), then `python3 Tests/float_minimize.py`. The
 window is opened off every screen and the button is pressed through the
@@ -14,7 +14,8 @@ import split_view as sv  # noqa: E402
 sv.use("float-min")
 t = sv.T()
 try:
-    sv.setup()
+    # Off to start with: on by default since 25 Nov 2026.
+    sv.setup(**{"float.minimize": False})
     sv.launch()
     up = sv.cmd({"do": "float", "action": "up"})
     t.ok("the window is up, off screen", up.get("showing") is True, up)

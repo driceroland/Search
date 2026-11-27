@@ -22,6 +22,9 @@ struct RecordingLine: Identifiable, Equatable {
     let name: String
     /// "is recording your screen", "is using your camera and microphone"…
     let what: String
+    /// A website sharing its screen: its line can be closed with ✕. An
+    /// extension's recording can't be, so it is never out of sight.
+    var dismissible = false
 }
 
 @MainActor
@@ -30,6 +33,11 @@ final class RecordingIndicator: ObservableObject {
 
     /// What the pill says, one line per extension recording.
     @Published private(set) var lines: [RecordingLine] = []
+    /// Lines whose ✕ was pressed, with what they said then. Only the pill is
+    /// hidden: nothing stops recording. A line that goes away (the share
+    /// ended) is forgotten here, so the next share shows again, and one
+    /// that says something new (what it records changed) shows again too.
+    @Published private(set) var dismissed: [String: String] = [:]
     /// What Stop does, for a line's extension.
     var onStop: ((String) -> Void)?
 
@@ -43,6 +51,8 @@ final class RecordingIndicator: ObservableObject {
     /// none. A tab whose page is among them wears a mark in the row.
     func update(_ lines: [RecordingLine], pages: [WKWebView] = []) {
         if self.lines != lines { self.lines = lines }
+        let kept = dismissed.filter { id, what in lines.contains { $0.id == id && $0.what == what } }
+        if kept != dismissed { dismissed = kept }
         let capturing = Set(pages.map(ObjectIdentifier.init))
         for browser in Browsers.all {
             for tab in browser.tabs {
@@ -50,6 +60,16 @@ final class RecordingIndicator: ObservableObject {
                 if tab.recording != now { tab.recording = now }
             }
         }
+        settle()
+    }
+
+    /// The lines the pill shows now: those not closed with ✕.
+    var shown: [RecordingLine] { lines.filter { dismissed[$0.id] != $0.what } }
+
+    /// A line's ✕: the pill stops showing it. The share itself goes on.
+    func dismiss(_ id: String) {
+        guard let line = lines.first(where: { $0.id == id && $0.dismissible }) else { return }
+        dismissed[id] = line.what
         settle()
     }
 
@@ -89,7 +109,7 @@ final class RecordingIndicator: ObservableObject {
     /// model is what is tested there (see Bench, recording).
     private func settle() {
         hosted.removeAll { $0.web.superview == nil && $0.web.window == nil && !isLent($0.web) }
-        let wanted = !lines.isEmpty || !hosted.isEmpty
+        let wanted = !shown.isEmpty || !hosted.isEmpty
         guard wanted else {
             panel?.orderOut(nil)
             return
@@ -178,7 +198,7 @@ struct PillView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(indicator.lines) { line in
+            ForEach(indicator.shown) { line in
                 HStack(spacing: 8) {
                     // The pill's one colour: a recording is known at a
                     // glance by its red dot, as in Chrome and Loom.
@@ -201,6 +221,18 @@ struct PillView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Stop \(line.name)")
+                    if line.dismissible {
+                        Button { indicator.dismiss(line.id) } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Palette.ink.opacity(0.6))
+                                .frame(width: 22, height: 22)
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Hide this")
+                        .accessibilityLabel("Dismiss screen sharing notification")
+                    }
                 }
             }
         }

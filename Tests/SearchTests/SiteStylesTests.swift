@@ -102,6 +102,8 @@ final class SiteStylesTests: XCTestCase {
             prefs.sitesStyles = saved
             browser.closeAll()
         }
+        // From off, whatever the default (on since 25 Nov 2026).
+        prefs.sitesStyles = false
         var told: [String?] = []
         let watch = SiteStyles.shared.changed.sink { told.append($0) }
         defer { watch.cancel() }

@@ -203,8 +203,8 @@ enum SiteSearch {
             if let item = parts.queryItems?.first(where: { $0.value == "SEARCHWORDS" }) {
                 path = parts.path
                 self.item = item.name
-            } else if parts.path.hasSuffix("SEARCHWORDS") {
-                path = String(parts.path.dropLast("SEARCHWORDS".count))
+            } else if parts.percentEncodedPath.hasSuffix("SEARCHWORDS") {
+                path = String(parts.percentEncodedPath.dropLast("SEARCHWORDS".count))
                 item = nil
             } else {
                 return nil
@@ -222,10 +222,10 @@ enum SiteSearch {
                 return parts.percentEncodedQueryItems?.first(where: { $0.name == item })?.value?
                     .replacingOccurrences(of: "+", with: " ").removingPercentEncoding
             }
-            guard parts.path.hasPrefix(path) else { return nil }
-            let rest = String(parts.path.dropFirst(path.count))
+            guard parts.percentEncodedPath.hasPrefix(path) else { return nil }
+            let rest = String(parts.percentEncodedPath.dropFirst(path.count))
             guard !rest.isEmpty, !rest.contains("/") else { return nil }
-            return rest
+            return rest.removingPercentEncoding
         }
     }
 

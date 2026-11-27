@@ -129,6 +129,10 @@ enum SettingsIndex {
               title: "Bring things over", detail: "Bookmarks, history, passwords and extensions from another browser",
               more: "From another browser on this Mac, or from a file it exported. Nothing leaves your Mac.",
               words: ["import", "chrome", "safari", "arc", "migrate"]),
+        .init(id: "general.exportSpaces", group: "browser", icon: "square.and.arrow.up.on.square",
+              title: "Export spaces", detail: "Every space, its pins, folders and open tabs, to a file",
+              more: "A bookmarks file any browser imports, a folder per space with its pins and folders and its open tabs in a folder of their own; or Search's own spaces file, which keeps colours and icons and comes back in through Bring Things Over › File…. Also in File › Export Spaces….",
+              words: ["export", "backup", "spaces", "pins", "bookmarks", "html", "save", "leave", "moving"], parent: "general.import"),
         .init(id: "icloud", group: "devices", icon: "icloud",
               title: "Sync with iCloud", detail: "With your iPhone and other Macs: open tabs, pins, spaces, bookmarks, a few settings",
               more: "Through your own iCloud, end to end encrypted: Search on your iPhone and your other Macs see this Mac's open tabs (under History and in the address field, as Tabs on Your Other Devices) and share its pins, spaces, bookmarks, search engine and look. Private tabs never go, nor your history, passwords, cookies or sign-ins. On for a new Search once you leave the welcome, where its switch is, so it can be turned off first; off for a Search you had before until you turn it on. Nothing leaves this Mac while it's off. The way to sync with your iPhone. Off while Sync Macs through a folder is on: use one or the other.",
@@ -155,6 +159,11 @@ enum SettingsIndex {
         .init(id: "downloads.button", group: "downloads", icon: "arrow.down.to.line",
               title: "Always show the downloads button", detail: "Off, it shows only while a file comes in",
               keys: ["downloads.button"]),
+        .init(id: "downloads.screenshots", group: "downloads", icon: "camera.viewfinder",
+              title: "Show screenshots in Downloads", detail: "Screenshots you take with ⇧⌘3, ⇧⌘4 or ⇧⌘5 appear in the list, ready to drag onto a page",
+              more: "Search watches the folder your Mac saves screenshots to (the Desktop, unless you chose another in ⇧⌘5 › Options) and lists each new one as it lands. Nothing already there is listed, the files stay where they are, and nothing leaves your Mac. macOS may ask once whether Search can see that folder.",
+              keys: [Screenshots.key],
+              words: ["screenshot", "screen shot", "capture", "library", "arc", "desktop", "drag", "upload", "image"]),
         .init(id: "downloads.open", group: "downloads", icon: "tray.and.arrow.down",
               title: "Open Downloads", detail: "From its button, ⇧⌘J and History › Downloads",
               more: "In a tab, as the side panel's card floating by the downloads button, or in the side panel beside the page.",
@@ -203,10 +212,6 @@ enum SettingsIndex {
               more: "Off, ⌘S hides the column and the page takes the whole window.",
               keys: ["sidebar.foldIcons"], words: ["collapse", "collapsed", "compact", "narrow", "hide sidebar", "icons only", "favicons"],
               parent: "tabs.layout"),
-        .init(id: "fold.loadingLine", group: "window", icon: "slider.horizontal.below.rectangle",
-              title: "A loading line with the tabs hidden", detail: "Folded away with ⌘S, a thin line along the page's top while it loads",
-              more: "With the tabs in sight, the ring on the tab says a page is loading; hidden, nothing did. The line runs as far as the page has come and goes once it is there.",
-              keys: ["fold.loadingLine"], words: ["loading", "progress", "bar", "spinner", "indicator", "hidden sidebar", "folded", "arc"]),
         .init(id: "layout.cards", group: "window", icon: "rectangle.inset.filled",
               title: "The page as a card", detail: "A little room around the page, with rounded corners",
               more: "Off, the page reaches the window's edges and the column is white with its hairline.",
@@ -303,18 +308,22 @@ enum SettingsIndex {
               parent: "bookmarks.bar"),
         .init(id: "bookmarks.iconsOnly", group: "tablook", icon: "square.grid.2x2",
               title: "Show icons only on the bookmarks bar", detail: "Each bookmark as its site's icon, its name on hover",
-              more: "Folders keep their names. A bookmark you renamed to nothing already shows its icon alone.",
+              more: "Folders keep their names. With the bookmarks in the sidebar, they sit side by side there as tiles. A bookmark you renamed to nothing already shows its icon alone.",
               keys: ["bookmarks.iconsOnly"], words: ["favorites bar", "bookmarks toolbar", "favicons", "compact", "icon only", "names", "titles"],
               parent: "bookmarks.bar"),
         .init(id: "bookmarks.newTabOnly", group: "tablook", icon: "plus.square",
               title: "Show the bookmarks bar only on new tabs", detail: "Hidden while a page is open, as Chrome and Edge can",
-              more: "The bar comes back as soon as the tab on screen is a new one.",
+              more: "The bar comes back as soon as the tab on screen is a new one, also with the column folded away.",
               keys: ["bookmarks.newTabOnly"], words: ["favorites bar", "bookmarks toolbar", "new tab", "only", "hide", "chrome", "edge"],
               parent: "bookmarks.bar"),
         .init(id: "motion.light", group: "motion", icon: "leaf",
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
               keys: [Motion.lightKey], words: ["battery", "animations", "motion"]),
+        .init(id: "motion.downloads", group: "motion", icon: "arrow.down.circle",
+              title: "Animate downloads", detail: "A new download arcs into the downloads button, and a check shows when it's in",
+              more: "From where you clicked. Skipped with Reduce Motion; the Saved line still says when a file is in.",
+              keys: ["motion.downloads"], words: ["downloads", "animation", "arc", "fly", "checkmark", "motion"]),
         .init(id: "motion.instant", group: "motion", icon: "bolt",
               title: "Reduce animations", detail: "Switching tabs, spaces and panels happens at once, without sliding or fading",
               more: "For Search alone, whatever Reduce Motion in System Settings says. The tab ⌘1–⌘9 picks is lit at once, and the page shows at once.",
@@ -348,6 +357,10 @@ enum SettingsIndex {
               title: "Show the Home bookmarks on a new tab", detail: "The sites of your bookmark folder called Home, under the address field",
               more: "Make a folder called Home in Bookmarks and put sites in it: a blank tab shows up to 16 of them as tiles with their names, in the order you keep them.",
               keys: ["home.grid"], words: ["home", "home page", "start page", "new tab", "speed dial", "favorites"]),
+        .init(id: "home.tiles", group: "newtabs", icon: "square.grid.3x2",
+              title: "Site tiles on a new tab", detail: "Small chips of your sites under the address field; add, edit and move them there",
+              more: "Click + to add a site, or right-click a tab and choose Add to New Tabs. Right-click a chip to edit or remove it, or click the × that shows on hover; drag chips to reorder them, or select one with Tab and press ⌘ with an arrow. Up to 12. They\u{2019}re kept in your bookmark folder called Home, so each profile has its own and they sync with your bookmarks. Private tabs show them but don\u{2019}t change them, and a new tab never fetches anything for them.",
+              keys: ["home.tiles"], words: ["shortcuts", "tiles", "speed dial", "top sites", "most visited", "favorites", "new tab", "start page", "home"]),
         .init(id: "tabs.undoReopens", group: "closing", icon: "arrow.uturn.backward.circle",
               title: "⌘Z reopens a closed tab", detail: "Right after closing it, as ⇧⌘T would; tabs just moved into a folder or group go back too",
               more: "Only while closing or moving them is the last thing you did: type or click anything else and ⌘Z undoes as before. A page that uses ⌘Z itself, such as a document or a drawing, keeps it. Several tabs moved together go back together.",
@@ -396,6 +409,11 @@ enum SettingsIndex {
               keys: ["tabs.clickKeepsName"],
               words: ["click", "tab name", "title", "keep name", "address bar", "edit address", "url", "sidebar", "rename", "arc"],
               parent: "address.shown"),
+        .init(id: "tabs.clickRenames", group: "tabbar", icon: "pencil",
+              title: "Double click to rename", detail: "A click on the tab you're on opens its name to type over, not its address",
+              more: "A click on the tab you're on opens its name to type over, as Rename in its right-click menu does, instead of its address. Edit its address with ⌘L.",
+              keys: ["tabs.clickRenames"],
+              words: ["rename", "name", "title", "double click", "click", "tab name"]),
         .init(id: "tabs.mirror", group: "tabwindows", icon: "rectangle.on.rectangle",
               title: "Same tabs in every window", detail: "Each window lists the same open tabs in a space, as it lists the same pins",
               more: "A tab opened, closed, moved, grouped or renamed in one window is so in the others. Each window shows the page on its own, so the same tab can be open in two windows at once. Private tabs stay in their window, and closing a window leaves its tabs in the others.",
@@ -414,6 +432,10 @@ enum SettingsIndex {
               title: "Suggestions from your search engine", detail: "What you type is sent to your engine as you type",
               more: "Its suggestions show under the address field. A custom engine can be given one under Search with. Never from a private tab, and never an address.",
               keys: ["search.suggest"], words: ["autocomplete", "suggest"]),
+        .init(id: "field.top", group: "search", icon: "return",
+              title: "Return takes the top suggestion", detail: "Return goes to the place on top of the list, not a search for what you typed",
+              more: "As in Arc's command bar: the first place under the field is picked as you type, so no arrow key is needed. ↑ lets go of it, and Return searches what you typed. An address typed out still goes where it says.",
+              keys: ["field.top"], words: ["arc", "enter", "return", "first suggestion", "top hit", "autocomplete", "arrow keys", "command bar"]),
         .init(id: "search.keywords", group: "search", icon: "character.cursor.ibeam",
               title: "Site shortcuts", detail: "A word before your search sends it to that site: \"yt cats\"",
               keys: ["search.keywords"], words: ["keyword", "bang"]),
@@ -442,6 +464,10 @@ enum SettingsIndex {
         .init(id: "float.minimize", group: "video", icon: "minus.circle",
               title: "Minimize the floating video", detail: "A button tucks the floating video small. The same button brings it back",
               keys: ["float.minimize"], words: ["minimize", "pip", "collapse", "small"]),
+        .init(id: "meet.pip", group: "video", icon: "person.2.crop.square.stack",
+              title: "Google Meet's own mini window", detail: "Leave a Meet call's tab and the call comes along in a small window, with Meet's buttons",
+              more: "As in Chrome: the call's tiles and Meet's own mute, camera and leave, in a corner over every app. It closes when you go back to the call. Meet is told Search is Chrome, which it asks for.",
+              keys: ["meet.pip"], words: ["google meet", "meet", "picture in picture", "pip", "mini window", "call", "video call", "document picture-in-picture"]),
         .init(id: "media.click", group: "video", icon: "play.slash",
               title: "Videos wait for a click", detail: "Videos don't start by themselves, even without sound",
               keys: [Preferences.waitsKey], words: ["autoplay", "auto-play"]),
@@ -463,8 +489,16 @@ enum SettingsIndex {
               keys: ["pageZoom"], words: ["zoom", "size", "scale"]),
         .init(id: "pages.capture", group: "pages", icon: "camera.viewfinder",
               title: "Capture pages", detail: "Capture… in the View menu copies an area, an element or the whole page",
-              more: "Drag across an area, click an element, or choose Whole Page; Esc cancels. The picture is copied and saved as a PNG in your downloads folder, and goes nowhere else.",
+              more: "Drag across an area, click an element, or choose Whole Page; Esc cancels. The picture is copied and saved as a PNG in your downloads folder (unless Copy captures only is on), and goes nowhere else.",
               keys: ["pages.capture"], words: ["screenshot", "capture", "snapshot", "picture", "png", "arc"]),
+        .init(id: "pages.capture.copyOnly", group: "pages", icon: "doc.on.clipboard",
+              title: "Copy captures only", detail: "The picture goes on the clipboard, with no PNG saved in your downloads folder",
+              keys: ["pages.capture.copyOnly"], words: ["screenshot", "capture", "clipboard", "copy", "png", "downloads", "save"],
+              parent: "pages.capture"),
+        .init(id: "hiding.shapes", group: "pages", icon: "arrow.up.and.down.and.arrow.left.and.right",
+              title: "Move and resize with Hide Elements", detail: "Drag what is outlined to move it, its right or bottom edge to resize it",
+              more: "Kept for the site like a hidden thing, listed in Hidden on This Site and put back the same way; ⌘Z takes the last change back. A click still hides.",
+              keys: ["hiding.shapes"], words: ["hide elements", "move", "resize", "drag", "size", "position", "zap", "arc", "boost"]),
         .init(id: "sites.styles", group: "pages", icon: "paintbrush",
               title: "Your own style for a site", detail: "Edit Site Style… in the View menu puts CSS of yours on the site you're on",
               more: "Applied as you type, to every page of that site, as Arc's Boosts. CSS only: Search never runs script you write in a page. Off, every style is kept but none is worn.",
@@ -500,8 +534,8 @@ enum SettingsIndex {
               parent: "spaces"),
         .init(id: "profiles", group: "spaces", icon: "person.2",
               title: "Profiles", detail: "Spaces with their own sign-ins, history and bookmarks",
-              more: "In windows of their own, unless Profiles in one window is on. Extensions, passwords and settings are shared.",
-              words: ["profile", "accounts", "work", "personal"]),
+              more: "In windows of their own, unless Profiles in one window is on. Extensions, passwords and settings are shared. The arrows beside each profile change their order, which the numbered shortcuts follow.",
+              words: ["profile", "accounts", "work", "personal", "reorder", "order", "shortcuts"]),
         .init(id: "profiles.oneWindow", group: "spaces", icon: "macwindow",
               title: "Profiles in one window", detail: "Every profile's spaces in one window, switched in place",
               more: "Choosing a space of another profile brings that profile's window into this one's place, so each keeps its own sign-ins. Closing it closes them all.",
@@ -527,6 +561,11 @@ enum SettingsIndex {
               title: "Pinned rows", detail: "Pins as rows under the squares, and Clear over the rest",
               more: "As in Arc: squares for the sites you live in, rows for pages you keep, and a line over the rest with Clear. Right-click a tab to pin it as a row. A row taken away from its page goes back with a click on its icon.",
               keys: ["pins.list"], words: ["arc", "pinned", "back to pinned page", "reset pin", "favicon", "go home"], parent: "tabs.layout"),
+        .init(id: "pins.preview", group: "pins", icon: "rectangle.on.rectangle",
+              title: "Preview pins on hover", detail: "Rest the pointer on a pin for a picture of its page and its unread count",
+              more: "After a moment, a small card beside the pin shows its page as it is, or as it was left if it's asleep, with its title and, for Gmail and other webmail, how many messages are unread. Nothing is loaded or woken to show it, and a private tab's page is never pictured.",
+              keys: ["pins.preview"],
+              words: ["preview", "hover", "hover card", "glance", "peek", "thumbnail", "pinned", "gmail", "unread", "calendar", "arc"]),
         .init(id: "pins.folders", group: "pins", icon: "folder",
               title: "Folders in pinned rows", detail: "Pinned rows in folders, folders in folders, as in Arc",
               more: "Right-click a pinned row and choose New Folder, or drag a row onto a folder. A folder folds with a click and holds up to three levels. Bringing Arc over keeps its folders as folders here. New Live Folder… fills one from a site's RSS or Atom feed, kept fresh every half hour.",
@@ -554,6 +593,10 @@ enum SettingsIndex {
               title: "The field in the middle of the window", detail: "⌘T's and ⌘L's field over a page, centred on the window and higher up",
               more: "As Arc and Zen place it, near where Spotlight comes: the column is dimmed with the page. Off, the field is centred on the page beside the column.",
               keys: ["field.window"], words: ["command bar", "cmd t", "cmd l", "spotlight", "centre", "center", "position", "arc", "zen"]),
+        .init(id: "field.hidesPage", group: "opening", icon: "rectangle.fill",
+              title: "Hide the page behind the field", detail: "⌘T's and ⌘L's field over a plain ground, the page out of sight",
+              more: "Off, the page stays dimmed behind the field and shows through. Escape or a click outside the field brings it back, as before.",
+              keys: ["field.hidesPage"], words: ["command bar", "cmd t", "cmd l", "dim", "blur", "cluttered", "busy", "background", "behind"]),
         .init(id: "newtab.recent", group: "opening", icon: "clock.arrow.circlepath",
               title: "Recent places in the new tab", detail: "Before you type, ⌘T's field lists the last three places you went",
               more: "From History on this Mac, leaving out pages already open, which ⌘K finds. Nothing is picked until an arrow key picks it, and a private tab lists nothing.",
@@ -642,6 +685,14 @@ enum SettingsIndex {
               title: "⌥-click a link opens it in Split View", detail: "Its page beside the one you're reading, as Open Link in Split View",
               more: "Off, ⌥-click follows the link as a click does. In Safari it downloads the link instead.",
               keys: ["links.optionSplit"], words: ["option click", "alt click", "split", "side by side", "link", "open beside"]),
+        .init(id: "split.controls", group: "mouse", icon: "rectangle.split.2x1",
+              title: "Controls over a page in Split View", detail: "Under the pointer: move it left or right, take it out of the split, or close it",
+              more: "The same as the divider's right-click menu and the Tabs menu, closer to hand.",
+              keys: ["split.controls"], words: ["split", "side by side", "move page", "swap", "close page", "separate", "buttons", "controls"]),
+        .init(id: "keys.backspaceBack", group: "mouse", icon: "delete.left",
+              title: "Backspace goes back", detail: "⌫ goes back a page and ⇧⌫ forward, as older browsers did",
+              more: "Only when you aren't typing in a field or editable text, and with no other key held. Off, as in Safari: ⌘[ goes back.",
+              keys: ["keys.backspaceBack"], words: ["backspace", "delete key", "back", "previous page", "go back", "history", "keyboard"]),
         .init(id: "autoscroll", group: "mouse", icon: "arrow.up.and.down.circle",
               title: "Scroll with the middle button", detail: "Click the wheel, then move the mouse to scroll, as on Windows",
               keys: ["autoscroll"], words: ["middle click", "autoscroll", "wheel"]),
@@ -703,6 +754,12 @@ enum SettingsIndex {
                       "device toolbar", "responsive", "emulation", "sensors", "geolocation", "mobile",
                       "chrome devtools", "elements", "styles", "console", "network", "sources", "debugger", "breakpoints",
                       "application", "storage", "cookies", "memory", "heap snapshot", "coverage", "css overview", "issues"]),
+        .init(id: "developer.local", group: "developer", icon: "chevron.left.forwardslash.chevron.right",
+              title: "Developer Mode for local sites", detail: "localhost, 127.0.0.1 and .test pages show their whole address and a bar of tools",
+              more: "The bar floats over the page's corner: the whole address, Web Inspector, Reload Ignoring Cache, and the cache turned off for the site's reloads. Any site can be put in Developer Mode or taken out of it from its site card or with ⇧⌥⌘I, and is remembered. Off, only the sites you turn on show it.",
+              keys: [DevMode.localKey, DevMode.sitesKey],
+              words: ["developer mode", "dev mode", "localhost", "local", "127.0.0.1", "dev server", "full url", "full address",
+                      "cache", "disable cache", "hard reload", "inspector", "devtools", "web developer"]),
         .init(id: "bench", group: "developer", icon: "terminal",
               title: "Let a script drive Search", detail: "A local socket for testing; its tabs never take over",
               more: "Its tabs open beside yours with a flask on them. See ./bench.",
@@ -786,36 +843,69 @@ enum SettingsIndex {
     // MARK: - finding
 
     /// The rows whose words match what was typed, in the order of the
-    /// sections. Every word typed has to be found somewhere in the row.
+    /// sections. Every word typed has to be found somewhere in the row; a
+    /// single letter, at the start of one of its words (a lone "d" was in
+    /// 175 of the rows, every one of them drawn at the first key).
     static func find(_ typed: String) -> [SettingsItem] {
         let words = typed.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return [] }
-        let order = SettingsPanel.Page.allCases
-        return items
-            .filter { item in
-                let group = SettingsIndex.group(item.group)
-                let hay = ([item.title, item.detail, item.more ?? "", group?.title ?? "", item.page.title]
-                    + item.words + item.keys).joined(separator: " ").lowercased()
-                return words.allSatisfy { hay.contains($0) }
+        let bytes = words.map { Array($0.utf8) }
+        return sought
+            .filter { row in
+                zip(words, bytes).allSatisfy { word, bytes in
+                    word.count == 1 ? row.starts.contains(word.first!) : Self.holds(row.hay, bytes)
+                }
             }
-            .sorted { (order.firstIndex(of: $0.page) ?? 0, groupOrder($0.group)) < (order.firstIndex(of: $1.page) ?? 0, groupOrder($1.group)) }
+            .map(\.item)
     }
 
-    private static func groupOrder(_ id: String) -> Int { groups.firstIndex { $0.id == id } ?? 0 }
+    /// Whether the row's words hold the typed ones, byte for byte: both are
+    /// lowercased the same way, and String's own search, Unicode-aware,
+    /// cost a millisecond a key over the index.
+    private static func holds(_ hay: [UInt8], _ word: [UInt8]) -> Bool {
+        hay.withUnsafeBytes { hay in
+            word.withUnsafeBytes { word in
+                memmem(hay.baseAddress, hay.count, word.baseAddress, word.count) != nil
+            }
+        }
+    }
+
+    /// Each row's words, lowercased, and the letters its words start with,
+    /// worked out once and in the order of the sections, rather than again
+    /// for every row at every key typed (idea 1333).
+    private static let sought: [(item: SettingsItem, hay: [UInt8], starts: Set<Character>)] = {
+        let order = SettingsPanel.Page.allCases
+        let groupIndex = Dictionary(groups.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let pageOf = Dictionary(groups.map { ($0.id, $0.page) }, uniquingKeysWith: { first, _ in first })
+        return items
+            .map { item -> (item: SettingsItem, hay: String, starts: Set<Character>, rank: (Int, Int)) in
+                let page = pageOf[item.group] ?? .general
+                let hay = ([item.title, item.detail, item.more ?? "", group(item.group)?.title ?? "", page.title]
+                    + item.words + item.keys).joined(separator: " ").lowercased()
+                let starts = Set(hay.split { !$0.isLetter && !$0.isNumber }.compactMap(\.first))
+                return (item, hay, starts, (order.firstIndex(of: page) ?? 0, groupIndex[item.group] ?? 0))
+            }
+            // Stable: rows of one group keep the order they are written in.
+            .enumerated()
+            .sorted { ($0.element.rank.0, $0.element.rank.1, $0.offset) < ($1.element.rank.0, $1.element.rank.1, $1.offset) }
+            .map { ($0.element.item, Array($0.element.hay.utf8), $0.element.starts) }
+    }()
 
     /// Whether a dependent row means anything as things are set now. Its
     /// section hides it otherwise; the find field shows it dimmed.
     @MainActor static func applies(_ item: SettingsItem, _ prefs: Preferences) -> Bool {
         switch item.id {
-        case "pages.dusk": return prefs.look != .light
+        // Shown while on whatever the look, so it can always be turned off.
+        case "pages.dusk": return prefs.look != .light || prefs.darkensPages
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "sidebar.slides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
         case "address.width": return prefs.addressLine && !prefs.sidebar
-        case "tabs.clickKeepsName": return prefs.addressLine && !prefs.iconColumn
-        // A click that edits nothing has no card to leave out.
-        case "tabs.clickAddressOnly": return !(prefs.tabClickKeepsName && prefs.addressLine && !prefs.iconColumn)
+        case "tabs.clickKeepsName": return prefs.addressLine && !prefs.iconColumn && !prefs.tabClickRenames
+        // A click that edits nothing, or edits the name, has no card to leave out.
+        case "tabs.clickAddressOnly": return prefs.iconColumn || !(prefs.tabClickRenames || prefs.tabClickKeepsName && prefs.addressLine)
+        case "tabs.clickRenames": return !prefs.iconColumn
         case "tabs.liquid": return LiquidTab.available && !(prefs.sidebar && prefs.sideIcons)
         case "window.glass.style": return prefs.glass && GlassStyle.liquidAvailable
         // With spaces on they are in the space's Colour…, beside its colour.
@@ -823,7 +913,9 @@ enum SettingsIndex {
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
-        case "bookmarks.iconsOnly", "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
+        // Icons only: on the bar above the page or in the column alike.
+        case "bookmarks.iconsOnly": return prefs.bookmarksBar
+        case "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
         case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
@@ -833,6 +925,7 @@ enum SettingsIndex {
         case "mail.default": return prefs.webmail != .none
         case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
         case "launcher.key": return prefs.launcher
+        case "pages.capture.copyOnly": return prefs.capturesPages
         case "icloud.erase": return ICloudSync.shared.on
         default: return true
         }
@@ -850,8 +943,9 @@ enum SettingsIndex {
         case "window.glass.clear", "window.glass.grain": return "With spaces on, in the space's menu › Colour…"
         case "sidebar.foldIcons": return "Only with the column down a side and not hidden until the edge"
         case "icloud.erase": return "Only while Sync with iCloud is on"
-        case "tabs.clickKeepsName": return "Only with the address bar always shown, and titles in the column or tabs across the top"
-        case "tabs.clickAddressOnly": return "Has no effect while Clicking the tab you're on keeps its name is on"
+        case "tabs.clickKeepsName": return "Only with the address bar always shown, titles in the column or tabs across the top, and Double click to rename off"
+        case "tabs.clickAddressOnly": return "Has no effect while Double click to rename or Clicking the tab you're on keeps its name is on"
+        case "tabs.clickRenames": return "Only with titles in the column or tabs across the top"
         case "profiles.oneWindow": return "Only with more than one profile"
         case "spaces.links", "links.ask", "spaces.buttons": return "Only with Spaces on"
         case "sidebar.player": return "Only with titles in the sidebar"
@@ -1074,6 +1168,7 @@ extension SettingsIndex {
     /// defaults changed: what Tests/settings_layout.py reads back.
     @MainActor static func values(_ prefs: Preferences) -> [String: Any] {
         [
+            "glyph": prefs.glyph.rawValue,
             "tabs.layout": prefs.tabsLayout.rawValue,
             "tabs.sleep": prefs.sleepChoice.rawValue,
             "float.own": prefs.floatOwn.rawValue,
@@ -1081,6 +1176,7 @@ extension SettingsIndex {
             "pins.home": prefs.pinsGoHome,
             "pins.peek": prefs.pinsPeek,
             "pins.linksNewTab": prefs.pinLinksOpenTabs,
+            "keys.backspaceBack": prefs.backspaceGoesBack,
             "links.peek": prefs.peekChoice.rawValue,
             "pages.120": prefs.fastPages.rawValue,
             "swipe.history": prefs.holdsHistory,
@@ -1126,6 +1222,9 @@ extension SettingsIndex {
         case "pins.linksNewTab":
             guard let on = value as? Bool else { return false }
             prefs.pinLinksOpenTabs = on
+        case "keys.backspaceBack":
+            guard let on = value as? Bool else { return false }
+            prefs.backspaceGoesBack = on
         case "sidebar.slides":
             guard let on = value as? Bool else { return false }
             prefs.slidesColumn = on

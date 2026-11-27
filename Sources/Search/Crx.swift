@@ -18,7 +18,7 @@ import Security
 
 enum Crx {
     enum Refused: LocalizedError {
-        case notAnID, download(Int), empty, notCrx, unsignedOrWrong, unpack
+        case notAnID, download(Int), empty, notCrx, unsignedOrWrong, unpack, theme
 
         var errorDescription: String? {
             switch self {
@@ -28,8 +28,19 @@ enum Crx {
             case .notCrx: return "What came back isn't a Chrome extension"
             case .unsignedOrWrong: return "The extension's signature doesn't hold up"
             case .unpack: return "The extension couldn't be unpacked"
+            case .theme: return "Chrome themes aren't supported in Search. Colour a space from its menu › Colour…, or choose a new tab's picture in Settings › Themes"
             }
         }
+    }
+
+    /// A Chrome theme: a manifest with "theme", which only Chrome's own
+    /// window draws from. Search has nothing to paint with it, so it would
+    /// install and change nothing (idea 1326): refused, saying where
+    /// Search's own colours are.
+    static func isTheme(_ folder: URL) -> Bool {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("manifest.json")),
+              let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+        return manifest["theme"] != nil
     }
 
     /// The version of Chrome the store is told it is talking to, and the one

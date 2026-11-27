@@ -49,6 +49,31 @@ final class FloatUnseenTests: XCTestCase {
         }
     }
 
+    /// On any site, not only streaming sites': a video somebody listened to
+    /// floats on its own (idea 1248: Video.js, Plyr and beIN's players
+    /// didn't), and a muted one never heard, a background's, still doesn't.
+    func testHeardVideoOnASiteOffTheListFloats() async throws {
+        try await withPlayer(style: .search, listed: false) { browser, owner, tab, floating in
+            XCTAssertFalse(Players.knows(tab.address), "a site off the list of streaming sites")
+            try await self.hearThenMute(tab)
+            owner.orderOut(nil)
+            try await waitForStop(tab)
+            browser.appLeft()
+            try await waitFor { floating() }
+            XCTAssertTrue(floating(), "leaving the app floats it, as ⇧⌘P would")
+        }
+    }
+
+    func testBackgroundVideoOnASiteOffTheListStays() async throws {
+        try await withPlayer(style: .search, listed: false) { browser, owner, tab, floating in
+            owner.orderOut(nil)
+            try await waitFor { try await self.visibility(tab) == "hidden" }
+            browser.appLeft()
+            try await waitFor { floating() }
+            XCTAssertFalse(floating(), "a muted video nobody heard stays in its page")
+        }
+    }
+
     func testVideoPausedByHandStaysInItsTab() async throws {
         try await withPlayer(style: .search) { browser, owner, tab, floating in
             _ = try await inPage(tab, "document.querySelector('video').pause(); true;")
@@ -81,13 +106,15 @@ final class FloatUnseenTests: XCTestCase {
 
     /// A browser whose window shows a page with a video playing, a canvas's
     /// stream, floated as `style` floats one, for `body`; `floating` says
-    /// whether it is out. Muted unless `audible`, when the stream carries a
+    /// whether it is out; `listed`, its site taken for a streaming site's
+    /// (Players). Muted unless `audible`, when the stream carries a
     /// sound track too (a silent one). The window is off every screen and
     /// WebKit is told not to mind (as the bench's stand is), so the page can
     /// be seen while the window is ordered in and not once it is ordered out.
     private func withPlayer(
         style: FloatStyle,
         audible: Bool = false,
+        listed: Bool = true,
         _ body: (Browser, NSWindow, Tab, @escaping () -> Bool) async throws -> Void
     ) async throws {
         let browser = Browser(record: WindowRecord())
@@ -98,7 +125,7 @@ final class FloatUnseenTests: XCTestCase {
         let previous = (browser.prefs.floatStyle, browser.prefs.floatsAway)
         let away = Float.benchAway
         let hosts = Players.benchHosts
-        Players.benchHosts.insert("float-unseen.invalid")
+        if listed { Players.benchHosts.insert("float-unseen.invalid") }
         Float.benchAway = NSPoint(x: -30000, y: -30000)
         defer {
             Float.benchAway = away

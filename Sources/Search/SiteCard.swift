@@ -28,40 +28,77 @@ enum SiteCardPanel {
     // MARK: - a pin's square
 
     /// A pin drawn as a square has no address to open, so the card hangs
-    /// from the square itself (idea 1081): each square on screen, by its tab.
-    private static let squares = NSMapTable<NSString, NSView>.strongToWeakObjects()
+    /// from the square itself (idea 1081): where each square is in its
+    /// window, from the top left, as the square last measured itself.
+    /// Kept as a place rather than as a view of the square's own: SwiftUI
+    /// let go of those views as it drew the squares again — for a pin
+    /// brought back at launch, the one you are on, or one put down — and
+    /// Site Information… did nothing on them (idea 1118).
+    private static var squares: [Tab.ID: (frame: CGRect, owner: UUID)] = [:]
+    /// What the card hangs from under a square: a view of no size to speak
+    /// of, never hit, moved onto the square each time.
+    private static var mark: NSView?
 
-    static func square(for id: Tab.ID) -> NSView? {
-        guard let view = squares.object(forKey: id.uuidString as NSString),
-              view.window != nil, !view.isHiddenOrHasHiddenAncestor else { return nil }
+    /// The square's place in `window`, made into a view the card can hang
+    /// from; nil when the square isn't drawn there.
+    static func square(for id: Tab.ID, in window: NSWindow?) -> NSView? {
+        guard let window, let content = window.contentView, let frame = squares[id]?.frame,
+              frame.width > 0, frame.height > 0 else { return nil }
+        let rect = content.isFlipped ? frame
+            : CGRect(x: frame.minX, y: content.bounds.height - frame.maxY, width: frame.width, height: frame.height)
+        guard content.bounds.intersects(rect) else { return nil }
+        let view = mark ?? Spot()
+        mark = view
+        if view.superview !== content { view.removeFromSuperview(); content.addSubview(view) }
+        view.frame = rect
         return view
     }
 
-    /// Put behind a pin's square: where its card hangs from. Never hit, so
-    /// the square's clicks stay the square's.
-    struct Square: NSViewRepresentable {
+    /// Whether `id` has a square drawn somewhere to hang the card from.
+    static func hasSquare(_ id: Tab.ID) -> Bool { squares[id] != nil }
+
+    /// On a pin's square (or a tile of the column of icons): says where it
+    /// is, for its card. The map of every space's rows draws the squares
+    /// too, and leaves this out.
+    struct Square: ViewModifier {
         let id: Tab.ID
-        func makeNSView(context: Context) -> NSView {
-            let view = Spot()
-            squares.setObject(view, forKey: id.uuidString as NSString)
-            return view
+        /// Off for a square only drawn, as another space's are.
+        var on = true
+        @State private var me = UUID()
+        @State private var frame = CGRect.zero
+        func body(content: Content) -> some View {
+            content
+                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { now in
+                    frame = now
+                    if on { squares[id] = (now, me) }
+                }
+                .onChange(of: on) { _, on in
+                    if on { squares[id] = (frame, me) } else if squares[id]?.owner == me { squares[id] = nil }
+                }
+                // Another tab come into this square (Browser.rowKey).
+                .onChange(of: id) { was, now in
+                    if on, let seen = squares[was], seen.owner == me {
+                        squares[was] = nil
+                        squares[now] = seen
+                    }
+                }
+                .onDisappear { if squares[id]?.owner == me { squares[id] = nil } }
         }
-        func updateNSView(_ view: NSView, context: Context) {
-            squares.setObject(view, forKey: id.uuidString as NSString)
-        }
-        private final class Spot: NSView {
-            override func hitTest(_ point: NSPoint) -> NSView? { nil }
-        }
+    }
+
+    private final class Spot: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 
     /// The card under a pin's square, from its menu's Site Information…;
     /// a click anywhere but the card puts it away, as the address bar's
     /// button's does.
-    static func show(for tab: Tab, in browser: Browser, square: NSView) {
+    static func show(for tab: Tab, in browser: Browser) {
         // After the edit any other tab had is let go of (follow hides the
-        // card as an edit ends), so this card isn't put away with it.
+        // card as an edit ends), so this card isn't put away with it; and
+        // where the square is once picking it has settled.
         DispatchQueue.main.async {
-            guard square.window != nil else { return }
+            guard let square = square(for: tab.id, in: browser.window) else { return }
             toggle(for: tab, in: browser, under: square, button: square)
         }
     }
@@ -379,6 +416,9 @@ struct SiteCard: View {
             sound
             grounded
             darken
+            if DevMode.host(of: tab.pageAddress) != nil {
+                Developer(tab: tab)
+            }
             if prefs.keepsSitesAwake, tab.awakeHost != nil {
                 HStack(spacing: 0) {
                     Text("Keep This Site Awake").font(MenuMetrics.font)
@@ -445,12 +485,13 @@ struct SiteCard: View {
     }
 
     /// Whether the site's videos float out on their own (see Grounded).
-    /// Only on a site they would float from, with one of Settings › General's
+    /// Only on a streaming site, or one playing a video now (they float
+    /// from any site since idea 1248), with one of Settings › General's
     /// Float the video switches on, and not in a private tab.
     @ViewBuilder private var grounded: some View {
         if !tab.shy, browser.prefs.floatsOnLeave || browser.prefs.floatsAway,
            let url = tab.pageAddress, ["http", "https"].contains(url.scheme?.lowercased()),
-           Players.knows(url), let host = url.host() {
+           Players.knows(url) || tab.playingVideo || tab.noisy, let host = url.host() {
             Ground(host: host)
         }
     }
@@ -638,6 +679,35 @@ struct SiteCard: View {
             .padding(.leading, MenuMetrics.text)
             .padding(.trailing, MenuMetrics.trailing)
             .frame(height: MenuMetrics.row)
+        }
+    }
+
+    /// Developer Mode for the site (DevMode.swift): its bar over the page,
+    /// at once.
+    private struct Developer: View {
+        @ObservedObject var tab: Tab
+        @ObservedObject private var mode = DevMode.shared
+
+        var body: some View {
+            HStack(spacing: 0) {
+                Text("Developer Mode")
+                    .font(MenuMetrics.font)
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .fixedSize()
+                Spacer(minLength: 24)
+                if let keys = ShortcutStore.shared.key(for: "view.developerMode")?.display {
+                    Text(keys)
+                        .font(MenuMetrics.font)
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .fixedSize()
+                        .padding(.trailing, 8)
+                }
+                Switch(on: Binding(get: { mode.isOn(tab) }, set: { mode.set($0, for: tab.pageAddress, shy: tab.shy) }))
+            }
+            .padding(.leading, MenuMetrics.text)
+            .padding(.trailing, MenuMetrics.trailing)
+            .frame(height: MenuMetrics.row)
+            .help("The page's whole address and quick tools: Web Inspector, reload ignoring cache, cache off")
         }
     }
 
@@ -905,9 +975,11 @@ extension Browser {
     /// hangs from the square instead.
     func showSiteInformation(_ tab: Tab) {
         if activeID != tab.id { select(tab) }
-        if tab.pin != nil, let square = SiteCardPanel.square(for: tab.id) {
+        // The column of icons has no address in a tile either: the card
+        // hangs from the tile, as from a square.
+        if tab.pin != nil || prefs.iconColumn, SiteCardPanel.hasSquare(tab.id) {
             if editingTab != nil { cancelTabEdit() }
-            SiteCardPanel.show(for: tab, in: self, square: square)
+            SiteCardPanel.show(for: tab, in: self)
         } else {
             beginTabEdit(tab, card: true)
         }

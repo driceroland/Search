@@ -120,7 +120,7 @@ final class Links: NSObject, NSApplicationDelegate {
         // is first asked for, and until then Search's own requests would go
         // out directly: making a store happens to ask for it early on
         // macOS 15.4, but on 14 the first update check can beat it.
-        MainActor.assumeIsolated { _ = BrowserProxy.shared }
+        MainActor.assumeIsolated { PerfLog.install(); _ = BrowserProxy.shared }
         Links.watchForTrouble()
         NSAppleEventManager.shared().setEventHandler(
             self, andSelector: #selector(handle(getURL:reply:)),
@@ -150,7 +150,7 @@ final class Links: NSObject, NSApplicationDelegate {
         // here, before the first is drawn, once more a turn later, and as
         // each is dressed. Open, with their tabs, and written down as they
         // were, until one is wanted (see Browsers.keepAway).
-        MainActor.assumeIsolated { Browsers.putAway() }
+        MainActor.assumeIsolated { PerfLog.mark("didFinishLaunching"); Browsers.putAway() }
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 Browsers.putAway()
@@ -164,11 +164,16 @@ final class Links: NSObject, NSApplicationDelegate {
         DispatchQueue.global(qos: .utility).async { ImportFile.sweepScratch() }
         Trim.start()
         MainActor.assumeIsolated {
+            Store.networkOnFirstInput()
             Shared.prefs.followFile()
             // The address field from any app, once asked for (Launcher.swift).
             Launcher.shared.start()
             // Live folders fetched, and kept fresh (LiveFolders.swift).
             LiveFolders.start()
+            // Back to a page's full screen after ⌘Tab (FullScreenReturn.swift).
+            FullScreenReturn.start()
+            // The Mac's screenshots in Downloads, once asked for (Screenshots.swift).
+            if Shared.prefs.screenshotsInDownloads { Screenshots.shared.watch(true) }
         }
         let plain = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
         guard !plain else { return }
@@ -185,6 +190,9 @@ final class Links: NSObject, NSApplicationDelegate {
         guard let text = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: text), Links.takes(url)
         else { return }
+        // A page is coming: WebKit's network process starts before its tab
+        // is made (Store.network).
+        MainActor.assumeIsolated { Store.network() }
         let sender = Self.sender(of: event)
         Links.take(url, sender: sender?.localizedName, pid: sender?.processIdentifier)
     }

@@ -9,6 +9,13 @@ up for the pin, and its Block Ads and Trackers switch, turned off, reaches
 the pin's page: it reloads without the blocker, so a slot the blocker
 hides (`.ad-slot`) shows; on again, it is hidden again. The card is a
 child window of the hidden probe's window, never on a screen.
+
+And every pin state (idea 1118): a pin you aren't on, the one you are
+on, one put down with ⌘W, and, after a relaunch, pins brought back
+asleep and awake — as a square, a row, a row in a folder, a tile of the
+column of icons, a square in the top row. Before, the card came for none
+of the squares brought back at launch nor the one you were on, and never
+in the column of icons.
 """
 import sys
 import threading
@@ -81,6 +88,59 @@ def run(t, name, prefs, folder=False, square=False, listed=False):
     sv.quit()
 
 
+def card_for(t, label, pid, square):
+    """Site Information… on `pid`: its card up, hung from the square (no
+    address opened) or from the address opened in it, inside the window."""
+    sv.cmd({"do": "ui", "finishedit": True}); time.sleep(0.3)
+    sv.cmd({"do": "ui", "siteinfo": True, "siteinfoid": pid[:8]}); time.sleep(1.0)
+    p = sv.cmd({"do": "probe"})
+    frames = p.get("siteCardFrames", {})
+    card, win = frames.get("card"), frames.get("window")
+    # Its top edge under the window's top and its left edge within 20
+    # points of the window's: hung from the column (or the top row), not
+    # somewhere else on the screen.
+    placed = bool(card and win and win[0] - 20 <= card[0] <= win[0] + win[2] and card[1] + card[3] <= win[1] + win[3])
+    t.ok(f"{label}: Site Information… brings its card", p["siteCard"] and p["siteCardTab"] == pid[:8].lower() and placed,
+         (p["siteCard"], p["siteCardTab"], pid[:8], card, win))
+    t.ok(f"{label}: {'under the square, no address opened' if square else 'under the address opened in it'}",
+         (p["tabEditing"] == "") == square, p["tabEditing"])
+    # Put away: the square's own Site Information… again, or the edit ended.
+    if p["siteCard"] and p["tabEditing"] == "":
+        sv.cmd({"do": "ui", "siteinfo": True, "siteinfoid": pid[:8]}); time.sleep(0.4)
+    sv.cmd({"do": "ui", "finishedit": True}); time.sleep(0.3)
+    t.ok(f"{label}: put away", not sv.cmd({"do": "probe"})["siteCard"])
+
+
+def states(t, name, prefs, square=False, listed=False, folder=False):
+    """Idea 1118: fresh, on, put down, and brought back asleep and awake."""
+    sv.setup(**prefs); sv.launch()
+    a = open_page("a"); b = open_page("b"); sv.page("other")
+    for pid in (a, b):
+        if folder:
+            sv.cmd({"do": "pinfolder", "action": "on"})
+            sv.cmd({"do": "pinfolder", "action": "pin", "id": pid})
+        else:
+            sv.cmd({"do": "pin", "id": pid, "listed": listed})
+    if folder:
+        sv.cmd({"do": "pinfolder", "action": "new", "name": "Work", "id": a})
+    time.sleep(0.8)
+    card_for(t, f"{name}, a pin you aren't on", a, square)
+    card_for(t, f"{name}, the pin you are on", a, square)
+    sv.sp("select", id=b); time.sleep(0.4)
+    sv.cmd({"do": "press", "code": 13, "chars": "w", "mods": ["cmd"], "letgo": True}); time.sleep(0.8)
+    t.ok(f"{name}: ⌘W puts the pin down, asleep", next(x for x in sv.sp("state")["tabs"] if x["id"] == b[:8].lower())["asleep"])
+    card_for(t, f"{name}, a pin put down", b, square)
+    sv.sp("select", id=a); time.sleep(0.4)
+    sv.sp("save"); sv.quit(); sv.launch(); time.sleep(1)
+    tabs = {x["url"].rsplit("/", 1)[-1]: x for x in sv.sp("state")["tabs"]}
+    asleep = [n for n in ("a", "b") if tabs[n]["asleep"]]
+    awake = [n for n in ("a", "b") if not tabs[n]["asleep"]]
+    t.ok(f"{name}: after a relaunch, a pin asleep and a pin awake", asleep and awake, (asleep, awake))
+    for n in asleep: card_for(t, f"{name}, brought back asleep", tabs[n]["id"], square)
+    for n in awake: card_for(t, f"{name}, brought back awake", tabs[n]["id"], square)
+    sv.quit()
+
+
 def main():
     t = sv.T()
     try:
@@ -88,6 +148,11 @@ def main():
         run(t, "row in the column", {"sidebar": True, "pins.list": True}, listed=True)
         run(t, "row in a pin folder", {"sidebar": True}, folder=True)
         run(t, "square in the top row", {"sidebar": False})
+        states(t, "square", {"sidebar": True, "spaces": True}, square=True)
+        states(t, "row", {"sidebar": True, "pins.list": True}, listed=True)
+        states(t, "folder row", {"sidebar": True}, folder=True)
+        states(t, "column of icons", {"sidebar": True, "sidebar.icons": True}, square=True)
+        states(t, "top row", {"sidebar": False})
     finally:
         sv.finish()
     t.done()

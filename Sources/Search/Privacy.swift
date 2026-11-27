@@ -107,7 +107,7 @@ enum ClickIDs {
     }
 }
 
-/// Settings › Privacy › Try HTTPS first, off unless turned on.
+/// Settings › Privacy › Try HTTPS first, on unless turned off (25 Nov 2026).
 ///
 /// HTTPS first: a top-level http:// load is tried over
 /// https:// first, and over http:// again only where that fails, so a site

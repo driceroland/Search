@@ -5,24 +5,27 @@ import SwiftUI
 // stays, with its play and a cross to put it away, until it plays again,
 // its page goes or the tab sleeps.
 //
-// Off unless turned on in Settings › Appearance › Tabs, and only with the
+// On unless turned off in Settings › Appearance › Tabs, and only with the
 // tabs down the side, titles and all: a sidebar of icons alone has no room
 // for its title and buttons. Off, nothing of it reaches a page: the pause
 // is two lines of script run in Search's world when it is pressed, and
 // never before.
 //
-// For the newest tab to make a sound that is out of sight: not the page on
-// screen, nor the other page of a pair on screen, nor one out in the
-// floating window, which has its own controls. Of this space's row only:
-// a tab left playing in another space keeps playing (see Spaces.swift), and
-// shows here once you are back in its space, if it is still out of sight.
+// A row for each tab making a sound out of sight, the newest at the top:
+// not the page on screen, nor the other page of a pair on screen, nor one
+// out in the floating window, which has its own controls. A tab left
+// playing in another space keeps playing (see Spaces.swift) and has its
+// row too; a click on it goes to its space.
 //
 // The pause looks in the page and in each frame below it that played (the
 // frames MediaKeys keeps), pauses what plays and remembers it; then WebKit
-// pauses whatever a script can't reach — a player in a shadow root, one
-// never put in the page. Only what was remembered can be played again, so
-// with nothing remembered the row goes once the page is quiet, rather than
-// offer a play that would do nothing.
+// suspends whatever a script can't reach — a player in a shadow root, one
+// never put in the page, as on most music sites. The play lifts that
+// suspension, which resumes only what it held, and plays what was
+// remembered. So the row always stays, with its play. Gone to, put away
+// with its cross, or its page leaving, the pause is handed to the page: the
+// suspended players paused as by their own buttons and the suspension
+// lifted, so the page plays as it would and the next page holds nothing.
 
 enum Player {
     /// What plays here, paused and remembered: the page sees its media
@@ -57,16 +60,33 @@ enum Player {
 }
 
 extension Browser {
-    /// The tab the player is for: the newest to make a sound, of the ones
-    /// in this row that are out of sight. Nil with the switch off, with the
-    /// tabs across the top, or with the sidebar as icons only or the strip.
-    var player: Tab? {
-        guard prefs.showsPlayer, prefs.sidebar, !prefs.iconColumn else { return nil }
+    /// The tabs the player is for: every one making a sound out of sight,
+    /// pinned or not, in this space or left playing in another, the newest
+    /// first. Each has its own row (idea 1332: only the newest showed, so
+    /// three of four playing tabs had no row). Empty with the switch off,
+    /// with the tabs across the top, or with the sidebar as icons only.
+    var players: [Tab] {
+        guard prefs.showsPlayer, prefs.sidebar, !prefs.iconColumn, !sounding.isEmpty else { return [] }
         let shown = visibleTabIDs
-        for id in sounding.reversed() where !shown.contains(id) && id != floating {
-            if let tab = tabs.first(where: { $0.id == id }) { return tab }
+        let all = tabs + parkedTabs
+        return sounding.reversed().compactMap { id in
+            guard !shown.contains(id), id != floating else { return nil }
+            return all.first { $0.id == id }
         }
-        return nil
+    }
+
+    /// The newest of them.
+    var player: Tab? { players.first }
+
+    /// A tab from the player, wherever it is: its space comes on screen
+    /// first when it was left playing in another.
+    func goToPlayer(_ tab: Tab) {
+        if !tabs.contains(where: { $0.id == tab.id }),
+           let space = parked.first(where: { $0.value.tabs.contains { $0.id == tab.id } })?.key {
+            switchSpace(to: space)
+        }
+        guard let tab = tabs.first(where: { $0.id == tab.id }) else { return }
+        select(tab)
     }
 
     /// A tab's sound started or stopped, or the player paused it or let it
@@ -105,7 +125,7 @@ struct PlayerRow: View {
             if tab.stilled && hovering {
                 // Paused from here and not wanted again: the row goes until
                 // the tab plays again.
-                PlayerButton(symbol: "xmark", help: "Put Away") { tab.stilled = false }
+                PlayerButton(symbol: "xmark", help: "Put Away") { tab.handPause() }
                     .transition(.opacity)
             }
             PlayerButton(symbol: tab.stilled ? "play.fill" : "pause.fill", help: tab.stilled ? "Play" : "Pause") {
@@ -127,7 +147,7 @@ struct PlayerRow: View {
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         // The buttons take their own clicks; the rest of the row is the way
         // to the tab.
-        .onTapGesture { browser.select(tab) }
+        .onTapGesture { browser.goToPlayer(tab) }
         .onHover { hovering = $0 }
         .help("Go to the tab")
         .animation(Motion.quick, value: hovering)

@@ -39,6 +39,12 @@ enum ExtensionShims {
     /// Search's passkey patch, put first in every script an extension runs in
     /// a page's own world (see Passkeys.swift, and `first` in the script).
     nonisolated static let passkeys = "search-passkeys.js"
+    /// Put before a file an extension injects with scripting.executeScript
+    /// in its isolated world, where no shim runs: only `storageGuard`.
+    nonisolated static let guardFile = "search-guard.js"
+    /// What the guard file leaves as its result, by which its entries are
+    /// told from the extension's own in what executeScript answers.
+    nonisolated static let guardMark = "__search-guard__"
     /// The first line of a worker that already carries the shim.
     nonisolated static let marker = "/* Search: Chrome APIs WebKit lacks, filled in (ExtensionShims.swift) */"
     nonisolated static let ender = "/* Search: end of shim */"
@@ -121,6 +127,7 @@ enum ExtensionShims {
         try script.write(to: folder.appendingPathComponent(file), atomically: true, encoding: .utf8)
         try contentShim(script).write(to: folder.appendingPathComponent(contentFile), atomically: true, encoding: .utf8)
         try PasskeyRelay.page.write(to: folder.appendingPathComponent(passkeys), atomically: true, encoding: .utf8)
+        try (storageGuard + "\"\(guardMark)\";\n").write(to: folder.appendingPathComponent(guardFile), atomically: true, encoding: .utf8)
         if ExtensionDevtools.page(in: manifest) != nil {
             try withShim(ExtensionDevtools.probePage).write(to: folder.appendingPathComponent(ExtensionDevtools.probeFile),
                                                            atomically: true, encoding: .utf8)
@@ -579,6 +586,66 @@ enum ExtensionShims {
         return "if (!globalThis.__searchShim) " + String(full[..<end.lowerBound]) + "})();\n"
     }
 
+    /// WebKit's web process crashes (JSStorage::defineOwnProperty, a null
+    /// read) when a script defines a property on localStorage or
+    /// sessionStorage with a descriptor that has `writable` but no `value`.
+    /// In an isolated world nothing catches it: the page's process dies,
+    /// Search loads the page again, the extension injects its script again,
+    /// and the page reloads in a loop. Fabric's web clipper does exactly
+    /// that on every page (`Object.defineProperty(localStorage, "getItem",
+    /// { writable: true })`, idea 1199). So such a define is completed as
+    /// Chrome reads it (WebIDL: a data descriptor sets the named item to its
+    /// value, undefined when it has none; any other is refused) before it
+    /// reaches WebKit. Nothing else about defineProperty changes.
+    nonisolated static let storageGuard = #"""
+    (() => {
+      const root = globalThis;
+      if (root.__searchStorageGuard || typeof root.Storage !== "function") return;
+      try { Object.defineProperty(root, "__searchStorageGuard", { value: true }); } catch (e) { return; }
+      const Storage = root.Storage, define = Object.defineProperty, defineAll = Object.defineProperties, reflect = Reflect.defineProperty;
+      const own = Object.prototype.hasOwnProperty;
+      // undefined: not a define this guard touches; false: refused; else the
+      // descriptor to hand WebKit.
+      const mend = (target, key, desc) => {
+        if (typeof key === "symbol" || !desc || typeof desc !== "object") return undefined;
+        let storage = false;
+        try { storage = target instanceof Storage; } catch (e) {}
+        if (!storage) return undefined;
+        if (own.call(desc, "get") || own.call(desc, "set")) return false;
+        if (own.call(desc, "value")) return undefined;
+        if (!own.call(desc, "writable")) return false;
+        return { ...desc, value: undefined };
+      };
+      const refused = (key) => new TypeError("Cannot define property " + String(key) + " on Storage");
+      define(Object, "defineProperty", { configurable: true, writable: true, value: {
+        defineProperty(target, key, desc) {
+          const m = mend(target, key, desc);
+          if (m === false) throw refused(key);
+          return define(target, key, m || desc);
+        } }.defineProperty });
+      define(Reflect, "defineProperty", { configurable: true, writable: true, value: {
+        defineProperty(target, key, desc) {
+          const m = mend(target, key, desc);
+          if (m === false) return false;
+          return reflect(target, key, m || desc);
+        } }.defineProperty });
+      define(Object, "defineProperties", { configurable: true, writable: true, value: {
+        defineProperties(target, props) {
+          let storage = false;
+          try { storage = target instanceof Storage; } catch (e) {}
+          if (!storage || !props || typeof props !== "object") return defineAll(target, props);
+          for (const key of Reflect.ownKeys(props)) {
+            if (!Object.prototype.propertyIsEnumerable.call(props, key)) continue;
+            const desc = props[key];
+            const m = mend(target, key, desc);
+            if (m === false) throw refused(key);
+            define(target, key, m || desc);
+          }
+          return target;
+        } }.defineProperties });
+    })();
+    """#
+
     /// Defines only what is missing, so the day WebKit implements an API,
     /// WebKit's is the one used.
     nonisolated static let script = #"""
@@ -685,6 +752,11 @@ enum ExtensionShims {
       // mended there, no API that Chrome doesn't give content scripts either.
       const inContent = typeof location !== "undefined" && !/^(chrome|webkit)-extension:$/.test(location.protocol);
       const runtime = chrome.runtime;
+      // A define on localStorage that crashes the page's process (see
+      // storageGuard), for content scripts.
+      if (inContent) {
+    \#(storageGuard)
+      }
       // A <script src> of the extension's own that a content script puts in
       // the page runs there whatever the page's Content Security Policy, in
       // Chrome. WebKit holds it to the page's: YouTube's script-src names no
@@ -1166,6 +1238,42 @@ enum ExtensionShims {
           }
         }, true);
       }
+      // The same thread, the same trap: a CryptoKey put into IndexedDB from
+      // the worker is wrapped by asking the main thread for the key that
+      // seals it, and the worker waits for an answer that can never come —
+      // the worker and every page of the extension froze for good, its
+      // popup an empty dark box (NordPass, idea 439). So a value holding a
+      // CryptoKey is refused at once with the DataCloneError of a browser
+      // that can't store one, which libraries already fall back from.
+      if (worker && root.IDBObjectStore && typeof root.CryptoKey === "function") {
+        const holdsKey = (value) => {
+          const seen = new Set(), todo = [value];
+          let n = 0;
+          while (todo.length && n++ < 20000) {
+            const v = todo.pop();
+            if (!v || typeof v !== "object" || seen.has(v)) continue;
+            if (v instanceof root.CryptoKey) return true;
+            seen.add(v);
+            if (ArrayBuffer.isView(v) || v instanceof ArrayBuffer || (root.Blob && v instanceof root.Blob)) continue;
+            if (v instanceof Map) { for (const [k, x] of v) todo.push(k, x); continue; }
+            if (v instanceof Set) { for (const x of v) todo.push(x); continue; }
+            for (const k of Object.keys(v)) todo.push(v[k]);
+          }
+          return false;
+        };
+        const refuse = () => new DOMException("A CryptoKey can't be stored from an extension's service worker in this browser.", "DataCloneError");
+        const guard = (proto, name) => {
+          const original = proto && proto[name];
+          if (typeof original !== "function") return;
+          Object.defineProperty(proto, name, { configurable: true, writable: true, value: function (value, ...rest) {
+            if (holdsKey(value)) throw refuse();
+            return original.call(this, value, ...rest);
+          } });
+        };
+        guard(root.IDBObjectStore.prototype, "put");
+        guard(root.IDBObjectStore.prototype, "add");
+        if (root.IDBCursor) guard(root.IDBCursor.prototype, "update");
+      }
       // WebKit runs an extension's worker on its web process's main thread,
       // and a worker's WebSocket waits there for the main thread to set up
       // its channel — for itself, for ever: the worker and every page of the
@@ -1524,7 +1632,11 @@ enum ExtensionShims {
           if (proto) {
             Object.defineProperty(proto, "userAgent", { get: () => chromeUA, configurable: true });
             Object.defineProperty(proto, "appVersion", { get: () => chromeUA.replace(/^Mozilla\//, ""), configurable: true });
-            Object.defineProperty(proto, "vendor", { get: () => "Google Inc.", configurable: true });
+            // A page's only: Chrome's worker has no navigator.vendor (the
+            // spec gives it to windows alone), and a worker that sets its
+            // own found ours read-only. ClickUp's, a module and so strict,
+            // threw on `navigator.vendor = …` and never started (idea 1348).
+            if (!worker) Object.defineProperty(proto, "vendor", { get: () => "Google Inc.", configurable: true });
             if (!("userAgentData" in navigator)) {
               const major = "__SEARCH_CHROME__".split(".")[0];
               const brands = [{ brand: "Chromium", version: major }, { brand: "Google Chrome", version: major }, { brand: "Not.A/Brand", version: "99" }];
@@ -4394,17 +4506,35 @@ enum ExtensionShims {
       // webRequest listeners with options WebKit doesn't take — blocking
       // needs a policy-installed extension in Chrome's MV3 too; extra headers
       // WebKit reports anyway — are added with the options it does take.
+      // WebKit's statusLine is the reason alone, "OK"; Chrome's is the whole
+      // line, "HTTP/1.1 200 OK". Neat Download Manager reads the code out of
+      // it, got 0 for every response, and so never offered a video.
+      const chromeLine = new WeakMap();
+      const lined = (listener) => {
+        if (typeof listener !== "function") return listener;
+        if (!chromeLine.has(listener)) chromeLine.set(listener, function (details, ...rest) {
+          if (details && typeof details.statusLine === "string" && details.statusCode && !/^HTTP\//.test(details.statusLine)) {
+            details = { ...details, statusLine: ("HTTP/1.1 " + details.statusCode + " " + details.statusLine).trim() };
+          }
+          return listener.call(this, details, ...rest);
+        });
+        return chromeLine.get(listener);
+      };
       if (chrome.webRequest) for (const key of Object.keys(chrome.webRequest)) {
         const target = chrome.webRequest[key];
         if (!/^on[A-Z]/.test(key) || !target || typeof target.addListener !== "function") continue;
         const add = target.addListener.bind(target);
         const own = ownRequests[key];
-        if (own && typeof target.removeListener === "function") {
+        if (typeof target.removeListener === "function") {
           const remove = target.removeListener.bind(target);
           put(target, "removeListener", (listener) => {
-            for (let i = own.length - 1; i >= 0; i--) if (own[i].listener === listener) own.splice(i, 1);
-            return remove(listener);
+            if (own) for (let i = own.length - 1; i >= 0; i--) if (own[i].listener === listener) own.splice(i, 1);
+            return remove(chromeLine.get(listener) || listener);
           });
+        }
+        if (typeof target.hasListener === "function") {
+          const has = target.hasListener.bind(target);
+          put(target, "hasListener", (listener) => has(chromeLine.get(listener) || listener));
         }
         put(target, "addListener", (listener, filter, spec) => {
           // WebKit can't read ws:// and wss:// patterns, and refuses the
@@ -4434,11 +4564,36 @@ enum ExtensionShims {
           if (own && typeof listener === "function" && !own.some((e) => e.listener === listener)) {
             own.push({ listener, filter, spec: Array.isArray(spec) ? spec.slice() : [] });
           }
+          const heard = lined(listener);
           try {
-            if (!Array.isArray(spec)) return add(listener, filter);
+            if (!Array.isArray(spec)) return add(heard, filter);
             const kept = spec.filter((s) => s === "requestHeaders" || s === "responseHeaders" || s === "requestBody");
-            try { return add(listener, filter, kept); } catch (e) { if (/startup/i.test(String(e && e.message))) throw e; return add(listener, filter); }
+            try { return add(heard, filter, kept); } catch (e) { if (/startup/i.test(String(e && e.message))) throw e; return add(heard, filter); }
           } catch (e) { late(e); }
+        });
+      }
+
+      // A file injected into a website's isolated world runs with no shim
+      // before it: the guard against WebKit's localStorage crash goes first
+      // (see storageGuard; Fabric's clipper reloaded every page in a loop).
+      // The extension's own files still run last, so the result is theirs.
+      if (!inContent && chrome.scripting && typeof chrome.scripting.executeScript === "function") {
+        const executeScript = chrome.scripting.executeScript.bind(chrome.scripting);
+        // WebKit answers with an entry for each file in each frame, so the
+        // guard's own entries, which carry its mark, are taken out again.
+        const mark = "\#(guardMark)";
+        put(chrome.scripting, "executeScript", (...args) => {
+          const injection = args[0];
+          if (!injection || typeof injection !== "object" || !Array.isArray(injection.files) || !injection.files.length
+              || String(injection.world || "ISOLATED").toUpperCase() === "MAIN"
+              || injection.files.some((f) => String(f).replace(/^\/+/, "") === "\#(guardFile)")) {
+            return executeScript(...args);
+          }
+          const callback = typeof args[args.length - 1] === "function" ? args.pop() : null;
+          const p = Promise.resolve(executeScript({ ...injection, files: ["\#(guardFile)", ...injection.files] }))
+            .then((results) => Array.isArray(results) ? results.filter((r) => !(r && r.result === mark)) : results);
+          if (!callback) return p;
+          p.then((r) => callback(r), (e) => withLastError(e, callback));
         });
       }
 
@@ -7381,7 +7536,7 @@ enum ExtensionAuth {
         Task { @MainActor [weak tab] in
             try? await Task.sleep(for: .seconds(4))
             guard let tab, tab.held == url else { return }
-            tab.failure = "No site at that address."
+            tab.failure = DNSRetryPolicy.gaveUp
         }
         return true
     }

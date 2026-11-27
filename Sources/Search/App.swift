@@ -55,6 +55,7 @@ struct SearchApp: App {
     }
 
     var body: some Scene {
+        let _ = Bench.count("app")
         // Where you left it, at the size you left it. SwiftUI saves a
         // window's frame under its id and puts it back before the window
         // first shows; set by hand once the window was up, it showed at the
@@ -70,6 +71,15 @@ struct SearchApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 780)
+        // No event from outside is SwiftUI's to route to this window: a
+        // page handed off from an iPhone, or a file opened from the Finder,
+        // had SwiftUI close the window before opening it again for the
+        // event (AppWindowsController.activateWindowForExternalEvent). The
+        // close counted as yours: with other windows open, its tabs all
+        // went; alone, it left full screen (ideas 1247, 1173). Links takes
+        // them all itself (application(_:continue:), (_:open:), the URL
+        // Apple Event). `python3 Tests/handoff_scene.py`
+        .handlesExternalEvents(matching: [])
         .commands {
             CommandGroup(replacing: .newItem) {
                 // Another window, with tabs of its own (see Windows.swift).
@@ -108,6 +118,10 @@ struct SearchApp: App {
                 // other way in opens too.
                 Button("Bring Things Over…") { browser.bringingIn = "" }
                     .shortcut("file.import")
+                // Every space, its pins and its tabs, to a file any browser
+                // imports, or Search's own (SpacesExport.swift).
+                Button("Export Spaces…") { browser.exportSpaces() }
+                    .shortcut("file.exportSpaces")
                 Divider()
                 Button("Close Tab") { browser.closeFront() }
                     .shortcut("file.closeTab")
@@ -290,6 +304,9 @@ struct SearchApp: App {
                     .shortcut(taken["console"] == nil ? "view.console" : nil)
                 Button("Inspect Element") { browser.inspectWebElement() }
                     .shortcut(taken["pick"] == nil ? "view.inspect" : nil)
+                Button("Developer Mode") { browser.toggleDeveloperMode() }
+                    .shortcut("view.developerMode")
+                    .disabled(DevMode.host(of: browser.active?.pageAddress) == nil)
                 // Only with a developer tools package installed (Settings ›
                 // About › Developer, see DevToolsPackages.swift).
                 if let package = DevToolsPackages.shared.primary, DevToolsPackages.shared.usable(package.offer.id) {
@@ -414,6 +431,11 @@ struct SearchApp: App {
                 Button(browser.pageKept ? "Edit Bookmark\u{2026}" : "Add This Page") { browser.bookmarkCurrent() }
                     .shortcut("bookmarks.add")
                     .disabled(!(browser.active?.isWeb ?? false))
+                if browser.prefs.homeTiles {
+                    // Settings › Site tiles on a new tab (HomeTiles.swift).
+                    Button("Add This Page to New Tabs") { browser.active.map { browser.addTile(from: $0) } }
+                        .disabled(!(browser.active.map(browser.offersTile) ?? false))
+                }
                 Button("Show Bookmarks…") { browser.bookmarking = true }
                     .shortcut("bookmarks.show")
                 Toggle("Show Bookmarks Bar", isOn: Binding(
@@ -426,13 +448,7 @@ struct SearchApp: App {
             }
             CommandMenu("History") {
                 Section("Recently Visited") {
-                    ForEach(browser.recentlyVisited) { trace in
-                        Button {
-                            browser.open(trace.url, foreground: true)
-                        } label: {
-                            MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
-                        }
-                    }
+                    RecentlyVisited(browser: browser, menu: browser.recentMenu)
                 }
                 if !browser.ghosts.isEmpty {
                     Section("Recently Closed") {
@@ -669,10 +685,14 @@ struct ContentView: View {
             // square; it grows into that and back with the column's slide.
             stage
                 .modifier(DevToolsStage(browser: browser))
-                // The tabs folded away: a line says the page is coming
-                // (Settings, idea 269), clear of the card's round corners.
+                // A line along the page's top says the page is coming, as
+                // Arc's (idea 269), clear of the card's round corners: with
+                // the tabs folded away, where nothing else said it, and with
+                // them in sight too, where it is in the line of sight and
+                // says how far along the page is (#1650, idea 1281). For
+                // everyone, no switch.
                 .overlay(alignment: .top) {
-                    if browser.folded, browser.prefs.showsLoadingLine, fullscreenTab == nil, let tab = browser.active {
+                    if fullscreenTab == nil, let tab = browser.active {
                         TabLoadingLine(tab: tab)
                             .padding(.horizontal, cardCorner)
                     }
@@ -709,9 +729,11 @@ struct ContentView: View {
             // The bookmarks bar, under the strip or beside the column's top —
             // there on the window's ground above the page's card, and no wider.
             if barShown {
+                // The pointer reaching an auto-hidden sidebar's edge brings it over the bar.
+                let side = chrome.width + (browser.folded && browser.prefs.sideHides ? Fold.hiddenEdge : 0)
                 BookmarksBar(browser: browser, bookmarks: browser.bookmarks, onFrame: cards)
-                    .padding(.leading, sideOnRight ? farGap : chrome.width)
-                    .padding(.trailing, sideOnRight ? chrome.width : farGap)
+                    .padding(.leading, sideOnRight ? farGap : side)
+                    .padding(.trailing, sideOnRight ? side : farGap)
                     .padding(.top, band)
                     .transition(.opacity)
             }
@@ -768,8 +790,15 @@ struct ContentView: View {
         } else if let tab = browser.active {
             Page(tab: tab, corner: cardCorner, browser: browser)
                 .overlay {
-                    if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
+                    if browser.prefs.showsLinks {
+                        // Beside the downloads tab at the window's edge, not under it.
+                        let room = browser.downloadsEdge ? DownloadFlight.edgeRoom : 0
+                        LinkBubble(status: browser.linkStatus,
+                                   leadingRoom: sideOnRight ? 0 : room, trailingRoom: sideOnRight ? room : 0)
+                    }
                 }
+                // Developer Mode's bar, for a site in it (DevMode.swift).
+                .overlay(alignment: .bottomTrailing) { DevBar(browser: browser, tab: tab) }
                 .overlay(alignment: .topTrailing) {
                     if browser.finding {
                         FindBar(browser: browser)
@@ -802,6 +831,7 @@ struct ContentView: View {
         } else if browser.prefs.homeTheme != .off {
             HomeBackground(theme: browser.prefs.homeTheme, tuning: browser.prefs.homeTuning,
                            image: browser.prefs.homeThemeImage, shuffle: browser.prefs.homeShuffle)
+                .clipShape(RoundedRectangle(cornerRadius: cardCorner, style: .continuous))
         } else {
             Palette.ground
         }
@@ -894,11 +924,10 @@ struct ContentView: View {
             .transition(.opacity)
     }
 
-    /// The bookmarks bar is up: asked for, there are bookmarks, the tabs
-    /// aren't folded away or under a video filling the screen, and it isn't
-    /// in the column instead (SideBookmarks).
+    /// The top bar is up when the tab and fold allow it, there are bookmarks,
+    /// and the page isn't filling the screen.
     private var barShown: Bool {
-        browser.bookmarksBarForTab && !browser.prefs.sideBookmarks && !browser.bookmarks.isEmpty && !browser.folded
+        browser.bookmarksBarForTab && !browser.prefs.sideBookmarks && !browser.bookmarks.isEmpty
             && fullscreenTab == nil
     }
 
@@ -915,17 +944,20 @@ struct ContentView: View {
     /// A column being dragged wider or narrower is followed as it goes.
     private func make(room new: CGSize, after old: CGSize) {
         let now = roomed
-        // The column's edge held: the page slides with it rather than being
-        // laid out again at every width it goes through. Wider, it runs on
-        // past the window's far edge; narrower, it is resized only every 40
-        // points, each time with that much to spare. Let go, it is resized
-        // once, to its room (below).
+        // The column's edge held: the page is laid out once, as wide as the
+        // narrowest column would leave it, and from then on only slides
+        // with the edge. Its far side always reaches past the card's, which
+        // cuts it, so no strip of nothing opens there and nothing is laid
+        // out again while the edge moves: resized every 40 points, the far
+        // side jumped each time as the page caught up a frame late. Let go,
+        // it is resized once, to its room (below).
         if edges.side != nil, new.height == now.height, new.width > Metrics.cardGap {
             roomTicket += 1
-            guard new.width < now.width else { return }
+            let least = Metrics.sideMin
+            guard now.width > least else { return }
             var still = Transaction()
             still.disablesAnimations = true
-            withTransaction(still) { room = CGSize(width: max(Metrics.sideMin, new.width - 40), height: new.height) }
+            withTransaction(still) { room = CGSize(width: least, height: new.height) }
             return
         }
         // The card's far gap coming back as the column does (see
@@ -991,7 +1023,7 @@ struct ContentView: View {
             }
             StoreOffer(browser: browser)
             if browser.veiling {
-                hint("Click anything to hide it   ↑↓ wider, narrower   ⌘Z undo   esc done")
+                hint("Click anything to hide it   ⌥-click all like it   ↑↓ wider, narrower   ⌘Z undo   esc done")
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -1119,6 +1151,7 @@ struct ContentView: View {
     }
 
     var body: some View {
+        let _ = Bench.count("content")
         window_
             // The column folded away, and out again at the edge (see Fold.swift).
             .overlay(alignment: sideOnRight ? .trailing : .leading) {
@@ -1155,6 +1188,14 @@ struct ContentView: View {
                 }
             }
             .overlay { panels }
+            // A new download's file on its way to the downloads button.
+            // Only with Settings › Appearance › Animate downloads on: off, nothing
+            // here watches the downloads at all.
+            .overlay {
+                if browser.prefs.animatesDownloads || browser.downloadsEdge {
+                    DownloadFlightLayer(browser: browser, fetches: browser.fetches, onRight: sideOnRight)
+                }
+            }
             .overlay { switcherOverlay }
             .overlay(alignment: .topTrailing) {
                 if let job = browser.fileImport { ImportProgress(browser: browser, job: job) }
@@ -1292,7 +1333,7 @@ struct ContentView: View {
 
     // MARK: - the window
 
-    /// A line that rises from the bottom, says one thing, and leaves.
+    /// A line at the bottom that comes into focus, says one thing, and goes.
     @ViewBuilder
     private var announcement: some View {
         if let text = browser.announcement {
@@ -1315,8 +1356,12 @@ struct ContentView: View {
                 .background(Palette.ground, in: Capsule())
                 .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
                 .shadow(color: .black.opacity(0.10), radius: 18, y: 6)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .animation(Motion.settle, value: browser.announcement)
+                // Comes into focus where it stands, and goes out of it: no
+                // travel, so it doesn't rise from or sink into the edge. With
+                // Reduce Motion, a plain fade.
+                .transition(Motion.reduced ? .opacity
+                            : .modifier(active: Focus(blur: 8, scale: 0.9, opacity: 0),
+                                        identity: Focus(blur: 0, scale: 1, opacity: 1)))
         }
     }
 
@@ -1467,6 +1512,12 @@ struct ContentView: View {
             window.isExcludedFromWindowsMenu = false
         }
         window.tabbingMode = .disallowed
+        // No picture of the window for macOS's state restoration: Search
+        // brings its windows back itself, from its own files. AppKit drew
+        // one a while after launch and after each change, a buffer the
+        // window's size in pixels (16 MB for a 1280-point window, 60 for a
+        // 5K screen) that the allocator then kept as part of the app.
+        window.disableSnapshotRestoration()
         // Light or dark is the app's to say (Settings › Appearance); the
         // window only has to be the ground colour that goes with it.
         window.titlebarAppearsTransparent = true
@@ -1542,6 +1593,11 @@ struct ContentView: View {
                 guard let window, event.window === window else { return event }
                 Browser.lastClose = nil
                 Browser.lastMove = nil
+                // Where a download a click starts sets off from (DownloadFlight).
+                if event.type != .otherMouseDown, let height = window.contentView?.bounds.height {
+                    let at = event.locationInWindow
+                    browser.lastPress = (CGPoint(x: at.x, y: height - at.y), CACurrentMediaTime())
+                }
                 // A click on the tab switcher, in this window only (see
                 // Browser.clickTabSwitcher), turned into the top-left
                 // coordinates SwiftUI's frames are in.
@@ -2411,3 +2467,35 @@ private struct ImportProgress: View {
         }
     }
 }
+
+/// Out of focus, smaller and clear, or none of those: the Saved line's way
+/// in and out.
+private struct Focus: ViewModifier {
+    let blur: CGFloat
+    let scale: CGFloat
+    let opacity: Double
+
+    func body(content: Content) -> some View {
+        content.blur(radius: blur).scaleEffect(scale).opacity(opacity)
+    }
+}
+
+/// The History menu's last few places, drawn again when they change
+/// (Browser.recentMenu) and not with every change to the window.
+private struct RecentlyVisited: View {
+    let browser: Browser
+    @ObservedObject var menu: RecentMenu
+
+    var body: some View {
+        ForEach(browser.recentlyVisited) { trace in
+            Button {
+                browser.open(trace.url, foreground: true)
+            } label: {
+                MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
+            }
+        }
+    }
+}
+
+/// See Browser.recentMenu.
+final class RecentMenu: ObservableObject {}

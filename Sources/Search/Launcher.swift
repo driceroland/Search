@@ -43,8 +43,11 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var offers: [Suggestion] = []
     /// The rest of the best match, after the caret, as ⌘L's field draws it.
     @Published private(set) var ending: String?
-    /// The row the arrow keys have walked to.
-    @Published var picked: Int?
+    /// The row Return will take.
+    @Published var picked: Int? {
+        didSet { pickedByTyping = false }
+    }
+    private var pickedByTyping = false
     /// Bumped when what was typed is no address and can't be searched for.
     @Published private(set) var refusals = 0
     /// Bumped each time the field should take the keys.
@@ -284,7 +287,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
 
     /// Typed plus whatever the field is finishing for you.
     var completed: String {
-        if let picked, offers.indices.contains(picked) { return offers[picked].key }
+        if !pickedByTyping, let picked, offers.indices.contains(picked) { return offers[picked].key }
         return typed + (ending ?? "")
     }
 
@@ -321,6 +324,10 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         let command = rest.first?.kind.isCommand == true ? [rest.removeFirst()] : []
         offers = command + open + rest
         ending = places.ending
+        if target.prefs.returnTakesTop, offers.first?.canBePickedWhileTyping(typed, ending: ending) == true {
+            picked = 0
+            pickedByTyping = true
+        }
     }
 
     /// Pages open in the windows of the profile the field was raised for,
@@ -371,9 +378,9 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     /// typed opened in a new tab of the window in front — one brought back
     /// if none is open — and Search in front of the app the field was
     /// raised over. The same order as Browser.submit.
-    func submit() {
+    func submit(address: URL? = nil) {
         guard up, let target = target ?? Browsers.front else { return }
-        let chosen = picked.flatMap { offers.indices.contains($0) ? offers[$0] : nil }
+        let chosen = address == nil ? picked.flatMap { offers.indices.contains($0) ? offers[$0] : nil } : nil
 
         if let chosen, let id = chosen.tab,
            let owner = Browsers.all.first(where: { browser in browser.tabs.contains { $0.id == id } }) {
@@ -384,7 +391,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         }
 
         // A command is only ever on top, and there it is what Return does.
-        if case .command(let command) = (chosen ?? offers.first)?.kind {
+        if address == nil, case .command(let command) = (chosen ?? offers.first)?.kind {
             dismiss(keeping: false)
             let browser = Browsers.ensureWindow()
             command.run(on: browser)
@@ -394,7 +401,9 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
         }
 
         let url: URL?
-        if let chosen {
+        if let address {
+            url = address
+        } else if let chosen {
             url = chosen.url
         } else if let ending {
             url = Address.url(from: typed + ending)
@@ -576,8 +585,12 @@ private struct LauncherField: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(launcher: launcher) }
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+        let field = WebsiteAddressField()
         field.delegate = context.coordinator
+        field.canPasteAndGo = { [weak coordinator = context.coordinator] in coordinator?.launcher.up == true }
+        field.pasteAndGo = { [weak coordinator = context.coordinator] url in
+            coordinator?.launcher.submit(address: url)
+        }
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
@@ -682,9 +695,13 @@ private struct LauncherField: NSViewRepresentable {
             case #selector(NSResponder.cancelOperation(_:)):
                 launcher.dismiss()
                 return true
-            case #selector(NSResponder.deleteWordBackward(_:)):
-                // ⌥⌫ over an offered ending lets go of it and takes the last
-                // word typed, as in the window's field.
+            case #selector(NSResponder.deleteWordBackward(_:)),
+                 #selector(NSResponder.deleteToBeginningOfLine(_:)):
+                // ⌥⌫ or ⌘⌫ over an offered ending lets go of it and takes the
+                // last word typed, or the line, as in the window's field.
+                // Left to the text view they only took the selected ending,
+                // which the field then offered again: ⌘⌫ did nothing until a
+                // letter was taken with ⌫ (idea 1334).
                 deleting = true
                 let selected = textView.selectedRange()
                 guard launcher.ending != nil, selected.length > 0,
@@ -692,7 +709,11 @@ private struct LauncherField: NSViewRepresentable {
                 else { return false }
                 textView.delete(nil)
                 deleting = true
-                textView.deleteWordBackward(nil)
+                if command == #selector(NSResponder.deleteWordBackward(_:)) {
+                    textView.deleteWordBackward(nil)
+                } else {
+                    textView.deleteToBeginningOfLine(nil)
+                }
                 return true
             case #selector(NSResponder.deleteBackward(_:)),
                  #selector(NSResponder.deleteForward(_:)),

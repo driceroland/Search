@@ -105,9 +105,23 @@ enum SyncSettings {
         })
     }
 
-    @MainActor static func items(_ prefs: Preferences) -> [String: String] {
+    /// Settings whose default has changed. On a Mac where one was never
+    /// chosen, the new default is not a choice: it must not be stamped as an
+    /// edit and win over a value another Mac chose. Until chosen here, such a
+    /// setting reads as what the Macs last agreed (`agreed`), and is taken.
+    static let defaultChanged: Set<String> = ["glyph"]
+
+    @MainActor static func items(_ prefs: Preferences, agreed: [String: String] = [:],
+                                 store: UserDefaults = Store.settings) -> [String: String] {
         var out: [String: String] = [:]
-        for setting in all { out["set:" + setting.key] = setting.read(prefs) }
+        for setting in all {
+            let key = "set:" + setting.key
+            if defaultChanged.contains(setting.key), store.object(forKey: setting.key) == nil, let held = agreed[key] {
+                out[key] = held
+            } else {
+                out[key] = setting.read(prefs)
+            }
+        }
         return out
     }
 
@@ -134,17 +148,29 @@ final class Sync: ObservableObject {
 
     nonisolated static let folderKey = "sync.folder"
     nonisolated static let deviceKey = "sync.device"
+    /// ThisMac.fingerprint of the Mac that made sync.device.
+    nonisolated static let deviceMacKey = "sync.device.mac"
     /// The folder Search makes inside the one chosen.
     nonisolated static let inside = "Search Sync"
 
     /// This Mac's id in the folder: made once, kept with the settings, so
     /// each test world (SEARCH_PROBE=<name>) is a Mac of its own.
-    let device: String = {
-        if let kept = Store.settings.string(forKey: Sync.deviceKey), !kept.isEmpty { return kept }
+    let device: String = Sync.device(in: Store.settings, mac: ThisMac.fingerprint)
+
+    /// This Mac's id, made once. Settings copied from another Mac
+    /// (Migration Assistant) carry that Mac's: both would write the same
+    /// file in the folder, so this one makes its own (ICloudLedger.claimed).
+    nonisolated static func device(in defaults: UserDefaults, mac: String?) -> String {
+        let keptMac = defaults.string(forKey: deviceMacKey)
+        if let kept = defaults.string(forKey: deviceKey), !kept.isEmpty, keptMac == nil || mac == nil || keptMac == mac {
+            if keptMac == nil, let mac { defaults.set(mac, forKey: deviceMacKey) }
+            return kept
+        }
         let made = UUID().uuidString
-        Store.settings.set(made, forKey: Sync.deviceKey)
+        defaults.set(made, forKey: deviceKey)
+        if let mac { defaults.set(mac, forKey: deviceMacKey) }
         return made
-    }()
+    }
 
     private var bag: Set<AnyCancellable> = []
     private var timer: Timer?
@@ -266,9 +292,9 @@ final class Sync: ObservableObject {
         defer { running = false }
         var seen = Set<String>()
         let prefs = Shared.prefs
-        seen.formUnion(run(scope: "app", in: root, current: { _ in SyncSettings.items(prefs) }, apply: { live in
+        seen.formUnion(run(scope: "app", in: root, current: { SyncSettings.items(prefs, agreed: $0) }, apply: { live in
             SyncSettings.apply(live, to: prefs)
-        }))
+        }, always: true))
         for profile in Profiles.shared.list {
             seen.formUnion(run(scope: Sync.scope(profile.id), in: root,
                                current: { Sync.items(of: profile.id, base: $0) },
@@ -280,8 +306,11 @@ final class Sync: ObservableObject {
 
     /// One scope: stamped, merged with the other Macs' files, applied, and
     /// written. The names of the other Macs read.
+    /// `always`: apply the merged items even when they match `current` —
+    /// settings, whose `current` may stand in what was agreed for what this
+    /// Mac shows (SyncSettings.defaultChanged); applying writes only what differs.
     private func run(scope: String, in root: URL, current: ([String: String]) -> [String: String],
-                     apply: ([String: String]) -> Void) -> [String] {
+                     apply: ([String: String]) -> Void, always: Bool = false) -> [String] {
         let files = FileManager.default
         let folder = root.appendingPathComponent(scope, isDirectory: true)
         do {
@@ -327,7 +356,7 @@ final class Sync: ObservableObject {
         let merged = SyncMerge.pass(current: here, base: state, theirs: theirs, device: device, now: now,
                                     understood: SyncItems.understood)
         let live = SyncMerge.live(merged)
-        if live != here { apply(live) }
+        if live != here || always { apply(live) }
         if merged != base, let data = try? JSONEncoder().encode(merged) {
             try? files.createDirectory(at: stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: stateURL, options: .atomic)

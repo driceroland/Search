@@ -35,7 +35,12 @@ import WebKit
 // if the pointer got there from the window, not from beyond, and once it
 // rests there a moment: a pointer only crossing to a display on that side
 // goes on through. And while the column is out, a pointer just past the
-// edge is still on it.
+// edge is still on it. Faster still, the pointer goes from the page to
+// well past the edge between two of its moves: with the column folded by
+// hand, leaving the window through its side counts as reaching the edge,
+// as in Zen, and the column waits a moment for the pointer to come back
+// (idea 1144). Not with the window against the screen's edge, where the
+// pointer stops at the edge anyway.
 //
 // While a tab's address is being typed into its row, the column stays out:
 // the pointer drifting off it is no reason to take the field away.
@@ -96,16 +101,25 @@ extension Browser {
         // Pressed again before the column went: it stays.
         if foldingAway {
             foldingAway = false
+            leaveOnGlass(false)
             return
         }
+        // On glass, the column keeps it until it has gone (columnGlass).
+        if prefs.sidebar, glassy { leaveOnGlass(!folded) }
         // Going away, the page is given the column's room first, and the
         // column slides only once WebKit has drawn the page at that size.
         // Given it as the slide started, the page grew while it slid, and
         // what WebKit hadn't drawn yet came in from the far edge as a bar
         // of the web view's own ground, black or white with the theme. Out
         // over the far edge, where the room goes, nothing of it shows.
+        // Under Reduce Motion or Reduce animations too, where the column
+        // then goes at once: gone before the page was drawn, its place was
+        // a flat band of the page's ground until WebKit caught up (idea
+        // 1254). It now goes the moment the page is there, still in a
+        // single step. Not when it fades instead (Motion.fadesColumn),
+        // which gives the page its room at once and fades over it.
         let pages = shownPages
-        if !folded, prefs.sidebar, !Motion.reduced, !pages.isEmpty {
+        if !folded, prefs.sidebar, !Motion.fadesColumn, !pages.isEmpty {
             let ticket = foldTicket
             foldingAway = true
             Browser.drawn(pages, within: 0.12) { [weak self] in
@@ -114,10 +128,13 @@ extension Browser {
                     self.foldingAway = false
                     self.folded = true
                 }
+                self.leaveOnGlass(false, after: Motion.columnAway + 0.1)
             }
             return
         }
+        let away = !folded
         moveColumn(out: folded) { self.folded.toggle() }
+        if away, leavingOnGlass { leaveOnGlass(false, after: Motion.columnAway + 0.1) }
     }
 
     /// `change`, which brings the column out (`out`) or puts it away, on
@@ -156,8 +173,10 @@ extension Browser {
     /// other half in Split View.
     private var shownPages: [WKWebView] {
         guard let active else { return [] }
-        let tabs = activeSplit.map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? [active]
-        return tabs.compactMap { $0.isWeb && !$0.asleep && !$0.floating ? $0.built : nil }
+        // Not `tabs`: a local of that name is in scope in its own closure,
+        // which Swift 6.3 rejects as captured before it is declared.
+        let shown = activeSplit.map { pair in pair.tabs.compactMap { id in tabs.first { $0.id == id } } } ?? [active]
+        return shown.compactMap { $0.isWeb && !$0.asleep && !$0.floating ? $0.built : nil }
     }
 
     /// `done` once each of `pages` has its new size and WebKit has put it
@@ -280,6 +299,7 @@ extension Browser {
 
     /// The folded column out over the page, or back in.
     func peek(_ out: Bool) {
+        if out, leavingOnGlass { leaveOnGlass(false) }
         moveColumn(out: out) { self.peeking = out }
     }
 
@@ -342,7 +362,70 @@ extension Browser {
         if !prefs.sidebar { return point.y >= size.height - Fold.edge }
         if window.styleMask.contains(.fullScreen), size.height - point.y < Fold.fullScreenCorner { return false }
         let zone = prefs.sideHides ? Fold.hiddenEdge : Fold.edge
-        return right ? point.x >= size.width - zone : point.x < zone
+        guard right ? point.x >= size.width - zone : point.x < zone else { return false }
+        // Off the very edge, over something the page has to press there
+        // (Airtable's button 6 points in): the page's, hover and all
+        // (idea 1308). Plain page in the band stays covered (Gmail's rail).
+        if prefs.sideHides, (right ? size.width - point.x : point.x) >= Fold.trueEdge,
+           EdgeAsk.pageHas(window, at: point) == true { return false }
+        return true
+    }
+}
+
+/// What the page under the hidden column's edge band has there, asked as
+/// the pointer comes into the band (idea 1308): the same question the band
+/// along the top asks (PageUnder) — a field, a button, a link, something
+/// with a hand for a pointer, text. One question out at a time; the last
+/// answer is kept for the point it was asked at, and the box it named.
+@MainActor
+enum EdgeAsk {
+    private static var answer: (window: ObjectIdentifier, at: NSPoint, box: NSRect?)?
+    private static var out: (point: NSPoint, since: TimeInterval)?
+    private static var next: (window: NSWindow, point: NSPoint)?
+    private static var ticket = 0
+
+    /// What the page has said of `point` (the window's): true, something of
+    /// its own to press there; false, nothing; nil, not asked or not yet.
+    static func pageHas(_ window: NSWindow, at point: NSPoint) -> Bool? {
+        guard let answer, answer.window == ObjectIdentifier(window) else { return nil }
+        if let box = answer.box { return box.insetBy(dx: -0.5, dy: -0.5).contains(point) ? true : nil }
+        return hypot(answer.at.x - point.x, answer.at.y - point.y) <= 3 ? false : nil
+    }
+
+    /// Asks the page under `point`, unless its answer is in already. Once it
+    /// says it has something there and the pointer is still on it, the page
+    /// is handed the move it was kept from, so it lights up under a pointer
+    /// that hasn't moved since.
+    static func ask(_ window: NSWindow, at point: NSPoint, then: (@MainActor () -> Void)? = nil) {
+        guard pageHas(window, at: point) == nil else { then?(); return }
+        // One at a time, but not behind a page that never answers.
+        if out != nil, !late { next = (window, point); return }
+        out = (point, ProcessInfo.processInfo.systemUptime)
+        ticket &+= 1
+        let mine = ticket
+        PageUnder.ask(in: window, at: point) { [weak window] web, box in
+            if mine == ticket { out = nil }
+            guard let window else { return }
+            answer = (ObjectIdentifier(window), point, box)
+            if box != nil, let page = web as? PageView, page.covered,
+               let move = NSEvent.mouseEvent(with: .mouseMoved, location: point, modifierFlags: [],
+                                             timestamp: ProcessInfo.processInfo.systemUptime,
+                                             windowNumber: window.windowNumber, context: nil,
+                                             eventNumber: 0, clickCount: 0, pressure: 0) {
+                page.mouseMoved(with: move)
+            }
+            then?()
+            if let waiting = next {
+                next = nil
+                ask(waiting.window, at: waiting.point)
+            }
+        }
+    }
+
+    /// Whether a question has been out longer than the edge waits.
+    static var late: Bool {
+        guard let out else { return false }
+        return ProcessInfo.processInfo.systemUptime - out.since > Fold.askWait
     }
 }
 
@@ -369,10 +452,39 @@ struct Fold: View {
     static let edge: CGFloat = 6
     /// For a column hidden for good, which waits for the pointer to settle
     /// (see dwell): a wider edge to find, as a hand reaches for it (#1279).
-    static let hiddenEdge: CGFloat = 10
+    /// A band of 10 points stayed hard to catch for a pointer arriving fast
+    /// at the side (a user's report); a press in the band still reaches the
+    /// page until the column is out (Browser.covers).
+    static let hiddenEdge: CGFloat = 28
+    /// The window's very edge, inside that band. A page's own buttons lie
+    /// in the band too, Airtable's collapsed sidebar 6–12 points in: there
+    /// the pointer was kept from the page (no hover), and resting on the
+    /// button for the dwell brought the column out over it, which then took
+    /// the click (idea 1308). Off this edge, where the page says it has
+    /// something to press (EdgeAsk), the band is the page's: it hears the
+    /// pointer, and the column comes only from the edge itself.
+    static let trueEdge: CGFloat = 4
+    /// How long the edge waits for the page's answer before leaving the
+    /// band to it: a page too busy to say keeps its band, the edge itself
+    /// still brings the column.
+    static let askWait: TimeInterval = 0.25
+
+    /// Whether the column hidden for good comes for the pointer resting
+    /// `distance` points in from its edge, the page having said `pageHas`
+    /// of what lies there (nil: not yet). True to come, false not to,
+    /// nil to wait for the page.
+    static func edgeComes(distance: CGFloat, pageHas: Bool?) -> Bool? {
+        guard distance >= trueEdge else { return true }
+        guard let pageHas else { return nil }
+        return !pageHas
+    }
+
     /// How far past the window's edge, on the column's side, the pointer
     /// still counts as on it.
-    private static let overshoot: CGFloat = 48
+    static let overshoot: CGFloat = 48
+    /// How long a column brought out by a pointer flung off the window
+    /// through its edge (see flung) waits for the pointer to come back.
+    private static let flingHold: TimeInterval = 0.6
     /// The grace before the column goes back in. With the time the slide
     /// takes to start, the column begins to go as soon after the pointer
     /// leaves as Dia's does. Arc doesn't wait at all, which loses the column
@@ -386,14 +498,32 @@ struct Fold: View {
     /// it was hard to find with the pointer; 12 is still under a page's
     /// own first line of anything to click.
     private static let top: CGFloat = 12
-    /// How long the pointer rests on the edge before the strip comes out,
-    /// whose edge is the way to the menu bar. Long enough to cross the edge,
-    /// short enough not to be waited for.
-    private static let dwell: TimeInterval = 0.15
-    /// The same for a column hidden for good: a hand on its way along the
-    /// side crosses its edge in a frame or two, and anything longer was felt
-    /// as a wait (#1279).
-    private static let columnDwell: TimeInterval = 0.05
+    /// How long the pointer rests on the edge before a column hidden for
+    /// good, or the strip across the top, comes out: a hand on its way
+    /// crosses the edge in a frame or two, and anything longer was felt as
+    /// a wait (#1279; the strip's 0.15 s too, idea 1253). The strip's edge
+    /// is also the way to the menu bar: its wait starts again for as long
+    /// as the pointer is still rising (see rising), so a pointer only
+    /// grazing it on the way up doesn't bring it out.
+    static let dwell: TimeInterval = 0.05
+
+    /// Whether the edge brings the column (or the strip) out with these
+    /// mouse buttons down: not while the left one is held. The edge is
+    /// watched on drags too, and a drag in the page that reached it — a
+    /// text selection, cells, a row, or a page's own sidebar along the same
+    /// edge pulled open (Airtable's lies 6 points in) — had the column slide
+    /// out over it on the way.
+    static func edgeBrings(pressed buttons: Int) -> Bool { buttons & 1 == 0 }
+
+    /// Whether the pointer, from `last` to `point` in the window's own
+    /// coordinates, is still going up: on its way past the strip's edge to
+    /// the menu bar rather than come to rest on it. Against the screen's
+    /// top, in full screen or a window under the menu bar's own edge, it
+    /// can't rise any further, and the wait runs.
+    static func rising(from last: NSPoint?, to point: NSPoint) -> Bool {
+        guard let last else { return false }
+        return point.y > last.y
+    }
 
     var body: some View {
         ZStack(alignment: onRight ? .topTrailing : .topLeading) {
@@ -467,7 +597,7 @@ struct Fold: View {
                         .frame(maxHeight: .infinity, alignment: .top)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
                                              strength: browser.folded && browser.peeking ? 1 : 0,
-                                             ground: !browser.glassUnder, corner: floating ? Metrics.cardRadius : 0))
+                                             ground: browser.columnGround, corner: floating ? Metrics.cardRadius : 0))
                         // Folded away beside a page that is a card, the
                         // page has the whole window, and the column comes
                         // out over it as a card of its own, as Arc's does:
@@ -660,14 +790,35 @@ struct Fold: View {
         let overshot = beside && pointer.crossing
             && NSScreen.screens.contains { $0.visibleFrame.contains(screen) }
         pointer.crossing = inWindow || overshot
+        let last = pointer.last
+        pointer.last = point
+        let now = ProcessInfo.processInfo.systemUptime
+        // Flung off the window through the column's edge (idea 1144): out at
+        // once, as the edge would have brought it had the pointer been seen
+        // there. Only with the column folded by hand, which comes at once
+        // from its edge; one hidden for good waits for the pointer to settle.
+        // Not while dragging something out of the window, and not with the
+        // window against its screen's edge, where the pointer stops at the
+        // edge itself or goes on to the display beyond (left as it was).
+        let flung = prefs.sidebar && !prefs.sideHides && !browser.peeking
+            && NSEvent.pressedMouseButtons == 0
+            && Fold.flung(from: last, to: point, size: size, right: onRight)
+            && !Fold.againstScreenEdge(window, right: onRight)
+            && last.map { NSWindow.windowNumber(at: window.convertPoint(toScreen: $0), belowWindowWithWindowNumber: 0) } == window.windowNumber
+        if flung { pointer.flungUntil = now + Fold.flingHold }
+        // Flung out, the column waits a moment for the pointer to come back,
+        // while it is still beside the window on that side.
+        let flingHeld = prefs.sidebar && now < pointer.flungUntil && past > 0
+            && point.y >= 0 && point.y < size.height
+        let frontColumn = Fold.frontColumn(sidebar: prefs.sidebar, key: window.isKeyWindow, main: window.isMainWindow)
         if browser.peeking {
             pass()
-            // Only this window counts, not another app's window over it. One
-            // of this app's own windows, such as a popover opened from the
-            // column, counts as the column.
+            // Where the pointer is decides for the column in front, as at
+            // its edge below. Still ask what's under it: a popover opened
+            // from the column holds it out even past its width.
             let top = NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0)
-            let onWindow = top == window.windowNumber
-            let onOwnPanel = !onWindow && NSApp.windows.contains { $0.windowNumber == top }
+            let onWindow = frontColumn || top == window.windowNumber
+            let onOwnPanel = top != window.windowNumber && NSApp.windows.contains { $0.windowNumber == top }
             // Floating, the column stands a gap in from the edge, and its
             // edge to pull reaches half its width past it.
             let reach = prefs.sidebar ? prefs.columnWidth + (floating ? Metrics.cardGap + 5 : 0) : Metrics.strip
@@ -678,19 +829,37 @@ struct Fold: View {
             // The edge held: the column stays out for the whole drag. Measured
             // against the width saved before it, or the strip's, the pointer
             // counted as off the column halfway and it slid away (#1462).
-            let over = onOwnPanel || popup || holding || pointer.edgeHeld || overshot || (onWindow && inWindow && distance < reach)
+            let over = onOwnPanel || popup || holding || pointer.edgeHeld || overshot || flingHeld
+                || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
         } else if inWindow, distance < (prefs.sidebar && prefs.sideHides ? Fold.hiddenEdge : Fold.edge),
+                  // Not with the button held: a drag in the page, a text
+                  // selection or Airtable's own sidebar edge pulled, came
+                  // to the edge and the column slid out over it mid-drag.
+                  Fold.edgeBrings(pressed: NSEvent.pressedMouseButtons),
                   // In full screen, not from the corner where macOS brings
                   // the window's buttons down with the menu bar: the column
                   // came out over them there, on the way to the red one (#241).
                   !(prefs.sidebar && window.styleMask.contains(.fullScreen) && size.height - point.y < Fold.fullScreenCorner) {
-            // Which window is under the pointer is asked only here, at the
-            // edge: another app's window over it doesn't bring the column out.
-            guard NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber
+            // Ask what's under the pointer only when the column's window
+            // isn't in front: another app's window over it shouldn't bring
+            // it out. In front, a window manager's floating panel can
+            // cover the screen's outermost points without covering the column,
+            // so position decides, even with picture in picture over the edge.
+            guard frontColumn || NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber
             else { return pass() }
+            if !prefs.sidebar, Fold.rising(from: last, to: point) { pass() }
+            // Off the very edge of a column hidden for good: ask the page
+            // what is there before the dwell is out (idea 1308).
+            if prefs.sidebar, prefs.sideHides, distance >= Fold.trueEdge { EdgeAsk.ask(window, at: point) }
             if arriving == nil { arrive() }
+        } else if flung {
+            pass()
+            peek(true)
+            // Gone in again once the hold is over, should the pointer not
+            // move again before then.
+            DispatchQueue.main.asyncAfter(deadline: .now() + Fold.flingHold + 0.01) { follow() }
         } else if overshot {
             // Off the window, so whatever is under the pointer isn't it. The
             // wait starts again with every move: the column comes once the
@@ -714,6 +883,36 @@ struct Fold: View {
         }
     }
 
+    static func frontColumn(sidebar: Bool, key: Bool, main: Bool) -> Bool {
+        sidebar && (key || main)
+    }
+
+    /// Whether a move of the pointer from `last` to `point`, both in the
+    /// window's own coordinates, left the window through the column's
+    /// side (`right`, or the left): from inside the window to past that
+    /// edge, crossing its line between the window's top and bottom. Between
+    /// two samples of a fast hand the pointer can go from the page to well
+    /// past the edge, and was never seen at the edge or just past it at
+    /// all (idea 1144). Zen counts the crossing, and so does this.
+    static func flung(from last: NSPoint?, to point: NSPoint, size: CGSize, right: Bool) -> Bool {
+        guard let last, last.x >= 0, last.x < size.width, last.y >= 0, last.y < size.height else { return false }
+        let edge = right ? size.width : 0
+        let past = right ? point.x - size.width : -point.x
+        guard past > 0, point.x != last.x else { return false }
+        // Where the move crossed the edge's line: within the window's height,
+        // not off its top or bottom corner on the way somewhere above or below.
+        let t = (edge - last.x) / (point.x - last.x)
+        let y = last.y + (point.y - last.y) * t
+        return y >= 0 && y < size.height
+    }
+
+    /// Whether the window's `right` (or left) side lies on its screen's own
+    /// edge, or past it.
+    static func againstScreenEdge(_ window: NSWindow, right: Bool) -> Bool {
+        guard let screen = window.screen?.frame else { return true }
+        return right ? window.frame.maxX >= screen.maxX - 1 : window.frame.minX <= screen.minX + 1
+    }
+
     /// Whether the Dock hides on the screen's `right` (or left) edge, and
     /// comes out there when the pointer pushes against it.
     static func dockHides(right: Bool) -> Bool {
@@ -724,15 +923,33 @@ struct Fold: View {
     /// The pointer on the edge: out at once, or after the dwell when the
     /// column is folded for good, and always for the strip, whose edge is
     /// the way to the menu bar, and for the pointer just past the edge.
-    private func arrive(resting: Bool = false) {
+    private func arrive(resting: Bool = false, after wait: TimeInterval = Fold.dwell) {
         guard resting || !prefs.sidebar || prefs.sideHides else { return peek(true) }
         pass()
         let coming = DispatchWorkItem {
             arriving = nil
+            // Pressed during the wait: the hand is at work in the page.
+            guard resting || Fold.edgeBrings(pressed: NSEvent.pressedMouseButtons) else { return }
+            // Off the very edge, over a button of the page's, the band is
+            // the page's: the column comes from the edge itself (idea 1308).
+            if !resting, prefs.sidebar, let window = pointer.window {
+                let point = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+                let distance = onRight ? window.frame.width - point.x : point.x
+                switch Fold.edgeComes(distance: distance, pageHas: EdgeAsk.pageHas(window, at: point)) {
+                case false?: return
+                case nil:
+                    // The page has yet to answer: a moment more, unless it
+                    // is too busy to, and the band stays its own.
+                    guard !EdgeAsk.late else { return }
+                    EdgeAsk.ask(window, at: point)
+                    return arrive(after: 0.02)
+                case true?: break
+                }
+            }
             peek(true)
         }
         arriving = coming
-        DispatchQueue.main.asyncAfter(deadline: .now() + (prefs.sidebar ? Fold.columnDwell : Fold.dwell), execute: coming)
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: coming)
     }
 
     /// The pointer crossed the edge without stopping.
@@ -1008,6 +1225,12 @@ private final class Pointer {
     /// The pointer is over the window, or just went off the column's edge from
     /// it and hasn't gone further.
     var crossing = false
+    /// Where the pointer was at the move before, in the window's own
+    /// coordinates.
+    var last: NSPoint?
+    /// Until when a column brought out by a fling off the window's edge
+    /// stays out for the pointer to come back (see Fold.flung).
+    var flungUntil: TimeInterval = 0
     /// The column's edge is held: its width is the drag's, not yet saved,
     /// and the pointer can be anywhere along the drag (#1462).
     var edgeHeld = false
@@ -1020,6 +1243,8 @@ private final class Pointer {
     func start(_ moved: @escaping @MainActor () -> Void) {
         guard local == nil, let window else { return }
         crossing = false
+        last = nil
+        flungUntil = 0
         // The pointer's moves reach the monitor wherever it is over the
         // window, not only over what tracks it — for as long as the watch
         // lasts, and no longer.
