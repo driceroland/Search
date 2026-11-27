@@ -22,6 +22,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- ⌘T onto an extension's new tab page that puts the caret in a search box of its own as it loads (`autofocus`, or its script focusing the box) leaves the keys in that box, with no address field over the page, as before 1.0.22: the field came up over every extension's new tab page and Escape was needed to reach the page's own box. A page that focuses nothing still gets the field, and ⌘L brings it up over any of them. `python3 Tests/newtab_extension_ownbox.py` ([#1714](https://github.com/driceroland/Search/issues/1714), idea 1389)
 - Dia's spaces come over again in File › Bring Things Over: Dia keeps its sidebar in WAL mode, and the copy Search reads, its log already merged in, still said so, so SQLite read nothing and the panel asked for Dia's key again. `swift test --filter ImportSidebarsTests` (#1715)
 - With several tabs picked, Tab › Pin Tab and Pin Tab as Row, and their keys, pin all of them, as their right-click menu does: they pinned only the tab in front. `swift test --filter TabSelectionTests` (#1692, idea 1366)
 - A tablet pen's pan (a Wacom pen with a button set to Pan/Scroll) over the column goes through the spaces the way it carries the page, as two fingers on a trackpad do, natural scrolling on or off, and one space a drag. Since 1.0.22 it went the other way round, read as a mouse's sideways wheel (#1646), and a drag could run across several. A mouse's wheels go as before. `swift test --filter SpaceWheelTests`, `python3 Tests/space_wheel_run.py` (idea 1391)

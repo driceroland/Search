@@ -5223,6 +5223,7 @@ final class Browser: NSObject, ObservableObject {
             typed = ""
             editing = true
             focusRequest += 1
+            ownBoxWatch = tab.id
             rememberSession()
             Extensions.shared.offerNewTabPage(into: tab)
             return
@@ -5260,6 +5261,57 @@ final class Browser: NSObject, ObservableObject {
         if #available(macOS 15.4, *) { Extensions.shared.offerNewTabPage(into: tab) }
     }
 
+    /// The extension's new tab page ⌘T just opened under the field, until
+    /// it has loaded: if it puts the caret in a box of its own as it does,
+    /// the field goes away and the keys are the page's (#1714).
+    private var ownBoxWatch: Tab.ID?
+
+    /// An extension's new tab page with a search box of its own, focused as
+    /// it loads (`autofocus`, or `focus()` from its script): the field over
+    /// it is put away, so what you type goes into the page's box, as before
+    /// 1.0.22. A page that focuses nothing keeps the field (#1627). Only
+    /// while the field is still up, empty, over that same tab: a key already
+    /// typed into the field, or another tab, and nothing changes. Asked as
+    /// it finishes loading and twice more within a second, for a page whose
+    /// script focuses its box a moment later.
+    private func watchOwnBox(_ tab: Tab, tries: Int = 3) {
+        guard ownBoxWatch == tab.id, activeID == tab.id, editing, typed.isEmpty,
+              let web = tab.built
+        else { ownBoxWatch = nil; return }
+        web.evaluateInSearch(Browser.ownBox) { [weak self, weak tab] value in
+            MainActor.assumeIsolated {
+                guard let self, let tab else { return }
+                guard self.ownBoxWatch == tab.id, self.activeID == tab.id, self.editing, self.typed.isEmpty
+                else { return }
+                if value as? Bool == true {
+                    self.ownBoxWatch = nil
+                    self.editing = false
+                } else if tries > 1 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self, weak tab] in
+                        guard let self, let tab else { return }
+                        self.watchOwnBox(tab, tries: tries - 1)
+                    }
+                } else {
+                    self.ownBoxWatch = nil
+                }
+            }
+        }
+    }
+
+    /// Whether the page's focus is in a box you type into: a text field,
+    /// a text area or an editable element, looked for through shadow roots.
+    static let ownBox = """
+    (function () {
+      var el = document.activeElement;
+      for (var i = 0; el && el.shadowRoot && el.shadowRoot.activeElement && i < 32; i++) el = el.shadowRoot.activeElement;
+      if (!el || el === document.body || el === document.documentElement) return false;
+      if (el.disabled || el.readOnly) return false;
+      if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+      if (el.tagName !== 'INPUT') return false;
+      return ['', 'text', 'search', 'url', 'email', 'tel', 'number'].indexOf((el.getAttribute('type') || '').toLowerCase()) >= 0;
+    })()
+    """
+
     /// New Tab in Group, from a group's heading, as Chrome's: a new tab at
     /// the group's end, in front. With the floating field on, over a page,
     /// the field comes up instead and the tab Return makes goes there (see
@@ -5290,6 +5342,7 @@ final class Browser: NSObject, ObservableObject {
             tabs = placed
             // The field over the extension's page takes the keys (#1627).
             editing = true
+            ownBoxWatch = tab.id
         } else {
             tab = Tab(configuration: Web.configuration(space: spaceID))
             prepare(tab)
@@ -10287,6 +10340,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // done, and it is shown.
         (webView as? PageView)?.showFirstFrame()
         guard let tab = anyTab(for: webView), let url = tab.address else { return }
+        if ownBoxWatch == tab.id { watchOwnBox(tab) }
         let typed = typedTo.removeValue(forKey: tab.id)
         tab.uncover()
         // And again once it has all come in, for a page that drew its look
