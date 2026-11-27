@@ -3009,6 +3009,8 @@ final class Browser: NSObject, ObservableObject {
     private var lastClear: (batch: UUID, blank: Tab.ID?)?
 
     private var bag = Set<AnyCancellable>()
+    /// How many things the window itself listens to: the same however many tabs have come and gone.
+    var listeningCount: Int { bag.count }
     /// The minute-by-minute look for tabs to put to sleep, and the ear for
     /// macOS saying memory is short. See Sleep.swift.
     var dozing: Timer?
@@ -7970,6 +7972,12 @@ final class Browser: NSObject, ObservableObject {
 
     func prepare(_ tab: Tab) {
         tab.delegate = self
+        // What this window listens to in the tab goes with the tab, not with
+        // the window: kept in the window's own set, every tab closed over a
+        // week of use left its sinks behind (about a kilobyte each), and a tab
+        // moved to another window went on being heard by the first. A tab
+        // prepared again listens once.
+        tab.subscriptions.removeAll()
         armSwipeClose(tab)
         // With two pages up, the keys going to the other one — Tab walked
         // past the last field of this one — make it the focused page, so the
@@ -8112,7 +8120,7 @@ final class Browser: NSObject, ObservableObject {
                 guard let self, let tab else { return }
                 heard(tab, noisy: noisy, stilled: stilled)
             }
-            .store(in: &bag)
+            .store(in: &tab.subscriptions)
 
         // A page's title lands a beat after the page itself, and a history
         // entry that only ever holds an address is half a memory.
@@ -8120,19 +8128,19 @@ final class Browser: NSObject, ObservableObject {
         tab.$address
             .dropFirst()
             .sink { [weak self] _ in self?.rememberSession() }
-            .store(in: &bag)
+            .store(in: &tab.subscriptions)
 
         tab.$muted
             .dropFirst()
             .sink { [weak self] _ in self?.rememberSession() }
-            .store(in: &bag)
+            .store(in: &tab.subscriptions)
 
         // Named or grouped here: so in the other windows, with Same tabs in
         // every window on (Twins.swift). Nothing otherwise.
         tab.$name.dropFirst().map { _ in () }
             .merge(with: tab.$groupID.dropFirst().map { _ in () })
             .sink { [weak self] in self?.twinsSoon() }
-            .store(in: &bag)
+            .store(in: &tab.subscriptions)
 
         tab.$title
             .dropFirst()
@@ -8142,7 +8150,7 @@ final class Browser: NSObject, ObservableObject {
                 guard let tab, !tab.shy, tab.translator == nil, let url = tab.address else { return }
                 self?.history(of: tab).retitle(url, title)
             }
-            .store(in: &bag)
+            .store(in: &tab.subscriptions)
     }
 
     /// Put the cursor back in the field, from wherever asked.

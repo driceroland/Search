@@ -920,6 +920,9 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
     /// what you were just reading is what you are most likely to want back.
     /// Written into the session, so a tab's time away counts across quits.
     private(set) var touched = Date()
+    /// What the window it is in listens to in it (Browser.prepare): it goes
+    /// with the tab.
+    var subscriptions = Set<AnyCancellable>()
     /// Whether `touched` says a look at all: a tab made this run and never
     /// looked at has only the time it was made there (see FolderPeek).
     private(set) var looked = false
