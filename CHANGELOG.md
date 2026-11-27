@@ -21,10 +21,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
-- Roomier tabs (Settings › Appearance › Tabs) makes the pinned squares in the column bigger too, with their icons, as much taller as the rows are (44 points for 34). (idea 1383)
-
-### Changed
-
+- The card after an update is calm now: one sentence, how many new features and changes and how many fixes the version brought, the small email field for whoever hasn't left one, a button to Settings and Close. No list of switches to decide on: every new setting keeps its default. Settings has a What's New section at the top of its sections, with a dot until it's opened after an update: the settings the last update added or changed, each its live row, and a line for each notable change with nothing to set. `swift test --filter WhatsNewTests` (idea 1381)
 - Roomier tabs (Settings › Appearance › Tabs) makes the pinned squares in the column bigger too, with their icons, as much taller as the rows are (44 points for 34). (idea 1383)
 - Settings says where Always show the address bar puts the address: at the top of the sidebar, or before the tabs across the top. Find a setting finds it as "url bar", "url field" or "address field". (idea 1382)
 

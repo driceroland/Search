@@ -2,21 +2,22 @@ import SwiftUI
 
 // What's new, once, after an update.
 //
-// New features start off, so someone who never opens Settings never meets
-// them (a reply on X). The first time a newer version opens, a small card
-// shows its new switches, each with a line of what it does and the switch
-// itself, and — so nothing gets lost — the switches from earlier versions
-// that are still off. Nothing else: few words (Drice). Closed, it
-// doesn't come back for that version. Not after a fresh install: the welcome
-// is for that. Every version's notes are in Settings › About › What's New…
+// The first time a newer version opens, a small calm card says how many
+// new features and changes and how many fixes it brought, with one button
+// to Settings › What's New and a Close (27 Nov 2026: a list of switches
+// to decide on was stressful, a reply on X). Every new setting keeps its
+// default, so nobody has to decide anything. Closed, it doesn't come back
+// for that version. Not after a fresh install: the welcome is for that.
+// Every version's notes are in Settings › About › What's New…
 //
-// A release edits `toggles` (its new switches, marked with its version),
-// `releases` (that it has a card) and `notes` (what it brought).
+// Settings › What's New, at the top of its sections, lists the settings
+// the last update added or changed, each its live row, and a short line
+// for each notable change with no setting; a dot on it until it's opened.
 //
-// A few switches lead: first on every card, above that version's own, for
-// as long as they are off. Sync with iCloud and Handoff do, since 22 Nov
-// 2026: on for a new install (SyncDefault.swift), offered here to everyone
-// who had Search before and never turned them on.
+// A release edits `releases` (its counts from CHANGELOG, its SettingsIndex
+// ids and lines; WhatsNewTests checks them) and `notes` (what it brought).
+// `toggles` is the older record of every switch that came off by default,
+// version by version; the card no longer shows it.
 
 enum WhatsNew {
     /// A switch the card offers: the same setting as in Settings.
@@ -37,6 +38,16 @@ enum WhatsNew {
     /// A version that has a card.
     struct Release {
         let version: String
+        /// Its CHANGELOG section's lines under Added and Changed, and under
+        /// Fixed: the card's one sentence (WhatsNewTests holds them to the
+        /// CHANGELOG). Nil until the version has its section.
+        var changes: Int? = nil
+        var fixes: Int? = nil
+        /// Settings › What's New: the SettingsIndex rows it added or
+        /// changed, each drawn as its live row, in this order.
+        var settings: [String] = []
+        /// And a short line for each notable change with no setting.
+        var lines: [String] = []
     }
 
     /// Every switch worth meeting, the leading ones first, then oldest
@@ -233,8 +244,23 @@ enum WhatsNew {
                since: "1.0.3", get: { $0.autoScroll }, set: { $0.autoScroll = $1 }),
     ]
 
+    /// Newest first. A release fills in its counts, settings and lines.
     static let releases: [Release] = [
-        Release(version: "1.0.22"),
+        Release(version: "1.0.23",
+                settings: ["sidebar.roomy"],
+                lines: []),
+        Release(version: "1.0.22", changes: 26, fixes: 63,
+                settings: ["meet.pip", "home.tiles", "pins.preview", "glyph", "downloads.screenshots",
+                           "pages.capture.copyOnly", "hiding.shapes", "split.controls", "motion.downloads",
+                           "tabs.clickRenames", "developer.local", "profiles"],
+                lines: [
+                    "Bring Things Over brings Dia's, Ardia's and Yab's spaces, with their pins and folders.",
+                    "File › Export Spaces… saves every space to a file.",
+                    "Right-click an address field for Paste and Go.",
+                    "A speaker on a pinned square whose page plays sound; a click mutes it.",
+                    "Hide Elements: hold ⌥ to hide every element like the one you point at.",
+                    "Hundreds of tabs stay light, and Search rests in about 42 MB.",
+                ]),
         Release(version: "1.0.21"),
         Release(version: "1.0.20"),
         Release(version: "1.0.19"),
@@ -267,6 +293,42 @@ enum WhatsNew {
     /// This version's card, when it has one.
     static var current: Release? { releases.first { $0.version == Updater.version } }
 
+    /// What Settings › What's New shows: this version's release, or the
+    /// newest one before it (a build between releases).
+    static var latest: Release? { latest(for: Updater.version) }
+
+    static func latest(for version: String) -> Release? {
+        releases.first { !older(version, than: $0.version) } ?? releases.first
+    }
+
+    /// The card's one sentence: "26 new features and changes, 63 fixes in
+    /// 1.0.22", or plainer while the counts aren't in.
+    static func summary(_ release: Release) -> String {
+        let parts = [release.changes.map { "\($0) new \($0 == 1 ? "feature or change" : "features and changes")" },
+                     release.fixes.map { "\($0) \($0 == 1 ? "fix" : "fixes")" }].compactMap { $0 }
+        guard !parts.isEmpty else { return "What's new in \(release.version)" }
+        return parts.joined(separator: ", ") + " in \(release.version)"
+    }
+
+    /// The rows Settings › What's New lists for a release: its ids, in its
+    /// order, that SettingsIndex still has.
+    static func items(_ release: Release) -> [SettingsItem] {
+        release.settings.compactMap { id in SettingsIndex.items.first { $0.id == id } }
+    }
+
+    /// Settings › What's New wears a dot until it's opened once after an
+    /// update: set as the card comes (due), never on a fresh install.
+    static let dotKey = "whatsnew.dot"
+
+    static func unopened(_ store: UserDefaults = Store.settings) -> Bool {
+        guard let latest, let dot = store.string(forKey: dotKey) else { return false }
+        return dot == latest.version
+    }
+
+    static func opened(_ store: UserDefaults = Store.settings) {
+        store.removeObject(forKey: dotKey)
+    }
+
     /// Version strings in order: 1.0.10 after 1.0.9.
     static func older(_ one: String, than other: String) -> Bool {
         let a = one.split(separator: ".").compactMap { Int($0) }
@@ -292,6 +354,7 @@ enum WhatsNew {
         }
         guard store.string(forKey: seenKey) != current.version else { return false }
         store.set(current.version, forKey: seenKey)
+        store.set(current.version, forKey: dotKey)
         return true
     }
 
@@ -922,13 +985,16 @@ enum WhatsNew {
     ]
 }
 
-/// The card: what's new in this version, its switches right there, and
-/// the earlier ones still off.
+/// The card after an update: one calm sentence, how many new things and
+/// fixes, and a way to Settings › What's New to look at them at leisure.
+/// Nothing to decide here (Drice, 27 Nov 2026, after a reply on X that the
+/// list of switches was stressful): every new setting keeps its default.
+/// The small email field stays, for whoever hasn't left an email yet.
 struct WhatsNewCard: View {
     let release: WhatsNew.Release
-    @ObservedObject var prefs: Preferences
     let close: () -> Void
-    let notes: () -> Void
+    /// Settings › What's New.
+    let settings: () -> Void
     /// A link from the card (the privacy page), opened in a tab.
     var open: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// For pictures: the email block's state, and whether it is offered
@@ -937,78 +1003,39 @@ struct WhatsNewCard: View {
     var optInEmail = ""
     var optInForced: Bool? = nil
 
-    /// The leading and earlier switches, read once as the card opens
-    /// (WhatsNew.rows): one turned on here stays in the list rather than
-    /// vanishing under the hand. The version's own are read as they stand.
-    @State private var listed: (leading: [WhatsNew.Toggle], own: [WhatsNew.Toggle], earlier: [WhatsNew.Toggle])?
-    /// Sync with iCloud's switch is its own, not a preference's.
-    @ObservedObject private var icloud = ICloudSync.shared
     /// The email block (OptIn.swift), read once as the card opens: offered
     /// until an email has been given, and kept after one is, for its thanks.
     @State private var offering: Bool?
     @ObservedObject private var reach = OptIn.Reach.shared
 
-    /// Pinned under the list, outside its scroll, so it is always in sight;
-    /// left off while the Mac is offline, where a press could only fail.
+    /// Left off while the Mac is offline, where a press could only fail.
     private var showsOptIn: Bool { (optInForced ?? offering ?? OptIn.offered()) && (optInForced != nil || reach.online) }
 
     var body: some View {
-        Plate("New in Search \(release.version)", width: 460, close: close) {
+        Plate("New in Search \(release.version)", width: 420, close: close) {
             VStack(alignment: .leading, spacing: 14) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        rows((listed?.leading ?? []) + WhatsNew.rows(for: release, prefs: prefs).own)
-                        if let earlier = listed?.earlier, !earlier.isEmpty {
-                            Caption("From earlier versions, in case you missed them")
-                                .padding(.top, 6)
-                            rows(earlier)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(WhatsNew.summary(release) + ".")
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(Palette.ink)
+                    Text("Nothing to decide: everything is set as it should be. Look around in Settings whenever you like.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxHeight: showsOptIn ? 360 : 470)
-                .fixedSize(horizontal: false, vertical: true)
                 if showsOptIn {
                     OptInBlock(source: .whatsNew, open: open, start: optInStart, startEmail: optInEmail)
                 }
             }
         } foot: {
-            HStack {
-                Button(action: notes) {
-                    Text("Everything that's new…")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
-                }
-                .buttonStyle(.plain)
+            HStack(spacing: 8) {
                 Spacer()
+                Pill("See What's New in Settings", action: settings)
                 Pill("Close", filled: true, action: close)
             }
         }
         .onAppear {
             if offering == nil { offering = OptIn.offered() }
-            if listed == nil { listed = WhatsNew.rows(for: release, prefs: prefs) }
-        }
-    }
-
-    private func rows(_ toggles: [WhatsNew.Toggle]) -> some View {
-        Card {
-            ForEach(Array(toggles.enumerated()), id: \.offset) { index, toggle in
-                if index > 0 { Rule() }
-                HStack(alignment: .center, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(toggle.title)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Palette.ink)
-                        Text(toggle.detail)
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Palette.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 8)
-                    Switch(on: Binding(get: { toggle.get(prefs) }, set: { toggle.set(prefs, $0) }))
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-            }
         }
     }
 }

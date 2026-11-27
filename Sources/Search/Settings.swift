@@ -20,6 +20,8 @@ struct SettingsPanel: View {
     /// for it, as only the tab on screen is drawn and going to another tab
     /// took the panel, and the words, away (#1655).
     var tabID: UUID? = nil
+    /// What's New's release, for pictures; otherwise the last update's.
+    var news: WhatsNew.Release? = nil
     @Environment(\.asTab) private var asTab
 
     @ObservedObject private var updater = Updater.shared
@@ -45,9 +47,14 @@ struct SettingsPanel: View {
     @State private var lit: String?
     /// What Set Up Like Arc changed, for Undo.
     @ObservedObject private var likeArc = LikeArc.shared
+    /// What's New's dot, until it's opened once after an update.
+    @State private var newsDot = WhatsNew.unopened()
 
     enum Page: String, CaseIterable, Identifiable {
         case general, appearance, themes, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
+        /// What the last update added or changed (WhatsNew.swift), at the
+        /// top of the rail. Last here so the find field's order holds.
+        case whatsNew
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -63,6 +70,7 @@ struct SettingsPanel: View {
             case .extensions: return "Extensions"
             case .keyboard: return "Keyboard & Mouse"
             case .about: return "About"
+            case .whatsNew: return "What's New"
             }
         }
         var icon: String {
@@ -79,6 +87,7 @@ struct SettingsPanel: View {
             case .extensions: return "puzzlepiece.extension"
             case .keyboard: return "keyboard"
             case .about: return "info.circle"
+            case .whatsNew: return "sparkle"
             }
         }
         /// A section by its name in an address or in the settings file,
@@ -88,12 +97,13 @@ struct SettingsPanel: View {
             switch name.lowercased() {
             case "downloads": return .general
             case "shortcuts", "mouse": return .keyboard
+            case "whatsnew", "new": return .whatsNew
             default: return Page(rawValue: name.lowercased())
             }
         }
         /// The rail's three blocks: the browser, your data and tools, About.
         static var blocks: [[Page]] {
-            [[.general, .appearance, .themes, .tabs, .browsing, .spaces],
+            [[.whatsNew, .general, .appearance, .themes, .tabs, .browsing, .spaces],
              [.passwords, .privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .keyboard],
              [.about]]
         }
@@ -125,6 +135,14 @@ struct SettingsPanel: View {
         .onChange(of: query) { _, words in
             if let tabID { browser.settingsQueries[tabID] = words.isEmpty ? nil : words }
         }
+        .onAppear { if page == .whatsNew { sawNews() } }
+        .onChange(of: page) { _, page in if page == .whatsNew { sawNews() } }
+    }
+
+    private func sawNews() {
+        guard newsDot else { return }
+        WhatsNew.opened()
+        newsDot = false
     }
 
     /// In a tab of its own (see InternalPages.swift): the sections down the
@@ -192,7 +210,8 @@ struct SettingsPanel: View {
                 }
                 ForEach(block) { item in
                     PageRow(page: item, on: !searching && page == item,
-                            count: searching ? counts[item] ?? 0 : nil, chosen: chosen) {
+                            count: searching ? counts[item] ?? 0 : nil, chosen: chosen,
+                            dot: item == .whatsNew && newsDot) {
                         query = ""
                         page = item
                     }
@@ -299,6 +318,8 @@ struct SettingsPanel: View {
         /// While searching: how many rows of this section match.
         let count: Int?
         let chosen: Namespace.ID
+        /// What's New, until it's opened once after an update.
+        var dot = false
         let act: () -> Void
         @State private var hovering = false
 
@@ -311,6 +332,10 @@ struct SettingsPanel: View {
                     Text(page.title)
                         .font(.system(size: 13, weight: on ? .medium : .regular))
                     Spacer(minLength: 0)
+                    if dot, count == nil {
+                        Circle().fill(Palette.ink).frame(width: 6, height: 6)
+                            .accessibilityLabel("New")
+                    }
                     if let count, count > 0 {
                         Text("\(count)")
                             .font(.system(size: 10.5, weight: .medium).monospacedDigit())
@@ -411,8 +436,59 @@ struct SettingsPanel: View {
             ExtensionsPage(browser: browser)
         case .ai:
             if AI.shipped { AISettings(browser: browser, prefs: prefs) }
+        case .whatsNew:
+            whatsNew
         default:
             groups(of: page)
+        }
+    }
+
+    /// What's New: the last update in a sentence, then the settings it
+    /// added or changed, each its live row, and its notable changes with
+    /// nothing to set. Every version's notes are a button away.
+    @ViewBuilder
+    private var whatsNew: some View {
+        if let release = news ?? WhatsNew.latest {
+            let items = WhatsNew.items(release)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Search \(release.version)")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                Text((release.changes == nil ? "" : WhatsNew.summary(release) + ". ")
+                     + "Everything is already set as it should be: try what you like, at your own pace.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.leading, 2)
+            if !items.isEmpty {
+                GroupBlock(title: "New and changed settings", icon: "slider.horizontal.3") {
+                    Card { rows(items, searched: true) }
+                }
+            }
+            if !release.lines.isEmpty {
+                GroupBlock(title: "Also new", icon: "sparkle") {
+                    Card {
+                        ForEach(Array(release.lines.enumerated()), id: \.offset) { index, line in
+                            if index > 0 { Rule() }
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text("•").foregroundStyle(Palette.faint)
+                                Text(line)
+                                    .foregroundStyle(Palette.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
+                            }
+                            .font(.system(size: 12.5))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                        }
+                    }
+                }
+            }
+            HStack {
+                Spacer()
+                Pill("Every version's notes…") { browser.show(InternalPage(.notes)) }
+            }
         }
     }
 

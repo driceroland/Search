@@ -1178,7 +1178,7 @@ final class Bench {
                 ? AnyView(AboutView(whatsNew: {}))
                 : request["notes"] as? Bool == true
                 ? AnyView(ReleaseNotesPanel {}.padding(40).background(Palette.ground))
-                : AnyView(WhatsNewCard(release: release, prefs: browser.prefs, close: {}, notes: {}).padding(40).background(Palette.ground))
+                : AnyView(WhatsNewCard(release: release, close: {}, settings: {}).padding(40).background(Palette.ground))
             let host = NSHostingView(rootView: root)
             host.frame = NSRect(origin: .zero, size: host.fittingSize)
             let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)

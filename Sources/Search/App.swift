@@ -1074,9 +1074,9 @@ struct ContentView: View {
         // version's notes are a tab.
         if browser.newsShowing, let release = WhatsNew.current {
             sheet {
-                WhatsNewCard(release: release, prefs: browser.prefs, close: { browser.newsShowing = false }, notes: {
+                WhatsNewCard(release: release, close: { browser.newsShowing = false }, settings: {
                     browser.newsShowing = false
-                    browser.show(InternalPage(.notes))
+                    browser.show(InternalPage(.settings, SettingsPanel.Page.whatsNew.rawValue))
                 }, open: { url in
                     browser.newsShowing = false
                     _ = browser.open(url, foreground: true)
