@@ -22,12 +22,46 @@ struct WindowTitle: View {
         Color.clear
             .frame(width: 0, height: 0)
             .onAppear(perform: apply)
-            .onChange(of: tab.title) { _, _ in apply() }
-            .onChange(of: tab.name) { _, _ in apply() }
+            .onChange(of: tab.title) { _, _ in later() }
+            .onChange(of: tab.name) { _, _ in later() }
     }
 
     private func apply() {
         if let window { WindowTitle.set(tab, in: window) }
+    }
+
+    /// A page's title changes in steps — gone as the next page commits,
+    /// then its own, then often again as its scripts settle (YouTube's do on
+    /// every video) — and each title the window took laid its title bar out
+    /// again and put the traffic lights back: two or three times a link
+    /// followed, on the main thread while the new page's frames waited for
+    /// it (idea 1327). Only the last of a quick run is set, a moment on.
+    private func later() {
+        guard let window else { return }
+        WindowTitle.soon(tab, in: window)
+    }
+
+    private final class Waiting {
+        weak var tab: Tab?
+        weak var window: NSWindow?
+        init(_ tab: Tab, _ window: NSWindow) { self.tab = tab; self.window = window }
+    }
+    @MainActor private static var waiting: [ObjectIdentifier: Waiting] = [:]
+    /// Long enough for a page's title to go and come back, short enough
+    /// that the Window menu never shows the page before.
+    static let settle: TimeInterval = 0.25
+
+    @MainActor static func soon(_ tab: Tab, in window: NSWindow) {
+        let key = ObjectIdentifier(window)
+        let first = waiting[key] == nil
+        waiting[key] = Waiting(tab, window)
+        guard first else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + settle) {
+            MainActor.assumeIsolated {
+                guard let last = waiting.removeValue(forKey: key), let tab = last.tab, let window = last.window else { return }
+                set(tab, in: window)
+            }
+        }
     }
 
     /// Names the window for the tab in front. Also called as the window is

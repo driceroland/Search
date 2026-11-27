@@ -2039,6 +2039,14 @@ final class Browser: NSObject, ObservableObject {
         history.recent()
     }
 
+    /// Said when the History menu's last few places change. The menu alone
+    /// watches it (RecentlyVisited, in App.swift): passed on as the window's
+    /// own change, as it was, every page that finished loading drew the
+    /// whole window again, the menu bar and every row of the column with it
+    /// — on the main thread, while the new page's frames waited for it to
+    /// let them in (idea 1327, `python3 Tests/nav_click.py --tabs 150 --cost 10`).
+    let recentMenu = RecentMenu()
+
     // MARK: - the camera and the microphone
 
     /// A page asking to see or hear you, waiting for an answer. WebKit hands
@@ -3258,14 +3266,14 @@ final class Browser: NSObject, ObservableObject {
             folded = (record ?? Browsers.read().first)?.folded == true
         }
 
-        // The History menu lists the last few places, and the menu is drawn
-        // from this object's changes — so a change to those is passed on,
-        // from the history of whichever space is on screen.
+        // The History menu lists the last few places: a change to those is
+        // passed on to the menu, from the history of whichever space is on
+        // screen (see recentMenu).
         $spaceID
             .removeDuplicates()
             .map { Spaces.history(for: $0).recentChanges }
             .switchToLatest()
-            .sink { [weak self] in self?.objectWillChange.send() }
+            .sink { [weak self] in self?.recentMenu.objectWillChange.send() }
             .store(in: &bag)
 
         // A page's passkeys for under its field, arriving while the caret
