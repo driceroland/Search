@@ -27,7 +27,7 @@ struct SplitPaneControls: View {
             // as Separate Split Tabs.
             Door(icon: "rectangle.portrait.and.arrow.right", help: "Remove from Split View") { browser.leaveSplit(tab) }
             // As the row's cross: a grouped page is put away rather than closed.
-            Door(icon: "xmark", help: browser.putsAway(tab) ? "Put Away" : "Close Tab") { browser.closeTab(tab) }
+            Door(icon: "xmark", help: "Close Tab") { browser.close(tab) }
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)

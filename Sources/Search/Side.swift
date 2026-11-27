@@ -1687,7 +1687,7 @@ struct SideBar: View {
         let index = row.index, tab = row.tab
         return rowItem(tab, tabs: browser.tabs, splits: browser.splits,
                        activeID: browser.activeID, interactive: true, pill: pill,
-                       close: { browser.closeTab(tab) })
+                       close: { browser.close(tab) })
             // Positions here are among the loose rows; the pinned block
             // sits in front of them in the real list.
             .modifier(Carried(index: index, steps: looseSteps, vertical: true,
@@ -1752,7 +1752,7 @@ struct SideBar: View {
             ForEach(Array(members.enumerated()), id: \.element.id) { index, tab in
                 rowItem(tab, tabs: browser.tabs, splits: browser.splits,
                         activeID: browser.activeID, interactive: true, pill: pill,
-                        close: { browser.closeTab(tab) })
+                        close: { browser.close(tab) })
                     .padding(.leading, icons ? 0 : 14)
                     .padding(.trailing, inset)
                     .modifier(Carried(index: index, steps: memberSteps, vertical: true,
@@ -2368,8 +2368,6 @@ private struct SideRow: View, Equatable {
     private let peek: Tab?
     /// Bumped when what was typed in a tab can't be gone to (see Shake).
     private let refusals: Int
-    /// Its cross is a minus: closing it puts its page away (Browser.putsAway).
-    private let putsAway: Bool
     /// In a group, with groups on: a page put away from it stays a row there.
     private let grouped: Bool
 
@@ -2390,7 +2388,6 @@ private struct SideRow: View, Equatable {
         pickedAmongOthers = browser.isPickedAmongOthers(tab)
         peek = browser.peekFrom == tab.id ? browser.peekTab : nil
         refusals = browser.refusals
-        putsAway = browser.putsAway(tab)
         // Another space's row in the map says itself: the browser knows
         // only this space's groups.
         self.grouped = prefs.usesTabGroups && (grouped ?? (browser.group(of: tab) != nil))
@@ -2401,7 +2398,7 @@ private struct SideRow: View, Equatable {
         a.browser === b.browser && a.prefs === b.prefs && a.tab === b.tab && a.live == b.live
             && a.pill == b.pill && a.interactive == b.interactive && a.editing == b.editing
             && a.selected == b.selected && a.pickedAmongOthers == b.pickedAmongOthers
-            && a.peek === b.peek && a.refusals == b.refusals && a.putsAway == b.putsAway
+            && a.peek === b.peek && a.refusals == b.refusals
             && a.grouped == b.grouped
     }
 
@@ -2548,9 +2545,10 @@ private struct SideRow: View, Equatable {
                 ZStack {
                     if hovering && closable {
                         // A pinned row is put down, not closed (see
-                        // Browser.close), and says so, as Arc's does; so is
-                        // a grouped tab's page while it is open (closeTab).
-                        Image(systemName: tab.pin != nil || (putsAway && !tab.asleep) ? "minus" : "xmark")
+                        // Browser.close), and says so, as Arc's does. A
+                        // grouped tab's cross closes it, as a loose tab's
+                        // does (idea 1412).
+                        Image(systemName: tab.pin != nil ? "minus" : "xmark")
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(Palette.muted)
                             .frame(width: 15, height: 15)

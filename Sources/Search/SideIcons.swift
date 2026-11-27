@@ -244,9 +244,8 @@ struct IconTile: View {
         .transition(.scale(scale: 0.9).combined(with: .opacity))
     }
 
-    /// Put away rather than closed, in a group (Browser.closeTab).
     private var cross: some View {
-        Image(systemName: browser.putsAway(tab) ? "minus" : "xmark")
+        Image(systemName: "xmark")
             .font(.system(size: 6.5, weight: .bold))
             .foregroundStyle(Palette.muted)
             .frame(width: Self.crossFrame.width, height: Self.crossFrame.height)
@@ -352,7 +351,7 @@ struct IconPair: View {
 
     private func half(_ tab: Tab) -> some View {
         IconTile(browser: browser, prefs: prefs, tab: tab, live: focused == tab.id, pill: pill,
-                 close: { browser.closeTab(tab) }, interactive: interactive, half: true)
+                 close: { browser.close(tab) }, interactive: interactive, half: true)
             .opacity(separation.leaving.map { leaving in leaving != tab.id && pages.contains { $0.id == leaving } } == true ? 0.35 : 1)
             .background {
                 if focused == tab.id {

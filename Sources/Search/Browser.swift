@@ -5467,8 +5467,9 @@ final class Browser: NSObject, ObservableObject {
         else if let tab = active { closeTab(tab) }
     }
 
-    /// Close Tab as a hand asks for it: ⌘W, the cross or a middle click on
-    /// the row, the tab's menu. A tab in a group is put away rather than
+    /// Close Tab as the keys ask for it: ⌘W and the Tab menu's Close Tab. The
+    /// cross, a middle click and the row's menu close for real (idea 1412).
+    /// A tab in a group is put away rather than
     /// closed, as Arc keeps a folder's tabs (idea 398): its page is let go,
     /// its row stays in the group, and a click opens it again at the page it
     /// was on. Asked again of a row already put away, it goes for good,
