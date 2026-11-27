@@ -2109,12 +2109,37 @@ final class Bench {
             let inWindow = browser.prefs.sidebar
                 ? NSPoint(x: min(60, browser.prefs.columnWidth / 2), y: window.frame.height / 2)
                 : NSPoint(x: window.frame.width / 2, y: window.frame.height - Metrics.strip / 2)
-            guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0),
-                  let event = NSEvent(cgEvent: cg) else { answer(["error": "no wheel event"]); return }
-            let taken = SpaceSwipe.shared.feed(event, in: window, at: inWindow)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                answer(["taken": taken, "precise": event.hasPreciseScrollingDeltas,
-                        "space": browser.space.name, "making": browser.makingSpace])
+            // COUNT notches EVERY seconds apart, as a wheel turned on sends
+            // them; with POINTS, each a step of that many points with no
+            // phase, as a wheel smoothed by its driver (Logi Options+) does.
+            let count = max(1, request["count"] as? Int ?? 1)
+            let every = request["every"] as? Double ?? 0.1
+            let points = request["points"] as? Double
+            func notch() -> NSEvent? {
+                guard let points else {
+                    return CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0)
+                        .flatMap { NSEvent(cgEvent: $0) }
+                }
+                let x = Double(dx.signum()) * points, y = Double(dy.signum()) * points
+                guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0) else { return nil }
+                cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+                cg.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: Int64(y))
+                cg.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: Int64(x))
+                cg.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: y)
+                cg.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: x)
+                return NSEvent(cgEvent: cg)
+            }
+            guard let first = notch() else { answer(["error": "no wheel event"]); return }
+            var taken = 0
+            for n in 0..<count {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(n) * every) {
+                    if let event = n == 0 ? first : notch(), SpaceSwipe.shared.feed(event, in: window, at: inWindow) { taken += 1 }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(count - 1) * every + 0.8) {
+                answer(["taken": count == 1 ? (taken == 1) as Any : taken as Any, "precise": first.hasPreciseScrollingDeltas,
+                        "space": browser.space.name, "index": browser.spaces.firstIndex { $0.id == browser.spaceID } ?? -1,
+                        "making": browser.makingSpace])
             }
 
         case "spacestroke":

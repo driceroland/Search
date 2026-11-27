@@ -27,10 +27,9 @@ final class SpaceSwipe {
     /// The glide after a swipe that was taken, which is taken too.
     private var gliding = false
     private var gathered = CGSize.zero
-    /// When the wheel last turned over the bar, whether a space came of it
-    /// or not. A spin of the wheel is a run of notches close together, and
-    /// it brings one space: the next waits for the wheel to have rested.
-    private var notched = Date.distantPast
+    /// A mouse's wheel over the tabs, as steps between spaces: each notch
+    /// one, however quickly they come (SpaceWheel.swift).
+    private var wheel = WheelSteps()
     /// Until when a new gesture is let go by: the hand that just brought a
     /// space is often still moving, and its next stroke would take one more.
     private var resting = Date.distantPast
@@ -412,7 +411,8 @@ final class SpaceSwipe {
     private func takes(_ event: NSEvent) -> Bool {
         // The window the fingers are over, at the start of a gesture or a
         // turn of the wheel; the rest of a gesture stays with it.
-        if event.phase == .began || !event.hasPreciseScrollingDeltas, let over = Browsers.browser(for: window(of: event)) {
+        let wheeled = WheelSteps.isWheel(precise: event.hasPreciseScrollingDeltas, phase: event.phase, momentum: event.momentumPhase)
+        if event.phase == .began || wheeled, let over = Browsers.browser(for: window(of: event)) {
             browser = over
         }
         guard let browser, browser.prefs.usesSpaces, !browser.folded || browser.peeking else { return false }
@@ -422,16 +422,17 @@ final class SpaceSwipe {
         // never taken for it. A sideways notch brings the space two fingers
         // swiping the same way would: a wheel turned that way sends the
         // opposite sign to their stroke's, so its dx is read the other way.
-        if !event.hasPreciseScrollingDeltas {
+        // Every notch one space, turned however quickly, and a wheel its
+        // driver smooths into points (Logi Options+) the same (WheelSteps):
+        // a spin used to bring one, and then wait for the wheel to rest.
+        if wheeled {
             let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
-            let step = browser.prefs.sidebar ? (abs(dx) > abs(dy) ? -dx : 0) : dy
-            guard step != 0, overTabs(event, in: browser), !overEditing(event) else { return false }
-            let now = Date()
-            let rested = now.timeIntervalSince(notched) > 0.3 && now > resting
-            notched = now
-            guard rested else { return true }
+            let along = browser.prefs.sidebar ? (abs(dx) > abs(dy) ? -dx : 0) : dy
+            guard along != 0, overTabs(event, in: browser), !overEditing(event) else { return false }
+            let step = wheel.feed(along, notched: !event.hasPreciseScrollingDeltas, at: CACurrentMediaTime())
+            guard step != 0 else { return true }
             let here = shown(browser)
-            let target = here + (step < 0 ? 1 : -1)
+            let target = here + step
             if let other = beyond(browser, target) {
                 leave(browser, for: other, step: target - here)
             } else if target >= 0, target <= furthest(browser) {
