@@ -1,8 +1,7 @@
 import XCTest
 @testable import Search
 
-/// Settings › Appearance › Tabs › Narrow to icons: off unless asked for;
-/// on, the column is never drawn under the line with titles, and pulled
+/// Narrow to icons, built in since 27 Nov 2026: the column is never drawn under the line with titles, and pulled
 /// under it is the strip of icons until it is pulled back out. On the
 /// model only.
 @MainActor
@@ -25,14 +24,19 @@ final class NarrowStripTests: XCTestCase {
         for (key, value) in saved { Store.settings.set(value, forKey: key) }
     }
 
-    func testOffUnlessAskedFor() {
+    /// On for everyone, with no switch, since 27 Nov 2026 (Retired): an
+    /// old off line is no longer followed. A test world still reads it, so
+    /// the column's own tests can draw titles under the line.
+    func testOnForEveryone() {
+        XCTAssertTrue(Preferences().narrowsToIcons)
+        Store.settings.set(false, forKey: "sidebar.narrowIcons")
+        XCTAssertFalse(Preferences().narrowsToIcons, "a test world reads the old line")
+        Retired.honoured = false
+        defer { Retired.honoured = true }
         let prefs = Preferences()
-        XCTAssertFalse(prefs.narrowsToIcons)
+        XCTAssertTrue(prefs.narrowsToIcons, "everyone else: on, whatever the line says")
         prefs.sideWidth = Metrics.sideMin
-        prefs.narrowed = true
-        XCTAssertFalse(prefs.narrowStrip)
-        XCTAssertFalse(prefs.iconColumn)
-        XCTAssertEqual(prefs.columnWidth, Metrics.sideMin)
+        XCTAssertEqual(prefs.columnWidth, Metrics.narrowLine)
     }
 
     func testNeverUnderTheLineWithTitles() {

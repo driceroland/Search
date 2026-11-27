@@ -69,7 +69,10 @@ enum SyncSettings {
         coded("search.keywords", \.keywords),
         coded("spaces", \.usesSpaces),
         coded("pins.list", \.listsPins),
-        coded("pins.home", \.pinsGoHome),
+        // Pins keep their site with no switch since 27 Nov 2026 (Retired):
+        // still sent, as Macs from before read it, but another Mac's old off
+        // no longer turns it off here (a test world still takes it).
+        retired(coded("pins.home", \.pinsGoHome)),
         raw("tabs.close.after", \.tabLife),
         raw("tabs.newPlace", \.newTabPlace),
         coded("tabs.shortcuts", \.showsTabShortcuts),
@@ -88,6 +91,14 @@ enum SyncSettings {
         "pins.list", "pins.home", "tabs.close.after", "tabs.newPlace", "tabs.shortcuts", "shield",
         "privacy.clickIDs", "privacy.gpc", "bookmarks.bar", "bookmarks.side", "quit.confirm",
     ]
+
+    /// A setting whose switch was taken out: read and sent as before, never
+    /// taken from another Mac outside a test world.
+    private static func retired(_ setting: Setting) -> Setting {
+        Setting(key: setting.key, read: setting.read, write: { prefs, text in
+            if Retired.honoured { setting.write(prefs, text) }
+        })
+    }
 
     private static func coded<T: Codable & Equatable>(_ key: String, _ path: ReferenceWritableKeyPath<Preferences, T>) -> Setting {
         Setting(key: key, read: { SyncMerge.text($0[keyPath: path]) }, write: { prefs, text in

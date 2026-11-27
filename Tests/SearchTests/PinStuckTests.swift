@@ -56,7 +56,7 @@ final class PinStuckTests: XCTestCase {
             point(x: x + 20, y: y, in: window),
             point(x: x + 10, y: y, in: window),
         ], in: window)
-        XCTAssertEqual(CarryGuard.count, 1, "carried")
+        try await until("carried") { CarryGuard.count == 1 }
         iconArrives(browser.tabs[0], in: browser)
         try await settle()
         callOffIfStillHeld()
@@ -67,13 +67,16 @@ final class PinStuckTests: XCTestCase {
         XCTAssertEqual(browser.squarePins.count, 6)
         // Picked up again, it goes where it is carried — once the page the
         // first press selected has loaded, which would call it off too.
-        try await Task.sleep(for: .seconds(2))
         let first = browser.tabs[0]
+        try await until("the first press's page loaded") {
+            first.built.map { $0.url != nil && !$0.isLoading } ?? false
+        }
+        try await settle()
         try await drag(from: point(x: x, y: y, in: window), through: [
             point(x: x + room / 3, y: y, in: window),
             point(x: x + room / 3 + 4, y: y, in: window),
         ], in: window)
-        XCTAssertEqual(browser.squarePins[1].id, first.id)
+        try await until("carried to the second square") { browser.squarePins[1].id == first.id }
         XCTAssertEqual(CarryGuard.count, 0)
     }
 
@@ -102,7 +105,7 @@ final class PinStuckTests: XCTestCase {
         let loose = browser.tabs.filter { $0.pin == nil }
         for row in [1, 2, 0] {
             try await click(point(x: 160, y: Metrics.strip + 44 + 14 + CGFloat(row) * 30, in: window), in: window)
-            XCTAssertEqual(browser.activeID, loose[row].id, "row \(row) where it was before the carry")
+            try await until("row \(row) where it was before the carry") { browser.activeID == loose[row].id }
         }
     }
 
@@ -122,7 +125,7 @@ final class PinStuckTests: XCTestCase {
             point(x: 70, y: Metrics.strip + 30, in: window),
             point(x: 10 + room / 2, y: Metrics.strip + 17, in: window),
         ], in: window)
-        XCTAssertEqual(CarryGuard.count, 1, "carried")
+        try await until("carried") { CarryGuard.count == 1 }
         let empty = point(x: 100, y: 480, in: window)
         try await post(.leftMouseDown, at: empty, in: window)
         try await post(.leftMouseUp, at: empty, in: window)
@@ -132,7 +135,7 @@ final class PinStuckTests: XCTestCase {
         XCTAssertEqual(browser.squarePins.map(\.id), [t[0].id])
         // The rows where they were: no line left open among them.
         try await click(point(x: 160, y: top + 14 + 30, in: window), in: window)
-        XCTAssertEqual(browser.activeID, t[2].id)
+        try await until("the row clicked") { browser.activeID == t[2].id }
         // The release it never had, over the grid: nothing comes of it.
         try await send(.leftMouseUp, at: last, in: window)
         try await settle()
@@ -227,6 +230,17 @@ final class PinStuckTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(250))
     }
 
+    /// Until `condition` holds, as long as a busy Mac takes: what a fixed
+    /// pause took for granted — SwiftUI's turn after an event, a page
+    /// loading — comes late under load. Fails after `timeout` seconds.
+    private func until(_ what: String, timeout: TimeInterval = 15, _ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else { XCTFail("never: \(what)"); return }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
     private func click(_ point: NSPoint, in window: NSWindow) async throws {
         try await send(.leftMouseDown, at: point, in: window)
         try await send(.leftMouseUp, at: point, in: window)
@@ -280,9 +294,9 @@ final class PinStuckTests: XCTestCase {
         // what earlier tests left on the queue (their windows' AppKit events,
         // forty and more by this point of a full run) ran past a count of
         // twenty, and the press was never sent.
-        let deadline = Date().addingTimeInterval(2)
+        let deadline = Date().addingTimeInterval(10)
         while Date() < deadline {
-            guard let queued = NSApp.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 0.2),
+            guard let queued = NSApp.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 1),
                                                inMode: .default, dequeue: true) else { break }
             NSApp.sendEvent(queued)
             if queued.type == type, queued.window === window { break }

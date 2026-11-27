@@ -345,7 +345,15 @@ enum Spaces {
 
     /// Every store of a deleted space that is still there, tried again.
     @MainActor static func sweep() {
-        for text in Store.settings.stringArray(forKey: "spaces.erasing") ?? [] {
+        let pending = Store.settings.stringArray(forKey: "spaces.erasing") ?? []
+        guard !pending.isEmpty else { return }
+        // WebKit's removal answers on its main run loop, which only its own
+        // objects set up: asked first thing in a run — a deleted profile's
+        // store never opened, or what the last run left at launch — it
+        // crashed the app (EXC_BAD_ACCESS in RunLoop::dispatch). A store
+        // kept in memory only sets it up, and writes nothing.
+        _ = WKWebsiteDataStore.nonPersistent()
+        for text in pending {
             guard let id = UUID(uuidString: text) else { continue }
             Task { @MainActor in
                 do { try await WKWebsiteDataStore.remove(forIdentifier: id) } catch {

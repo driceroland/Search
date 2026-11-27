@@ -90,13 +90,17 @@ final class WakeLatencyTests: XCTestCase {
     /// in a window. Waiting for a timer to look again, it was asked for at
     /// the timer's next tick, 20 ms after the wake, however soon the stage
     /// had the view in place.
-    func testAWokenPageLoadsAsSoonAsItsViewIsInAWindow() throws {
+    func testAWokenPageLoadsAsSoonAsItsViewIsInAWindow() async throws {
         let tab = try asleep()
-        let before = server.requests("/page")
         tab.wake()
         attach(tab)
-        // A few milliseconds of the run loop, a good deal less than a tick.
-        spin(for: 0.008) { server.requests("/page") > before || tab.web.isLoading }
+        XCTAssertFalse(tab.web.isLoading, "not in the very step the view lands (see PageView.viewDidMoveToWindow)")
+        // The main queue's next turn, and nothing else: a block queued now
+        // runs after the one the view's landing queued, before any timer's
+        // tick. Counted in turns, not milliseconds, which a busy Mac (or a
+        // test body that is itself a block on the main queue, where turning
+        // the run loop by hand runs none of them) made fail.
+        await withCheckedContinuation { done in DispatchQueue.main.async { done.resume() } }
         XCTAssertTrue(tab.web.isLoading, "The page should be asked for as the view lands, not on a timer's tick")
     }
 

@@ -198,11 +198,7 @@ struct SearchApp: App {
                 .shortcut("view.sidebar")
                 // Folded away, not moved (see Fold.swift) — the column, or the
                 // strip across the top.
-                Button(browser.prefs.shrinks && !browser.folded
-                       ? (browser.prefs.sideIcons ? "Show Sidebar Titles" : "Show Sidebar as Icons Only")
-                       : browser.prefs.sidebar
-                       ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
-                       : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
+                Button(browser.foldTitle) { browser.toggleFold() }
                     .shortcut("view.fold")
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
@@ -448,13 +444,7 @@ struct SearchApp: App {
             }
             CommandMenu("History") {
                 Section("Recently Visited") {
-                    ForEach(browser.recentlyVisited) { trace in
-                        Button {
-                            browser.open(trace.url, foreground: true)
-                        } label: {
-                            MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
-                        }
-                    }
+                    RecentlyVisited(browser: browser, menu: browser.recentMenu)
                 }
                 if !browser.ghosts.isEmpty {
                     Section("Recently Closed") {
@@ -836,7 +826,7 @@ struct ContentView: View {
                 .animation(Motion.quick, value: browser.applePairing)
         } else if browser.prefs.homeTheme != .off {
             HomeBackground(theme: browser.prefs.homeTheme, tuning: browser.prefs.homeTuning,
-                           image: browser.prefs.homeThemeImage, shuffle: browser.prefs.homeShuffle)
+                           image: browser.prefs.homeThemeImage)
                 .clipShape(RoundedRectangle(cornerRadius: cardCorner, style: .continuous))
         } else {
             Palette.ground
@@ -1080,9 +1070,9 @@ struct ContentView: View {
         // version's notes are a tab.
         if browser.newsShowing, let release = WhatsNew.current {
             sheet {
-                WhatsNewCard(release: release, prefs: browser.prefs, close: { browser.newsShowing = false }, notes: {
+                WhatsNewCard(release: release, close: { browser.newsShowing = false }, settings: {
                     browser.newsShowing = false
-                    browser.show(InternalPage(.notes))
+                    browser.show(InternalPage(.settings, SettingsPanel.Page.whatsNew.rawValue))
                 }, open: { url in
                     browser.newsShowing = false
                     _ = browser.open(url, foreground: true)
@@ -1784,6 +1774,8 @@ struct ContentView: View {
     /// while the page has the keyboard; in the address field or a panel,
     /// Search's keys are Search's. The keys that make and close tabs and move
     /// between them stay Search's first, as Chrome keeps them its own.
+    /// ⌘R also stays Search's first so a sheet can't edit cells in place of
+    /// reloading (#1667).
     ///
     /// ⌘K is always Search's, on every page: the way to any open page is
     /// the one key that must never be taken (Drice; #238). Slack, X, GitHub
@@ -1797,6 +1789,7 @@ struct ContentView: View {
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
             || (key == "k" && !shifted)
+            || (key == "r" && !shifted && !event.modifierFlags.contains(.option))
             || (!shifted && (event.keyCode == 123 || event.keyCode == 124) && !caretIn(event))
         guard !reserved, event.window?.firstResponder is PageView else { return false }
         if let passed = ContentView.passed, PageView.same(passed, event) {
@@ -2485,3 +2478,23 @@ private struct Focus: ViewModifier {
         content.blur(radius: blur).scaleEffect(scale).opacity(opacity)
     }
 }
+
+/// The History menu's last few places, drawn again when they change
+/// (Browser.recentMenu) and not with every change to the window.
+private struct RecentlyVisited: View {
+    let browser: Browser
+    @ObservedObject var menu: RecentMenu
+
+    var body: some View {
+        ForEach(browser.recentlyVisited) { trace in
+            Button {
+                browser.open(trace.url, foreground: true)
+            } label: {
+                MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
+            }
+        }
+    }
+}
+
+/// See Browser.recentMenu.
+final class RecentMenu: ObservableObject {}

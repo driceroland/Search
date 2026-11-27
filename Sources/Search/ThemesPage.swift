@@ -26,8 +26,7 @@ struct ThemesPage: View {
         VStack(alignment: .leading, spacing: 16) {
             mock
 
-            // A pop-up where the six segments (~488 pt, which don't
-            // shrink) would run off the card. By the preview's width (see
+            // A pop-up where the four segments would run off the card. By the preview's width (see
             // mock): the segments' ideal width counts each as the widest.
             Group {
                 if width >= 470 {
@@ -41,32 +40,12 @@ struct ThemesPage: View {
             case .off:
                 Text("The blank tab stays plain.")
                     .font(.system(size: 12)).foregroundStyle(Palette.muted)
-            case .wall:
-                grid(HomeTheme.walls.map { theme in
-                    card(theme.title, on: prefs.homeTheme == theme, preview: preview(theme)) { prefs.homeTheme = theme }
-                })
-            case .stickers:
-                grid(StickerPack.allCases.map { pack in
-                    var t = prefs.homeTuning
-                    t.pack = pack
-                    return card(pack.title, on: prefs.homeTheme == .stickers && prefs.homeTuning.pack == pack,
-                                preview: preview(.stickers, t)) {
-                        prefs.homeTuning.pack = pack
-                        prefs.homeTheme = .stickers
-                    }
-                })
             case .solid:
                 solid
             case .gradient:
                 gradient
             case .image:
                 image
-            }
-
-            if family == .wall || family == .stickers {
-                Toggle("Shuffle: a different one each day", isOn: $prefs.homeShuffle)
-                    .toggleStyle(.checkbox)
-                    .font(.system(size: 12))
             }
 
             if family != .off && (family != .image || HomeBackground.load(prefs.homeThemeImage) != nil) {
@@ -94,8 +73,7 @@ struct ThemesPage: View {
         return ZStack {
             Palette.ground
             if prefs.homeTheme != .off {
-                HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage,
-                               shuffle: prefs.homeShuffle)
+                HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage)
             }
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Palette.ground)
@@ -281,16 +259,6 @@ struct ThemesPage: View {
         VStack(alignment: .leading, spacing: 8) {
             ThemeSlider(title: "Intensity", value: prefs.homeTuning.intensity * 100, range: 0...100, unit: "%") {
                 prefs.homeTuning.intensity = $0 / 100
-            }
-            if prefs.homeTheme == .stickers {
-                ThemeSlider(title: "Density", value: prefs.homeTuning.density * 100, range: 0...100, unit: "%") {
-                    prefs.homeTuning.density = $0 / 100
-                }
-            }
-            if prefs.homeTheme == .stickers {
-                ThemeSlider(title: "Scale", value: prefs.homeTuning.scale * 100, range: 0...100, unit: "%") {
-                    prefs.homeTuning.scale = $0 / 100
-                }
             }
         }
     }
