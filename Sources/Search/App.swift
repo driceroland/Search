@@ -1778,6 +1778,8 @@ struct ContentView: View {
     /// while the page has the keyboard; in the address field or a panel,
     /// Search's keys are Search's. The keys that make and close tabs and move
     /// between them stay Search's first, as Chrome keeps them its own.
+    /// ⌘R also stays Search's first so a sheet can't edit cells in place of
+    /// reloading (#1667).
     ///
     /// ⌘K is always Search's, on every page: the way to any open page is
     /// the one key that must never be taken (Drice; #238). Slack, X, GitHub
@@ -1791,6 +1793,7 @@ struct ContentView: View {
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
             || (key == "k" && !shifted)
+            || (key == "r" && !shifted && !event.modifierFlags.contains(.option))
             || (!shifted && (event.keyCode == 123 || event.keyCode == 124) && !caretIn(event))
         guard !reserved, event.window?.firstResponder is PageView else { return false }
         if let passed = ContentView.passed, PageView.same(passed, event) {
