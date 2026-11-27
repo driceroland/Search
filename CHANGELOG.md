@@ -22,6 +22,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Closing a tab while its video is full screen no longer leaves its picture behind every new tab until Search is quit. Thanks [@pasteley](https://github.com/pasteley) ([#1702](https://github.com/driceroland/Search/pull/1702))
 - A sleeping tab in a tab group brightens under the pointer in the sidebar, as other tabs there do: only its row's background lit up, its title and icon stayed dimmed. Thanks [@hrbengtsen](https://github.com/hrbengtsen) ([#1683](https://github.com/driceroland/Search/pull/1683))
 - Site shortcuts on different ports of the same host, such as localhost:3000 and localhost:4000, keep their past searches separate. Switching between them in the address field shows the history of the shortcut you typed. `python3 Tests/site_search_ports.py` Thanks [@kudala-bharani](https://github.com/kudala-bharani) ([#1677](https://github.com/driceroland/Search/pull/1677))
+- ⌘R reloads a page even when it uses the same key for something else, such as Fill Right in Google Sheets. Remove the Reload Page shortcut in Settings › Shortcuts to give the key back to the page. `python3 Tests/reload_shortcut.py` ([#1667](https://github.com/driceroland/Search/issues/1667)) Thanks [@kudala-bharani](https://github.com/kudala-bharani) ([#1676](https://github.com/driceroland/Search/pull/1676))
 
 ### Changed
 
