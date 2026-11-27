@@ -2416,10 +2416,12 @@ private struct SideRow: View, Equatable {
     private var closable: Bool { tab.pin == nil || !tab.asleep }
     /// A grouped tab holding no page — put away with its minus (Browser.putAway),
     /// put to sleep, or not opened since launch: the row stays, dimmed as a
-    /// pin put down is, so the minus is seen to have done something.
+    /// pin put down is, so the minus is seen to have done something. Lit
+    /// under the pointer as any other sleeping row, and as its pill across
+    /// the top is (TabPill.dim, idea 950).
     /// Read from the tab here, not when the column made the row: the column
     /// isn't drawn again when one of its tabs lets its page go.
-    private var putAway: Bool { grouped && tab.asleep && !live }
+    private var putAway: Bool { grouped && tab.asleep && !live && !hovering }
     /// Any other tab asleep, with Settings › Tabs › Dim sleeping tabs on:
     /// faded until the pointer is on it.
     private var dim: Bool { prefs.dimsSleepingTabs && tab.asleep && !live && !hovering && !putAway }
@@ -2468,7 +2470,7 @@ private struct SideRow: View, Equatable {
                     // The page is translated (Translate.swift).
                     TranslateSign(tab: tab, colour: colour)
                     TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
-                                size: prefs.sideTitle, colour: colour, roomy: true, dim: dim)
+                                size: prefs.sideTitle, colour: ink, roomy: true, dim: putAway || dim)
                 }
             }
             // Pushed to the leading edge by its frame, not a Spacer: the
@@ -2636,13 +2638,15 @@ private struct SideRow: View, Equatable {
         }
     }
 
-    private var colour: Color {
-        if live || prefs.highContrastText {
-            return putAway ? Palette.ink.opacity(0.45) : Palette.ink
-        }
-        let colour = hovering ? Palette.ink.opacity(0.7) : greys.muted
-        return putAway ? colour.opacity(0.45) : colour
+    /// The row's ink, before a put-away row's dim. The title takes that dim
+    /// as a fade of its own (TitleAtRest.dim), as a sleeping title does,
+    /// since the ink changes at once under the pointer.
+    private var ink: Color {
+        if live || prefs.highContrastText { return Palette.ink }
+        return hovering ? Palette.ink.opacity(0.7) : greys.muted
     }
+
+    private var colour: Color { putAway ? ink.opacity(0.45) : ink }
 }
 
 /// A row that is an action rather than a page. Quiet until the pointer is on it.
