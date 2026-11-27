@@ -661,6 +661,9 @@ struct SettingsPanel: View {
         case "address.shown": Switch(on: $prefs.addressLine)
         case "scrollbars.fade": Switch(on: $prefs.scrollbarsFade)
         case "address.width": Segmented(options: AddressWidth.allCases.map { ($0, $0.title) }, selection: $prefs.addressWidth)
+        case "address.place": Segmented(options: AddressPlace.allCases.map { ($0, $0.title) },
+                                        selection: Binding(get: { prefs.addressPlace },
+                                                           set: { place in withAnimation(Motion.glide) { prefs.addressPlace = place } }))
         case "window.glass": Switch(on: $prefs.glass)
         case "window.glass.style": Segmented(options: GlassStyle.allCases.map { ($0, $0.title) }, selection: $prefs.glassStyle)
         case "window.glass.clear": Slider(value: $prefs.glassClear, in: 0...1).controlSize(.small).frame(width: 160)

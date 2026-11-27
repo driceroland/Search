@@ -32,6 +32,9 @@ struct PaneStageView: NSViewRepresentable {
     var pairing: (browser: Browser, pairing: Browser.ApplePairing)? = nil
     /// Each page's corners, as a card (see CardEdge).
     var corner: CGFloat = 0
+    /// The top two square, under the rows above the page inside the card
+    /// (Toolbar).
+    var squareTop = false
     /// The page filling the screen, if one is (see SplitStage.immersed).
     var immersed: Tab.ID? = nil
 
@@ -39,6 +42,7 @@ struct PaneStageView: NSViewRepresentable {
 
     func updateNSView(_ stage: PaneStage, context: Context) {
         stage.corner = corner
+        stage.squareTop = squareTop
         stage.immersedID = immersed
         stage.onCommit = commit
         stage.onFocus = focus
@@ -60,6 +64,16 @@ final class PaneStage: NSView {
         didSet {
             guard corner != oldValue else { return }
             for slot in slots { slot.corner = corner }
+            paint()
+            needsLayout = true
+        }
+    }
+    /// The cards' top corners square, the rows above the page inside the
+    /// card (Toolbar's CardHead) rounding the card's own above them; the
+    /// page's edge along its top is the line between the rows and the page.
+    var squareTop = false {
+        didSet {
+            guard squareTop != oldValue else { return }
             paint()
             needsLayout = true
         }
@@ -104,7 +118,7 @@ final class PaneStage: NSView {
             let seen = slot.frame.intersection(card)
             let short = seen.isNull ? .zero
                 : CGSize(width: slot.frame.width - seen.width, height: slot.frame.height - seen.height)
-            slot.clip(short: short, corner: corner)
+            slot.clip(short: short, corner: corner, squareTop: squareTop)
             // The edge would be cut on the card's far sides: none while
             // the card is short of the page.
             slot.layer?.borderWidth = corner > 0 && whole ? hairline : 0
@@ -381,11 +395,15 @@ final class PaneStage: NSView {
                 slot.layer?.borderWidth = card ? hairline : 0
                 slot.layer?.borderColor = edge
             }
+            // In this flipped stage, the cards' bottom is the maximum y.
+            let corners: CACornerMask = squareTop ? [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+                : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
             for shadow in shadows {
                 shadow.isHidden = !card
                 shadow.backgroundColor = ground
                 shadow.cornerRadius = corner
                 shadow.cornerCurve = .continuous
+                shadow.maskedCorners = corners
             }
         }
     }
@@ -1103,6 +1121,9 @@ extension PaneStage {
             // Moving as a card, when the pages are cards.
             view.layer?.cornerRadius = corner
             view.layer?.cornerCurve = .continuous
+            // Under the rows inside the card, its top square as the page's is
+            // (an image view isn't flipped: its bottom is the minimum y).
+            if squareTop { view.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner] }
             view.layer?.masksToBounds = corner > 0
             addSubview(view, positioned: .below, relativeTo: divider)
             self.pictures.append(view)

@@ -171,6 +171,15 @@ enum Metrics {
     /// this round.
     static let cardGap: CGFloat = 8
     static let cardRadius: CGFloat = 10
+
+    /// The page's outline on its card: round at all four corners, or at the
+    /// bottom two only when the row above the page is inside the card with
+    /// it (Toolbar), the page's top a straight line under the row.
+    static func cardOutline(_ corner: CGFloat, squareTop: Bool = false) -> UnevenRoundedRectangle {
+        let top = squareTop ? 0 : corner
+        return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: corner,
+                                      bottomTrailingRadius: corner, topTrailingRadius: top, style: .continuous)
+    }
     /// Where the first tab starts. The traffic lights run from 19 to 79 —
     /// measured, not guessed — so this leaves them the same air on their right
     /// that the window gives them on their left.
@@ -193,13 +202,14 @@ enum Metrics {
     /// The three doors' own width, without the air after them.
     static let helmDoors: CGFloat = 3 * 26 + 2 * 4
     /// The same two, for the doors Settings leaves shown (idea 815): all
-    /// three unless some are hidden, nothing when none is.
+    /// three unless some are hidden, nothing when none is, or when they are
+    /// in the row above the page (Toolbar).
     @MainActor static func helm(_ prefs: Preferences) -> CGFloat {
-        let n = CGFloat(prefs.helmDoors)
+        let n = CGFloat(prefs.rowHelmDoors)
         return n == 0 ? 0 : n * 26 + (n - 1) * 2 + 8
     }
     @MainActor static func helmDoors(_ prefs: Preferences) -> CGFloat {
-        let n = CGFloat(prefs.helmDoors)
+        let n = CGFloat(prefs.rowHelmDoors)
         return n == 0 ? 0 : n * 26 + (n - 1) * 4
     }
     /// Tabs are a fixed width rather than the width of their titles, so the
@@ -619,6 +629,20 @@ private struct PopoverGround: ViewModifier {
     }
 }
 
+/// What a row above the page (Toolbar, BookmarksBar) is drawn on.
+enum RowGround {
+    /// Its own ground, a hairline under it: edge to edge, or with the tabs
+    /// across the top.
+    case own
+    /// The window's ground beside the page's card, and no line of its own:
+    /// the card's edge is the line.
+    case frame
+    /// Inside the page's card, over the page: the card's top (CardHead)
+    /// draws the ground and the edge, and the page's own edge is the line
+    /// under the rows, so the row draws neither.
+    case card
+}
+
 /// The page as a card in the window, with the tabs down the side: round
 /// corners, a hairline edge and a soft shadow under it. The shadow is drawn
 /// by a shape behind the page, never by the page's own layers, which would
@@ -732,6 +756,9 @@ struct CardClip: ViewModifier, Animatable {
     var corner: CGFloat
     let scale: CGFloat
     let on: Bool
+    /// The row above the page inside the card (Toolbar): the page's top
+    /// corners square under it, the card rounding its own above the row.
+    var squareTop = false
 
     var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<AnimatablePair<CGFloat, CGFloat>, CGFloat>> {
         get { .init(.init(card.top, card.leading), .init(.init(card.bottom, card.trailing), corner)) }
@@ -745,7 +772,8 @@ struct CardClip: ViewModifier, Animatable {
     func body(content: Content) -> some View {
         func pixel(_ x: CGFloat) -> CGFloat { scale > 0 ? (x * scale).rounded() / scale : x }
         let across = CGSize(width: pixel(card.leading + card.trailing), height: pixel(card.top + card.bottom))
-        return content.background(Rider(across: on ? across : nil, corner: on ? max(0, corner) : 0))
+        return content.background(Rider(across: on ? across : nil, corner: on ? max(0, corner) : 0,
+                                        squareTop: on && squareTop))
     }
 
     /// The card, measured in the window: the room it leaves across and
@@ -755,6 +783,7 @@ struct CardClip: ViewModifier, Animatable {
     private struct Rider: NSViewRepresentable {
         let across: CGSize?
         let corner: CGFloat
+        let squareTop: Bool
 
         func makeNSView(context: Context) -> NSView { Unseen() }
 
@@ -772,7 +801,7 @@ struct CardClip: ViewModifier, Animatable {
             }
             switch unseen.stage {
             case let panes as PaneStage: panes.clip(card: card, corner: corner)
-            case let one as StageView: one.clip(card: card, corner: corner)
+            case let one as StageView: one.clip(card: card, corner: corner, squareTop: squareTop)
             default: break
             }
         }

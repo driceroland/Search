@@ -60,6 +60,13 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Address bar above the page", detail: "In a row of its own above the page, as in Chrome: back, forward and reload before it, the extensions after it.",
+               since: "1.0.22", get: { $0.toolbar },
+               set: { prefs, on in
+                   prefs.addressPlace = on ? .page : .side
+                   if on { prefs.addressLine = true }
+               },
+               shown: { $0.sidebar }),
         Toggle(title: "Double click to rename", detail: "Click on the tab you're on to rename it, as Rename in its menu does, instead of editing its address.",
                since: "1.0.22", get: { $0.tabClickRenames }, set: { $0.tabClickRenames = $1 },
                shown: { !$0.iconColumn }),

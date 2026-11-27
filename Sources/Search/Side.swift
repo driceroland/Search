@@ -115,7 +115,9 @@ struct SideBar: View {
     /// What sits above the pins: the lights' band, and with icons only the
     /// three doors under it.
     private var top: CGFloat {
-        !icons ? Metrics.strip : !strip ? lightsBand + Metrics.helmDoors(prefs) + 8 : lightsBand + (stripUp ? stackedDoors : 0)
+        !icons ? Metrics.strip
+            : !strip ? lightsBand + (prefs.toolbar ? 0 : Metrics.helmDoors(prefs) + 8)
+            : lightsBand + (stripUp ? stackedDoors : 0)
     }
     private var innerEdge: Alignment { onRight ? .leading : .trailing }
 
@@ -250,7 +252,7 @@ struct SideBar: View {
                     Color.clear.frame(height: lightsBand)
                     if stripUp {
                         foot
-                    } else if !strip {
+                    } else if !strip, !prefs.toolbar {
                         Helm(browser: browser, vertical: true)
                             .frame(maxWidth: .infinity)
                             .padding(.bottom, 8)
@@ -262,7 +264,8 @@ struct SideBar: View {
                             FoldDoor(browser: browser, right: prefs.sidePosition == .right)
                                 .padding(.trailing, SideBar.foldDoor(true) - 26)
                         }
-                        Helm(browser: browser)
+                        // Gone up to the row above the page, with the address.
+                        if !prefs.toolbar { Helm(browser: browser) }
                         Spacer(minLength: 0)
                     }
                     .frame(height: Metrics.strip)
@@ -280,8 +283,9 @@ struct SideBar: View {
                                 .accessibilityHidden(!doorsTop)
                         }
                     }
-                    // The page's address, when it is to be in sight.
-                    if prefs.addressLine {
+                    // The page's address, when it is to be in sight here and
+                    // not above the page (Toolbar).
+                    if prefs.addressLine && !prefs.toolbar {
                         AddressLine(browser: browser, height: prefs.sideRow)
                             .padding(.bottom, 6)
                             // Its suggestions hang over the rows below.
@@ -1993,7 +1997,7 @@ private struct SideFoot: View {
                 // An agent connected in this window: a click on it is Stop.
                 AgentStatus(browser: browser, style: .icon)
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
-                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0, puzzle: !prefs.hidesExtensionsDoor, live: live)
+                if !prefs.toolbar { ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0, puzzle: !prefs.hidesExtensionsDoor, live: live) }
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
                 SpaceButtons(browser: browser, vertical: true)
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
@@ -2012,13 +2016,13 @@ private struct SideFoot: View {
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom, live: live)
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: .bottom) }
                 SpaceButtons(browser: browser)
-                ExtensionSlot(browser: browser, edge: .bottom, room: room, puzzle: !prefs.hidesExtensionsDoor, live: live)
+                if !prefs.toolbar { ExtensionSlot(browser: browser, edge: .bottom, room: room, puzzle: !prefs.hidesExtensionsDoor, live: live) }
             }
         } else {
             HStack(spacing: 2) {
                 if prefs.showsProfileDoor { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser) }
-                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room, puzzle: !prefs.hidesExtensionsDoor, live: live)
+                if !prefs.toolbar { ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room, puzzle: !prefs.hidesExtensionsDoor, live: live) }
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
                 SpaceButtons(browser: browser, squeezes: true)
                 // Only while a download is running, and a moment after.
@@ -2040,7 +2044,7 @@ private struct SideFoot: View {
     /// How many doors the foot has, stacked: what the rows stop short of.
     @MainActor static func doors(_ prefs: Preferences, _ fetches: Fetches, hanging: Bool = false, spaces: Int = 0) -> Int {
         var kept = spaces  // a button per space (SpaceButtons)
-        if !prefs.hidesExtensionsDoor { kept += 1 }  // the puzzle
+        if prefs.footPuzzle { kept += 1 }  // the puzzle
         if !prefs.hidesBookmarksDoor { kept += 1 }
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
         if prefs.showsProfileDoor { kept += 1 }
@@ -2052,7 +2056,7 @@ private struct SideFoot: View {
     /// lights' row must have to take them (SideBar.doorsUp).
     @MainActor static func keptWidth(_ prefs: Preferences, spaces: Int = 0) -> CGFloat {
         var kept = 1 + spaces  // downloads and a button per space
-        if !prefs.hidesExtensionsDoor { kept += 1 }  // the puzzle
+        if prefs.footPuzzle { kept += 1 }  // the puzzle
         if !prefs.hidesBookmarksDoor { kept += 1 }
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
         if prefs.showsProfileDoor { kept += 1 }
@@ -2064,7 +2068,7 @@ private struct SideFoot: View {
     private var room: Int {
         let door: CGFloat = 26 + 2
         var kept = SpaceButtons.count(prefs, browser.spaces)  // the spaces' buttons
-        if !prefs.hidesExtensionsDoor { kept += 1 }  // the puzzle
+        if prefs.footPuzzle { kept += 1 }  // the puzzle
         if !prefs.hidesBookmarksDoor { kept += 1 }
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
         if prefs.showsProfileDoor { kept += 1 }
