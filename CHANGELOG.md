@@ -21,6 +21,7 @@ in [ROADMAP.md](ROADMAP.md).
 - Pages scroll at about 60 frames a second unless Pages at 120 Hz is chosen in Settings, as in Safari: for people who never touched it the setting had become On power, and on the power adapter busy pages such as YouTube's home stuttered. Those who chose 120 Hz keep it. `swift test --filter SettingsIndexTests`, `python3 Tests/settings_layout.py` (#1685, #1205) Thanks [@rbshh](https://github.com/rbshh) ([#1691](https://github.com/driceroland/Search/pull/1691))
 - Closing a tab while its video is full screen no longer leaves its picture behind every new tab until Search is quit. Thanks [@pasteley](https://github.com/pasteley) ([#1702](https://github.com/driceroland/Search/pull/1702))
 - A sleeping tab in a tab group brightens under the pointer in the sidebar, as other tabs there do: only its row's background lit up, its title and icon stayed dimmed. Thanks [@hrbengtsen](https://github.com/hrbengtsen) ([#1683](https://github.com/driceroland/Search/pull/1683))
+- Site shortcuts on different ports of the same host, such as localhost:3000 and localhost:4000, keep their past searches separate. Switching between them in the address field shows the history of the shortcut you typed. `python3 Tests/site_search_ports.py` Thanks [@kudala-bharani](https://github.com/kudala-bharani) ([#1677](https://github.com/driceroland/Search/pull/1677))
 
 ### Changed
 

@@ -8383,16 +8383,17 @@ final class Browser: NSObject, ObservableObject {
 
     /// What the site in the field was searched for before, newest first:
     /// read from the history once when the site goes in, not at every key.
+    /// Shortcuts on the same host can have different search templates.
     /// Never in a private tab, whose field says nothing of where you have been.
     private func searchedBefore(on site: SearchSite) -> [String] {
         guard active?.shy != true else { return [] }
-        if let pastSearches, pastSearches.site == site.id { return pastSearches.words }
+        if let pastSearches, pastSearches.template == site.template { return pastSearches.words }
         let host = site.host.split(separator: "/").first.map(String.init) ?? site.host
         let words = SiteSearch.pastSearches(on: site, in: history.everything(matching: host))
-        pastSearches = (site.id, words)
+        pastSearches = (site.template, words)
         return words
     }
-    private var pastSearches: (site: SearchSite.ID, words: [String])?
+    private var pastSearches: (template: String, words: [String])?
 
     private func askEngine() {
         guard let question = engineQuestion(for: typed) else {
@@ -8527,7 +8528,7 @@ final class Browser: NSObject, ObservableObject {
             else { return place }
             if site.template == engine, words.lowercased() == asked { return nil }
             // "naruto+vs" and "naruto%20vs" are two pages but one search.
-            guard seen.insert(site.host + " " + words.lowercased()).inserted else { return nil }
+            guard seen.insert(site.template + " " + words.lowercased()).inserted else { return nil }
             return Suggestion(key: words, title: site.name, url: place.url, kind: .searched)
         }
     }
