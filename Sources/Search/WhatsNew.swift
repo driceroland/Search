@@ -33,6 +33,8 @@ enum WhatsNew {
         var shown: @MainActor (Preferences) -> Bool = { _ in true }
         /// First on every card while it is off, whatever its version.
         var lead = false
+        /// Its row in Settings (SettingsIndex), for What's New's Worth a look.
+        var settingsID: String? = nil
     }
 
     /// A version that has a card.
@@ -64,9 +66,9 @@ enum WhatsNew {
                since: "1.0.16", get: { _ in ICloudSync.shared.on },
                set: { _, on in on ? ICloudSync.shared.turnOnOrWait() : ICloudSync.shared.turnOff() },
                // Never beside the folder sync: the two would undo each other.
-               shown: { _ in ICloudSync.shared.on || !Sync.shared.on }, lead: true),
+               shown: { _ in ICloudSync.shared.on || !Sync.shared.on }, lead: true, settingsID: "icloud"),
         Toggle(title: "Handoff to your iPhone", detail: "The page in front comes up in your iPhone's and iPad's app switcher.",
-               since: "1.0.16", get: { $0.handoff }, set: { $0.handoff = $1 }, lead: true),
+               since: "1.0.16", get: { $0.handoff }, set: { $0.handoff = $1 }, lead: true, settingsID: "handoff"),
     ] + (AI.shipped ? [
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
@@ -314,6 +316,27 @@ enum WhatsNew {
     /// order, that SettingsIndex still has.
     static func items(_ release: Release) -> [SettingsItem] {
         release.settings.compactMap { id in SettingsIndex.items.first { $0.id == id } }
+    }
+
+    /// Settings › What's New › Worth a look: the leading switches (Sync with
+    /// iCloud, Handoff), on for a new install, as their usual rows for whoever
+    /// had Search before and has them off, until they have been seen there
+    /// once. No card asks any more (27 Nov 2026).
+    static let worthSeenKey = "whatsnew.worth.seen"
+
+    @MainActor static func worthALook(_ prefs: Preferences, _ store: UserDefaults = Store.settings) -> [String] {
+        let seen = Set(store.stringArray(forKey: worthSeenKey) ?? [])
+        return toggles
+            .filter { $0.lead && !$0.get(prefs) && $0.shown(prefs) }
+            .compactMap(\.settingsID)
+            .filter { !seen.contains($0) && SettingsIndex.item($0) != nil }
+    }
+
+    /// Shown once: not offered again, whatever they are left at.
+    static func sawWorth(_ ids: [String], _ store: UserDefaults = Store.settings) {
+        guard !ids.isEmpty else { return }
+        let seen = store.stringArray(forKey: worthSeenKey) ?? []
+        store.set(seen + ids.filter { !seen.contains($0) }, forKey: worthSeenKey)
     }
 
     /// Settings › What's New wears a dot until it's opened once after an

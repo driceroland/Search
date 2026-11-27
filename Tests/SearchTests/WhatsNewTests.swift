@@ -100,6 +100,30 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertFalse(WhatsNew.unopened(store), "a dot from an older update doesn't linger")
     }
 
+    /// Sync with iCloud and Handoff, offered as rows while off and not yet
+    /// seen there; gone once seen or turned on.
+    func testWorthALook() throws {
+        let store = try XCTUnwrap(UserDefaults(suiteName: "whatsnew-worth-\(UUID().uuidString)"))
+        let prefs = Shared.prefs
+        let before = prefs.handoff
+        defer { prefs.handoff = before }
+        prefs.handoff = false
+        let first = WhatsNew.worthALook(prefs, store)
+        XCTAssertTrue(first.contains("handoff"))
+        XCTAssertEqual(first.contains("icloud"), !ICloudSync.shared.on && !Sync.shared.on)
+        for id in first { XCTAssertNotNil(SettingsIndex.item(id), id) }
+        XCTAssertEqual(WhatsNew.toggles.filter(\.lead).compactMap(\.settingsID), ["icloud", "handoff"])
+        // Turned on: not offered.
+        prefs.handoff = true
+        XCTAssertFalse(WhatsNew.worthALook(prefs, store).contains("handoff"))
+        // Seen once: not offered again, even off.
+        prefs.handoff = false
+        WhatsNew.sawWorth(first, store)
+        XCTAssertEqual(WhatsNew.worthALook(prefs, store), [])
+        WhatsNew.sawWorth(first, store)
+        XCTAssertEqual(store.stringArray(forKey: WhatsNew.worthSeenKey)?.count, first.count)
+    }
+
     func testWhatsNewSectionTopsTheRail() {
         XCTAssertEqual(SettingsPanel.Page.blocks.first?.first, .whatsNew)
         XCTAssertEqual(SettingsPanel.Page.named("whatsnew"), .whatsNew)

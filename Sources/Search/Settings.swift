@@ -49,6 +49,9 @@ struct SettingsPanel: View {
     @ObservedObject private var likeArc = LikeArc.shared
     /// What's New's dot, until it's opened once after an update.
     @State private var newsDot = WhatsNew.unopened()
+    /// What's New › Worth a look, read once as the section opens: a row
+    /// switched on there stays rather than vanishing under the hand.
+    @State private var worth: [String]?
 
     enum Page: String, CaseIterable, Identifiable {
         case general, appearance, themes, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
@@ -140,6 +143,11 @@ struct SettingsPanel: View {
     }
 
     private func sawNews() {
+        if worth == nil {
+            let ids = WhatsNew.worthALook(prefs)
+            worth = ids
+            WhatsNew.sawWorth(ids)
+        }
         guard newsDot else { return }
         WhatsNew.opened()
         newsDot = false
@@ -483,6 +491,12 @@ struct SettingsPanel: View {
                             .padding(.vertical, 10)
                         }
                     }
+                }
+            }
+            let worthRows = (worth ?? []).compactMap(SettingsIndex.item)
+            if !worthRows.isEmpty {
+                GroupBlock(title: "Worth a look", icon: "hand.thumbsup") {
+                    Card { rows(worthRows, searched: true) }
                 }
             }
             HStack {
