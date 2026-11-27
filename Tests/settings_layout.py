@@ -30,13 +30,13 @@ BEFORE = {
     "downloads.button": "downloads button", "look": "dark mode", "pages.dusk": "darken",
     "sidebar": "sidebar", "sidebar.position": "right", "sidebar.hides": "hide the column",
     "layout.cards": "card", "toolbar.left": "back forward", "sidebar.roomy": "roomier",
-    "glyph": "favicon", "tabs.reading": "how far", "tabs.give": "pressed", "bookmarks.bar": "bookmarks bar",
+    "glyph": "favicon", "bookmarks.bar": "bookmarks bar",
     "motion.light": "low power", "tabs.newPlace": "new tab position", "tabs.newAfterLast": "last tab",
     "tabs.lazy": "background tabs", "tabs.popupWindows": "pop-ups", "tabs.sleep": "sleep",
     "tabs.sleep.pace": "sleep", "tabs.close.after": "close tabs", "tabs.shortcuts": "numbers",
     "tabs.address": "address", "search.engine": "search with", "search.custom": "engine",
     "search.suggest": "suggestions", "search.keywords": "site shortcuts", "links.little": "small window",
-    "reader.twins": "markdown", "reader.follows": "reading mode", "float.style": "picture in picture",
+    "reader.follows": "reading mode", "float.style": "picture in picture",
     "float.leave": "float", "float.away": "switch apps", "media.click": "autoplay",
     "fullscreen.escapeTwice": "esc", "fullscreen.keepsWindow": "desktop", "pageZoom": "zoom", "pages.120.mode": "120", "spaces": "spaces",
     "pins.home": "pins", "pins.peek": "pins", "pins.list": "pinned rows", "newtab.floating": "floating",
@@ -53,7 +53,13 @@ BEFORE = {
     "links.show": "where links go", "float.flicks": "flick",
 }
 ALWAYS = {"splitView", "tabs.groups", "panel.sites", "translate.pages", "tabs.keepAwake", "search.sites",
-          "pins.shared", "pins.numberBack", "switcher.keys", "links.show", "float.flicks"}
+          "pins.shared", "pins.numberBack", "switcher.keys", "links.show", "float.flicks",
+          # Built in since Settings was cut in half (27 Nov 2026, Retired).
+          "motion.light", "tabs.newAfterLast", "tabs.popupWindows", "reader.follows", "commandbar",
+          "swipe.history", "pins.home", "pins.peek"}
+# Taken out on 27 Nov 2026: no row finds them any more.
+GONE = {"tabs.reading": "how far", "tabs.give": "pressed", "reader.twins": "markdown",
+        "field.hidesPage": "hide the page", "tabs.clickAddressOnly": "address only", "pages.bounce": "bounce"}
 
 
 def settings(**f): return sv.cmd({"do": "settings", **f})
@@ -78,15 +84,24 @@ def case_reachable(t):
         if hit and key in ALWAYS:
             t.ok(f"…and says {key} is always there", hit[0]["note"] and hit[0]["findOnly"], hit[0])
     t.ok("no key is left out of the rows", set(BEFORE) - {"auto.install"} <= keys, set(BEFORE) - keys)
+    for key, words in GONE.items():
+        t.ok(f"{key} is gone from the rows", key not in keys, key)
     # Every result names its section and group.
     found = settings(find="video")["found"]
     t.ok("results carry section and group", found and all(i["page"] and i["groupTitle"] for i in found), found)
     t.ok("…in Browsing › Video", any(i["page"] == "browsing" and i["groupTitle"] == "Video" for i in found))
-    shown = [i for i in items if not i["findOnly"]]
-    # A budget, not a rule: raised from 150 on 25 Nov when Developer Mode,
-    # Screenshots in Downloads and Preview pins on hover took it to 154.
-    t.ok("about a hundred and sixty rows in the sections", 105 <= len(shown) <= 175, len(shown))
-    t.ok("eleven sections, Themes among them (#1318)", len(every["pages"]) == 11 and "themes" in every["pages"], every["pages"])
+    drawn = [i for i in items if not i["findOnly"] and not i["within"]]
+    shown = [i for i in drawn if not i["advanced"]]
+    # Cut in half on 27 Nov 2026, from 163: a budget, not a rule.
+    t.ok("at most half of 163 rows on the pages", 60 <= len(shown) <= 81, len(shown))
+    t.ok("about 110 with every Advanced open", len(drawn) <= 112, len(drawn))
+    # Under Advanced, or a line of a row of several: still found.
+    for words, id in [("middle button", "autoscroll"), ("liquid glass", "tabs.liquid"), ("rename", "tabs.clickRenames"),
+                      ("advanced", "bench")]:
+        found = settings(find=words)["found"]
+        t.ok(f"“{words}” finds {id}", any(i["id"] == id for i in found), [i["id"] for i in found])
+    t.ok("twelve sections, What's New first and Themes among them (#1318)",
+         len(every["pages"]) == 12 and every["pages"][0] == "whatsNew" and "themes" in every["pages"], every["pages"])
     # Old addresses land in the new sections.
     sv.cmd({"do": "ui", "show": "search://settings/shortcuts"}); time.sleep(0.6)
     t.ok("search://settings/shortcuts opens Keyboard & Mouse", settings()["settingsPage"] == "keyboard",

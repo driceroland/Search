@@ -98,9 +98,6 @@ enum WhatsNew {
         Toggle(title: "Backspace goes back", detail: "⌫ goes back a page and ⇧⌫ forward, when you aren't typing in a field.",
                since: "1.0.21", get: { $0.backspaceGoesBack }, set: { $0.backspaceGoesBack = $1 }),
 
-        Toggle(title: "Hide the page behind the field", detail: "⌘T's and ⌘L's field over a plain ground, the page out of sight instead of dimmed.",
-               since: "1.0.21", get: { $0.fieldHidesPage }, set: { $0.fieldHidesPage = $1 }),
-
         Toggle(title: "Return takes the top suggestion", detail: "Return goes to the place on top of the field's list as you type, as in Arc's command bar; ↑ lets go of it.",
                since: "1.0.21", get: { $0.returnTakesTop }, set: { $0.returnTakesTop = $1 }),
 
@@ -117,9 +114,6 @@ enum WhatsNew {
         Toggle(title: "Fade scroll bars", detail: "Thin bars over the page that come up as it scrolls and fade when it stops, even with a mouse.",
                since: "1.0.20", get: { $0.scrollbarsFade }, set: { $0.scrollbarsFade = $1 }),
 
-        Toggle(title: "Update ready, in the window", detail: "When a new version is waiting, \"Update ready\" and Restart at the foot of the sidebar, or a pill by the tabs. On; × hides it until the next one.",
-               since: "1.0.20", get: { $0.showsUpdateReady }, set: { $0.showsUpdateReady = $1 }),
-
         Toggle(title: "Bookmarks bar only on new tabs", detail: "The bookmarks bar above a new tab only, gone once a page opens, as in Chrome and Edge.",
                since: "1.0.20", get: { $0.bookmarksNewTabOnly }, set: { $0.bookmarksNewTabOnly = $1 },
                shown: { $0.bookmarksBar && !$0.sideBookmarks }),
@@ -128,9 +122,6 @@ enum WhatsNew {
                since: "1.0.19", get: { $0.bookmarksInSidebar }, set: { $0.bookmarksInSidebar = $1 }),
         Toggle(title: "The field in the middle of the window", detail: "⌘T's and ⌘L's field centred on the window and higher up, as in Arc.",
                since: "1.0.19", get: { $0.fieldOnWindow }, set: { $0.fieldOnWindow = $1 }),
-        Toggle(title: "Click the tab you're on to edit its address", detail: "Without the site card.",
-               since: "1.0.19", get: { $0.tabClickAddressOnly }, set: { $0.tabClickAddressOnly = $1 },
-               shown: { $0.iconColumn || !($0.tabClickRenames || $0.tabClickKeepsName && $0.addressLine) }),
         Toggle(title: "Touch ID before filling a password", detail: "Touch ID, or your Mac's password, before a saved password goes into a page.",
                since: "1.0.19", get: { $0.asksBeforeFilling }, set: { $0.asksBeforeFilling = $1 }),
         Toggle(title: "Icons only on the bookmarks bar", detail: "Each bookmark its site's icon, its name on hover. Folders keep their names.",
@@ -139,9 +130,6 @@ enum WhatsNew {
 
         Toggle(title: "Sidebar button", detail: "Beside the window's buttons, it hides the sidebar as ⌘S does.",
                since: "1.0.18", get: { $0.foldButton }, set: { $0.foldButton = $1 }),
-        Toggle(title: "Narrow to icons", detail: "Pull the sidebar narrower and it becomes a strip of site icons.",
-               since: "1.0.18", get: { $0.narrowsToIcons }, set: { $0.narrowsToIcons = $1 }),
-
         Toggle(title: "⌘T finds your open tabs", detail: "As you type in ⌘T's field, a matching open tab or pin comes first.",
                since: "1.0.17", get: { $0.arcTabPopup }, set: { $0.arcTabPopup = $1 },
                shown: { $0.floatingNewTab }),
@@ -169,8 +157,6 @@ enum WhatsNew {
                since: "1.0.15", get: { $0.mirrorsTabs }, set: { $0.mirrorsTabs = $1 }),
         Toggle(title: "⌥-click a link opens it in Split View", detail: "Beside the page you're reading.",
                since: "1.0.15", get: { $0.optionClickSplits }, set: { $0.optionClickSplits = $1 }),
-        Toggle(title: "Bounce at the top and bottom", detail: "Pages stretch past their ends and spring back, as in Safari.",
-               since: "1.0.15", get: { $0.bounces }, set: { $0.bounces = $1 }),
         Toggle(title: "Slide the column in and out", detail: "An eased slide for ⌘S and the column that hides.",
                since: "1.0.15", get: { $0.slidesColumn }, set: { $0.slidesColumn = $1 }),
 
@@ -203,8 +189,6 @@ enum WhatsNew {
 
         Toggle(title: "Suggestions from your search engine", detail: "Searches suggested as you type. What you type is sent to your engine; never from a private tab.",
                since: "1.0.6", get: { $0.engineSuggests }, set: { $0.engineSuggests = $1 }),
-        Toggle(title: "Pins keep their site", detail: "Links elsewhere open in a peek, and ⌘W takes a pin back to its page, as in Arc.",
-               since: "1.0.6", get: { $0.pinsKeepSite }, set: { $0.pinsKeepSite = $1 }),
         Toggle(title: "Darken light pages", detail: "While Search is dark, pages with no dark look of their own are darkened.",
                since: "1.0.6", get: { $0.darkensPages }, set: { $0.darkensPages = $1 }),
         Toggle(title: "Roomier tabs", detail: "Taller rows, larger titles and bigger pinned squares in the sidebar.",
@@ -250,7 +234,12 @@ enum WhatsNew {
     static let releases: [Release] = [
         Release(version: "1.0.23",
                 settings: ["sidebar.roomy"],
-                lines: []),
+                lines: [
+                    "Settings are half as long: most switches are built in now, and the rare ones wait under Advanced at the foot of each page.",
+                    "Find a setting still finds every one, and opens Advanced to show it.",
+                    "Taken out: the reading fill in a tab, tabs giving when pressed, Markdown copies in reading mode, hiding the page behind the ⌘T field, a click on a tab editing its address only, and the page bounce.",
+                    "Home background keeps Off, Solid colour, Gradient and Image; set to a wall painting or stickers, it is Off now.",
+                ]),
         Release(version: "1.0.22", changes: 26, fixes: 63,
                 settings: ["meet.pip", "home.tiles", "pins.preview", "glyph", "downloads.screenshots",
                            "pages.capture.copyOnly", "hiding.shapes", "split.controls", "motion.downloads",
@@ -404,6 +393,16 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.23", date: "Coming next",
+            headline: "Settings, half as long.",
+            new: [],
+            better: [
+                "Settings are half as long. Most switches are built in now: what everyone wants simply works, with nothing to turn on. The rare ones wait under Advanced at the foot of each page, and Find a setting still finds every one and opens Advanced to show it.",
+                "Taken out: the reading fill in the tab you're on, tabs giving when pressed, reading a site's Markdown copy, hiding the page behind the ⌘T field, a click on the tab editing its address only, the page bounce, and Home background's Wall painting and Stickers (set to one of them, it is Off; Solid colour, Gradient and Image are there).",
+            ],
+            fixed: []
+        ),
         Notes(
             version: "1.0.22", date: "27 November 2026",
             headline: "Light with hundreds of tabs, and light at rest.",

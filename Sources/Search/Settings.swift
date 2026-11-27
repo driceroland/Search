@@ -45,6 +45,8 @@ struct SettingsPanel: View {
     @FocusState private var finding: Bool
     /// A row gone to from a result, lit for a moment.
     @State private var lit: String?
+    /// The pages whose Advanced is open. Folded each time Settings opens.
+    @State private var advancedOpen: Set<Page> = []
     /// What Set Up Like Arc changed, for Undo.
     @ObservedObject private var likeArc = LikeArc.shared
     /// What's New's dot, until it's opened once after an update.
@@ -449,6 +451,8 @@ struct SettingsPanel: View {
         default:
             groups(of: page)
         }
+        // Last on the page, under everything else it has.
+        advanced(of: page)
     }
 
     /// What's New: the last update in a sentence, then the settings it
@@ -507,11 +511,59 @@ struct SettingsPanel: View {
     }
 
     private func groups(of page: Page) -> some View {
-        ForEach(SettingsIndex.groups(of: page)) { group in
+        ForEach(SettingsIndex.groups(of: page).filter { !SettingsIndex.items(in: $0.id).isEmpty }) { group in
             GroupBlock(title: group.title, icon: group.icon) {
                 Card { rows(SettingsIndex.items(in: group.id).filter(shown), searched: false) }
             }
         }
+    }
+
+    /// The page's rare switches, folded under one line at its foot (idea
+    /// 1259). Open, they are rows like any other; dependent ones show only
+    /// while they count, as elsewhere.
+    @ViewBuilder
+    private func advanced(of page: Page) -> some View {
+        let all = SettingsIndex.advanced(of: page)
+        if !all.isEmpty {
+            let open = advancedOpen.contains(page)
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    withAnimation(Motion.quick) {
+                        if open { advancedOpen.remove(page) } else { advancedOpen.insert(page) }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .rotationEffect(.degrees(open ? 90 : 0))
+                        Text("ADVANCED")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .tracking(0.5)
+                        Text("\(all.filter(shown).count)")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    .foregroundStyle(Palette.ink.opacity(0.62))
+                    .padding(.leading, 2)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(open ? "Hide advanced settings" : "Show advanced settings")
+                if open {
+                    Card { rows(all.filter(shown), searched: false) }
+                        .transition(.opacity)
+                }
+            }
+        }
+    }
+
+    /// Goes to a row from a find result: its page, Advanced opened if it is
+    /// there, and the row it is drawn in lit.
+    private func go(to item: SettingsItem?) {
+        guard let item else { return }
+        page = item.page
+        if item.advanced { advancedOpen.insert(item.page) }
+        lit = item.findOnly ? nil : (item.within ?? item.id)
     }
 
     /// In its section, a dependent row is there only while it counts.
@@ -564,7 +616,7 @@ struct SettingsPanel: View {
                     let first = byGroup[group.id]?.first
                     query = ""
                     page = group.page
-                    lit = first?.findOnly == false ? first?.id : nil
+                    go(to: first)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { withAnimation(Motion.quick) { lit = nil } }
                 } label: {
                     HStack(spacing: 6) {
@@ -654,6 +706,44 @@ struct SettingsPanel: View {
 
     @ViewBuilder
     private func control(_ item: SettingsItem) -> some View {
+        // Always there now, with nothing to set: what the find field says.
+        if item.kind == .note {
+            Always()
+        } else if !SettingsIndex.lines(of: item.id).isEmpty {
+            lines(of: item)
+        } else {
+            pageControl(item)
+        }
+    }
+
+    /// A row of several lines: each its title and its own control, as its
+    /// row had them before they were put together. Only the lines that count
+    /// as things are set.
+    private func lines(of row: SettingsItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(SettingsIndex.lines(of: row.id).filter(shown)) { line in
+                if line.kind == .wide {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(shortcuts.relabel(title(of: line))).font(.system(size: 12)).foregroundStyle(Palette.ink)
+                        pageControl(line)
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        Text(line.id == "spaces.commandNumbers" ? title(of: line) : shortcuts.relabel(title(of: line)))
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.ink)
+                            .help(line.detail)
+                        Spacer(minLength: 8)
+                        pageControl(line)
+                    }
+                    .id(line.id)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pageControl(_ item: SettingsItem) -> some View {
         switch item.page {
         case .general: generalControl(item.id)
         case .appearance: appearanceControl(item.id)
@@ -801,15 +891,7 @@ struct SettingsPanel: View {
                 get: { prefs.roomyTabs },
                 set: { on in withAnimation(Motion.glide) { prefs.roomyTabs = on } }
             ))
-        case "sidebar.player": Switch(on: $prefs.showsPlayer)
         case "sidebar.foldButton": Switch(on: $prefs.foldButton)
-        case "sidebar.narrowIcons":
-            Switch(on: Binding(
-                get: { prefs.narrowsToIcons },
-                // Off, the column has its titles back, and on again it starts
-                // with them rather than as a strip from long ago.
-                set: { on in withAnimation(Motion.glide) { prefs.narrowsToIcons = on; if !on { prefs.narrowed = false } } }
-            ))
         case "sidebar.doorsUp":
             Switch(on: Binding(
                 get: { prefs.doorsUp },
@@ -825,9 +907,6 @@ struct SettingsPanel: View {
                           ("Profile", Binding(get: { !prefs.hidesProfileDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesProfileDoor = !on } }))])
         case "glyph": Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
         case "tabs.highContrast": Switch(on: $prefs.highContrastText)
-        case "tabs.reading": Switch(on: $prefs.showsReading)
-        case "tabs.pinCounts": Switch(on: $prefs.showsPinCounts)
-        case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
         case "bookmarks.iconsOnly": Switch(on: $prefs.bookmarksIconsOnly)
         case "bookmarks.newTabOnly": Switch(on: $prefs.bookmarksNewTabOnly)
@@ -836,7 +915,6 @@ struct SettingsPanel: View {
                 get: { prefs.bookmarksInSidebar },
                 set: { on in withAnimation(Motion.glide) { prefs.bookmarksInSidebar = on } }
             ))
-        case "motion.light": Switch(on: $prefs.lightMotion)
         case "motion.instant": Switch(on: $prefs.instantMotion)
         case "motion.downloads": Switch(on: $prefs.animatesDownloads)
         case "note.split": Always()
@@ -856,19 +934,13 @@ struct SettingsPanel: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .fixedSize()
-        case "tabs.newAfterLast": Switch(on: $prefs.newTabAfterLast)
         case "tabs.keepWindow": Switch(on: $prefs.keepWindowAfterLast)
         case "tabs.closeGoesBack": Switch(on: $prefs.closeGoesBack)
-        case "home.grid": Switch(on: $prefs.homeGrid)
         case "home.tiles": Switch(on: $prefs.homeTiles)
-        case "tabs.undoReopens": Switch(on: $prefs.undoReopensTab)
         case "tabs.switcherBehindFirst": Switch(on: $prefs.switcherBehindFirst)
         case "tabs.switcherLeavesOutPins": Switch(on: $prefs.switcherLeavesOutPins)
-        case "tabs.frontBeside": Switch(on: $prefs.frontLinksBeside)
-        case "tabs.swipeBackCloses": Switch(on: $prefs.swipeBackCloses)
         case "tabs.mirror": Switch(on: $prefs.mirrorsTabs)
         case "tabs.lazy": Switch(on: $prefs.lazyTabs)
-        case "tabs.popupWindows": Switch(on: $prefs.popupWindows)
         case "tabs.sleep":
             VStack(alignment: .leading, spacing: 7) {
                 Segmented(options: SleepChoice.allCases.map { ($0, $0.title) }, selection: $prefs.sleepChoice, wide: true)
@@ -893,7 +965,6 @@ struct SettingsPanel: View {
                 get: { prefs.showsAddress },
                 set: { on in withAnimation(Motion.glide) { prefs.showsAddress = on } }
             ))
-        case "tabs.clickAddressOnly": Switch(on: $prefs.tabClickAddressOnly)
         case "tabs.clickKeepsName": Switch(on: $prefs.tabClickKeepsName)
         case "tabs.clickRenames": Switch(on: $prefs.tabClickRenames)
         case "note.groups", "note.awake": Always()
@@ -939,16 +1010,11 @@ struct SettingsPanel: View {
             }
         case "links.little": Switch(on: $prefs.littleLinks)
         case "links.little.tabs": Switch(on: $prefs.linksFindTabs)
-        case "reader.twins": Switch(on: $prefs.readsTwins)
-        case "reader.follows": Switch(on: $prefs.readerFollowsLook)
         case "float.style": Segmented(options: FloatStyle.allCases.map { ($0, $0.title) }, selection: $prefs.floatStyle)
         case "float.own":
             Segmented(options: FloatOwn.allCases.map { ($0, $0.title) }, selection: $prefs.floatOwn, wide: true)
                 .frame(maxWidth: 340)
-        case "float.minimize": Switch(on: $prefs.floatMinimizes)
         case "media.click": Switch(on: $prefs.waitsForPlay)
-        case "video.keys": Switch(on: $prefs.videoKeys)
-        case "meet.pip": Switch(on: $prefs.meetPiP)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
         case "fullscreen.keepsWindow": Switch(on: $prefs.keepsWindow)
         case "translate.target":
@@ -958,10 +1024,9 @@ struct SettingsPanel: View {
             // The number itself takes it back to 100%.
             Steps(stops: Preferences.zooms, value: $prefs.pageZoom, home: 1) { "\(Int(($0 * 100).rounded()))%" }
         case "pages.120": Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
-        case "pages.capture": Switch(on: $prefs.capturesPages)
+        case "sites.styles": SiteStylesControl(prefs: prefs)
         case "pages.capture.copyOnly": Switch(on: $prefs.copiesCapturesOnly)
         case "hiding.shapes": Switch(on: $prefs.hidingShapes)
-        case "sites.styles": SiteStylesControl(prefs: prefs)
         case "autocorrect": Switch(on: $prefs.autocorrect)
         case "inlinePredictions": Switch(on: $prefs.inlinePredictions)
         case "note.panel", "note.translate", "note.sitesearch", "note.links", "note.flick": Always()
@@ -994,18 +1059,12 @@ struct SettingsPanel: View {
         case "spaces.links": Switch(on: $prefs.sendsLinksToSpaces)
         case "spaces.buttons": Switch(on: $prefs.spaceButtons)
         case "links.ask": Switch(on: $prefs.asksSpaceForLinks)
-        case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
-        case "pins.preview": Switch(on: $prefs.pinPreviews)
-        case "pins.folders": Switch(on: $prefs.pinFolders)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "pins.linksNewTab": Switch(on: $prefs.pinLinksOpenTabs)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
         case "field.window": Switch(on: $prefs.fieldOnWindow)
-        case "field.hidesPage": Switch(on: $prefs.fieldHidesPage)
-        case "newtab.recent": Switch(on: $prefs.recentInNewTab)
         case "newtab.arc": Switch(on: $prefs.arcTabPopup)
-        case "commandbar": Switch(on: $prefs.commandBar)
         case "start.fresh": Switch(on: $prefs.startsFresh)
         case "note.sharedpins", "note.pinback": Always()
         default: EmptyView()
@@ -1070,15 +1129,12 @@ struct SettingsPanel: View {
         case "keys.backspaceBack": Switch(on: $prefs.backspaceGoesBack)
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "wheel.smooth": Switch(on: $prefs.wheelGlides)
-        case "pages.bounce": Switch(on: $prefs.bounces)
-        case "swipe.history": Switch(on: $prefs.holdsHistory)
         case "launcher.on": Switch(on: $prefs.launcher)
         case "launcher.key": LauncherKeyBox(prefs: prefs)
         case "launcher.little": Switch(on: $prefs.launcherLittle)
         case "note.switcher": Always()
         case "updates.version": versionControl
         case "updates.auto": Switch(on: $prefs.installsUpdates)
-        case "updates.notice": Switch(on: $prefs.showsUpdateReady)
         case "about.feedback": Pill("Send Feedback") { Links.writeFeedback() }
         case "about.notes": Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
         case "developer.local": Switch(on: $prefs.developerLocal)

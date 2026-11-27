@@ -295,7 +295,8 @@ struct SiteStylesControl: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
             }
-            Switch(on: $prefs.sitesStyles)
+            // Always on since 27 Nov 2026: no switch, only the sites to undo.
+            if styles.hosts.isEmpty { Always() }
         }
     }
 }

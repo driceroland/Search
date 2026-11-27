@@ -145,6 +145,27 @@ enum SidebarDefault {
     }
 }
 
+/// The switches Settings no longer has (27 Nov 2026, "Settings are half
+/// as long"): their behaviour is fixed, on or off. A line one of them left in
+/// someone's settings is no longer read, and is left where it is, so a
+/// build from before still finds it. Only a test world reads it still,
+/// so the probes and tests written against the old switch keep working.
+enum Retired {
+    /// Whether those lines are read: in a test world only. A test sets it
+    /// off to see Search as everyone else does.
+    nonisolated(unsafe) static var honoured = Store.testing
+
+    /// On for everyone. A test world reads the line, on without one.
+    nonisolated static func on(_ key: String, _ store: UserDefaults = Store.settings) -> Bool {
+        honoured ? store.object(forKey: key) as? Bool ?? true : true
+    }
+
+    /// Off for everyone. A test world reads the line, off without one.
+    nonisolated static func off(_ key: String, _ store: UserDefaults = Store.settings) -> Bool {
+        honoured ? store.bool(forKey: key) : false
+    }
+}
+
 @MainActor
 final class Preferences: ObservableObject {
     private let store = Store.settings
@@ -202,10 +223,6 @@ final class Preferences: ObservableObject {
     /// The sliders and colours behind it: intensity, density, scale, pack.
     @Published var homeTuning: HomeTuning {
         didSet { store.set(homeTuning.text, forKey: "home.tuning") }
-    }
-    /// A different wall or sticker pack each day, from the chosen family.
-    @Published var homeShuffle: Bool {
-        didSet { store.set(homeShuffle, forKey: "home.shuffle") }
     }
     /// Where the chosen picture's copy lives, for the image theme.
     @Published var homeThemeImage: String? {
@@ -1387,7 +1404,6 @@ final class Preferences: ObservableObject {
         look = chosen
         homeTheme = store.string(forKey: "home.theme").flatMap(HomeTheme.stored) ?? .off
         homeThemeImage = store.string(forKey: "home.theme.image")
-        homeShuffle = store.bool(forKey: "home.shuffle")
         homeTuning = HomeTuning.read(store.string(forKey: "home.tuning")) ?? HomeTuning()
         // Before the first window, and not deferred: the window that is about
         // to be made should be made in the right appearance. Through `shared`
@@ -1408,10 +1424,10 @@ final class Preferences: ObservableObject {
         foldButton = store.bool(forKey: "sidebar.foldButton")
         sideIcons = store.bool(forKey: "sidebar.icons")
         foldsToIcons = store.bool(forKey: "sidebar.foldIcons")
-        narrowsToIcons = store.bool(forKey: "sidebar.narrowIcons")
+        narrowsToIcons = Retired.on("sidebar.narrowIcons", store)
         narrowed = store.bool(forKey: "sidebar.narrowed")
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        showsPlayer = store.object(forKey: "sidebar.player") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        showsPlayer = Retired.on("sidebar.player", store)
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
@@ -1434,10 +1450,10 @@ final class Preferences: ObservableObject {
         shiftCustom = store.string(forKey: "search.shiftCustom") ?? ""
         keywords = store.data(forKey: "search.keywords")
             .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
-        tabsGive = store.bool(forKey: "tabs.give")
+        tabsGive = Retired.off("tabs.give", store)
         awakeSites = Set(store.stringArray(forKey: "tabs.awakeSites") ?? [])
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        popupWindows = store.object(forKey: "tabs.popupWindows") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        popupWindows = Retired.on("tabs.popupWindows", store)
         popupSites = Set(store.stringArray(forKey: "privacy.popupSites") ?? [])
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         dimsSleepingTabs = store.bool(forKey: "tabs.sleep.dim")
@@ -1450,21 +1466,21 @@ final class Preferences: ObservableObject {
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen
         lazyTabs = store.bool(forKey: "tabs.lazy")
-        // On for everyone who never touched it (Drice, 26 Nov 2026, #1577).
-        newTabAfterLast = store.object(forKey: "tabs.newAfterLast") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        newTabAfterLast = Retired.on("tabs.newAfterLast", store)
         keepWindowAfterLast = store.bool(forKey: "tabs.keepWindow")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        undoReopensTab = store.object(forKey: "tabs.undoReopens") as? Bool ?? true
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        homeGrid = store.object(forKey: "home.grid") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        undoReopensTab = Retired.on("tabs.undoReopens", store)
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        homeGrid = Retired.on("home.grid", store)
         homeTiles = store.bool(forKey: "home.tiles")
         switcherBehindFirst = store.bool(forKey: "tabs.switcherBehindFirst")
         switcherLeavesOutPins = store.bool(forKey: "tabs.switcherLeavesOutPins")
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        frontLinksBeside = store.object(forKey: "tabs.frontBeside") as? Bool ?? true
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        swipeBackCloses = store.object(forKey: "tabs.swipeBackCloses") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        frontLinksBeside = Retired.on("tabs.frontBeside", store)
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        swipeBackCloses = Retired.on("tabs.swipeBackCloses", store)
         mirrorsTabs = store.bool(forKey: "tabs.mirror")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
@@ -1472,19 +1488,19 @@ final class Preferences: ObservableObject {
         engineSuggests = store.bool(forKey: "search.suggest")
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
         showsTabShortcuts = store.bool(forKey: "tabs.shortcuts")
-        showsReading = store.bool(forKey: "tabs.reading")
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        showsPinCounts = store.object(forKey: "tabs.pinCounts") as? Bool ?? true
+        showsReading = Retired.off("tabs.reading", store)
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        showsPinCounts = Retired.on("tabs.pinCounts", store)
         // On by default, but off in test runs unless a test asks, so no
         // other probe's pages on 127.0.0.1 wear the bar.
         developerLocal = store.object(forKey: DevMode.localKey) as? Bool ?? !Store.testing
-        pinPreviews = store.object(forKey: "pins.preview") as? Bool ?? true
+        pinPreviews = Retired.on("pins.preview", store)
         screenshotsInDownloads = store.bool(forKey: Screenshots.key)
         highContrastText = store.bool(forKey: "tabs.highContrast")
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
         // Security's advice); a choice made before stands.
         showsAddress = store.object(forKey: "tabs.address") as? Bool ?? true
-        tabClickAddressOnly = store.bool(forKey: "tabs.clickAddressOnly")
+        tabClickAddressOnly = Retired.off("tabs.clickAddressOnly", store)
         tabClickKeepsName = store.bool(forKey: "tabs.clickKeepsName")
         tabClickRenames = store.bool(forKey: "tabs.clickRenames")
         shielded = store.object(forKey: "shield") as? Bool ?? true
@@ -1552,35 +1568,35 @@ final class Preferences: ObservableObject {
         spacesOnCommand = store.bool(forKey: Preferences.spacesOnCommandKey)
         profilesInOneWindow = store.bool(forKey: "profiles.oneWindow")
         listsPins = store.bool(forKey: "pins.list")
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        pinFolders = store.object(forKey: "pins.folders") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        pinFolders = Retired.on("pins.folders", store)
         pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
         pinLinksOpenTabs = store.bool(forKey: "pins.linksNewTab")
-        // "Pins keep their site" is one switch over two keys (see
-        // SettingsIndex): on when either was on, on by default when neither
-        // was ever touched (Drice, 24 Oct 2026), off when one was turned
-        // off and the other never set. Nothing is written here.
+        // "Pins keep their site": always on, with no switch since 27 Nov
+        // 2026 (see Retired). A test world still reads its two keys as the
+        // switch did: on when either is on or neither was touched, off when
+        // one was turned off and the other never set. Nothing is written here.
         let home = store.object(forKey: "pins.home") as? Bool
         let peek = store.object(forKey: "pins.peek") as? Bool
-        let keepsSite = home == nil && peek == nil ? true : (home ?? false) || (peek ?? false)
+        let keepsSite = !Retired.honoured || (home == nil && peek == nil ? true : (home ?? false) || (peek ?? false))
         pinsGoHome = keepsSite
         ai = AI.shipped && store.bool(forKey: "ai")
         aiProvider = store.string(forKey: "ai.provider").flatMap(AIProvider.init(rawValue:))
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        commandBar = store.object(forKey: "commandbar") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        commandBar = Retired.on("commandbar", store)
         handoff = store.bool(forKey: "handoff")
         floatingNewTab = store.bool(forKey: "newtab.floating")
         fieldOnWindow = store.bool(forKey: "field.window")
-        fieldHidesPage = store.bool(forKey: "field.hidesPage")
+        fieldHidesPage = Retired.off("field.hidesPage", store)
         launcher = store.bool(forKey: "launcher.on")
         launcherLittle = store.bool(forKey: "launcher.little")
         launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
-        recentInNewTab = store.bool(forKey: "newtab.recent")
+        recentInNewTab = Retired.on("newtab.recent", store)
         arcTabPopup = store.bool(forKey: "newtab.arc")
         returnTakesTop = store.bool(forKey: "field.top")
-        // On for everyone who never touched it (24 Oct 2026).
-        let history = store.object(forKey: "swipe.history") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        let history = Retired.on("swipe.history", store)
         holdsHistory = history
         PageView.holdsHistory = history
         // On for everyone who never touched these three switches (Drice,
@@ -1588,8 +1604,8 @@ final class Preferences: ObservableObject {
         let flicks = store.object(forKey: "float.flicks") as? Bool ?? true
         floatFlicks = flicks
         Float.flicks = flicks
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        let minimizes = store.object(forKey: "float.minimize") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        let minimizes = Retired.on("float.minimize", store)
         floatMinimizes = minimizes
         Float.minimizes = minimizes
         floatsAway = store.bool(forKey: "float.away")
@@ -1602,7 +1618,7 @@ final class Preferences: ObservableObject {
         translateTarget = store.string(forKey: "translate.target") ?? ""
         translateAlways = Set(store.stringArray(forKey: PageTranslator.alwaysKey) ?? [])
         installsUpdates = store.object(forKey: Updater.installKey) as? Bool ?? true
-        showsUpdateReady = store.object(forKey: UpdateNotice.key) as? Bool ?? true
+        showsUpdateReady = Retired.on(UpdateNotice.key, store)
         updateHiddenBuild = store.integer(forKey: UpdateNotice.hiddenKey)
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
@@ -1611,9 +1627,9 @@ final class Preferences: ObservableObject {
         splitControls = store.bool(forKey: "split.controls")
         backspaceGoesBack = store.bool(forKey: Preferences.backspaceKey)
         pinsPeek = keepsSite
-        readsTwins = store.bool(forKey: "reader.twins")
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        readerFollowsLook = store.object(forKey: "reader.follows") as? Bool ?? true
+        readsTwins = Retired.off("reader.twins", store)
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        readerFollowsLook = Retired.on("reader.follows", store)
         littleLinks = store.bool(forKey: Preferences.littleKey)
         linksFindTabs = store.bool(forKey: "links.little.tabs")
         webmail = store.string(forKey: "mail.webmail").flatMap(Webmail.init(rawValue:)) ?? .none
@@ -1635,12 +1651,12 @@ final class Preferences: ObservableObject {
         let dusk = store.bool(forKey: "pages.dusk")
         darkensPages = dusk
         Dusk.shared.on = dusk
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        capturesPages = store.object(forKey: "pages.capture") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        capturesPages = Retired.on("pages.capture", store)
         copiesCapturesOnly = store.bool(forKey: "pages.capture.copyOnly")
         hidingShapes = store.bool(forKey: "hiding.shapes")
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        let styles = store.object(forKey: "sites.styles") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        let styles = Retired.on("sites.styles", store)
         sitesStyles = styles
         SiteStyles.shared.on = styles
         inspectorChrome = store.bool(forKey: "inspector.chrome")
@@ -1648,18 +1664,18 @@ final class Preferences: ObservableObject {
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        let videoKeys = store.object(forKey: "video.keys") as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        let videoKeys = Retired.on("video.keys", store)
         self.videoKeys = videoKeys
         VideoKeys.on = videoKeys
-        let meetPiP = store.object(forKey: "meet.pip") as? Bool ?? true
+        let meetPiP = Retired.on("meet.pip", store)
         self.meetPiP = meetPiP
         MeetPiP.on = meetPiP
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         let glides = store.object(forKey: "wheel.smooth") as? Bool ?? true
         wheelGlides = glides
         WheelGlide.on = glides
-        let bouncing = store.bool(forKey: "pages.bounce")
+        let bouncing = Retired.off("pages.bounce", store)
         bounces = bouncing
         Swipe.bounces = bouncing
         // "pages.120" was a switch before it was three choices: on is now
@@ -1671,8 +1687,8 @@ final class Preferences: ObservableObject {
             ?? .never
         fastPages = fast
         FrameRate.mode = fast
-        // On for everyone who never touched it (Drice, 25 Nov 2026).
-        lightMotion = store.object(forKey: Motion.lightKey) as? Bool ?? true
+        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        lightMotion = Retired.on(Motion.lightKey, store)
         animatesDownloads = store.bool(forKey: "motion.downloads")
         let instant = store.bool(forKey: Motion.instantKey)
         instantMotion = instant
@@ -1740,7 +1756,6 @@ final class Preferences: ObservableObject {
         take(\.look, "look", store.string(forKey: "look").flatMap(Look.init), or: .system)
         take(\.homeTheme, "home.theme", store.string(forKey: "home.theme").flatMap(HomeTheme.stored), or: .off)
         take(\.homeThemeImage, store.string(forKey: "home.theme.image"))
-        take(\.homeShuffle, store.bool(forKey: "home.shuffle"))
         take(\.homeTuning, "home.tuning", HomeTuning.read(store.string(forKey: "home.tuning")), or: HomeTuning())
         take(\.navigationLeft, store.bool(forKey: "toolbar.left"))
         take(\.compactStrip, store.bool(forKey: "tabs.compact"))
@@ -1755,7 +1770,7 @@ final class Preferences: ObservableObject {
         take(\.foldButton, store.bool(forKey: "sidebar.foldButton"))
         take(\.sideIcons, store.bool(forKey: "sidebar.icons"))
         take(\.foldsToIcons, store.bool(forKey: "sidebar.foldIcons"))
-        take(\.narrowsToIcons, store.bool(forKey: "sidebar.narrowIcons"))
+        take(\.narrowsToIcons, Retired.on("sidebar.narrowIcons", store))
         take(\.narrowed, store.bool(forKey: "sidebar.narrowed"))
         take(\.sideWidth, "sidebar.width", (store.object(forKey: "sidebar.width") as? Double).map { CGFloat($0) }
             .flatMap { (Metrics.sideMin...Metrics.sideMax).contains($0) ? $0 : nil }, or: Metrics.side)
@@ -1771,11 +1786,11 @@ final class Preferences: ObservableObject {
         take(\.glassClear, "window.glass.clear", (store.object(forKey: "window.glass.clear") as? Double).map { min(1, max(0, $0)) }, or: 0.5)
         take(\.glassStyle, "window.glass.style", store.string(forKey: "window.glass.style").flatMap(GlassStyle.init), or: .frosted)
         take(\.liquidTabs, store.bool(forKey: "tabs.liquid"))
-        take(\.bounces, store.bool(forKey: "pages.bounce"))
+        take(\.bounces, Retired.off("pages.bounce", store))
         Swipe.bounces = bounces
         take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: Glyph.standard)
-        take(\.tabsGive, store.bool(forKey: "tabs.give"))
-        take(\.tabClickAddressOnly, store.bool(forKey: "tabs.clickAddressOnly"))
+        take(\.tabsGive, Retired.off("tabs.give", store))
+        take(\.tabClickAddressOnly, Retired.off("tabs.clickAddressOnly", store))
         take(\.tabClickKeepsName, store.bool(forKey: "tabs.clickKeepsName"))
         take(\.tabClickRenames, store.bool(forKey: "tabs.clickRenames"))
         take(\.instantMotion, store.bool(forKey: Motion.instantKey))

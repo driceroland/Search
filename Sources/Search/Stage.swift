@@ -18,8 +18,7 @@ private struct BlankWall: View {
 
     var body: some View {
         if prefs.homeTheme != .off {
-            HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage,
-                           shuffle: prefs.homeShuffle)
+            HomeBackground(theme: prefs.homeTheme, tuning: prefs.homeTuning, image: prefs.homeThemeImage)
         }
     }
 }
