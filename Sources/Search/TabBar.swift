@@ -1046,7 +1046,7 @@ private struct TabPill: View, Equatable {
                 // What its page counts as waiting (UnreadBadge): a pin shows
                 // no title to say it in.
                 .unreadBadge(prefs.showsPinCounts && !lettering && shortcutNumbers[tab.id] == nil ? tab.unread : nil, icon: 16,
-                             ring: live ? greys.pinLive : selected ? greys.wash : hovering ? greys.hover : greys.tile)
+                             ring: live ? greys.pinLive : selected ? greys.wash : hovering ? greys.tileHover : greys.tile)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 6)
                 .frame(width: span)
@@ -1275,8 +1275,10 @@ private struct TabPill: View, Equatable {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(greys.wash)
         } else if hovering {
+            // A square rests on the tile grey, which the plain hover is no
+            // darker than: it takes the step above it (Greys.tileHover).
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(greys.hover)
+                .fill(pinned ? greys.tileHover : greys.hover)
         } else if pinned || compact || rowCarrying {
             // A letter with nothing behind it reads as debris. A pinned tab
             // keeps a faint ground of its own so the block of them reads as

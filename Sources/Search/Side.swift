@@ -2217,7 +2217,7 @@ private struct PinSquare: View, Equatable {
 
     /// The square's grey, as `background` paints it: the unread badge's ring.
     private var squareGround: Color {
-        live ? greys.pinLive : selected ? greys.wash : hovering ? greys.hover : greys.tile
+        live ? greys.pinLive : selected ? greys.wash : hovering ? greys.tileHover : greys.tile
     }
 
     /// The pin's letter: full ink with High contrast text, otherwise the
@@ -2264,7 +2264,7 @@ private struct PinSquare: View, Equatable {
                 } else {
                     RoundedRectangle(cornerRadius: scale * 9 / 34, style: .continuous)
                         .fill(selected ? greys.wash :
-                              hovering ? greys.hover : greys.tile)
+                              hovering ? greys.tileHover : greys.tile)
                 }
             }
             .animation(Motion.quick, value: live)
