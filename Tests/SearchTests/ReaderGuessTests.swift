@@ -190,20 +190,54 @@ final class ReaderGuessTests: XCTestCase {
         XCTAssertEqual(shown?[2] as? Int, 1)
     }
 
+    func testParagraphAlignmentKeepsPrettyWrappingAndSourceLineAlignment() async throws {
+        for justified in [true, false] {
+            let web = try await read("/ft", justified: justified)
+            let styles = try await call(web, """
+            var p = getComputedStyle(document.querySelector('#office-reader p:not(.office-from)'));
+            var source = getComputedStyle(document.querySelector('.office-from'));
+            return [p.textAlign, p.textAlignLast, p.textWrapStyle, source.textAlign];
+            """) as? [String]
+            XCTAssertEqual(styles?[0], justified ? "justify" : "start")
+            XCTAssertEqual(styles?[1], "start")
+            XCTAssertEqual(styles?[3], "start")
+            // Older WebKit versions fall back to ordinary wrapping.
+            let supportsPretty = try await call(web, "return CSS.supports('text-wrap', 'pretty');") as? Bool
+            if supportsPretty == true { XCTAssertEqual(styles?[2], "pretty") }
+        }
+    }
+
+    func testJustificationUpdatesAnOpenArticleInPlace() async throws {
+        let web = try await read("/ft")
+        guard let page = web as? PageView else { return XCTFail("Expected a PageView") }
+        Web.pages.add(page)
+        defer { Web.pages.remove(page) }
+        _ = try await call(web, "window.readerArticle = document.getElementById('office-reader'); return true;")
+        for justified in [false, true] {
+            Reader.updateJustification(justified)
+            let found = try await call(web, """
+            return [getComputedStyle(document.querySelector('#office-reader p:not(.office-from)')).textAlign,
+                    window.readerArticle === document.getElementById('office-reader')];
+            """) as? [Any]
+            XCTAssertEqual(found?[0] as? String, justified ? "justify" : "start")
+            XCTAssertEqual(found?[1] as? Bool, true)
+        }
+    }
+
     // MARK: - plumbing
 
     private var holding: [Loaded] = []
 
-    private func read(_ path: String, look: String? = nil) async throws -> WKWebView {
+    private func read(_ path: String, look: String? = nil, justified: Bool = true) async throws -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
-        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1000, height: 800), configuration: configuration)
+        let web = PageView(frame: NSRect(x: 0, y: 0, width: 1000, height: 800), configuration: configuration)
         let loaded = Loaded()
         holding.append(loaded)
         web.navigationDelegate = loaded
         web.load(URLRequest(url: server.url(path)))
         try await loaded.wait()
-        var arguments: [String: Any] = ["sheet": Reader.sheet]
+        var arguments: [String: Any] = ["sheet": Reader.stylesheet(justified: justified)]
         if let look { arguments["readerLook"] = look }
         let answer = try await call(web, Reader.script, arguments, world: .page)
         XCTAssertEqual(answer as? String, "read")

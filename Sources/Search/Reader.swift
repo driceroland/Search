@@ -18,7 +18,19 @@ enum Reader {
     private static let dark = "color-scheme:dark;--r-ground:#1c1c1c;--r-ink:#e0e0e0;--r-quiet:#8a8a8a;"
         + "--r-aside:#a8a8a8;--r-rule:#333;--r-code:#2a2a2a;--r-picture:brightness(.92)"
 
-    static let sheet = [
+    static var sheet: String { stylesheet(justified: Store.settings.object(forKey: "reader.justified") as? Bool ?? false) }
+
+    static func stylesheet(justified: Bool) -> String {
+        baseSheet + "#office-reader{--r-align:\(justified ? "justify" : "start")}"
+    }
+
+    /// Updates existing articles without rebuilding their content or scroll position.
+    @MainActor static func updateJustification(_ justified: Bool) {
+        let script = "document.getElementById('office-reader')?.style.setProperty('--r-align','\(justified ? "justify" : "start")');"
+        for page in Web.pages.allObjects { page.evaluateJavaScript(script) }
+    }
+
+    private static let baseSheet = [
         // Light, or dark as the window is or as chosen in the corner
         // (ReaderLook puts it on <html>, which the reader keeps). The dark
         // ground is the window's own (Palette.ground); the text a shade
@@ -36,7 +48,7 @@ enum Reader {
         "margin:0 0 40px;text-transform:uppercase;letter-spacing:.06em;text-align:start;hyphens:manual}",
         // WebKit can choose line breaks across the paragraph to avoid short
         // last lines and uneven spacing. Older engines keep normal wrapping.
-        "#office-reader p{margin:0 0 1.35em;text-align:justify;text-align-last:start;",
+        "#office-reader p{margin:0 0 1.35em;text-align:var(--r-align,justify);text-align-last:start;",
         "-webkit-hyphens:auto;hyphens:auto;text-wrap:pretty}",
         "#office-reader img,#office-reader video,#office-reader iframe{max-width:100%;",
         "height:auto;border-radius:6px;margin:1.6em 0;display:block}",

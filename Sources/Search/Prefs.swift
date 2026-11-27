@@ -936,9 +936,15 @@ final class Preferences: ObservableObject {
     @Published var readsTwins: Bool {
         didSet { store.set(readsTwins, forKey: "reader.twins") }
     }
-    /// Reading mode goes dark with the window, with a light/dark/window
-    /// switch in its corner (see ReaderLook). On unless turned off; off, the
-    /// article is white, as it always was.
+    /// Reader paragraphs align along both edges when turned on.
+    @Published var readerJustified: Bool {
+        didSet {
+            store.set(readerJustified, forKey: "reader.justified")
+            Reader.updateJustification(readerJustified)
+        }
+    }
+
+    /// Reading mode follows the window, with a light/dark switch in its corner.
     @Published var readerFollowsLook: Bool {
         didSet { store.set(readerFollowsLook, forKey: "reader.follows") }
     }
@@ -1610,6 +1616,7 @@ final class Preferences: ObservableObject {
         backspaceGoesBack = store.bool(forKey: Preferences.backspaceKey)
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
+        readerJustified = store.object(forKey: "reader.justified") as? Bool ?? false
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         readerFollowsLook = store.object(forKey: "reader.follows") as? Bool ?? true
         littleLinks = store.bool(forKey: Preferences.littleKey)

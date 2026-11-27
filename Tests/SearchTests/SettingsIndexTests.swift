@@ -32,6 +32,22 @@ final class SettingsIndexTests: XCTestCase {
         }
     }
 
+    func testReaderJustificationDefaultsPersistsAndAppearsUnderAppearance() {
+        let key = "reader.justified"
+        let saved = Store.settings.object(forKey: key)
+        defer { Store.settings.set(saved, forKey: key) }
+        Store.settings.removeObject(forKey: key)
+        XCTAssertFalse(Preferences().readerJustified)
+        XCTAssertNil(Store.settings.object(forKey: key))
+        let prefs = Preferences()
+        prefs.readerJustified = false
+        XCTAssertFalse(Preferences().readerJustified)
+        prefs.readerJustified = true
+        XCTAssertTrue(Preferences().readerJustified)
+        XCTAssertEqual(SettingsIndex.item(key)?.page, .appearance)
+        XCTAssertEqual(SettingsIndex.item(key)?.group, "reader")
+    }
+
     func testOldSectionNames() {
         XCTAssertEqual(SettingsPanel.Page.named("shortcuts"), .keyboard)
         XCTAssertEqual(SettingsPanel.Page.named("downloads"), .general)

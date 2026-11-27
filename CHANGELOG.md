@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Reader paragraphs use justification, automatic hyphenation and `text-wrap: pretty`. Settings › Appearance › Reader has a Justify text switch, off by default, which updates open articles immediately. Turning it off keeps pretty wrapping and aligns paragraphs to the leading edge.
+
 ### Held back
 
 Not in this version, kept on main for a later one:

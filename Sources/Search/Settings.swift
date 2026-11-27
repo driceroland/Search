@@ -634,6 +634,7 @@ struct SettingsPanel: View {
     @ViewBuilder
     private func appearanceControl(_ id: String) -> some View {
         switch id {
+        case "reader.justified": Switch(on: $prefs.readerJustified)
         case "look":
             Pictures(options: Look.allCases.map { look in
                 (look, look == .system ? "Auto" : look.title, AnyView(LookPicture(look: look)))

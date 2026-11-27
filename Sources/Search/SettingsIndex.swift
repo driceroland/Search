@@ -66,6 +66,7 @@ enum SettingsIndex {
         .init(id: "theme", page: .appearance, title: "Light and dark", icon: "circle.lefthalf.filled"),
         .init(id: "window", page: .appearance, title: "Window", icon: "macwindow"),
         .init(id: "tablook", page: .appearance, title: "Tabs", icon: "textformat.size"),
+        .init(id: "reader", page: .appearance, title: "Reader", icon: "doc.plaintext"),
         .init(id: "motion", page: .appearance, title: "Motion", icon: "wind"),
 
         .init(id: "themes", page: .themes, title: "Home background", icon: "photo.artframe"),
@@ -178,6 +179,10 @@ enum SettingsIndex {
               kind: .wide),
 
         // Appearance
+        .init(id: "reader.justified", group: "reader", icon: "text.justify",
+              title: "Justify text", detail: "Align Reader paragraphs evenly along both edges",
+              more: "This takes advantage of WebKit's superior HTML typography to reduce \"rivers\", \"rags\", and \"orphans\"",
+              keys: ["reader.justified"], words: ["reader", "justification", "alignment", "typography"]),
         .init(id: "look", group: "theme", icon: "circle.lefthalf.filled",
               title: "Appearance", detail: "Light, dark, or whatever the Mac is doing. Pages follow it too",
               keys: ["look"], words: ["dark mode", "light mode", "theme", "system"], kind: .wide),
