@@ -1317,6 +1317,9 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
         add(KeptScroll.script, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         add(Veiling.picker, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         add(PageDrafts.script, .atDocumentStart, mainFrameOnly: false, in: Web.world)
+        // Every frame: one that loaded while hidden takes the page's zoom
+        // once shown (see FrameZoom.swift).
+        add(FrameZoom.script, .atDocumentStart, mainFrameOnly: false, in: Web.world)
         // Every frame: one of the page's own origin offers its sign-in's
         // boxes the page's accounts; any other returns at once (see the
         // script's first lines).
