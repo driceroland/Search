@@ -261,6 +261,63 @@ final class ShortcutTests: XCTestCase {
         XCTAssertEqual(tab.page?.kind, .bookmarks)
     }
 
+    func testPasteShortcutsReachTheFocusedFieldEditor() async throws {
+        _ = NSApplication.shared
+        ShortcutStore.shared.resetAll()
+        let browser = Browser(record: WindowRecord())
+        try XCTUnwrap(browser.active).show(InternalPage(.settings))
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 900, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let root = try XCTUnwrap(window.contentView)
+        let hosting = NSHostingView(rootView: ContentView(browser: browser))
+        hosting.frame = root.bounds
+        root.addSubview(hosting)
+        window.orderBack(nil)
+        defer {
+            ContentView.forget(browser)
+            window.contentView = nil
+            window.close()
+            browser.closeAll()
+        }
+
+        let id = ObjectIdentifier(browser)
+        for _ in 0..<50 where ContentView.keyHooks[id] == nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let take = try XCTUnwrap(ContentView.keyHooks[id])
+        let editor = PasteRecordingEditor(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        editor.isFieldEditor = true
+        root.addSubview(editor)
+        XCTAssertTrue(window.makeFirstResponder(editor))
+
+        func key(_ flags: NSEvent.ModifierFlags, _ characters: String) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: 9))
+        }
+
+        XCTAssertNil(take(try key(.command, "v")))
+        XCTAssertEqual(editor.pastes, 1)
+        XCTAssertEqual(editor.plainPastes, 0)
+        XCTAssertNil(take(try key([.command, .shift], "V")))
+        XCTAssertEqual(editor.pastes, 1)
+        XCTAssertEqual(editor.plainPastes, 1)
+
+        editor.isEditable = false
+        let ignored = try key(.command, "v")
+        XCTAssertTrue(take(ignored) === ignored)
+        XCTAssertEqual(editor.pastes, 1)
+    }
+
+    private final class PasteRecordingEditor: NSTextView {
+        var pastes = 0
+        var plainPastes = 0
+
+        override func paste(_ sender: Any?) { pastes += 1 }
+        override func pasteAsPlainText(_ sender: Any?) { plainPastes += 1 }
+    }
+
     private func arrow(_ code: UInt16, in window: NSWindow) throws -> NSEvent {
         try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,

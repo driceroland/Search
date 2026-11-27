@@ -31,6 +31,22 @@ final class TabSelectionTests: XCTestCase {
         XCTAssertTrue(browser.selectedTabIDs.isEmpty)
     }
 
+    /// Tab › Pin Tab and Pin Tab as Row, with several picked, pin
+    /// them all, as their right-click menu does; alone, the tab in front (#1692).
+    func testPinTargetsAreThePickedTabsWithTheOneInFront() {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        let browser = makeBrowser()
+        let tabs = browser.shownTabs
+        browser.select(tabs[3])
+        XCTAssertEqual(browser.pinTargets().map(\.id), [tabs[3].id])
+        browser.extendTabSelection(to: tabs[1], modifiers: .shift)
+        XCTAssertEqual(Set(browser.pinTargets().map(\.id)), Set([tabs[1].id, tabs[2].id, tabs[3].id]))
+        for each in browser.pinTargets() { browser.pin(each, listed: true) }
+        XCTAssertTrue([tabs[1], tabs[2], tabs[3]].allSatisfy { $0.pin != nil && $0.listed })
+        XCTAssertNil(tabs[0].pin)
+    }
+
     func testBothSplitHalvesCanBeSelectedAndRangesIncludeBoth() {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)

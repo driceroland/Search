@@ -43,6 +43,7 @@ final class PinFolderColumnTests: XCTestCase {
             Session.write(now: true, space: browser.spaceID, Session.Shape(tabs: [], active: 0))
         }
         made.removeAll()
+        FolderPeek.hide()
         restorePreferences?()
         if let activationPolicy { NSApp.setActivationPolicy(activationPolicy) }
         windows.removeAll()
@@ -245,6 +246,76 @@ final class PinFolderColumnTests: XCTestCase {
         XCTAssertEqual(Pins.defs(browser.spaceID).first { $0.id == two.pinID }?.folder, work)
     }
 
+    /// Peek into folded folders (FolderPeek.swift): off unless turned on;
+    /// on, a folded folder's own pages, the one looked at last first, and a
+    /// click on one opens it with the folder left folded. Times are made up:
+    /// no clock decides the order.
+    func testAFoldedFoldersPeek() throws {
+        let store = Store.settings
+        let saved = store.object(forKey: "pins.folderPeek")
+        defer { if let saved { store.set(saved, forKey: "pins.folderPeek") } else { store.removeObject(forKey: "pins.folderPeek") } }
+        store.removeObject(forKey: "pins.folderPeek")
+        XCTAssertFalse(Preferences().pinFolderPeek, "off unless turned on")
+        XCTAssertNotNil(SettingsIndex.items.first { $0.id == "pins.folderPeek" })
+
+        let browser = makeBrowser()
+        let (one, two, three, four) = try pinned(browser)
+        let work = try XCTUnwrap(browser.newPinFolder(named: "Work", holding: one, rename: false))
+        browser.movePin(two, into: work)
+        browser.movePin(three, into: work)
+        let inner = try XCTUnwrap(browser.newPinFolder(named: "Inner", in: work, rename: false))
+        browser.movePin(four, into: inner)
+        // Opened behind, never looked at: after the others, however new.
+        let five = browser.open(URL(string: "https://five.example/")!, foreground: false)
+        browser.pin(five, listed: true)
+        browser.movePin(five, into: work)
+        XCTAssertFalse(five.looked)
+        browser.setPinFolderFolded(work, true)
+        let t = Date(timeIntervalSinceReferenceDate: 0)
+        three.touch(at: t)
+        one.touch(at: t.addingTimeInterval(60))
+        two.touch(at: t.addingTimeInterval(120))
+        four.touch(at: t.addingTimeInterval(600))
+
+        browser.prefs.pinFolderPeek = false
+        XCTAssertTrue(browser.folderPeek(work).isEmpty, "off: nothing")
+        XCTAssertEqual(FolderPeek.refusal(work, in: browser), "off")
+        browser.prefs.pinFolderPeek = true
+        XCTAssertEqual(browser.folderPeek(work).map(\.id), [two.id, one.id, three.id, five.id], "Work's own, not Inner's")
+        XCTAssertEqual(FolderPeek.refusal(work, in: browser), "window not in front")
+
+        // Opened from it: in front, Work still folded, the page under its heading.
+        FolderPeek.open(three, in: browser)
+        XCTAssertTrue(browser.active === three)
+        XCTAssertEqual(browser.pinFolders.first { $0.id == work }?.collapsed, true)
+        XCTAssertEqual(described(browser), ["folder 0 Work", "pin 1 three"])
+        XCTAssertEqual(browser.folderPeek(work).map(\.id), [three.id, two.id, one.id, five.id], "the page on screen first")
+
+        browser.setPinFolderFolded(work, false)
+        XCTAssertTrue(browser.folderPeek(work).isEmpty, "open: nothing to peek into")
+        XCTAssertEqual(FolderPeek.refusal(work, in: browser), "not a folded folder")
+        XCTAssertFalse(FolderPeek.isShown)
+    }
+
+    /// A pin never looked at stays so across a quit: the session says it
+    /// (Session.Entry.unseen), only for it, and a session without the key,
+    /// older or another version's, reads as before.
+    func testAPinNeverLookedAtStaysSoInTheSession() throws {
+        let entry = Session.Entry(url: "https://one.example/", title: "one", pin: "O", name: nil, home: nil, unseen: true)
+        let data = try JSONEncoder().encode(entry)
+        XCTAssertEqual(try JSONDecoder().decode(Session.Entry.self, from: data).unseen, true)
+        let plain = try JSONEncoder().encode(Session.Entry(url: "https://two.example/", title: "two", pin: nil, name: nil, home: nil))
+        XCTAssertFalse(String(decoding: plain, as: UTF8.self).contains("unseen"), "not written for any other tab")
+        let old = #"{"url":"https://three.example/","title":"three","pin":"T","touched":0}"#
+        XCTAssertNil(try JSONDecoder().decode(Session.Entry.self, from: Data(old.utf8)).unseen)
+
+        let tab = Search.Tab()
+        tab.touch(at: Date(timeIntervalSinceReferenceDate: 0), looked: false)
+        XCTAssertFalse(tab.looked, "a time kept for a pin never looked at is no look")
+        tab.touch(at: Date(timeIntervalSinceReferenceDate: 60))
+        XCTAssertTrue(tab.looked)
+    }
+
     // MARK: - helpers
 
     private func described(_ browser: Browser) -> [String] {
@@ -273,10 +344,10 @@ final class PinFolderColumnTests: XCTestCase {
         NSApp.setActivationPolicy(.prohibited)
         let prefs = Shared.prefs
         let previous = (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.pinFolders,
-                        prefs.usesSpaces, prefs.sharesPins)
+                        prefs.usesSpaces, prefs.sharesPins, prefs.pinFolderPeek)
         restorePreferences = {
             (prefs.sidebar, prefs.usesTabGroups, prefs.splitView, prefs.listsPins, prefs.pinFolders,
-             prefs.usesSpaces, prefs.sharesPins) = previous
+             prefs.usesSpaces, prefs.sharesPins, prefs.pinFolderPeek) = previous
         }
         let browser = Browser(record: WindowRecord())
         browsers.append(browser)

@@ -20,6 +20,8 @@ struct SettingsPanel: View {
     /// for it, as only the tab on screen is drawn and going to another tab
     /// took the panel, and the words, away (#1655).
     var tabID: UUID? = nil
+    /// What's New's release, for pictures; otherwise the last update's.
+    var news: WhatsNew.Release? = nil
     @Environment(\.asTab) private var asTab
 
     @ObservedObject private var updater = Updater.shared
@@ -32,22 +34,38 @@ struct SettingsPanel: View {
     /// Whether Search opens email links, and which app does now.
     @State private var mailDefault = Mail.isDefault
     @State private var mailHandler = Mail.handlerName
+    /// Whether macOS lets Search use its passkeys, kept here so the row that
+    /// asks goes away once it has been answered: macOS says nothing when it
+    /// changes.
+    @State private var passkeyAccess = Passkeys.access
     /// A site shortcut being written, kept out of Preferences until it's saved.
     @State private var draft: Keyword?
     @State private var page: Page = Page.named(Store.settings.string(forKey: "settings.page") ?? "") ?? .general
-    /// The chosen section's white, slid from one to the next as the tab
-    /// column slides its live tab's (Side.swift).
-    @Namespace private var chosen
+    /// The chosen section's white: one, slid from row to row as the tab
+    /// column slides its live tab's (Side.swift), and never taken away. Made
+    /// again under the row picked (matchedGeometryEffect), it was there at
+    /// once while the last one slid down to meet it, and two showed.
+    @State private var whiteAt: Page?
     /// What is typed in Find a setting.
     @State private var query = ""
     @FocusState private var finding: Bool
     /// A row gone to from a result, lit for a moment.
     @State private var lit: String?
+    /// The pages whose Advanced is open. Folded each time Settings opens.
+    @State private var advancedOpen: Set<Page> = []
     /// What Set Up Like Arc changed, for Undo.
     @ObservedObject private var likeArc = LikeArc.shared
+    /// What's New's dot, until it's opened once after an update.
+    @State private var newsDot = WhatsNew.unopened()
+    /// What's New › Worth a look, read once as the section opens: a row
+    /// switched on there stays rather than vanishing under the hand.
+    @State private var worth: [String]?
 
     enum Page: String, CaseIterable, Identifiable {
         case general, appearance, themes, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
+        /// What the last update added or changed (WhatsNew.swift), at the
+        /// top of the rail. Last here so the find field's order holds.
+        case whatsNew
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -63,6 +81,7 @@ struct SettingsPanel: View {
             case .extensions: return "Extensions"
             case .keyboard: return "Keyboard & Mouse"
             case .about: return "About"
+            case .whatsNew: return "What's New"
             }
         }
         var icon: String {
@@ -79,6 +98,7 @@ struct SettingsPanel: View {
             case .extensions: return "puzzlepiece.extension"
             case .keyboard: return "keyboard"
             case .about: return "info.circle"
+            case .whatsNew: return "sparkle"
             }
         }
         /// A section by its name in an address or in the settings file,
@@ -88,12 +108,13 @@ struct SettingsPanel: View {
             switch name.lowercased() {
             case "downloads": return .general
             case "shortcuts", "mouse": return .keyboard
+            case "whatsnew", "new": return .whatsNew
             default: return Page(rawValue: name.lowercased())
             }
         }
         /// The rail's three blocks: the browser, your data and tools, About.
         static var blocks: [[Page]] {
-            [[.general, .appearance, .themes, .tabs, .browsing, .spaces],
+            [[.whatsNew, .general, .appearance, .themes, .tabs, .browsing, .spaces],
              [.passwords, .privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .keyboard],
              [.about]]
         }
@@ -125,6 +146,19 @@ struct SettingsPanel: View {
         .onChange(of: query) { _, words in
             if let tabID { browser.settingsQueries[tabID] = words.isEmpty ? nil : words }
         }
+        .onAppear { if page == .whatsNew { sawNews() } }
+        .onChange(of: page) { _, page in if page == .whatsNew { sawNews() } }
+    }
+
+    private func sawNews() {
+        if worth == nil {
+            let ids = WhatsNew.worthALook(prefs)
+            worth = ids
+            WhatsNew.sawWorth(ids)
+        }
+        guard newsDot else { return }
+        WhatsNew.opened()
+        newsDot = false
     }
 
     /// In a tab of its own (see InternalPages.swift): the sections down the
@@ -191,60 +225,121 @@ struct SettingsPanel: View {
                         .padding(.horizontal, 10).padding(.vertical, 7)
                 }
                 ForEach(block) { item in
-                    PageRow(page: item, on: !searching && page == item,
-                            count: searching ? counts[item] ?? 0 : nil, chosen: chosen) {
+                    PageRow(page: item, on: !searching && (whiteAt ?? page) == item,
+                            under: !searching && (whiteAt ?? page) == item,
+                            count: searching ? counts[item] ?? 0 : nil,
+                            dot: item == .whatsNew && newsDot) {
                         query = ""
                         page = item
                     }
+                    .anchorPreference(key: RowSpots.self, value: .bounds) { [item: $0] }
                 }
             }
             Spacer(minLength: 0)
         }
-        .animation(slide, value: page)
+        .backgroundPreferenceValue(RowSpots.self) { spots in
+            GeometryReader { geo in
+                if let spot = spots[whiteAt ?? page] {
+                    let frame = geo[spot]
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Palette.ground)
+                        .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
+                        .frame(width: frame.width, height: frame.height)
+                        .offset(x: frame.minX, y: frame.minY)
+                        // Searching, the counts say where to look: no white.
+                        .opacity(searching ? 0 : 1)
+                        .animation(Motion.quick, value: searching)
+                }
+            }
+        }
+        .onAppear { whiteAt = page }
+        // The white sets off, and on the same glide the words it leaves
+        // dim as the ones it goes to light.
+        .onChange(of: page) { _, page in withAnimation(slide) { whiteAt = page } }
         .padding(8)
         .frame(width: SettingsPanel.rail, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Palette.wash.opacity(0.45), in: Rectangle())
     }
 
-    /// The white's move: the tab column's glide, a touch longer and with a
-    /// little give at the end, so the eye follows it down the rail. None
-    /// with Reduce Motion, and a plain ease in Low Power Mode, as glide.
-    private var slide: Animation? {
-        Motion.reduced ? nil : Motion.light ? .easeOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.72)
+    /// Where each section's row is, for the white to go to.
+    private struct RowSpots: PreferenceKey {
+        static let defaultValue: [Page: Anchor<CGRect>] = [:]
+        static func reduce(value: inout [Page: Anchor<CGRect>], nextValue: () -> [Page: Anchor<CGRect>]) {
+            value.merge(nextValue()) { $1 }
+        }
     }
+
+    /// The white's move: the tab column's own glide (Motion.glide), so
+    /// the two read as one kind of thing. None with Reduce Motion, and a
+    /// plain ease in Low Power Mode.
+    private var slide: Animation? { Motion.glide }
 
     /// Find a setting: the wash, the glass, ⌘F beside it until something
     /// is typed. Escape empties it, and then lets go.
+    ///
+    /// What is typed is the field's own, so a key redraws the field alone;
+    /// the results follow once the keys pause (`settle`), or at once when
+    /// it is emptied. Every key redrew the whole of Settings, up to every
+    /// row with its control, and the field lagged (idea 1333).
     private struct FindField: View {
         @Binding var text: String
         var focus: FocusState<Bool>.Binding
+        @State private var typed = ""
+        @State private var pending: Task<Void, Never>?
+
+        /// How long the keys pause before the results follow them.
+        static let settle: Duration = .milliseconds(120)
 
         var body: some View {
+            field
+                .onAppear { typed = text }
+                // Gone before the keys paused (another tab gone to): what
+                // was typed is still what Settings keeps (#1655).
+                .onDisappear { if typed != text { pending?.cancel(); text = typed } }
+                // Emptied or filled from outside (a section picked, a kept query).
+                .onChange(of: text) { _, words in
+                    guard words != typed else { return }
+                    pending?.cancel()
+                    typed = words
+                }
+                .onChange(of: typed) { _, words in
+                    pending?.cancel()
+                    guard words != text else { return }
+                    if words.trimmingCharacters(in: .whitespaces).isEmpty { text = words; return }
+                    pending = Task { @MainActor in
+                        try? await Task.sleep(for: Self.settle)
+                        guard !Task.isCancelled else { return }
+                        text = words
+                    }
+                }
+        }
+
+        private var field: some View {
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.muted)
                 ZStack(alignment: .leading) {
-                    if text.isEmpty {
+                    if typed.isEmpty {
                         Text("Find a setting").foregroundStyle(Palette.muted.opacity(0.8))
                     }
-                    TextField("", text: $text)
+                    TextField("", text: $typed)
                         .textFieldStyle(.plain)
                         .foregroundStyle(Palette.ink)
                         .focused(focus)
                         // Escape empties it; empty, it lets go of the keys,
                         // for Tab and the arrows to move around Settings.
-                        .onExitCommand { if text.isEmpty { focus.wrappedValue = false } else { text = "" } }
+                        .onExitCommand { if typed.isEmpty { focus.wrappedValue = false } else { typed = "" } }
                         .accessibilityLabel("Find a setting")
                 }
                 .font(.system(size: 12.5))
-                if text.isEmpty {
+                if typed.isEmpty {
                     Text("⌘F")
                         .font(.system(size: 10.5, design: .rounded))
                         .foregroundStyle(Palette.muted.opacity(0.8))
                 } else {
-                    Button { text = "" } label: {
+                    Button { typed = "" } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(Palette.faint)
@@ -262,9 +357,13 @@ struct SettingsPanel: View {
     private struct PageRow: View {
         let page: Page
         let on: Bool
+        /// Where the white is, or is going: no grey of the pointer's there,
+        /// drawn over it as it comes.
+        let under: Bool
         /// While searching: how many rows of this section match.
         let count: Int?
-        let chosen: Namespace.ID
+        /// What's New, until it's opened once after an update.
+        var dot = false
         let act: () -> Void
         @State private var hovering = false
 
@@ -277,6 +376,10 @@ struct SettingsPanel: View {
                     Text(page.title)
                         .font(.system(size: 13, weight: on ? .medium : .regular))
                     Spacer(minLength: 0)
+                    if dot, count == nil {
+                        Circle().fill(Palette.ink).frame(width: 6, height: 6)
+                            .accessibilityLabel("New")
+                    }
                     if let count, count > 0 {
                         Text("\(count)")
                             .font(.system(size: 10.5, weight: .medium).monospacedDigit())
@@ -291,12 +394,8 @@ struct SettingsPanel: View {
                 .padding(.horizontal, 10)
                 .frame(height: 30)
                 .background {
-                    if on {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Palette.ground)
-                            .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
-                            .matchedGeometryEffect(id: "chosen", in: chosen)
-                    } else if hovering {
+                    // The white is the rail's, laid under the rows (pages).
+                    if hovering && !on && !under {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(Palette.hover)
                     }
@@ -377,17 +476,124 @@ struct SettingsPanel: View {
             ExtensionsPage(browser: browser)
         case .ai:
             if AI.shipped { AISettings(browser: browser, prefs: prefs) }
+        case .whatsNew:
+            whatsNew
         default:
             groups(of: page)
+        }
+        // Last on the page, under everything else it has.
+        advanced(of: page)
+    }
+
+    /// What's New: the last update in a sentence, then the settings it
+    /// added or changed, each its live row, and its notable changes with
+    /// nothing to set. Every version's notes are a button away.
+    @ViewBuilder
+    private var whatsNew: some View {
+        if let release = news ?? WhatsNew.latest {
+            let items = WhatsNew.items(release)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Search \(release.version)")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                Text((release.changes == nil ? "" : WhatsNew.summary(release) + ". ")
+                     + "Everything is already set as it should be: try what you like, at your own pace.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.leading, 2)
+            if !items.isEmpty {
+                GroupBlock(title: "New and changed settings", icon: "slider.horizontal.3") {
+                    Card { rows(items, searched: true) }
+                }
+            }
+            if !release.lines.isEmpty {
+                GroupBlock(title: "Also new", icon: "sparkle") {
+                    Card {
+                        ForEach(Array(release.lines.enumerated()), id: \.offset) { index, line in
+                            if index > 0 { Rule() }
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text("•").foregroundStyle(Palette.faint)
+                                Text(line)
+                                    .foregroundStyle(Palette.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
+                            }
+                            .font(.system(size: 12.5))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                        }
+                    }
+                }
+            }
+            let worthRows = (worth ?? []).compactMap(SettingsIndex.item)
+            if !worthRows.isEmpty {
+                GroupBlock(title: "Worth a look", icon: "hand.thumbsup") {
+                    Card { rows(worthRows, searched: true) }
+                }
+            }
+            HStack {
+                Spacer()
+                Pill("Every version's notes…") { browser.show(InternalPage(.notes)) }
+            }
         }
     }
 
     private func groups(of page: Page) -> some View {
-        ForEach(SettingsIndex.groups(of: page)) { group in
+        ForEach(SettingsIndex.groups(of: page).filter { !SettingsIndex.items(in: $0.id).isEmpty }) { group in
             GroupBlock(title: group.title, icon: group.icon) {
                 Card { rows(SettingsIndex.items(in: group.id).filter(shown), searched: false) }
             }
         }
+    }
+
+    /// The page's rare switches, folded under one line at its foot (idea
+    /// 1259). Open, they are rows like any other; dependent ones show only
+    /// while they count, as elsewhere.
+    @ViewBuilder
+    private func advanced(of page: Page) -> some View {
+        let all = SettingsIndex.advanced(of: page)
+        if !all.isEmpty {
+            let open = advancedOpen.contains(page)
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    withAnimation(Motion.quick) {
+                        if open { advancedOpen.remove(page) } else { advancedOpen.insert(page) }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .rotationEffect(.degrees(open ? 90 : 0))
+                        Text("ADVANCED")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .tracking(0.5)
+                        Text("\(all.filter(shown).count)")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                    }
+                    .foregroundStyle(Palette.ink.opacity(0.62))
+                    .padding(.leading, 2)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(open ? "Hide advanced settings" : "Show advanced settings")
+                if open {
+                    Card { rows(all.filter(shown), searched: false) }
+                        .transition(.opacity)
+                }
+            }
+        }
+    }
+
+    /// Goes to a row from a find result: its page, Advanced opened if it is
+    /// there, and the row it is drawn in lit.
+    private func go(to item: SettingsItem?) {
+        guard let item else { return }
+        page = item.page
+        if item.advanced { advancedOpen.insert(item.page) }
+        lit = item.findOnly ? nil : (item.within ?? item.id)
     }
 
     /// In its section, a dependent row is there only while it counts.
@@ -440,7 +646,7 @@ struct SettingsPanel: View {
                     let first = byGroup[group.id]?.first
                     query = ""
                     page = group.page
-                    lit = first?.findOnly == false ? first?.id : nil
+                    go(to: first)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { withAnimation(Motion.quick) { lit = nil } }
                 } label: {
                     HStack(spacing: 6) {
@@ -530,6 +736,44 @@ struct SettingsPanel: View {
 
     @ViewBuilder
     private func control(_ item: SettingsItem) -> some View {
+        // Always there now, with nothing to set: what the find field says.
+        if item.kind == .note {
+            Always()
+        } else if !SettingsIndex.lines(of: item.id).isEmpty {
+            lines(of: item)
+        } else {
+            pageControl(item)
+        }
+    }
+
+    /// A row of several lines: each its title and its own control, as its
+    /// row had them before they were put together. Only the lines that count
+    /// as things are set.
+    private func lines(of row: SettingsItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(SettingsIndex.lines(of: row.id).filter(shown)) { line in
+                if line.kind == .wide {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(shortcuts.relabel(title(of: line))).font(.system(size: 12)).foregroundStyle(Palette.ink)
+                        pageControl(line)
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        Text(line.id == "spaces.commandNumbers" ? title(of: line) : shortcuts.relabel(title(of: line)))
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.ink)
+                            .help(line.detail)
+                        Spacer(minLength: 8)
+                        pageControl(line)
+                    }
+                    .id(line.id)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pageControl(_ item: SettingsItem) -> some View {
         switch item.page {
         case .general: generalControl(item.id)
         case .appearance: appearanceControl(item.id)
@@ -680,15 +924,7 @@ struct SettingsPanel: View {
                 get: { prefs.roomyTabs },
                 set: { on in withAnimation(Motion.glide) { prefs.roomyTabs = on } }
             ))
-        case "sidebar.player": Switch(on: $prefs.showsPlayer)
         case "sidebar.foldButton": Switch(on: $prefs.foldButton)
-        case "sidebar.narrowIcons":
-            Switch(on: Binding(
-                get: { prefs.narrowsToIcons },
-                // Off, the column has its titles back, and on again it starts
-                // with them rather than as a strip from long ago.
-                set: { on in withAnimation(Motion.glide) { prefs.narrowsToIcons = on; if !on { prefs.narrowed = false } } }
-            ))
         case "sidebar.doorsUp":
             Switch(on: Binding(
                 get: { prefs.doorsUp },
@@ -704,9 +940,6 @@ struct SettingsPanel: View {
                           ("Profile", Binding(get: { !prefs.hidesProfileDoor }, set: { on in withAnimation(Motion.glide) { prefs.hidesProfileDoor = !on } }))])
         case "glyph": Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
         case "tabs.highContrast": Switch(on: $prefs.highContrastText)
-        case "tabs.reading": Switch(on: $prefs.showsReading)
-        case "tabs.pinCounts": Switch(on: $prefs.showsPinCounts)
-        case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
         case "bookmarks.iconsOnly": Switch(on: $prefs.bookmarksIconsOnly)
         case "bookmarks.newTabOnly": Switch(on: $prefs.bookmarksNewTabOnly)
@@ -715,7 +948,6 @@ struct SettingsPanel: View {
                 get: { prefs.bookmarksInSidebar },
                 set: { on in withAnimation(Motion.glide) { prefs.bookmarksInSidebar = on } }
             ))
-        case "motion.light": Switch(on: $prefs.lightMotion)
         case "motion.instant": Switch(on: $prefs.instantMotion)
         case "motion.downloads": Switch(on: $prefs.animatesDownloads)
         case "note.split": Always()
@@ -735,19 +967,13 @@ struct SettingsPanel: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .fixedSize()
-        case "tabs.newAfterLast": Switch(on: $prefs.newTabAfterLast)
         case "tabs.keepWindow": Switch(on: $prefs.keepWindowAfterLast)
         case "tabs.closeGoesBack": Switch(on: $prefs.closeGoesBack)
-        case "home.grid": Switch(on: $prefs.homeGrid)
         case "home.tiles": Switch(on: $prefs.homeTiles)
-        case "tabs.undoReopens": Switch(on: $prefs.undoReopensTab)
         case "tabs.switcherBehindFirst": Switch(on: $prefs.switcherBehindFirst)
         case "tabs.switcherLeavesOutPins": Switch(on: $prefs.switcherLeavesOutPins)
-        case "tabs.frontBeside": Switch(on: $prefs.frontLinksBeside)
-        case "tabs.swipeBackCloses": Switch(on: $prefs.swipeBackCloses)
         case "tabs.mirror": Switch(on: $prefs.mirrorsTabs)
         case "tabs.lazy": Switch(on: $prefs.lazyTabs)
-        case "tabs.popupWindows": Switch(on: $prefs.popupWindows)
         case "tabs.sleep":
             VStack(alignment: .leading, spacing: 7) {
                 Segmented(options: SleepChoice.allCases.map { ($0, $0.title) }, selection: $prefs.sleepChoice, wide: true)
@@ -772,7 +998,6 @@ struct SettingsPanel: View {
                 get: { prefs.showsAddress },
                 set: { on in withAnimation(Motion.glide) { prefs.showsAddress = on } }
             ))
-        case "tabs.clickAddressOnly": Switch(on: $prefs.tabClickAddressOnly)
         case "tabs.clickKeepsName": Switch(on: $prefs.tabClickKeepsName)
         case "tabs.clickRenames": Switch(on: $prefs.tabClickRenames)
         case "note.groups", "note.awake": Always()
@@ -818,16 +1043,11 @@ struct SettingsPanel: View {
             }
         case "links.little": Switch(on: $prefs.littleLinks)
         case "links.little.tabs": Switch(on: $prefs.linksFindTabs)
-        case "reader.twins": Switch(on: $prefs.readsTwins)
-        case "reader.follows": Switch(on: $prefs.readerFollowsLook)
         case "float.style": Segmented(options: FloatStyle.allCases.map { ($0, $0.title) }, selection: $prefs.floatStyle)
         case "float.own":
             Segmented(options: FloatOwn.allCases.map { ($0, $0.title) }, selection: $prefs.floatOwn, wide: true)
                 .frame(maxWidth: 340)
-        case "float.minimize": Switch(on: $prefs.floatMinimizes)
         case "media.click": Switch(on: $prefs.waitsForPlay)
-        case "video.keys": Switch(on: $prefs.videoKeys)
-        case "meet.pip": Switch(on: $prefs.meetPiP)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
         case "fullscreen.keepsWindow": Switch(on: $prefs.keepsWindow)
         case "translate.target":
@@ -837,10 +1057,9 @@ struct SettingsPanel: View {
             // The number itself takes it back to 100%.
             Steps(stops: Preferences.zooms, value: $prefs.pageZoom, home: 1) { "\(Int(($0 * 100).rounded()))%" }
         case "pages.120": Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
-        case "pages.capture": Switch(on: $prefs.capturesPages)
+        case "sites.styles": SiteStylesControl(prefs: prefs)
         case "pages.capture.copyOnly": Switch(on: $prefs.copiesCapturesOnly)
         case "hiding.shapes": Switch(on: $prefs.hidingShapes)
-        case "sites.styles": SiteStylesControl(prefs: prefs)
         case "autocorrect": Switch(on: $prefs.autocorrect)
         case "inlinePredictions": Switch(on: $prefs.inlinePredictions)
         case "note.panel", "note.translate", "note.sitesearch", "note.links", "note.flick": Always()
@@ -873,18 +1092,13 @@ struct SettingsPanel: View {
         case "spaces.links": Switch(on: $prefs.sendsLinksToSpaces)
         case "spaces.buttons": Switch(on: $prefs.spaceButtons)
         case "links.ask": Switch(on: $prefs.asksSpaceForLinks)
-        case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
-        case "pins.preview": Switch(on: $prefs.pinPreviews)
-        case "pins.folders": Switch(on: $prefs.pinFolders)
+        case "pins.folderPeek": Switch(on: $prefs.pinFolderPeek)
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "pins.linksNewTab": Switch(on: $prefs.pinLinksOpenTabs)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
         case "field.window": Switch(on: $prefs.fieldOnWindow)
-        case "field.hidesPage": Switch(on: $prefs.fieldHidesPage)
-        case "newtab.recent": Switch(on: $prefs.recentInNewTab)
         case "newtab.arc": Switch(on: $prefs.arcTabPopup)
-        case "commandbar": Switch(on: $prefs.commandBar)
         case "start.fresh": Switch(on: $prefs.startsFresh)
         case "note.sharedpins", "note.pinback": Always()
         default: EmptyView()
@@ -949,15 +1163,12 @@ struct SettingsPanel: View {
         case "keys.backspaceBack": Switch(on: $prefs.backspaceGoesBack)
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "wheel.smooth": Switch(on: $prefs.wheelGlides)
-        case "pages.bounce": Switch(on: $prefs.bounces)
-        case "swipe.history": Switch(on: $prefs.holdsHistory)
         case "launcher.on": Switch(on: $prefs.launcher)
         case "launcher.key": LauncherKeyBox(prefs: prefs)
         case "launcher.little": Switch(on: $prefs.launcherLittle)
         case "note.switcher": Always()
         case "updates.version": versionControl
         case "updates.auto": Switch(on: $prefs.installsUpdates)
-        case "updates.notice": Switch(on: $prefs.showsUpdateReady)
         case "about.feedback": Pill("Send Feedback") { Links.writeFeedback() }
         case "about.notes": Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
         case "developer.local": Switch(on: $prefs.developerLocal)
@@ -1005,6 +1216,22 @@ struct SettingsPanel: View {
                 .under()
             }
         case "passkeys":
+            // Until macOS has been asked, the field offers none and never
+            // asks (Passkeys.wait), so the question is put from here.
+            if !searched, prefs.passkeysPossible, prefs.passkeys, passkeyAccess == .notDetermined {
+                Rule()
+                SettingRow(icon: "lock.open", title: "Let Search use this Mac's passkeys",
+                           detail: "macOS asks once. Until then, sign-in fields offer no passkeys") {
+                    Pill("Allow…") {
+                        Passkeys.ask {
+                            passkeyAccess = Passkeys.access
+                            if passkeyAccess == .denied {
+                                browser.announce("macOS was told no: System Settings › Privacy & Security › Passkeys")
+                            }
+                        }
+                    }
+                }
+            }
             if !searched, !Vault.never.isEmpty {
                 Rule()
                 SettingRow(icon: "hand.raised.slash", title: "Sites never asked",

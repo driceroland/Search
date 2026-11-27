@@ -21,7 +21,12 @@ final class PinSpeakerTests: XCTestCase {
 
     override func tearDown() async throws {
         for window in windows { window.contentView = nil; window.close() }
-        for browser in browsers { browser.closeAll() }
+        // Its pins unpinned: left in the space, the next test's window
+        // (PinStuckTests) opened with them.
+        for browser in browsers {
+            for tab in browser.tabs where tab.pin != nil { browser.unpin(tab) }
+            browser.closeAll()
+        }
         restore?()
         windows.removeAll()
         browsers.removeAll()

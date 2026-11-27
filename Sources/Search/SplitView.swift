@@ -115,13 +115,13 @@ struct SplitStage: View {
     }
 }
 
-/// A page's two edges while a tab is carried over it: the bands that split
-/// it, as wide as TabDrag reads them, faint, so the page shows through. Over
-/// the middle, letting go splits nothing; this says so before it happens.
-private struct SplitDropHint: View {
+/// A page's two sides while a tab is carried over it: the bands that split
+/// it, as wide as TabDrag reads them, tinted with the accent colour and
+/// outlined so they show on any page, white or dark, and the page shows
+/// through. Over the middle, letting go splits nothing; this says so before
+/// it happens. They were white at a third, which a white page swallowed.
+struct SplitDropHint: View {
     let width: CGFloat
-
-    private var band: CGFloat { min(width / 2, max(TabDrag.band, width * TabDrag.bandShare)) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -132,17 +132,36 @@ private struct SplitDropHint: View {
     }
 
     private var edge: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Palette.ground.opacity(0.35))
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Palette.ink.opacity(0.18), lineWidth: 1)
+        SplitDropMark(emphasis: false) {
             Image(systemName: "rectangle.split.2x1")
-                .font(.system(size: 15))
-                .foregroundStyle(Palette.ink.opacity(0.4))
+                .font(.system(size: 15, weight: .medium))
         }
         .padding(6)
-        .frame(width: band)
+        .frame(width: TabDrag.band(for: width))
+    }
+}
+
+/// A place a carried tab would go, seen on any page: an accent tint, an
+/// accent outline, and a thin dark and light rim around it that one or the
+/// other of shows against whatever the page is. `emphasis`: where it will go,
+/// not only where it could.
+struct SplitDropMark<Label: View>: View {
+    let emphasis: Bool
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        ZStack {
+            shape.fill(Color.accentColor.opacity(emphasis ? 0.22 : 0.14))
+            shape.strokeBorder(Color.black.opacity(0.28), lineWidth: emphasis ? 4.5 : 3.5)
+            shape.strokeBorder(Color.white.opacity(0.7), lineWidth: emphasis ? 3.5 : 2.5)
+            shape.strokeBorder(Color.accentColor.opacity(emphasis ? 1 : 0.85), lineWidth: emphasis ? 2.5 : 1.5)
+            label()
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule(style: .continuous).fill(Palette.ground.opacity(0.85)))
+        }
     }
 }
 
@@ -240,7 +259,7 @@ private struct PaneLayers: View {
     }
 }
 
-private struct SplitDropPreview: View {
+struct SplitDropPreview: View {
     let preview: TabDrag.Preview
     let tabs: [Tab]
     /// The split the page under the hand is in, which the carried tab
@@ -275,16 +294,23 @@ private struct SplitDropPreview: View {
     }
 
     private func half(title: String, proposed: Bool) -> some View {
-        ZStack {
-            Rectangle().fill(proposed ? Palette.ink.opacity(0.06) : Palette.ground.opacity(0.42))
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(proposed ? Palette.ink.opacity(0.3) : Palette.ink.opacity(0.12), lineWidth: 1)
-                .padding(6)
-            Text(title.isEmpty ? "New Tab" : title)
-                .font(.system(size: 13, weight: proposed ? .medium : .regular))
-                .foregroundStyle(Palette.ink.opacity(proposed ? 0.78 : 0.48))
-                .lineLimit(1)
-                .padding(.horizontal, 20)
+        let name = Text(title.isEmpty ? "New Tab" : title)
+            .font(.system(size: 13, weight: proposed ? .semibold : .regular))
+            .lineLimit(1)
+        return ZStack {
+            if proposed {
+                // Where the carried tab goes: tinted and outlined, on any page.
+                SplitDropMark(emphasis: true) { name }
+                    .padding(6)
+            } else {
+                // The page that stays: veiled, so the carried one stands out.
+                Rectangle().fill(Palette.ground.opacity(0.55))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Palette.ink.opacity(0.14), lineWidth: 1)
+                    .padding(6)
+                name.foregroundStyle(Palette.ink.opacity(0.55))
+                    .padding(.horizontal, 20)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

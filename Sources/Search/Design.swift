@@ -81,6 +81,11 @@ struct Greys {
     /// The faintest ink, New tab's, the same way: on Vivid the opaque grey
     /// all but vanished into the colour.
     let faint: Color
+    /// The hover of something that rests on `tile` (a pinned square): a
+    /// step above it, short of `pinLive`. The plain `hover` is no darker
+    /// than `tile` on the white (0.035 against 0.035), so a pin under the
+    /// pointer didn't change at all.
+    var tileHover: Color { wash }
 
     // Black in a light window, white in a dark one, at the strength that
     // lands on the same grey as Palette's over the ground they lie on (the
@@ -423,7 +428,7 @@ enum Motion {
     /// The switch itself: on for everyone who never touched it (Drice, 25
     /// Nov 2026), as Preferences reads it.
     private static var lightOn: Bool {
-        Store.settings.object(forKey: lightKey) as? Bool ?? true
+        Retired.on(lightKey)
     }
 
     nonisolated static let lightKey = "motion.light"

@@ -198,11 +198,7 @@ struct SearchApp: App {
                 .shortcut("view.sidebar")
                 // Folded away, not moved (see Fold.swift) — the column, or the
                 // strip across the top.
-                Button(browser.prefs.shrinks && !browser.folded
-                       ? (browser.prefs.sideIcons ? "Show Sidebar Titles" : "Show Sidebar as Icons Only")
-                       : browser.prefs.sidebar
-                       ? (browser.folded ? "Show Sidebar" : "Hide Sidebar")
-                       : (browser.folded ? "Show Tab Bar" : "Hide Tab Bar")) { browser.toggleFold() }
+                Button(browser.foldTitle) { browser.toggleFold() }
                     .shortcut("view.fold")
                 Picker("Tabs Wear", selection: Binding(
                     get: { browser.prefs.glyph },
@@ -378,7 +374,17 @@ struct SearchApp: App {
                 }
                 if let tab = browser.active {
                     let rows = browser.prefs.showsPinRows
-                    if tab.pin == nil {
+                    // Several picked with the tab in front: all of them, as
+                    // their right-click menu does (#1692).
+                    let targets = browser.pinTargets()
+                    if tab.pin == nil, targets.count > 1 {
+                        Button("Pin \(targets.count) Tabs") { for each in targets { browser.pin(each) } }
+                            .shortcut("tabs.pin")
+                        if rows {
+                            Button("Pin \(targets.count) Tabs as Rows") { for each in targets { browser.pin(each, listed: true) } }
+                                .shortcut("tabs.pinRow")
+                        }
+                    } else if tab.pin == nil {
                         Button("Pin Tab") { browser.pin(tab) }
                             .shortcut("tabs.pin")
                             .disabled(!tab.isWeb || tab.shy)
@@ -855,7 +861,7 @@ struct ContentView: View {
                 .animation(Motion.quick, value: browser.applePairing)
         } else if browser.prefs.homeTheme != .off {
             HomeBackground(theme: browser.prefs.homeTheme, tuning: browser.prefs.homeTuning,
-                           image: browser.prefs.homeThemeImage, shuffle: browser.prefs.homeShuffle)
+                           image: browser.prefs.homeThemeImage)
                 .clipShape(Metrics.cardOutline(cardCorner, squareTop: rowsInCard))
         } else {
             Palette.ground
@@ -1126,9 +1132,9 @@ struct ContentView: View {
         // version's notes are a tab.
         if browser.newsShowing, let release = WhatsNew.current {
             sheet {
-                WhatsNewCard(release: release, prefs: browser.prefs, close: { browser.newsShowing = false }, notes: {
+                WhatsNewCard(release: release, close: { browser.newsShowing = false }, settings: {
                     browser.newsShowing = false
-                    browser.show(InternalPage(.notes))
+                    browser.show(InternalPage(.settings, SettingsPanel.Page.whatsNew.rawValue))
                 }, open: { url in
                     browser.newsShowing = false
                     _ = browser.open(url, foreground: true)
@@ -1830,6 +1836,8 @@ struct ContentView: View {
     /// while the page has the keyboard; in the address field or a panel,
     /// Search's keys are Search's. The keys that make and close tabs and move
     /// between them stay Search's first, as Chrome keeps them its own.
+    /// ⌘R also stays Search's first so a sheet can't edit cells in place of
+    /// reloading (#1667).
     ///
     /// ⌘K is always Search's, on every page: the way to any open page is
     /// the one key that must never be taken (Drice; #238). Slack, X, GitHub
@@ -1843,6 +1851,7 @@ struct ContentView: View {
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
             || (key == "k" && !shifted)
+            || (key == "r" && !shifted && !event.modifierFlags.contains(.option))
             || (!shifted && (event.keyCode == 123 || event.keyCode == 124) && !caretIn(event))
         guard !reserved, event.window?.firstResponder is PageView else { return false }
         if let passed = ContentView.passed, PageView.same(passed, event) {
@@ -2292,6 +2301,12 @@ struct ContentView: View {
             browser.recalling = true
         case "j" where shifted:
             browser.showDownloads()
+        case "v" where !shifted:
+            // Edit's Paste asks AppKit for an action target. The event's
+            // window already knows which field editor has the keyboard.
+            guard let editor = event.window?.firstResponder as? NSTextView,
+                  editor.isFieldEditor, editor.isEditable else { return false }
+            return editor.tryToPerform(#selector(NSText.paste(_:)), with: nil)
         case "v" where shifted && flags.contains(.option):
             // ⌥⇧⌘V, Paste and Match Style as in Safari: never Paste and Go.
             Browser.pasteMatchingStyle()
