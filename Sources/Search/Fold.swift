@@ -51,6 +51,19 @@ import WebKit
 // menu bar just above, so the strip always waits for the pointer to settle.
 
 extension Browser {
+    /// What ⌘S does now, as View and the column's own menu say it: the
+    /// column hidden, out over the page only while the pointer brings it, is
+    /// shown; one in its place is hidden.
+    var foldTitle: String {
+        Browser.foldTitle(sidebar: prefs.sidebar, folded: folded, shrinks: prefs.shrinks, icons: prefs.sideIcons)
+    }
+
+    static func foldTitle(sidebar: Bool, folded: Bool, shrinks: Bool, icons: Bool) -> String {
+        if shrinks, !folded { return icons ? "Show Sidebar Titles" : "Show Sidebar as Icons Only" }
+        if sidebar { return folded ? "Show Sidebar" : "Hide Sidebar" }
+        return folded ? "Show Tab Bar" : "Hide Tab Bar"
+    }
+
     /// ⌘S. The column, or the strip across the top, out of the way, or back.
     func toggleFold() {
         // Asked to keep the tabs in sight: the column goes to icons only and

@@ -17,6 +17,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- The sidebar's right-click menu says Show Sidebar while the sidebar is hidden and only out over the page, as the View menu does, rather than always Hide Sidebar.
 - Settings › Extensions › From Safari apps no longer offers an extension you already added from the Chrome Web Store (Grammarly, 1Password…): it says "Added from the Chrome Web Store" instead of making a second copy, and adding one from the store that's already there from a Safari app says so first.
 - A mouse's side wheel over the sidebar (the MX Master's thumb wheel) goes through spaces one notch at a time, in the way you turn it: turned steadily it brought a space only where it happened to pause, and with Logi Options+ smoothing it on, none at all. Trackpad swipes are unchanged.
 - The Passwords app's verification codes come up in more code boxes: one labelled in Catalan, Spanish, Italian, Portuguese, German, Dutch, the Nordic languages, Polish, Czech or Turkish ("codi de verificació", "codice di verifica", "Bestätigungscode"…), one whose only label is the line written above it, and a bare box for a few digits alone on a sign-in page. A Catalan university's sign-in asked for its code and nothing came up. Discount, voucher and postal-code boxes in those languages stay out. `swift test --filter FormFieldCorpusTests` (reported by email, idea 1346)

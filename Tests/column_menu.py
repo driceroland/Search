@@ -82,6 +82,16 @@ try:
     m = menu(x, bottom - 120, pick="New Folder")
     t.ok("New Folder makes one", "New Folder" in m["folders"], m["folders"])
 
+    # Hidden (⌘S), and out over the page because the pointer brought it:
+    # the item says what it does, as View's does — Show Sidebar keeps it.
+    sv.cmd({"do": "ui", "folded": True, "peek": True}); time.sleep(0.8)
+    m = menu(x, bottom - 120)
+    t.ok("hidden, brought out by the pointer: Show Sidebar, not Hide Sidebar",
+         "Show Sidebar" in m["items"] and "Hide Sidebar" not in m["items"], m["items"])
+    menu(x, bottom - 120, pick="Show Sidebar"); time.sleep(0.8)
+    m = menu(x, bottom - 120)
+    t.ok("Show Sidebar keeps it: Hide Sidebar again", "Hide Sidebar" in m["items"], m["items"])
+
     if len(sys.argv) > 1:
         sv.cmd({"do": "column", "path": f"{sys.argv[1]}/column.png", "height": bottom})
 finally:
