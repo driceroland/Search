@@ -93,7 +93,7 @@ struct Omnibox: View {
                     // Or out of sight, for whoever asked (Settings › Hide
                     // the page behind the field).
                     Rectangle()
-                        .fill(Palette.ground.opacity(browser.prefs.fieldHidesPage ? 1 : 0.74))
+                        .fill(browser.prefs.fieldHidesPage ? Palette.ground : Palette.cover)
                         .ignoresSafeArea(.all, edges: fitted ? [] : .all)
                         .onTapGesture { browser.dismiss() }
                         .transition(.opacity)

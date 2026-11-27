@@ -91,6 +91,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- The page under a peek is covered as it is under ⌘T's and ⌘L's field, with the window's own light or dark laid over it, where it had a faint grey shade that was all but gone in dark mode. The column and the tabs stay uncovered, as before. `python3 Tests/peek_cover.py`
 - Back, forward and reload with nowhere to go are dimmed to half rather than nearly gone, so the row no longer looks as if it lost a button; drawn offscreen, their symbols sit on the line through the middle of the window's three buttons, within half a point. `swift test --filter HelmAlignTests` Thanks [@doroved](https://github.com/doroved) ([#1633](https://github.com/driceroland/Search/issues/1633))
 - The loading line along the page's top shows with the tabs in sight too, down the side or across the top, not only with them folded away: it is in the line of sight and says how far along the page is, where the tab's ring is small and off to the side. For everyone, so its switch in Settings is gone. `python3 Tests/loading_line_shown.py` Thanks [@AB-boi](https://github.com/AB-boi) ([#1650](https://github.com/driceroland/Search/issues/1650))
 - With the tabs across the top hidden until the pointer reaches the top edge, the bar comes down as soon as the hidden sidebar does: it waits 0.05 s on the edge instead of 0.15 s. A pointer still moving up, on its way past the edge to the menu bar, doesn't bring it down. `swift test --filter FoldDwellTests` (idea 1253)

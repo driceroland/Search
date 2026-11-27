@@ -216,8 +216,12 @@ struct PeekLayer: View {
         ZStack {
             // The dimming only fades. Grown and shrunk with the panel, its
             // edges travelled across the window as it came (Drice, 24 Sep 2026).
+            // The field's cover, not a shade of its own: a page still there,
+            // out of the way, looks the same under either. Not hidden with
+            // Settings › Hide the page behind the field: a peek is read
+            // beside the page it came from.
             if browser.peekInFront {
-                Color.black.opacity(0.22)
+                Palette.cover
                     .contentShape(Rectangle())
                     .onTapGesture { browser.closePeek() }
                     .transition(.opacity)

@@ -22,6 +22,10 @@ enum Palette {
     /// bookmarks bar and the gaps share it, a touch off the page's white, so
     /// the card reads as one (see CardEdge).
     static let frame = Color(nsColor: NS.frame)
+    /// Over a page that is still there, just out of the way of something
+    /// raised over it: ⌘T's and ⌘L's field, a peek. One cover for both, so
+    /// they read as one kind of thing.
+    static let cover = ground.opacity(0.74)
     /// The only two that aren't grey: a connection nobody can read on the
     /// way, and one anybody can (see SiteCard.swift).
     static let safe = Color(nsColor: NS.safe)           // green-700 · green-400
