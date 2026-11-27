@@ -90,7 +90,9 @@ final class SpaceSwipe {
             MainActor.assumeIsolated { SpaceSwipe.shared.pressed(event) } ? nil : event
         }
         // ⌃1–⌃9 go on from the space on its way in (Browser.goToSpace).
-        interrupts = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { event in
+        interrupts = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .tabletProximity]) { event in
+            MainActor.assumeIsolated { PenPan.note(event) }
+            if event.type == .tabletProximity { return event }
             if event.type != .keyDown || !event.modifierFlags.contains(.control) {
                 MainActor.assumeIsolated { SpaceSwipe.shared.interrupted() }
             }
@@ -99,6 +101,7 @@ final class SpaceSwipe {
         // The pointer setting off once the rows stand still: the hand is
         // going for a tab, not on to another space (landSoon).
         pointer = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
+            MainActor.assumeIsolated { PenPan.note(event) }
             if abs(event.deltaX) + abs(event.deltaY) > 2 {
                 MainActor.assumeIsolated { SpaceSwipe.shared.reached() }
             }
@@ -426,10 +429,11 @@ final class SpaceSwipe {
         // driver smooths into points (Logi Options+) the same (WheelSteps):
         // a spin used to bring one, and then wait for the wheel to rest.
         if wheeled {
-            let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
-            let along = browser.prefs.sidebar ? (abs(dx) > abs(dy) ? -dx : 0) : dy
+            // A pen's pan carries the spaces the way it carries the page (PenPan).
+            let pen = PenPan.isPen(event)
+            let along = WheelSteps.along(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY, sidebar: browser.prefs.sidebar, pen: pen)
             guard along != 0, overTabs(event, in: browser), !overEditing(event) else { return false }
-            let step = wheel.feed(along, notched: !event.hasPreciseScrollingDeltas, at: CACurrentMediaTime())
+            let step = wheel.feed(along, notched: !event.hasPreciseScrollingDeltas, pen: pen, at: CACurrentMediaTime())
             guard step != 0 else { return true }
             let here = shown(browser)
             let target = here + step

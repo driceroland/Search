@@ -109,4 +109,91 @@ final class SpaceWheelTests: XCTestCase {
         XCTAssertFalse(wheel(try event(units: .pixel, phase: 2)), "a trackpad stroke moving")
         XCTAssertFalse(wheel(try event(units: .pixel, momentum: 2)), "a stroke's glide")
     }
+
+    // MARK: a tablet pen's pan (Wacom, side button set to Pan/Scroll, idea 1391)
+
+    /// A scroll event as a tablet's driver posts one: lines, or points with
+    /// no phase; `inverted` with macOS's natural scrolling on for it.
+    private func panEvent(dx: Int32, points: Bool, inverted: Bool) throws -> NSEvent {
+        let cg = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: points ? .pixel : .line, wheelCount: 2, wheel1: 0, wheel2: dx, wheel3: 0))
+        if points { cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1) }
+        if inverted { cg.setIntegerValueField(try XCTUnwrap(CGEventField(rawValue: 137)), value: 1) }
+        let event = try XCTUnwrap(NSEvent(cgEvent: cg))
+        XCTAssertEqual(event.isDirectionInvertedFromDevice, inverted)
+        return event
+    }
+
+    /// The step a run of the same event brings, read as SpaceSwipe reads it.
+    private func steps(_ event: NSEvent, pen: Bool, sidebar: Bool = true, count: Int = 12, every: TimeInterval = 0.016) -> [Int] {
+        let along = WheelSteps.along(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY, sidebar: sidebar, pen: pen)
+        var wheel = WheelSteps()
+        return (0..<count).map { wheel.feed(along, notched: !event.hasPreciseScrollingDeltas, pen: pen, at: 100 + Double($0) * every) }.filter { $0 != 0 }
+    }
+
+    func testPenPanMovesSpacesTheWayThePageMoves() throws {
+        // The page carried left (deltas below zero, as a page scrolls by
+        // them) brings the next space, as two fingers moved left do; carried
+        // right, the one before. Natural scrolling on or off for the pen:
+        // the deltas already say which way the page goes.
+        for inverted in [false, true] {
+            for points in [false, true] {
+                let left = try panEvent(dx: -6, points: points, inverted: inverted)
+                let right = try panEvent(dx: 6, points: points, inverted: inverted)
+                XCTAssertEqual(steps(left, pen: true), [1], "page left: next space (inverted \(inverted), points \(points))")
+                XCTAssertEqual(steps(right, pen: true), [-1], "page right: the space before (inverted \(inverted), points \(points))")
+            }
+        }
+    }
+
+    func testPenPanIsOneSpaceADrag() {
+        // A long drag of the pen: one space, not one an event.
+        var wheel = WheelSteps()
+        let drag = (0..<60).map { wheel.feed(-2, notched: true, pen: true, at: 100 + Double($0) * 0.016) }.filter { $0 != 0 }
+        XCTAssertEqual(drag, [1])
+        // Rested, then dragged again: the next one.
+        XCTAssertEqual(wheel.feed(-2, notched: true, pen: true, at: 103), 1)
+        // A smoothed pan short of `smooth` points: nothing yet.
+        var nudge = WheelSteps()
+        XCTAssertEqual(nudge.feed(-10, notched: false, pen: true, at: 100), 0)
+        XCTAssertEqual(nudge.feed(-25, notched: false, pen: true, at: 100.02), 1)
+    }
+
+    func testMouseWheelsKeepTheirWay() throws {
+        // A mouse's sideways wheel, notched or smoothed, stays as #1646 has
+        // it: the other way round to the page.
+        let notch = try panEvent(dx: -1, points: false, inverted: false)
+        XCTAssertEqual(WheelSteps.along(dx: notch.scrollingDeltaX, dy: 0, sidebar: true, pen: false), 1)
+        XCTAssertEqual(run([(1, 100)], notched: true), [-1])
+        // The bar across the top: up or down as sent, for both.
+        XCTAssertEqual(WheelSteps.along(dx: 0, dy: -1, sidebar: false, pen: false), -1)
+        XCTAssertEqual(WheelSteps.along(dx: 0, dy: -1, sidebar: false, pen: true), -1)
+        // More up or down than sideways in the column: the tabs scroll.
+        XCTAssertEqual(WheelSteps.along(dx: 2, dy: 5, sidebar: true, pen: true), 0)
+        XCTAssertEqual(WheelSteps.along(dx: 2, dy: 5, sidebar: true, pen: false), 0)
+    }
+
+    @MainActor
+    func testPenKnownFromTheTabletAndItsDriver() throws {
+        XCTAssertTrue(PenPan.isTabletDriver("WacomTabletDriver"))
+        XCTAssertTrue(PenPan.isTabletDriver("TabletDriver"))
+        XCTAssertFalse(PenPan.isTabletDriver("logioptionsplus_agent"))
+        XCTAssertFalse(PenPan.isTabletDriver(""))
+        XCTAssertFalse(PenPan.fromTabletDriver(pid: getpid()))
+        XCTAssertFalse(PenPan.fromTabletDriver(pid: 0))
+        XCTAssertTrue(PenPan.isTablet(subtype: .tabletPoint))
+        XCTAssertFalse(PenPan.isTablet(subtype: .mouseEvent))
+        let saved = PenPan.near
+        defer { PenPan.near = saved }
+        // The pen near: the scroll events are its pan; a plain wheel's not.
+        let event = try panEvent(dx: -1, points: false, inverted: true)
+        PenPan.near = true
+        XCTAssertTrue(PenPan.isPen(event))
+        PenPan.near = false
+        XCTAssertFalse(PenPan.isPen(event))
+        // The mouse moved by a mouse: the pen is not what's scrolling.
+        PenPan.near = true
+        let moved = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+        PenPan.note(moved)
+        XCTAssertFalse(PenPan.near)
+    }
 }

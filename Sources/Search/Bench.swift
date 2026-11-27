@@ -2115,10 +2115,17 @@ final class Bench {
             let count = max(1, request["count"] as? Int ?? 1)
             let every = request["every"] as? Double ?? 0.1
             let points = request["points"] as? Double
+            // PEN: a tablet pen's pan instead (PenPan), the pen near the
+            // tablet for the run; INVERTED: macOS's natural scrolling on for
+            // it, as the event says (isDirectionInvertedFromDevice).
+            let pen = request["pen"] as? Bool ?? false
+            let inverted = request["inverted"] as? Bool ?? false
+            if pen { PenPan.near = true }
             func notch() -> NSEvent? {
                 guard let points else {
-                    return CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0)
-                        .flatMap { NSEvent(cgEvent: $0) }
+                    guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0) else { return nil }
+                    if inverted { cg.setIntegerValueField(CGEventField(rawValue: 137)!, value: 1) }
+                    return NSEvent(cgEvent: cg)
                 }
                 let x = Double(dx.signum()) * points, y = Double(dy.signum()) * points
                 guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0) else { return nil }
@@ -2127,6 +2134,7 @@ final class Bench {
                 cg.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: Int64(x))
                 cg.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: y)
                 cg.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: x)
+                if inverted { cg.setIntegerValueField(CGEventField(rawValue: 137)!, value: 1) }
                 return NSEvent(cgEvent: cg)
             }
             guard let first = notch() else { answer(["error": "no wheel event"]); return }
@@ -2137,6 +2145,7 @@ final class Bench {
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(count - 1) * every + 0.8) {
+                if pen { PenPan.near = false }
                 answer(["taken": count == 1 ? (taken == 1) as Any : taken as Any, "precise": first.hasPreciseScrollingDeltas,
                         "space": browser.space.name, "index": browser.spaces.firstIndex { $0.id == browser.spaceID } ?? -1,
                         "making": browser.makingSpace])

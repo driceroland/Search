@@ -18,6 +18,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- A tablet pen's pan (a Wacom pen with a button set to Pan/Scroll) over the column goes through the spaces the way it carries the page, as two fingers on a trackpad do, natural scrolling on or off, and one space a drag. Since 1.0.22 it went the other way round, read as a mouse's sideways wheel (#1646), and a drag could run across several. A mouse's wheels go as before. `swift test --filter SpaceWheelTests`, `python3 Tests/space_wheel_run.py` (idea 1391)
 - The sidebar's right-click menu says Show Sidebar while the sidebar is hidden and only out over the page, as the View menu does, rather than always Hide Sidebar.
 - Settings › Extensions › From Safari apps no longer offers an extension you already added from the Chrome Web Store (Grammarly, 1Password…): it says "Added from the Chrome Web Store" instead of making a second copy, and adding one from the store that's already there from a Safari app says so first.
 - A mouse's side wheel over the sidebar (the MX Master's thumb wheel) goes through spaces one notch at a time, in the way you turn it: turned steadily it brought a space only where it happened to pause, and with Logi Options+ smoothing it on, none at all. Trackpad swipes are unchanged.

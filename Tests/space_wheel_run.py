@@ -63,6 +63,17 @@ try:
     t.ok("a smoothed notch (six 6-point steps, no phase): one space on", where() == 3, (where(), r))
     r = notches(dx=-1, count=18, every=0.008, points=6)
     t.ok("three smoothed notches back: three spaces back", where() == 0, (where(), r))
+    # A tablet pen's pan (Wacom, Pan/Scroll, idea 1391): the page carried left
+    # (dx below zero) brings the next space, the way the page moves, natural
+    # scrolling on or off; a whole drag is one space.
+    r = notches(dx=-1, count=20, every=0.016, pen=True)
+    t.ok("a pen's pan carrying the page left: one space on", where() == 1, (where(), r))
+    r = notches(dx=-1, count=20, every=0.016, pen=True, inverted=True)
+    t.ok("the same, natural scrolling on: one more", where() == 2, (where(), r))
+    r = notches(dx=1, count=20, every=0.016, points=4, pen=True, inverted=True)
+    t.ok("a pen's pan in points carrying the page right: one space back", where() == 1, (where(), r))
+    r = notches(dx=1, count=1)
+    t.ok("a mouse's notch after it still goes as before", where() == 2, (where(), r))
 finally:
     t.done()
     sv.finish()
