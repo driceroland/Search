@@ -843,22 +843,53 @@ enum SettingsIndex {
     // MARK: - finding
 
     /// The rows whose words match what was typed, in the order of the
-    /// sections. Every word typed has to be found somewhere in the row.
+    /// sections. Every word typed has to be found somewhere in the row; a
+    /// single letter, at the start of one of its words (a lone "d" was in
+    /// 175 of the rows, every one of them drawn at the first key).
     static func find(_ typed: String) -> [SettingsItem] {
         let words = typed.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return [] }
-        let order = SettingsPanel.Page.allCases
-        return items
-            .filter { item in
-                let group = SettingsIndex.group(item.group)
-                let hay = ([item.title, item.detail, item.more ?? "", group?.title ?? "", item.page.title]
-                    + item.words + item.keys).joined(separator: " ").lowercased()
-                return words.allSatisfy { hay.contains($0) }
+        let bytes = words.map { Array($0.utf8) }
+        return sought
+            .filter { row in
+                zip(words, bytes).allSatisfy { word, bytes in
+                    word.count == 1 ? row.starts.contains(word.first!) : Self.holds(row.hay, bytes)
+                }
             }
-            .sorted { (order.firstIndex(of: $0.page) ?? 0, groupOrder($0.group)) < (order.firstIndex(of: $1.page) ?? 0, groupOrder($1.group)) }
+            .map(\.item)
     }
 
-    private static func groupOrder(_ id: String) -> Int { groups.firstIndex { $0.id == id } ?? 0 }
+    /// Whether the row's words hold the typed ones, byte for byte: both are
+    /// lowercased the same way, and String's own search, Unicode-aware,
+    /// cost a millisecond a key over the index.
+    private static func holds(_ hay: [UInt8], _ word: [UInt8]) -> Bool {
+        hay.withUnsafeBytes { hay in
+            word.withUnsafeBytes { word in
+                memmem(hay.baseAddress, hay.count, word.baseAddress, word.count) != nil
+            }
+        }
+    }
+
+    /// Each row's words, lowercased, and the letters its words start with,
+    /// worked out once and in the order of the sections, rather than again
+    /// for every row at every key typed (idea 1333).
+    private static let sought: [(item: SettingsItem, hay: [UInt8], starts: Set<Character>)] = {
+        let order = SettingsPanel.Page.allCases
+        let groupIndex = Dictionary(groups.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let pageOf = Dictionary(groups.map { ($0.id, $0.page) }, uniquingKeysWith: { first, _ in first })
+        return items
+            .map { item -> (item: SettingsItem, hay: String, starts: Set<Character>, rank: (Int, Int)) in
+                let page = pageOf[item.group] ?? .general
+                let hay = ([item.title, item.detail, item.more ?? "", group(item.group)?.title ?? "", page.title]
+                    + item.words + item.keys).joined(separator: " ").lowercased()
+                let starts = Set(hay.split { !$0.isLetter && !$0.isNumber }.compactMap(\.first))
+                return (item, hay, starts, (order.firstIndex(of: page) ?? 0, groupIndex[item.group] ?? 0))
+            }
+            // Stable: rows of one group keep the order they are written in.
+            .enumerated()
+            .sorted { ($0.element.rank.0, $0.element.rank.1, $0.offset) < ($1.element.rank.0, $1.element.rank.1, $1.offset) }
+            .map { ($0.element.item, Array($0.element.hay.utf8), $0.element.starts) }
+    }()
 
     /// Whether a dependent row means anything as things are set now. Its
     /// section hides it otherwise; the find field shows it dimmed.
