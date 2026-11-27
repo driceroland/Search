@@ -16,6 +16,12 @@ private func expect(_ typed: String, _ wanted: String?) {
 // certificate: plain http.
 expect("localhost:3000", "http://localhost:3000")
 expect("printer.local", "http://printer.local")
+expect("Umbrel.local", "http://Umbrel.local")
+expect("umbrel.lan", "http://umbrel.lan")
+expect("nas.home:5000", "http://nas.home:5000")
+expect("router.home.arpa", "http://router.home.arpa")
+expect("pi.localdomain", "http://pi.localdomain")
+expect("wiki.internal/x", "http://wiki.internal/x")
 expect("127.0.0.1:8080", "http://127.0.0.1:8080")
 expect("0.0.0.0:8080", "http://0.0.0.0:8080")
 expect("10.0.0.1", "http://10.0.0.1")
@@ -26,6 +32,8 @@ expect("172.31.255.254", "http://172.31.255.254")
 
 // A website, whatever its name looks like: https.
 expect("example.com", "https://example.com")
+expect("lan.example.com", "https://lan.example.com")
+expect("homework.com", "https://homework.com")
 expect("172.15.0.1", "https://172.15.0.1")
 expect("172.32.0.1", "https://172.32.0.1")
 // 10.io, 10.ai and 10.org are registered domains, and a name whose first

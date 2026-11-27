@@ -118,7 +118,7 @@ enum ClickIDs {
 /// the clear. WebKit's own policy, from macOS 15.2; before that, as it was.
 /// Subframes are WebKit's to decide.
 ///
-/// Local addresses (localhost, .localhost, .test, .local, IP addresses, a
+/// Local addresses (localhost, .localhost, .test, .local, .lan, .home, IP addresses, a
 /// one-word host) are left as asked: a dev server rarely has HTTPS, and
 /// shouldn't wait on a failed attempt first.
 enum HTTPSFirst {
@@ -147,7 +147,7 @@ enum HTTPSFirst {
 
     static func local(_ url: URL) -> Bool {
         guard let host = url.host()?.lowercased() else { return true }
-        if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".test") || host.hasSuffix(".local") {
+        if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".test") || Address.lanName(host) {
             return true
         }
         // An IP address, v4 or v6: no certificate would name it.

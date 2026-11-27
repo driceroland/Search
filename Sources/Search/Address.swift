@@ -68,11 +68,19 @@ enum Address {
         // on the network by its name, printer.local or homeassistant.local.
         let local = host == "localhost"
             || host.hasSuffix(".localhost")
-            || host.hasSuffix(".local")
+            || lanName(host)
             || host == "127.0.0.1"
             || host == "0.0.0.0"
             || privateRange(host)
         return URL(string: (local ? "http://" : "https://") + text)
+    }
+
+    /// A name that only means something on a home or office network: Bonjour
+    /// (.local) and what routers hand out (.lan, .home, .home.arpa,
+    /// .localdomain, .internal). No certificate authority names these, so
+    /// https there is a failure, not a page.
+    static func lanName(_ host: String) -> Bool {
+        ["local", "lan", "home", "home.arpa", "localdomain", "internal"].contains { host == $0 || host.hasSuffix("." + $0) }
     }
 
     /// The private ranges, where Docker and many offices put their machines.
