@@ -3247,6 +3247,30 @@ final class PageView: WKWebView {
     /// `load` now, or in its turn while the page is out of sight (LoadTurns).
     func inTurn(_ load: @escaping LoadTurns.Load) { LoadTurns.shared.start(self, load) }
 
+    /// WebKit draws the page in a view of its own, sized with this one, and
+    /// AppKit rounds a view it sizes to the screen's pixels as it is seen at
+    /// that moment. A peek is sized as it grows in, seen at 98%, so that view
+    /// stayed a fraction of a pixel off once the peek was full size, and the
+    /// page's text was soft until the window next changed size. Sized while
+    /// seen scaled, a view meant to fill this one, off by no more than that
+    /// rounding, is given this one's bounds, as at full size. Seen at its
+    /// own size, AppKit's rounding is kept: it puts a side of a split half a
+    /// point wide on whole pixels.
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        for view in subviews where view.autoresizingMask.contains([.width, .height]) && view.frame != bounds {
+            let off = [view.frame.minX - bounds.minX, view.frame.minY - bounds.minY,
+                       view.frame.maxX - bounds.maxX, view.frame.maxY - bounds.maxY]
+            if off.allSatisfy({ abs($0) < 1.5 }), seenScaled { view.frame = bounds }
+        }
+    }
+
+    /// Seen at another size than its own, as in a peek growing into place.
+    private var seenScaled: Bool {
+        let seen = convert(bounds, to: nil).size
+        return abs(seen.width - bounds.width) > 0.01 || abs(seen.height - bounds.height) > 0.01
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         gateTrackingAreas()
