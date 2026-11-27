@@ -34,6 +34,10 @@ struct SettingsPanel: View {
     /// Whether Search opens email links, and which app does now.
     @State private var mailDefault = Mail.isDefault
     @State private var mailHandler = Mail.handlerName
+    /// Whether macOS lets Search use its passkeys, kept here so the row that
+    /// asks goes away once it has been answered: macOS says nothing when it
+    /// changes.
+    @State private var passkeyAccess = Passkeys.access
     /// A site shortcut being written, kept out of Preferences until it's saved.
     @State private var draft: Keyword?
     @State private var page: Page = Page.named(Store.settings.string(forKey: "settings.page") ?? "") ?? .general
@@ -1209,6 +1213,22 @@ struct SettingsPanel: View {
                 .under()
             }
         case "passkeys":
+            // Until macOS has been asked, the field offers none and never
+            // asks (Passkeys.wait), so the question is put from here.
+            if !searched, prefs.passkeysPossible, prefs.passkeys, passkeyAccess == .notDetermined {
+                Rule()
+                SettingRow(icon: "lock.open", title: "Let Search use this Mac's passkeys",
+                           detail: "macOS asks once. Until then, sign-in fields offer no passkeys") {
+                    Pill("Allow…") {
+                        Passkeys.ask {
+                            passkeyAccess = Passkeys.access
+                            if passkeyAccess == .denied {
+                                browser.announce("macOS was told no: System Settings › Privacy & Security › Passkeys")
+                            }
+                        }
+                    }
+                }
+            }
             if !searched, !Vault.never.isEmpty {
                 Rule()
                 SettingRow(icon: "hand.raised.slash", title: "Sites never asked",
