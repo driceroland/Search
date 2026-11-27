@@ -11,6 +11,10 @@ in [ROADMAP.md](ROADMAP.md).
 
 ## Unreleased
 
+### Added
+
+- Peek into folded folders: rest the pointer on a folded pin folder's heading for half a second and a small list beside the column shows the pages in it, the one opened last at the top; a click opens one and the folder stays folded, the page under its heading as the page in front always is. Only the folder's own pages, not those of the folders inside it, and never a live folder. A page not opened since it came into the window comes after the others, in the folder's order. The list takes no keys from the page and goes as the pointer leaves it, at a key or a click elsewhere, and as a hidden column folds away. Off unless turned on, in Settings › Spaces & Pins › Advanced › Peek into folded folders. `swift test --filter PinFoldersTests`, `swift test --filter PinFolderColumnTests`, `python3 Tests/pin_folders.py` (pin folders only, part of idea 387; [#1585](https://github.com/driceroland/Search/issues/1585)) Thanks [@tourneur-maxime](https://github.com/tourneur-maxime) ([#1668](https://github.com/driceroland/Search/pull/1668))
+
 ### Changed
 
 - Smooth scrolling with a mouse wheel is off unless you turn it on: it cost about four times the CPU per notch.

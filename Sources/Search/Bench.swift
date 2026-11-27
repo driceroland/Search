@@ -5930,6 +5930,21 @@ final class Bench {
             case "fold", "open":
                 guard let folder = named("name") else { answer(["error": "no folder “\(request["name"] as? String ?? "")”"]); return }
                 browser.setPinFolderFolded(folder.id, request["action"] as? String == "fold")
+            case "peek":
+                // A folded folder's peek (FolderPeek.swift): why it would not
+                // open now and the pages it lists; "setting" turns its switch
+                // first, and "open" clicks the row at that place.
+                if let on = request["setting"] as? Bool { browser.prefs.pinFolderPeek = on }
+                guard let folder = named("name") else { answer(["error": "no folder “\(request["name"] as? String ?? "")”"]); return }
+                let pages = browser.folderPeek(folder.id)
+                var out: [String: Any] = ["peekOn": browser.prefs.pinFolderPeek, "peek": pages.map(Bench.short),
+                                          "refusal": FolderPeek.refusal(folder.id, in: browser) ?? ""]
+                if let at = request["open"] as? Int {
+                    guard pages.indices.contains(at) else { answer(["error": "nothing at \(at) in that folder's peek"]); return }
+                    FolderPeek.open(pages[at], in: browser)
+                    out["front"] = browser.active.map(Bench.short) ?? NSNull()
+                }
+                answer(state(out)); return
             case "rename":
                 guard let folder = named("name"), let to = request["to"] as? String else { answer(["error": "rename needs NAME TO"]); return }
                 browser.renamePinFolder(folder.id, to: to)
