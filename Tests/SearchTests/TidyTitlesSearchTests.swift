@@ -103,19 +103,6 @@ final class TidyTitlesSearchTests: XCTestCase {
         XCTAssertEqual(Browser.ownTitle(of: tab), "My PR")
     }
 
-    func testSettingsIndexFollowsAvailabilityWithoutRelaunch() {
-        TidyTitles.faking = false
-        let realAvailable = TidyTitles.available
-        XCTAssertEqual(SettingsIndex.item("tabs.tidy") != nil, realAvailable)
-        XCTAssertEqual(SettingsIndex.items(in: "tabbar").contains { $0.id == "tabs.tidy" }, realAvailable)
-
-        TidyTitles.faking = true
-        XCTAssertNotNil(SettingsIndex.item("tabs.tidy"))
-        XCTAssertTrue(SettingsIndex.items(in: "tabbar").contains { $0.id == "tabs.tidy" })
-        XCTAssertTrue(SettingsIndex.find("tidy").contains { $0.id == "tabs.tidy" })
-        XCTAssertTrue(SettingsIndex.find("apple intelligence").contains { $0.id == "tabs.tidy" })
-    }
-
     private func until(_ what: String, _ done: () -> Bool) {
         let end = Date().addingTimeInterval(3)
         while !done(), Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }

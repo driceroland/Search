@@ -108,11 +108,11 @@ enum SettingsIndex {
 
     static func group(_ id: String) -> SettingsGroup? { groups.first { $0.id == id } }
     static func groups(of page: SettingsPanel.Page) -> [SettingsGroup] { groups.filter { $0.page == page } }
-    static func items(in group: String) -> [SettingsItem] { catalog.filter { $0.group == group && !$0.findOnly && offered($0) } }
+    static func items(in group: String) -> [SettingsItem] { items.filter { $0.group == group && !$0.findOnly } }
 
     // MARK: - rows
 
-    private static let catalog: [SettingsItem] = [
+    static let items: [SettingsItem] = ([
         // General
         .init(id: "general.default", group: "browser", icon: "link.badge.plus",
               title: "Open links from other apps", detail: "Make Search the browser Mail, Slack and the rest send links to",
@@ -829,9 +829,7 @@ enum SettingsIndex {
         .init(id: "note.flick", group: "video", icon: "hand.raised.fingers.spread",
               title: "Flick the floating video to a corner", detail: "Always there: two fingers send it to the corner they point at",
               keys: ["float.flicks"], words: ["flick", "corner"], kind: .note, findOnly: true),
-    ]
-
-    static var items: [SettingsItem] { catalog.filter(offered) }
+    ] as [SettingsItem]).filter(offered)
 
     /// Rows for a feature this Mac's WebKit doesn't have aren't listed at
     /// all, on the page or in the find field (see Privacy.swift).
@@ -845,7 +843,7 @@ enum SettingsIndex {
         }
     }
 
-    static func item(_ id: String) -> SettingsItem? { catalog.first { $0.id == id && offered($0) } }
+    static func item(_ id: String) -> SettingsItem? { items.first { $0.id == id } }
 
     // MARK: - finding
 
