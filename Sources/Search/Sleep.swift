@@ -285,6 +285,71 @@ extension Browser {
     }
 }
 
+// A sleeping tab's picture lives in a file, not in memory.
+//
+// A tab asleep keeps a picture of its page at the screen's pixels, to cover
+// the stage while the page is rebuilt and for the tab switcher: a JPEG of
+// 350 KB for a plain article and 2 MB for a page of photos. Held in memory,
+// 30 sleeping tabs added 36 MB to the app; the hundreds a week of use leaves
+// asleep added up to a good part of its footprint. A file in the temporary
+// folder costs the app none of it, and is read back only for the moment the
+// tab wakes or the switcher draws it. A private tab's stays in memory, so
+// nothing of one is written down; so does one whose file couldn't be written.
+// The file goes with the picture, and any left by a run that didn't end well
+// are cleared at the next launch.
+final class KeptPicture: @unchecked Sendable {
+    private let data: Data?
+    private let file: URL?
+
+    init(_ jpeg: Data, inMemory: Bool) {
+        if !inMemory, let written = KeptPicture.write(jpeg) {
+            file = written
+            data = nil
+        } else {
+            file = nil
+            data = jpeg
+        }
+    }
+
+    /// The picture, read from its file when it is in one.
+    var bytes: Data? { data ?? file.flatMap { try? Data(contentsOf: $0) } }
+
+    /// Whether it is in a file rather than in memory.
+    var isOnDisk: Bool { file != nil }
+
+    /// Where it is, for tests.
+    var path: String? { file?.path }
+
+    deinit {
+        if let file { try? FileManager.default.removeItem(at: file) }
+    }
+
+    /// One folder for the run, emptied the first time it is asked for: a
+    /// world of its own (a test run's) has a folder of its own.
+    private static let folder: URL? = {
+        let name = "com.officecommun.search.sleeping" + (Store.world.map { "." + $0 } ?? "")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.removeItem(at: folder)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            return folder
+        } catch {
+            return nil
+        }
+    }()
+
+    private static func write(_ jpeg: Data) -> URL? {
+        guard let folder else { return nil }
+        let file = folder.appendingPathComponent(UUID().uuidString + ".jpg")
+        do {
+            try jpeg.write(to: file)
+            return file
+        } catch {
+            return nil
+        }
+    }
+}
+
 // A tab keeps its sessionStorage through sleep.
 //
 // A sleeping tab's history and scroll come back with its view

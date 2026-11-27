@@ -960,10 +960,12 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
         guard let built else { return memory }
         return built.isLoading ? nil : built.interactionState
     }
-    /// The last picture of that page, compressed, for the moment it wakes.
-    private var picture: Data?
+    /// The last picture of that page, compressed, for the moment it wakes:
+    /// kept in a file, so the hundreds a long run leaves cost the app none of
+    /// its memory (see KeptPicture).
+    private var picture: KeptPicture?
     /// For the bench.
-    var keptPicture: Data? { picture }
+    var keptPicture: Data? { picture?.bytes }
     /// That picture, over the stage while the page is rebuilt underneath it:
     /// coming back to a tab that slept starts from what you left, not white.
     @Published private(set) var cover: NSImage?
@@ -1843,7 +1845,8 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
     func sleep(picture: Data?) {
         guard let url = address, let built else { return }
         memory = built.interactionState
-        self.picture = picture
+        // A private tab's stays in memory: nothing of one is written down.
+        self.picture = picture.map { KeptPicture($0, inMemory: shy) }
         pending = url
         stale = false
         pull = nil
@@ -1906,7 +1909,7 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
     func preview(width: CGFloat, _ done: @escaping (NSImage?) -> Void) {
         if let picture {
             DispatchQueue.global(qos: .userInitiated).async {
-                let source = CGImageSourceCreateWithData(picture as CFData, nil)
+                let source = picture.bytes.flatMap { CGImageSourceCreateWithData($0 as CFData, nil) }
                 let options = [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceThumbnailMaxPixelSize: Int(width * 2)
@@ -2172,7 +2175,7 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
         immersed = false
         let state = memory
         memory = nil
-        if let picture, let image = NSImage(data: picture) {
+        if let data = picture?.bytes, let image = NSImage(data: data) {
             cover = image
             // Whatever happens to the page, the picture doesn't outstay it.
             uncover(after: 4)
