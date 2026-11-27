@@ -117,6 +117,49 @@ enum SafariApps {
         return extensions(in: app).contains { $0.folder.path == real.path }
     }
 
+    /// The extension `name` already added some other way: the same one from
+    /// the Chrome Web Store (Grammarly, 1Password, Dark Reader…), or from
+    /// another app. Added again, it ran twice, every page done over by both.
+    /// Told by the name it goes by, the part before a colon or a dash, with
+    /// "for Safari" and the like left off: the stores' own names for one
+    /// extension differ past that ("Grammarly for Safari", "Grammarly: AI
+    /// Writing Assistant and Grammar Checker App").
+    static func twin(of name: String, id: String? = nil, among installed: [Installed]) -> Installed? {
+        installed.first { $0.id != id && same($0.name, name) }
+    }
+
+    /// The same extension added already another way, said before adding it
+    /// again: both would run on every page (twin).
+    static func twinLine(_ twin: Installed) -> String {
+        let how = twin.fromApp.map { "from the Safari extension in “\($0)”" }
+            ?? (twin.fromStore ? "from the Chrome Web Store" : "already")
+        return "“\(twin.name)” is added \(how): with this one too, both would run."
+    }
+
+    /// Whether two extensions' names are one extension's: one's words the
+    /// start of the other's, after `brand`, and not a short common word.
+    static func same(_ a: String, _ b: String) -> Bool {
+        let x = brand(a), y = brand(b)
+        guard !x.isEmpty, !y.isEmpty else { return false }
+        let (short, long) = x.count <= y.count ? (x, y) : (y, x)
+        guard Array(long.prefix(short.count)) == short else { return false }
+        return short == long || short.joined().count >= 4
+    }
+
+    /// The words of the name an extension goes by, folded: up to its first
+    /// colon, dash, bar or bracket, without a trailing "for Safari",
+    /// "extension" or the like.
+    static func brand(_ name: String) -> [String] {
+        var text = name.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        for cut in [":", " - ", " – ", " — ", "|", "(", "®", "™"] {
+            if let at = text.range(of: cut) { text = String(text[..<at.lowerBound]) }
+        }
+        var words = text.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        let filler: Set<String> = ["for", "safari", "chrome", "extension", "web", "browser", "app", "on"]
+        while words.count > 1, let last = words.last, filler.contains(last) { words.removeLast() }
+        return words
+    }
+
     /// Adds `item` through the unpacked-extension path, once `still` says it
     /// is what was listed.
     @available(macOS 15.4, *)

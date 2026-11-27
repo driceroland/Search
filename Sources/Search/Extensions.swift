@@ -1179,7 +1179,8 @@ final class Extensions: NSObject, ObservableObject {
         let found = try await WKWebExtension(resourceBaseURL: staged)
         let name = found.displayName ?? id
         let wants = Extensions.describe(found, in: staged)
-        let accepted = confirm ? await ask(install: name, wants: wants, icon: found.icon(for: CGSize(width: 64, height: 64)), fromApp: fromApp) : true
+        let accepted = confirm ? await ask(install: name, wants: wants, icon: found.icon(for: CGSize(width: 64, height: 64)), fromApp: fromApp,
+                                           twin: SafariApps.twin(of: name, id: id, among: installed)) : true
         guard accepted, !installed.contains(where: { $0.id == id }) else { return }
         let permissions = Extensions.grants(found, in: staged)
         try ExtensionFiles.replace(staged, at: finalFolder)
@@ -1832,10 +1833,12 @@ final class Extensions: NSObject, ObservableObject {
         return out
     }
 
-    func ask(install name: String, wants: [String], icon: NSImage?, updating: Bool = false, fromApp: String? = nil) async -> Bool {
+    func ask(install name: String, wants: [String], icon: NSImage?, updating: Bool = false, fromApp: String? = nil,
+             twin: Installed? = nil) async -> Bool {
         await ask(
             "Add “\(name)” to Search?",
             detail: (fromApp.map { "From the Safari extension in “\($0)”.\n\n" } ?? "")
+                + (twin.map { SafariApps.twinLine($0) + "\n\n" } ?? "")
                 + (wants.isEmpty ? "It doesn't ask for anything special." : "It will be able to:\n• " + wants.joined(separator: "\n• ")),
             icon: icon, yes: "Add Extension", no: "Cancel", updating: updating
         )
