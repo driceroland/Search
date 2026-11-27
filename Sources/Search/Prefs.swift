@@ -1309,6 +1309,14 @@ final class Preferences: ObservableObject {
         aiModels[provider.rawValue] = name
     }
 
+    /// A thin line along the page's top while it loads, with the tabs in
+    /// sight or folded away (idea 269, #1650). Off unless turned on (Drice,
+    /// 27 Nov 2026): always on in 1.0.22 it appeared by itself and could not
+    /// be turned off. Read with `bool`, so only a stored true, the switch
+    /// turned on by hand, counts; nothing else can turn it on.
+    @Published var showsLoadingLine: Bool {
+        didSet { store.set(showsLoadingLine, forKey: "fold.loadingLine") }
+    }
     /// Two pages share one place in the tab row.
     /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
     /// adds a command, so there is no switch. Still a property, for the
@@ -1486,6 +1494,7 @@ final class Preferences: ObservableObject {
         hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen
+        showsLoadingLine = store.bool(forKey: "fold.loadingLine")
         lazyTabs = store.bool(forKey: "tabs.lazy")
         // Always on, with no switch since 27 Nov 2026 (see Retired).
         newTabAfterLast = Retired.on("tabs.newAfterLast", store)

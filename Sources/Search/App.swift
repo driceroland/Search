@@ -695,10 +695,10 @@ struct ContentView: View {
                 // Arc's (idea 269), clear of the card's round corners: with
                 // the tabs folded away, where nothing else said it, and with
                 // them in sight too, where it is in the line of sight and
-                // says how far along the page is (#1650, idea 1281). For
-                // everyone, no switch.
+                // says how far along the page is (#1650, idea 1281). Only
+                // with its switch on (Settings › Appearance), off by default.
                 .overlay(alignment: .top) {
-                    if fullscreenTab == nil, let tab = browser.active {
+                    if browser.prefs.showsLoadingLine, fullscreenTab == nil, let tab = browser.active {
                         TabLoadingLine(tab: tab)
                             .padding(.horizontal, cardCorner)
                     }

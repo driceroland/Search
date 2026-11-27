@@ -233,10 +233,11 @@ enum WhatsNew {
     /// Newest first. A release fills in its counts, settings and lines.
     static let releases: [Release] = [
         Release(version: "1.0.23",
-                settings: ["sidebar.roomy"],
+                settings: ["sidebar.roomy", "fold.loadingLine"],
                 lines: [
                     "Settings are half as long: most switches are built in now, and the rare ones wait under Advanced at the foot of each page.",
                     "Find a setting still finds every one, and opens Advanced to show it.",
+                    "The loading line along the page's top is off again, with its switch back in Settings › Appearance: it showed by itself in 1.0.22 and could not be turned off.",
                     "Taken out: the reading fill in a tab, tabs giving when pressed, Markdown copies in reading mode, hiding the page behind the ⌘T field, a click on a tab editing its address only, and the page bounce.",
                     "Home background keeps Off, Solid colour, Gradient and Image; set to a wall painting or stickers, it is Off now.",
                 ]),

@@ -55,6 +55,19 @@ final class SettingsIndexTests: XCTestCase {
         }
     }
 
+    /// The loading line (27 Nov 2026): off, however 1.0.21 or 1.0.22 left
+    /// things; only a switch turned on by hand counts.
+    func testLoadingLineOffUnlessTurnedOn() {
+        fresh {
+            XCTAssertFalse(Preferences().showsLoadingLine)
+            XCTAssertNil(Store.settings.object(forKey: "fold.loadingLine"), "nothing written for the default")
+            Store.settings.set(false, forKey: "fold.loadingLine")
+            XCTAssertFalse(Preferences().showsLoadingLine)
+            Store.settings.set(true, forKey: "fold.loadingLine")
+            XCTAssertTrue(Preferences().showsLoadingLine, "turned on by hand, it stays on")
+        }
+    }
+
     func testExplicitChoicesStand() {
         fresh {
             Store.settings.set(false, forKey: "pages.120")
@@ -247,6 +260,13 @@ final class SettingsIndexTests: XCTestCase {
         XCTAssertTrue(SettingsIndex.find("backspace").contains { $0.id == "keys.backspaceBack" })
         XCTAssertTrue(SettingsIndex.find("smooth scrolling").contains { $0.id == "wheel.smooth" && $0.advanced && $0.within == "mouse.habits" })
         XCTAssertTrue(SettingsIndex.find("site tiles").contains { $0.id == "home.tiles" })
+        // The loading line: a visible switch on Appearance, found by its words.
+        for word in ["loading", "progress", "line", "loading line"] {
+            XCTAssertTrue(SettingsIndex.find(word).contains { $0.id == "fold.loadingLine" }, word)
+        }
+        let line = SettingsIndex.items.first { $0.id == "fold.loadingLine" }
+        XCTAssertEqual(line?.page, .appearance)
+        XCTAssertEqual(line?.advanced, false, "not buried in Advanced")
         XCTAssertTrue(SettingsIndex.find("advanced").isEmpty == false)
         XCTAssertTrue(SettingsIndex.find("").isEmpty)
         XCTAssertTrue(SettingsIndex.find("zzzz nothing").isEmpty)

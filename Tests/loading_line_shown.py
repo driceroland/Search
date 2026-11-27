@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """The loading line along the page's top, with the tabs in sight too
-(#1650, idea 1281), in a hidden probe.
+(#1650, idea 1281), in a hidden probe. Off by default (27 Nov 2026): first
+a page loads with the switch untouched and no line shows; then the switch
+is turned on (Settings › Appearance, key fold.loadingLine).
 
 Build first (`./build.sh`), then `python3 Tests/loading_line_shown.py` from a
 worktree. A page that takes a few seconds to arrive is opened with the tabs
@@ -43,9 +45,16 @@ def lines():
 def main():
     t = sv.T()
     try:
+        sv.setup(sidebar=True); sv.launch()
+        page = sv.page("a")
+        sv.cmd({"do": "go", "id": page, "url": f"{SLOW}/x"})
+        time.sleep(1.2)
+        st = lines()
+        t.ok("switch off (the default): no line while the page loads", not any(x["shown"] for x in st["lines"]), st)
+        sv.quit()
         for sidebar, folded in ((True, False), (False, False), (True, True)):
             where = "folded" if folded else ("column" if sidebar else "top row")
-            sv.setup(sidebar=sidebar); sv.launch()
+            sv.setup(sidebar=sidebar, **{"fold.loadingLine": True}); sv.launch()
             if folded:
                 sv.cmd({"do": "ui", "folded": True}); time.sleep(0.6)
             page = sv.page("a")

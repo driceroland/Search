@@ -21,7 +21,7 @@ final class DefaultsOnTests: XCTestCase {
     /// Still off unless turned on.
     /// "wheel.smooth" was on from 25 Nov 2026 until 27 Nov: off again, it
     /// cost about four times the CPU per notch.
-    static let offKeys = ["search.suggest", "pages.bounce", "passwords.fill.prove", "tabs.lazy", "links.little.tabs", "wheel.smooth"]
+    static let offKeys = ["fold.loadingLine", "search.suggest", "pages.bounce", "passwords.fill.prove", "tabs.lazy", "links.little.tabs", "wheel.smooth"]
 
     private func read(_ prefs: Preferences) -> [String: Bool] {
         ["privacy.httpsFirst": prefs.triesHTTPSFirst && HTTPSFirst.on,
@@ -63,6 +63,7 @@ final class DefaultsOnTests: XCTestCase {
         XCTAssertFalse(fresh.bounces)
         XCTAssertFalse(fresh.asksBeforeFilling)
         XCTAssertFalse(fresh.lazyTabs)
+        XCTAssertFalse(fresh.showsLoadingLine, "the loading line is off unless turned on")
         XCTAssertFalse(fresh.linksFindTabs)
         XCTAssertFalse(fresh.wheelGlides || WheelGlide.on, "smooth wheel off unless turned on")
         XCTAssertNil(store.object(forKey: "wheel.smooth"), "nothing written for the default")

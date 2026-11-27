@@ -903,6 +903,7 @@ struct SettingsPanel: View {
                      ))
         case "layout.cardsFullScreen": Switch(on: $prefs.cardsInFullScreen)
         case "address.shown": Switch(on: $prefs.addressLine)
+        case "fold.loadingLine": Switch(on: $prefs.showsLoadingLine)
         case "scrollbars.fade": Switch(on: $prefs.scrollbarsFade)
         case "address.width": Segmented(options: AddressWidth.allCases.map { ($0, $0.title) }, selection: $prefs.addressWidth)
         case "address.place": Segmented(options: AddressPlace.allCases.map { ($0, $0.title) },
