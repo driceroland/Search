@@ -304,7 +304,7 @@ struct SideBar: View {
             .animation(doorsFoot ? SideBar.footIn : SideBar.doorsOut) {
                 $0.modifier(EndInset(bottom: footHeight))
             }
-            .padding(.bottom, (browser.player == nil ? 0 : rowHeight + SideBar.playerGap)
+            .padding(.bottom, CGFloat(browser.players.count) * (rowHeight + SideBar.playerGap)
                      + (agentHere && !icons ? agentCard + SideBar.playerGap : 0)
                      + (updateHere ? rowHeight + SideBar.playerGap : 0))
 
@@ -318,7 +318,8 @@ struct SideBar: View {
                         .padding(.bottom, SideBar.playerGap)
                         .transition(.opacity)
                 }
-                if let tab = browser.player {
+                // One row for each tab playing out of sight, the newest on top.
+                ForEach(browser.players, id: \.id) { tab in
                     PlayerRow(browser: browser, prefs: prefs, tab: tab)
                         .padding(.horizontal, 10)
                         .padding(.bottom, SideBar.playerGap)
@@ -438,7 +439,7 @@ struct SideBar: View {
             $0.disablesAnimations = true
         }
         .animation(Motion.quick, value: landing)
-        .animation(Motion.quick, value: browser.player?.id)
+        .animation(Motion.quick, value: browser.players.map(\.id))
         .animation(Motion.glide, value: browser.activeID)
         .animation(Motion.glide, value: browser.editingTab)
         .animation(Motion.settle, value: browser.tabs.map(\.id))

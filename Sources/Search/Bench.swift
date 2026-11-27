@@ -954,12 +954,13 @@ final class Bench {
                 case "still": tab.still()
                 case "play": tab.playAgain()
                 case "away": tab.handPause()
-                case "go": browser.select(tab)
+                case "go": browser.goToPlayer(tab)
                 default: answer(["error": "act is still, play, away or go"]); return
                 }
             }
             let tab = browser.player
-            answer(["tab": tab.map { Bench.short($0) } ?? "", "stilled": tab?.stilled ?? false,
+            answer(["tab": tab.map { Bench.short($0) } ?? "", "tabs": browser.players.map { Bench.short($0) },
+                    "stilled": tab?.stilled ?? false,
                     "noisy": tab?.noisy ?? false, "sounding": browser.sounding.count])
 
         case "eval":
