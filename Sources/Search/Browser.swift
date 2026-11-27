@@ -4892,6 +4892,16 @@ final class Browser: NSObject, ObservableObject {
         selectableTabs.filter { selectedTabIDs.contains($0.id) }
     }
 
+    /// What Tab › Pin Tab and Pin Tab as Row (and their keys) pin: the tab
+    /// in front, or, when it is one of several picked tabs that can all be
+    /// pinned, every one of them, as their right-click menu does (#1692).
+    func pinTargets() -> [Tab] {
+        guard let tab = active else { return [] }
+        guard tab.pin == nil, isPickedAmongOthers(tab) else { return [tab] }
+        let picked = pickedTabs
+        return picked.allSatisfy({ $0.pin == nil && $0.isWeb && !$0.shy }) ? picked : [tab]
+    }
+
     /// One of several picked: a press on it waits for the release, as a
     /// click, rather than bringing it forward as the button goes down (see
     /// TabPress), which would drop the others before the drag could take them.

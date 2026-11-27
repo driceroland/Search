@@ -22,6 +22,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- With several tabs picked, Tab › Pin Tab and Pin Tab as Row, and their keys, pin all of them, as their right-click menu does: they pinned only the tab in front. `swift test --filter TabSelectionTests` (#1692, idea 1366)
 - A tablet pen's pan (a Wacom pen with a button set to Pan/Scroll) over the column goes through the spaces the way it carries the page, as two fingers on a trackpad do, natural scrolling on or off, and one space a drag. Since 1.0.22 it went the other way round, read as a mouse's sideways wheel (#1646), and a drag could run across several. A mouse's wheels go as before. `swift test --filter SpaceWheelTests`, `python3 Tests/space_wheel_run.py` (idea 1391)
 - Carrying a tab onto a page to split it, where it would go shows on any page: the sides are tinted with the accent colour and outlined, so they no longer vanish on a white page, and the half the tab would take is marked the same way. Each side now splits from two fifths of the page in, not a quarter, so the split no longer waits for the tab to reach the page's edge; only a strip down the middle splits nothing. `swift test --filter SplitZonesTests` (idea 1392)
 - The sidebar's right-click menu says Show Sidebar while the sidebar is hidden and only out over the page, as the View menu does, rather than always Hide Sidebar.

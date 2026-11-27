@@ -374,7 +374,17 @@ struct SearchApp: App {
                 }
                 if let tab = browser.active {
                     let rows = browser.prefs.showsPinRows
-                    if tab.pin == nil {
+                    // Several picked with the tab in front: all of them, as
+                    // their right-click menu does (#1692).
+                    let targets = browser.pinTargets()
+                    if tab.pin == nil, targets.count > 1 {
+                        Button("Pin \(targets.count) Tabs") { for each in targets { browser.pin(each) } }
+                            .shortcut("tabs.pin")
+                        if rows {
+                            Button("Pin \(targets.count) Tabs as Rows") { for each in targets { browser.pin(each, listed: true) } }
+                                .shortcut("tabs.pinRow")
+                        }
+                    } else if tab.pin == nil {
                         Button("Pin Tab") { browser.pin(tab) }
                             .shortcut("tabs.pin")
                             .disabled(!tab.isWeb || tab.shy)
