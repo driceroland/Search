@@ -60,6 +60,24 @@ enum WhatsNew {
         Toggle(title: "AI on pages", detail: "Summarize a page or ask about it. Choose where it runs in Settings › AI.",
                since: "1.0.5", get: { $0.ai }, set: { $0.ai = $1 }),
     ] : []) + [
+        Toggle(title: "Site tiles on a new tab", detail: "Small chips of your sites under the address field; add, edit and move them right there.",
+               since: "1.0.22", get: { $0.homeTiles }, set: { $0.homeTiles = $1 }),
+
+        Toggle(title: "Screenshots in Downloads", detail: "A screenshot you take shows at the top of the Downloads list, ready to drag onto a page.",
+               since: "1.0.22", get: { $0.screenshotsInDownloads }, set: { $0.screenshotsInDownloads = $1 }),
+
+        Toggle(title: "Copy captures only", detail: "Capture… puts the picture on the clipboard and saves no PNG in your downloads folder.",
+               since: "1.0.22", get: { $0.copiesCapturesOnly }, set: { $0.copiesCapturesOnly = $1 }),
+
+        Toggle(title: "Move and resize with Hide Elements", detail: "Drag what is outlined to move it, or its right or bottom edge to resize it, kept for the site.",
+               since: "1.0.22", get: { $0.hidingShapes }, set: { $0.hidingShapes = $1 }),
+
+        Toggle(title: "Controls over a page in Split View", detail: "A small capsule on the page under the pointer: move it left or right, take it out, or close it.",
+               since: "1.0.22", get: { $0.splitControls }, set: { $0.splitControls = $1 }),
+
+        Toggle(title: "Animate downloads", detail: "A new download glides into the downloads button, and a check shows once it's in.",
+               since: "1.0.22", get: { $0.animatesDownloads }, set: { $0.animatesDownloads = $1 }),
+
         Toggle(title: "Double click to rename", detail: "Click on the tab you're on to rename it, as Rename in its menu does, instead of editing its address.",
                since: "1.0.22", get: { $0.tabClickRenames }, set: { $0.tabClickRenames = $1 },
                shown: { !$0.iconColumn }),
@@ -216,6 +234,7 @@ enum WhatsNew {
     ]
 
     static let releases: [Release] = [
+        Release(version: "1.0.22"),
         Release(version: "1.0.21"),
         Release(version: "1.0.20"),
         Release(version: "1.0.19"),
@@ -299,6 +318,40 @@ enum WhatsNew {
 
     /// Newest first.
     static let notes: [Notes] = [
+        Notes(
+            version: "1.0.22", date: "27 November 2026",
+            headline: "Light with hundreds of tabs, and light at rest.",
+            new: [
+                "Google Meet's own mini window comes along when you leave a call's tab, as in Chrome, with your camera, microphone and background blur still working. On; Settings › Videos turns it off.",
+                "Bring Things Over brings Dia's, Ardia's and Yab's spaces, with their pins, folders and profiles.",
+                "Site chips under a new tab's address field, to add, edit and move right there, in Settings › Tabs.",
+                "Previews of pinned tabs on hover, and a speaker on a pinned square whose page plays sound.",
+                "Screenshots in Downloads, captures copied only, moving and resizing with Hide Elements, controls over a page in Split View, animated downloads and a click to rename the tab you're on, each off until you turn it on.",
+                "Developer Mode for local sites, Hide Elements taking every element like the one you point at, File › Export Spaces… and Paste and Go.",
+            ],
+            better: [
+                "400 tabs stay light and fast: closing a tab, opening one, picking a pin and switching spaces take a fraction of the time, and the column scrolls without a stall.",
+                "At rest Search runs as one process in about 42 MB, where 1.0.21 took 66 MB in 3, and many tabs take less memory.",
+                "Tabs and pins show the site's icon by default instead of a letter.",
+                "Tabs you aren't looking at load a few at a time, so reloading many no longer stalls the window.",
+                "Following a link or sending a form costs the window less with many tabs.",
+                "Sync with iCloud always says why it isn't syncing.",
+            ],
+            fixed: [
+                "Darken pages turning pages near black with their borders gone; pages are darkened in their own colours again.",
+                "A site that couldn't be found for a moment, as the Wi-Fi changes or a VPN comes up: it is tried again and loads by itself.",
+                "ClickUp Brain not starting, and pages reloading in a loop with the Fabric clipper.",
+                "A Downloads folder macOS keeps Search out of failing every download; Search now asks where to save, once.",
+                "A click on the tab you're on closing it with Icons only.",
+                "OneDrive's and SharePoint's Open in desktop app not opening Word or Excel.",
+                "A page handed off from your iPhone closing the window's tabs.",
+                "A full-screen video missing from Discord's, Zoom's and Meet's screen-share pickers.",
+                "Sign in with Apple closing its own tab on sites that come back by redirects.",
+                "The hidden sidebar coming out halfway through a drag along the left edge.",
+                "What's playing showing only the newest of several tabs playing out of sight.",
+                "Deleting a profile whose spaces were never opened crashing Search.",
+            ]
+        ),
         Notes(
             version: "1.0.21", date: "25 November 2026",
             headline: "Your fixes, from NordPass to YouTube's sign-in.",
