@@ -48,6 +48,7 @@ struct HomeGrid: View {
                                 .padding(.horizontal, 10)
                                 .frame(maxWidth: .infinity, minHeight: 50, maxHeight: 50)
                                 .background(RoundedRectangle(cornerRadius: 14).strokeBorder(Palette.hairline))
+                                .background(WallBacking(shape: RoundedRectangle(cornerRadius: 14)))
                                 .contentShape(RoundedRectangle(cornerRadius: 14))
                         }
                         .buttonStyle(.plain)
