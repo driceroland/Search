@@ -11,6 +11,7 @@ import SwiftUI
 struct SettingsPanel: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
+    @ObservedObject private var appIcon = AppIconStyle.shared
     /// The section the tab's address names (search://settings/privacy),
     /// when Settings is a tab: asked for again, it moves there.
     var asked: String? = nil
@@ -790,6 +791,27 @@ struct SettingsPanel: View {
         case "window.glass.clear": Slider(value: $prefs.glassClear, in: 0...1).controlSize(.small).frame(width: 160)
         case "window.glass.grain": Slider(value: $prefs.glassGrain, in: 0...1).controlSize(.small).frame(width: 160)
         case "toolbar.left": Switch(on: $prefs.navigationLeft)
+        case "appicon.custom":
+            HStack(alignment: .center, spacing: 22) {
+                Image(nsImage: appIcon.preview ?? NSApp.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 132, height: 132)
+                VStack(alignment: .leading, spacing: 8) {
+                    Pill("Choose…", filled: !appIcon.isCustom) { appIcon.choose() }
+                    if appIcon.isCustom { Pill("Reset") { appIcon.reset() } }
+                }
+            }
+            
+        case "appicon.mark":
+            Segmented(options: IconMark.allCases.map { ($0, $0.title) }, selection: $appIcon.mark)
+        case "appicon.blur":
+            Segmented(options: AppIconStyle.blurSteps.map { ($0, AppIconStyle.blurLabel($0)) }, selection: $appIcon.blur)
+        case "appicon.frost":
+            Segmented(options: AppIconStyle.frostSteps.map { ($0, AppIconStyle.percentLabel($0)) }, selection: $appIcon.frost)
+        case "appicon.grain":
+            Segmented(options: AppIconStyle.grainSteps.map { ($0, AppIconStyle.percentLabel($0)) }, selection: $appIcon.grain)
+
         case "tabs.compact":
             Switch(on: Binding(
                 get: { prefs.compactStrip },

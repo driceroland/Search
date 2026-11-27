@@ -65,6 +65,7 @@ enum SettingsIndex {
 
         .init(id: "theme", page: .appearance, title: "Light and dark", icon: "circle.lefthalf.filled"),
         .init(id: "window", page: .appearance, title: "Window", icon: "macwindow"),
+        .init(id: "logo", page: .appearance, title: "Logo", icon: "app.dashed"),
         .init(id: "tablook", page: .appearance, title: "Tabs", icon: "textformat.size"),
         .init(id: "motion", page: .appearance, title: "Motion", icon: "wind"),
 
@@ -237,6 +238,24 @@ enum SettingsIndex {
               title: "Fade scroll bars when scrolling stops", detail: "Thin bars over the page that come up only as it scrolls, even with a mouse",
               more: "As macOS draws them with a trackpad, whatever System Settings › Appearance › Show scroll bars says. Off, Search follows that setting.",
               keys: ["scrollbars.fade"], words: ["scroll bar", "scrollbar", "scrollbars", "overlay", "fade", "hide", "auto hide", "when scrolling"]),
+
+        .init(id: "appicon.custom", group: "logo", icon: "app.dashed",
+              title: "App icon", detail: "Put a picture of your own behind the mark",
+              more: "The picture is blurred a little and frosted, and the mark is drawn over it in a shade that suits it. Shown in the Dock and ⌘Tab while Search is open; it goes back to the usual icon when you close it.",
+              keys: ["appicon.image"], words: ["icon", "dock", "app icon", "custom icon", "logo", "wallpaper", "picture", "image"], kind: .wide),
+        .init(id: "appicon.mark", group: "logo", icon: "capsule",
+              title: "Mark", detail: "Light or dark; Auto follows the picture",
+              keys: ["appicon.mark"], words: ["icon", "pill", "mark", "light", "dark", "auto", "logo"], parent: "appicon.custom"),
+        .init(id: "appicon.blur", group: "logo", icon: "drop",
+              title: "Blur", detail: "How soft the picture is",
+              keys: ["appicon.blur"], words: ["icon", "blur", "soft", "logo"], parent: "appicon.custom"),
+        .init(id: "appicon.frost", group: "logo", icon: "snowflake",
+              title: "Frost", detail: "How much white is laid over the picture",
+              keys: ["appicon.frost"], words: ["icon", "frost", "frosted", "glass", "white", "logo"], parent: "appicon.custom"),
+        .init(id: "appicon.grain", group: "logo", icon: "circle.dotted",
+              title: "Grain", detail: "Film grain on the picture",
+              keys: ["appicon.grain"], words: ["icon", "grain", "noise", "film", "logo"], parent: "appicon.custom"),
+        
         .init(id: "window.glass", group: "window", icon: "square.on.square.intersection.dashed",
               title: "Glass", detail: "What is behind the window shows through the tabs and the frame, blurred",
               more: "As in Arc and Zen. The glass takes the space's colour; how see-through it is, and its grain, are in the space's menu › Colour…. Not in full screen.",

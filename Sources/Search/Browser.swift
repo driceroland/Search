@@ -3221,6 +3221,7 @@ final class Browser: NSObject, ObservableObject {
             Spaces.seedHistories()
             Shield.shared.enabled = prefs.shielded
             Shield.shared.compile()
+            AppIconStyle.shared.start()
             if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
             if prefs.bench {
                 Bench.shared.start(for: self)
