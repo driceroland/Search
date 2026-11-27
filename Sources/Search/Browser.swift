@@ -9035,6 +9035,16 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
     ) {
         decide(webView, action) { [weak self] policy in
+            // The page's own jump to another site right after a click on an
+            // invisible cover over it, as ad scripts make (idea 1417).
+            if policy == .allow, action.targetFrame?.isMainFrame == true,
+               [.other, .linkActivated].contains(action.navigationType),
+               let tab = self?.popupTab(for: webView),
+               tab.popupGesture.coverJump(to: action.request.url, from: webView.url) {
+                tab.noteBlocked(action.request.url)
+                decisionHandler(.cancel, preferences)
+                return
+            }
             // Revoke before WebKit can run the old document's unload handlers.
             // A nil target is a new window, not this tab leaving its document,
             // and a jump to a #fragment of the same page keeps it: the click

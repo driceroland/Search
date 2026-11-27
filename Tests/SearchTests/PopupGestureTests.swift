@@ -260,3 +260,34 @@ final class PopupGestureTests: XCTestCase {
     }
 
 }
+
+/// Idea 1417: a click on an invisible full-page cover grants no window, and
+/// the page's jump to another site right after it is refused.
+final class PopupGestureCoverTests: XCTestCase {
+    func testCoverClickGrantsNoWindow() {
+        var permission = PopupGesture()
+        permission.record(origin: "o", kind: "input", now: 10)
+        permission.cover(now: 10.1)
+        XCTAssertFalse(permission.take(origin: "o", mainFrame: true, now: 10.2))
+        permission.record(origin: "o", kind: "click", now: 10.3)
+        permission.cover(now: 10.3)
+        XCTAssertFalse(permission.take(origin: "o", mainFrame: true, now: 10.4))
+    }
+
+    func testARealClickAfterwardsStillGrantsOne() {
+        var permission = PopupGesture()
+        permission.cover(now: 10)
+        permission.record(origin: "o", kind: "input", now: 11)
+        XCTAssertTrue(permission.take(origin: "o", mainFrame: true, now: 11.1))
+    }
+
+    func testJumpToAnotherSiteAfterACoverClick() {
+        var permission = PopupGesture()
+        let here = URL(string: "https://shows.example.com/home")
+        XCTAssertFalse(permission.coverJump(to: URL(string: "https://ads.example.net/x"), from: here, now: 10))
+        permission.cover(now: 10)
+        XCTAssertTrue(permission.coverJump(to: URL(string: "https://ads.example.net/x"), from: here, now: 10.5))
+        XCTAssertFalse(permission.coverJump(to: URL(string: "https://www.example.com/next"), from: here, now: 10.5))
+        XCTAssertFalse(permission.coverJump(to: URL(string: "https://ads.example.net/x"), from: here, now: 13))
+    }
+}

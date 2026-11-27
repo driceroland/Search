@@ -22,6 +22,8 @@ struct PopupGesture {
     /// page's own window for it became (see opened(_:) and claim()).
     private var serial = 0
     private var made: (serial: Int, tab: UUID)?
+    /// When the last press or click on an invisible full-page cover was.
+    private var coverAt: TimeInterval?
 
     mutating func record(origin: String?, kind: String, mainFrame: Bool = false, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         // A press of the middle button is an input like any other; it only
@@ -45,6 +47,25 @@ struct PopupGesture {
         input = kind != "click"
         menu = kind == "menu"
         middle = pressedMiddle
+    }
+
+    /// A press or click on an element that covers the page and shows
+    /// nothing (see PopupGestureRelay.script): not a click on anything the
+    /// person saw, so it grants no window, and the page's jump to another
+    /// site right after it is refused (see coverJump). Ad scripts hide
+    /// their windows and redirects behind such a cover (idea 1417).
+    mutating func cover(now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        recorded = false
+        consumed = true
+        coverAt = now
+    }
+
+    /// Whether the page's own jump to `to`, from `current`, comes right
+    /// after a click on an invisible cover and leaves for another site.
+    func coverJump(to: URL?, from current: URL?, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        guard let coverAt, now >= coverAt, now - coverAt <= 2,
+              let target = BlockedPopups.site(of: to), let here = BlockedPopups.site(of: current) else { return false }
+        return target != here
     }
 
     mutating func take(origin: String?, mainFrame: Bool = false, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
@@ -166,8 +187,34 @@ final class PopupGestureRelay: NSObject, WKScriptMessageHandler {
     static let script = """
     (() => {
       const keys = new Set();
+      // An element that covers the page and shows nothing: fixed or absolute,
+      // at least 85% of the window each way, and either see-through (opacity
+      // or an empty transparent box) or without anything drawn in it.
+      const media = new Set(['VIDEO', 'AUDIO', 'IFRAME', 'CANVAS', 'INPUT', 'TEXTAREA', 'SELECT', 'OBJECT', 'EMBED', 'IMG', 'SVG', 'BUTTON']);
+      function cover(e) {
+        try {
+          const el = e.target;
+          if (!(el instanceof Element) || media.has(el.tagName.toUpperCase()) || el === document.body || el === document.documentElement) return false;
+          const cs = getComputedStyle(el);
+          if (cs.position !== 'fixed' && cs.position !== 'absolute') return false;
+          const r = el.getBoundingClientRect();
+          if (r.width < innerWidth * 0.85 || r.height < innerHeight * 0.85) return false;
+          let faint = false;
+          for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+            if (parseFloat(getComputedStyle(n).opacity) < 0.05) { faint = true; break; }
+          }
+          if (faint) return true;
+          const bg = cs.backgroundColor.match(/[\\d.]+/g) || [];
+          const clear = cs.backgroundColor === 'transparent' || (bg.length === 4 && parseFloat(bg[3]) === 0);
+          return clear && cs.backgroundImage === 'none' && !el.textContent.trim() && !el.querySelector('img, video, canvas, svg, picture, iframe');
+        } catch (x) { return false; }
+      }
       function note(e) {
         if (!e.isTrusted) return;
+        if ((e.type === 'mousedown' || e.type === 'click') && cover(e)) {
+          window.webkit.messageHandlers.officePopupGesture.postMessage('cover');
+          return;
+        }
         if (e.type === 'keydown' && (e.key === 'Escape' ||
             ['Shift', 'Control', 'Alt', 'Meta'].includes(e.key))) return;
         if (e.type === 'keydown') keys.add(e.code || e.key);
@@ -203,9 +250,10 @@ final class PopupGestureRelay: NSObject, WKScriptMessageHandler {
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let kind = message.body as? String, ["input", "middle", "click", "menu"].contains(kind) else { return }
+        guard let kind = message.body as? String, ["input", "middle", "click", "menu", "cover"].contains(kind) else { return }
         MainActor.assumeIsolated {
             guard let webView = message.webView, let tab = Self.tab(for: webView) else { return }
+            if kind == "cover" { tab.popupGesture.cover(); return }
             tab.popupGesture.record(origin: PopupGesture.origin(message.frameInfo), kind: kind,
                                      mainFrame: message.frameInfo.isMainFrame)
         }
