@@ -183,6 +183,11 @@ final class ApplePasswords: ObservableObject {
     /// Whether this Mac's helper says it hands out verification codes.
     private var fillsCodes = false
     private let keepAliveEvery: TimeInterval
+    /// How long a start takes before the row says "Connecting…", and how soon
+    /// a helper must be gone to count as stopped as it started. A test over a
+    /// real process on a loaded Mac widens both.
+    private let connectingAfter: TimeInterval
+    private let goneAtOnce: TimeInterval
     private var keepAlive: Task<Void, Never>?
     /// For the log only: when the helper was started, the pairing made, the
     /// Mac last slept and woke, and which command is waiting on an answer.
@@ -205,8 +210,11 @@ final class ApplePasswords: ObservableObject {
 
     init(makeLink: (() throws -> AppleLink)? = nil, prefs: Preferences? = nil,
          keepAliveEvery: TimeInterval = ApplePasswords.keepAliveEvery,
+         connectingAfter: TimeInterval = 0.4, goneAtOnce: TimeInterval = 1,
          entitled: Bool = ApplePasswords.holdsBrowserEntitlement) {
         self.keepAliveEvery = keepAliveEvery
+        self.connectingAfter = connectingAfter
+        self.goneAtOnce = goneAtOnce
         self.entitled = entitled
         self.makeLink = makeLink ?? {
             // A test run never runs Apple's helper: it would put its window
@@ -277,7 +285,7 @@ final class ApplePasswords: ObservableObject {
             // Gone at once, before a word: macOS stopped it as it started
             // (a launch constraint violation, signal 9 after 0s).
             if case ApplePasswordsError.gone? = error as? ApplePasswordsError, !heard,
-               Date().timeIntervalSince(began) < 1, entitled {
+               Date().timeIntervalSince(began) < goneAtOnce, entitled {
                 Self.log.notice("The helper was stopped as it started: its launch constraint doesn't admit Search on this macOS")
                 refused = true
                 fail(Unavailable(errorDescription: "Apple's Passwords helper isn't available to Search on this version of macOS"), stop: true)
@@ -509,7 +517,7 @@ final class ApplePasswords: ObservableObject {
         if state == .starting {
             let mine = startingSince
             Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 400_000_000)
+                try? await Task.sleep(nanoseconds: UInt64(connectingAfter * 1_000_000_000))
                 guard let self, self.startingSince == mine, self.state == .starting else { return }
                 self.connecting = true
             }

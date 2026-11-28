@@ -64,7 +64,7 @@ final class ApplePasswordsRowTests: XCTestCase {
         let program = folder.appendingPathComponent("helper")
         try "#!/bin/sh\nkill -9 $$\n".write(to: program, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: program.path)
-        let apple = ApplePasswords(makeLink: { HelperLink(program: program) }, entitled: true)
+        let apple = ApplePasswords(makeLink: { HelperLink(program: program) }, connectingAfter: 60, goneAtOnce: 60, entitled: true)
         let (watch, seen) = titles(of: apple)
         await apple.connect()
         watch.cancel()
