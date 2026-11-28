@@ -82,8 +82,7 @@ enum BookmarksFile {
                 if tag == "H3" {
                     heading = title
                     bar = attribute(toolbarExpression, in: attributes)?.lowercased() == "true"
-                } else if let href = attribute(hrefExpression, in: attributes), let url = URL(string: href),
-                          url.scheme == "http" || url.scheme == "https" {
+                } else if let href = attribute(hrefExpression, in: attributes), let url = webAddress(href) {
                     append(.site(title.isEmpty ? (url.host() ?? href) : title, url))
                 }
             } else if ns.substring(with: match.range(at: 4)).isEmpty {
@@ -117,6 +116,17 @@ enum BookmarksFile {
             if let title = list.title { append(.folder(title, list.nodes)) } else if stack.isEmpty { root += list.nodes } else { stack[stack.count - 1].nodes += list.nodes }
         }
         return root
+    }
+
+    /// The scheme is case-insensitive. Keep the path and query as exported.
+    private static func webAddress(_ text: String) -> URL? {
+        guard let url = URL(string: text), let scheme = url.scheme else { return nil }
+        let lower = scheme.lowercased()
+        guard lower == "http" || lower == "https" else { return nil }
+        if lower == scheme { return url }
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        parts.scheme = lower
+        return parts.url
     }
 
     private static let tagExpression = try! NSRegularExpression(
