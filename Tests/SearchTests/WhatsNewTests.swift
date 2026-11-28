@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import Search
 
 /// The calm card after an update and Settings › What's New: each release's
@@ -66,21 +67,48 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertEqual(WhatsNew.releases.first { $0.version == "1.0.22" }?.settings.first, "meet.pip")
     }
 
-    /// The card opens with real content: four to six highlights, each with
-    /// a symbol that exists, a short title and one sentence.
-    func testHighlightsAreRealContent() {
+    /// The popup stays simple: a short title, two short lines, no list. The
+    /// details live in Settings › What's New, which still has its highlights.
+    func testCardTextStaysShort() {
+        XCTAssertLessThanOrEqual(WhatsNewCard.title.count, 24)
+        XCTAssertLessThanOrEqual(WhatsNewCard.lines.count, 2)
+        for line in WhatsNewCard.lines {
+            XCTAssertLessThanOrEqual(line.split(separator: " ").count, 8, line)
+        }
+        let all = ([WhatsNewCard.title] + WhatsNewCard.lines).joined(separator: " ").lowercased()
+        XCTAssertFalse(all.contains("shorten"), "not in this build")
+        XCTAssertFalse(all.contains("cookie") || all.contains("signed in"), "that fix is not on main")
+        XCTAssertEqual(WhatsNewCard.lines.first, "A few small improvements and fixes.")
+        // The details are in Settings › What's New.
         let release = WhatsNew.releases[0]
-        XCTAssertEqual(release.version, "1.0.23")
-        XCTAssertTrue((4...6).contains(release.highlights.count), "\(release.highlights.count) highlights")
-        XCTAssertEqual(Set(release.highlights.map(\.title)).count, release.highlights.count)
+        XCTAssertTrue((4...6).contains(release.highlights.count))
         for item in release.highlights {
             XCTAssertNotNil(NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil), item.symbol)
-            XCTAssertFalse(item.title.isEmpty)
-            XCTAssertLessThanOrEqual(item.title.count, 36, item.title)
-            XCTAssertLessThanOrEqual(item.text.count, 130, item.text)
-            XCTAssertTrue(item.text.hasSuffix(".") && !item.text.contains(". "), "one sentence: \(item.text)")
         }
-        XCTAssertFalse(release.highlights.contains { $0.text.lowercased().contains("shorten") }, "Shorten long tab titles is not in this build")
+    }
+
+    /// The email form is in the card at once, behind no link: the block the
+    /// card draws is the one with the form, and offered whenever no email
+    /// has been given (the source file holds it; a picture shows it).
+    func testCardShowsTheEmailForm() throws {
+        _ = NSApplication.shared
+        let host = NSHostingView(rootView: WhatsNewCard(release: WhatsNew.releases[0], close: {}, settings: {}, optInForced: true))
+        host.frame = NSRect(origin: .zero, size: host.fittingSize)
+        host.layoutSubtreeIfNeeded()
+        func texts(_ view: NSView) -> [String] {
+            var out: [String] = []
+            if let label = view.accessibilityLabel() { out.append(label) }
+            for sub in view.subviews { out += texts(sub) }
+            return out
+        }
+        // Tall enough for the title, two lines and the whole email block.
+        XCTAssertGreaterThan(host.fittingSize.height, 330)
+        XCTAssertEqual(host.fittingSize.width, 420, accuracy: 1)
+        let source = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/Search/WhatsNew.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("OptInBlock(source: .whatsNew"))
+        XCTAssertFalse(source.contains("Join\") { joining"), "no link in front of the form")
     }
 
     func testReleasesAreNewestFirst() {

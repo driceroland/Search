@@ -1031,13 +1031,11 @@ enum WhatsNew {
     ]
 }
 
-/// The card after an update: what is new in this version, a few things in
-/// plain words, then Continue and a quiet way to Settings › What's New.
-/// Nothing to decide here (Drice, 27 Nov 2026, after a reply on X that the
-/// list of switches was stressful), but it must show what is new (28 Nov:
-/// a card that only says "what's new" and shows nothing is pointless).
-/// The iPhone beta is one quiet line that opens the email field, which
-/// stays for whoever hasn't left an email yet.
+/// The card after an update, as simple as it can be (Drice, 28 Nov 2026:
+/// it must not list what is new, the details live in Settings › What's
+/// New): that Search was updated, one line, and the email box, in plain
+/// view, for whoever hasn't left an email yet. Close, and a quiet way to
+/// Settings › What's New.
 struct WhatsNewCard: View {
     let release: WhatsNew.Release
     let close: () -> Void
@@ -1051,54 +1049,44 @@ struct WhatsNewCard: View {
     var optInEmail = ""
     var optInForced: Bool? = nil
 
+    /// The words on the card, short on purpose (WhatsNewTests holds them).
+    static let title = "Search is up to date"
+    static let lines = ["A few small improvements and fixes.", "New: addresses like umbrel.local now open."]
+
     /// The email block (OptIn.swift), read once as the card opens: offered
     /// until an email has been given, and kept after one is, for its thanks.
     @State private var offering: Bool?
-    /// Whether the quiet line has been pressed and the field is out.
-    @State private var joining = false
     @ObservedObject private var reach = OptIn.Reach.shared
 
     /// Left off while the Mac is offline, where a press could only fail.
     private var showsOptIn: Bool { (optInForced ?? offering ?? OptIn.offered()) && (optInForced != nil || reach.online) }
 
     var body: some View {
-        Plate("New in Search \(release.version)", width: 440, close: close) {
+        Plate(Self.title, width: 420, close: close) {
             VStack(alignment: .leading, spacing: 16) {
-                if release.highlights.isEmpty {
-                    Text(WhatsNew.summary(release) + ".")
-                        .font(.system(size: 13.5))
-                        .foregroundStyle(Palette.ink)
-                } else {
-                    HighlightList(highlights: release.highlights)
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Self.lines, id: \.self) { line in
+                        Text(line)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 if showsOptIn {
-                    if joining || optInStart != .idle {
-                        OptInBlock(source: .whatsNew, open: open, start: optInStart, startEmail: optInEmail)
-                    } else {
-                        HStack(spacing: 6) {
-                            Text("Search for iPhone is in beta")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Palette.muted)
-                            Button("Join") { joining = true }
-                                .buttonStyle(.plain)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Palette.ink)
-                                .accessibilityLabel("Join the Search for iPhone beta")
-                        }
-                    }
+                    OptInBlock(source: .whatsNew, open: open, start: optInStart, startEmail: optInEmail)
                 }
             }
         } foot: {
             HStack(spacing: 8) {
-                Button("All changes in Settings", action: settings)
+                Button("See what changed", action: settings)
                     .buttonStyle(.plain)
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
-                    .accessibilityLabel("Show all changes in Settings")
+                    .accessibilityLabel("See what changed, in Settings")
                 Spacer()
-                Pill("Continue", filled: true, action: close)
+                Pill("Close", filled: true, action: close)
                     .keyboardShortcut(.defaultAction)
-                    .accessibilityLabel("Continue")
+                    .accessibilityLabel("Close")
             }
         }
         .onExitCommand(perform: close)
