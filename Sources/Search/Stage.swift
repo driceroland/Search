@@ -365,9 +365,37 @@ final class StageView: NSView {
         return false
     }
 
+    /// Whether this page has a video out in macOS's picture in picture (or is
+    /// entering it). Kept in the window unseen like a page on a call: detached
+    /// from its window and paused, WebKit demotes and can suspend its process,
+    /// leaving macOS's picture in picture window stuck with unresponsive buttons.
+    static func inPictureInPicture(_ view: NSView) -> Bool {
+        (view as? PageView)?.inPictureInPicture == true
+    }
+
+    private static func shouldHold(_ view: NSView) -> Bool {
+        onCall(view) || inPictureInPicture(view)
+    }
+
     /// Whether this page is one kept here unseen for its call.
     func holdsCall(_ view: NSView) -> Bool {
         calls[ObjectIdentifier(view)]?.web === view
+    }
+
+    /// Whether this page is kept here unseen for macOS picture in picture.
+    func holdsPictureInPicture(_ view: NSView) -> Bool {
+        view.superview === self && view !== wanted && Self.inPictureInPicture(view)
+    }
+
+    /// Whether any unseen page here is kept for macOS picture in picture.
+    var hasHeldPictureInPicture: Bool {
+        subviews.contains { holdsPictureInPicture($0) }
+    }
+
+    /// Re-evaluate held background views after a page leaves picture in picture.
+    func updateHeld() {
+        settle()
+        superview?.needsLayout = true
     }
 
     func keep(_ page: NSView) {
@@ -378,7 +406,13 @@ final class StageView: NSView {
     func letGo(_ page: NSView) {
         guard parting === page else { return }
         parting = nil
-        if page.superview === self, page !== wanted { page.removeFromSuperview() }
+        if page.superview === self, page !== wanted {
+            if Self.shouldHold(page) {
+                hold(page)
+                return
+            }
+            page.removeFromSuperview()
+        }
         page.alphaValue = 1
     }
 
@@ -646,7 +680,7 @@ final class StageView: NSView {
                 view.alphaValue = 0
                 continue
             }
-            if Self.onCall(view) {
+            if Self.shouldHold(view) {
                 hold(view)
                 continue
             }
@@ -721,10 +755,10 @@ final class StageView: NSView {
         }
     }
 
-    /// A page on a call, kept: unseen, at the stage's size, and never the
-    /// one the keys go to. Out of the window, a page loses the keys by
-    /// itself; kept in it, a page that had them would go on taking what
-    /// you type in the tab in front.
+    /// A page on a call or in macOS picture in picture, kept: unseen, at the
+    /// stage's size, and never the one the keys go to. Out of the window, a
+    /// page loses the keys by itself; kept in it, a page that had them would
+    /// go on taking what you type in the tab in front.
     private func hold(_ view: NSView) {
         view.alphaValue = 0
         if !(inspecting && subviews.contains(where: Self.isInspector)) { view.frame = bounds }
@@ -732,6 +766,7 @@ final class StageView: NSView {
            responder === view || responder.isDescendant(of: view) {
             window.makeFirstResponder(nil)
         }
+        guard Self.onCall(view) else { return }
         let key = ObjectIdentifier(view)
         guard calls[key]?.web !== view, let web = view as? WKWebView else { return }
         calls[key]?.stop()
@@ -786,11 +821,12 @@ final class StageView: NSView {
             guard let wanted, wanted.superview === self else { return nil }
             return wanted.hitTest(convert(point, from: superview))
         }
-        if let hit, let held = subviews.first(where: { holdsCall($0) && (hit === $0 || hit.isDescendant(of: $0)) }),
+        if let hit, let held = subviews.first(where: { (holdsCall($0) || holdsPictureInPicture($0)) && (hit === $0 || hit.isDescendant(of: $0)) }),
            held !== wanted {
             guard let wanted, wanted.superview === self else { return nil }
             return wanted.hitTest(convert(point, from: superview))
         }
+        if hit === self, wanted == nil, hasHeldPictureInPicture { return nil }
         return hit
     }
 

@@ -120,8 +120,9 @@ final class PaneStage: NSView {
                 : CGSize(width: slot.frame.width - seen.width, height: slot.frame.height - seen.height)
             slot.clip(short: short, corner: corner, squareTop: squareTop)
             // The edge would be cut on the card's far sides: none while
-            // the card is short of the page.
-            slot.layer?.borderWidth = corner > 0 && whole ? hairline : 0
+            // the card is short of the page, or on an unused slot holding a PiP view.
+            let activeSlot = index < tabs.count && shown(index)
+            slot.layer?.borderWidth = corner > 0 && whole && activeSlot ? hairline : 0
             if index < shadows.count {
                 let shadow = shadows[index]
                 if !seen.isNull { shadow.frame = seen }
@@ -391,8 +392,9 @@ final class PaneStage: NSView {
             let ground = Palette.NS.ground.cgColor
             layer?.backgroundColor = card ? NSColor.clear.cgColor : ground
             let hairline = 1 / max(1, window?.backingScaleFactor ?? 2)
-            for slot in slots {
-                slot.layer?.borderWidth = card ? hairline : 0
+            for (index, slot) in slots.enumerated() {
+                let activeSlot = index < tabs.count && shown(index)
+                slot.layer?.borderWidth = card && activeSlot ? hairline : 0
                 slot.layer?.borderColor = edge
             }
             // In this flipped stage, the cards' bottom is the maximum y.
@@ -491,14 +493,17 @@ final class PaneStage: NSView {
         for (index, slot) in slots.enumerated() {
             let frame = index < frames.count ? frames[index] : .zero
             let visible = index < tabs.count && shown(index) && frame.width > 0
-            slot.isHidden = !visible
+            let heldPiP = !visible && (slot.hasHeldPictureInPicture || slot.subviews.contains { StageView.inPictureInPicture($0) })
+            slot.isHidden = !visible && !heldPiP
             // Grown, by a page not already covered for it by ⌘S's cover.
             if visible, slot.frame.width > 0,
                frame.width > slot.frame.width + 0.5 || frame.height > slot.frame.height + 0.5,
                !((page(tabs[index]) as? WKWebView).map { FoldCover.coming.contains($0) } ?? false) {
                 grew = true
             }
-            if slot.frame != frame { slot.frame = frame }
+            let targetFrame = heldPiP ? area : frame
+            if slot.frame != targetFrame { slot.frame = targetFrame }
+            if heldPiP { slot.layer?.borderWidth = 0 }
             if index < shadows.count {
                 // Pages run the stage's full height, so its flip is no matter.
                 let shadow = shadows[index]

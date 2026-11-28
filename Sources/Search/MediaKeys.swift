@@ -131,7 +131,7 @@ final class MediaKeys: NSObject, WKScriptMessageHandler {
       }
       window.__officeMedia = function () {
         document.querySelectorAll('audio, video').forEach(function (el) {
-          if (!el.paused || el.muted || held.has(el) || !played.has(el)) return;
+          if (!el.paused || el.muted || held.has(el) || !played.has(el) || el.webkitPresentationMode === 'picture-in-picture') return;
           held.add(el);
           // Its own ears too: taken out of the page, or the page's listeners
           // wiped by document.open(), it still hears its play.

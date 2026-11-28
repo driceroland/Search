@@ -1,3 +1,4 @@
+import Foundation
 import WebKit
 
 /// The floating video as macOS's own picture in picture, for whoever picks
@@ -43,6 +44,50 @@ enum NativePiP {
     /// Every page there is, after the choice changed.
     @MainActor static func allowEverywhere() {
         for web in Web.pages.allObjects { allow(web.configuration.preferences) }
+    }
+
+    /// Tabs currently holding a video in macOS's picture in picture, and an
+    /// App Nap activity token while at least one does. While the browser window
+    /// sits behind another app and the PiP video is paused (no audio), macOS
+    /// App Nap can throttle or suspend the background WebContent process, which
+    /// leaves macOS's PiP panel on screen with unresponsive buttons.
+    @MainActor private static let activeTabs = NSHashTable<Tab>.weakObjects()
+    @MainActor private static var activity: NSObjectProtocol?
+
+    @MainActor static func keepAwake(for tab: Tab, active: Bool) {
+        if active {
+            activeTabs.add(tab)
+        } else {
+            activeTabs.remove(tab)
+        }
+        let needed = !activeTabs.allObjects.isEmpty
+        if needed, activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiatedAllowingIdleSystemSleep],
+                reason: "Picture in Picture"
+            )
+        } else if !needed, let token = activity {
+            activity = nil
+            ProcessInfo.processInfo.endActivity(token)
+        }
+    }
+
+    /// Whether WebKit currently detects window occlusion for `web`.
+    @MainActor static func occlusionDetectionEnabled(_ web: WKWebView) -> Bool {
+        let get = NSSelectorFromString("_windowOcclusionDetectionEnabled")
+        guard web.responds(to: get) else { return false }
+        typealias Getter = @convention(c) (AnyObject, Selector) -> Bool
+        return unsafeBitCast(web.method(for: get), to: Getter.self)(web, get)
+    }
+
+    /// Turn WebKit's window occlusion detection off while a page is in macOS's
+    /// picture in picture so covering the browser window with another app does
+    /// not demote or suspend a paused PiP page's WebContent process.
+    @MainActor static func setOcclusionDetection(_ web: WKWebView, enabled: Bool) {
+        let set = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+        guard web.responds(to: set) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(web.method(for: set), to: Setter.self)(web, set, enabled)
     }
 
     /// The largest video playing, into picture in picture. `toggle`: one
