@@ -1255,6 +1255,13 @@ final class Preferences: ObservableObject {
     @Published var pinLinksOpenTabs: Bool {
         didSet { store.set(pinLinksOpenTabs, forKey: "pins.linksNewTab") }
     }
+    /// Settings › Spaces & Pins › Advanced › Use the same tab across spaces: a
+    /// pin every space shows keeps one page as you move between the spaces of a
+    /// window that share sign-ins (see Browser.exchangePins). Off unless turned
+    /// on.
+    @Published var pinsSameTab: Bool {
+        didSet { store.set(pinsSameTab, forKey: "pins.sameTab") }
+    }
     /// A pin's ⌘ number pressed again, on that pin, goes back to the tab
     /// you were on before it.
     /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
@@ -1275,6 +1282,9 @@ final class Preferences: ObservableObject {
     /// Whether the shared pins are in the rows: asked for, and with Spaces
     /// on. Off, they wait in pins.json for the switch to come back.
     var showsSharedPins: Bool { sharesPins && usesSpaces }
+    /// Whether a shared pin's page goes with you from space to space: asked
+    /// for, and with shared pins in the rows to go with.
+    var reusesSharedPins: Bool { pinsSameTab && showsSharedPins }
     /// The AI add-on: summaries of the page and questions about it (see
     /// AIAssist). Off unless asked for; nothing is sent until you ask.
     @Published var ai: Bool {
@@ -1603,6 +1613,7 @@ final class Preferences: ObservableObject {
         pinFolderPeek = store.bool(forKey: "pins.folderPeek")
         pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
         pinLinksOpenTabs = store.bool(forKey: "pins.linksNewTab")
+        pinsSameTab = store.bool(forKey: "pins.sameTab")
         // "Pins keep their site": always on, with no switch since 27 Nov
         // 2026 (see Retired). A test world still reads its two keys as the
         // switch did: on when either is on or neither was touched, off when
