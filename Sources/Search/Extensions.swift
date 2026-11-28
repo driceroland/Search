@@ -233,6 +233,11 @@ final class Extensions: NSObject, ObservableObject {
         super.init()
         controller.delegate = self
         installed = (try? JSONDecoder().decode([Installed].self, from: Data(contentsOf: Extensions.list))) ?? []
+        // An extension that held the proxy when Search quit holds it again
+        // from the first page, as in Chrome (ExtensionProxy.swift); its
+        // worker is woken when a proxy asks it for a sign-in.
+        ExtensionProxyAuth.wake = { [weak self] id in self?.contexts[id]?.loadBackgroundContent { _ in } }
+        BrowserProxy.shared.extensionsChanged(self)
     }
 
     // MARK: - starting
@@ -1227,6 +1232,7 @@ final class Extensions: NSObject, ObservableObject {
         ExtensionPopup.forget(id)
         installed.removeAll { $0.id == id }
         save()
+        BrowserProxy.shared.extensionsChanged(self)
         try? FileManager.default.removeItem(at: Extensions.folder(for: id))
         var left = Store.settings.stringArray(forKey: Extensions.forgettingKey) ?? []
         if !left.contains(id) { left.append(id) }
@@ -1384,6 +1390,7 @@ final class Extensions: NSObject, ObservableObject {
             unload(id)
             ExtensionCapture.forget(id)
         }
+        BrowserProxy.shared.extensionsChanged(self)
     }
 
     func openOptions(_ id: String) {
@@ -1720,6 +1727,7 @@ final class Extensions: NSObject, ObservableObject {
     func setPrivate(_ id: String, _ on: Bool) {
         guard let context = contexts[id] else { return }
         Store.settings.set(on, forKey: "extensions.private.\(id)")
+        BrowserProxy.shared.extensionsChanged(self)
         let allowed = Extensions.mayGoPrivate(context)
         guard context.hasAccessToPrivateData != allowed else { return }
         context.hasAccessToPrivateData = allowed
@@ -1800,6 +1808,9 @@ final class Extensions: NSObject, ObservableObject {
         ("readingList", "Read and change your reading list"), ("downloads.open", "Open files it downloads"),
         ("desktopCapture", "Record your screen or a window, when you choose what to share"),
         ("tabCapture", "Record a tab, when you ask it to"),
+        // Chrome counts it as reading and changing everything on every
+        // website: whatever isn't encrypted passes through its proxy.
+        ("proxy", "Send everything you browse through a proxy it chooses"),
     ]
 
     /// What an extension wants, in words.
@@ -2331,6 +2342,10 @@ extension Extensions: WKWebExtensionControllerDelegate {
         }
         if port.applicationIdentifier == ExtensionWatch.groupsPort || port.applicationIdentifier == ExtensionWatch.idlePort {
             try ExtensionWatch.connect(port, from: extensionContext)
+            return
+        }
+        if port.applicationIdentifier == ExtensionProxyAuth.name {
+            try ExtensionProxyAuth.connect(port, from: extensionContext)
             return
         }
         // The port a worker's shim opens only to find what ports share; it

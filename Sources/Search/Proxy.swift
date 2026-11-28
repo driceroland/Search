@@ -266,7 +266,23 @@ final class BrowserProxy: ObservableObject {
     /// space's store is held by Spaces. Spaces.everyStore is not enough on
     /// its own, since a private tab's is left out of it on purpose.
     private let stores = NSHashTable<WKWebsiteDataStore>.weakObjects()
+    /// Those of them that are a private tab's.
+    private let privateStores = NSHashTable<WKWebsiteDataStore>.weakObjects()
     private static let key = "network.proxy"
+
+    /// The extension whose chrome.proxy settings are followed, through the
+    /// relay (ExtensionProxy.swift). Only while nothing is set here: the
+    /// proxy typed into Settings wins.
+    @Published private(set) var extensionInControl: String?
+    /// Its name, for Settings.
+    @Published private(set) var extensionName: String?
+    private var relay: ExtensionProxyRelay?
+    private var relayPort: UInt16?
+    /// The holder and what it set, as last acted on, so a change to any
+    /// other setting doesn't start the relay over.
+    private var followed: (id: String, value: NSObject?, goesPrivate: Bool)?
+    /// The extension in control is let into private tabs.
+    private var goesPrivate = false
 
     init(defaults: UserDefaults = Store.settings,
          password: String? = nil,
@@ -283,6 +299,99 @@ final class BrowserProxy: ObservableObject {
         ProxyNetwork.keep(value.configuration(password: self.password))
     }
 
+    /// What stores and sessions are given: the proxy set here, else the
+    /// relay while an extension holds the proxy, else nothing. A private
+    /// tab's store gets the relay only when the extension is let into
+    /// private tabs; otherwise it goes as if no extension had set a proxy,
+    /// as Chrome's incognito does.
+    private func effective(private inPrivate: Bool = false) -> ProxyConfiguration? {
+        if let mine = value.configuration(password: password) { return mine }
+        guard extensionInControl != nil, !inPrivate || goesPrivate else { return nil }
+        // Until the relay listens (at launch, or if it can't), port 1,
+        // which refuses: nothing goes around a VPN's rules meanwhile.
+        let port = relayPort.flatMap { NWEndpoint.Port(rawValue: $0) } ?? 1
+        var proxy = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: "127.0.0.1", port: port))
+        if let relay {
+            proxy.applyCredential(username: ExtensionProxyRelay.username, password: inPrivate ? relay.privateSecret : relay.secret)
+        }
+        // The relay down means the extension's rules can't be followed:
+        // a page fails rather than going around a VPN's proxy.
+        proxy.allowFailover = false
+        proxy.excludedDomains = ProxySettingsValue.direct
+        return proxy
+    }
+
+    private func apply() {
+        ProxyNetwork.keep(effective())
+        for store in stores.allObjects {
+            Self.put([effective(private: privateStores.contains(store))].compactMap { $0 }, on: store)
+        }
+    }
+
+    /// A store with no proxy, given none, is left alone: setting even an
+    /// empty list starts WebKit's network process (see attach), and this
+    /// runs at launch whether or not an extension holds the proxy.
+    private static func put(_ configurations: [ProxyConfiguration], on store: WKWebsiteDataStore) {
+        guard !configurations.isEmpty || !store.proxyConfigurations.isEmpty else { return }
+        store.proxyConfigurations = configurations
+    }
+
+    /// The extension, on, installed last of those that set a proxy Search
+    /// can follow, as Chrome gives the proxy to the most recently installed.
+    @available(macOS 15.4, *)
+    static func controller(in owner: Extensions) -> String? {
+        owner.installed.last { item in
+            guard item.enabled, let set = Extensions.settings(for: item.id)["proxy.settings"] else { return false }
+            return (try? ExtensionProxyRules.read(set)) != nil
+        }?.id
+    }
+
+    /// Looked at again whenever an extension sets or clears the proxy, is
+    /// turned on or off, or removed.
+    @available(macOS 15.4, *)
+    func extensionsChanged(_ owner: Extensions) {
+        let holder = Self.controller(in: owner)
+        let set = holder.flatMap { Extensions.settings(for: $0)["proxy.settings"] } as? NSObject
+        let goes = holder.flatMap { owner.contexts[$0] }.map(Extensions.mayGoPrivate) ?? false
+        if followed?.id == holder, followed?.value == set, followed?.goesPrivate == goes { return }
+        if followed?.id != holder { relay?.forgetSignIns() }
+        followed = holder.map { ($0, set, goes) }
+        goesPrivate = goes
+        extensionName = owner.installed.first { $0.id == holder }?.name
+        guard let holder, let rules = try? ExtensionProxyRules.read(set) else {
+            extensionInControl = nil
+            relay?.stop()
+            relay = nil
+            relayPort = nil
+            apply()
+            return
+        }
+        extensionInControl = holder
+        if let relay {
+            relay.rules = rules
+            apply()
+            return
+        }
+        let made = ExtensionProxyRelay { await BrowserProxy.signIn($0) }
+        made.rules = rules
+        relay = made
+        made.start { port in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    let proxy = BrowserProxy.shared
+                    guard proxy.relay === made else { return }
+                    proxy.relayPort = port
+                    proxy.apply()
+                }
+            }
+        }
+    }
+
+    @available(macOS 15.4, *)
+    private static func signIn(_ challenge: ProxyChallenge) async -> ProxyCredentials? {
+        await ExtensionProxyAuth.ask(challenge, controller: shared.extensionInControl)
+    }
+
     /// Called where a store is made, not where one is read: `Store.websites`
     /// hands out WebKit's default store on every read, and attaching there
     /// meant hopping to the main actor inside a getter that is read off it.
@@ -291,12 +400,11 @@ final class BrowserProxy: ObservableObject {
     /// even an empty list starts WebKit's network process, and Search at
     /// rest on a new tab ran it for nothing (5.7 MB). `save` still reaches
     /// every store attached here.
-    func attach(_ store: WKWebsiteDataStore) {
+    func attach(_ store: WKWebsiteDataStore, private inPrivate: Bool = false) {
         guard !stores.contains(store) else { return }
         stores.add(store)
-        let configurations = [value.configuration(password: password)].compactMap { $0 }
-        guard !configurations.isEmpty || !store.proxyConfigurations.isEmpty else { return }
-        store.proxyConfigurations = configurations
+        if inPrivate { privateStores.add(store) }
+        Self.put([effective(private: inPrivate)].compactMap { $0 }, on: store)
     }
 
     func save(_ proposed: ProxySettingsValue, password: String) throws {
@@ -310,10 +418,7 @@ final class BrowserProxy: ObservableObject {
         defaults.set(try JSONEncoder().encode(proposed), forKey: Self.key)
         self.password = secret
         value = proposed
-        let proxy = proposed.configuration(password: secret)
-        ProxyNetwork.keep(proxy)
-        let configurations = [proxy].compactMap { $0 }
-        for store in stores.allObjects { store.proxyConfigurations = configurations }
+        apply()
     }
 
     var savedPassword: String { password }
@@ -344,7 +449,9 @@ struct ProxySettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Line("Send everything through a proxy", draft.mode == .system ? "Off: Search follows the Mac's own network settings." : note) {
+            Line("Send everything through a proxy", draft.mode != .system ? note
+                 : proxy.extensionName.map { "Off: \($0) sets the proxy, as an extension can. Turning one on here takes over from it." }
+                 ?? "Off: Search follows the Mac's own network settings.") {
                 Picker("Proxy", selection: $draft.mode) {
                     ForEach(ProxySettingsValue.Mode.allCases) { Text($0.title).tag($0) }
                 }

@@ -4599,6 +4599,91 @@ enum ExtensionShims {
         });
       }
 
+      // A proxy's sign-in (ExtensionProxy.swift). WebKit never asks a
+      // blocking onAuthRequired listener, and a proxy an extension set goes
+      // through Search's relay, which WebKit doesn't see. So the listeners
+      // that asked to block are kept here, and while there are any a port
+      // is open to the browser, which asks them when a proxy answers 407:
+      // the answer goes back on the same port. Tailchrome waits on exactly
+      // this before it lets a page through its helper.
+      if (background && chrome.webRequest && runtime && typeof runtime.connectNative === "function") {
+        const web = chrome.webRequest;
+        let auth = web.onAuthRequired;
+        if (!auth || typeof auth.addListener !== "function") {
+          auth = event();
+          try { put(web, "onAuthRequired", auth); } catch (e) {}
+        }
+        const askers = [];
+        const addAuth = auth.addListener.bind(auth);
+        const removeAuth = typeof auth.removeListener === "function" ? auth.removeListener.bind(auth) : () => {};
+        let authPort = null;
+        const respond = async (to, question, details) => {
+          let url = null;
+          try { url = new URL(details.url); } catch (e) {}
+          let result = {};
+          for (const entry of askers.slice()) {
+            const filter = entry.filter || {};
+            if (url && Array.isArray(filter.urls) && !filter.urls.some((p) => patternMatches(p, url))) continue;
+            let got = {};
+            try {
+              got = await new Promise((resolve) => {
+                let done = false;
+                const finish = (r) => { if (!done) { done = true; resolve(r || {}); } };
+                const r = entry.listener({ ...details }, entry.async ? finish : undefined);
+                if (!entry.async) {
+                  if (r && typeof r.then === "function") r.then(finish, () => finish({})); else finish(r);
+                } else if (r && typeof r.then === "function") r.then((v) => { if (v) finish(v); }, () => {});
+              });
+            } catch (e) { setTimeout(() => { throw e; }); }
+            if (got && (got.authCredentials || got.cancel)) { result = got; break; }
+          }
+          const given = result.authCredentials;
+          try {
+            to.postMessage({ answer: question, cancel: !!result.cancel,
+              authCredentials: given ? { username: String(given.username), password: String(given.password) } : null });
+          } catch (e) {}
+        };
+        const openAuth = () => {
+          if (authPort) return;
+          let mine;
+          try { mine = runtime.connectNative("search.proxyauth"); } catch (e) { return; }
+          authPort = mine;
+          let answered = false, tries = 0;
+          const greet = () => { try { mine.postMessage({ listen: true, worker }); } catch (e) {} };
+          const again = () => {
+            if (answered || authPort !== mine || tries++ >= 20) return;
+            greet();
+            setTimeout(again, 100 * Math.min(tries, 5));
+          };
+          mine.onMessage.addListener((m) => {
+            // Its own messages, come back to it (see watching).
+            if (authPort !== mine || !m || typeof m !== "object" || m.listen || m.answer !== undefined) return;
+            if (m.ready) { if (!answered) greet(); return; }
+            answered = true;
+            if (typeof m.ask === "string") respond(mine, m.ask, m.details || {});
+          });
+          mine.onDisconnect.addListener(() => { if (authPort === mine) authPort = null; });
+          again();
+        };
+        put(auth, "addListener", (listener, filter, spec) => {
+          const blocks = Array.isArray(spec) && (spec.includes("blocking") || spec.includes("asyncBlocking"));
+          if (blocks && typeof listener === "function" && !askers.some((e) => e.listener === listener)) {
+            askers.push({ listener, filter, async: spec.includes("asyncBlocking") });
+            openAuth();
+          }
+          try { return addAuth(listener, filter, spec); } catch (e) {}
+        });
+        put(auth, "removeListener", (listener) => {
+          for (let i = askers.length - 1; i >= 0; i--) if (askers[i].listener === listener) askers.splice(i, 1);
+          if (!askers.length && authPort) {
+            const old = authPort;
+            authPort = null;
+            try { old.disconnect(); } catch (e) {}
+          }
+          try { return removeAuth(listener); } catch (e) {}
+        });
+      }
+
       // Tabs as Chrome describes them. Every tab has a groupId, which code
       // tests before anything else: -1 when in no group, and the group's
       // number, asked of the browser, for an extension that asked for
@@ -6058,7 +6143,7 @@ enum ExtensionShims {
             guard !family.isEmpty, allowed(id, context: context).contains(family) else {
                 throw Unsupported(what: "The extension never asked for \u{201C}\(family)\u{201D}")
             }
-            return setting(api, first as? [String: Any] ?? [:], extension: id, owner: owner)
+            return try setting(api, first as? [String: Any] ?? [:], extension: id, owner: owner)
         }
 
         // What leaves this app is answered here, not in the injected script:
@@ -7044,26 +7129,42 @@ enum ExtensionShims {
     static var awake: [String: IOPMAssertionID] = [:]
 
     /// chrome.privacy and chrome.proxy: what each extension set, kept across
-    /// launches as Chrome keeps it. Search acts on one of them — an
+    /// launches as Chrome keeps it. Search acts on two of them — an
     /// extension turning the browser's own offer to save passwords off,
-    /// which is how every password manager asks Chrome to step aside.
-    private static func setting(_ api: String, _ details: [String: Any], extension id: String, owner: Extensions) -> Any? {
+    /// which is how every password manager asks Chrome to step aside, and
+    /// the proxy (ExtensionProxy.swift).
+    private static func setting(_ api: String, _ details: [String: Any], extension id: String, owner: Extensions) throws -> Any? {
         let parts = api.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return nil }
         let name = parts[1]
         var mine = Extensions.settings(for: id)
         switch parts[0] {
         case "setting.set":
+            // A proxy Search can't follow is refused now, as Chrome refuses
+            // a malformed one, rather than taken and never used.
+            if name == "proxy.settings" { _ = try ExtensionProxyRules.read(details["value"]) }
             mine[name] = details["value"]
         case "setting.clear":
             mine[name] = nil
         default:
             let value = mine[name] ?? defaultSetting(name, owner: owner)
-            return ["value": value ?? NSNull(), "levelOfControl": mine[name] != nil ? "controlled_by_this_extension" : "controllable_by_this_extension"]
+            return ["value": value ?? NSNull(), "levelOfControl": levelOfControl(name, set: mine[name] != nil, by: id, owner: owner)]
         }
         Extensions.setSettings(mine, for: id)
+        if name == "proxy.settings" { BrowserProxy.shared.extensionsChanged(owner) }
         owner.objectWillChange.send()
         return nil
+    }
+
+    /// Whose a setting is, as Chrome says it. The proxy can be held by
+    /// someone else: the proxy typed into Settings, which no extension
+    /// overrides, or the extension installed last of those that set one.
+    private static func levelOfControl(_ name: String, set: Bool, by id: String, owner: Extensions) -> String {
+        if name == "proxy.settings" {
+            if BrowserProxy.shared.value.mode != .system { return "not_controllable" }
+            if let holder = BrowserProxy.controller(in: owner), holder != id { return "controlled_by_other_extensions" }
+        }
+        return set ? "controlled_by_this_extension" : "controllable_by_this_extension"
     }
 
     private static func defaultSetting(_ name: String, owner: Extensions) -> Any? {

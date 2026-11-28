@@ -121,6 +121,7 @@ final class ExtensionWorkerRecovery {
         // The worker before this one is gone, and its hosts with it.
         ExtensionNative.stopWorkerHosts(of: id)
         ExtensionWatch.workerGone(of: id)
+        ExtensionProxyAuth.workerGone(of: id)
         createdWorker(id, lifetime: background.lifetime)
     }
 
