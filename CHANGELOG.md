@@ -19,6 +19,7 @@ in [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- The note after an update has a switch: "Don't show this after updates" at the foot of the card, and "Show a note after updates" in Settings › General, on unless turned off; Settings › What's New stays either way.
 - What's New after an update is one short card: Search is up to date, a few small improvements and fixes, the iPhone email box in plain view, Close and a quiet "See what changed" that opens Settings › What's New, which opens with the detailed list.
 - Settings read in plainer words: titles and details of the rows that remain say it in short sentences, with the jargon gone (socket, CSS, keychain, cross-site, Global Privacy Control, Liquid Glass, http://). "Prevent cross-site tracking" is now "Stop trackers following you between sites" and "Site tiles on a new tab" is "Your sites on a new tab". Find a setting still finds every row by its old words, and no id changed. `swift test --filter SettingsIndexTests` (idea 1411)
 - A tab inside a group closes with one click: its cross shows on hover, as a loose tab's does, and closes the tab (the column, the top row, icons and Split View capsules), as does a middle click. It was a minus that only put the page away, and a second click was needed to close. ⌘W on a grouped tab still puts its page away and keeps the row, and the tab's menu still offers Put Away. `swift test --filter GroupCrossClosesTests` (idea 1412)

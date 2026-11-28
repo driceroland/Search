@@ -1336,6 +1336,12 @@ final class Preferences: ObservableObject {
     @Published var handoff: Bool {
         didSet { store.set(handoff, forKey: "handoff") }
     }
+    /// The note after an update (WhatsNew.swift): on unless turned off, from
+    /// the card's own "Don't show this after updates" or Settings.
+    static let updateNoteKey = "whatsnew.note"
+    @Published var updateNote: Bool {
+        didSet { store.set(updateNote, forKey: Self.updateNoteKey) }
+    }
     /// "settings", "new tab" and the like, typed alone in the address field,
     /// reach that part of the app instead of asking a search engine for the
     /// word; part of one is offered (see AddressCommands.swift). On unless
@@ -1617,6 +1623,7 @@ final class Preferences: ObservableObject {
         // Always on, with no switch since 27 Nov 2026 (see Retired).
         commandBar = Retired.on("commandbar", store)
         handoff = store.bool(forKey: "handoff")
+        updateNote = store.object(forKey: Self.updateNoteKey) as? Bool ?? true
         floatingNewTab = store.bool(forKey: "newtab.floating")
         fieldOnWindow = store.bool(forKey: "field.window")
         fieldHidesPage = Retired.off("field.hidesPage", store)

@@ -846,6 +846,7 @@ struct SettingsPanel: View {
                 .disabled(icloud.on && !sync.on)
                 .opacity(icloud.on && !sync.on ? 0.4 : 1)
         case "handoff": Switch(on: $prefs.handoff)
+        case "news.note": Switch(on: $prefs.updateNote)
         case "icloud":
             // Off limits in a build not signed for iCloud, and while the
             // folder sync is on.

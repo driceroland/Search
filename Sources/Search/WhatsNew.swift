@@ -381,9 +381,12 @@ enum WhatsNew {
     /// At launch, once: whether the card is due. Not on a fresh install (the
     /// welcome is up, and this version counts as seen), nor in a test world
     /// unless the bench asks; otherwise once per version that has a card.
-    @MainActor static func due(prefs: Preferences, welcoming: Bool) -> Bool {
-        let store = Store.settings
-        guard let current, !Store.testing else { return false }
+    /// With the note switched off (Settings, or the card's own line) the
+    /// version still counts as seen and Settings › What's New still gets its
+    /// dot, but nothing is shown.
+    @MainActor static func due(prefs: Preferences, welcoming: Bool, store: UserDefaults = Store.settings,
+                               release: Release? = WhatsNew.current, testing: Bool = Store.testing) -> Bool {
+        guard let current = release, !testing else { return false }
         if welcoming {
             store.set(current.version, forKey: seenKey)
             return false
@@ -391,7 +394,7 @@ enum WhatsNew {
         guard store.string(forKey: seenKey) != current.version else { return false }
         store.set(current.version, forKey: seenKey)
         store.set(current.version, forKey: dotKey)
-        return true
+        return prefs.updateNote
     }
 
     /// Search › What's New… and the About window's button (idea 968): this
@@ -1048,9 +1051,12 @@ struct WhatsNewCard: View {
     var optInStart: OptInForm.Phase = .idle
     var optInEmail = ""
     var optInForced: Bool? = nil
+    /// Where "Don't show this after updates" is kept.
+    @ObservedObject var prefs: Preferences = Shared.prefs
 
     /// The words on the card, short on purpose (WhatsNewTests holds them).
     static let title = "Search is up to date"
+    static let stopLabel = "Don't show this after updates"
     static let lines = ["A few small improvements and fixes.", "New: addresses like umbrel.local now open."]
 
     /// The email block (OptIn.swift), read once as the card opens: offered
@@ -1077,16 +1083,32 @@ struct WhatsNewCard: View {
                 }
             }
         } foot: {
-            HStack(spacing: 8) {
-                Button("See what changed", action: settings)
-                    .buttonStyle(.plain)
-                    .font(.system(size: 12))
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Button("See what changed", action: settings)
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                        .accessibilityLabel("See what changed, in Settings")
+                    Spacer()
+                    Pill("Close", filled: true, action: close)
+                        .keyboardShortcut(.defaultAction)
+                        .accessibilityLabel("Close")
+                }
+                Button { prefs.updateNote.toggle() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: prefs.updateNote ? "square" : "checkmark.square.fill")
+                            .font(.system(size: 12))
+                        Text(Self.stopLabel)
+                            .font(.system(size: 11.5))
+                    }
                     .foregroundStyle(Palette.muted)
-                    .accessibilityLabel("See what changed, in Settings")
-                Spacer()
-                Pill("Close", filled: true, action: close)
-                    .keyboardShortcut(.defaultAction)
-                    .accessibilityLabel("Close")
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Self.stopLabel)
+                .accessibilityValue(prefs.updateNote ? "off" : "on")
+                .accessibilityAddTraits(.isButton)
             }
         }
         .onExitCommand(perform: close)

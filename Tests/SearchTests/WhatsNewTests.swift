@@ -111,6 +111,46 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertFalse(source.contains("Join\") { joining"), "no link in front of the form")
     }
 
+    /// The note after an update can be switched off, on the card or in
+    /// Settings; on unless turned off, and then not shown even for a new
+    /// version, while Settings › What's New keeps its dot.
+    func testNoteAfterUpdatesCanBeTurnedOff() throws {
+        let suite = "whatsnew-note-\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { store.removePersistentDomain(forName: suite) }
+        let prefs = Shared.prefs
+        let before = prefs.updateNote
+        defer { prefs.updateNote = before }
+        let release = WhatsNew.Release(version: "9.9.9")
+        // Default: on, with nothing stored.
+        prefs.updateNote = true
+        XCTAssertTrue(WhatsNew.due(prefs: prefs, welcoming: false, store: store, release: release, testing: false))
+        XCTAssertFalse(WhatsNew.due(prefs: prefs, welcoming: false, store: store, release: release, testing: false), "once per version")
+        // Off: a newer version still shows nothing, and the dot is there.
+        prefs.updateNote = false
+        let newer = WhatsNew.Release(version: "9.9.10")
+        XCTAssertFalse(WhatsNew.due(prefs: prefs, welcoming: false, store: store, release: newer, testing: false))
+        XCTAssertEqual(store.string(forKey: WhatsNew.dotKey), "9.9.10")
+        // Back on: the next version shows again.
+        prefs.updateNote = true
+        XCTAssertTrue(WhatsNew.due(prefs: prefs, welcoming: false, store: store, release: .init(version: "9.9.11"), testing: false))
+    }
+
+    func testNoteDefaultIsOn() throws {
+        let store = try XCTUnwrap(UserDefaults(suiteName: "whatsnew-default-\(UUID().uuidString)"))
+        XCTAssertNil(store.object(forKey: Preferences.updateNoteKey))
+        XCTAssertEqual(store.object(forKey: Preferences.updateNoteKey) as? Bool ?? true, true)
+        XCTAssertEqual(WhatsNewCard.stopLabel, "Don't show this after updates")
+        let row = try XCTUnwrap(SettingsIndex.item("news.note"))
+        XCTAssertEqual(row.title, "Show a note after updates")
+        XCTAssertFalse(row.advanced, "visible, not under Advanced")
+        XCTAssertEqual(row.keys, [Preferences.updateNoteKey])
+        for words in ["update", "what's new", "popup", "note after updates"] {
+            XCTAssertTrue(SettingsIndex.find(words).contains { $0.id == "news.note" }, words)
+        }
+        XCTAssertTrue(SettingsIndex.drawn.contains { $0.id == "news.note" })
+    }
+
     func testReleasesAreNewestFirst() {
         for (a, b) in zip(WhatsNew.releases, WhatsNew.releases.dropFirst()) {
             XCTAssertTrue(WhatsNew.older(b.version, than: a.version), "\(b.version) before \(a.version)")
