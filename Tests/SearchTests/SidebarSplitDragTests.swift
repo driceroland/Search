@@ -88,6 +88,16 @@ final class SidebarSplitDragTests: XCTestCase {
         XCTAssertEqual(browser.tabs.last?.id, t[2].id, "moved down the column")
     }
 
+    func testCarriedOverThePageLeavesTheColumn() async throws {
+        let (browser, t, window) = try await setUp()
+        try await carry(row: 2, toPage: 0.5, in: window)
+        var hand = pagePoint(0.5, in: window)
+        for _ in 0..<20 { hand.y -= 6; try await send(.leftMouseDragged, at: hand, in: window) }
+        try await send(.leftMouseUp, at: hand, in: window)
+        try await settle()
+        XCTAssertEqual(browser.tabs.map(\.id), t.map(\.id))
+    }
+
     func testTheTabAlreadyOnScreenCarriedOntoItsPageSplitsNothing() async throws {
         let (browser, t, window) = try await setUp()
         try await carry(row: 0, toPage: 0.95, in: window)

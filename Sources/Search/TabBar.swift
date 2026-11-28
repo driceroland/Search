@@ -1382,6 +1382,7 @@ struct Carried: ViewModifier {
     /// Cancelled with Escape: put down until the hand lets go, not picked
     /// up again by its next move.
     @State private var escaped = false
+    @State private var overPage = false
 
     func body(content: Content) -> some View {
         placed(content)
@@ -1404,12 +1405,17 @@ struct Carried: ViewModifier {
                             from = index
                             start = Carried.leading(of: index, in: steps)
                             origin = place
+                            overPage = false
                             CarryGuard.open(ticket, end: callOff)
                         }
-                        travel = vertical ? value.translation.height : value.translation.width
+                        if !overPage { travel = vertical ? value.translation.height : value.translation.width }
                         // Asked every move, so the block it left lets go
                         // of it as soon as it is elsewhere.
-                        let crossed = cross?(value.location) == true
+                        let crossed = !overPage && cross?(value.location) == true
+                        if !overPage, vertical, let browser, value.location.x < -10 || value.location.x > browser.prefs.columnWidth - 10 {
+                            overPage = true
+                            travel = Carried.leading(of: index, in: steps) - start
+                        }
                         var splitting = false
                         if let browser, let tab, browser.prefs.splitView {
                             splitting = TabDrag.shared.update(browser: browser, tab: tab,
@@ -1418,7 +1424,7 @@ struct Carried: ViewModifier {
                         // After the update, which works out the half of a
                         // pair that was picked up.
                         lift(at: value.location)
-                        if splitting || crossed { return }
+                        if splitting || crossed || overPage { return }
                         // A tab of a group, or one over a group, lands where
                         // it is let go (see GroupDropFrames.resolve) rather
                         // than moving along the row as it goes.
