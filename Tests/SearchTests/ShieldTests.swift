@@ -47,6 +47,7 @@ final class ShieldTests: XCTestCase {
         _ = try await store.compileContentRuleList(forIdentifier: "office-shield-old", encodedContentRuleList: marker)
         _ = try await store.compileContentRuleList(forIdentifier: "office-shield", encodedContentRuleList: marker)
         _ = try await store.compileContentRuleList(forIdentifier: "unrelated", encodedContentRuleList: marker)
+        _ = try await store.compileContentRuleList(forIdentifier: "office-shield-custom-kept", encodedContentRuleList: marker)
 
         let shield = Shield(store: store)
         let controller = WKUserContentController()
@@ -61,11 +62,11 @@ final class ShieldTests: XCTestCase {
         XCTAssertEqual(display, "none")
 
         shield.enabled = false
-        shield.apply(to: [controller])
+        shield.apply()
         display = try await markerDisplay(web)
         XCTAssertEqual(display, "block")
         shield.enabled = true
-        shield.apply(to: [controller])
+        shield.apply()
         display = try await markerDisplay(web)
         XCTAssertEqual(display, "none")
 
@@ -77,8 +78,95 @@ final class ShieldTests: XCTestCase {
         let names = await store.availableIdentifiers() ?? []
         XCTAssertTrue(names.contains(identifier))
         XCTAssertTrue(names.contains("unrelated"))
+        XCTAssertTrue(names.contains("office-shield-custom-kept"))
         XCTAssertFalse(names.contains("office-shield"))
         XCTAssertFalse(names.contains("office-shield-old"))
+    }
+
+    func testAllowlistNormalizationAndParentMatching() throws {
+        let suite = "shield-allowlist-\(UUID())"
+        let settings = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { settings.removePersistentDomain(forName: suite) }
+        let shield = Shield(store: nil, settings: settings)
+
+        let site = try XCTUnwrap(Shield.normalizedHost("  HTTPS://WWW.Example.COM.:8443/a?b=1  "))
+        XCTAssertEqual(site, "example.com")
+        XCTAssertEqual(Shield.normalizedHost(" News.Example.com/path "), "news.example.com")
+        XCTAssertNil(Shield.normalizedHost("https:///path"))
+        XCTAssertNil(Shield.normalizedHost("just words"))
+
+        shield.pause(site, true)
+        shield.pause("news.example.com", true)
+        shield.pause("com", true)
+        for host in ["example.com", "www.example.com", "news.example.com", "deep.news.example.com"] {
+            XCTAssertTrue(shield.isPaused(on: host), host)
+        }
+        for host in ["notexample.com", "example.com.evil.test", "elsewhere.com"] {
+            XCTAssertFalse(shield.isPaused(on: host), host)
+        }
+        XCTAssertFalse(shield.isPaused(on: nil))
+
+        shield.resumeBlocking(on: "deep.news.example.com")
+        XCTAssertFalse(shield.isPaused(on: "deep.news.example.com"))
+        XCTAssertEqual(settings.stringArray(forKey: "shield.paused"), ["com"])
+    }
+
+    func testAttachingAndRemovingChunksKeepsAllowlistedTabsUnblocked() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let suite = "shield-allowlist-\(UUID())"
+        let settings = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { settings.removePersistentDomain(forName: suite) }
+        let store = try XCTUnwrap(WKContentRuleListStore(url: folder))
+        let shield = Shield(store: store, settings: settings)
+        let config = WKWebViewConfiguration()
+        let controller = config.userContentController
+        shield.protect(controller)
+        shield.tune(controller, for: "news.example.invalid")
+        shield.pause("example.invalid", true)
+        shield.compile()
+        try await waitForList(shield)
+        var lists: [WKContentRuleList] = []
+        let markers = ["custom-one", "custom-two"]
+        for marker in markers {
+            let json = ##"[{"trigger":{"url-filter":".*"},"action":{"type":"css-display-none","selector":"#\##(marker)"}}]"##
+            let list = try await store.compileContentRuleList(forIdentifier: "office-shield-custom-\(marker)", encodedContentRuleList: json)
+            lists.append(try XCTUnwrap(list))
+        }
+        let web = WKWebView(frame: .zero, configuration: config)
+
+        func check(_ custom: String, builtIn: String) async throws {
+            for marker in markers {
+                let display = try await markerDisplay(web, builtIn: false, markerID: marker)
+                XCTAssertEqual(display, custom, marker)
+            }
+            let display = try await markerDisplay(web, markerID: "builtin")
+            XCTAssertEqual(display, builtIn)
+        }
+
+        shield.setCustomList(lists)
+        try await check("block", builtIn: "block")
+        shield.enabled = false
+        shield.apply()
+        shield.enabled = true
+        shield.apply()
+        try await check("block", builtIn: "block")
+
+        shield.pause("example.invalid", false)
+        try await check("none", builtIn: "none")
+        shield.enabled = false
+        shield.apply()
+        try await check("block", builtIn: "block")
+        shield.enabled = true
+        shield.apply()
+        try await check("none", builtIn: "none")
+
+        shield.setCustomList([])
+        try await check("block", builtIn: "none")
+        shield.setCustomList(lists)
+        shield.pause("example.invalid", true)
+        try await check("block", builtIn: "block")
     }
 
     private func waitForList(_ shield: Shield) async throws {
@@ -89,11 +177,12 @@ final class ShieldTests: XCTestCase {
         XCTAssertNotNil(shield.list)
     }
 
-    private func markerDisplay(_ web: WKWebView) async throws -> String? {
+    private func markerDisplay(_ web: WKWebView, builtIn: Bool = true, markerID: String = "marker") async throws -> String? {
         let token = UUID().uuidString
-        web.loadHTMLString("<body data-token='\(token)'><div id='marker' class='adsbygoogle'>marker</div></body>", baseURL: URL(string: "https://example.invalid/"))
+        let element = "<div id='\(markerID)' class='\(builtIn ? "adsbygoogle" : "")'>marker</div>"
+        web.loadHTMLString("<body data-token='\(token)'>\(element)</body>", baseURL: URL(string: "https://example.invalid/"))
         for _ in 0..<500 {
-            if let display = try? await web.evaluateJavaScript("document.body?.dataset.token === '\(token)' && getComputedStyle(document.getElementById('marker')).display") as? String {
+            if let display = try? await web.evaluateJavaScript("document.body?.dataset.token === '\(token)' && getComputedStyle(document.getElementById('\(markerID)')).display") as? String {
                 return display
             }
             try await Task.sleep(nanoseconds: 10_000_000)

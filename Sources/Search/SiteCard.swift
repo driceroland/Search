@@ -623,7 +623,8 @@ struct SiteCard: View {
             .frame(height: MenuMetrics.row)
             .help("Turn off here if the site breaks; the page reloads")
             .onChange(of: on) { _, value in
-                Shield.shared.pause(host, !value)
+                if value { Shield.shared.resumeBlocking(on: host) }
+                else { Shield.shared.pause(host, true) }
                 reload()
             }
         }

@@ -1,8 +1,8 @@
 import CryptoKit
 import WebKit
 
-// The ad blocker. No settings, no counter, no shield icon going green — it is
-// prepared at launch and then it is simply true that the page is lighter.
+// The ad blocker. The built-in list is prepared at launch. Tabs can also
+// have a second list with the rules their user added in Settings.
 //
 // A content rule list is enforced inside WebKit's networking, before a request
 // is made and before a stylesheet is applied, so this costs nothing at run time
@@ -13,22 +13,26 @@ final class Shield: ObservableObject {
     static let shared = Shield()
 
     private let store: WKContentRuleListStore?
+    private let settings: UserDefaults
 
     convenience init() {
         self.init(store: WKContentRuleListStore.default())
     }
 
-    init(store: WKContentRuleListStore?) {
+    init(store: WKContentRuleListStore?, settings: UserDefaults = Store.settings) {
         self.store = store
+        self.settings = settings
+        paused = Set(settings.stringArray(forKey: "shield.paused") ?? [])
     }
 
     private(set) var list: WKContentRuleList?
-    private var waiting: [WKUserContentController] = []
+    private var customLists: [WKContentRuleList] = []
     private var preparing = false
+    private var restoringCustomFilters = false
 
     // The list is prepared in the background at launch, and a page that
     // starts loading before it is ready makes its first requests without
-    // it: `waiting` gives it the list a moment later, after the ad and
+    // it: the controller gets the list a moment later, after the ad and
     // tracker requests have gone. The tab restored in front started loading
     // 50–150 ms before the list was ready. So the first loads wait for it,
     // at most a second, once per launch: after that nothing waits, even on
@@ -39,13 +43,23 @@ final class Shield: ObservableObject {
     /// Runs `load` now, or, while the list is being prepared, once it is
     /// ready, compiling it failed, or a second has passed.
     func whenReady(_ load: @escaping () -> Void) {
-        guard !settled, preparing, enabled else { return load() }
+        guard !settled, enabled, preparing || restoringCustomFilters else { return load() }
         if held.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 MainActor.assumeIsolated { self?.release() }
             }
         }
         held.append(load)
+    }
+
+    func setRestoringCustomFilters(_ restoring: Bool) {
+        guard restoring != restoringCustomFilters else { return }
+        restoringCustomFilters = restoring
+        releaseIfReady()
+    }
+
+    private func releaseIfReady() {
+        if !preparing && !restoringCustomFilters { release() }
     }
 
     private func release() {
@@ -69,41 +83,77 @@ final class Shield: ObservableObject {
     /// Sites it is off for — the ones it broke. A checkout that never
     /// finishes, a video that never starts: switching off here, for this site,
     /// beats switching off everywhere and forgetting to switch back.
-    private(set) var paused: Set<String> = Set(
-        Store.settings.stringArray(forKey: "shield.paused") ?? []
-    )
+    @Published private(set) var paused: Set<String>
+
+    static func normalizedHost(_ text: String) -> String? {
+        SiteAccess.host(from: text)
+    }
 
     func isPaused(on host: String?) -> Bool {
         guard let host else { return false }
-        return paused.contains(host)
+        return paused.contains { Self.matches($0, host: host) }
+    }
+
+    private static func matches(_ site: String, host: String) -> Bool {
+        let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        if host == site { return true }
+        // Single-label hosts can be paused exactly, never as a suffix.
+        return site.contains(".") && host.hasSuffix("." + site)
     }
 
     func pause(_ host: String, _ off: Bool) {
-        if off { paused.insert(host) } else { paused.remove(host) }
-        Store.settings.set(Array(paused).sorted(), forKey: "shield.paused")
+        var sites = paused
+        if off { sites.insert(host) } else { sites.remove(host) }
+        savePaused(sites)
     }
 
-    /// Before each page: the list goes on or off for the site this tab is
-    /// heading to. A rule list is enforced from the moment it is added, so
-    /// doing this at the navigation is what makes "off for this site" true
-    /// for the whole page rather than for the second half of it.
+    func resumeBlocking(on host: String) {
+        savePaused(paused.filter { !Self.matches($0, host: host) })
+    }
+
+    private func savePaused(_ sites: Set<String>) {
+        guard sites != paused else { return }
+        paused = sites
+        settings.set(sites.sorted(), forKey: "shield.paused")
+        apply()
+    }
+
+    private final class Page {
+        var host: String?
+        var builtIn: WKContentRuleList?
+        var custom: [WKContentRuleList] = []
+    }
+
+    private let pages = NSMapTable<WKUserContentController, Page>.weakToStrongObjects()
+
+    /// The tab keeps the host of the last main-frame navigation decision, even
+    /// when a rule list is still compiling or its current URL hasn't changed.
     func tune(_ controller: WKUserContentController, for host: String?) {
-        guard list != nil else { return }
-        set(controller, on: enabled && !isPaused(on: host))
+        let page = pages.object(forKey: controller) ?? Page()
+        page.host = host
+        pages.setObject(page, forKey: controller)
+        set(controller, page: page, on: enabled && !isPaused(on: host))
     }
 
-    /// Whether each page's controller has the list, as it was last given or
-    /// taken: one heading to another page with Shield on, as before, is left
-    /// as it is, rather than the list taken out and put back — sent to the
-    /// page's process both ways — on every link followed.
-    private let holding = NSMapTable<WKUserContentController, NSNumber>.weakToStrongObjects()
+    private func set(_ controller: WKUserContentController, page: Page, on: Bool) {
+        let builtIn = on ? list : nil
+        let custom = on ? customLists : []
+        if page.builtIn !== builtIn {
+            if let old = page.builtIn { controller.remove(old) }
+            if let builtIn { controller.add(builtIn) }
+            page.builtIn = builtIn
+        }
+        if !page.custom.elementsEqual(custom, by: { $0 === $1 }) {
+            page.custom.forEach { controller.remove($0) }
+            custom.forEach { controller.add($0) }
+            page.custom = custom
+        }
+    }
 
-    private func set(_ controller: WKUserContentController, on: Bool, again: Bool = false) {
-        guard let list else { return }
-        if !again, holding.object(forKey: controller)?.boolValue == on { return }
-        controller.remove(list)
-        if on { controller.add(list) }
-        holding.setObject(NSNumber(value: on), forKey: controller)
+    func setCustomList(_ lists: [WKContentRuleList]) {
+        guard !customLists.elementsEqual(lists, by: { $0 === $1 }) else { return }
+        customLists = lists
+        apply()
     }
 
     /// Third parties whose only job is to watch or to sell. First-party
@@ -237,7 +287,7 @@ final class Shield: ObservableObject {
                             guard let compiled else {
                                 self.preparing = false
                                 self.trouble = error?.localizedDescription ?? "Compiling the block list failed"
-                                self.release()
+                                self.releaseIfReady()
                                 return
                             }
                             self.ready(compiled, store: store, identifier: identifier)
@@ -252,29 +302,28 @@ final class Shield: ObservableObject {
         preparing = false
         list = compiled
         // Tabs that opened while this was still preparing get it now.
-        if enabled { waiting.forEach { set($0, on: true, again: true) } }
-        waiting = []
-        release()
+        apply()
+        releaseIfReady()
         // Leave other users of WebKit's store alone, including extensions.
         store.getAvailableContentRuleListIdentifiers { identifiers in
-            for old in identifiers ?? [] where old != identifier && (old == "office-shield" || old.hasPrefix("office-shield-")) {
+            for old in identifiers ?? [] where old != identifier
+                && !old.hasPrefix(CustomFilters.identifierPrefix)
+                && (old == "office-shield" || old.hasPrefix("office-shield-")) {
                 store.removeContentRuleList(forIdentifier: old) { _ in }
             }
         }
     }
 
-    /// Every tab asks for it; whoever asks before it is ready is remembered.
+    /// Register new tabs even if neither list is ready yet.
     func protect(_ controller: WKUserContentController) {
-        if list != nil {
-            if enabled { set(controller, on: true, again: true) }
-        } else {
-            waiting.append(controller)
-        }
+        tune(controller, for: pages.object(forKey: controller)?.host)
     }
 
-    /// Switched on or off for every page that is already open.
-    func apply(to controllers: [WKUserContentController]) {
-        guard list != nil else { return }
-        for controller in controllers { set(controller, on: enabled, again: true) }
+    /// Reuse each controller's main-frame host across all windows and spaces.
+    func apply() {
+        for controller in pages.keyEnumerator().allObjects.compactMap({ $0 as? WKUserContentController }) {
+            guard let page = pages.object(forKey: controller) else { continue }
+            set(controller, page: page, on: enabled && !isPaused(on: page.host))
+        }
     }
 }
