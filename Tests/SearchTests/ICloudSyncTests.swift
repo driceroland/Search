@@ -1236,4 +1236,145 @@ final class ICloudSyncTests: XCTestCase {
         XCTAssertEqual(ICloudSync.profileLine(several: true, name: "Me", elsewhere: true),
                        "Syncs the Me profile · Switch to Me to sync")
     }
+
+    // MARK: - a big import (idea 1423)
+
+    /// What a Zen import into Personal looks like: one folder with its
+    /// subfolders and thousands of pages, each with a long address.
+    private func bigImport(_ count: Int, folders: Int = 40) -> [Bookmark] {
+        let per = count / folders
+        let kids = (0..<folders).map { f in
+            Bookmark.folder("Space \(f)", (0..<per).map { n in
+                Bookmark.site("Some page title number \(f)-\(n) of a long reading list",
+                              URL(string: "https://www.example.com/articles/2026/11/section-\(f)/a-fairly-long-slug-for-page-\(n)?utm_source=zen&ref=\(n)")!)
+            })
+        }
+        return [Bookmark.folder("Zen", kids), Bookmark.site("Office Commun", URL(string: "https://officecommun.com/")!)]
+    }
+
+    func testABigImportIsPastOneRecordAndSplitsIntoPartsThatEachFit() throws {
+        let tree = bigImport(6000)
+        let whole = try XCTUnwrap(ICloudMerge.outgoing(tree, over: nil, shape: .bookmarks))
+        XCTAssertGreaterThan(whole.count, 1_000_000, "6,000 pages with real addresses are past CloudKit's record (the bug)")
+        let parts = ICloudMerge.splitBookmarks(whole)
+        XCTAssertGreaterThan(parts.count, 1)
+        for part in parts { XCTAssertLessThanOrEqual(part.count, ICloudMerge.recordBudget) }
+        // Every part is a list of bookmarks as the iPhone has always read it.
+        for part in parts { XCTAssertNotNil(try? JSONDecoder().decode([PhoneBookmark].self, from: part)) }
+        // And the parts are the list again, order and all.
+        let back = try XCTUnwrap(ICloudMerge.joinBookmarks(parts))
+        XCTAssertEqual(try JSONDecoder().decode([Bookmark].self, from: back), tree)
+        XCTAssertEqual(back, whole)
+    }
+
+    func testAListThatFitsIsTheOneRecordItAlwaysWas() throws {
+        let tree = bigImport(400)
+        let whole = try XCTUnwrap(ICloudMerge.outgoing(tree, over: nil, shape: .bookmarks))
+        XCTAssertLessThan(whole.count, ICloudMerge.recordBudget)
+        XCTAssertEqual(ICloudMerge.splitBookmarks(whole), [whole])
+    }
+
+    func testBookmarksPastOneRecordGoUpInPartsAndAnotherMacReadsThemBack() async throws {
+        let mac = FakeMac(), engine = FakeEngine()
+        mac.marks = bigImport(6000)
+        let sync = await joined(mac, engine)
+        let keys = engine.saved.filter { ICloudMerge.bookmarksPart($0) != nil }
+        XCTAssertTrue(keys.contains("bookmarks") && keys.contains("bookmarks.2"), "\(keys)")
+        var cloud: [(key: String, data: Data, at: Date)] = []
+        for key in keys {
+            let out = try XCTUnwrap(sync.outgoing(key))
+            XCTAssertLessThan(out.data.count, 1_000_000, "\(key) fits a record")
+            cloud.append((key, out.data, out.at))
+        }
+        // The other Mac, new to iCloud.
+        let other = FakeMac(), otherEngine = FakeEngine()
+        otherEngine.cloud = cloud
+        let otherSuite = "icloud-tests-\(UUID().uuidString)"
+        let otherDefaults = try XCTUnwrap(UserDefaults(suiteName: otherSuite))
+        defer { otherDefaults.removePersistentDomain(forName: otherSuite) }
+        let theirs = make(other, otherEngine, defaults: otherDefaults)
+        theirs.turnOn()
+        await theirs.join()
+        XCTAssertTrue(theirs.joined)
+        XCTAssertEqual(other.marks, mac.marks, "all of it, in order")
+        XCTAssertFalse(otherEngine.saved.contains { ICloudMerge.bookmarksPart($0) != nil }, "nothing echoed")
+        // No echo here either.
+        engine.saved = []
+        sync.publish()
+        XCTAssertTrue(engine.saved.filter { ICloudMerge.bookmarksPart($0) != nil }.isEmpty)
+    }
+
+    func testBookmarksThatShrinkDeleteTheirLaterParts() async throws {
+        let mac = FakeMac(), engine = FakeEngine()
+        mac.marks = bigImport(6000)
+        let sync = await joined(mac, engine)
+        XCTAssertNotNil(sync.ledger.values["bookmarks.2"])
+        mac.marks = [Bookmark.site("One", URL(string: "https://one.example/")!)]
+        engine.saved = []
+        sync.publish()
+        XCTAssertEqual(engine.saved.filter { ICloudMerge.bookmarksPart($0) != nil }, ["bookmarks"])
+        XCTAssertTrue(engine.deleted.contains("bookmarks.2"))
+        XCTAssertNil(sync.ledger.values["bookmarks.2"])
+    }
+
+    func testAnIPhoneReadingOnlyTheFirstPartStillReadsTheShapes() throws {
+        let whole = try XCTUnwrap(ICloudMerge.outgoing(bigImport(6000), over: nil, shape: .bookmarks))
+        let first = try XCTUnwrap(ICloudMerge.splitBookmarks(whole).first)
+        let list = try JSONDecoder().decode([PhoneBookmark].self, from: first)
+        XCTAssertEqual(list.first?.title, "Zen")
+        XCTAssertFalse(list.first?.children?.isEmpty ?? true)
+    }
+
+    /// The import itself, through the real code: Zen's bookmarks taken
+    /// into a Personal list post the saved notification, and what that
+    /// leaves goes up as a record.
+    func testAnImportIntoPersonalPostsTheSavedNotificationAndGoesUp() async throws {
+        let store = Bookmarks(file: "idea1423-\(UUID().uuidString).json")
+        defer { store.retire() }
+        let mac = FakeMac(), engine = FakeEngine()
+        let sync = await joined(mac, engine)
+        engine.saved = []
+        var posted = 0
+        let token = NotificationCenter.default.addObserver(forName: Bookmarks.saved, object: store, queue: nil) { _ in
+            MainActor.assumeIsolated { posted += 1; mac.marks = store.roots }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let zen = bigImport(6000)[0].children ?? []
+        XCTAssertEqual(store.takeNoting(zen, from: "Zen").added, 6000)
+        XCTAssertEqual(posted, 1, "takeNoting saves, so sync hears of it")
+        sync.publish()
+        XCTAssertTrue(engine.saved.contains("bookmarks"))
+        XCTAssertTrue(engine.saved.contains("bookmarks.2"), "past one record: in parts, not dropped")
+
+        // The file import (bookmarks HTML, Safari export) is another way in.
+        let more = [Bookmark.site("Another", URL(string: "https://another.example/")!)]
+        _ = try await store.takeFile(more, from: "HTML", control: ImportFile.Control())
+        XCTAssertEqual(posted, 2)
+        // Moving one between folders, and taking an import back out.
+        let id = try XCTUnwrap(store.roots.last?.id)
+        store.move(id, into: store.roots.first?.id)
+        XCTAssertEqual(posted, 3)
+        store.withdraw([id])
+        XCTAssertEqual(posted, 4)
+    }
+
+    // MARK: the line when something can't go up
+
+    func testARecordThatCantGoUpSaysWhichAndWhy() {
+        let big = ICloudSync.upload("bookmarks.2", failed: CKError(.limitExceeded))
+        XCTAssertEqual(big, "Couldn\u{2019}t send bookmarks: too big for iCloud to take in one piece")
+        XCTAssertTrue(ICloudSync.upload("pins.\(first.uuidString)", failed: CKError(.permissionFailure))?.hasPrefix("Couldn\u{2019}t send pins") == true)
+        XCTAssertNotNil(ICloudSync.upload("settings", failed: CKError(.internalError)), "nothing is a quiet default")
+        XCTAssertNil(ICloudSync.upload("bookmarks", failed: CKError(.networkFailure)), "the engine tries these again itself")
+        XCTAssertNil(ICloudSync.upload("bookmarks", failed: CKError(.serviceUnavailable)))
+    }
+
+    func testTheLineGoesWhenRecordsGoUpAgain() async {
+        let sync = await joined(FakeMac(), FakeEngine())
+        sync.failed("Couldn\u{2019}t send bookmarks: too big")
+        XCTAssertNotNil(sync.problem)
+        sync.sent()
+        XCTAssertNil(sync.problem)
+    }
 }

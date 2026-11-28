@@ -298,6 +298,130 @@ enum ICloudMerge {
 
     static func decode<T: Decodable>(_ type: T.Type, _ data: Data) -> T? { try? JSONDecoder().decode(type, from: data) }
 
+    // MARK: bookmarks in parts (idea 1423)
+
+    /// What one record's data may hold before the bookmarks go in several:
+    /// CloudKit refuses a record over about 1 MB (a Zen import of some
+    /// thousand pages was past it, and nothing of it ever went up).
+    static let recordBudget = 700_000
+
+    /// The record of a part of the bookmarks: `bookmarks` is the first, as
+    /// ever; the rest are `bookmarks.2`, `bookmarks.3`… (SYNC.md).
+    static func bookmarksKey(_ part: Int) -> String { part <= 1 ? "bookmarks" : "bookmarks.\(part)" }
+
+    /// Which part a record name is, or nil when it isn't one.
+    static func bookmarksPart(_ key: String) -> Int? {
+        if key == "bookmarks" { return 1 }
+        guard key.hasPrefix("bookmarks."), let part = Int(key.dropFirst("bookmarks.".count)), part >= 2 else { return nil }
+        return part
+    }
+
+    /// The bookmark parts kept, in order.
+    static func bookmarksParts(in values: [String: Data]) -> [(key: String, data: Data)] {
+        values.compactMap { key, data in bookmarksPart(key).map { ($0, key, data) } }
+            .sorted { $0.0 < $1.0 }.map { ($0.1, $0.2) }
+    }
+
+    private static func dump(_ object: Any) -> Data? {
+        try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+    }
+
+    /// The bookmarks as the records that hold them: one while they fit,
+    /// exactly the record there always was. Past the budget they are cut in
+    /// order, a folder too big for one carried on in the next part under the
+    /// same id and name; each part is a list of bookmarks as the iPhone has
+    /// always read (an iPhone that knows only the first sees the first).
+    static func splitBookmarks(_ whole: Data, budget: Int = recordBudget) -> [Data] {
+        guard whole.count > budget, let list = try? JSONSerialization.jsonObject(with: whole) as? [[String: Any]] else { return [whole] }
+        func size(_ object: Any) -> Int { dump(object)?.count ?? 0 }
+        var parts: [[[String: Any]]] = [[]]
+        var used = 0
+        /// How many of `path`'s folders the part under way already has open
+        /// at its end.
+        func open(_ path: [[String: Any]]) -> Int {
+            var level = parts[parts.count - 1]
+            var depth = 0
+            for shell in path {
+                guard let last = level.last, last["id"] as? String == shell["id"] as? String,
+                      let kids = last["children"] as? [[String: Any]] else { break }
+                level = kids
+                depth += 1
+            }
+            return depth
+        }
+        func insert(_ leaf: [String: Any], _ path: ArraySlice<[String: Any]>, into list: inout [[String: Any]]) {
+            guard let shell = path.first else { list.append(leaf); return }
+            if list.last?["id"] as? String == shell["id"] as? String, list.last?["children"] != nil {
+                var last = list.removeLast()
+                var kids = last["children"] as? [[String: Any]] ?? []
+                last["children"] = nil
+                insert(leaf, path.dropFirst(), into: &kids)
+                last["children"] = kids
+                list.append(last)
+            } else {
+                var made = shell
+                var kids: [[String: Any]] = []
+                insert(leaf, path.dropFirst(), into: &kids)
+                made["children"] = kids
+                list.append(made)
+            }
+        }
+        func place(_ leaf: [String: Any], through path: [[String: Any]]) {
+            let shells = { (from: Int) in path[from...].reduce(0) { $0 + size($1) + 16 } }
+            var cost = size(leaf) + 1 + shells(open(path))
+            if used + cost > budget, used > 0 {
+                parts.append([])
+                used = 0
+                cost = size(leaf) + 1 + shells(0)
+            }
+            insert(leaf, path[...], into: &parts[parts.count - 1])
+            used += cost
+        }
+        func walk(_ nodes: [[String: Any]], through path: [[String: Any]]) {
+            for node in nodes {
+                if let kids = node["children"] as? [[String: Any]], !kids.isEmpty {
+                    var shell = node
+                    shell["children"] = nil
+                    walk(kids, through: path + [shell])
+                } else {
+                    place(node, through: path)
+                }
+            }
+        }
+        walk(list, through: [])
+        let out = parts.compactMap { dump($0) }
+        return out.count == parts.count ? out : [whole]
+    }
+
+    /// The parts of the bookmarks, back as the one list they were cut from
+    /// (a folder carried on in the next part is one folder again).
+    static func joinBookmarks(_ parts: [Data]) -> Data? {
+        guard parts.count > 1 else { return parts.first }
+        func merge(_ into: inout [[String: Any]], _ more: [[String: Any]]) {
+            for node in more {
+                if let id = node["id"] as? String, let kids = node["children"] as? [[String: Any]],
+                   let at = into.lastIndex(where: { $0["id"] as? String == id && $0["children"] != nil }) {
+                    var host = into[at]
+                    var have = host["children"] as? [[String: Any]] ?? []
+                    host["children"] = nil
+                    into[at]["children"] = nil
+                    merge(&have, kids)
+                    host["children"] = have
+                    into[at] = host
+                } else {
+                    into.append(node)
+                }
+            }
+        }
+        var whole: [[String: Any]] = []
+        for part in parts {
+            guard let list = try? JSONSerialization.jsonObject(with: part) as? [[String: Any]] else { return nil }
+            merge(&whole, list)
+        }
+        return dump(whole)
+    }
+
+
     /// The tabs that go up: ordinary web pages, no pin, never a private tab,
     /// each address once.
     static func pages(_ tabs: [(url: URL?, title: String, shy: Bool, pinned: Bool)]) -> [DeviceTabs.Page] {
@@ -972,11 +1096,33 @@ final class ICloudSync: ObservableObject {
             if !folders.isEmpty || ledger.values[key] != nil { put(key, folders.map(ICloudMerge.forCloud), .folders) }
             put("pins." + space.id.uuidString, local.pins(space.id), .pins)
         }
-        put("bookmarks", local.bookmarks(), .bookmarks)
+        let dropped = offerBookmarks(local.bookmarks(), now: now, into: &due)
         put("settings", local.settings(), .settings)
+        if !dropped.isEmpty {
+            engine?.delete(dropped)
+            save()
+        }
         guard !due.isEmpty else { return }
         save()
         engine?.save(due)
+    }
+
+    /// The bookmarks, offered: one record while they fit, several past
+    /// the budget (ICloudMerge.splitBookmarks). Nothing goes when the list
+    /// is what the parts already say, however they were cut by the device
+    /// that wrote them. Returns the parts that are no more.
+    private func offerBookmarks(_ roots: [Bookmark], now: Date, into due: inout [String]) -> [String] {
+        let kept = ICloudMerge.bookmarksParts(in: ledger.values)
+        let last = ICloudMerge.joinBookmarks(kept.map(\.data))
+        guard let whole = ICloudMerge.outgoing(roots, over: last, shape: .bookmarks), whole != last else { return [] }
+        let parts = ICloudMerge.splitBookmarks(whole)
+        for (n, data) in parts.enumerated() {
+            let key = ICloudMerge.bookmarksKey(n + 1)
+            if ledger.offer(key, data, now: now) { due.append(key) }
+        }
+        let gone = kept.map(\.key).filter { (ICloudMerge.bookmarksPart($0) ?? 0) > parts.count }
+        for key in gone { ledger.removed(key) }
+        return gone
     }
 
     // MARK: what comes in
@@ -1020,7 +1166,7 @@ final class ICloudSync: ObservableObject {
             readable = ICloudMerge.decode([PinFolder].self, data) != nil
         } else if key == "spaces" {
             readable = ICloudMerge.decode([Space].self, data) != nil
-        } else if key == "bookmarks" {
+        } else if ICloudMerge.bookmarksPart(key) != nil {
             readable = ICloudMerge.decode([Bookmark].self, data) != nil
         } else if key == "settings" {
             readable = ICloudMerge.decode(SharedSettings.self, data) != nil
@@ -1066,8 +1212,10 @@ final class ICloudSync: ObservableObject {
                     apply(key, joining: joining)
                 }
             }
-        } else if key == "bookmarks" {
-            guard var roots = ICloudMerge.decode([Bookmark].self, data) else { return }
+        } else if ICloudMerge.bookmarksPart(key) != nil {
+            // Every part kept, as the one list (idea 1423).
+            guard let whole = ICloudMerge.joinBookmarks(ICloudMerge.bookmarksParts(in: ledger.values).map(\.data)),
+                  var roots = ICloudMerge.decode([Bookmark].self, whole) else { return }
             let mine = local.bookmarks()
             if joining { roots = ICloudMerge.union(bookmarks: roots, mine) }
             if roots != mine { local.adopt(bookmarks: roots) }
@@ -1083,6 +1231,8 @@ final class ICloudSync: ObservableObject {
     func removed(_ key: String) {
         ledger.removed(key)
         if key.hasPrefix("device.") { others[String(key.dropFirst("device.".count))] = nil }
+        // A part gone: the list is what the others say.
+        if ledger.joined, key != "bookmarks", ICloudMerge.bookmarksPart(key) != nil { apply("bookmarks", joining: false) }
         save()
     }
 
@@ -1129,7 +1279,17 @@ final class ICloudSync: ObservableObject {
 
     func failed(_ message: String) {
         problem = message
+        uploadFailed = true
     }
+
+    /// Records went up and none failed: a line about one that did is out
+    /// of date.
+    func sent() {
+        if uploadFailed { problem = nil; uploadFailed = false }
+        synced()
+    }
+
+    private var uploadFailed = false
 
     /// Signed in, out, or as someone else.
     func accountChanged(_ now: Account) {
@@ -1261,11 +1421,34 @@ final class ICloudSync: ObservableObject {
         }
     }
 
-    static func say(_ error: Error) -> String {
+    /// What a record is, for the line when it can't go up.
+    nonisolated static func what(_ key: String) -> String {
+        if key.hasPrefix("device.") { return "open tabs" }
+        if key.hasPrefix("pinfolders.") { return "pin folders" }
+        if key.hasPrefix("pins.") { return "pins" }
+        if ICloudMerge.bookmarksPart(key) != nil { return "bookmarks" }
+        return key == "spaces" ? "spaces" : key == "settings" ? "settings" : "something"
+    }
+
+    /// The line under "Sync with iCloud" for a record that failed to go up,
+    /// or nil when the engine tries again by itself (idea 1423: nothing
+    /// that fails is quiet).
+    nonisolated static func upload(_ key: String, failed error: CKError) -> String? {
+        switch error.code {
+        case .networkFailure, .networkUnavailable, .serviceUnavailable, .requestRateLimited, .zoneBusy:
+            return nil
+        default:
+            let why = say(error)
+            return "Couldn\u{2019}t send \(what(key)): \(why.prefix(1).lowercased() + why.dropFirst())"
+        }
+    }
+
+    nonisolated static func say(_ error: Error) -> String {
         guard let error = error as? CKError else { return error.localizedDescription }
         switch error.code {
         case .notAuthenticated: return "Sign in to iCloud in System Settings to sync"
         case .quotaExceeded: return "Your iCloud is full"
+        case .limitExceeded: return "Too big for iCloud to take in one piece"
         case .networkFailure, .networkUnavailable: return "Offline. Sync carries on when you're back"
         default: return error.localizedDescription
         }
@@ -1489,16 +1672,19 @@ final class CloudKitEngine: ICloudEngine, CKSyncEngineDelegate, @unchecked Senda
                     actions.append { owner.zoneGone() }
                 case .unknownItem:
                     actions.append { owner.forgetFields(key) }
-                case .networkFailure, .networkUnavailable, .serviceUnavailable, .requestRateLimited, .zoneBusy:
-                    break // the engine tries again by itself
                 default:
-                    problems.append(ICloudSync.say(failure.error))
+                    // Anything the engine won't try again says so under
+                    // the switch, with which record (idea 1423).
+                    if let line = ICloudSync.upload(key, failed: failure.error) { problems.append(line) }
                 }
+            }
+            for (id, error) in changes.failedRecordDeletes where error.code != .unknownItem && error.code != .zoneNotFound {
+                if let line = ICloudSync.upload(id.recordName, failed: error) { problems.append(line) }
             }
             await MainActor.run {
                 for (key, fields) in saved { owner.saved(key, fields: fields) }
                 for action in actions { action() }
-                if let problem = problems.first { owner.failed(problem) } else if !saved.isEmpty { owner.synced() }
+                if let problem = problems.first { owner.failed(problem) } else if !saved.isEmpty { owner.sent() }
             }
         default:
             break
