@@ -158,21 +158,24 @@ enum Feed {
     }
 
     /// A session of its own that keeps nothing and sends no sign-in.
-    private static let session: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.httpCookieStorage = nil
-        config.httpShouldSetCookies = false
-        config.httpCookieAcceptPolicy = .never
-        config.urlCredentialStorage = nil
-        config.urlCache = nil
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 30
-        config.httpAdditionalHeaders = [
-            "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, text/html;q=0.5, */*;q=0.1",
-        ]
-        return URLSession(configuration: config)
-    }()
+    private static var session: URLSession {
+        ProxyNetwork.kept("live-folders") {
+            let config = URLSessionConfiguration.ephemeral
+            config.httpCookieStorage = nil
+            config.httpShouldSetCookies = false
+            config.httpCookieAcceptPolicy = .never
+            config.urlCredentialStorage = nil
+            config.urlCache = nil
+            config.requestCachePolicy = .reloadIgnoringLocalCacheData
+            config.timeoutIntervalForRequest = 15
+            config.timeoutIntervalForResource = 30
+            config.httpAdditionalHeaders = [
+                "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, text/html;q=0.5, */*;q=0.1",
+            ]
+            ProxyNetwork.stamp(config)
+            return URLSession(configuration: config)
+        }
+    }
 
     /// The feed at `url`, or, for a page, the feed the page points to.
     static func load(_ url: URL) async -> Result<Read, Problem> {
