@@ -343,6 +343,16 @@ struct DeveloperSourcePane: View {
         return coverage.lineUsage(for: document.url)
     }
 
+    /// Performance's line-level profile in the lines shown: pretty-printed,
+    /// or an authored file's through its source map, as Chrome's gutter.
+    private var profileLines: [Int: Double] {
+        guard !session.lineProfile.isEmpty, !document.formatting else { return [:] }
+        let maps = session.sourceMaps, document = document
+        return session.lineProfile.lines(of: document.url,
+                                         original: isAuthored ? { maps.original(url: $0, line: $1, column: $2) } : nil,
+                                         shown: { document.shownLine(forOriginal: $0, column: $1) })
+    }
+
     /// Each shown line's breakpoint marker.
     private var markers: [Int: SourceGutterMarker] {
         let url = document.url
@@ -469,6 +479,7 @@ struct DeveloperSourcePane: View {
             return controller
         }
         actions.paused = debugger.pause != nil
+        actions.clearLineProfile = { session.clearLineProfile() }
         actions.continueToHere = { line in
             debugger.continueToHere(url: url, line: document.breakpointTarget(line: line).line)
         }
@@ -593,6 +604,7 @@ struct DeveloperSourcePane: View {
                 reveal: reveal,
                 execution: execution,
                 coverage: coverageLines,
+                profile: profileLines,
                 inlineValues: inlineAnnotations?.key == key ? inlineAnnotations?.lines ?? [:] : [:],
                 moved:{ position = $0; document.caret = $0.offset },
                 revealed: { serial in DispatchQueue.main.async { session.revealedSource(serial) } }
@@ -800,6 +812,8 @@ final class SourceEditorActions {
     var closeTab: (() -> Void)?
     /// ⌥⌘F, ⇧⌘F: Search across all sources.
     var showSearch: (() -> Void)?
+    /// The gutter's Clear line-level profile data.
+    var clearLineProfile: () -> Void = {}
     var url = ""
     var isPretty = false
     var canPrettyPrint = false
@@ -838,6 +852,8 @@ struct SourceCodeView: NSViewRepresentable {
     var execution: Int? = nil
     /// Coverage marks by 1-based line: true for code that ran.
     var coverage: [Int: Bool] = [:]
+    /// Line-level profile milliseconds by 1-based line.
+    var profile: [Int: Double] = [:]
     var inlineValues: [Int: String] = [:]
     var moved: (SourceTextView.Position) -> Void
     var revealed: (Int) -> Void = { _ in }
@@ -898,6 +914,11 @@ struct SourceCodeView: NSViewRepresentable {
         }
         if textView.coverageLines != coverage {
             textView.coverageLines = coverage
+            container.gutter.needsDisplay = true
+        }
+        if textView.profileLines != profile {
+            textView.profileLines = profile
+            container.gutter.updateThickness(lines: textView.lineStarts.count)
             container.gutter.needsDisplay = true
         }
         if let reveal, textView.displayID == display.id, container.revealed != reveal.serial {
@@ -1055,6 +1076,8 @@ final class SourceTextView: NSTextView {
     var breakpointMarkers: [Int: SourceGutterMarker] = [:]
     /// The Coverage tool's marks by 1-based line: true for code that ran.
     var coverageLines: [Int: Bool] = [:]
+    /// Performance's line-level profile: milliseconds by 1-based line.
+    var profileLines: [Int: Double] = [:]
     var inlineValues: [Int: String] = [:] {
         didSet { if inlineValues != oldValue { needsDisplay = true } }
     }
@@ -1853,7 +1876,7 @@ final class SourceTextView: NSTextView {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    private func item(_ title: String, _ perform: @escaping () -> Void) -> NSMenuItem {
+    fileprivate func item(_ title: String, _ perform: @escaping () -> Void) -> NSMenuItem {
         let item = SourceMenuItem(title: title, action: #selector(SourceMenuItem.fire), keyEquivalent: "")
         item.handler = perform
         item.target = item
@@ -2075,10 +2098,16 @@ final class SourceGutterView: NSRulerView {
     /// The column of fold markers, right of the numbers, when code folding is on.
     static let foldWidth: CGFloat = 12
     var foldColumn: CGFloat { textView?.foldingEnabled == true ? Self.foldWidth : 0 }
+    /// The line-level profile's timings, left of the numbers, while there are any.
+    var profileColumn: CGFloat {
+        guard let most = textView?.profileLines.values.max() else { return 0 }
+        return ceil((DeveloperLineProfile.label(most) as NSString).size(withAttributes: [.font: Self.font]).width) + 8
+    }
 
     func updateThickness(lines: Int) {
         let digits = max(2, String(lines).count)
         let width = CGFloat(digits) * ("8" as NSString).size(withAttributes: [.font: Self.font]).width + 22 + foldColumn
+            + profileColumn
         if abs(width - ruleThickness) > 0.5 { ruleThickness = ceil(width) }
     }
 
@@ -2129,9 +2158,20 @@ final class SourceGutterView: NSRulerView {
         let markers = textView.breakpointMarkers
         let coverage = textView.coverageLines
         let foldColumn = self.foldColumn
+        let profile = textView.profileLines, profileColumn = self.profileColumn
+        let most = profile.values.max() ?? 0
         for (line, y, height) in visibleLines() {
             let lineRect = NSRect(x: 0, y: y, width: bounds.width - 1, height: height)
             guard lineRect.intersects(rect) else { continue }
+            if let ms = profile[line], most > 0 {
+                // Chrome's line-level timing, shaded by its share of the busiest line's.
+                NSColor.systemOrange.withAlphaComponent(0.1 + 0.5 * ms / most).setFill()
+                NSRect(x: 0, y: y, width: profileColumn - 2, height: height).fill()
+                let label = NSAttributedString(string: DeveloperLineProfile.label(ms),
+                                               attributes: [.font: Self.font, .foregroundColor: SourceTheme.text])
+                let size = label.size()
+                label.draw(at: NSPoint(x: profileColumn - 5 - size.width, y: y + (min(height, 16) - size.height) / 2))
+            }
             if let used = coverage[line] {
                 // Chrome's coverage bar down the gutter's edge, under a marker.
                 (used ? DeveloperCoverageStyle.used : DeveloperCoverageStyle.unused).setFill()
@@ -2141,7 +2181,8 @@ final class SourceGutterView: NSRulerView {
             let marked = marker != nil
             if let marker {
                 // Chrome's marker: a tag over the number, pointing at the code.
-                let tag = NSRect(x: 2, y: y + 1, width: bounds.width - 5 - foldColumn, height: max(height - 2, 10))
+                let tag = NSRect(x: 2 + profileColumn, y: y + 1, width: bounds.width - 5 - foldColumn - profileColumn,
+                                 height: max(height - 2, 10))
                 let path = NSBezierPath()
                 let tip: CGFloat = 5
                 path.move(to: NSPoint(x: tag.minX + 2, y: tag.minY))
@@ -2170,7 +2211,13 @@ final class SourceGutterView: NSRulerView {
             }
         }
         if let execution = textView.executionRect {
+            NSGraphicsContext.saveGraphicsState()
+            // Right of the profile's timings, at the numbers' left edge.
+            let shift = NSAffineTransform()
+            shift.translateX(by: profileColumn, yBy: 0)
+            shift.concat()
             drawExecutionArrow(at: convert(NSPoint(x: 0, y: execution.minY), from: textView).y, height: execution.height)
+            NSGraphicsContext.restoreGraphicsState()
         }
     }
 
@@ -2249,13 +2296,17 @@ final class SourceGutterView: NSRulerView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard let textView, textView.canSetBreakpoints else { return nil }
+        guard let textView else { return nil }
         let point = convert(event.locationInWindow, from: nil)
-        guard let hit = visibleLines().last(where: { $0.1 <= point.y }) else { return nil }
         let menu = NSMenu()
-        textView.addBreakpointItems(to: menu, line: hit.0)
+        if textView.canSetBreakpoints, let hit = visibleLines().last(where: { $0.1 <= point.y }) {
+            textView.addBreakpointItems(to: menu, line: hit.0)
+        }
+        if !textView.profileLines.isEmpty, let actions = textView.actions {
+            menu.addItem(textView.item("Clear line-level profile data", actions.clearLineProfile))
+        }
         if menu.items.last?.isSeparatorItem == true { menu.removeItem(at: menu.items.count - 1) }
-        return menu
+        return menu.items.isEmpty ? nil : menu
     }
 
     override func resetCursorRects() {

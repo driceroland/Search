@@ -62,6 +62,7 @@ final class DeveloperToolsSession: ObservableObject {
     let elements = DeveloperElementsState()
 
     @Published private(set) var panel: DeveloperPanel = .elements
+    let extensionPanels = DeveloperExtensionPanelState()
     @Published private(set) var ready = false
     @Published private(set) var connectionFailed = false
     @Published var message: String?
@@ -114,9 +115,16 @@ final class DeveloperToolsSession: ObservableObject {
     @Published private(set) var resourceFrames: [ResourceFrame] = []
     @Published private(set) var timeline: [Timing] = []
     @Published private(set) var timelineAnnotations: [DeveloperPerformanceAnnotation] = []
+    @Published private(set) var lineProfile = DeveloperLineProfile()
+    private(set) var timelineScripts: [DeveloperPerformanceScript]?
+    private var timelineDocument: String?
+    private var timelineAddress: URL?
+    var timelineIsCurrentDocument: Bool {
+        timelineAddress != nil && timelineAddress == address && timelineDocument == navigationID
+    }
     @Published private(set) var recordingTimeline = false
     private var collectingScriptSamples = false
-    private var scriptProfilerStarted = false
+    private(set) var scriptProfilerStarted = false
     private var capturingTracks = false
     private var trackStart: Double?
     private var trackNetwork = DeveloperPerformanceNetworkRecording()
@@ -128,6 +136,8 @@ final class DeveloperToolsSession: ObservableObject {
     /// Performance's screenshots, a frame of the view whenever it changes.
     private var trackShots: DeveloperFilmstripRecorder?
     private(set) var recordingTimelineMemory = false
+    @Published private(set) var heapTotal: Double?
+    private var heapPreview = false
     @Published private(set) var throttle: NetworkCondition = .unrestricted
     @Published private(set) var requestInterception = false
     @Published private(set) var cacheDisabled = false
@@ -158,6 +168,7 @@ final class DeveloperToolsSession: ObservableObject {
     /// More tools › AI assistance: the chat with the on-device model.
 
     private var requestIndex: [String: Int] = [:]
+    private var requestNumber = 0
     private var pendingPick: NSPoint?
     private var pickWhenReady = false
     private var commandNumber = 0
@@ -279,6 +290,7 @@ final class DeveloperToolsSession: ObservableObject {
 
     func disconnect() -> Task<Void, Never> {
         if let disconnectTask { return disconnectTask }
+        extensionPanels.stop()
         if userAgentOverride != nil { setUserAgentOverride(nil) }
         DeveloperIssuesModel.closed(self)
         DeveloperLiveMetricsModel.closed(self)
@@ -398,6 +410,8 @@ final class DeveloperToolsSession: ObservableObject {
                     try await self.callFrontend("return searchInspector.capabilities();", [:])
                 }) {
                     _ = try? await current.evaluateJavaScript(DeveloperNetworkBridgeScript.source)
+                    _ = try? await callFrontend("return await searchNetwork.setBlocking(options);",
+                                                ["options": networkTools.blockingOptions])
                     domTargetID = state["domTargetId"] as? String
                     runtimeTargetID = state["runtimeTargetId"] as? String
                     _ = try await callFrontend("searchInspector.setDomains(domains);", [
@@ -434,6 +448,7 @@ final class DeveloperToolsSession: ObservableObject {
         // As in Chrome DevTools: drawer tools (Rendering, Sensors) and panels
         // moved to the drawer open there, under the panel already shown.
         if DeveloperToolsShell.shared.openInDrawer(panel) { return }
+        extensionPanels.select(nil)
         guard self.panel != panel else { return }
         idleDrains = 0
         if self.panel == .elements { stopPicking() }
@@ -484,7 +499,7 @@ final class DeveloperToolsSession: ObservableObject {
     /// reads the heap through its own frontend hook.)
     private var eventDomains: [String] {
         var domains = ["DOM", "Page", "Target", "Network", "Console", "Debugger", "Timeline", "ScriptProfiler"]
-        if recordingTimelineMemory { domains.append("Memory") }
+        if recordingTimelineMemory || heapPreview { domains.append("Memory") }
         // Performance's CPU track, while a recording is captured.
         if capturingTracks { domains.append("CPUProfiler") }
         if memory.tracking { domains.append("Heap") }
@@ -845,9 +860,10 @@ final class DeveloperToolsSession: ObservableObject {
             guard capturingTracks else { return }
             capturingTracks = false
             recordingTimelineMemory = false
+            timelineDocument = navigationID
+            timelineAddress = address
             trackShots?.stop()
             if let start = trackStart, let end = params["endTime"] as? Double, end >= start {
-                record = Self.withinRecording(record, from: start)
                 record.append(Timing(type: "RecordingBounds", start: start, end: end))
                 record += trackNetwork.timings(from: start, to: end)
                 if let page = trackPage,
@@ -856,6 +872,7 @@ final class DeveloperToolsSession: ObservableObject {
                     record += DeveloperPerformancePageTimings.screenshots(shots.images, pageNow: now, pageDate: date,
                                                                           sync: sync, bounds: start...end)
                 }
+                record = Self.withinRecording(record, from: start)
             }
             trackStart = nil
             trackNetwork = .init()
@@ -863,10 +880,12 @@ final class DeveloperToolsSession: ObservableObject {
             trackPageDate = nil
             trackShots = nil
         case "Memory.trackingUpdate":
-            guard capturingTracks, recordingTimelineMemory, let start = trackStart,
-                  let sample = params["event"] as? [String: Any], let time = sample["timestamp"] as? Double,
-                  time >= start, let categories = sample["categories"] as? [[String: Any]],
+            guard let sample = params["event"] as? [String: Any],
+                  let categories = sample["categories"] as? [[String: Any]],
                   let bytes = categories.first(where: { $0["type"] as? String == "javascript" })?["size"] as? NSNumber else { return }
+            if heapPreview { heapTotal = bytes.doubleValue }
+            guard capturingTracks, recordingTimelineMemory, let start = trackStart,
+                  let time = sample["timestamp"] as? Double, time >= start else { return }
             record.append(Timing(type: "JSHeapSample", start: time, end: time, data: ["bytes": bytes.stringValue]))
         case "CPUProfiler.trackingUpdate":
             guard capturingTracks, let start = trackStart, let event = params["event"] as? [String: Any],
@@ -876,6 +895,7 @@ final class DeveloperToolsSession: ObservableObject {
             guard collectingScriptSamples else { return }
             collectingScriptSamples = false
             let traces = (params["samples"] as? [String: Any])?["stackTraces"] as? [[String: Any]] ?? []
+            lineProfile = DeveloperLineProfile(traces, within: record)
             record += DeveloperScriptProfile.timings(traces, within: record)
         default: break
         }
@@ -917,11 +937,14 @@ final class DeveloperToolsSession: ObservableObject {
            let node = tree[html] {
             expand(node)
         }
-        if let path = reselectPath {
-            reselectPath = nil
+        let path = reselectPath ?? "body"
+        let reselecting = reselectPath != nil
+        reselectPath = nil
+        if selectedNode == nil {
             let found = try? await command("DOM.querySelector", ["nodeId": id, "selector": path], targetID: domTargetID)
             if domRevision == revision, selectedNode == nil, let node = found?["nodeId"] as? Int, node > 0 {
                 selectNode(node)
+                if !reselecting, let body = nodes[node], !expanded.contains(node) { expand(body) }
             }
         }
     }
@@ -1097,6 +1120,17 @@ final class DeveloperToolsSession: ObservableObject {
             }
             if changed { self.nodes = tree }
         }
+    }
+
+    /// Synthetic adopted-style rows have no DOM node of their own.
+    func deselectNode() {
+        selection?.cancel()
+        selection = nil
+        selectedNode = nil
+        styles = []
+        matchedStyles = []
+        layoutContext = nil
+        listeners = []
     }
 
     func selectNode(_ id: Int) {
@@ -1650,6 +1684,7 @@ final class DeveloperToolsSession: ObservableObject {
     func clearNetwork() {
         requests = []
         requestIndex = [:]
+        requestNumber = 0
         Task { _ = try? await bridge("searchInspector.clearRequestDetails?.(); return true;") }
     }
 
@@ -1674,7 +1709,9 @@ final class DeveloperToolsSession: ObservableObject {
     /// Requests read from a HAR file, listed after the recorded ones.
     func addImportedRequests(_ imported: [Request]) {
         var network = requests
-        for request in imported where requestIndex[request.id] == nil {
+        for var request in imported where requestIndex[request.id] == nil {
+            requestNumber += 1
+            request.number = requestNumber
             requestIndex[request.id] = network.count
             network.append(request)
         }
@@ -1695,6 +1732,7 @@ final class DeveloperToolsSession: ObservableObject {
                                   type: type, loader: params["loaderId"] as? String, started: at)
             request.wallStarted = params["walltime"] as? Double
             request.documentURL = params["documentURL"] as? String
+            request.referrerPolicy = data["referrerPolicy"] as? String
             request.frameId = params["frameId"] as? String
             request.initiatorURL = initiator?["url"] as? String
             request.initiatorType = initiator?["type"] as? String
@@ -1705,6 +1743,7 @@ final class DeveloperToolsSession: ObservableObject {
                 request.ended = at
             }
             if let index = requestIndex[id] {
+                request.number = network[index].number
                 if params["redirectResponse"] != nil {
                     let previous = network[index]
                     request.originalURL = previous.originalURL ?? previous.url
@@ -1712,6 +1751,8 @@ final class DeveloperToolsSession: ObservableObject {
                 }
                 network[index] = request
             } else {
+                requestNumber += 1
+                request.number = requestNumber
                 if network.count >= 1_000 {
                     network.removeFirst(100)
                     requestIndex = Dictionary(uniqueKeysWithValues: network.enumerated().map { ($1.id, $0) })
@@ -2056,7 +2097,8 @@ final class DeveloperToolsSession: ObservableObject {
         return parameters.isEmpty && message["type"] as? String ?? "log" == "log" ? "info" : level
     }
 
-    func loadTimeline(_ timings: [Timing], annotations: [DeveloperPerformanceAnnotation] = []) {
+    func loadTimeline(_ timings: [Timing], annotations: [DeveloperPerformanceAnnotation] = [],
+                      scripts: [DeveloperPerformanceScript]? = nil) {
         guard !recordingTimeline else { return }
         // Nothing of a recording left unfinished applies to the file.
         collectingScriptSamples = false
@@ -2068,6 +2110,10 @@ final class DeveloperToolsSession: ObservableObject {
         trackPageDate = nil
         trackShots?.stop()
         trackShots = nil
+        timelineScripts = scripts ?? []
+        timelineDocument = nil
+        timelineAddress = nil
+        lineProfile = DeveloperLineProfile()
         timeline = Self.cappedTimeline(timings)
         timelineAnnotations = annotations
     }
@@ -2094,6 +2140,23 @@ final class DeveloperToolsSession: ObservableObject {
         timelineAnnotations = []
     }
 
+    func clearLineProfile() { lineProfile = DeveloperLineProfile() }
+
+    func setHeapPreview(_ watching: Bool) {
+        run { session in
+            guard session.heapPreview != watching else { return }
+            session.heapPreview = watching
+            if watching {
+                try await session.updateEventDomains()
+                if !session.recordingTimelineMemory { _ = try? await session.command("Memory.startTracking") }
+            } else {
+                session.heapTotal = nil
+                if !session.recordingTimelineMemory { _ = try? await session.command("Memory.stopTracking") }
+                try await session.updateEventDomains()
+            }
+        }
+    }
+
     func toggleTimeline(reloading: Bool = false) {
         run { session in
             let start = !session.recordingTimeline
@@ -2102,6 +2165,10 @@ final class DeveloperToolsSession: ObservableObject {
             if start {
                 session.timeline = []
                 session.timelineAnnotations = []
+                session.timelineScripts = nil
+                session.timelineDocument = nil
+                session.timelineAddress = nil
+                session.lineProfile = DeveloperLineProfile()
                 session.screenshotsRecorded = 0
                 session.capturingTracks = true
                 session.trackStart = nil
@@ -2114,7 +2181,8 @@ final class DeveloperToolsSession: ObservableObject {
                 try? await session.updateEventDomains()
                 // WebKit's Screenshot instrument captures full-size frames and can
                 // stall compositing. Track screenshots using small view snapshots.
-                var instruments = ["Timeline", "ScriptProfiler"]
+                let samples = !DeveloperPerformanceCapture.jsSamplesDisabled
+                var instruments = samples ? ["Timeline", "ScriptProfiler"] : ["Timeline"]
                 if memory { instruments.append("Memory") }
                 // The CPU and Animations tracks' instruments; WebKit refuses
                 // the whole list over an instrument it doesn't know.
@@ -2128,7 +2196,7 @@ final class DeveloperToolsSession: ObservableObject {
             } else {
                 session.trackShots?.stop()
             }
-            if !start, session.recordingTimelineMemory {
+            if !start, session.recordingTimelineMemory, !session.heapPreview {
                 _ = try? await session.command("Memory.stopTracking")
             }
             if !start {
@@ -2158,9 +2226,10 @@ final class DeveloperToolsSession: ObservableObject {
                     shots.start(web)
                     session.trackShots = shots
                 }
-                session.scriptProfilerStarted = (try? await session.command("ScriptProfiler.startTracking", ["includeSamples": true])) != nil
+                session.scriptProfilerStarted = !DeveloperPerformanceCapture.jsSamplesDisabled
+                    ? (try? await session.command("ScriptProfiler.startTracking", ["includeSamples": true])) != nil : false
                 session.collectingScriptSamples = session.scriptProfilerStarted
-                if memory { _ = try? await session.command("Memory.startTracking") }
+                if memory, !session.heapPreview { _ = try? await session.command("Memory.startTracking") }
                 _ = try? await session.command("CPUProfiler.startTracking")
                 _ = try? await session.command("Animation.startTracking")
             } else if session.scriptProfilerStarted {
@@ -2225,7 +2294,12 @@ final class DeveloperToolsSession: ObservableObject {
     /// Timeline.recordingStarted, and the earliest record sets the
     /// recording's zero, so one such record put the page load seconds in.
     nonisolated static func withinRecording(_ records: [Timing], from start: Double) -> [Timing] {
-        records.filter { $0.end >= start }
+        records.filter { $0.end >= start }.map { record in
+            guard record.start < start else { return record }
+            var clipped = record
+            clipped.start = start
+            return clipped
+        }
     }
 
     /// A WebKit timeline record and the records nested in it, in the order

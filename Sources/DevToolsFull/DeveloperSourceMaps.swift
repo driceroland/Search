@@ -67,11 +67,15 @@ struct DeveloperSourceMap: Equatable {
     /// its relative `sources` resolve against; else the compiled file's.
     init(text: String, mapURL: String?, scriptURL: String?) throws {
         // A map may start with Chrome's XSSI guard, )]}' on its own line.
+        guard let json = Self.json(text) else { throw ParseError.notJSON }
+        try self.init(json: json, base: mapURL ?? scriptURL)
+    }
+
+    static func json(_ text: String) -> [String: Any]? {
         var body = Substring(text)
         if body.hasPrefix(")]}") { body = body.drop { $0 != "\n" } }
-        guard let data = body.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw ParseError.notJSON }
-        try self.init(json: json, base: mapURL ?? scriptURL)
+        guard let data = body.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
     init(json: [String: Any], base: String?) throws {
@@ -494,6 +498,8 @@ final class DeveloperSourceMaps {
         let startLine: Int
         let startColumn: Int
         let map: DeveloperSourceMap
+        let exportText: String?
+        let mapURL: String?
     }
 
     private struct Script {
@@ -511,6 +517,7 @@ final class DeveloperSourceMaps {
     private var loading = Set<String>()
     private var seeded = Set<String>()
     private var fetched: [String: String] = [:]
+    private var retainedExportBytes = 0
     /// Bumped when the page navigates, so a map read for the old page is dropped.
     private var generation = 0
     /// Every load made, for the Developer resources drawer tool.
@@ -520,7 +527,7 @@ final class DeveloperSourceMaps {
         self.session = session
     }
 
-    private static func key(_ url: String) -> String {
+    nonisolated static func key(_ url: String) -> String {
         String(url.prefix { $0 != "?" && $0 != "#" })
     }
 
@@ -547,6 +554,7 @@ final class DeveloperSourceMaps {
             loading = []
             seeded = []
             fetched = [:]
+            retainedExportBytes = 0
             resourceLog.removeAll()
             changed()
         default:
@@ -673,7 +681,14 @@ final class DeveloperSourceMaps {
                 let map = try DeveloperSourceMap(text: text, mapURL: mapURL, scriptURL: url)
                 self.resourceLog.finish(record, bytes: text.utf8.count)
                 guard !map.sources.isEmpty else { return }
-                self.attached[key] = Attached(url: url, css: css, startLine: startLine, startColumn: startColumn, map: map)
+                // Keep the original JSON for an explicit trace export. Bound
+                // the additional storage separately from the source-map loader.
+                let bytes = text.utf8.count
+                let keep = !css && self.retainedExportBytes + bytes <= DeveloperPerformanceScript.byteLimit
+                let exportText = keep ? text : nil
+                if keep { self.retainedExportBytes += bytes }
+                self.attached[key] = Attached(url: url, css: css, startLine: startLine, startColumn: startColumn,
+                                              map: map, exportText: exportText, mapURL: mapURL)
                 self.changed()
                 self.session?.debugger.sourceMapLoaded(Set(map.sources))
                 // Its third-party and ignore-listed sources are stepped over.
@@ -724,6 +739,11 @@ final class DeveloperSourceMaps {
 
     private func entry(forGenerated url: String) -> Attached? {
         guard !url.isEmpty, let entry = attached[Self.key(url)], enabled(entry) else { return nil }
+        return entry
+    }
+
+    func recordedScriptMap(for url: String) -> Attached? {
+        guard let entry = entry(forGenerated: url), entry.url == url, !entry.css else { return nil }
         return entry
     }
 

@@ -217,6 +217,9 @@ Not in this version, kept on main for a later one:
 
 ### Added
 
+- Developer Tools Full shows panels from enabled extensions with access to the inspected page.
+- Developer Tools packages carry the recent Perch changes for Elements, Console, Network, Sources, Performance, Memory and device emulation.
+
 - Settings › Tabs › Keep the window when its last tab closes, off unless turned on: ⌘W on the window's last tab, an empty one, leaves it there with its field ready, as Arc does, instead of closing the window; ⇧⌘W still closes it. With Leave a new tab when the last tab closes, a window is then never closed by one ⌘W too many. `python3 Tests/keep_window_last_tab.py` (reported by email, idea 1102)
 - A pinned row taken away from its page goes back with a click on its icon, as Arc's pinned tabs do: under the pointer the icon becomes a back arrow ("Back to Pinned Page"), and a click takes the pin home, picking it first if another tab was on screen. The rest of the row keeps its click, and at home the icon is part of the row as before. A square already goes home with a double-click, and the row's right-click menu still has Back to Pinned Page. `python3 Tests/pin_icon_home.py` (idea 1076)
 - Sync with iCloud carries your tab groups with your open tabs: each group's name, colour, folded state and its tabs in order. On another Mac, History › Tabs on Your Other Devices lists that device's tabs by group, a menu each, with Open All in Tab Group to bring a group over as one, named and coloured as it was. Added to the record as optional fields, so a Mac without groups writes the same record as before, and an older Search or the iPhone still lists every tab. Pin folders and tab groups stay two things. `swift test --filter ICloudSyncTests`, `python3 Tests/icloud_groups.py` (idea 1093)

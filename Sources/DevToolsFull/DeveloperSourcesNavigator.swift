@@ -131,8 +131,37 @@ enum SourceTree {
         let groups = self.authored(authored)
         guard !groups.isEmpty else { return nodes }
         if nodes.isEmpty { return groups }
-        nodes[0].children = groups + nodes[0].children
+        // An authored file from the page's own host (src/app.js beside
+        // app.min.js) goes under that host's node, as in Chrome, not a
+        // second node of the same name.
+        var separate: [SourceTreeNode] = []
+        for group in groups {
+            if let index = nodes[0].children.firstIndex(where: { $0.kind == .origin && $0.name == group.name }) {
+                nodes[0].children[index].children = merged(nodes[0].children[index].children, group.children)
+            } else {
+                separate.append(group)
+            }
+        }
+        nodes[0].children = separate + nodes[0].children
         return nodes
+    }
+
+    /// Two folders' contents as one: same-named folders merged, folders
+    /// before files, each by name.
+    private static func merged(_ first: [SourceTreeNode], _ second: [SourceTreeNode]) -> [SourceTreeNode] {
+        var folders = first.filter { $0.kind == .folder }
+        var files = first.filter(\.isFile)
+        for node in second {
+            if node.kind == .folder, let index = folders.firstIndex(where: { $0.name == node.name }) {
+                folders[index].children = merged(folders[index].children, node.children)
+            } else if node.kind == .folder {
+                folders.append(node)
+            } else {
+                files.append(node)
+            }
+        }
+        let byName = { (a: SourceTreeNode, b: SourceTreeNode) in a.name.localizedStandardCompare(b.name) == .orderedAscending }
+        return folders.sorted(by: byName) + files.sorted(by: byName)
     }
 
     private static func folders(of url: String) -> [String] {

@@ -235,6 +235,8 @@ extension DeveloperToolsSession {
         var initiatorType: String?
         var wallStarted: Double?
         var documentURL: String?
+        var referrerPolicy: String?
+        var number: Int?
         /// The frame that made the request, for Group by frame.
         var frameId: String?
         var originalURL: String?
@@ -307,7 +309,7 @@ extension DeveloperToolsSession {
     struct Timing: Identifiable, Equatable {
         let id = UUID()
         let type: String
-        let start: Double
+        var start: Double
         let end: Double
         var depth = 0
         var data: [String: String] = [:]

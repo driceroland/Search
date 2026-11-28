@@ -326,6 +326,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
+APCA contrast in the optional Full package adapts the luminance and signed contrast
+functions in [Chromium DevTools' ColorUtils.ts](https://github.com/ChromeDevTools/devtools-frontend/blob/b6c7456a9a228c45bcdd7cf5f35eb278b2698f0d/front_end/core/common/ColorUtils.ts#L95-L147)
+under the BSD 3-Clause License below.
+
 ### BSD 3-Clause License (Chromium)
 
 ```

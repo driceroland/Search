@@ -44,13 +44,18 @@ struct DeveloperIssuesView: View {
             if model.groups.isEmpty {
                 empty
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(sections) { section in
-                            DeveloperIssueSectionView(model: model, section: section, depth: 0)
+                ScrollViewReader { reader in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(sections) { section in
+                                DeveloperIssueSectionView(model: model, section: section, depth: 0)
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // An issue opened from its underline in Elements.
+                    .onAppear { scroll(reader) }
+                    .onChange(of: model.revealed) { _, _ in scroll(reader) }
                 }
             }
         }
@@ -61,6 +66,14 @@ struct DeveloperIssuesView: View {
             model.viewDisappeared()
         }
         .accessibilityIdentifier("developer-issues")
+    }
+
+    private func scroll(_ reader: ScrollViewProxy) {
+        guard let id = model.revealed else { return }
+        DispatchQueue.main.async {
+            reader.scrollTo(id, anchor: .top)
+            model.revealed = nil
+        }
     }
 
     private var sections: [DeveloperIssueSection] {
@@ -214,11 +227,12 @@ private struct DeveloperIssueRow: View {
             }
             .buttonStyle(.plain)
             .contextMenu {
-                Button("Copy issue title") { copy(group.title) }
+                Button("Copy issue title") { DeveloperToolsSession.copyToPasteboard(group.title) }
             }
             if open { details }
             Divider()
         }
+        .id(group.id)
     }
 
     private var details: some View {
@@ -258,11 +272,6 @@ private struct DeveloperIssueRow: View {
         .padding(.trailing, DeveloperToolsStyle.gutter)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 

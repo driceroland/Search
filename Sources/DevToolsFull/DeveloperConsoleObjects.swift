@@ -552,11 +552,16 @@ enum ConsoleFormat {
             if property.subtype == "array" {
                 return property.value ?? "Array" + ((property.valuePreview?.size).map { "(\($0))" } ?? "")
             }
-            if let nested = property.valuePreview, property.subtype == nil,
-               nested.properties.count <= 3, !nested.properties.isEmpty {
-                return "{" + nested.properties.map { $0.name + ": " + ($0.type == "string" ? "'\($0.value ?? "")'" : $0.value ?? "…") }
-                    .joined(separator: ", ") + (nested.overflow ? ", …" : "") + "}"
+            // One level down Chrome abbreviates, as `(4) [1, {…}, h1, Map(1)]`:
+            // a plain object is {…}, an element its tag, a Map or Set its size.
+            if property.subtype == "node", let value = property.value {
+                return value.trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
             }
+            if ["map", "set", "weakmap", "weakset"].contains(property.subtype ?? ""),
+               let value = property.value, !value.contains("("), let size = property.valuePreview?.size {
+                return value + "(\(size))"
+            }
+            if property.subtype == nil, property.value == nil || property.value == "Object" { return "{…}" }
             return property.value ?? "{…}"
         default: return property.value ?? property.type
         }
@@ -1119,6 +1124,21 @@ final class DeveloperConsoleStore: ObservableObject {
         else { expanded.insert(key) }
     }
 
+    /// The console menu's Expand all and Collapse all: every group, and
+    /// every logged object's top level, opened or closed. `load` asks for
+    /// an opened object's properties.
+    func setAllExpanded(_ expand: Bool, lines: [DeveloperToolsSession.ConsoleLine],
+                        load: (ConsoleRemoteObject, String?) -> Void = { _, _ in }) {
+        toggledGroups = Set(lines.filter { ConsoleLayout.isGroupStart($0) && ($0.details?.type == "startGroupCollapsed") == expand }.map(\.id))
+        guard expand else { expanded = []; deepExpansion = [:]; return }
+        for line in lines {
+            let objects = ConsoleRowContent.objects(line, store: self)
+            guard !objects.isEmpty, expanded.insert(line.id.uuidString).inserted, objects.count == 1 else { continue }
+            load(objects[0], line.details?.targetID)
+        }
+    }
+
+
     func reset() {
         inspectedNodes = []
         expanded = []
@@ -1181,17 +1201,18 @@ extension DeveloperToolsSession {
         let nodes = consoleStore.inspectedNodes
         let gesture = consoleStore.settings.userActivation
         let place = consolePlace()
+        let prepared = DeveloperConsoleSyntax.prepare(expression, paused: paused || place["callFrameId"] != nil)
         let target = place["targetId"] as? String
         Task { [weak self] in
             guard let self else { return }
             do {
                 let token = UUID().uuidString
                 let reply = try await self.bridge("""
-                    const reply = await searchConsole.evaluate(expression, nodes, gesture, null, place);
+                    const reply = await searchConsole.evaluate(expression, nodes, gesture, null, place, awaited);
                     searchInspector.mark?.(token);
                     return reply;
                     """, [
-                    "expression": expression, "nodes": nodes, "gesture": gesture, "place": place, "token": token,
+                    "expression": prepared.expression, "awaited": prepared.awaited, "nodes": nodes, "gesture": gesture, "place": place, "token": token,
                 ]) as? [String: Any]
                 if reply?["contextReset"] as? Bool == true { self.consoleStore.context = nil }
                 guard let raw = reply?["value"] as? [String: Any] else { return }

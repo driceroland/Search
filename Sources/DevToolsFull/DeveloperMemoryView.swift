@@ -194,6 +194,8 @@ struct DeveloperMemoryView: View {
                 Text("Record to see objects allocated during that time that are still alive when you stop.")
                     .foregroundStyle(.secondary)
             }
+            DeveloperHeapTotal(session: session)
+                .padding(.top, 6)
             HStack(spacing: 8) {
                 Button(profile == .snapshot ? "Take snapshot" : profile == .detached ? "Start" : recordingTitle,
                        action: record)
@@ -1225,5 +1227,33 @@ private extension View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(selected ? DeveloperToolsStyle.selected : .clear)
             .contentShape(Rectangle())
+    }
+}
+
+/// The JavaScript VM for the inspected page and its reported heap usage.
+struct DeveloperHeapTotal: View {
+    @ObservedObject var session: DeveloperToolsSession
+
+    var body: some View {
+        let address = session.address
+        let heap = session.heapTotal.map { String(format: "%.1f MB", $0 / 1_000_000) } ?? "–"
+        VStack(alignment: .leading, spacing: 6) {
+            Text("JavaScript VM instance").font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 12) {
+                Text(address?.host() ?? address?.absoluteString ?? "Page").lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 12)
+                Text(heap).monospacedDigit().foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: DeveloperToolsStyle.rowHeight)
+            .background(DeveloperToolsStyle.selected)
+            Text("Total JS heap size: \(heap)")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("developer-memory-total-heap")
+        }
+        .frame(maxWidth: 420, alignment: .leading)
+        .onAppear { session.setHeapPreview(true) }
+        .onDisappear { session.setHeapPreview(false) }
     }
 }

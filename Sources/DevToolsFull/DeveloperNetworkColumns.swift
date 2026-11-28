@@ -1,11 +1,13 @@
 import SwiftUI
 
 /// The request list's header menu, as Chrome lays it out: a checkbox for
-/// each column, Response Headers to add a header's value as a column,
-/// Waterfall to choose what that column sorts by, and Reset Columns. The
+/// each column, Response Headers and Request headers to add a header's
+/// value as a column, Waterfall to choose what that column sorts by, and Reset Columns. The
 /// row menu's Header Options shows the same.
 struct DeveloperNetworkColumnMenu: View {
     @Binding var options: DeveloperNetworkView.Options
+    /// The request header names recorded, offered after Chrome's own.
+    var seen: [String] = []
     let manageHeaders: () -> Void
 
     var body: some View {
@@ -24,6 +26,13 @@ struct DeveloperNetworkColumnMenu: View {
             }
             Divider()
             Button("Manage Header Columns…", action: manageHeaders)
+        }
+        Menu("Request headers") {
+            ForEach(options.requestHeaderChoices(seen: seen), id: \.self) { name in
+                Toggle(DeveloperNetworkListColumn.title(forHeader: name), isOn: Binding(get: {
+                    options.requestHeaderColumns.contains(name)
+                }, set: { on in options.showRequestHeaderColumn(name, on) }))
+            }
         }
         Menu("Waterfall") {
             ForEach(DeveloperNetworkWaterfallSort.allCases) { sort in

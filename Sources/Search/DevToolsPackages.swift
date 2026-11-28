@@ -359,9 +359,17 @@ final class DevToolsPackages: ObservableObject {
 
     static func unload(_ web: WKWebView) {
         guard !idle else { return }
-        shared.bridges.values.forEach { $0.awake.remove(ObjectIdentifier(web)) }
+        for bridge in shared.bridges.values {
+            bridge.stopExtensionPanels(in: web)
+            bridge.awake.remove(ObjectIdentifier(web))
+        }
         shared.tabs[ObjectIdentifier(web)] = nil
         shared.loaded.values.forEach { $0.tabWillUnload(webView: web) }
+    }
+
+    static func documentChanged(_ web: WKWebView) {
+        guard !idle else { return }
+        for bridge in shared.bridges.values { bridge.extensionDocumentChanged(in: web) }
     }
 
     static func busy(_ tab: Tab) -> Bool {
@@ -622,10 +630,12 @@ final class DevToolsPackages: ObservableObject {
 
 /// Search, as one package sees it.
 @MainActor
-final class DevToolsHostBridge: NSObject, SearchDevToolsHost {
+final class DevToolsHostBridge: NSObject, SearchDevToolsExtensionHost {
     let id: String
     let isolatedWorld: WKContentWorld
     var awake = Set<ObjectIdentifier>()
+    private weak var extensionWeb: WKWebView?
+    private var extensionSession: DeveloperExtensionPanels?
 
     init(id: String) {
         self.id = id
@@ -684,6 +694,50 @@ final class DevToolsHostBridge: NSObject, SearchDevToolsHost {
     func rearm(_ webView: WKWebView) { tab(webView)?.rearm() }
 
     func invalidate() { DevToolsPackages.shared.invalidate() }
+
+    func startExtensionPanels(in webView: WKWebView, changed: @escaping () -> Void) {
+        guard id == "full", !isPrivate(webView),
+              let tab = tab(webView), tab.built === webView, tab.isWeb,
+              let browser = tab.delegate as? Browser else { return }
+        if let extensionWeb { stopExtensionPanels(in: extensionWeb) }
+        let session = DeveloperExtensionPanels()
+        session.changed = changed
+        extensionWeb = webView
+        extensionSession = session
+        let appearance = webView.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])
+        session.start(inspecting: tab, browser: browser, theme: appearance == .darkAqua ? "dark" : "default")
+    }
+
+    func stopExtensionPanels(in webView: WKWebView) {
+        guard extensionWeb === webView, let session = extensionSession else { return }
+        extensionWeb = nil
+        extensionSession = nil
+        session.stop()
+    }
+
+    func extensionDocumentChanged(in webView: WKWebView) {
+        if extensionWeb === webView { extensionSession?.documentChanged() }
+    }
+
+    func extensionPanels(in webView: WKWebView) -> [[String: String]] {
+        guard extensionWeb === webView, let session = extensionSession else { return [] }
+        return session.items.map { ["id": $0.id, "title": $0.title] }
+    }
+
+    func extensionPanelIcon(_ id: String, in webView: WKWebView) -> NSImage? {
+        extensionWeb === webView ? extensionSession?.icons[id] : nil
+    }
+
+    func selectedExtensionPanel(in webView: WKWebView) -> String? {
+        extensionWeb === webView ? extensionSession?.selectedItem?.id : nil
+    }
+
+    func showExtensionPanel(_ id: String?, in webView: WKWebView) -> NSView? {
+        guard extensionWeb === webView, let session = extensionSession else { return nil }
+        session.select(id)
+        guard let item = session.selectedItem else { return nil }
+        return session.web(for: item)
+    }
 
     private func tab(_ web: WKWebView) -> Tab? { DevToolsPackages.shared.tab(for: web) }
 }

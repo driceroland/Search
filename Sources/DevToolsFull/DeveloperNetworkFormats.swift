@@ -246,6 +246,7 @@ enum DeveloperHAR {
         let request: DeveloperToolsSession.Request
         let details: DeveloperRequestDetails
         let extra: DeveloperNetworkTools.Extra
+        var frames: [DeveloperNetworkTools.Frame] = []
     }
 
     /// Without fractions of a second, for the HAR files that leave them out.
@@ -301,10 +302,34 @@ enum DeveloperHAR {
         return entry
     }
 
+    static func socketMessages(_ frames: [DeveloperNetworkTools.Frame]) -> [[String: Any]] {
+        frames.filter { $0.kind != .error }.map { frame in
+            ["type": frame.kind == .sent ? "send" : "receive", "time": frame.time ?? 0,
+             "opcode": frame.opcode ?? 1, "data": frame.data]
+        }
+    }
+
+    /// HAR files can carry either kind of message as data. Live EventSource
+    /// streams are not instrumented by the package.
+    static func frames(_ entry: [String: Any]) -> [DeveloperNetworkTools.Frame] {
+        let socket = entry["_webSocketMessages"] as? [[String: Any]]
+        let list = socket ?? entry["_eventSourceMessages"] as? [[String: Any]] ?? []
+        return list.prefix(200).enumerated().map { index, item in
+            let data = String((item["data"] as? String ?? "").prefix(16_384))
+            let isEvent = socket == nil
+            return DeveloperNetworkTools.Frame(id: index, kind: item["type"] as? String == "send" ? .sent : .received,
+                opcode: isEvent ? nil : (item["opcode"] as? Int ?? 1), data: data, length: data.utf8.count,
+                time: item["time"] as? Double, eventID: isEvent ? item["eventId"] as? String : nil,
+                eventType: isEvent ? item["eventName"] as? String : nil)
+        }
+    }
+
     /// Chrome's "sanitized" HAR: no cookies or authorization.
     static func sanitized(_ entry: [String: Any]) -> [String: Any] {
-        let sensitive: Set<String> = ["cookie", "set-cookie", "authorization"]
+        let sensitive: Set<String> = ["cookie", "set-cookie", "authorization", "proxy-authorization"]
         var entry = entry
+        entry.removeValue(forKey: "_webSocketMessages")
+        entry.removeValue(forKey: "_eventSourceMessages")
         for side in ["request", "response"] {
             guard var part = entry[side] as? [String: Any] else { continue }
             if let headers = part["headers"] as? [[String: Any]] {
@@ -385,7 +410,7 @@ enum DeveloperHAR {
             extra.responseHeaders = details.responseHeaders.map { $0.name.lowercased() }
             extra.cookies = details.requestCookies.map(\.name)
             extra.setCookies = details.responseCookies.map(\.name)
-            return Imported(request: row, details: details, extra: extra)
+            return Imported(request: row, details: details, extra: extra, frames: frames(entry))
         }
     }
 
@@ -394,6 +419,7 @@ enum DeveloperHAR {
         case "xhr": "XHR"
         case "fetch": "Fetch"
         case "websocket": "WebSocket"
+        case "eventsource": "EventSource"
         case "stylesheet": "StyleSheet"
         default: type.prefix(1).uppercased() + type.dropFirst()
         }

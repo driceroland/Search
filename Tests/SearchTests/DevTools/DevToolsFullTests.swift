@@ -18,7 +18,8 @@ private typealias PageTab = Search.Tab
 ///
 /// Needs both packages built first: SEARCH_TEST_DEVTOOLS names the folder
 /// `SEARCH_SIGN_IDENTITY=- ./build.sh release devtools` makes (build/devtools).
-/// A package, once loaded, stays for the run: the tests are in order.
+/// A package, once loaded, stays for the process. Run this suite on its own
+/// with `swift test --filter DevToolsFullTests` so Lite can test a fresh process.
 @MainActor
 final class DevToolsFullTests: XCTestCase {
     override class func setUp() {
@@ -113,6 +114,9 @@ final class DevToolsFullTests: XCTestCase {
         let rules = try XCTUnwrap(styles["rules"] as? [[String: Any]], "\(styles)")
         XCTAssertTrue(rules.contains { ($0["selector"] as? String) == "#title" && (($0["properties"] as? [String]) ?? []).contains("color: rgb(10, 20, 30)") },
                       "the stylesheet's rule: \(rules)")
+        try await verifyElementsParity(on: tab.web) { command, arguments in
+            try await self.perform(command, arguments, tab)
+        }
 
         // Console: the page's message, and an evaluation.
         _ = try await tab.web.evaluateJavaScript("console.log('hello from the page'); true")
@@ -121,6 +125,17 @@ final class DevToolsFullTests: XCTestCase {
                       "\(logged)")
         let evaluated = try await perform("console.evaluate", ["expression": "6 * 7"], tab)
         XCTAssertTrue((evaluated["lines"] as? [[String: Any]] ?? []).contains { $0["text"] as? String == "42" }, "\(evaluated)")
+        let awaited = try await perform("console.evaluate", ["expression": "await Promise.resolve(64)"], tab)
+        XCTAssertTrue((awaited["lines"] as? [[String: Any]] ?? []).contains { $0["text"] as? String == "64" }, "\(awaited)")
+        let object = try await perform("console.evaluate", ["expression": "{score: 27}"], tab)
+        XCTAssertTrue((object["lines"] as? [[String: Any]] ?? []).contains {
+            $0["level"] as? String == "result" && ($0["text"] as? String)?.contains("score: 27") == true
+        }, "\(object)")
+        let history = try await perform("console.history", [:], tab)
+        XCTAssertEqual(history["values"] as? [String], ["second", "first", "edited second", "draft"])
+        let dropdown = try await perform("settings.dropdown", [:], tab)
+        XCTAssertEqual(dropdown["initial"] as? Bool, true)
+        XCTAssertEqual(dropdown["value"] as? String, "bottom")
 
         // Network: the page's requests, with headers both ways.
         tab.web.reload()
@@ -131,6 +146,51 @@ final class DevToolsFullTests: XCTestCase {
         XCTAssertEqual(css["status"] as? Int, 200)
         let headers = try await perform("network.headers", ["id": css["id"] as? String ?? ""], tab)
         XCTAssertTrue((headers["response"] as? [[String]] ?? []).contains { $0.first?.lowercased() == "content-type" }, "\(headers)")
+        XCTAssertGreaterThan(css["number"] as? Int ?? 0, 0)
+        _ = try await tab.web.callAsyncJavaScript("""
+            const response = await fetch("/app.css?network-parity", {
+                referrerPolicy: "no-referrer", headers: {"X-Parity-Fixture": "column-value"}
+            });
+            return response.ok;
+            """, arguments: [:], in: nil, contentWorld: .page)
+        let parity = try await perform("network.requests", ["contains": "network-parity"], tab)
+        let request = try XCTUnwrap((parity["requests"] as? [[String: Any]])?.first {
+            ($0["url"] as? String)?.contains("network-parity") == true
+        })
+        XCTAssertEqual(request["referrerPolicy"] as? String, "no-referrer")
+        let column = try await perform("network.columns", [
+            "id": try XCTUnwrap(request["id"] as? String), "header": "x-parity-fixture",
+        ], tab)
+        XCTAssertEqual(column["value"] as? String, "column-value")
+        let messages = try await perform("network.harMessages", [:], tab)
+        XCTAssertEqual((messages["socket"] as? [[String: Any]])?.first?["data"] as? String, "hello")
+        XCTAssertEqual(messages["event"] as? String, "update")
+        XCTAssertEqual(messages["sanitized"] as? Bool, true)
+        let changed = try await perform("network.interception", ["encodings": [], "imageFormats": ["image/webp"]], tab)
+        XCTAssertEqual(changed["message"] as? String, "", "\(changed)")
+        let blockedImage = try await tab.web.callAsyncJavaScript("""
+            const response = await fetch("/app.css?encoding", {cache: "no-store"});
+            if (!response.ok) return "request failed";
+            return await new Promise(resolve => {
+                const image = new Image();
+                image.onload = () => resolve("loaded");
+                image.onerror = () => resolve("failed");
+                image.src = "/pixel.webp?disabled";
+            });
+            """, arguments: [:], in: nil, contentWorld: .page)
+        XCTAssertEqual(server.header("Accept-Encoding", of: "/app.css"), "identity")
+        XCTAssertEqual(blockedImage as? String, "failed")
+        XCTAssertFalse(server.header("Accept", of: "/pixel.webp")?.contains("image/webp") ?? true)
+        _ = try await perform("network.interception", ["encodings": NSNull(), "imageFormats": []], tab)
+        let restoredImage = try await tab.web.callAsyncJavaScript("""
+            return await new Promise(resolve => {
+                const image = new Image();
+                image.onload = () => resolve(image.naturalWidth);
+                image.onerror = () => resolve(0);
+                image.src = "/pixel.webp?restored";
+            });
+            """, arguments: [:], in: nil, contentWorld: .page)
+        XCTAssertEqual(restoredImage as? Int, 1)
         XCTAssertFalse((headers["request"] as? [[String]] ?? []).isEmpty, "\(headers)")
 
         // Sources: the files, and a breakpoint the page stops at.
@@ -151,6 +211,9 @@ final class DevToolsFullTests: XCTestCase {
         // Performance: a short recording has records.
         let recorded = try await perform("performance.record", ["milliseconds": 600, "during": "for (let i = 0; i < 1e5; i++) Math.sqrt(i); return true"], tab)
         XCTAssertGreaterThan(recorded["records"] as? Int ?? 0, 0, "\(recorded)")
+        try await verifyPerformanceParity(web: tab.web) { command, arguments in
+            try await self.perform(command, arguments, tab)
+        }
 
         // Memory: a heap snapshot, counted.
         let heap = try await perform("memory.snapshot", [:], tab)
@@ -207,6 +270,116 @@ final class DevToolsFullTests: XCTestCase {
         XCTAssertEqual(seen["posted"] as? String, "refused", "no handler to call: \(probe)")
         XCTAssertEqual(seen["patched"] as? [String], [], "the page's own functions untouched: \(probe)")
         _ = try await perform("close", [:], tab)
+    }
+
+    // MARK: - 2b. Installed extensions: panels, inspected tab and lifecycle
+
+    func test2bExtensionPanelsUseTheInspectedTab() async throws {
+        guard #available(macOS 15.4, *) else { throw XCTSkip("WebKit extensions require macOS 15.4") }
+        if packages.installed["full"] == nil {
+            packages.offered = [try XCTUnwrap(try localPackage("DevToolsFull")([:]))]
+            packages.install("full")
+            try await waitUntil(timeout: 60) { self.packages.states["full"] == .idle && self.packages.installed["full"] != nil }
+        }
+        let previous = packages.primaryID
+        packages.primaryID = "full"
+        defer { packages.primaryID = previous }
+        Browsers.register(browser)
+        defer {
+            tab = nil
+            Browsers.discard(browser)
+        }
+
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("DevtoolsFixture", isDirectory: true)
+        let source = scratch.appendingPathComponent("extension", isDirectory: true)
+        try FileManager.default.copyItem(at: fixture, to: source)
+        let extensions = Extensions.shared
+        let id = Crx.unpackedID(for: URL(fileURLWithPath: Crx.realPath(of: source), isDirectory: true))
+        extensions.installFolder(at: source, confirm: false)
+        defer { extensions.remove(id) }
+        try await waitUntil { extensions.contexts[id]?.isLoaded == true }
+
+        let inspected = try await open("/app")
+        let other = browser.open(server.url("/hostile"), foreground: false)
+        try await waitUntil { other.committed == self.server.url("/hostile") }
+        XCTAssertTrue(browser.active === inspected)
+        let before = try await perform("extension.panels", [:], inspected)
+        XCTAssertEqual((before["panels"] as? [[String: Any]])?.count, 0)
+        browser.toggleInspector()
+        let ready = try await perform("ready", [:], inspected)
+        XCTAssertEqual(ready["ready"] as? Bool, true, "\(ready)")
+
+        var items: [[String: Any]] = []
+        try await waitUntil { [self] in
+            items = (try? await perform("extension.panels", [:], inspected))?["panels"] as? [[String: Any]] ?? []
+            return items.count == 2
+        }
+        func panelID(_ title: String) throws -> String {
+            try XCTUnwrap(items.first(where: { $0["title"] as? String == title })?["id"] as? String, "\(items)")
+        }
+        let components = try panelID("Fixture Components")
+        let profiler = try panelID("Fixture Profiler")
+        XCTAssertNotEqual(components, profiler)
+        let selected = try await perform("extension.select", ["id": components], inspected)
+        XCTAssertEqual(selected["selected"] as? String, components, "\(selected)")
+        XCTAssertEqual(selected["rendered"] as? Bool, true, "\(selected)")
+        try await waitUntil { [self] in
+            let state = try? await perform("extension.state", [:], inspected)
+            return state?["viewTitle"] as? String == "Components | app | Panel fixture | hidden:0"
+        }
+
+        // Switching panels sends onHidden before onShown. The second panel
+        // still reads the inspected document despite the other tab.
+        let second = try await perform("extension.select", ["id": profiler], inspected)
+        XCTAssertEqual(second["selected"] as? String, profiler, "\(second)")
+        XCTAssertEqual(second["rendered"] as? Bool, true, "\(second)")
+        try await waitUntil { [self] in
+            let state = try? await perform("extension.state", [:], inspected)
+            return state?["viewTitle"] as? String == "Profiler | app | Panel fixture | hidden:1"
+        }
+
+        _ = try await perform("select", ["panel": "Elements"], inspected)
+        let native = try await perform("extension.state", [:], inspected)
+        XCTAssertEqual(native["selected"] as? String, "", "\(native)")
+        XCTAssertEqual(native["rendered"] as? Bool, false, "\(native)")
+        _ = try await perform("close", [:], inspected)
+        let closed = try await perform("extension.panels", [:], inspected)
+        XCTAssertEqual((closed["panels"] as? [[String: Any]])?.count, 0)
+        XCTAssertFalse(DevToolsPackages.busy(inspected))
+
+        // Turning the extension off while tools are open removes its panels.
+        _ = try await perform("open", ["item": "devtools"], inspected)
+        try await waitUntil { [self] in
+            let listed = try? await perform("extension.panels", [:], inspected)
+            return (listed?["panels"] as? [[String: Any]])?.count == 2
+        }
+        extensions.setEnabled(id, false)
+        try await waitUntil { [self] in
+            let listed = try? await perform("extension.panels", [:], inspected)
+            return extensions.contexts[id] == nil && (listed?["panels"] as? [[String: Any]])?.count == 0
+        }
+        _ = try await perform("close", [:], inspected)
+
+        // Even with the extension allowed into private tabs, Full does not
+        // provide an extension panel for an inspected private document.
+        extensions.setEnabled(id, true)
+        try await waitUntil { extensions.contexts[id]?.isLoaded == true }
+        extensions.setPrivate(id, true)
+        XCTAssertTrue(extensions.contexts[id]?.hasAccessToPrivateData == true)
+        browser.newShyTab()
+        let privateTab = try XCTUnwrap(browser.active)
+        tab = privateTab
+        XCTAssertTrue(privateTab.shy)
+        window.contentView = privateTab.web
+        privateTab.go(to: server.url("/app"))
+        try await waitUntil { privateTab.committed == self.server.url("/app") && !privateTab.web.isLoading }
+        browser.toggleInspector()
+        let privateReady = try await perform("ready", [:], privateTab)
+        XCTAssertEqual(privateReady["ready"] as? Bool, true, "\(privateReady)")
+        let privatePanels = try await perform("extension.panels", [:], privateTab)
+        XCTAssertEqual((privatePanels["panels"] as? [[String: Any]])?.count, 0)
+        _ = try await perform("close", [:], privateTab)
     }
 
     // MARK: - 3. Both packages: the picker decides; Remove each
@@ -327,6 +500,8 @@ final class DevToolsFullTests: XCTestCase {
             <script>localStorage.setItem("flavour", "vanilla"); document.cookie = "visit=1; path=/";
             console.log("hello from the page"); fetch("/data.json");</script></body></html>
             """),
+        "/pixel.webp": .init(type: "image/webp", body: "",
+                            bytes: Data(base64Encoded: "UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==")),
         "/app.css": .init(type: "text/css", body: "#title { color: rgb(10, 20, 30); margin: 4px; }\n"),
         "/app.js": .init(type: "text/javascript", body: "function compute(n) {\n  const doubled = n * 2;\n  return doubled;\n}\n"),
         "/data.json": .init(type: "application/json", body: "{\"ok\":true}"),

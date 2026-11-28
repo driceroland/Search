@@ -316,7 +316,7 @@ enum DeveloperToolsKeys {
             let context = host.context else { return false }
         let session = context.session
         let shell = DeveloperToolsShell.shared
-        let panel = session.panel
+        let panel: DeveloperPanel? = session.extensionPanels.selection == nil ? session.panel : nil
         let search = DeveloperSourcesSearchModel.of(session)
         let state = DeveloperToolsKeyState(
             focus: focus(of: event.window?.firstResponder),
@@ -379,6 +379,7 @@ enum DeveloperToolsKeys {
         let point = content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
         guard let hit = content.hitTest(point) else { return }
         guard let clicked = host(of: hit), host(of: window.firstResponder) !== clicked else { return }
+        if let panel = clicked.context?.session.extensionPanels.selection?.view, hit.isDescendant(of: panel) { return }
         window.makeFirstResponder(clicked)
     }
 
@@ -414,10 +415,22 @@ struct DeveloperToolsContext {
     func toggleViewport() { if let web = session.web { FullPlugin.current?.open("device", webView: web) } }
 
     /// The panels ⌘[ and ⌘] step through.
-    var strip: [DeveloperPanel] { shell.panels.shown }
-    var currentTab: DeveloperPanel { session.panel }
+    var strip: [DeveloperToolsTab] {
+        shell.panels.shown.map(DeveloperToolsTab.panel) + session.extensionPanels.items.map { .extensionPanel($0.id) }
+    }
 
-    func select(_ panel: DeveloperPanel) { session.select(panel) }
+    var currentTab: DeveloperToolsTab {
+        session.extensionPanels.selection.map { .extensionPanel($0.id) } ?? .panel(session.panel)
+    }
+
+    func select(_ tab: DeveloperToolsTab) {
+        switch tab {
+        case .panel(let panel): session.select(panel)
+        case .extensionPanel(let id):
+            if session.picking { session.togglePicker() }
+            session.extensionPanels.select(id)
+        }
+    }
 
     func perform(_ action: DeveloperToolsKeyAction) {
         switch action {
@@ -449,7 +462,7 @@ struct DeveloperToolsContext {
             if tabs.indices.contains(index) { select(tabs[index]) }
         case .focusConsole:
             // In the drawer when Console isn't the panel in front, as in Chrome.
-            if session.panel != .console {
+            if currentTab != .panel(.console) {
                 shell.showDrawer(.tool(.console))
             }
             session.consoleStore.promptFocus += 1

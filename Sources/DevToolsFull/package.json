@@ -9,11 +9,11 @@
     "Device toolbar",
     "Performance insights",
     "CSS overview",
-    "Coverage",
-    "Issues"
+    "Coverage and Issues",
+    "Extension panels"
   ],
-  "version": 2,
-  "display": "1.1",
+  "version": 3,
+  "display": "1.2",
   "api": 1,
   "principal": "SearchDevToolsFull",
   "menu": [

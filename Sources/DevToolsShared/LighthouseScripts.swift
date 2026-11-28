@@ -13,7 +13,7 @@ enum LighthouseScripts {
     const state = window.__searchDeveloperLoad;
     const navigation = performance.getEntriesByType("navigation")[0];
     const out = { observed: !!state, fcp: null, lcp: null, lcpSupported: false, cls: 0, shifts: 0, tasks: [], errors: [],
-        ttfb: null, load: null, redirects: 0, now: performance.now() };
+        ttfb: null, load: null, redirects: 0, now: performance.now(), timeOrigin: performance.timeOrigin };
     if (state) {
         state.lighthouseDone = true;
         Object.assign(out, { fcp: state.fcp, lcp: state.lcp, lcpSupported: state.lcpSupported, cls: state.cls,

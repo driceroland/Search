@@ -176,6 +176,7 @@ struct LighthouseReport: Equatable, Identifiable {
     var audits: [String: LighthouseAudit]
     var userAgent = ""
     var viewport = CGSize.zero
+    var devicePixelRatio = 1.0
     var warnings: [String] = []
     var duration: Double = 0
 
@@ -434,12 +435,14 @@ enum LighthouseJSON {
             "gatherMode": report.mode.rawValue,
             "userAgent": report.userAgent,
             "environment": ["networkUserAgent": report.userAgent, "hostUserAgent": report.userAgent, "benchmarkIndex": 0,
-                            "viewport": ["width": report.viewport.width, "height": report.viewport.height]] as [String: Any],
+                            "viewport": ["width": report.viewport.width, "height": report.viewport.height,
+                                         "devicePixelRatio": report.devicePixelRatio]] as [String: Any],
             "runWarnings": [note] + report.warnings,
             "configSettings": ["formFactor": report.form.rawValue, "locale": "en-US", "throttlingMethod": "provided",
                                "onlyCategories": report.categories.map(\.rawValue),
-                               "screenEmulation": ["mobile": report.form == .mobile, "width": report.form.size.width,
-                                                   "height": report.form.size.height, "disabled": false] as [String: Any]] as [String: Any],
+                               "screenEmulation": ["mobile": report.form == .mobile, "width": report.viewport.width,
+                                                   "height": report.viewport.height, "deviceScaleFactor": report.devicePixelRatio,
+                                                   "disabled": false] as [String: Any]] as [String: Any],
             "audits": audits,
             "categories": categories,
             "categoryGroups": LighthouseCatalog.groups.mapValues { ["title": $0] },
@@ -485,62 +488,5 @@ enum LighthouseJSON {
 
     static func data(_ report: LighthouseReport) -> Data? {
         try? JSONSerialization.data(withJSONObject: object(report), options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-    }
-}
-
-// MARK: - Speed Index
-
-/// Speed Index from frames of the page as it loaded, as Speedline works it
-/// out: each frame's colour histogram (near-white pixels left out), its
-/// progress how far it has come from the first frame's histogram toward the
-/// last's, and the index the area above the progress curve, in ms.
-enum SpeedIndex {
-    struct Frame {
-        let time: Double
-        let histogram: [[Int]]
-    }
-
-    static func histogram(_ image: CGImage) -> [[Int]]? {
-        let width = min(image.width, 160)
-        let height = max(1, image.height * width / max(1, image.width))
-        var pixels = [UInt8](repeating: 0, count: width * height * 4)
-        guard let context = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-                                      space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        var out = [[Int]](repeating: [Int](repeating: 0, count: 256), count: 3)
-        for i in stride(from: 0, to: pixels.count, by: 4) {
-            let r = pixels[i], g = pixels[i + 1], b = pixels[i + 2]
-            if r > 249 && g > 249 && b > 249 { continue }
-            out[0][Int(r)] += 1
-            out[1][Int(g)] += 1
-            out[2][Int(b)] += 1
-        }
-        return out
-    }
-
-    static func progress(_ frame: [[Int]], first: [[Int]], last: [[Int]]) -> Double {
-        var total = 0.0
-        for channel in 0..<3 {
-            var whole = 0, now = 0
-            for bin in 0..<256 {
-                whole += abs(first[channel][bin] - last[channel][bin])
-                now += abs(frame[channel][bin] - last[channel][bin])
-            }
-            total += whole == 0 ? 1 : max(0, 1 - Double(now) / Double(whole))
-        }
-        return total / 3
-    }
-
-    /// Nil with fewer than two frames.
-    static func index(_ frames: [Frame]) -> Double? {
-        guard frames.count >= 2, let first = frames.first?.histogram, let last = frames.last?.histogram else { return nil }
-        var index = 0.0
-        var previous = (time: 0.0, progress: 0.0)
-        for frame in frames {
-            index += (1 - previous.progress) * max(0, frame.time - previous.time)
-            previous = (frame.time, progress(frame.histogram, first: first, last: last))
-        }
-        return index
     }
 }

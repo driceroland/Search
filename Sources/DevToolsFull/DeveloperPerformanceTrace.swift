@@ -67,6 +67,7 @@ struct DeveloperPerformanceRecordings {
         let url: String?
         let timings: [Timing]
         var annotations: [DeveloperPerformanceAnnotation]
+        let scripts: [DeveloperPerformanceScript]?
         /// How long it ran, in ms.
         let duration: Double
 
@@ -91,7 +92,7 @@ struct DeveloperPerformanceRecordings {
     /// A recording shown for the first time goes first; past the limit
     /// the oldest goes. One already here stays where it is.
     mutating func add(_ timings: [Timing], annotations: [DeveloperPerformanceAnnotation], url: String?,
-                      date: Date = Date()) {
+                      date: Date = Date(), scripts: [DeveloperPerformanceScript]? = nil) {
         guard !timings.isEmpty else { return }
         let key = Self.key(timings)
         guard !contains(key) else { return }
@@ -102,7 +103,7 @@ struct DeveloperPerformanceRecordings {
         }
         let duration = lower.isFinite && upper.isFinite ? max(0, (upper - lower) * 1_000) : 0
         entries.insert(Entry(id: key, date: date, url: url, timings: timings, annotations: annotations,
-                             duration: duration), at: 0)
+                             scripts: scripts, duration: duration), at: 0)
         if entries.count > Self.limit { entries.removeLast(entries.count - Self.limit) }
     }
 
@@ -145,7 +146,8 @@ final class DeveloperPerformanceHistoryStore: ObservableObject {
 /// opens in Chrome's Performance panel too. What Chrome's format has no
 /// place for (WebKit's own record type, the nesting depth, the call stack)
 /// goes in each event's args.search, so a file saved here opens here as it
-/// was recorded.
+/// was recorded. With script content included, the trace uses Chrome's
+/// ScriptRundown events and source-map metadata.
 ///
 /// Loading takes that format (as an array or as Chrome's own
 /// {"traceEvents": [...]} object, with complete, instant and begin/end
@@ -175,6 +177,7 @@ enum DeveloperPerformanceTrace {
     struct Recording {
         let timings: [Timing]
         let annotations: [DeveloperPerformanceAnnotation]
+        var scripts: [DeveloperPerformanceScript]? = nil
     }
 
     /// WebKit's record types under Chrome's names, where the two differ.
@@ -211,13 +214,17 @@ enum DeveloperPerformanceTrace {
     ]
 
     /// Chrome's bookkeeping events, which aren't work the page did.
-    private static let skipped: Set<String> = ["TracingStartedInBrowser", "TracingStartedInPage", "TracingSessionIdForWorker"]
+    private static let rundown = "ScriptRundown"
+    private static let rundownSource = "ScriptRundownSource"
+    private static let skipped: Set<String> = ["TracingStartedInBrowser", "TracingStartedInPage", "TracingSessionIdForWorker",
+                                               rundown, rundownSource]
 
     // MARK: Saving
 
     /// The recording as a trace file. `url` is the page it was recorded on.
     static func export(_ timings: [Timing], url: String? = nil,
-                       annotations: [DeveloperPerformanceAnnotation] = []) throws -> Data {
+                       annotations: [DeveloperPerformanceAnnotation] = [],
+                       scripts: [DeveloperPerformanceScript]? = nil) throws -> Data {
         let ids: [String: Any] = ["pid": processID, "tid": threadID]
         func event(_ fields: [String: Any]) -> [String: Any] { fields.merging(ids) { first, _ in first } }
         let origin = timings.map(\.start).min() ?? 0
@@ -276,7 +283,30 @@ enum DeveloperPerformanceTrace {
                 "args": args,
             ]))
         }
-        return try JSONSerialization.data(withJSONObject: events, options: [])
+        guard let scripts, !scripts.isEmpty else { return try JSONSerialization.data(withJSONObject: events) }
+        var maps: [[String: Any]] = []
+        var remaining = DeveloperPerformanceScript.byteLimit
+        for (index, script) in scripts.prefix(DeveloperPerformanceScript.scriptLimit).enumerated() {
+            guard script.bytes <= remaining else { continue }
+            remaining -= script.bytes
+            let source = script.text
+            var data: [String: Any] = ["isolate": "1", "scriptId": index + 1, "url": script.url, "isModule": false,
+                                       "startLine": 0, "startColumn": 0, "length": source.utf16.count]
+            if let mapURL = script.mapURL { data["sourceMapUrl"] = mapURL }
+            events.append(event(["name": rundown, "cat": "disabled-by-default-devtools.v8-source-rundown", "ph": "I", "s": "t",
+                                 "ts": origin * 1_000_000, "args": ["data": data]]))
+            events.append(event(["name": rundownSource, "cat": "disabled-by-default-devtools.v8-source-rundown-sources",
+                                 "ph": "I", "s": "t", "ts": origin * 1_000_000, "args": ["data": [
+                                    "isolate": "1", "scriptId": index + 1, "length": source.utf16.count, "sourceText": source,
+                                 ]]]))
+            if let json = script.mapText.flatMap(DeveloperSourceMap.json) {
+                var map: [String: Any] = ["url": script.url, "sourceMap": json]
+                if let mapURL = script.mapURL { map["sourceMapUrl"] = mapURL }
+                maps.append(map)
+            }
+        }
+        return try JSONSerialization.data(withJSONObject: ["traceEvents": events,
+                                                           "metadata": ["source": "DevTools", "sourceMaps": maps]])
     }
 
     /// An entries link's end, its times in ms from the recording's start.
@@ -306,14 +336,8 @@ enum DeveloperPerformanceTrace {
 
     static func recording(from data: Data) throws -> Recording {
         guard let json = try? JSONSerialization.jsonObject(with: data) else { throw Failure.unreadable }
-        let list: [Any]
-        if let array = json as? [Any] {
-            list = array
-        } else if let object = json as? [String: Any], let events = object["traceEvents"] as? [Any] {
-            list = events
-        } else if let object = json as? [String: Any], let records = object["records"] as? [Any] {
-            list = records
-        } else {
+        let object = json as? [String: Any]
+        guard let list = json as? [Any] ?? object?["traceEvents"] as? [Any] ?? object?["records"] as? [Any] else {
             throw Failure.unreadable
         }
         let objects = list.compactMap { $0 as? [String: Any] }
@@ -344,7 +368,49 @@ enum DeveloperPerformanceTrace {
             }
             return DeveloperPerformanceAnnotation(id: id, label: String(label.prefix(120)), range: start...end, link: link)
         }
-        return Recording(timings: result, annotations: annotations)
+        return Recording(timings: result, annotations: annotations,
+                         scripts: traceScripts(objects, metadata: object?["metadata"] as? [String: Any]))
+    }
+
+    private static func traceScripts(_ events: [[String: Any]], metadata: [String: Any]?) -> [DeveloperPerformanceScript]? {
+        func payload(_ event: [String: Any]) -> [String: Any]? {
+            (event["args"] as? [String: Any])?["data"] as? [String: Any]
+        }
+        func key(_ data: [String: Any]) -> String? {
+            guard let id = data["scriptId"] else { return nil }
+            return "\(data["isolate"] ?? "").\(id)"
+        }
+        var pieces: [String: [Int: String]] = [:]
+        var remaining = DeveloperPerformanceScript.byteLimit
+        let fragmentLimit = 5_000
+        for event in events.lazy.filter({ $0["name"] as? String == rundownSource }).prefix(fragmentLimit) {
+            guard let data = payload(event), let key = key(data), let text = data["sourceText"] as? String,
+                  text.utf8.count <= remaining, pieces[key] != nil || pieces.count < DeveloperPerformanceScript.scriptLimit else { continue }
+            let index = (data["splitIndex"] as? NSNumber)?.intValue ?? pieces[key]?.count ?? 0
+            guard (0..<fragmentLimit).contains(index) else { continue }
+            remaining -= text.utf8.count
+            pieces[key, default: [:]][index] = text
+        }
+        let maps = (metadata?["sourceMaps"] as? [[String: Any]] ?? []).prefix(1_000)
+        var seen = Set<String>()
+        var scripts: [DeveloperPerformanceScript] = []
+        for event in events where event["name"] as? String == rundown {
+            guard let data = payload(event), let url = data["url"] as? String, !url.isEmpty,
+                  let key = key(data), seen.insert(url).inserted,
+                  let parts = pieces.removeValue(forKey: key) else { continue }
+            let mapURL = data["sourceMapUrl"] as? String
+            let entry = maps.first { $0["url"] as? String == url && $0["sourceMapUrl"] as? String == mapURL }
+                ?? maps.first { $0["url"] as? String == url }
+            var mapText: String?
+            if let json = entry?["sourceMap"] as? [String: Any],
+               let data = try? JSONSerialization.data(withJSONObject: json), data.count <= remaining {
+                mapText = String(decoding: data, as: UTF8.self)
+                remaining -= data.count
+            }
+            scripts.append(DeveloperPerformanceScript(url: url, text: parts.sorted { $0.key < $1.key }.map(\.value).joined(),
+                                                      mapText: mapText, mapURL: mapURL ?? entry?["sourceMapUrl"] as? String))
+        }
+        return scripts.isEmpty ? nil : scripts
     }
 
     private static func number(_ value: Any?) -> Double? { DeveloperProtocolValue.number(value) }

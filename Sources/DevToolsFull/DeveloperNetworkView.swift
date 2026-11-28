@@ -28,6 +28,10 @@ struct DeveloperNetworkView: View {
         var headerColumns = DevDefaults.store.stringArray(forKey: Options.headerColumnsKey) ?? [] {
             didSet { DevDefaults.store.set(headerColumns, forKey: Self.headerColumnsKey) }
         }
+        /// Request headers shown as columns, likewise, from Request headers.
+        var requestHeaderColumns = DevDefaults.store.stringArray(forKey: Options.requestHeaderColumnsKey) ?? [] {
+            didSet { DevDefaults.store.set(requestHeaderColumns, forKey: Self.requestHeaderColumnsKey) }
+        }
         /// Headers added through Manage Header Columns…, offered after
         /// Chrome's own in Response Headers.
         var customHeaders = DevDefaults.store.stringArray(forKey: Options.customHeadersKey) ?? [] {
@@ -74,6 +78,7 @@ struct DeveloperNetworkView: View {
 
         private static let columnsKey = "developerTools.network.columns"
         private static let headerColumnsKey = "developerTools.network.headerColumns"
+        private static let requestHeaderColumnsKey = "developerTools.network.requestHeaderColumns"
         private static let customHeadersKey = "developerTools.network.customHeaders"
         private static let widthsKey = "developerTools.network.columnWidths"
         private static let listWidthKey = "developerTools.network.listWidth"
@@ -103,6 +108,22 @@ struct DeveloperNetworkView: View {
             }
         }
 
+        /// The headers Request headers offers: Chrome's, then those recorded.
+        func requestHeaderChoices(seen: [String]) -> [String] {
+            var names = DeveloperNetworkListColumn.requestHeaders
+            for name in requestHeaderColumns + seen where !names.contains(name) { names.append(name) }
+            return names
+        }
+
+        mutating func showRequestHeaderColumn(_ name: String, _ on: Bool) {
+            if on {
+                if !requestHeaderColumns.contains(name) { requestHeaderColumns.append(name) }
+            } else {
+                requestHeaderColumns.removeAll { $0 == name }
+                if sort == .requestHeader(name) { sort = nil }
+            }
+        }
+
         mutating func showHeaderColumn(_ name: String, _ on: Bool) {
             if on {
                 if !headerColumns.contains(name) { headerColumns.append(name) }
@@ -116,8 +137,10 @@ struct DeveloperNetworkView: View {
         mutating func resetColumns() {
             columns = Set(DeveloperNetworkColumn.defaults)
             headerColumns = []
+            requestHeaderColumns = []
             columnWidths = [:]
             if case .header = sort { sort = nil }
+            if case .requestHeader = sort { sort = nil }
             if let sort, case .standard(let column) = sort, !columns.contains(column) { self.sort = nil }
         }
     }
@@ -812,7 +835,9 @@ private struct DeveloperNetworkPanel: View {
         }
         .background(DeveloperToolsStyle.chrome)
         .overlay(alignment: .bottom) { horizontalRule }
-        .contextMenu { DeveloperNetworkColumnMenu(options: $options) { managingHeaders = true } }
+        .contextMenu {
+            DeveloperNetworkColumnMenu(options: $options, seen: tools.requestHeaderNames) { managingHeaders = true }
+        }
     }
 
     /// What the list says when it has no rows.
@@ -839,6 +864,7 @@ private struct DeveloperNetworkPanel: View {
             .filter { (options.columns.contains($0) || $0 == .name) && $0 != .waterfall }
             .map(DeveloperNetworkListColumn.standard)
         columns += options.headerColumns.map(DeveloperNetworkListColumn.header)
+            + options.requestHeaderColumns.map(DeveloperNetworkListColumn.requestHeader)
         if options.columns.contains(.waterfall) { columns.append(.standard(.waterfall)) }
         func used() -> CGFloat { columns.compactMap(columnWidth).reduce(0, +) + 150 }
         while used() > width,
@@ -883,7 +909,8 @@ private struct DeveloperNetworkPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(column == .standard(.waterfall) ? "Sort by " + options.waterfallSort.rawValue : "Sort by " + column.title)
+        .help(column == .standard(.waterfall) ? "Sort by " + options.waterfallSort.rawValue
+              : "Sort by " + column.title + (column.note.map { "\n" + $0 } ?? ""))
         .accessibilityIdentifier("developer-network-column-\(column.title.lowercased())")
     }
 
@@ -1132,7 +1159,7 @@ private struct DeveloperNetworkPanel: View {
     private func cell(_ column: DeveloperNetworkListColumn, row: DeveloperToolsSession.Request,
                       extra: DeveloperNetworkTools.Extra?, timing: DeveloperNetworkTiming, origin: Double) -> some View {
         switch column {
-        case .header:
+        case .header, .requestHeader:
             Text(DeveloperNetworkListColumn.value(column, row, extra)).foregroundStyle(.secondary).truncationMode(.middle)
         case .standard(let standard):
             switch standard {
@@ -1530,7 +1557,7 @@ private struct DeveloperNetworkRowMenu: View {
             }
         }
         Menu("Header Options") {
-            DeveloperNetworkColumnMenu(options: $options, manageHeaders: manageHeaders)
+            DeveloperNetworkColumnMenu(options: $options, seen: tools.requestHeaderNames, manageHeaders: manageHeaders)
         }
         Divider()
         let host = session.host

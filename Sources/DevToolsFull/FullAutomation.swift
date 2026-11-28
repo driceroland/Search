@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import WebKit
 
 /// The tools driven by name (SearchDevToolsPlugin.perform): what tests use.
@@ -62,6 +63,16 @@ enum FullAutomation {
             session.select(panel)
             return ["panel": session.panel.rawValue]
 
+        case "extension.panels":
+            let items = session()?.extensionPanels.items ?? []
+            return ["panels": items.map { ["id": $0.id, "title": $0.title] }]
+        case "extension.select", "extension.state":
+            let panels = session()?.extensionPanels
+            if command == "extension.select" { panels?.select(arguments["id"] as? String) }
+            let selection = panels?.selection
+            return ["selected": selection?.id ?? "", "rendered": selection?.view != nil,
+                    "viewTitle": (selection?.view as? WKWebView)?.title ?? ""]
+
         // Elements
         case "elements.tree":
             guard let session = session() else { return ["error": "not open"] }
@@ -87,9 +98,17 @@ enum FullAutomation {
         case "console.evaluate":
             guard let session = session(), let expression = arguments["expression"] as? String else { return ["error": "not open"] }
             let before = session.console.count
-            session.evaluate(expression)
+            session.evaluateInConsole(expression)
             _ = await wait(10) { session.console.count >= before + 2 }
             return ["lines": session.console.suffix(4).map { ["level": $0.level, "text": $0.text] }]
+        case "console.history":
+            var cursor = DeveloperConsoleHistoryCursor()
+            let history = ["first", "second"]
+            let latest = cursor.move(-1, from: "draft", in: history)
+            let first = cursor.move(-1, from: "edited second", in: history)
+            let edited = cursor.move(1, from: "first", in: history)
+            let draft = cursor.move(1, from: "edited second", in: history)
+            return ["values": [latest, first, edited, draft].compactMap { $0 }]
         case "console.messages":
             guard let session = session() else { return ["error": "not open"] }
             session.select(.console)
@@ -106,8 +125,39 @@ enum FullAutomation {
                 _ = await wait(10) { session.requests.contains { $0.url.contains(path) && $0.status != nil } }
             }
             return ["requests": session.requests.map {
-                ["id": $0.id, "url": $0.url, "method": $0.method, "status": $0.status ?? 0, "type": $0.type]
+                ["id": $0.id, "url": $0.url, "method": $0.method, "status": $0.status ?? 0, "type": $0.type,
+                 "referrerPolicy": $0.referrerPolicy ?? "", "number": $0.number ?? 0,
+                 "renderBlocking": DeveloperNetworkColumn.renderBlocking($0)]
             }]
+        case "network.columns":
+            guard let session = session(), let id = arguments["id"] as? String,
+                  let header = arguments["header"] as? String else { return ["error": "no request"] }
+            await session.networkTools.poll()
+            return ["value": session.networkTools.extras[id]?.requestHeaderValues[header] ?? ""]
+        case "network.harMessages":
+            let entry: [String: Any] = [
+                "_webSocketMessages": [["type": "send", "data": "hello", "time": 1.0, "opcode": 1]],
+            ]
+            let eventEntry: [String: Any] = [
+                "_eventSourceMessages": [["eventName": "update", "data": "world", "time": 2.0]],
+            ]
+            let socket = DeveloperHAR.frames(entry)
+            let event = DeveloperHAR.frames(eventEntry)
+            return ["socket": DeveloperHAR.socketMessages(socket), "event": event.first?.eventType ?? "",
+                    "sanitized": DeveloperHAR.sanitized(entry)["_webSocketMessages"] == nil]
+        case "network.interception":
+            guard let session = session() else { return ["error": "not open"] }
+            let network = session.networkTools
+            if let encodings = arguments["encodings"] as? [String] {
+                network.acceptedEncodings = Set(encodings.compactMap(DeveloperNetworkTools.ContentEncoding.init(rawValue:)))
+            } else if arguments["encodings"] is NSNull {
+                network.acceptedEncodings = nil
+            }
+            if let formats = arguments["imageFormats"] as? [String] {
+                network.disabledImageFormats = Set(formats.compactMap(DeveloperNetworkTools.ImageFormat.init(rawValue:)))
+            }
+            await network.waitForInterceptionSettings()
+            return ["message": network.message ?? ""]
         case "network.headers":
             guard let session = session(), let id = arguments["id"] as? String,
                   let details = await session.requestDetails(id) else { return ["error": "no request"] }
@@ -159,8 +209,12 @@ enum FullAutomation {
         case "performance.record":
             guard let session = session() else { return ["error": "not open"] }
             session.select(.performance)
+            let kept = DeveloperPerformanceCapture.jsSamplesDisabled
+            defer { DeveloperPerformanceCapture.jsSamplesDisabled = kept }
+            if let disabled = arguments["disableSamples"] as? Bool { DeveloperPerformanceCapture.jsSamplesDisabled = disabled }
             session.toggleTimeline()
             _ = await wait(5) { session.recordingTimeline }
+            let sampling = session.scriptProfilerStarted
             if let during = arguments["during"] as? String {
                 _ = try? await web.evaluateJavaScript(during, in: nil, contentFor: .page)
             }
@@ -168,7 +222,8 @@ enum FullAutomation {
             session.toggleTimeline()
             _ = await wait(10) { !session.recordingTimeline }
             _ = await wait(5) { !session.timeline.isEmpty }
-            return ["records": session.timeline.count, "types": Array(Set(session.timeline.map(\.type))).sorted()]
+            return ["records": session.timeline.count, "sampling": sampling,
+                    "types": Array(Set(session.timeline.map(\.type))).sorted()]
 
         // Memory
         case "memory.snapshot":
@@ -183,7 +238,19 @@ enum FullAutomation {
             }
             return ["nodes": entry.snapshot.nodeCount]
 
+        case "settings.dropdown":
+            var value = "right"
+            let dropdown = DeveloperSettingsDropdown(label: "Dock side", selection: Binding(get: { value }, set: { value = $0 }),
+                                            options: [("right", "Right"), ("bottom", "Bottom")])
+            let initial = dropdown.isOn("right").wrappedValue && !dropdown.isOn("bottom").wrappedValue
+            dropdown.isOn("bottom").wrappedValue = true
+            dropdown.isOn("bottom").wrappedValue = false
+            return ["initial": initial, "value": value]
+        case "performance.parity", "performance.liveMetrics", "performance.clearLogs", "memory.total", "sources.globalListeners":
+            guard let session = session() else { return ["error": "not open"] }
+            return await DeveloperPerformanceAutomation.perform(command, arguments, session: session)
         default:
+            if let session = session(), let answer = await session.automateElements(command, arguments) { return answer }
             return ["error": "unknown command"]
         }
     }

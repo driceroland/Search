@@ -27,6 +27,10 @@ final class DeveloperIssuesModel: ObservableObject {
     @Published private(set) var hidden = 0
     @Published private(set) var problem: String?
     @Published var expanded = Set<String>()
+    /// Elements' issue underlines: each node's issues, by its id in the tree.
+    @Published private(set) var marks: [Int: [DeveloperIssueMark]] = [:]
+    /// A row an Elements underline opened, for the Issues view to scroll to.
+    @Published var revealed: String?
     @Published var options = DeveloperIssueOptions(
         includeThirdPartyCookies: DevDefaults.store.bool(forKey: DeveloperIssuesModel.thirdPartyKey),
         groupByCategory: DevDefaults.store.bool(forKey: DeveloperIssuesModel.byCategoryKey),
@@ -114,6 +118,9 @@ final class DeveloperIssuesModel: ObservableObject {
     private var contrastDue = false
     private var lastContrast = Date.distantPast
     private var hoverTask: Task<Void, Never>?
+    private var marksTask: Task<Void, Never>?
+    /// What `marks` was resolved from: the elements' marks and the tree's root.
+    private var marked: (wanted: [DeveloperIssueElement: [DeveloperIssueMark]], revision: Int, root: Int)?
     /// The last console line ingested, so each publish of the Console's
     /// lines only walks the ones after it.
     private var lastLineID: UUID?
@@ -144,6 +151,7 @@ final class DeveloperIssuesModel: ObservableObject {
         guard let found = models.removeValue(forKey: ObjectIdentifier(session)) else { return }
         found.model.poll?.cancel()
         found.model.poll = nil
+        found.model.marksTask?.cancel()
         found.model.release(&found.model.stateHolder)
     }
 
@@ -164,6 +172,10 @@ final class DeveloperIssuesModel: ObservableObject {
         session.$requests
             .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in self?.recompute() }
+            .store(in: &subscriptions)
+        // Entering Elements reads the document afresh and can renumber its nodes.
+        session.$root.combineLatest(session.$panel).receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.resolveMarks() }
             .store(in: &subscriptions)
         guard !session.isClosed else { return }
         poll = Task { [weak self] in
@@ -468,7 +480,7 @@ final class DeveloperIssuesModel: ObservableObject {
         if let session { issues = DeveloperIssueRules.link(issues, requests: session.requests.map { ($0.id, $0.url) }) }
         let include = options.includeThirdPartyCookies
         let next = DeveloperIssueRules.aggregate(issues, includeThirdParty: include)
-        if next != groups { groups = next }
+        if next != groups { groups = next; resolveMarks() }
         let hiddenNow = DeveloperIssueRules.hiddenCount(issues, includeThirdParty: include)
         if hiddenNow != hidden { hidden = hiddenNow }
     }
@@ -509,6 +521,63 @@ final class DeveloperIssuesModel: ObservableObject {
         _ = try? await session.command("Runtime.releaseObject", ["objectId": object], targetID: holder.target)
         guard let id = (node?["nodeId"] as? NSNumber)?.intValue, id > 0 else { return nil }
         return id
+    }
+
+    /// Resolve at most one batch per scan when its marks or document
+    /// change. A scan's node IDs belong to its own document.
+    private func resolveMarks() {
+        guard let session, session.panel == .elements, let root = session.root else { return }
+        let revision = session.domRevision
+        let wanted = DeveloperIssueRules.marks(groups)
+        if let marked, marked.wanted == wanted, marked.revision == revision, marked.root == root { return }
+        marked = (wanted, revision, root)
+        marksTask?.cancel()
+        marksTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, let self else { return }
+            var next: [Int: [DeveloperIssueMark]] = [:]
+            for holder in [self.formHolder, self.contrastHolder].compactMap({ $0 }) {
+                let indexes = Array(wanted.keys.filter { $0.scan == holder.scan }.map(\.index).sorted().prefix(500))
+                if !indexes.isEmpty {
+                    let nodes = await self.scannedNodes(holder: holder, indexes: indexes)
+                    for (index, id) in nodes {
+                        next[id, default: []] += wanted[DeveloperIssueElement(scan: holder.scan, index: index)] ?? []
+                    }
+                }
+            }
+            guard !Task.isCancelled, revision == self.session?.domRevision,
+                  root == self.session?.root, next != self.marks else { return }
+            self.marks = next
+        }
+    }
+
+    private func scannedNodes(holder: Holder, indexes: [Int]) async -> [Int: Int] {
+        guard let session, let list = try? await session.command("Runtime.callFunctionOn", [
+            "objectId": holder.objectID, "functionDeclaration": "function(indexes) { return indexes.map(i => this.elements[i] || null); }",
+            "arguments": [["value": indexes]], "doNotPauseOnExceptionsAndMuteConsole": true,
+        ], targetID: holder.target).object("result")?.string("objectId") else { return [:] }
+        let reply = try? await session.command("Runtime.getProperties", ["objectId": list, "ownProperties": true], targetID: holder.target)
+        let properties = reply?.objects("properties") ?? reply?.objects("result") ?? []
+        var nodes: [Int: Int] = [:]
+        for property in properties {
+            guard let position = property.string("name").flatMap(Int.init), indexes.indices.contains(position),
+                  let object = property.object("value")?.string("objectId") else { continue }
+            if !Task.isCancelled {
+                let result = try? await session.command("DOM.requestNode", ["objectId": object], targetID: session.domTargetID)
+                if let id = result?.int("nodeId"), id > 0 { nodes[indexes[position]] = id }
+            }
+            _ = try? await session.command("Runtime.releaseObject", ["objectId": object], targetID: holder.target)
+        }
+        _ = try? await session.command("Runtime.releaseObject", ["objectId": list], targetID: holder.target)
+        return nodes
+    }
+
+    /// The Issues drawer tab, open at an issue's row (an underline in Elements).
+    func reveal(issue group: String) {
+        expanded = expanded.filter { !$0.hasPrefix("section:") }
+        expanded.insert(group)
+        revealed = group
+        Self.show()
     }
 
     /// An element row hovered: drawn on the page; nil hides it.

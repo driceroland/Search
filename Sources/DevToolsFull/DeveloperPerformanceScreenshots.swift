@@ -22,6 +22,16 @@ enum DeveloperPerformanceMemory {
     }
 }
 
+/// The recording's opt-out from WebKit's sampling profiler.
+enum DeveloperPerformanceCapture {
+    static let samplesKey = "developerTools.performance.disableJavaScriptSamples"
+
+    static var jsSamplesDisabled: Bool {
+        get { DevDefaults.store.bool(forKey: samplesKey) }
+        set { DevDefaults.store.set(newValue, forKey: samplesKey) }
+    }
+}
+
 @MainActor
 enum DeveloperPerformanceScreenshots {
     static let key = "developerPerformanceScreenshots"

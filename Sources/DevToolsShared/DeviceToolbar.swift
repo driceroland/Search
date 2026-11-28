@@ -15,9 +15,8 @@ import WebKit
 //     is the one the site sees;
 //   - light or dark is the page view's appearance, which is what WebKit
 //     answers prefers-color-scheme with;
-//   - reduced motion and the vision filters are a script of the tools' own
-//     world: the page's reduced-motion rules made to apply, a filter on the
-//     page's root;
+//   - reduced motion, the rendering filters and local-font emulation run
+//     in the tools' own world, with the page's styles restored when off;
 //   - a location or an orientation can only reach the page through the
 //     page's own functions, so that one script stands in the page's world,
 //     with the values written into it, nothing else (see Plugin.swift).
@@ -156,6 +155,8 @@ final class DeviceEmulation: ObservableObject {
     @Published var landscape = false { didSet { if landscape != oldValue { session?.invalidate() } } }
     @Published var colorScheme = ColorSchemeEmulation.none { didSet { if colorScheme != oldValue { changed() } } }
     @Published var reducedMotion = false { didSet { if reducedMotion != oldValue { changed() } } }
+    @Published var autoDark = false { didSet { if autoDark != oldValue { changed() } } }
+    @Published var noLocalFonts = false { didSet { if noLocalFonts != oldValue { changed() } } }
     @Published var vision = VisionDeficiency.none { didSet { if vision != oldValue { changed() } } }
     @Published var location: SensorLocation? { didSet { if location != oldValue { sensorsChanged() } } }
     /// The page is told its position can't be found.
@@ -173,6 +174,8 @@ final class DeviceEmulation: ObservableObject {
         if let turned = values["landscape"] as? Bool { landscape = turned }
         if let scheme = (values["colorScheme"] as? String).flatMap(ColorSchemeEmulation.init) { colorScheme = scheme }
         if let motion = values["reducedMotion"] as? Bool { reducedMotion = motion }
+        if let dark = values["autoDark"] as? Bool { autoDark = dark }
+        if let disabled = values["noLocalFonts"] as? Bool { noLocalFonts = disabled }
         if let seen = (values["vision"] as? String).flatMap(VisionDeficiency.init) { vision = seen }
         if values.keys.contains("location") {
             location = (values["location"] as? String).flatMap { name in SensorLocation.presets.first { $0.title == name } }
@@ -223,8 +226,12 @@ final class DeviceEmulation: ObservableObject {
     private func changed(reload: Bool = false) {
         guard let session, let web = session.web, on || applied else { return }
         applied = on
-        web.appearance = on ? (colorScheme == .dark ? NSAppearance(named: .darkAqua)
-                               : colorScheme == .light ? NSAppearance(named: .aqua) : nil) : nil
+        let scheme = on ? (autoDark ? ColorSchemeEmulation.dark : colorScheme) : .none
+        switch scheme {
+        case .dark: web.appearance = NSAppearance(named: .darkAqua)
+        case .light: web.appearance = NSAppearance(named: .aqua)
+        case .none: web.appearance = nil
+        }
         session.rearm()
         Task { await live(session) }
         let agent = userAgent
@@ -253,18 +260,30 @@ final class DeviceEmulation: ObservableObject {
         }
     }
 
+    private static let normalRendering: [String: Any] = [
+        "motion": false, "filter": "", "matrix": "", "autoDark": false, "noLocalFonts": false,
+    ]
+
+    private var renderingValues: [String: Any] {
+        ["motion": reducedMotion, "filter": vision.filter ?? "", "matrix": vision.matrix ?? "",
+         "autoDark": autoDark, "noLocalFonts": noLocalFonts]
+    }
+
     /// The rendering scripts run on the page that's up, or undone there.
     private func live(_ session: DevToolsSession) async {
-        _ = await session.call(Self.renderingBody, ["motion": on && reducedMotion, "filter": on ? (vision.filter ?? "") : "",
-                                                    "matrix": on ? (vision.matrix ?? "") : ""])
+        _ = await session.call(Self.renderingBody, applied ? renderingValues : Self.normalRendering)
     }
 
     func scripts() -> [WKUserScript] {
         guard on, let session else { return [] }
         var out: [WKUserScript] = []
-        if reducedMotion || vision != .none {
-            let values = Self.json(["motion": reducedMotion, "filter": vision.filter ?? "", "matrix": vision.matrix ?? ""])
-            let source = "(function(v) { const motion = v.motion, filter = v.filter, matrix = v.matrix;\n\(Self.renderingBody)\n})(\(values));"
+        if reducedMotion || autoDark || noLocalFonts || vision != .none {
+            let values = Self.json(renderingValues)
+            let source = """
+                (function({motion, filter, matrix, autoDark, noLocalFonts}) {
+                \(Self.renderingBody)
+                })(\(values));
+                """
             out.append(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: session.world))
         }
         if let sensors = sensorScript() {
@@ -281,7 +300,7 @@ final class DeviceEmulation: ObservableObject {
         if let web = session?.web {
             web.appearance = nil
             web.customUserAgent = nil
-            if let session { Task { _ = await session.call(Self.renderingBody, ["motion": false, "filter": "", "matrix": ""]) } }
+            if let session { Task { await live(session) } }
             if reloading, web.url != nil { web.reload() }
         }
         agentSet = nil
@@ -309,56 +328,111 @@ final class DeviceEmulation: ObservableObject {
 
     // MARK: scripts
 
-    /// Rendering, in the tools' world: `motion` makes the page's
-    /// prefers-reduced-motion: reduce rules apply and its no-preference ones
-    /// not; `filter` (and `matrix` for a colour one) goes on the page's
-    /// root. Called again with neither, it puts everything back.
+    /// Rendering, in the tools' world. Visiting CSSOM rules lets the package
+    /// emulate styles without replacing the site's functions. Each edit is
+    /// kept until the option is turned off.
     static let renderingBody = #"""
-    const state = window.__searchDeveloperRendering || (window.__searchDeveloperRendering = { rules: new Map() });
+    if (!window.__searchDeveloperRendering && !motion && !filter && !autoDark && !noLocalFonts) return true;
+    const state = window.__searchDeveloperRendering || (window.__searchDeveloperRendering = {
+        rules: new Map(), fonts: new Map(),
+    });
+    state.motion = motion;
+    state.noLocalFonts = noLocalFonts;
+    state.visionFilter = filter;
+    state.autoDark = autoDark;
     const swap = (text) => text
         .replace(/\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)/gi, "(min-width: 0px)")
         .replace(/\(\s*prefers-reduced-motion\s*:\s*no-preference\s*\)/gi, "(max-width: -1px)")
         .replace(/\(\s*prefers-reduced-motion\s*\)/gi, "(min-width: 0px)");
-    const visit = (rules, depth) => {
-        if (!rules || depth > 8) return;
-        for (const rule of rules) {
-            if (rule instanceof CSSMediaRule && !state.rules.has(rule)) {
-                const text = rule.media.mediaText;
-                if (/prefers-reduced-motion/i.test(text)) {
-                    state.rules.set(rule, text);
-                    try { rule.media.mediaText = swap(text); } catch (e) {}
-                }
-            }
-            if (rule.cssRules) visit(rule.cssRules, depth + 1);
+    // Split the CSSOM source list at commas outside strings and functions.
+    const withoutLocal = (src) => {
+        const parts = [];
+        let start = 0, depth = 0, quote = "";
+        for (let i = 0; i < src.length; i++) {
+            const c = src[i];
+            if (c === "\\") { i++; continue; }
+            if (quote) { if (c === quote) quote = ""; continue; }
+            if (c === '"' || c === "'") quote = c;
+            else if (c === "(") depth++;
+            else if (c === ")") depth--;
+            else if (c === "," && !depth) { parts.push(src.slice(start, i)); start = i + 1; }
         }
+        parts.push(src.slice(start));
+        const kept = parts.map((part) => part.trim()).filter((part) => !/^local\s*\(/i.test(part));
+        if (kept.length === parts.length) return src;
+        return kept.length ? kept.join(", ") : 'url("data:font/woff2;base64,")';
+    };
+    const undoFont = (style, edit) => {
+        if (style.getPropertyValue("src") === edit.last) style.setProperty("src", edit.source);
     };
     const sweep = () => {
-        for (const sheet of document.styleSheets) {
-            try { visit(sheet.cssRules, 0); } catch (e) {}
+        const sheets = new Set(), fonts = new Set();
+        const visit = (rules, depth) => {
+            if (!rules || depth > 8) return;
+            for (const rule of rules) {
+                if (state.motion && rule instanceof CSSMediaRule && !state.rules.has(rule)) {
+                    const text = rule.media.mediaText;
+                    if (/prefers-reduced-motion/i.test(text)) {
+                        state.rules.set(rule, text);
+                        try { rule.media.mediaText = swap(text); } catch (e) {}
+                    }
+                }
+                if (state.noLocalFonts && rule instanceof CSSFontFaceRule) {
+                    const style = rule.style, source = style.getPropertyValue("src");
+                    fonts.add(style);
+                    if (state.fonts.get(style)?.last !== source) {
+                        const wanted = withoutLocal(source);
+                        if (source !== wanted) {
+                            style.setProperty("src", wanted);
+                            state.fonts.set(style, { source, last: style.getPropertyValue("src") });
+                        } else {
+                            state.fonts.delete(style);
+                        }
+                    }
+                }
+                if (rule instanceof CSSImportRule && rule.styleSheet) walk(rule.styleSheet, depth + 1);
+                else if (rule.cssRules) visit(rule.cssRules, depth + 1);
+            }
+        };
+        const walk = (sheet, depth) => {
+            if (sheets.has(sheet)) return;
+            sheets.add(sheet);
+            try { visit(sheet.cssRules, depth); } catch (e) {}
+        };
+        for (const sheet of [...document.styleSheets, ...document.adoptedStyleSheets]) walk(sheet, 0);
+        for (const [style, edit] of state.fonts) {
+            if (fonts.has(style)) continue;
+            undoFont(style, edit);
+            state.fonts.delete(style);
         }
     };
-    if (motion) {
-        sweep();
-        if (!state.watch) {
-            state.watch = new MutationObserver(() => sweep());
-            state.watch.observe(document.documentElement, { childList: true, subtree: true });
-            state.load = () => sweep();
-            document.addEventListener("load", state.load, true);
-        }
-    } else {
-        if (state.watch) {
-            state.watch.disconnect();
-            document.removeEventListener("load", state.load, true);
-            state.watch = null;
-        }
+    if (!motion) {
         for (const [rule, text] of state.rules) {
             try { rule.media.mediaText = text; } catch (e) {}
         }
         state.rules.clear();
     }
+    if (!noLocalFonts) {
+        for (const [style, edit] of state.fonts) undoFont(style, edit);
+        state.fonts.clear();
+    }
+    if (motion || noLocalFonts) {
+        sweep();
+        if (!state.watch) {
+            state.watch = new MutationObserver(sweep);
+            state.watch.observe(document.documentElement, { childList: true, subtree: true });
+            state.load = sweep;
+            document.addEventListener("load", state.load, true);
+        }
+    } else if (state.watch) {
+        state.watch.disconnect();
+        document.removeEventListener("load", state.load, true);
+        state.watch = null;
+        state.load = null;
+    }
+
     const root = document.documentElement;
     if (state.svg) { state.svg.remove(); state.svg = null; }
-    if (state.filtered) { root.style.removeProperty("filter"); state.filtered = false; }
     if (filter) {
         if (matrix) {
             const ns = "http://www.w3.org/2000/svg";
@@ -376,9 +450,67 @@ final class DeviceEmulation: ObservableObject {
             root.appendChild(svg);
             state.svg = svg;
         }
-        root.style.setProperty("filter", filter, "important");
-        state.filtered = true;
     }
+
+    // Give a light page a dark rendering, but keep a site's own dark theme.
+    // A constructed stylesheet cancels the inversion on media without a
+    // node or attribute that a site's own stylesheet can match.
+    const alreadyDark = (root) => {
+        if (/\bdark\b/.test(getComputedStyle(root).colorScheme || "")) return true;
+        const meta = document.querySelector('meta[name="color-scheme" i]');
+        if (/\bdark\b/.test(meta?.content || "")) return true;
+        for (const element of [root, document.body]) {
+            if (!element) continue;
+            const rgb = /rgba?\(([^)]+)\)/.exec(getComputedStyle(element).backgroundColor);
+            if (!rgb) continue;
+            const [r, g, b, alpha = 1] = rgb[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+            if (alpha > 0) return 0.2126 * r + 0.7152 * g + 0.0722 * b < 102;
+        }
+        return false;
+    };
+    const matchesFilter = (edit) => edit.style.getPropertyValue("filter") === edit.last
+        && edit.style.getPropertyPriority("filter") === "important";
+    const syncDark = () => {
+        const root = document.documentElement;
+        if (!root) return;
+        const dark = state.autoDark && !alreadyDark(root);
+        const currentSheets = document.adoptedStyleSheets;
+        if (dark) {
+            if (!state.darkMedia) {
+                state.darkMedia = new CSSStyleSheet();
+                state.darkMedia.replaceSync("img, video, canvas, iframe, embed, object, [style*='background-image'] "
+                    + "{ filter: hue-rotate(180deg) invert(1) !important; }");
+            }
+            if (!currentSheets.includes(state.darkMedia)) document.adoptedStyleSheets = [...currentSheets, state.darkMedia];
+        } else if (state.darkMedia) {
+            document.adoptedStyleSheets = currentSheets.filter((sheet) => sheet !== state.darkMedia);
+            state.darkMedia = null;
+        }
+
+        const style = root.style, next = [state.visionFilter, dark ? "invert(1) hue-rotate(180deg)" : ""]
+            .filter(Boolean).join(" ");
+        const prior = state.rootFilter;
+        if (prior && (prior.style !== style || !next)) {
+            if (matchesFilter(prior)) prior.style.setProperty("filter", prior.original, prior.priority);
+            state.rootFilter = null;
+        }
+        if (!next) return;
+        if (!state.rootFilter || !matchesFilter(state.rootFilter)) {
+            state.rootFilter = { style, original: style.getPropertyValue("filter"), priority: style.getPropertyPriority("filter") };
+        }
+        if (state.rootFilter.requested !== next) {
+            style.setProperty("filter", next, "important");
+            state.rootFilter.last = style.getPropertyValue("filter");
+            state.rootFilter.requested = next;
+        }
+    };
+    syncDark();
+    if (autoDark && !state.darkTimer) state.darkTimer = setInterval(syncDark, 500);
+    if (!autoDark && state.darkTimer) {
+        clearInterval(state.darkTimer);
+        state.darkTimer = null;
+    }
+    if (!motion && !filter && !autoDark && !noLocalFonts) delete window.__searchDeveloperRendering;
     return true;
     """#
 
@@ -471,6 +603,10 @@ struct DeviceBar: View {
                     ForEach(ColorSchemeEmulation.allCases) { Text($0.title).tag($0) }
                 }
                 Toggle("prefers-reduced-motion: reduce", isOn: $device.reducedMotion)
+                Toggle("Enable automatic dark mode", isOn: $device.autoDark)
+                    .help("Requests dark mode and darkens light pages without their own dark theme.")
+                Toggle("Disable local fonts", isOn: $device.noLocalFonts)
+                    .help("Skips local() sources in accessible @font-face rules.")
                 Picker("Vision", selection: $device.vision) {
                     ForEach(VisionDeficiency.allCases) { Text($0.title).tag($0) }
                 }

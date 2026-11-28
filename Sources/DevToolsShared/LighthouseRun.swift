@@ -5,7 +5,7 @@ import WebKit
 //
 // Navigation loads the page again from a blank one, as Lighthouse does: the
 // load observer goes in for that load only (PageObserver.source), the
-// page is photographed small every tenth of a second for the Speed Index,
+// page is photographed small about every 16 ms for the Speed Index,
 // and once it has settled the metrics are read, then the page itself.
 // Snapshot reads the page as it is. Mobile scores against Lighthouse's
 // mobile curves and, unless the device toolbar is already up, shows the
@@ -94,7 +94,7 @@ final class LighthouseModel: ObservableObject {
         let started = Date()
         let mode = self.mode, form = self.form
         var metrics: [String: Any]?
-        var frames: [SpeedIndex.Frame] = []
+        var speedIndex: Double?
         if mode == .navigation {
             if form == .mobile, !session.device.on {
                 session.device.device = "Moto G Power"
@@ -108,15 +108,19 @@ final class LighthouseModel: ObservableObject {
             observing = true
             session.rearm()
             session.response = nil
-            let loadStart = Date()
+            let film = Task { await Self.film(web) }
             web.load(URLRequest(url: url))
-            let film = Task { await Self.film(web, from: loadStart) }
             await session.settle(timeout: 45, quiet: 1.5)
             guard !Task.isCancelled else { film.cancel(); return nil }
             stage = "Measuring"
             metrics = await session.call(LighthouseScripts.metrics) as? [String: Any]
             film.cancel()
-            frames = await film.value
+            let captures = await film.value
+            if let origin = LighthouseAudits.number(metrics?["timeOrigin"]), origin.isFinite {
+                let frames = captures.frames.map { ($0.ms - origin, $0.histogram) }
+                speedIndex = SpeedIndex.speedIndex(frames, fcp: LighthouseAudits.number(metrics?["fcp"]),
+                                                   end: captures.end.map { $0 - origin })
+            }
             observing = false
             session.rearm()
         }
@@ -131,32 +135,36 @@ final class LighthouseModel: ObservableObject {
         }
         guard !Task.isCancelled else { return nil }
         let input = LighthouseInput(mode: mode, form: form, page: page, metrics: metrics,
-                                    speedIndex: SpeedIndex.index(frames), response: session.response, robots: robots)
+                                    speedIndex: speedIndex, response: session.response, robots: robots)
         var report = LighthouseAudits.report(input, categories: LighthouseCategory.allCases.filter(categories.contains))
         report.duration = Date().timeIntervalSince(started) * 1000
         return report
     }
 
-    /// The page, small, every tenth of a second until cancelled. Frames
-    /// with nothing painted yet still count: they are the blank start.
-    private static func film(_ web: WKWebView, from start: Date) async -> [SpeedIndex.Frame] {
-        var frames: [SpeedIndex.Frame] = []
-        let blank = [[Int]](repeating: [Int](repeating: 0, count: 256), count: 3)
-        frames.append(SpeedIndex.Frame(time: 0, histogram: blank))
+    /// Sample small bitmaps for about 50 seconds at most, keeping frames
+    /// that changed. Use the time the snapshot arrived so an in-flight
+    /// snapshot never appears earlier in the trace.
+    private static func film(_ web: WKWebView) async -> (frames: [(ms: Double, histogram: [Int])], end: Double?) {
+        var frames: [(ms: Double, histogram: [Int])] = []
+        var end: Double?
+        var captured = 0
         let configuration = WKSnapshotConfiguration()
         configuration.snapshotWidth = 160
         configuration.afterScreenUpdates = false
-        while !Task.isCancelled, frames.count < 300 {
-            let time = Date().timeIntervalSince(start) * 1000
+        for _ in 0..<3_000 where !Task.isCancelled {
             if let image = try? await web.takeSnapshot(configuration: configuration),
-               let picture = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
-               let histogram = SpeedIndex.histogram(picture) {
-                frames.append(SpeedIndex.Frame(time: time, histogram: histogram))
+               let picture = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                guard !Task.isCancelled else { break }
+                let time = Date().timeIntervalSince1970 * 1_000
+                let histogram = SpeedIndex.histogram(picture)
+                if frames.last?.histogram != histogram { frames.append((time, histogram)) }
+                captured += 1
+                end = time
             }
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            try? await Task.sleep(for: .milliseconds(16))
         }
-        // Only a run with real pictures of the page counts.
-        return frames.count > 2 ? frames : []
+        guard captured >= 2 else { return (frames: [], end: nil) }
+        return (frames: frames, end: end)
     }
 
     // MARK: saving
@@ -297,6 +305,7 @@ enum LighthouseAudits {
         return LighthouseReport(url: page["url"] as? String ?? "", fetched: date, mode: input.mode, form: input.form,
                                 categories: categories, audits: audits, userAgent: page["userAgent"] as? String ?? "",
                                 viewport: CGSize(width: number(page["width"]) ?? 0, height: number(page["height"]) ?? 0),
+                                devicePixelRatio: number(page["dpr"]).flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 1,
                                 warnings: warnings)
     }
 

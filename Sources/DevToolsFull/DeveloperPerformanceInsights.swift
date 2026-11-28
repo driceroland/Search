@@ -76,7 +76,7 @@ enum DeveloperPerformanceInsights {
 
     /// Every insight the recording has the data for, failing ones first.
     static func all(_ profile: Profile, page: URL? = nil) -> [Insight] {
-        var found = [
+        let found = [
             lcpBreakdown(profile, page: page), lcpDiscovery(profile, page: page), inpBreakdown(profile),
             renderBlocking(profile), networkDependencyTree(profile, page: page), documentLatency(profile, page: page),
             imageDelivery(profile), fontDisplay(profile), layoutShifts(profile), forcedReflow(profile),
@@ -193,9 +193,13 @@ enum DeveloperPerformanceInsights {
     // MARK: Render blocking requests
 
     static func isRenderBlockingType(_ bar: Profile.NetworkBar) -> Bool {
-        if ["Stylesheet", "StyleSheet", "Script"].contains(bar.resourceType) { return true }
-        let type = (bar.mimeType ?? "").lowercased()
-        return type.contains("css") || type.contains("javascript") || type.contains("ecmascript")
+        isRenderBlockingType(type: bar.resourceType, mimeType: bar.mimeType)
+    }
+
+    static func isRenderBlockingType(type: String, mimeType: String?) -> Bool {
+        if ["Stylesheet", "StyleSheet", "Script"].contains(type) { return true }
+        let mime = (mimeType ?? "").lowercased()
+        return mime.contains("css") || mime.contains("javascript") || mime.contains("ecmascript")
     }
 
     /// Stylesheets and scripts begun and done before the first contentful

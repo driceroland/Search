@@ -5,9 +5,9 @@ import SwiftUI
 /// colour that would pass, of the same hue with only its lightness moved.
 enum DeveloperContrastFix {
     struct Line: Equatable {
-        /// "AA" or "AAA".
+        /// The contrast standard being shown.
         let level: String
-        /// 4.5 or 7, or 3 and 4.5 for large text.
+        /// The score the text needs under this standard.
         let threshold: Double
         let passes: Bool
         /// The suggested colour, when the line fails and one exists.
@@ -18,7 +18,51 @@ enum DeveloperContrastFix {
         large ? (3, 4.5) : (4.5, 7)
     }
 
-    static func lines(foreground: DeveloperCSSColor, background: DeveloperCSSColor, large: Bool) -> [Line] {
+    /// Settings: show APCA instead of the AA and AAA lines, as Chrome can.
+    static let apcaKey = "developerTools.colorPicker.apca"
+
+    // Adapted from Chromium DevTools ColorUtils.ts (b6c7456a), Copyright
+    // 2020 The Chromium Authors. See Resources/LICENSE-Chromium-DevTools.txt.
+    /// Lightness contrast (Lc), with positive scores for dark text on a
+    /// light background. Resolve transparency before measuring luminance.
+    static func apca(_ foreground: DeveloperCSSColor, _ background: DeveloperCSSColor) -> Double {
+        let ground = background.isOpaque ? background : background.over(.white)
+        let text = foreground.isOpaque ? foreground : foreground.over(ground)
+        func luminance(_ color: DeveloperCSSColor) -> Double {
+            let red = pow(color.red / 255, 2.4)
+            let green = pow(color.green / 255, 2.4)
+            let blue = pow(color.blue / 255, 2.4)
+            let value = 0.2126729 * red + 0.7151522 * green + 0.0721750 * blue
+            return value > 0.022 ? value : value + pow(0.022 - value, 1.414)
+        }
+        let textLuminance = luminance(text)
+        let groundLuminance = luminance(ground)
+        guard abs(textLuminance - groundLuminance) >= 0.0005 else { return 0 }
+        let contrast: Double
+        if groundLuminance > textLuminance {
+            let raw = (pow(groundLuminance, 0.56) - pow(textLuminance, 0.57)) * 1.14
+            contrast = raw < 0.1 ? 0 : raw - 0.027
+        } else {
+            let raw = (pow(groundLuminance, 0.65) - pow(textLuminance, 0.62)) * 1.14
+            contrast = raw > -0.1 ? 0 : raw + 0.027
+        }
+        return contrast * 100
+    }
+
+    /// The preview's Lc targets for body text and large text.
+    static func apcaThreshold(large: Bool) -> Double { large ? 60 : 75 }
+
+    /// "Lc 63.1".
+    static func apcaLabel(_ lc: Double) -> String { "Lc " + String(format: "%.1f", lc) }
+
+    static func lines(foreground: DeveloperCSSColor, background: DeveloperCSSColor, large: Bool, apca: Bool = false) -> [Line] {
+        if apca {
+            let threshold = apcaThreshold(large: large)
+            let measure = { (fore: DeveloperCSSColor, back: DeveloperCSSColor) in abs(Self.apca(fore, back)) }
+            let passes = measure(foreground, background) >= threshold
+            return [Line(level: "APCA", threshold: threshold, passes: passes,
+                         fix: passes ? nil : suggestion(for: foreground, on: background, ratio: threshold, measure: measure))]
+        }
         let ratio = DeveloperCSSColor.contrast(foreground, background)
         let (aa, aaa) = thresholds(large: large)
         return [("AA", aa), ("AAA", aaa)].map { level, threshold in
@@ -36,10 +80,12 @@ enum DeveloperContrastFix {
     /// The colour of the same hue and saturation nearest in lightness to
     /// `foreground` whose contrast with `background` reaches `ratio`, its
     /// alpha kept; nil when neither lighter nor darker gets there. A
-    /// foreground that already passes is its own answer.
-    static func suggestion(for foreground: DeveloperCSSColor, on background: DeveloperCSSColor,
-                           ratio: Double) -> DeveloperCSSColor? {
-        if DeveloperCSSColor.contrast(foreground, background) >= ratio { return foreground }
+    /// foreground that already passes is its own answer. `measure` is the
+    /// WCAG ratio, or APCA's |Lc|.
+    static func suggestion(for foreground: DeveloperCSSColor, on background: DeveloperCSSColor, ratio: Double,
+                           measure: (DeveloperCSSColor, DeveloperCSSColor) -> Double = DeveloperCSSColor.contrast)
+        -> DeveloperCSSColor? {
+        if measure(foreground, background) >= ratio { return foreground }
         let (hue, saturation, lightness) = hsl(foreground)
         let back = background.isOpaque ? background : background.over(.white)
         func color(_ l: Double) -> DeveloperCSSColor {
@@ -53,7 +99,7 @@ enum DeveloperContrastFix {
         func passes(_ l: Double, lighter: Bool) -> Bool {
             let candidate = color(l)
             let side = lighter ? shown(candidate) >= back.luminance : shown(candidate) <= back.luminance
-            return side && DeveloperCSSColor.contrast(candidate, background) >= ratio
+            return side && measure(candidate, background) >= ratio
         }
         func search(lighter: Bool) -> Double? {
             let end = lighter ? 1.0 : 0.0
@@ -74,7 +120,7 @@ enum DeveloperContrastFix {
         var l = found
         for _ in 0..<64 {
             let candidate = rounded(color(l))
-            if DeveloperCSSColor.contrast(candidate, background) >= ratio { return candidate }
+            if measure(candidate, background) >= ratio { return candidate }
             l = lighter ? min(1, l + 1.0 / 512) : max(0, l - 1.0 / 512)
         }
         return nil
@@ -126,17 +172,19 @@ struct DeveloperContrastDetails: View {
     let foreground: DeveloperCSSColor
     let contrast: DeveloperStyleContrast
     let apply: ((DeveloperCSSColor) -> Void)?
+    @AppStorage(DeveloperContrastFix.apcaKey, store: DevDefaults.store) private var apca = false
 
     var body: some View {
         let ratio = DeveloperCSSColor.contrast(foreground, contrast.background)
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("Contrast ratio").fontWeight(.semibold)
-                Text(DeveloperCSSOverview.ratioLabel(ratio)).monospacedDigit()
+                Text(apca ? "APCA contrast" : "Contrast ratio").fontWeight(.semibold)
+                Text(apca ? DeveloperContrastFix.apcaLabel(DeveloperContrastFix.apca(foreground, contrast.background))
+                     : DeveloperCSSOverview.ratioLabel(ratio)).monospacedDigit()
                 sample
             }
             ForEach(DeveloperContrastFix.lines(foreground: foreground, background: contrast.background,
-                                               large: contrast.largeText), id: \.level) { line in
+                                               large: contrast.largeText, apca: apca), id: \.level) { line in
                 HStack(spacing: 6) {
                     Text("\(line.level): \(DeveloperContrastFix.label(line.threshold))").monospacedDigit()
                     Image(systemName: line.passes ? "checkmark" : "exclamationmark.triangle.fill")
@@ -162,6 +210,9 @@ struct DeveloperContrastDetails: View {
             if contrast.largeText {
                 Text("Large text").foregroundStyle(.secondary)
             }
+            Toggle("Use APCA contrast", isOn: $apca)
+                .toggleStyle(.developerCheckbox)
+                .help("Measure web text contrast with the Advanced Perceptual Contrast Algorithm.")
         }
         .font(.system(size: 11))
         .padding(10)
