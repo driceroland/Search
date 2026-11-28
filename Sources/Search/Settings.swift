@@ -1208,6 +1208,7 @@ struct SettingsPanel: View {
                 }
                 .under()
             }
+            if !searched { ShieldSettings().under() }
         case "privacy.forget":
             if !searched {
                 Group {

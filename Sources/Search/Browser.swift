@@ -3223,6 +3223,7 @@ final class Browser: NSObject, ObservableObject {
             Spaces.seedHistories()
             Shield.shared.enabled = prefs.shielded
             Shield.shared.compile()
+            CustomFilters.shared.start()
             if #available(macOS 15.4, *) { Extensions.shared.start(for: self) }
             if prefs.bench {
                 Bench.shared.start(for: self)
@@ -3610,7 +3611,7 @@ final class Browser: NSObject, ObservableObject {
             .sink { [weak self] on in
                 guard let self else { return }
                 Shield.shared.enabled = on
-                Shield.shared.apply(to: tabs.compactMap { $0.built?.configuration.userContentController })
+                Shield.shared.apply()
                 announce(on ? "Ads and trackers blocked" : "Blocking off — reload to see the difference")
             }
             .store(in: &bag)
