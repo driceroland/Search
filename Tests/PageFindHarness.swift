@@ -17,6 +17,7 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
     private let finder = PageFind()
     private var web: WKWebView!
     private var window: NSWindow!
+    private let findField = NSTextField()
     private var generation: UInt64 = 0
     private var spec: Spec?
     private var checks = 0
@@ -27,13 +28,18 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         configuration.websiteDataStore = .nonPersistent()
         web = WKWebView(frame: NSRect(x: 0, y: 0, width: 460, height: 380), configuration: configuration)
         window = NSWindow(
-            contentRect: NSRect(x: -20_000, y: -20_000, width: 460, height: 380),
+            contentRect: NSRect(x: -20_000, y: -20_000, width: 460, height: 420),
             styleMask: .borderless,
             backing: .buffered,
             defer: false
         )
         window.isReleasedWhenClosed = false
-        window.contentView = web
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 420))
+        web.frame.origin.y = 40
+        content.addSubview(web)
+        findField.frame = NSRect(x: 10, y: 5, width: 300, height: 30)
+        content.addSubview(findField)
+        window.contentView = content
         // WebKit needs a sized view attached to a window to lay out the page.
         // The probe lives well outside every screen so it never covers the user's work.
         window.orderFrontRegardless()
@@ -190,6 +196,10 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         await checkSameQuerySelectionCleanup()
         await checkFrameAndSelectionRestoration()
         await checkControlsAndMutation()
+        await checkVisibleControlMatches()
+        await checkPersistentFieldHighlights()
+        await checkFieldHighlightLayout()
+        await checkStyledFieldHighlights()
         await checkDOMMutationBeforeNext()
         await checkStaleRequestsAndClear()
         await checkHorizontalHitScrollsIntoView()
@@ -293,9 +303,9 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         expect(mainHit, count: 3, index: 1, "The same query has one main, one input, and one iframe hit")
         let inputHit = await update("sharedmark")
         expect(inputHit, count: 3, index: 2, "Next moves from the main document into the input")
-        let restoredMain = (try? await evaluate("window.getSelection().toString()")) as? String
+        let selectedControl = (try? await evaluate("window.getSelection().toString()")) as? String
         let inputRange = (try? await evaluate("[document.querySelector('#sharedcontrol').selectionStart, document.querySelector('#sharedcontrol').selectionEnd]")) as? [Int]
-        check(restoredMain == "mainoriginal", "Next restores the main document's prior selection when entering a control")
+        check(selectedControl == "sharedmark", "The focused control exposes the selected match")
         check(inputRange == [0, 10], "The current control hit is selected")
 
         let frameHit = await update("sharedmark")
@@ -339,6 +349,362 @@ private final class PageFindHarness: NSObject, NSApplicationDelegate {
         let newAfterEdit = await update("newpivot")
         expect(newAfterEdit, count: 1, index: 1, "Next sees a newly entered control value")
         _ = await clear()
+    }
+
+    private func checkVisibleControlMatches() async {
+        _ = try? await evaluate("document.querySelector('#field').value = document.querySelector('#area').value = 'a this.word b'")
+        for selector in ["#field", "#area"] {
+            _ = await clear()
+            _ = try? await evaluate("""
+            (() => {
+                const control = document.querySelector('\(selector)');
+                control.blur();
+                control.setSelectionRange(2, 4);
+                control.scrollIntoView({ block: 'center' });
+            })()
+            """)
+            findField.stringValue = ".word"
+            window.makeFirstResponder(findField)
+            do {
+                let before = try await controlSnapshot(selector)
+                var hit = await update(".word")
+                if selector == "#area" { hit = await update(".word") }
+                expect(hit, count: 2, index: selector == "#field" ? 1 : 2,
+                       "A literal substring in \(selector) is found")
+                let after = try await controlSnapshot(selector)
+                let selection = (try? await evaluate("""
+                    (() => { const c = document.querySelector('\(selector)');
+                    return [c.selectionStart, c.selectionEnd]; })()
+                    """)) as? [Int]
+                check(selection == [6, 11], "Only .word is selected in \(selector), not the whole field")
+                check(window.firstResponder === findField.currentEditor(),
+                      "Find keeps keyboard focus after selecting \(selector)")
+                check((try? highlightPixels(after).orange) ?? 0 > 20,
+                      "The current match in \(selector) is painted orange")
+                _ = await clear()
+                let cleared = try await controlSnapshot(selector)
+                check(before == cleared, "Clearing Find removes the visible selection in \(selector)")
+            } catch {
+                check(false, "Could not capture \(selector): \(error)")
+            }
+        }
+    }
+
+    private func controlSnapshot(_ selector: String) async throws -> Data {
+        try await Task.sleep(for: .milliseconds(100))
+        let value = try await evaluate("""
+            (() => { const r = document.querySelector('\(selector)').getBoundingClientRect();
+            return [r.x, r.y, r.width, r.height]; })()
+            """)
+        guard let box = value as? [Double], box.count == 4 else { throw CocoaError(.coderInvalidValue) }
+        let configuration = WKSnapshotConfiguration()
+        configuration.rect = CGRect(x: box[0], y: box[1], width: box[2], height: box[3])
+        let image = try await web.takeSnapshot(configuration: configuration)
+        guard let pixels = image.tiffRepresentation else { throw CocoaError(.coderInvalidValue) }
+        return pixels
+    }
+
+    private func checkPersistentFieldHighlights() async {
+        _ = await clear()
+        _ = try? await evaluate("""
+            (() => {
+                const fixture = document.createElement('section');
+                fixture.id = 'field-paint';
+                fixture.innerHTML = `<p>paintword</p>
+                    <input id="paint-input" value="paintword gap paintword">
+                    <textarea id="paint-area">paintword gap paintword</textarea>`;
+                document.body.prepend(fixture);
+                for (const field of fixture.querySelectorAll('input, textarea')) {
+                    field.style.cssText = 'display:block;box-sizing:border-box;width:340px;height:40px;margin:8px;font:16px/20px monospace;padding:4px;border:2px solid #777';
+                }
+            })()
+            """)
+        findField.stringValue = "paintword"
+        window.makeFirstResponder(findField)
+        _ = try? await evaluate("document.querySelector('#field-paint').scrollIntoView({ block: 'start' })")
+        let before = try? await controlSnapshot("#paint-input")
+        let textBefore = try? await pageSelectionText()
+        let first = await update("paintword")
+        expect(first, count: 5, index: 1, "Page text and repeated matches in two fields share one result list")
+        do {
+            let input = try highlightPixels(await controlSnapshot("#paint-input"))
+            let area = try highlightPixels(await controlSnapshot("#paint-area"))
+            check(input.yellow > 200 && input.orange == 0,
+                  "Input matches are yellow while the current result is page text")
+            check(area.yellow > 200 && area.orange == 0,
+                  "Textarea matches are yellow while the current result is page text")
+            if let before {
+                let native = try highlightPixels(before)
+                let difference = native.ink.symmetricDifference(input.ink).count
+                check(Double(difference) / Double(max(1, native.ink.count)) < 0.05,
+                      "Painting keeps the input's original glyph positions")
+            }
+            let selectedText = try await pageSelectionText()
+            check(selectedText == textBefore, "Page selection does not copy mirrored field values")
+            let hit = try await evaluate("""
+                (() => { const field = document.querySelector('#paint-input');
+                const r = field.getBoundingClientRect();
+                return document.elementFromPoint(r.left + 10, r.top + 10) === field; })()
+                """) as? Bool
+            check(hit == true, "Highlights let pointer events reach the real input")
+            _ = try? await evaluate("""
+                (() => { const cover = document.createElement('div'); cover.id = 'paint-cover';
+                cover.style.cssText = 'position:fixed;inset:0;background:white;z-index:999999';
+                document.body.append(cover); })()
+                """)
+            let covered = try highlightPixels(await controlSnapshot("#paint-input"))
+            check(covered.yellow + covered.orange == 0, "Field highlights do not draw over a covering page panel")
+            _ = try? await evaluate("document.querySelector('#paint-cover').remove()")
+            let uncovered = try highlightPixels(await controlSnapshot("#paint-input"))
+            check(uncovered.yellow > 200, "Removing a covering panel restores field highlights")
+            let next = await update("paintword")
+            expect(next, count: 5, index: 2, "Next enters the first input match")
+            let current = try highlightPixels(await controlSnapshot("#paint-input"))
+            check(current.orange > 100 && current.yellow > 100,
+                  "One field can show an orange current match and a yellow other match")
+            check(window.firstResponder === findField.currentEditor(), "Painting keeps typing in Find")
+
+            _ = try? await evaluate("document.querySelector('#paint-input').value = 'paintword' + ' gap'.repeat(50) + ' paintword'")
+            let lastInput = await update("paintword")
+            expect(lastInput, count: 5, index: 3, "Next reaches the far-right input match")
+            _ = try? await evaluate("document.querySelector('#paint-input').scrollLeft = 10000")
+            let scrolledInput = try highlightPixels(await controlSnapshot("#paint-input"))
+            check(scrolledInput.orange > 100, "The far-right input match stays orange after internal scrolling")
+
+            _ = try? await evaluate("document.querySelector('#paint-area').value = 'paintword\\n' + 'filler\\n'.repeat(12) + 'paintword'")
+            _ = await update("paintword")
+            _ = try? await evaluate("document.querySelector('#paint-area').scrollTop = 10000")
+            let scrolledArea = try highlightPixels(await controlSnapshot("#paint-area"))
+            check(scrolledArea.yellow > 100 && scrolledArea.orange == 0,
+                  "Textarea scrolling reveals the other match and clips the off-screen current match")
+            let lastArea = await update("paintword")
+            expect(lastArea, count: 5, index: 5, "Next reaches the final textarea match")
+            let final = try highlightPixels(await controlSnapshot("#paint-area"))
+            check(final.orange > 100, "The final textarea match is orange at its scrolled position")
+
+            _ = await clear()
+            let clearedInput = try highlightPixels(await controlSnapshot("#paint-input"))
+            let clearedArea = try highlightPixels(await controlSnapshot("#paint-area"))
+            check(clearedInput.yellow + clearedInput.orange + clearedArea.yellow + clearedArea.orange == 0,
+                  "Clear removes every colored field highlight")
+            let hosts = try await evaluate("document.querySelectorAll('search-find-fields').length") as? Int
+            check(hosts == 0, "Clear removes the field painting surface")
+        } catch {
+            check(false, "Could not inspect field highlighting: \(error)")
+        }
+        _ = await clear()
+        _ = try? await evaluate("document.querySelector('#field-paint').remove()")
+    }
+
+    private func checkFieldHighlightLayout() async {
+        _ = await clear()
+        _ = try? await evaluate("""
+            (() => {
+                const fixture = document.createElement('section');
+                fixture.id = 'field-layout';
+                fixture.innerHTML = `<p>fixedword</p>
+                    <input id="paint-disabled" disabled value="fixedword">
+                    <input id="paint-readonly" readonly value="fixedword">
+                    <div id="paint-clip" style="width:120px;height:40px;overflow:auto">
+                        <input id="paint-clipped" value="${'gap '.repeat(24)}clipword">
+                    </div>
+                    <textarea id="paint-mask" style="-webkit-text-security:disc">maskword</textarea>
+                    <div id="paint-scale"><textarea id="paint-wrap">${'wrapword'.repeat(3)}</textarea></div>`;
+                document.body.prepend(fixture);
+                for (const control of fixture.querySelectorAll('input, textarea')) {
+                    Object.assign(control.style, { display: 'block', width: '320px', height: '40px',
+                        boxSizing: 'border-box', padding: '4px', font: '17px/22px serif' });
+                }
+                Object.assign(fixture.querySelector('#paint-wrap').style, { width: '120px', height: '80px' });
+                const shadow = document.createElement('input');
+                shadow.id = 'nested-paint'; shadow.value = 'nestedpaint';
+                document.querySelector('#card').shadowRoot.append(shadow);
+                document.querySelector('#card').style.display = 'block';
+                const frame = document.querySelector('#frame');
+                frame.dataset.fieldPaintOriginal = frame.getAttribute('srcdoc') || '';
+                frame.style.height = '100px';
+                const area = frame.contentDocument.createElement('textarea');
+                area.id = 'nested-paint'; area.value = 'nestedpaint';
+                frame.contentDocument.body.prepend(area);
+                const label = document.createElement('p'); label.textContent = 'nestedpaint';
+                fixture.append(label);
+            })()
+            """)
+        findField.stringValue = "fixedword"
+        window.makeFirstResponder(findField)
+        expect(await update("fixedword"), count: 3, index: 1, "Disabled and readonly values remain searchable")
+        do {
+            let disabled = try highlightPixels(await controlSnapshot("#paint-disabled"))
+            let readonly = try highlightPixels(await controlSnapshot("#paint-readonly"))
+            check(disabled.yellow > 100 && readonly.yellow > 100,
+                  "Disabled and readonly fields are highlighted without focusing them")
+            _ = await update("fixedword")
+            let current = try highlightPixels(await controlSnapshot("#paint-disabled"))
+            check(current.orange > 100, "A disabled field can paint the current match")
+
+            _ = await update("clipword")
+            _ = try? await evaluate("document.querySelector('#paint-clip').scrollLeft = 0")
+            let clipped = try highlightPixels(await controlSnapshot("#paint-clip"))
+            check(clipped.orange == 0, "An overflow container clips a field highlight outside its visible area")
+            _ = try? await evaluate("document.querySelector('#paint-clip').scrollLeft = 10000")
+            var revealed = try highlightPixels(await controlSnapshot("#paint-clip"))
+            for _ in 0..<5 where revealed.orange <= 100 {
+                revealed = try highlightPixels(await controlSnapshot("#paint-clip"))
+            }
+            check(revealed.orange > 100, "Scrolling an ancestor reveals the correctly positioned field highlight")
+
+            _ = try? await evaluate("document.querySelector('#paint-mask').scrollIntoView({block:'center'})")
+            let maskedBefore = try highlightPixels(await controlSnapshot("#paint-mask"))
+            _ = await update("maskword")
+            let masked = try highlightPixels(await controlSnapshot("#paint-mask"))
+            check(masked.orange > 100, "CSS-masked text gets a visible match")
+            let mask = try await evaluate("getComputedStyle(document.querySelector('#paint-mask')).webkitTextSecurity") as? String
+            check(mask == "disc", "Painting preserves the field's CSS masking")
+            check(Double(maskedBefore.ink.symmetricDifference(masked.ink).count) / Double(max(1, maskedBefore.ink.count)) < 0.05,
+                  "Masked field highlights retain the original dots instead of revealing letters")
+            _ = try? await evaluate("document.querySelector('#paint-mask').value = 'changed';")
+            try await Task.sleep(for: .milliseconds(300))
+            let edited = try highlightPixels(await controlSnapshot("#paint-mask"))
+            check(edited.orange + edited.yellow == 0, "A programmatic value change cannot leave stale mirrored text")
+
+            _ = try? await evaluate("document.querySelector('#paint-wrap').scrollIntoView({block:'center'})")
+            let wrapBefore = try highlightPixels(await controlSnapshot("#paint-wrap"))
+            expect(await update(String(repeating: "wrapword", count: 3)), count: 1, index: 1,
+                   "One textarea match can wrap over several lines")
+            let wrapped = try highlightPixels(await controlSnapshot("#paint-wrap"))
+            check(wrapped.orange > 500 && Double(wrapBefore.ink.symmetricDifference(wrapped.ink).count) / Double(max(1, wrapBefore.ink.count)) < 0.05,
+                  "Wrapped highlighting follows the native textarea's glyph positions")
+            _ = try? await evaluate("document.querySelector('#paint-scale').style.transform = 'scale(0.8)'")
+            _ = await update(String(repeating: "wrapword", count: 3))
+            let scaled = try highlightPixels(await controlSnapshot("#paint-wrap"))
+            check(scaled.orange > 200, "Field highlights follow a scaled ancestor")
+            expect(await update("nestedpaint"), count: 3, index: 1,
+                   "One query spans the main page, an open shadow tree, and an iframe field")
+            _ = try? await evaluate("document.querySelector('#card').scrollIntoView({block:'center'})")
+            var shadow = try highlightPixels(await controlSnapshot("#card"))
+            for _ in 0..<5 {
+                if shadow.yellow > 100 { break }
+                shadow = try highlightPixels(await controlSnapshot("#card"))
+            }
+            check(shadow.yellow > 100, "A field inside an open shadow tree has a yellow match")
+            _ = try? await evaluate("document.querySelector('#frame').scrollIntoView({block:'center'})")
+            let frame = try highlightPixels(await controlSnapshot("#frame"))
+            check(frame.yellow > 100, "A same-origin iframe field has a yellow match")
+            _ = try? await evaluate("""
+                document.querySelector('#frame').srcdoc = '<input value="nestedpaint"><script>window.framePaintReady=true;window.frameTicks=0;setInterval(()=>frameTicks++,20);</script>';
+                """)
+            for _ in 0..<100 {
+                if (try? await evaluate("document.querySelector('#frame').contentWindow.framePaintReady")) as? Bool == true { break }
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            expect(await update("nestedpaint"), count: 3, index: 2,
+                   "Replacing an iframe document refreshes the shared result list")
+            let replaced = try highlightPixels(await controlSnapshot("#frame"))
+            check(replaced.yellow > 100, "A replacement iframe document receives its own highlight stylesheet")
+            let ticks = try await evaluate("document.querySelector('#frame').contentWindow.frameTicks") as? Int
+            check((ticks ?? 0) > 1, "Retiring an iframe painter does not cancel the new page's timers")
+            _ = try? await evaluate("document.querySelector('#frame').removeAttribute('srcdoc'); document.querySelector('#frame').src = 'data:text/html,<input value=nestedpaint>'")
+            for _ in 0..<100 {
+                if (try? await evaluate("document.querySelector('#frame').contentDocument === null")) as? Bool == true { break }
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            expect(await update("nestedpaint"), count: 2, index: 1,
+                   "A cross-origin iframe navigation retires its painter without breaking Find")
+            _ = await clear()
+            let hosts = try await evaluate("document.querySelectorAll('search-find-fields').length") as? Int
+            check(hosts == 0, "Clear removes remaining field painters after iframe navigation")
+        } catch {
+            check(false, "Could not inspect field layout: \(error)")
+        }
+        _ = await clear()
+        _ = try? await evaluate("""
+            document.querySelector('#field-layout').remove();
+            document.querySelector('#card').shadowRoot.querySelector('#nested-paint').remove();
+            document.querySelector('#card').style.display = '';
+            const frame = document.querySelector('#frame');
+            frame.srcdoc = frame.dataset.fieldPaintOriginal;
+            delete frame.dataset.fieldPaintOriginal;
+            frame.style.height = '';
+            """)
+        try? await waitForPage()
+    }
+
+    private func checkStyledFieldHighlights() async {
+        let cases = [
+            ("search", "prefix styledword suffix", "text-align:left"),
+            ("text", "prefix styledword suffix", "text-align:center"),
+            ("text", "\u{05D0}\u{05D1}\u{05D2} styledword xyz", "direction:rtl;text-align:start"),
+            ("text", "styledword", "text-align:right;-webkit-text-security:disc")
+        ]
+        for (type, value, style) in cases {
+            _ = await clear()
+            _ = try? await web.callAsyncJavaScript("""
+                const fixture = document.createElement('section'); fixture.id = 'field-style';
+                const label = document.createElement('p'); label.textContent = 'styledword';
+                const input = document.createElement('input'); input.id = 'styled-input';
+                input.type = type; input.value = value;
+                input.style.cssText = 'font:17px/24px serif;width:330px;height:42px;box-sizing:border-box;padding:5px;border:2px solid #777;' + style;
+                fixture.append(label, input); document.body.prepend(fixture);
+                fixture.scrollIntoView({block:'start'});
+                """, arguments: ["type": type, "value": value, "style": style], in: nil, contentWorld: .page)
+            findField.stringValue = "styledword"
+            window.makeFirstResponder(findField)
+            do {
+                let before = try highlightPixels(await controlSnapshot("#styled-input"))
+                expect(await update("styledword"), count: 2, index: 1, "Styled field matches are counted (\(type), \(style))")
+                let after = try highlightPixels(await controlSnapshot("#styled-input"))
+                let difference = Double(before.ink.symmetricDifference(after.ink).count) / Double(max(1, before.ink.count))
+                check(after.yellow > 100 && difference < 0.05,
+                      "Styled field highlighting preserves glyph positions (\(type), \(style), difference=\(difference))")
+                if style == "text-align:center" {
+                    _ = try await evaluate("void document.querySelector('#styled-input').animate([{transform:'translateX(0)'},{transform:'translateX(40px)'}], {duration:100,fill:'forwards'})")
+                    try await Task.sleep(for: .milliseconds(350))
+                    var moved = try highlightPixels(await controlSnapshot("#styled-input"))
+                    for _ in 0..<5 where moved.yellow <= 100 {
+                        moved = try highlightPixels(await controlSnapshot("#styled-input"))
+                    }
+                    check(moved.yellow > 100 && Double(before.ink.symmetricDifference(moved.ink).count) / Double(max(1, before.ink.count)) < 0.05,
+                          "Field highlights follow layout changes that emit no DOM mutation or resize")
+                }
+            } catch {
+                check(false, "Could not inspect styled field: \(error)")
+            }
+            _ = await clear()
+            _ = try? await evaluate("document.querySelector('#field-style').remove()")
+        }
+    }
+
+    private func pageSelectionText() async throws -> String? {
+        try await evaluate("""
+            (() => {
+                const selection = window.getSelection();
+                const saved = Array.from({length: selection.rangeCount}, (_, i) => selection.getRangeAt(i).cloneRange());
+                document.execCommand('selectAll');
+                const text = selection.toString();
+                selection.removeAllRanges();
+                for (const range of saved) selection.addRange(range);
+                return text;
+            })()
+            """) as? String
+    }
+
+    private func highlightPixels(_ data: Data) throws -> (yellow: Int, orange: Int, ink: Set<Int>) {
+        guard let bitmap = NSBitmapImageRep(data: data) else { throw CocoaError(.coderInvalidValue) }
+        var yellow = 0, orange = 0
+        var ink = Set<Int>()
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                if max(color.redComponent, color.greenComponent, color.blueComponent) < 0.4 {
+                    ink.insert(y * bitmap.pixelsWide + x)
+                }
+                if color.redComponent > 0.9 && color.blueComponent < 0.3 {
+                    if color.greenComponent > 0.9 { yellow += 1 }
+                    else if color.greenComponent > 0.5 && color.greenComponent < 0.7 { orange += 1 }
+                }
+            }
+        }
+        return (yellow, orange, ink)
     }
 
     private func checkDOMMutationBeforeNext() async {
