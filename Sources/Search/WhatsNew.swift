@@ -50,6 +50,17 @@ enum WhatsNew {
         var settings: [String] = []
         /// And a short line for each notable change with no setting.
         var lines: [String] = []
+        /// What the card and Settings › What's New open with: four to six
+        /// things the person will notice, each a symbol, a short title and
+        /// one plain sentence (WhatsNewTests holds the count and the symbols).
+        var highlights: [Highlight] = []
+    }
+
+    /// One thing a release changed, in the user's words.
+    struct Highlight: Equatable {
+        let symbol: String
+        let title: String
+        let text: String
     }
 
     /// Every switch worth meeting, the leading ones first, then oldest
@@ -235,11 +246,23 @@ enum WhatsNew {
         Release(version: "1.0.23",
                 settings: ["sidebar.roomy", "fold.loadingLine"],
                 lines: [
-                    "Settings are half as long: most switches are built in now, and the rare ones wait under Advanced at the foot of each page.",
                     "Find a setting still finds every one, and opens Advanced to show it.",
-                    "The loading line along the page's top is off again, with its switch back in Settings › Appearance: it showed by itself in 1.0.22 and could not be turned off.",
                     "Taken out: the reading fill in a tab, tabs giving when pressed, Markdown copies in reading mode, hiding the page behind the ⌘T field, a click on a tab editing its address only, and the page bounce.",
                     "Home background keeps Off, Solid colour, Gradient and Image; set to a wall painting or stickers, it is Off now.",
+                ],
+                highlights: [
+                    Highlight(symbol: "slider.horizontal.3", title: "Settings, half as long",
+                              text: "Most switches are built in now, and the rare ones wait under Advanced at the foot of each page."),
+                    Highlight(symbol: "person.crop.circle.badge.checkmark", title: "Signed in stays signed in",
+                              text: "Sites like your bank no longer log you out every time you relaunch Search."),
+                    Highlight(symbol: "network", title: "Home network names just work",
+                              text: "Addresses like umbrel.local, .lan or .home open straight away."),
+                    Highlight(symbol: "eye.slash", title: "A cleaner private window",
+                              text: "⇧⌘N with no window open starts on one private tab, with no blank tab in front."),
+                    Highlight(symbol: "icloud", title: "Big bookmark libraries sync",
+                              text: "Thousands of bookmarks, from a Zen or Arc import, now reach your iPhone through iCloud."),
+                    Highlight(symbol: "rectangle.topthird.inset.filled", title: "The loading line is a choice",
+                              text: "The thin line along the page's top is off again; its switch is in Settings › Appearance."),
                 ]),
         Release(version: "1.0.22", changes: 26, fixes: 63,
                 settings: ["meet.pip", "home.tiles", "pins.preview", "glyph", "downloads.screenshots",
@@ -1008,11 +1031,13 @@ enum WhatsNew {
     ]
 }
 
-/// The card after an update: one calm sentence, how many new things and
-/// fixes, and a way to Settings › What's New to look at them at leisure.
+/// The card after an update: what is new in this version, a few things in
+/// plain words, then Continue and a quiet way to Settings › What's New.
 /// Nothing to decide here (Drice, 27 Nov 2026, after a reply on X that the
-/// list of switches was stressful): every new setting keeps its default.
-/// The small email field stays, for whoever hasn't left an email yet.
+/// list of switches was stressful), but it must show what is new (28 Nov:
+/// a card that only says "what's new" and shows nothing is pointless).
+/// The iPhone beta is one quiet line that opens the email field, which
+/// stays for whoever hasn't left an email yet.
 struct WhatsNewCard: View {
     let release: WhatsNew.Release
     let close: () -> Void
@@ -1029,36 +1054,88 @@ struct WhatsNewCard: View {
     /// The email block (OptIn.swift), read once as the card opens: offered
     /// until an email has been given, and kept after one is, for its thanks.
     @State private var offering: Bool?
+    /// Whether the quiet line has been pressed and the field is out.
+    @State private var joining = false
     @ObservedObject private var reach = OptIn.Reach.shared
 
     /// Left off while the Mac is offline, where a press could only fail.
     private var showsOptIn: Bool { (optInForced ?? offering ?? OptIn.offered()) && (optInForced != nil || reach.online) }
 
     var body: some View {
-        Plate("New in Search \(release.version)", width: 420, close: close) {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 6) {
+        Plate("New in Search \(release.version)", width: 440, close: close) {
+            VStack(alignment: .leading, spacing: 16) {
+                if release.highlights.isEmpty {
                     Text(WhatsNew.summary(release) + ".")
                         .font(.system(size: 13.5))
                         .foregroundStyle(Palette.ink)
-                    Text("Nothing to decide: everything is set as it should be. Look around in Settings whenever you like.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
-                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    HighlightList(highlights: release.highlights)
                 }
                 if showsOptIn {
-                    OptInBlock(source: .whatsNew, open: open, start: optInStart, startEmail: optInEmail)
+                    if joining || optInStart != .idle {
+                        OptInBlock(source: .whatsNew, open: open, start: optInStart, startEmail: optInEmail)
+                    } else {
+                        HStack(spacing: 6) {
+                            Text("Search for iPhone is in beta")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.muted)
+                            Button("Join") { joining = true }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Palette.ink)
+                                .accessibilityLabel("Join the Search for iPhone beta")
+                        }
+                    }
                 }
             }
         } foot: {
             HStack(spacing: 8) {
+                Button("All changes in Settings", action: settings)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                    .accessibilityLabel("Show all changes in Settings")
                 Spacer()
-                Pill("See What's New in Settings", action: settings)
-                Pill("Close", filled: true, action: close)
+                Pill("Continue", filled: true, action: close)
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityLabel("Continue")
             }
         }
+        .onExitCommand(perform: close)
         .onAppear {
             if offering == nil { offering = OptIn.offered() }
+        }
+    }
+}
+
+/// The highlights, one per row: a small symbol, a bold title and one
+/// sentence. The card and Settings › What's New draw the same list.
+struct HighlightList: View {
+    let highlights: [WhatsNew.Highlight]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            ForEach(highlights, id: \.title) { item in
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: item.symbol)
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 22, height: 22)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Palette.ink)
+                        Text(item.text)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(item.title). \(item.text)")
+            }
         }
     }
 }

@@ -66,6 +66,23 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertEqual(WhatsNew.releases.first { $0.version == "1.0.22" }?.settings.first, "meet.pip")
     }
 
+    /// The card opens with real content: four to six highlights, each with
+    /// a symbol that exists, a short title and one sentence.
+    func testHighlightsAreRealContent() {
+        let release = WhatsNew.releases[0]
+        XCTAssertEqual(release.version, "1.0.23")
+        XCTAssertTrue((4...6).contains(release.highlights.count), "\(release.highlights.count) highlights")
+        XCTAssertEqual(Set(release.highlights.map(\.title)).count, release.highlights.count)
+        for item in release.highlights {
+            XCTAssertNotNil(NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil), item.symbol)
+            XCTAssertFalse(item.title.isEmpty)
+            XCTAssertLessThanOrEqual(item.title.count, 36, item.title)
+            XCTAssertLessThanOrEqual(item.text.count, 130, item.text)
+            XCTAssertTrue(item.text.hasSuffix(".") && !item.text.contains(". "), "one sentence: \(item.text)")
+        }
+        XCTAssertFalse(release.highlights.contains { $0.text.lowercased().contains("shorten") }, "Shorten long tab titles is not in this build")
+    }
+
     func testReleasesAreNewestFirst() {
         for (a, b) in zip(WhatsNew.releases, WhatsNew.releases.dropFirst()) {
             XCTAssertTrue(WhatsNew.older(b.version, than: a.version), "\(b.version) before \(a.version)")

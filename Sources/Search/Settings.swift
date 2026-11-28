@@ -497,12 +497,15 @@ struct SettingsPanel: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Palette.ink)
                 Text((release.changes == nil ? "" : WhatsNew.summary(release) + ". ")
-                     + "Everything is already set as it should be: try what you like, at your own pace.")
+                     + (release.highlights.isEmpty ? "Everything is already set as it should be: try what you like, at your own pace." : "What changed, and nothing to decide."))
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.leading, 2)
+            if !release.highlights.isEmpty {
+                Card { HighlightList(highlights: release.highlights).padding(14) }
+            }
             if !items.isEmpty {
                 GroupBlock(title: "New and changed settings", icon: "slider.horizontal.3") {
                     Card { rows(items, searched: true) }
