@@ -70,8 +70,9 @@ extension Browser {
         let shown = visibleTabIDs
         let all = tabs + parkedTabs
         return sounding.reversed().compactMap { id in
-            guard !shown.contains(id), id != floating else { return nil }
-            return all.first { $0.id == id }
+            guard !shown.contains(id), id != floating, id != pictured else { return nil }
+            guard let tab = all.first(where: { $0.id == id }), !tab.inPictureInPicture else { return nil }
+            return tab
         }
     }
 

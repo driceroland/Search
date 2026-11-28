@@ -616,7 +616,19 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
     let immersion = PassthroughSubject<Bool, Never>()
 
     /// True while this tab's page is out in the little window.
-    @Published var floating = false
+    @Published var floating = false {
+        // Back in its tab, paused: the media keys go back as after any pause.
+        didSet { if oldValue, !floating { rearmQuiet() } }
+    }
+    /// True while WebKit reports a video of this tab is out in macOS's native
+    /// picture in picture (`_webView:hasVideoInPictureInPictureDidChange:`).
+    @Published private(set) var inPictureInPicture = false
+    /// Grace timer while `webkitSetPresentationMode('picture-in-picture')`
+    /// settles asynchronously into WebKit's delegate callback.
+    private var pictureInPictureGrace: DispatchWorkItem?
+    /// True while window occlusion detection was turned off by us for macOS
+    /// picture in picture, so exiting restores it only when we changed it.
+    private var pausedOcclusionForPiP = false
 
     /// A sideways swipe in progress, for the disc that shows it. Kept apart
     /// from the rest of the tab, as the meter is: it changes with every event
@@ -2427,20 +2439,86 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
         built.setAllMediaPlaybackSuspended(false) {}
     }
 
+    /// WebKit's report that this tab's page entered or left macOS's picture
+    /// in picture. Keeps the page alive in its stage and out of App Nap while
+    /// PiP is up, and releases both the moment PiP closes.
+    func setPictureInPicture(_ on: Bool) {
+        pictureInPictureGrace?.cancel()
+        pictureInPictureGrace = nil
+        if inPictureInPicture != on { inPictureInPicture = on }
+        built?.inPictureInPicture = on
+        NativePiP.keepAwake(for: self, active: on)
+        if on {
+            quiet?.invalidate()
+            quiet = nil
+            if suspended {
+                stilled = false
+                suspended = false
+                built?.setAllMediaPlaybackSuspended(false) {}
+            }
+            if let web = built, !pausedOcclusionForPiP, NativePiP.occlusionDetectionEnabled(web) {
+                NativePiP.setOcclusionDetection(web, enabled: false)
+                pausedOcclusionForPiP = true
+            }
+        } else {
+            if pausedOcclusionForPiP, let web = built {
+                pausedOcclusionForPiP = false
+                NativePiP.setOcclusionDetection(web, enabled: true)
+            } else {
+                pausedOcclusionForPiP = false
+            }
+            (built?.superview as? StageView)?.updateHeld()
+            // Paused in picture in picture, its timer was dropped on the way
+            // in: without another, the media keys stayed Search's for good.
+            rearmQuiet()
+        }
+    }
+
+    /// The countdown to `hush` again, for a page paused while its video was
+    /// out, where `hush` would not act and nothing else restarts it.
+    private func rearmQuiet() {
+        guard !noisy, !floating, !inPictureInPicture, built != nil, quiet == nil else { return }
+        quiet = Timer.scheduledTimer(withTimeInterval: MediaKeys.wait, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.hush() }
+        }
+    }
+
+    /// Hold this tab's view in its stage briefly after asking WebKit to enter
+    /// macOS picture in picture, bridging the async gap until WebKit fires
+    /// `_webView:hasVideoInPictureInPictureDidChange:`.
+    func expectPictureInPicture() {
+        guard !inPictureInPicture, let web = built else { return }
+        web.inPictureInPicture = true
+        pictureInPictureGrace?.cancel()
+        let clear = DispatchWorkItem { [weak self, weak web] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.pictureInPictureGrace = nil
+                guard !self.inPictureInPicture else { return }
+                web?.inPictureInPicture = false
+                (web?.superview as? StageView)?.updateHeld()
+            }
+        }
+        pictureInPictureGrace = clear
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: clear)
+    }
+
     /// Quiet long enough: the paused media muted, in the page and in each
-    /// frame that played, so the Mac hands the media keys back.
+    /// frame that played, so the Mac hands the media keys back. Never while
+    /// the video is out in the floating window or macOS picture in picture.
     private func hush() {
         quiet = nil
-        guard !noisy, built != nil else { return }
+        guard !noisy, !floating, !inPictureInPicture, built != nil else { return }
         // Paused last, with Search in front: it keeps the keys (idea 1350).
         guard MediaKeysKeeper.shared.handsBack(self) else { return }
         handBack()
     }
 
     /// The media keys given back now: what played here, paused, is muted
-    /// (MediaKeys.watch).
+    /// (MediaKeys.watch). Never while the video is out in the floating window
+    /// or macOS picture in picture.
     func handBack() {
-        guard !noisy, let built else { return }
+        guard !noisy, !floating, !inPictureInPicture, let built else { return }
         built.evaluateJavaScript(MediaKeys.hush, in: nil, in: Web.world) { _ in }
         for frame in media.frames {
             built.evaluateJavaScript(MediaKeys.hush, in: frame, in: Web.world) { _ in }
@@ -2472,7 +2550,19 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
         // and the suspension with the view.
         stilled = false
         suspended = false
-        guard let web = built else { return }
+        pictureInPictureGrace?.cancel()
+        pictureInPictureGrace = nil
+        if inPictureInPicture { inPictureInPicture = false }
+        NativePiP.keepAwake(for: self, active: false)
+        guard let web = built else {
+            pausedOcclusionForPiP = false
+            return
+        }
+        web.inPictureInPicture = false
+        if pausedOcclusionForPiP {
+            pausedOcclusionForPiP = false
+            NativePiP.setOcclusionDetection(web, enabled: true)
+        }
         DevToolsPackages.unload(web)
         (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
@@ -2717,6 +2807,10 @@ final class PageView: WKWebView {
     required init?(coder: NSCoder) { nil }
 
     var draftFrames: [WKFrameInfo] = []
+
+    /// True while a video in this view is out in macOS's picture in picture
+    /// (or entering it), so StageView keeps the view in its window unseen.
+    var inPictureInPicture = false
 
     var onMenuClosed: (() -> Void)?
 

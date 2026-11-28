@@ -398,6 +398,7 @@ extension Browser {
     private func pageProcessEnded(_ webView: WKWebView, _ end: PageEnd) {
         cancelDisplay(for: webView)
         if let asking = certificateTab(for: webView) { dropCertificateAsks(for: asking.id) }
+        if let any = anyTab(for: webView) { clearPictureInPicture(for: any) }
         guard let tab = tab(for: webView) else { return }
         dropQuestions(for: tab.id)
         let host = tab.address?.host() ?? ""
