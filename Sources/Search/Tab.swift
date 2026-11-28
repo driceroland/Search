@@ -616,7 +616,10 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
     let immersion = PassthroughSubject<Bool, Never>()
 
     /// True while this tab's page is out in the little window.
-    @Published var floating = false
+    @Published var floating = false {
+        // Back in its tab, paused: the media keys go back as after any pause.
+        didSet { if oldValue, !floating { rearmQuiet() } }
+    }
     /// True while WebKit reports a video of this tab is out in macOS's native
     /// picture in picture (`_webView:hasVideoInPictureInPictureDidChange:`).
     @Published private(set) var inPictureInPicture = false
@@ -2465,6 +2468,18 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
                 pausedOcclusionForPiP = false
             }
             (built?.superview as? StageView)?.updateHeld()
+            // Paused in picture in picture, its timer was dropped on the way
+            // in: without another, the media keys stayed Search's for good.
+            rearmQuiet()
+        }
+    }
+
+    /// The countdown to `hush` again, for a page paused while its video was
+    /// out, where `hush` would not act and nothing else restarts it.
+    private func rearmQuiet() {
+        guard !noisy, !floating, !inPictureInPicture, built != nil, quiet == nil else { return }
+        quiet = Timer.scheduledTimer(withTimeInterval: MediaKeys.wait, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.hush() }
         }
     }
 

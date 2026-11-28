@@ -62,8 +62,14 @@ final class NativePiPTests: XCTestCase {
         browser.webView(web, hasVideoInPictureInPictureDidChange: true)
         XCTAssertTrue(video.inPictureInPicture)
         XCTAssertTrue(web.inPictureInPicture)
-        XCTAssertEqual(browser.pictured, video.id)
+        // Started by the page, not by Search: never `pictured`, so coming
+        // back to the tab leaves it where the person put it.
+        XCTAssertNil(browser.pictured)
         XCTAssertTrue(browser.hasPictureInPicture)
+        // The tab itself left out, as when Search's own script answers "in"
+        // after WebKit already reported it (finishSpaceFloat).
+        XCTAssertFalse(browser.hasPictureInPicture(besides: video))
+        XCTAssertTrue(browser.hasPictureInPicture(besides: other))
         XCTAssertEqual(browser.awake(because: video), "its video is out")
         XCTAssertEqual(browser.stays(because: video), "its video is out")
         if prevOcclusion {
@@ -217,11 +223,12 @@ final class NativePiPTests: XCTestCase {
 
         browser.webView(web, hasVideoInPictureInPictureDidChange: true)
         XCTAssertTrue(video.inPictureInPicture)
-        XCTAssertEqual(browser.pictured, video.id)
+        XCTAssertTrue(browser.hasPictureInPicture)
 
         // Simulating WebContent process termination clears stale PiP state.
         browser.webViewWebContentProcessDidTerminate(web)
         XCTAssertFalse(video.inPictureInPicture)
         XCTAssertNil(browser.pictured)
+        XCTAssertFalse(browser.hasPictureInPicture)
     }
 }

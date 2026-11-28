@@ -53,6 +53,7 @@ enum NativePiP {
     /// leaves macOS's PiP panel on screen with unresponsive buttons.
     @MainActor private static let activeTabs = NSHashTable<Tab>.weakObjects()
     @MainActor private static var activity: NSObjectProtocol?
+    @MainActor private static var sweep: Timer?
 
     @MainActor static func keepAwake(for tab: Tab, active: Bool) {
         if active {
@@ -60,14 +61,26 @@ enum NativePiP {
         } else {
             activeTabs.remove(tab)
         }
+        settleActivity()
+    }
+
+    /// The activity held only while a tab still alive is in picture in
+    /// picture. A weak table drops a freed tab by itself, with no call here,
+    /// so this also runs on a timer while the activity is up.
+    @MainActor private static func settleActivity() {
         let needed = !activeTabs.allObjects.isEmpty
         if needed, activity == nil {
             activity = ProcessInfo.processInfo.beginActivity(
                 options: [.userInitiatedAllowingIdleSystemSleep],
                 reason: "Picture in Picture"
             )
+            sweep = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+                MainActor.assumeIsolated { settleActivity() }
+            }
         } else if !needed, let token = activity {
             activity = nil
+            sweep?.invalidate()
+            sweep = nil
             ProcessInfo.processInfo.endActivity(token)
         }
     }

@@ -5417,7 +5417,7 @@ final class Browser: NSObject, ObservableObject {
         // Coming back to the tab whose video is out brings it home first, so
         // it is never lifted and landed in the same breath.
         if floating == tab.id { land() }
-        if pictured == tab.id || tab.inPictureInPicture { unpicture(tab) }
+        if pictured == tab.id { unpicture(tab) }
         if floatPrevious { leaving() }
         // Asleep here and read in another window since: it wakes where that
         // window is (see Twins.swift).
@@ -6395,7 +6395,11 @@ final class Browser: NSObject, ObservableObject {
         if !tab.wake() { tab.revive() }
         // Its video, in macOS's picture in picture, comes back into the page
         // first: once out of the row, nothing here could bring it back.
-        if pictured == tab.id || tab.inPictureInPicture { unpicture(tab) }
+        if pictured == tab.id || tab.inPictureInPicture {
+            unpicture(tab)
+            // WebKit's answer may come after the tab has left the row.
+            tab.setPictureInPicture(false)
+        }
         detach(tab)
         LittleWindow.show(tab, for: self, front: !Store.testing, lifted: true)
         writeSession(now: true)
@@ -7648,8 +7652,13 @@ final class Browser: NSObject, ObservableObject {
     /// Whether any tab in this window currently has a video in macOS's picture
     /// in picture — either sent there by Search (`pictured`) or entered from
     /// the page itself (`tab.inPictureInPicture`).
-    var hasPictureInPicture: Bool {
-        pictured != nil || (tabs + parkedTabs).contains { $0.inPictureInPicture }
+    var hasPictureInPicture: Bool { hasPictureInPicture(besides: nil) }
+
+    /// The same, leaving `tab` out: the tab being sent to picture in picture
+    /// may already be reported there by WebKit before the script answers.
+    func hasPictureInPicture(besides tab: Tab?) -> Bool {
+        (pictured != nil && pictured != tab?.id)
+            || (tabs + parkedTabs).contains { $0 !== tab && $0.inPictureInPicture }
     }
 
     func leavingSpace() {
@@ -7660,16 +7669,15 @@ final class Browser: NSObject, ObservableObject {
 
     func returnSpaceVideo() {
         if let id = floating, visibleTabIDs.contains(id) { land() }
-        for tab in tabs where visibleTabIDs.contains(tab.id) && (pictured == tab.id || tab.inPictureInPicture) {
-            unpicture(tab)
-        }
+        if let id = pictured, visibleTabIDs.contains(id) { unpicture() }
     }
 
     private func finishSpaceFloat(_ request: UUID?, tab: Tab, system: Bool) -> Bool {
         guard let request else { return true }
         let current = spaceFloat.finish(request)
         guard current, (tabs + parkedTabs).contains(where: { $0 === tab }),
-              !visibleTabIDs.contains(tab.id), !floater.showing, !hasPictureInPicture else {
+              !visibleTabIDs.contains(tab.id), !floater.showing,
+              !hasPictureInPicture(besides: system ? tab : nil) else {
             tab.built?.evaluateInSearch(system ? NativePiP.off : Isolate.off)
             return false
         }
@@ -7724,7 +7732,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     private func liftAway() {
-        liftedAway = !floater.showing && !hasPictureInPicture
+        liftedAway = !floater.showing && (prefs.floatStyle != .system || !hasPictureInPicture)
         lift(active, quietly: true, otherwise: otherPane)
     }
 
@@ -7738,7 +7746,7 @@ final class Browser: NSObject, ObservableObject {
         stopAwayWatch()
         defer { liftedAway = false }
         if liftedAway, let id = floating, id == activeID { land() }
-        if liftedAway, let tab = active, pictured == tab.id || tab.inPictureInPicture { unpicture(tab) }
+        if liftedAway, let id = pictured, id == activeID { unpicture() }
     }
 
     /// ⌘⇧P, for lifting one out by hand.
@@ -7773,15 +7781,20 @@ final class Browser: NSObject, ObservableObject {
             else if let spaceRequest { _ = spaceFloat.finish(spaceRequest) }
             return
         }
-        let stage = tab.web.superview as? StageView
-        stage?.keep(tab.web)
-        tab.web.evaluateInSearch(NativePiP.script(toggle: toggle)) { [weak self, weak tab, weak stage] answer in
+        let page = tab.web
+        let stage = page.superview as? StageView
+        stage?.keep(page)
+        page.evaluateInSearch(NativePiP.script(toggle: toggle)) { [weak self, weak tab, weak stage, weak page] answer in
             MainActor.assumeIsolated {
+                // Let go of the page held, never `tab.web`: a tab put down or
+                // asleep in the meantime would build a page anew for it.
+                let letGo = { if let page { stage?.letGo(page) } }
                 guard let self else {
-                    if let tab { stage?.letGo(tab.web) }
+                    letGo()
                     return
                 }
                 guard let tab else {
+                    letGo()
                     if let spaceRequest { _ = self.spaceFloat.finish(spaceRequest) }
                     return
                 }
@@ -7789,19 +7802,19 @@ final class Browser: NSObject, ObservableObject {
                 case "in":
                     if self.finishSpaceFloat(spaceRequest, tab: tab, system: true) {
                         self.pictured = tab.id
-                        tab.expectPictureInPicture()
+                        if tab.built === page { tab.expectPictureInPicture() }
                     }
-                    stage?.letGo(tab.web)
+                    letGo()
                 case "out":
                     if let spaceRequest { _ = self.spaceFloat.finish(spaceRequest) }
                     if self.pictured == tab.id { self.pictured = nil }
-                    stage?.letGo(tab.web)
+                    letGo()
                 case "refused":
                     if let spaceRequest { _ = self.spaceFloat.finish(spaceRequest) }
-                    stage?.letGo(tab.web)
+                    letGo()
                     if !quietly { self.announce("This page keeps its video to itself") }
                 default:
-                    stage?.letGo(tab.web)
+                    letGo()
                     if let otherwise { return self.picture(otherwise, quietly: quietly, toggle: toggle, spaceRequest: spaceRequest) }
                     if let spaceRequest { _ = self.spaceFloat.finish(spaceRequest) }
                     if !quietly { self.announce("Nothing is playing here") }
@@ -7832,13 +7845,15 @@ final class Browser: NSObject, ObservableObject {
     /// in picture — whether Search asked for it or the page's own button did.
     @objc(_webView:hasVideoInPictureInPictureDidChange:)
     func webView(_ webView: WKWebView, hasVideoInPictureInPictureDidChange hasVideo: Bool) {
-        guard let tab = anyTab(for: webView) else { return }
+        // A tab sent to a small window or a peek while its video was out
+        // hears PiP end there; missed, it stayed in picture in picture for good.
+        guard let tab = anyTab(for: webView)
+            ?? (peekTab?.built === webView ? peekTab : nil)
+            ?? littleTab(for: webView) else { return }
         tab.setPictureInPicture(hasVideo)
-        if hasVideo {
-            pictured = tab.id
-        } else if pictured == tab.id {
-            pictured = nil
-        }
+        // `pictured` stays Search's own: set only when its script answers
+        // "in", so a PiP from the page's own button is never taken back.
+        if !hasVideo, pictured == tab.id { pictured = nil }
     }
 
     /// The button at the top right of macOS's picture in picture, back to the
