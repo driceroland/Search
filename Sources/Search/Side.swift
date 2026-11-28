@@ -969,7 +969,7 @@ struct SideBar: View {
             FeedItemRow(browser: browser, prefs: prefs, item: item, depth: depth, compact: icons, interactive: false)
         case .pin(.pin(let tab, let depth)):
             if icons {
-                IconTile(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
+                IconTile(browser: browser, prefs: prefs, tab: tab, nav: tab.nav, live: tab.id == row.active,
                          pill: pill, close: {}, interactive: false)
             } else {
                 SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == row.active,
@@ -1082,7 +1082,7 @@ struct SideBar: View {
                          live: activeID.map { pair.contains($0) } ?? false,
                          focusedID: activeID, interactive: interactive, pill: pill)
             } else {
-                IconTile(browser: browser, prefs: prefs, tab: tab, live: tab.id == activeID,
+                IconTile(browser: browser, prefs: prefs, tab: tab, nav: tab.nav, live: tab.id == activeID,
                          pill: pill, close: close, interactive: interactive)
             }
         } else if let pair, pages.count >= 2 {
@@ -2180,6 +2180,7 @@ private struct PinSquare: View, Equatable {
     let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
+    @ObservedObject var nav: Navigation
     let live: Bool
     let pill: Namespace.ID
     var width: CGFloat = 34
@@ -2197,6 +2198,7 @@ private struct PinSquare: View, Equatable {
         self.browser = browser
         self.prefs = prefs
         self.tab = tab
+        nav = tab.nav
         self.live = live
         self.pill = pill
         self.width = width
@@ -2241,7 +2243,7 @@ private struct PinSquare: View, Equatable {
                 PinField(browser: browser, tab: tab)
             } else if let number = shortcutNumbers[tab.id] {
                 TabShortcutNumber(number: number)
-            } else if tab.loading {
+            } else if nav.loading {
                 // Its page on the way, as a row's ring says.
                 Ring(size: scale * 11 / 34)
             } else if prefs.glyph == .icons, let icon = tab.icon {
@@ -2354,6 +2356,7 @@ private struct SideRow: View, Equatable {
     let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
+    @ObservedObject var nav: Navigation
     let live: Bool
     let pill: Namespace.ID
     let close: () -> Void
@@ -2376,6 +2379,7 @@ private struct SideRow: View, Equatable {
         self.browser = browser
         self.prefs = prefs
         self.tab = tab
+        nav = tab.nav
         self.live = live
         self.pill = pill
         self.close = close
@@ -2410,10 +2414,10 @@ private struct SideRow: View, Equatable {
     /// The ring or the speaker, which stay for as long as the page loads or
     /// plays (or is muted) and so keep a place of their own at the end of the
     /// row. The cross is only there under the pointer, and takes none.
-    private var status: Bool { !editing && (tab.loading || speaker) }
+    private var status: Bool { !editing && (nav.loading || speaker) }
     /// The speaker, which can be pressed, and so steps in beside the cross
     /// under the pointer rather than hiding beneath it as the ring does.
-    private var speaker: Bool { !tab.loading && (tab.noisy || tab.muted) }
+    private var speaker: Bool { !nav.loading && (tab.noisy || tab.muted) }
     /// A pinned row with a peek opened from it: the peek's icon at its end,
     /// as on a square's corner.
     private var peeking: Bool { !editing && tab.pin != nil && peek != nil }
@@ -2510,7 +2514,7 @@ private struct SideRow: View, Equatable {
 
             if status {
                 ZStack {
-                    if tab.loading {
+                    if nav.loading {
                         Ring().transition(.opacity)
                     } else {
                         Speaker(tab: tab).transition(.opacity)
@@ -2566,7 +2570,7 @@ private struct SideRow: View, Equatable {
                 .padding(.trailing, 7)
             }
         }
-        .animation(Motion.quick, value: tab.loading)
+        .animation(Motion.quick, value: nav.loading)
         .animation(Motion.quick, value: speaker)
         .animation(Motion.quick, value: tab.blockedPopups.isEmpty)
         .animation(Motion.quick, value: tab.translation == nil)

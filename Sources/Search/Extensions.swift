@@ -613,7 +613,7 @@ final class Extensions: NSObject, ObservableObject {
                 changed(.URL)
                 self?.leftSite(id, to: url)
             },
-            tab.$loading.dropFirst().removeDuplicates().sink { _ in changed(.loading) },
+            tab.nav.$loading.dropFirst().removeDuplicates().sink { _ in changed(.loading) },
             tab.$pin.dropFirst().map { $0 != nil }.removeDuplicates().sink { _ in changed(.pinned) },
             // Into a group or out of one: a group shows to an extension
             // only while it has a tab.

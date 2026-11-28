@@ -2584,7 +2584,7 @@ final class Bench {
                         out["viewWasBuilt"] = tab.built != nil
                         let start = CACurrentMediaTime()
                         var loading: Double?
-                        let watch = tab.$loading.first(where: { $0 }).sink { _ in loading = (CACurrentMediaTime() - start) * 1000 }
+                        let watch = tab.nav.$loading.first(where: { $0 }).sink { _ in loading = (CACurrentMediaTime() - start) * 1000 }
                         // When Return went, on the clock a page's
                         // performance.timeOrigin is on (Tests/mem_at_rest.py).
                         out["submittedAt"] = Date().timeIntervalSince1970 * 1000
@@ -2804,7 +2804,7 @@ final class Bench {
             let built = tab.built != nil
             var loading: Double?
             let start = CACurrentMediaTime()
-            let watch = tab.$loading.first(where: { $0 }).sink { _ in loading = (CACurrentMediaTime() - start) * 1000 }
+            let watch = tab.nav.$loading.first(where: { $0 }).sink { _ in loading = (CACurrentMediaTime() - start) * 1000 }
             browser.pickBookmark(url)
             let returned = (CACurrentMediaTime() - start) * 1000
             Bench.whenResting(since: start) { rested in

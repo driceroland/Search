@@ -798,7 +798,7 @@ struct Helm: View {
 
     var body: some View {
         if let tab = browser.active {
-            Wheel(browser: browser, tab: tab, vertical: vertical)
+            Wheel(browser: browser, tab: tab, nav: tab.nav, vertical: vertical)
         } else {
             // Nowhere to go and nothing to reload: the doors stay in place,
             // greyed, so the row doesn't shift when a tab arrives.
@@ -820,11 +820,12 @@ struct Helm: View {
     private struct Wheel: View {
         let browser: Browser
         @ObservedObject var tab: Tab
+        @ObservedObject var nav: Navigation
         var vertical = false
 
         var body: some View {
-            let back = !tab.isBlank && tab.canGoBack
-            let forward = !tab.isBlank && tab.canGoForward
+            let back = !tab.isBlank && nav.canGoBack
+            let forward = !tab.isBlank && nav.canGoForward
             Helm.stack(vertical) {
                 // Each can be hidden in Settings › Appearance (idea 815).
                 if !browser.prefs.hidesBack {
@@ -840,19 +841,19 @@ struct Helm: View {
                 // Reload, or stop while it is still coming.
                 if !browser.prefs.hidesReload {
                 Door(
-                    icon: tab.loading ? "xmark" : "arrow.clockwise",
+                    icon: nav.loading ? "xmark" : "arrow.clockwise",
                     // Stop's ⌘. is the Mac's own, not one of Settings › Shortcuts.
-                    help: tab.loading ? "Stop   ⌘." : "Reload",
-                    shortcut: tab.loading ? nil : "view.reload"
+                    help: nav.loading ? "Stop   ⌘." : "Reload",
+                    shortcut: nav.loading ? nil : "view.reload"
                 ) {
-                    if tab.loading { tab.stop() } else { browser.reload() }
+                    if nav.loading { tab.stop() } else { browser.reload() }
                 }
                 .disabled(!tab.isWeb)
                 .opacity(tab.isWeb ? 1 : Helm.dimmed)
                 // The menu's second item is the reason for it: ⌥⌘R has no
                 // button. Nothing to offer while the door is Stop.
                 .contextMenu {
-                    if !tab.loading && tab.isWeb {
+                    if !nav.loading && tab.isWeb {
                         Button("Reload Page") { browser.reload() }
                             .shortcut("view.reload")
                         Button("Reload Page From Origin") { browser.reload(fromOrigin: true) }
@@ -863,7 +864,7 @@ struct Helm: View {
             }
             .animation(Motion.quick, value: back)
             .animation(Motion.quick, value: forward)
-            .animation(Motion.quick, value: tab.loading)
+            .animation(Motion.quick, value: nav.loading)
         }
     }
 }
@@ -921,6 +922,7 @@ private struct TabPill: View, Equatable {
     let browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
+    @ObservedObject var nav: Navigation
     let live: Bool
     let width: CGFloat
     /// How much of the strip there is, for the field that grows over it.
@@ -940,6 +942,7 @@ private struct TabPill: View, Equatable {
         self.browser = browser
         self.prefs = prefs
         self.tab = tab
+        nav = tab.nav
         self.live = live
         self.width = width
         self.room = room
@@ -988,7 +991,7 @@ private struct TabPill: View, Equatable {
     }
     /// A speaker to press at the end of the pill: the page plays sound, or
     /// was muted. The ring, while the page is still coming, goes first.
-    private var speaker: Bool { !editing && !tab.loading && (tab.noisy || tab.muted) }
+    private var speaker: Bool { !editing && !nav.loading && (tab.noisy || tab.muted) }
     /// Where the page is, said on the tab you're on (Settings › Tabs › Show
     /// the address on the tab you're on).
     /// Where there is room for the site's name beside its lock and port:
@@ -1025,7 +1028,7 @@ private struct TabPill: View, Equatable {
                         PinField(browser: browser, tab: tab)
                     } else if let number = shortcutNumbers[tab.id] {
                         TabShortcutNumber(number: number)
-                    } else if tab.loading {
+                    } else if nav.loading {
                         // Its page on the way, as a tab's ring says; the
                         // letter or icon comes back once it is there.
                         Ring(size: 11)
@@ -1126,7 +1129,7 @@ private struct TabPill: View, Equatable {
                         .transition(.opacity)
                 } else if let number = shortcutNumbers[tab.id] {
                     TabShortcutNumber(number: number)
-                } else if tab.loading {
+                } else if nav.loading {
                     Ring()
                 } else {
                     Mark(icon: prefs.glyph == .icons ? tab.icon : nil, letter: tab.monogram, size: 15, dim: tab.asleep,
@@ -1216,7 +1219,7 @@ private struct TabPill: View, Equatable {
                             .background(Palette.ink.opacity(0.07), in: Circle())
                             .help(crossHelp)
                             .transition(.opacity)
-                    } else if tab.loading {
+                    } else if nav.loading {
                         Ring().transition(.opacity)
                     }
                 }
@@ -1236,7 +1239,7 @@ private struct TabPill: View, Equatable {
                     }
                 }
                 .animation(nil, value: hovering)
-                .animation(Motion.quick, value: tab.loading)
+                .animation(Motion.quick, value: nav.loading)
             }
         }
         .padding(.leading, Metrics.tabLead)

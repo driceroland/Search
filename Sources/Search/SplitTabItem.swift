@@ -113,6 +113,7 @@ struct SplitTabItem: View {
             browser: browser,
             prefs: prefs,
             tab: tab,
+            nav: tab.nav,
             focused: focused == tab.id,
             stacked: stacked,
             first: index == 0,
@@ -173,6 +174,7 @@ private struct SplitTabHalf: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
+    @ObservedObject var nav: Navigation
     let focused: Bool
     let stacked: Bool
     /// The top half in the column, the left one across the top.
@@ -198,7 +200,7 @@ private struct SplitTabHalf: View {
 
     private var hovering: Bool { hovered == tab.id }
     private var title: String { tab.label.isEmpty ? "New Tab" : tab.label }
-    private var playing: Bool { !tab.loading && (tab.noisy || tab.muted) }
+    private var playing: Bool { !nav.loading && (tab.noisy || tab.muted) }
     /// Never in a copy that takes no clicks (the map of every space's rows):
     /// a second field there takes the keys and ends the edit (see SideRow).
     private var editing: Bool { interactive && browser.editingTab == tab.id }
@@ -373,7 +375,7 @@ private struct SplitTabHalf: View {
         if playing {
             Speaker(tab: tab)
                 .padding(.trailing, stacked && hovering ? 3 : 0)
-        } else if tab.loading && !(stacked && hovering) {
+        } else if nav.loading && !(stacked && hovering) {
             Ring(size: 10)
                 .padding(.trailing, 3)
         }
