@@ -80,7 +80,7 @@ enum IconTiles {
         var marks: [String] = []
         if tab.shy { marks.append("Private") }
         if tab.recording { marks.append("Recording") }
-        if !tab.loading && tab.muted { marks.append("Muted") } else if !tab.loading && tab.noisy { marks.append("Playing sound") }
+        if !tab.nav.loading && tab.muted { marks.append("Muted") } else if !tab.nav.loading && tab.noisy { marks.append("Playing sound") }
         if !marks.isEmpty { lines.append(marks.joined(separator: " · ")) }
         return lines.joined(separator: "\n")
     }
@@ -93,6 +93,7 @@ struct IconTile: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
     @ObservedObject var tab: Tab
+    @ObservedObject var nav: Navigation
     let live: Bool
     let pill: Namespace.ID
     let close: () -> Void
@@ -129,7 +130,7 @@ struct IconTile: View {
         ZStack {
             if interactive, let number = shortcutNumbers[tab.id] {
                 TabShortcutNumber(number: number)
-            } else if tab.loading {
+            } else if nav.loading {
                 Ring()
             } else if tab.isBlank {
                 Image(systemName: "plus.magnifyingglass")
@@ -238,7 +239,7 @@ struct IconTile: View {
         .accessibilityAction(named: "Close tab") { if interactive { close() } }
         .animation(nil, value: hovering)
         .animation(Motion.quick, value: crossShows)
-        .animation(Motion.quick, value: tab.loading)
+        .animation(Motion.quick, value: nav.loading)
         .animation(Motion.quick, value: speaker)
         .animation(Motion.quick, value: tab.recording)
         .transition(.scale(scale: 0.9).combined(with: .opacity))
@@ -280,7 +281,7 @@ struct CornerSpeaker: View {
 
     /// Whether a tile or a square of `tab` wears it: its page plays sound,
     /// or was muted, and isn't on its way (the ring has the place then).
-    static func shows(for tab: Tab) -> Bool { !tab.loading && (tab.noisy || tab.muted) }
+    static func shows(for tab: Tab) -> Bool { !tab.nav.loading && (tab.noisy || tab.muted) }
 
     var body: some View {
         Button(action: tab.toggleMute) {
@@ -350,7 +351,7 @@ struct IconPair: View {
     }
 
     private func half(_ tab: Tab) -> some View {
-        IconTile(browser: browser, prefs: prefs, tab: tab, live: focused == tab.id, pill: pill,
+        IconTile(browser: browser, prefs: prefs, tab: tab, nav: tab.nav, live: focused == tab.id, pill: pill,
                  close: { browser.close(tab) }, interactive: interactive, half: true)
             .opacity(separation.leaving.map { leaving in leaving != tab.id && pages.contains { $0.id == leaving } } == true ? 0.35 : 1)
             .background {

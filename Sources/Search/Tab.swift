@@ -280,6 +280,15 @@ final class Reading: ObservableObject {
     @Published var value: Double = 0
 }
 
+/// A tab's load and Back/Forward, apart from the tab as `Reading` is: on it,
+/// every load redrew every view watching the tab, most of which never show them.
+@MainActor
+final class Navigation: ObservableObject {
+    @Published fileprivate(set) var loading = false
+    @Published fileprivate(set) var canGoBack = false
+    @Published fileprivate(set) var canGoForward = false
+}
+
 /// A tab's sideways swipe, for its disc alone (see `Tab.pulling`).
 final class Pulling: ObservableObject {
     @Published var pull: Pull?
@@ -467,9 +476,20 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
         address = url
         failure = nil
     }
-    @Published private(set) var loading = false
-    @Published private(set) var canGoBack = false
-    @Published private(set) var canGoForward = false
+    /// Views read these from `nav`, which they observe: through the tab, they never redraw.
+    let nav = Navigation()
+    private(set) var loading: Bool {
+        get { nav.loading }
+        set { if nav.loading != newValue { nav.loading = newValue } }
+    }
+    private(set) var canGoBack: Bool {
+        get { nav.canGoBack }
+        set { if nav.canGoBack != newValue { nav.canGoBack = newValue } }
+    }
+    private(set) var canGoForward: Bool {
+        get { nav.canGoForward }
+        set { if nav.canGoForward != newValue { nav.canGoForward = newValue } }
+    }
     /// Set when the page never arrived — no host, no network, a refused
     /// connection, a process that kept dying. Shown in place of the page
     /// rather than in a dialog.
